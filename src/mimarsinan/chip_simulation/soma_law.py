@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.chip_simulation.soma_axes import (
     FIRING_GRANULARITY_KEY,
@@ -88,6 +88,30 @@ class SomaLaw:
     def saturates(self) -> bool:
         """The membrane clamps to ``[0, 2**membrane_bits - 1]`` on every update."""
         return self.membrane_arithmetic == SATURATING_UNSIGNED_MEMBRANE
+
+    @property
+    def membrane_bounds(self) -> Optional[Tuple[float, float]]:
+        """The representable membrane interval, or ``None`` when unbounded.
+
+        An unsigned fixed-width register holds ``[0, 2**bits - 1]`` and clamps
+        on EVERY update; the default accumulator declares no interval, so a
+        consumer that reads ``None`` keeps today's arithmetic exactly.
+        """
+        if not self.saturates:
+            return None
+        return (0.0, float(2 ** int(self.membrane_bits) - 1))
+
+    @property
+    def membrane_lattice_quantum(self) -> Optional[float]:
+        """The exact arithmetic quantum of the membrane, or ``None``.
+
+        A fixed-width unsigned register counts in whole LSBs, so the quantum
+        is 1 in the chip's own units — the value a per-event snap projects
+        onto. An unbounded accumulator declares no lattice here: the default
+        points keep their own ``membrane_integer_lattice`` machinery
+        untouched (plan §2.4).
+        """
+        return 1.0 if self.saturates else None
 
     @property
     def is_default_point(self) -> bool:

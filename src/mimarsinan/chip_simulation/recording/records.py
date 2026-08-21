@@ -1,5 +1,10 @@
 """Per-segment spike-count records for HCM↔Loihi parity verification."""
-# Subtractive reset with no voltage decay ⇒ output spike counts depend only on total integrated input (order-independent), so equal input counts + weights + threshold ⇒ equal output counts.
+# Order-independence is a PROPERTY OF THE LAW, not of counts: under a lossless
+# subtractive reset with no decay and at most one spike per cycle, a window's
+# output count depends only on the total integrated input. A per-event law
+# (firing_granularity='per_event') denies that hypothesis — arrival order and
+# adjacency change the count — so under it these counts are only a projection
+# of the record, and the per-cycle raster below is the load-bearing half.
 
 from __future__ import annotations
 
@@ -22,6 +27,9 @@ class CoreSpikeCounts:
 
     input_spike_count: np.ndarray
     output_spike_count: np.ndarray
+    # (T, n_out_used) per-cycle emission multiplicities in PRODUCER-LOCAL time;
+    # None wherever the executing law makes the count a complete record.
+    output_spike_raster: Optional[np.ndarray] = None
 
 
 @dataclass

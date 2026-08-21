@@ -8,7 +8,12 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.models.spiking.serial import (
+    refuse_saturating_membrane,
+    require_serial_deployment_admissible,
+)
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
@@ -63,8 +68,13 @@ class SpikingHybridCoreFlow(
         lif_execution_synchronized: bool = False,
         membrane_integer_lattice: bool = False,
         pass_transfer: str = VERBATIM,
+        soma_law: SomaLaw = DEFAULT_SOMA_LAW,
     ):
         super().__init__()
+        # The resolved soma point this executor runs. Constructed from the
+        # contract by the builders; the default IS today's law, so every
+        # historical construction resolves byte-identically.
+        self.soma_law = soma_law
         # ONE discipline per run: a run whose backends disagreed would report
         # numbers from two different computations (see run_pass_transfer).
         self.pass_transfer = str(pass_transfer)
@@ -74,6 +84,9 @@ class SpikingHybridCoreFlow(
         # [§17] certification capture seam: called as (stage, raw_counts)
         # after every neural segment, both disciplines; None disables.
         self.stage_count_recorder: "object | None" = None
+        # [ODIN P2] per-cycle raster capture: called as (stage, raster) with
+        # the segment output raster (T, B, out) in producer-local time.
+        self.stage_raster_recorder: "object | None" = None
 
         self.input_shape = input_shape
         self.hybrid_mapping = hybrid_mapping
@@ -117,6 +130,21 @@ class SpikingHybridCoreFlow(
             firing_mode=self.firing_mode,
             compute_dtype=COMPUTE_DTYPE,
             phase_dither=bool(phase_dither),
+        )
+
+        # The point-keyed seam: refuse a program the declared soma law cannot
+        # execute faithfully BEFORE a single cycle folds (retimed level hops,
+        # neuron splitting, coalescing, a non-integral window-start membrane).
+        require_serial_deployment_admissible(
+            hybrid_mapping, soma_law, membrane_init=self.lif_membrane_init,
+        )
+        refuse_saturating_membrane(
+            soma_law if self.membrane_readout else None,
+            mechanism="the membrane-readout logits decode",
+            identity=(
+                "Q_T = theta*c_T + m_T holds only for a LOSSLESS accumulator, "
+                "where the residual membrane IS the unemitted charge."
+            ),
         )
 
         self._segment_tensor_cache: Dict[int, dict] = {}

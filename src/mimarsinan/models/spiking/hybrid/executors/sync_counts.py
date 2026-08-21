@@ -4,18 +4,41 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.models.spiking.serial.refusals import (
+    refuse_cycle_atomic,
+    refuse_saturating_membrane,
+)
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
 
 
 def run_neural_segment_counts(
-    flow, input_spike_train, *, seg, T, batch_size, device,
+    flow, input_spike_train, *, seg, T, batch_size, device, soma_law,
     neuron_count_recorder: dict | None = None,
 ) -> torch.Tensor:
     """The synchronized count-domain reference: per core, memb = W·counts +
     bias·T (+ V0·θ) and the emitted count is the strict staircase — bit-equal
     to two-window execution for ANY arrival (§16 theorem), and latch-correct
-    for level-gapped consumers (counts have no windows)."""
+    for level-gapped consumers (counts have no windows).
+
+    That theorem's hypotheses are a lossless subtractive-or-zero reset on an
+    UNBOUNDED accumulator with at most one spike per cycle, so both soma axes
+    can deny it — and this executor then refuses instead of approximating.
+    """
+    refuse_cycle_atomic(
+        soma_law, mechanism="the synchronized count executor",
+        theorem=(
+            "its closed-form staircase is a THEOREM that a window's count "
+            "depends only on the total integrated charge, order-independently."
+        ),
+    )
+    refuse_saturating_membrane(
+        soma_law, mechanism="the synchronized count executor",
+        identity=(
+            "its closed form models the membrane as a linear accumulator over "
+            "the whole window."
+        ),
+    )
     cores = seg["cores"]
     counts_in = input_spike_train.sum(dim=0)
     buffers = [

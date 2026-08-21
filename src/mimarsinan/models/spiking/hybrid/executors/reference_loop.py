@@ -21,6 +21,18 @@ def allocate_record_tensors(
     return record_in_t, record_out_t
 
 
+def allocate_record_rasters(cores, T, device) -> list[torch.Tensor]:
+    """Per-core (T, n_out) per-cycle emission multiplicities of a recording.
+
+    Under a per-event law the window count is a projection: two runs with the
+    same counts and different rhythm are different computations at the next
+    hop, so the parity gate needs the rhythm itself.
+    """
+    return [
+        torch.zeros(int(T), max(int(c.neurons_per_core - c.available_neurons), 1),
+                    device=device, dtype=torch.int64) for c in cores]
+
+
 def build_cycle_activity_plan(
     seg, *, cores, stepable, cycles, T, latency_gated
 ) -> tuple[list, list]:
@@ -93,6 +105,7 @@ def accumulate_output_spans(
 
 def append_core_spike_counts(
     recorder_seg, cores, *, axon_spans, record_in_t, record_out_t,
+    record_raster_t=None,
 ) -> None:
     """Append every core's recorded input/output spike counts to the record."""
     for core_idx, core in enumerate(cores):
@@ -110,5 +123,9 @@ def append_core_spike_counts(
                 n_always_on_axons=n_always_on,
                 input_spike_count=record_in_t[core_idx].cpu().numpy().astype(np.int64),
                 output_spike_count=record_out_t[core_idx].cpu().numpy().astype(np.int64),
+                output_spike_raster=(
+                    None if record_raster_t is None
+                    else record_raster_t[core_idx].cpu().numpy().astype(np.int64)
+                ),
             )
         )

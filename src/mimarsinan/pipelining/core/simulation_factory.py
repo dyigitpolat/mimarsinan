@@ -120,6 +120,7 @@ def build_spiking_hybrid_flow(
         lif_execution_synchronized=contract.lif_execution_synchronized,
         membrane_integer_lattice=bool(plan.weight_quantization),
         pass_transfer=run_pass_transfer(cfg),
+        soma_law=contract.soma_law(),
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)

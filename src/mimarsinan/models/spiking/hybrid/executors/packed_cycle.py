@@ -96,14 +96,30 @@ def run_neural_segment_packed(
         for bucket, signals in staged:
             group = len(bucket.core_indices)
             grouped = signals.reshape(batch_size, group, bucket.n_axons)
+            n0, n1 = bucket.neuron_start, bucket.neuron_end
+            slice_state = {k: v[:, n0:n1] for k, v in state.items()}
+            theta = packed.theta_flat[n0:n1]
+            if policy.serial:
+                # The gather ALREADY materialized the per-axon multiplicity
+                # tensor; the einsum below would reduce it one line later,
+                # and that reduction is exactly the cycle-atomic assumption
+                # the per-event law denies. Hand the grouped tensor over.
+                out = policy.advance_events(
+                    slice_state, bucket.weights, grouped,
+                    theta.reshape(group, -1),
+                    hw_bias=bucket.bias,
+                    thresholding_mode=flow.thresholding_mode,
+                    output_dtype=COMPUTE_DTYPE,
+                )
+                fires[:, n0:n1] = out
+                counts[:, n0:n1] += out
+                continue
             charge = torch.einsum("gna,bga->bgn", bucket.weights, grouped)
             if bucket.bias is not None:
                 charge = charge + bucket.bias
             contribution = charge.reshape(batch_size, -1)
-            n0, n1 = bucket.neuron_start, bucket.neuron_end
-            slice_state = {k: v[:, n0:n1] for k, v in state.items()}
             out = policy.advance(
-                slice_state, contribution, packed.theta_flat[n0:n1],
+                slice_state, contribution, theta,
                 thresholding_mode=flow.thresholding_mode,
                 output_dtype=COMPUTE_DTYPE,
             )
