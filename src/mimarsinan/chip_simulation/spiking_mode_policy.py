@@ -72,6 +72,24 @@ class NevresimExecParams:
         """Whether this law can emit more than one spike per neuron per cycle."""
         return counts_on_the_wire(self.integration_policy)
 
+    def require_default_integration(self, family: str) -> None:
+        """Refuse a point this executor has no template slot for.
+
+        Only the LIF executors take an integration policy; every other family
+        would silently emit the whole-vector fold while the deployment
+        declares an event-serial soma.
+        """
+        if self.integration_policy == WHOLE_VECTOR_INTEGRATE:
+            return
+        raise ValueError(
+            f"nevresim has no {family} executor for integration_policy="
+            f"{self.integration_policy!r}: that family's compute policy takes "
+            f"no integration slot, so the emitted program would run the "
+            f"default per-cycle fold while the deployment declares a "
+            f"per-event soma. Deploy spiking_family='lif', or the default "
+            f"soma point."
+        )
+
     @property
     def spike_generator(self) -> str:
         """The C++ spike provider. A replayed train is the ONE generator whose
@@ -317,6 +335,7 @@ class TtfsAnalyticalModePolicy(SpikingModePolicy):
         return forces_activation_quantization(self.spiking_mode)
 
     def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
+        params.require_default_integration("ttfs")
         if not self._is_quantized:
             return ExecPolicySpec(
                 compute_policy="TTFSAnalyticalCompute",
@@ -454,6 +473,7 @@ class TtfsCascadeModePolicy(_TtfsCycleModePolicy):
         return "count"
 
     def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
+        params.require_default_integration("ttfs_cycle_based")
         return ExecPolicySpec(
             compute_policy=f"TTFSCascadeCompute<{params.compare}>",
             exec_decl=(

@@ -49,6 +49,16 @@ THETA = 1
 FAN = 3          # three axon slots carry the SAME input line ...
 WEIGHT = 3       # ... each one supra-threshold, so ONE cycle emits FAN spikes
 
+# The ORDER witness (plan §2.3): a sign-asymmetric consumer whose answer
+# depends on occurrences of one slot being ADJACENT. Both slots source the
+# producer's neuron, so each carries FAN occurrences per cycle:
+#   adjacent    +3 +3 +3 -3 -3 -3  ->  crosses 5 on the second occurrence: 1
+#   round-robin +3 -3 +3 -3 +3 -3  ->  never reaches 5:                    0
+# A fixture of identical slots (which this one used to be) cannot see the
+# difference, and the parity gate would pass an interleaving executor.
+ORDER_THETA = 5
+ORDER_WEIGHTS = (3, -3)
+
 PER_EVENT_8 = SomaLaw.resolve({
     "spiking_family": "lif", "spiking_variant": "streamed",
     "firing_mode": "Novena", "firing_granularity": "per_event",
@@ -56,7 +66,7 @@ PER_EVENT_8 = SomaLaw.resolve({
 })
 
 
-def _core(axons, neurons, matrix, sources, latency):
+def _core(axons, neurons, matrix, sources, latency, threshold=THETA):
     """One biasless hard core — biasless because the per-event point requires a
     param-encoded bias, which is what leaves nevresim's per-cycle ``bias_`` at
     zero and the bias delivered as an always-on ROW instead."""
@@ -65,18 +75,20 @@ def _core(axons, neurons, matrix, sources, latency):
     core.axon_sources = list(sources)
     core.available_axons = 0
     core.available_neurons = 0
-    core.threshold = float(THETA)
+    core.threshold = float(threshold)
     core.latency = latency
     return core
 
 
 def _multi_spiking_mapping() -> HybridHardCoreMapping:
-    """Core 0 fires ``FAN`` times per cycle; core 1 consumes that multiplicity.
+    """Core 0 fires ``FAN`` times per cycle; cores 1 and 2 consume that count.
 
     Core 0's three axon slots all source input line 0, so a single 0/1 input
     spike arrives as three ADJACENT event occurrences — three threshold
     crossings, three spikes, in one cycle. Core 1 sees that COUNT on one axon
-    with a unit weight and a unit threshold, so it re-emits it exactly.
+    with a unit weight and a unit threshold, so it re-emits it exactly. Core 2
+    is the ORDER witness: two oppositely signed slots carrying the same count,
+    whose emission exists only while each slot's occurrences stay adjacent.
     """
     producer = _core(
         FAN, 1,
@@ -87,21 +99,28 @@ def _multi_spiking_mapping() -> HybridHardCoreMapping:
     consumer = _core(
         1, 1, np.array([[1.0]]), [SpikeSource(0, 0)], latency=1,
     )
+    order_witness = _core(
+        2, 1,
+        np.asarray(ORDER_WEIGHTS, dtype=np.float64).reshape(2, 1),
+        [SpikeSource(0, 0), SpikeSource(0, 0)],
+        latency=1,
+        threshold=ORDER_THETA,
+    )
     segment = HardCoreMapping([])
-    segment.cores = [producer, consumer]
+    segment.cores = [producer, consumer, order_witness]
     segment.output_sources = np.asarray(
-        [SpikeSource(0, 0), SpikeSource(1, 0)], dtype=object)
+        [SpikeSource(i, 0) for i in range(3)], dtype=object)
     stage = HybridStage(
         kind="neural",
         name="per_event_fixture",
         hard_core_mapping=segment,
         input_map=[SegmentIOSlice(node_id=-2, offset=0, size=1)],
-        output_map=[SegmentIOSlice(node_id=0, offset=0, size=2)],
+        output_map=[SegmentIOSlice(node_id=0, offset=0, size=3)],
     )
     return HybridHardCoreMapping(
         stages=[stage],
         output_sources=np.asarray(
-            [IRSource(node_id=0, index=i) for i in range(2)], dtype=object),
+            [IRSource(node_id=0, index=i) for i in range(3)], dtype=object),
     )
 
 
@@ -171,7 +190,7 @@ def test_nevresim_and_hcm_agree_per_neuron_at_atol_zero_under_per_event():
 
     torch_record = _torch_records(hybrid)
     torch_cores = torch_record.segments[0].cores
-    assert len(torch_cores) == 2
+    assert len(torch_cores) == 3
 
     for core in torch_cores:
         expected = np.asarray(core.output_spike_count, dtype=np.int64)
@@ -184,6 +203,8 @@ def test_nevresim_and_hcm_agree_per_neuron_at_atol_zero_under_per_event():
     producer_count = int(records[0][0]["out"][0])
     assert producer_count == FAN * T, producer_count
     assert int(records[0][1]["out"][0]) == FAN * T
+    # ... and the ORDER witness fired, which an interleaving fold never does.
+    assert int(records[0][2]["out"][0]) > 0, records[0][2]["out"]
 
 
 @pytest.mark.skipif(not have_cxx_compiler(), reason="C++ compiler unavailable")
