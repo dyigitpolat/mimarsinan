@@ -7,6 +7,7 @@ from typing import Any, Callable, Mapping, Optional
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_semantics import supports_spiking_mode
 
 __all__ = [
     "Backend",
@@ -120,10 +121,18 @@ class SimulationBackend(Backend):
         return True if self._applies_for is None else bool(self._applies_for(plan))
 
     def require_supported(self, contract: Any, *, context: str) -> None:
-        """Validate the backend×mode, preferring a backend-specific error message."""
+        """Validate the backend×mode×point, naming the cause that actually refused.
+
+        The registered message explains this backend's MODE refusal only; a
+        soma point with no executor refuses through the shared typed error, so
+        a refusal can never mis-report which axis it is about.
+        """
         if self.supports(contract):
             return
-        if self._unsupported_error is not None:
+        mode_refused = not supports_spiking_mode(
+            self.name, _policy_of(contract).spiking_mode
+        )
+        if self._unsupported_error is not None and mode_refused:
             raise ValueError(self._unsupported_error(contract))
         super().require_supported(contract, context=context)
 

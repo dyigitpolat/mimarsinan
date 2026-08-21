@@ -25,9 +25,13 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     backend_capabilities,
     supports_spiking_mode,
 )
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 _BACKENDS = ("hcm", "nevresim", "unified", "hybrid", "sanafe", "lava", "loihi",
              "training")
+_REGISTERED_BACKENDS = tuple(
+    backend.name for backend in BACKEND_REGISTRY.simulation_backends()
+)
 
 _PER_EVENT = SomaLaw.resolve({
     "spiking_family": "lif", "spiking_variant": "streamed",
@@ -151,3 +155,79 @@ class TestTheSecondFiringTableDelegates:
         assert not (caps.supports_default or caps.supports_novena or caps.supports_ttfs)
         with pytest.raises(ValueError, match="odin"):
             strategy.require_backend("odin")
+
+
+class TestTheStepLevelGuardNamesTheCauseOfTheRefusal:
+    """§7 row 4 at the STEP-LEVEL guards: a refusal names the axis that refused.
+
+    A backend may register its own message for the LEGACY mode refusal; using
+    that message for a soma-point refusal would report a factually false cause
+    (loihi does implement ``spiking_mode='lif'`` — what it cannot run is the
+    declared point), which is the failure class these axes exist to prevent.
+    """
+
+    _POINTS = {
+        "per_event": ({"firing_granularity": "per_event"}, "firing_granularity"),
+        "saturating": ({"membrane_bits": 8}, "membrane_arithmetic"),
+    }
+
+    def _point_plan(self, backend, point):
+        declaration, _axis = self._POINTS[point]
+        return DeploymentPlan.resolve({
+            "configuration_mode": "user", "model_type": "mlp_mixer",
+            "spiking_family": "lif", "spiking_variant": "streamed",
+            **{f"enable_{name}_simulation": (name == backend)
+               for name in _REGISTERED_BACKENDS},
+            **declaration,
+        })
+
+    @pytest.mark.parametrize("point", sorted(_POINTS))
+    @pytest.mark.parametrize("backend", _REGISTERED_BACKENDS)
+    def test_require_supported_refuses_the_point_by_axis(self, backend, point):
+        plan = self._point_plan(backend, point)
+        with pytest.raises(BackendSomaLawError) as exc:
+            BACKEND_REGISTRY.get(backend).require_supported(plan, context="ctx")
+        message = str(exc.value)
+        assert self._POINTS[point][1] in message
+        assert backend in message and "ctx" in message
+
+    @pytest.mark.parametrize("point", sorted(_POINTS))
+    @pytest.mark.parametrize("backend", _REGISTERED_BACKENDS)
+    def test_selected_step_specs_refuses_the_enabled_backend_by_axis(
+        self, backend, point
+    ):
+        plan = self._point_plan(backend, point)
+        with pytest.raises(BackendSomaLawError) as exc:
+            BACKEND_REGISTRY.selected_step_specs(plan)
+        message = str(exc.value)
+        assert self._POINTS[point][1] in message
+        assert backend in message
+        assert "only implements LIF dynamics" not in message
+
+
+class TestTheLegacyModeRefusalKeepsItsExactMessage:
+    """The registered per-backend message survives verbatim for its ACTUAL
+    cause — an unsupported spiking mode at the default soma point."""
+
+    def _mode_plan(self, mode):
+        return DeploymentPlan.resolve({
+            "configuration_mode": "user", "model_type": "mlp_mixer",
+            "spiking_mode": mode, "enable_loihi_simulation": True,
+        })
+
+    @pytest.mark.parametrize("mode", ["ttfs", "ttfs_quantized", "ttfs_cycle_based"])
+    def test_loihi_pins_its_historical_text_and_untyped_class(self, mode):
+        with pytest.raises(ValueError) as exc:
+            BACKEND_REGISTRY.get("loihi").require_supported(
+                self._mode_plan(mode), context="Loihi Simulation"
+            )
+        assert type(exc.value) is ValueError
+        assert str(exc.value) == (
+            f"enable_loihi_simulation is not supported for spiking_mode={mode!r}; "
+            "Loihi/Lava only implements LIF dynamics."
+        )
+
+    def test_loihi_admits_lif_at_the_default_point(self):
+        BACKEND_REGISTRY.get("loihi").require_supported(
+            self._mode_plan("lif"), context="Loihi Simulation"
+        )

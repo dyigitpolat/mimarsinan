@@ -14,6 +14,9 @@ from mimarsinan.config_schema.defaults import (
     DEFAULT_DEPLOYMENT_PARAMETERS,
     DEFAULT_PLATFORM_CONSTRAINTS,
 )
+from mimarsinan.config_schema.deployment_derivation import (
+    derive_pipeline_runtime_parameters,
+)
 from mimarsinan.config_schema.derivation.soma import (
     enforce_soma_axes_contract,
     fold_soma_axes,
@@ -168,6 +171,93 @@ class TestPerEventCrossKeyRequirements:
     def test_the_contract_is_inert_under_the_default_point(self):
         enforce_soma_axes_contract({"spiking_family": "lif",
                                     "lif_membrane_init": -0.5})
+
+
+class TestTheContractIsTotalOverAdversarialGrids:
+    """The contract judges a RAW, un-normalized draft grid at BOTH seams, so no
+    grid shape may raise: a shape it cannot parse as a core grid leaves the row
+    silent (the document's own shape validators own that complaint), and a grid
+    that genuinely declares a bias lane is a KEYED row, never a crash."""
+
+    # Shapes no reader can parse as a core grid — the soma row stays silent.
+    _UNJUDGEABLE_GRIDS = ["nope", 7, ["a", "b"], {"count": 2}, True]
+    # Well-shaped grids whose core types default to an on-chip bias lane.
+    _LANE_GRIDS = [[{}], [{"count": 2}], [{"max_axons": 128, "max_neurons": 256}]]
+    # Well-shaped grids that declare the param-encoded bias per_event needs.
+    _BIASLESS_GRIDS = [_BIASLESS_CORES, [{"count": 2, "has_bias": False}]]
+    _ALL_GRIDS = _UNJUDGEABLE_GRIDS + _LANE_GRIDS + _BIASLESS_GRIDS + [None, []]
+
+    _DOCUMENT_FAMILIES = {
+        "per_event": {"spiking_family": "lif", "spiking_variant": "streamed",
+                      "firing_granularity": "per_event"},
+        "saturating": {"spiking_family": "lif", "spiking_variant": "streamed",
+                       "membrane_arithmetic": "saturating_unsigned"},
+        "mvm": {"core_semantics": "mvm", "firing_granularity": "per_event"},
+        "legacy_only": {"spiking_mode": "lif"},
+        "default_point": {"spiking_family": "lif"},
+    }
+
+    def _draft(self, family, cores):
+        pc = {} if cores is None else {"cores": cores}
+        return _document(self._DOCUMENT_FAMILIES[family], pc)
+
+    def _rows(self, family, cores):
+        return [(row["key"], row["rule_id"])
+                for row in resolve_draft(self._draft(family, cores)).errors]
+
+    @pytest.mark.parametrize("cores", _ALL_GRIDS)
+    @pytest.mark.parametrize("family", sorted(_DOCUMENT_FAMILIES))
+    def test_resolve_draft_returns_keyed_rows_and_never_raises(self, family, cores):
+        for row in resolve_draft(self._draft(family, cores)).errors:
+            assert row["rule_id"] and "message" in row
+
+    @pytest.mark.parametrize("cores", _UNJUDGEABLE_GRIDS)
+    @pytest.mark.parametrize("family", sorted(_DOCUMENT_FAMILIES))
+    def test_an_unjudgeable_grid_contributes_no_bias_row(self, family, cores):
+        """The bias question stays silent on a shape it cannot parse — the row
+        set is the one a grid that satisfies the bias rule produces."""
+        assert self._rows(family, cores) == self._rows(family, _BIASLESS_CORES)
+
+    @pytest.mark.parametrize("cores", _LANE_GRIDS)
+    def test_a_declared_bias_lane_is_a_keyed_row_not_a_crash(self, cores):
+        rows = [row for row in resolve_draft(self._draft("per_event", cores)).errors
+                if row["rule_id"] == "soma_law_contract"]
+        assert [row["key"] for row in rows] == ["firing_granularity"]
+        assert any(remedy["action"] == "clear"
+                   and remedy["key"] == "firing_granularity"
+                   for remedy in rows[0]["remedies"])
+
+    @pytest.mark.parametrize("cores", _BIASLESS_GRIDS)
+    def test_a_biasless_grid_needs_no_dimensions_to_satisfy_per_event(self, cores):
+        assert not [row for row in self._rows("per_event", cores)
+                    if row[1] in ("soma_law_contract", "derivation")]
+
+    @pytest.mark.parametrize("cores", _ALL_GRIDS)
+    @pytest.mark.parametrize("family", sorted(_DOCUMENT_FAMILIES))
+    def test_the_run_path_never_raises_a_lookup_error(self, family, cores):
+        """``derive_pipeline_runtime_parameters`` may refuse the point — with a
+        DESIGNED keyed ValueError, never a KeyError/AttributeError from a grid
+        key the bias question never needed."""
+        dp = {**self._DOCUMENT_FAMILIES[family],
+              **({} if cores is None else {"cores": cores})}
+        try:
+            derive_pipeline_runtime_parameters(dp)
+        except ValueError as exc:
+            assert any(key in str(exc) for key in
+                       ("firing_granularity", "membrane_arithmetic",
+                        "membrane_bits", "lif_membrane_init"))
+
+    @pytest.mark.parametrize("cores", _LANE_GRIDS)
+    def test_the_run_path_refuses_a_lane_grid_by_name(self, cores):
+        dp = {**self._DOCUMENT_FAMILIES["per_event"], "cores": cores}
+        with pytest.raises(ValueError, match="firing_granularity"):
+            derive_pipeline_runtime_parameters(dp)
+
+    @pytest.mark.parametrize("cores", _BIASLESS_GRIDS + _UNJUDGEABLE_GRIDS)
+    def test_the_run_path_admits_what_the_resolve_channel_admits(self, cores):
+        dp = {**self._DOCUMENT_FAMILIES["per_event"], "cores": cores}
+        derive_pipeline_runtime_parameters(dp)
+        assert dp["firing_granularity"] == "per_event"
 
 
 class TestLegalityLandsThroughTheGenericMachinery:

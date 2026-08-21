@@ -14,6 +14,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 from mimarsinan.config_schema.registry import REGISTRY, serialize_registry
 from mimarsinan.config_schema.resolve import legal_values_view
 from mimarsinan.gui.wizard.schema import get_wizard_defaults
+from mimarsinan.gui.wizard.schema_api import resolve_payload
 
 _SOMA_KEYS = ("firing_granularity", "membrane_arithmetic", "membrane_bits",
               "weight_sign_granularity")
@@ -62,3 +63,34 @@ class TestTheSomaKeysRenderGenerically:
         platform = get_wizard_defaults()["platform_constraints"]
         assert platform["membrane_bits"] == 0
         assert platform["weight_sign_granularity"] == "per_synapse"
+
+
+class TestTheResolveEndpointAnswersInRowsNotExceptions:
+    """``/api/config/resolve`` is a live keystroke channel: a half-typed core
+    grid under a declared soma point must come back as keyed rows, never as a
+    500 from the cross-key contract."""
+
+    @pytest.mark.parametrize("cores", ["nope", [{}], 7, [{"count": 2}],
+                                       {"count": 2}, ["a"], []])
+    def test_a_per_event_draft_over_a_malformed_grid_returns_keyed_rows(self, cores):
+        payload = resolve_payload({
+            "deployment_parameters": {"spiking_family": "lif",
+                                      "spiking_variant": "streamed",
+                                      "firing_granularity": "per_event"},
+            "platform_constraints": {"cores": cores},
+        })
+        assert payload["ok"] is False
+        assert payload["errors"]
+        for row in payload["errors"]:
+            assert row["rule_id"] and row["message"]
+
+    def test_a_declared_bias_lane_surfaces_the_remediable_soma_row(self):
+        payload = resolve_payload({
+            "deployment_parameters": {"spiking_family": "lif",
+                                      "spiking_variant": "streamed",
+                                      "firing_granularity": "per_event"},
+            "platform_constraints": {"cores": [{}]},
+        })
+        rows = [row for row in payload["errors"]
+                if row["rule_id"] == "soma_law_contract"]
+        assert [row["key"] for row in rows] == ["firing_granularity"]
