@@ -163,6 +163,36 @@ def compare_cycle_counts(result, samples: Sequence[SampleTrace]) -> list[str]:
     return differences
 
 
+def suprathreshold_multiplicity(mapping: HardCoreMapping,
+                                samples: Sequence[SampleTrace]) -> int:
+    """The most events that alone reach theta any neuron receives in one cycle.
+
+    Two of them in one cycle is the ONLY stimulus that separates the per-cycle
+    law from the event-serial one: a serial fold fires on each, a per-cycle
+    compare fires once, so a fixture whose multiplicity is 1 cannot tell the
+    two laws apart.
+    """
+    worst = 0
+    for sample in samples:
+        for per_core in sample.trace.inputs:
+            for core, slots in zip(mapping.cores, per_core):
+                weights = np.asarray(core.get_core_matrix(), dtype=np.float64)
+                reaching = (weights >= float(core.threshold)).astype(np.float64)
+                arrivals = np.asarray(slots, dtype=np.float64)
+                worst = max(worst, int((arrivals @ reaching).max(initial=0)))
+    return worst
+
+
+def rtl_cycle_multiplicity(result, neurons: Sequence[int]) -> int:
+    """The most spikes any neuron emitted in one cycle ON THE WIRE."""
+    return max(
+        max(result.cycle_counts(sample, cycle, core, int(count)))
+        for sample in range(result.plan.samples)
+        for cycle in range(result.plan.cycles_per_sample)
+        for core, count in enumerate(neurons)
+    )
+
+
 def report(label: str, result) -> None:
     """The honest per-gate line the runner's transcript is read from."""
     print(f"[odin-gen] {label} engine={result.build.engine} "

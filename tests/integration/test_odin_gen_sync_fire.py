@@ -6,10 +6,13 @@ per-cycle window whose NET charge goes negative cannot be held by a register
 that floors at zero, and the sync-fire core's contract is that it holds exactly
 the number the unbounded accumulator holds.
 
-The fixture is built around that case and nothing else: neuron 0 of the producer
+The fixture is built around that case and one more: neuron 0 of the producer
 takes +3 and -7 in one cycle, sits at -4, and only crosses theta two cycles
 later. An unsigned register floors at 0 on the first cycle and therefore fires
 EARLY — the gate pins that difference so the comparison cannot be vacuous.
+Neuron 1 takes TWO events that each alone reach theta in one cycle, which is
+the only stimulus under which the per-cycle law and the event-serial law
+disagree: the per-cycle compare emits one spike where a serial fold emits two.
 
 Four things are compared at zero difference: the generated RTL, the deployed
 torch per-cycle kernels, the nevresim `WholeVectorSaturatingSigned` policy, and
@@ -32,7 +35,9 @@ from integration.odin_gen_harness import (
     mapping_of,
     report,
     require_simulator,
+    rtl_cycle_multiplicity,
     spec_for,
+    suprathreshold_multiplicity,
     sync_fire_law,
     thetas_of,
     timed,
@@ -60,11 +65,17 @@ CONSUMER = 1
 
 
 def _producer():
-    """Neuron 0 is the net-negative witness; neuron 255 exercises the top address."""
+    """Neuron 0 is the net-negative witness; neuron 1 the law witness.
+
+    Rows 2 and 3 both reach theta on their own, so neuron 1 is the neuron that
+    receives two suprathreshold events in one cycle; neuron 255 exercises the
+    top address.
+    """
     matrix = np.zeros((AXONS, NEURONS), dtype=np.float64)
     matrix[0][0] = 3.0
     matrix[1][0] = -7.0
     matrix[2][1] = 5.0
+    matrix[3][1] = 5.0
     matrix[AXONS - 1][NEURONS - 1] = 5.0
     return matrix
 
@@ -91,7 +102,11 @@ def _mapping():
 
 
 def _rasters():
-    """Cycle 0 drives BOTH the +3 and the -7 row: the window is net-negative."""
+    """Cycle 0 drives BOTH the +3 and the -7 row: the window is net-negative.
+
+    It also drives rows 2 AND 3 together, which is the window in which neuron 1
+    receives two suprathreshold events at once.
+    """
     def row(*active):
         line = [0] * AXONS
         for index in active:
@@ -99,11 +114,11 @@ def _rasters():
         return line
 
     negative = [
-        row(0, 1, 2, AXONS - 1),   # neuron 0: +3 - 7 = -4
-        row(0),                    # -1
-        row(0),                    # +2
-        row(0),                    # +5 -> the first crossing
-        row(0, 1),                 # -4 again
+        row(0, 1, 2, 3, AXONS - 1),  # neuron 0: +3 - 7 = -4; neuron 1: +5 +5
+        row(0),                     # -1
+        row(0),                     # +2
+        row(0),                     # +5 -> the first crossing
+        row(0, 1),                  # -4 again
     ]
     quiet = [row(2), row(0, 1), row(0), row(0), row(0)]
     return [negative, quiet]
@@ -151,14 +166,20 @@ class TestTheSyncFireRtlReproducesThePerCycleLaw:
         assert result.capture.rail_failures == 0
         assert result.capture.rail_checks == result.plan.n_cores
 
+    def test_the_fixture_is_not_vacuous_for_the_law_under_test(self, sync_fire):
+        """Non-vacuity, on the INPUTS: without a neuron that receives two
+        suprathreshold events in one cycle the two laws coincide everywhere and
+        the cosimulation cannot discriminate them, whatever it reports."""
+        _spec, mapping, _rast, samples, _b, _gen, _result = sync_fire
+        assert suprathreshold_multiplicity(mapping, samples) >= 2
+
     def test_at_most_one_spike_per_neuron_per_cycle(self, sync_fire):
-        """A per-CYCLE law compares once; a count above one would mean the
-        generated core ran the event-serial law instead."""
-        _spec, _map, _rast, samples, _b, _gen, result = sync_fire
-        assert max(
-            max(counts) for sample in samples
-            for per_core in sample.trace.outputs for counts in per_core
-        ) == 1
+        """The law's signature, read off the RTL: a per-CYCLE core compares
+        once, so the wire never carries two spikes from one neuron in one
+        cycle — an event-serial core would, on this fixture, at cycle 0."""
+        _spec, mapping, _rast, _samples, _b, _gen, result = sync_fire
+        assert rtl_cycle_multiplicity(
+            result, [int(core.neurons_per_core) for core in mapping.cores]) == 1
         assert result.capture.events
 
 
