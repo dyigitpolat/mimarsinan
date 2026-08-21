@@ -99,6 +99,15 @@ MODES = {
     "lifs": {"spiking_family": "lif", "spiking_variant": "streamed",
              "firing_mode": "Default", "spike_generation_mode": "Uniform",
              "thresholding_mode": "<", "axis": ("lif", "streamed")},
+    # [ODIN P3] the per-event soma point on the streamed-lif discipline: the
+    # threshold is evaluated after EVERY arriving event occurrence and the
+    # membrane is a saturating 8-bit unsigned register, so a neuron may emit
+    # several spikes in one cycle. Its own hypervolume cell (a per-event run
+    # can never be counted as coverage of the streamed-LIF one).
+    "lifse": {"spiking_family": "lif", "spiking_variant": "streamed",
+              "firing_mode": "Novena", "spike_generation_mode": "Uniform",
+              "thresholding_mode": "<=",
+              "axis": ("lif+per_event-sat8", "streamed")},
     "ttfs": {"spiking_family": "ttfs", "spiking_variant": "analytical",
              "firing_mode": "TTFS", "spike_generation_mode": "TTFS",
              "thresholding_mode": "<=", "axis": ("ttfs", "none")},
@@ -124,7 +133,7 @@ QUANT = {
     "fp": {"weight_quantization": False},
     "wq": {"weight_quantization": True},
 }
-AQ_DERIVED_MODES = {"lifsync", "lifs", "ttfsq", "casc", "sync"}
+AQ_DERIVED_MODES = {"lifsync", "lifs", "lifse", "ttfsq", "casc", "sync"}
 
 
 def _quant_axis(row):
@@ -153,6 +162,7 @@ ENDPOINT_FLOOR_STEPS_BASE = 16000
 ENDPOINT_MODE_EXTRA_STEPS = {
     "lifsync": 2 * 600,
     "lifs": 2 * 600,
+    "lifse": 2 * 600,
     "sync": 600,
 }
 
@@ -303,6 +313,29 @@ T0 = [
          scheduling=True, platform="I", tags=["sched"],
          note="streamed x scheduling: 3 passes, VERBATIM raster carry on every "
               "backend, carry census sealed in the record"),
+    # [ODIN P3, plan §9] the per-event soma point's cell — the SMALLEST honest
+    # vehicle: t0_45's shape (streamed lif, simple_mlp, wq wb5, S=4, seed 1)
+    # with the point's axes declared. has_bias=false because per_event REQUIRES
+    # a param-encoded bias (the bias becomes an always-on row at the tail of
+    # the slot order, not a per-cycle scalar); coalescing and neuron splitting
+    # are off because both re-threshold a partial sum, which the fold refuses
+    # by name. hcm and nevresim execute it; sanafe and loihi derive OFF.
+    dict(n=54, mode="lifse", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1,
+         has_bias=False, coalescing=False, splitting=False,
+         firing_granularity="per_event", membrane_bits=8,
+         tags=["nobias"],
+         note="the per-event / saturating-8-bit soma point on the streamed "
+              "discipline: threshold after every event occurrence, hard-zero "
+              "reset, counts (not bits) on the wire inside a segment. "
+              "MEASURED 2026-08-21 (ODIN P3, 218.5 s wall): RED at Soft Core "
+              "Mapping — the P2 streamed NF<->SCM RASTER gate refuses with "
+              "1004/3152 per-cycle emission mismatches (worst nf=1 scm=7 at "
+              "perceptron 2), so the run never reaches deployment and there "
+              "is no deployed accuracy yet. Trained/validation reads at the "
+              "point: test 0.9752, validation 0.9747. The refusal is the "
+              "gate working (counts alone would have hidden a rhythm "
+              "difference that changes the next hop); closing it is a P2 "
+              "NF-twin cycle, not a cell respec."),
     # n=52 IS DELIBERATELY UNUSED. A lifs/vitleaf/offload MIXED-DOMAIN SEAM cell
     # was authored here on 2026-08-13 and WITHDRAWN the same day: it runs to
     # Soft Core Mapping and then fails the FATAL streamed NF<->SCM exactness
@@ -594,7 +627,7 @@ def _deployment(tier, row, vehicles, dataset):
     dp = {
         "lr": row.get("lr", 0.003),
         "tuning_budget_scale": row.get(
-            "budget", 0.25 if tier == 0 and row["mode"] in ("lifsync", "lifs", "ttfs") else 0.5 if tier == 0 else 1,
+            "budget", 0.25 if tier == 0 and row["mode"] in ("lifsync", "lifs", "lifse", "ttfs") else 0.5 if tier == 0 else 1,
         ),
         "degradation_tolerance": 0.15 if tier == 0 else 0.1,
         "model_config_mode": "user",

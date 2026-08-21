@@ -44,7 +44,12 @@ class TestFactory:
         assert behavior == NeuralBehaviorConfig.from_deployment_config(cfg)
         # Per-backend helpers stay reachable through the composition.
         assert behavior.nevresim_compare_policy() == "InclusiveCompare"
-        assert behavior.nevresim_reset_policy() == "ZeroReset"
+        # [ODIN P3, D2] the reset law has ONE resolver now. This contract is
+        # a TTFS one, whose neurons never read a LIF reset policy at all; the
+        # two resolvers used to disagree about exactly that inert answer
+        # (ZeroReset here, SubtractiveReset in codegen), and the consolidation
+        # keeps the codegen answer — the one that reaches emitted C++.
+        assert behavior.nevresim_reset_policy() == "SubtractiveReset"
 
     def test_schedule_is_normalized(self):
         contract = SpikingDeploymentContract.from_pipeline_config(

@@ -14,7 +14,7 @@ and `resolve_exec_policy`, which delegates the spiking-mode → C++
 |---|---|
 | `cpp_chip_model.py` | `ChipModel`: chip dimensions + cores/connections/outputs; emits the consteval `generate_chip` header, the weights text file, and chip JSON (save/load). |
 | `cpp_chip_model_types.py` | Codegen value types — `SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core` — and `compress_sources_to_spans` (run-length encodes axon sources into spans). |
-| `generate_main.py` | Instantiates `main.cpp` from a template: `get_config`, `resolve_compare_policy` / `resolve_lif_fire_policy` (comparator/reset strings), `resolve_exec_policy` (delegates to `SpikingModePolicy.nevresim_exec_policy`), `generate_main_function`, `generate_main_function_runtime`, `generate_main_function_for_real_valued_exec`. |
+| `generate_main.py` | Instantiates `main.cpp` from a template: `get_config` (which resolves the soma point's integration policy), `resolve_compare_policy` / `resolve_lif_fire_policy` / `resolve_integration_policy` (this module's call surface over the ONE resolver in `chip_simulation.nevresim_policy_types`), `resolve_exec_policy` (delegates to `SpikingModePolicy.nevresim_exec_policy`), `generate_main_function`, `generate_main_function_runtime`, `generate_main_function_for_real_valued_exec`. |
 | `main_cpp_template.py` | Standard compile-time-chip spiking main; loads inputs via `load_input_n` or `load_spike_train_input_n`. |
 | `main_cpp_template_runtime.py` | Runtime-chip main: loads connectivity from `chip_spans.txt` at run time instead of baking it into a consteval chip (avoids recompiling per mapping). |
 | `main_cpp_template_debug_spikes.py` | Debug main that prints per-cycle firing neuron indices instead of output counts. |

@@ -67,7 +67,8 @@ class TestRunBinaryRawMembraneContract:
 
 class TestSpikeTrainParse:
     """SPKTRN is its own record line beside SPKREC — the count parser is untouched,
-    and the trains arrive in producer-local time as per-neuron bitstrings."""
+    and the trains arrive in producer-local time as per-neuron per-cycle
+    emissions (bits on a SPKTRN line, counts on a versioned SPKTRN2 one)."""
 
     def test_trains_parse_per_sample_per_core(self):
         from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
@@ -80,8 +81,8 @@ class TestSpikeTrainParse:
         )
         samples = parse_spike_trains(stderr)
         assert samples == [
-            {0: ["0101", "0011"], 1: ["1111"]},
-            {0: ["0000", "1000"], 1: ["0001"]},
+            {0: [[0, 1, 0, 1], [0, 0, 1, 1]], 1: [[1, 1, 1, 1]]},
+            {0: [[0, 0, 0, 0], [1, 0, 0, 0]], 1: [[0, 0, 0, 1]]},
         ]
 
     def test_spkrec_lines_are_not_trains_and_trains_are_not_counts(self):
@@ -95,7 +96,7 @@ class TestSpikeTrainParse:
             "SPKTRN 0 0101\nSPKTRN_END\n"
         )
         assert parse_spike_records(stderr) == [{0: {"in": [1], "out": [2]}}]
-        assert parse_spike_trains(stderr) == [{0: ["0101"]}]
+        assert parse_spike_trains(stderr) == [{0: [[0, 1, 0, 1]]}]
 
     def test_a_ragged_core_fails_loud(self):
         import pytest
@@ -116,6 +117,38 @@ class TestSpikeTrainParse:
 
         with pytest.raises(ValueError, match="non-binary"):
             parse_spike_trains("SPKTRN 0 0102\nSPKTRN_END\n")
+
+    def test_the_counted_line_carries_multiplicities(self):
+        """[ODIN P3] SPKTRN2 is the per-event law's raster: per-cycle COUNTS,
+        comma-joined per neuron, closed by the same terminator."""
+        from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
+            parse_spike_trains,
+        )
+
+        stderr = "SPKTRN2 0 0,3,1,0 2,0,0,0\nSPKTRN2 1 0,0,0,0\nSPKTRN_END\n"
+        assert parse_spike_trains(stderr) == [
+            {0: [[0, 3, 1, 0], [2, 0, 0, 0]], 1: [[0, 0, 0, 0]]},
+        ]
+
+    def test_a_counted_line_above_the_currency_ceiling_fails_loud(self):
+        import pytest
+
+        from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
+            parse_spike_trains,
+        )
+
+        with pytest.raises(ValueError, match="ceiling"):
+            parse_spike_trains("SPKTRN2 0 0,128\nSPKTRN_END\n")
+
+    def test_a_counted_line_with_a_non_count_field_fails_loud(self):
+        import pytest
+
+        from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
+            parse_spike_trains,
+        )
+
+        with pytest.raises(ValueError, match="not a per-cycle count"):
+            parse_spike_trains("SPKTRN2 0 0,-1\nSPKTRN_END\n")
 
     def test_the_recorder_header_pins_the_protocol(self):
         """The C++ side is compiled only in the integration tier, so the unit

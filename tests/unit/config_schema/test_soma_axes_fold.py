@@ -379,12 +379,12 @@ class TestTheDefaultPointResolvesInert:
 
 
 class TestSimEnablesDeriveFromTheSamePointAwareQuery:
-    """Under a point nothing executes, every backend derives OFF — and an
-    explicit ON gets the keyed capability error the recipe fold already
+    """A backend derives ON exactly where it has an executor for the POINT: at
+    P3 nevresim does, sanafe and loihi still do not, and an explicit ON for one
+    that does not gets the keyed capability error the recipe fold already
     produces for a capability-off backend."""
 
-    _ENABLES = ("enable_nevresim_simulation", "enable_sanafe_simulation",
-                "enable_loihi_simulation")
+    _ENABLES = ("enable_sanafe_simulation", "enable_loihi_simulation")
 
     def _per_event_dp(self, **extra):
         return {"spiking_family": "lif", "spiking_variant": "streamed",
@@ -403,12 +403,20 @@ class TestSimEnablesDeriveFromTheSamePointAwareQuery:
         assert resolved["enable_sanafe_simulation"] is True
         assert resolved["enable_loihi_simulation"] is True
 
-    def test_a_per_event_point_derives_every_backend_off(self):
+    def test_a_per_event_point_derives_every_executorless_backend_off(self):
         resolved = build_flat_pipeline_config(
             self._per_event_dp(), self._pc(), pipeline_mode="phased",
         )
         for key in self._ENABLES:
             assert resolved[key] is False, key
+
+    def test_a_per_event_point_derives_nevresim_ON(self):
+        """[ODIN P3] the capability flip, read through the derivation: the
+        integration-policy axis IS nevresim's executor for the point."""
+        resolved = build_flat_pipeline_config(
+            self._per_event_dp(), self._pc(), pipeline_mode="phased",
+        )
+        assert resolved["enable_nevresim_simulation"] is True
 
     @pytest.mark.parametrize("key", _ENABLES)
     def test_an_explicit_enable_against_the_point_is_a_keyed_error(self, key):

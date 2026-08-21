@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.chip_simulation.simulation_runner import emit as emit_mod
 from mimarsinan.chip_simulation.simulation_runner.emit import (
     _PreparedSegment,
@@ -49,6 +50,7 @@ def _fake_self(tmp_path, timeout_s):
         simulation_step_timeout_s=timeout_s,
         membrane_readout=False,
         membrane_half_step_charge=0.0,
+        soma_law=DEFAULT_SOMA_LAW,
     )
 
 

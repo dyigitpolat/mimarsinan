@@ -13,17 +13,26 @@ from mimarsinan.chip_simulation.simulation_runner.segment_run import (
 
 
 class TestTheRasterGather:
-    """SPKTRN records are already producer-local, so the gather is a row
+    """The train records are already producer-local, so the gather is a row
     selection with NO time shift — a shift here would double-apply the latency
     the recorder already removed."""
 
-    def test_core_sources_take_the_neurons_bitstring(self):
+    def test_core_sources_take_the_neurons_train(self):
         raster = raster_from_spike_trains(
-            {0: ["0101", "0011"]},
+            {0: [[0, 1, 0, 1], [0, 0, 1, 1]]},
             [("core", 0, 0), ("core", 0, 1)], 4, None,
         )
         assert raster[:, 0].tolist() == [0, 1, 0, 1]
         assert raster[:, 1].tolist() == [0, 0, 1, 1]
+
+    def test_a_counted_train_carries_its_multiplicities_into_the_raster(self):
+        """[ODIN P3] the carry seam's whole point: a per-event producer emits
+        3 spikes in one cycle and the raster the next segment replays says 3,
+        not 1."""
+        raster = raster_from_spike_trains(
+            {0: [[0, 3, 1, 0]]}, [("core", 0, 0)], 4, None,
+        )
+        assert raster[:, 0].tolist() == [0, 3, 1, 0]
 
     def test_always_on_sources_spike_every_cycle(self):
         raster = raster_from_spike_trains({}, [("on", 0, 0)], 3, None)

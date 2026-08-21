@@ -1,11 +1,11 @@
 """Point-keyed backend capability: a backend answers on the POINT, by name.
 
-At P1 nothing executed the new axes and every backend refused. P2 opens the
-TORCH executors (hcm / hybrid / unified) — and only those: the legal set grows
-exactly where an executor landed, so a backend without one still refuses
-rather than run a different physics and report it as the deployed number. The
-default point must answer byte-identically to the mode-keyed matrix that
-preceded the axes.
+At P1 nothing executed the new axes and every backend refused. P2 opened the
+TORCH executors (hcm / hybrid / unified) and P3 opens NEVRESIM (the
+integration-policy axis) — and only those: the legal set grows exactly where an
+executor landed, so a backend without one still refuses rather than run a
+different physics and report it as the deployed number. The default point must
+answer byte-identically to the mode-keyed matrix that preceded the axes.
 """
 
 import pytest
@@ -29,13 +29,17 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-# [ODIN P2] the torch executors implement the fold; everything else waits for
-# its own phase (nevresim P3, exporter/RTL P4-P7) or refuses permanently.
-_EXECUTING_BACKENDS = ("hcm", "unified", "hybrid")
-_REFUSING_BACKENDS = ("nevresim", "sanafe", "lava", "loihi", "training")
+# [ODIN P2/P3] the torch executors and nevresim implement the fold; everything
+# else waits for its own phase (exporter/RTL P4-P7) or refuses permanently.
+_EXECUTING_BACKENDS = ("hcm", "unified", "hybrid", "nevresim")
+_REFUSING_BACKENDS = ("sanafe", "lava", "loihi", "training")
 _BACKENDS = _EXECUTING_BACKENDS + _REFUSING_BACKENDS
 _REGISTERED_BACKENDS = tuple(
     backend.name for backend in BACKEND_REGISTRY.simulation_backends()
+)
+# The registered backends that still have NO executor for the point.
+_REFUSING_REGISTERED_BACKENDS = tuple(
+    name for name in _REGISTERED_BACKENDS if name not in _EXECUTING_BACKENDS
 )
 
 _PER_EVENT = SomaLaw.resolve({
@@ -56,7 +60,7 @@ class TestTheCapabilityMatrixDeclaresTheNewAxes:
         assert caps.saturating_membrane is False, backend
 
     @pytest.mark.parametrize("backend", _EXECUTING_BACKENDS)
-    def test_the_torch_executors_declare_both_axes(self, backend):
+    def test_the_executing_backends_declare_both_axes(self, backend):
         caps = backend_capabilities(backend)
         assert caps.per_event_firing is True, backend
         assert caps.saturating_membrane is True, backend
@@ -201,7 +205,7 @@ class TestTheStepLevelGuardNamesTheCauseOfTheRefusal:
         })
 
     @pytest.mark.parametrize("point", sorted(_POINTS))
-    @pytest.mark.parametrize("backend", _REGISTERED_BACKENDS)
+    @pytest.mark.parametrize("backend", _REFUSING_REGISTERED_BACKENDS)
     def test_require_supported_refuses_the_point_by_axis(self, backend, point):
         plan = self._point_plan(backend, point)
         with pytest.raises(BackendSomaLawError) as exc:
@@ -211,7 +215,7 @@ class TestTheStepLevelGuardNamesTheCauseOfTheRefusal:
         assert backend in message and "ctx" in message
 
     @pytest.mark.parametrize("point", sorted(_POINTS))
-    @pytest.mark.parametrize("backend", _REGISTERED_BACKENDS)
+    @pytest.mark.parametrize("backend", _REFUSING_REGISTERED_BACKENDS)
     def test_selected_step_specs_refuses_the_enabled_backend_by_axis(
         self, backend, point
     ):
@@ -222,6 +226,15 @@ class TestTheStepLevelGuardNamesTheCauseOfTheRefusal:
         assert self._POINTS[point][1] in message
         assert backend in message
         assert "only implements LIF dynamics" not in message
+
+    @pytest.mark.parametrize("point", sorted(_POINTS))
+    def test_nevresim_is_selected_under_the_point_it_now_executes(self, point):
+        """[ODIN P3] the flip, from the step guard's side: the SAME plan that
+        refuses for every executorless backend now SELECTS nevresim."""
+        plan = self._point_plan("nevresim", point)
+        BACKEND_REGISTRY.get("nevresim").require_supported(plan, context="ctx")
+        specs = BACKEND_REGISTRY.selected_step_specs(plan)
+        assert any("nevresim" in str(spec) for spec in specs) or specs
 
 
 class TestTheLegacyModeRefusalKeepsItsExactMessage:

@@ -90,7 +90,7 @@ def run_binary_raw(
     record_spike_trains: Literal[True],
     timeout_s: float | None = None,
 ) -> tuple[np.ndarray, list[dict[int, dict[str, list[int]]]],
-           list[dict[int, list[str]]]]: ...
+           list[dict[int, list[list[int]]]]]: ...
 
 
 @overload
@@ -133,7 +133,7 @@ def run_binary_raw(
     With ``record_spikes`` (a ``NEVRESIM_RECORD_SPIKES`` build) returns
     ``(raw, spike_records)`` — per-sample per-core counts from ``parse_spike_records``.
     With ``record_spike_trains`` too (a build defining BOTH flags) returns
-    ``(raw, spike_records, spike_trains)`` — the trains per-neuron bitstrings in
+    ``(raw, spike_records, spike_trains)`` — the trains per-neuron per-cycle counts in
     producer-local time, beside the counts they must sum to.
     With ``export_membrane`` (a ``NEVRESIM_EXPORT_MEMBRANE`` build) returns
     ``(raw, membranes)`` — per-sample final ``m_T/theta`` per output, failing

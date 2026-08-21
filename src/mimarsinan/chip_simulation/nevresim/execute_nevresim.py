@@ -4,6 +4,7 @@ import os
 import subprocess
 import time
 
+from mimarsinan.models.spiking.serial.refusals import EMISSION_COUNT_CEILING
 from mimarsinan.chip_simulation.execution_bounds import (
     SimulationTimeoutError,
     kill_process_group,
@@ -57,14 +58,48 @@ def parse_spike_records(stderr: str) -> list[dict[int, dict[str, list[int]]]]:
     return samples
 
 
-def parse_spike_trains(stderr: str) -> list[dict[int, list[str]]]:
-    """Parse ``SPKTRN`` lines (NEVRESIM_RECORD_SPIKE_TRAINS build) into per-sample
-    trains: ``{core: [bitstring per neuron]}``, each bitstring the neuron's
-    emission history in PRODUCER-LOCAL time. ``SPKTRN_END`` closes a sample.
-    A ragged core (neuron bitstrings of unequal length) fails loud — that is a
+def _parse_binary_train(core: int, token: str) -> list[int]:
+    """One neuron's SPKTRN bitstring. A per-cycle law emits at most one spike
+    per neuron, so anything but 0/1 here is a protocol violation, not a count:
+    the counted wire has its OWN versioned line."""
+    if set(token) - {"0", "1"}:
+        raise ValueError(f"SPKTRN core {core}: non-binary train symbol")
+    return [int(char) for char in token]
+
+
+def _parse_counted_train(core: int, token: str) -> list[int]:
+    """One neuron's SPKTRN2 comma-joined per-cycle counts."""
+    counts = []
+    for field in token.split(","):
+        if not field.isdigit():
+            raise ValueError(
+                f"SPKTRN2 core {core}: {field!r} is not a per-cycle count"
+            )
+        count = int(field)
+        if count > EMISSION_COUNT_CEILING:
+            raise ValueError(
+                f"SPKTRN2 core {core}: per-cycle count {count} exceeds the "
+                f"count currency's ceiling {EMISSION_COUNT_CEILING}"
+            )
+        counts.append(count)
+    return counts
+
+
+def parse_spike_trains(stderr: str) -> list[dict[int, list[list[int]]]]:
+    """Parse the spike-train record lines (NEVRESIM_RECORD_SPIKE_TRAINS build)
+    into per-sample trains: ``{core: [per-cycle counts per neuron]}`` in
+    PRODUCER-LOCAL time. ``SPKTRN_END`` closes a sample.
+
+    TWO wire versions, both closed by the same terminator: ``SPKTRN`` carries a
+    bit raster (one char per cycle) and ``SPKTRN2`` carries per-cycle COUNTS
+    (comma-joined per neuron), which is what a law that can fire more than once
+    per cycle actually produces. The binary version stays STRICT — a non-binary
+    symbol on a ``SPKTRN`` line is a violated protocol, not a count.
+
+    A ragged core (neuron trains of unequal length) fails loud — that is a
     protocol violation, not a short train."""
-    samples: list[dict[int, list[str]]] = []
-    current: dict[int, list[str]] = {}
+    samples: list[dict[int, list[list[int]]]] = []
+    current: dict[int, list[list[int]]] = {}
     for line in (stderr or "").splitlines():
         line = line.strip()
         if not line.startswith("SPKTRN"):
@@ -74,15 +109,16 @@ def parse_spike_trains(stderr: str) -> list[dict[int, list[str]]]:
             current = {}
             continue
         toks = line.split()
-        core, trains = int(toks[1]), toks[2:]
+        counted = toks[0] == "SPKTRN2"
+        parse_train = _parse_counted_train if counted else _parse_binary_train
+        core = int(toks[1])
+        trains = [parse_train(core, token) for token in toks[2:]]
         widths = {len(t) for t in trains}
         if len(widths) > 1:
             raise ValueError(
-                f"SPKTRN core {core}: ragged trains (lengths {sorted(widths)}) — "
-                f"every neuron of a core shares one window"
+                f"{toks[0]} core {core}: ragged trains (lengths "
+                f"{sorted(widths)}) — every neuron of a core shares one window"
             )
-        if any(set(t) - {"0", "1"} for t in trains):
-            raise ValueError(f"SPKTRN core {core}: non-binary train symbol")
         current[core] = trains
     return samples
 

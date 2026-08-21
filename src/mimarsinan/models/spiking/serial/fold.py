@@ -31,17 +31,11 @@ from mimarsinan.models.nn.lif_kernels import (
     snap_membrane_to_lattice,
 )
 from mimarsinan.models.spiking.serial.refusals import (
+    EMISSION_COUNT_CEILING,
     EmissionBoundExceededError,
     SerialFoldUnsupportedError,
     SerialResetLawError,
 )
-
-EMISSION_COUNT_CEILING = 127
-"""The count currency's ceiling. A window/cycle count travels as one signed
-8-bit event count (nevresim's ``spike_t``), and the exporter prices the wire
-from the same number, so 127 is the loudest bound EVERY implementation shares
-(plan §2.2). It is asserted, never clamped: a silent saturation here is the
-exact failure the count currency exists to make impossible."""
 
 
 def require_serial_law(soma_law: SomaLaw) -> None:

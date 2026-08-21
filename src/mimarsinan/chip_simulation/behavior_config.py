@@ -8,13 +8,15 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategy, FiringStrategyFactory
+from mimarsinan.chip_simulation.nevresim_policy_types import (
+    nevresim_compare_policy,
+    nevresim_lif_fire_policy,
+    nevresim_reset_policy,
+)
 from mimarsinan.chip_simulation.recording._spike_encoding import encode_segment_input
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
-from mimarsinan.chip_simulation.spiking_semantics import (
-    is_default_firing_mode,
-    is_novena_firing_mode,
-)
+from mimarsinan.chip_simulation.spiking_semantics import is_novena_firing_mode
 from mimarsinan.models.spiking.spiking_config import SPIKE_MODES
 
 
@@ -68,17 +70,13 @@ class NeuralBehaviorConfig:
         self.firing_strategy().require_backend(backend)
 
     def nevresim_reset_policy(self) -> str:
-        if is_default_firing_mode(self.firing_mode):
-            return "SubtractiveReset"
-        return "ZeroReset"
+        return nevresim_reset_policy(self.firing_mode)
 
     def nevresim_compare_policy(self) -> str:
-        return "StrictCompare" if self.thresholding_mode == "<" else "InclusiveCompare"
+        return nevresim_compare_policy(self.thresholding_mode)
 
     def nevresim_lif_fire_policy(self) -> str:
-        reset = self.nevresim_reset_policy()
-        compare = self.nevresim_compare_policy()
-        return f"LIFirePolicy<{reset}, {compare}>"
+        return nevresim_lif_fire_policy(self.firing_mode, self.thresholding_mode)
 
     def lava_zero_reset(self) -> bool:
         return is_novena_firing_mode(self.firing_mode)

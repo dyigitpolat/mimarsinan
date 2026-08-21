@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.chip_simulation.simulation_runner.membrane_probe import (
     flat_membrane_slices,
     stash_membrane_corrections,
@@ -108,6 +109,7 @@ class TestPrepareSegmentsArmsExportFlag:
             simulation_step_timeout_s=900.0,
             membrane_readout=armed,
             membrane_half_step_charge=0.0,
+            soma_law=DEFAULT_SOMA_LAW,
         )
         SimulationHybridMixin._prepare_all_segments(fake_self, hybrid)
         return recorded[0]
@@ -115,16 +117,18 @@ class TestPrepareSegmentsArmsExportFlag:
     def test_armed_runner_requests_membrane_build(self, monkeypatch, tmp_path):
         args = self._prepare(monkeypatch, tmp_path, armed=True)
         # (..., export_membrane, record_mode, record_trains, input_mode,
-        # carried_out): BOTH builds — window counts from the record binary,
-        # membranes from the export binary; a COLLAPSE run carries nothing.
-        assert args[-5] is True, "export_membrane must reach the compile worker"
-        assert args[-4] is True
-        assert args[-3] is False and args[-2] is None and args[-1] == ()
+        # carried_out, soma_law): BOTH builds — window counts from the record
+        # binary, membranes from the export binary; a COLLAPSE run carries
+        # nothing, and the run's resolved soma point rides to every worker.
+        assert args[-6] is True, "export_membrane must reach the compile worker"
+        assert args[-5] is True
+        assert args[-4] is False and args[-3] is None and args[-2] == ()
+        assert args[-1] is DEFAULT_SOMA_LAW
 
     def test_unarmed_runner_keeps_default_build(self, monkeypatch, tmp_path):
         args = self._prepare(monkeypatch, tmp_path, armed=False)
-        assert args[-5] is False
-        assert args[-4] is True, (
+        assert args[-6] is False
+        assert args[-5] is True, (
             "lif segments must request the window-record build"
         )
 

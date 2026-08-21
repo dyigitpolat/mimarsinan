@@ -223,11 +223,12 @@ class BackendSpikingCapabilities:
 
 
 _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
-    # [ODIN P2] the torch executors implement the event-serial fold and the
-    # saturating unsigned membrane (models/spiking/serial); every other
-    # backend still refuses the point by name until its own phase lands.
+    # [ODIN P2/P3] the torch executors (models/spiking/serial) and the nevresim
+    # integration-policy axis both implement the event-serial fold on the
+    # saturating unsigned membrane; every other backend still refuses the point
+    # by name until its own phase lands.
     "hcm": BackendSpikingCapabilities(True, True, True, True, True, True),
-    "nevresim": BackendSpikingCapabilities(True, True, True, True),
+    "nevresim": BackendSpikingCapabilities(True, True, True, True, True, True),
     "unified": BackendSpikingCapabilities(True, True, True, True, True, True),
     "hybrid": BackendSpikingCapabilities(True, True, True, True, True, True),
     "sanafe": BackendSpikingCapabilities(True, True, True, True),

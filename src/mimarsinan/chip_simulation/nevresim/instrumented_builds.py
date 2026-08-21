@@ -124,7 +124,8 @@ def predict_spiking_raw_with_spike_trains(
     ``spike_trains`` is per-sample ``{core: (neurons, T) uint8}`` in
     PRODUCER-LOCAL time — the per-cycle emission history whose window sum IS the
     SPKREC count, which is the self-check a consumer gets for free by asking for
-    both from one binary.
+    both from one binary. Under a counted wire the entries are per-cycle COUNTS
+    rather than bits, and that identity is exactly what keeps holding.
     """
     if max_input_count is None:
         max_input_count = len(input_loader)
@@ -148,8 +149,10 @@ def predict_spiking_raw_with_spike_trains(
         record_spike_trains=True,
         timeout_s=driver.simulation_step_timeout_s,
     )
+    # uint8 holds the whole count currency (ceiling 127) as well as the bit
+    # raster, so both wire versions land in the same array type.
     as_arrays = [
-        {core: np.array([[int(b) for b in t] for t in trains], dtype=np.uint8)
+        {core: np.array(trains, dtype=np.uint8).reshape(len(trains), -1)
          for core, trains in sample.items()}
         for sample in spike_trains
     ]

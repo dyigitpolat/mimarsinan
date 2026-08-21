@@ -12,6 +12,15 @@ from __future__ import annotations
 from typing import Any
 
 
+EMISSION_COUNT_CEILING = 127
+"""The count currency's ceiling. A window/cycle count travels as one signed
+8-bit event count (nevresim's ``spike_t``), the counted raster prints it and
+the exporter prices the wire from the same number, so 127 is the loudest bound
+EVERY implementation shares (plan §2.2). It is asserted, never clamped: a
+silent saturation here is the exact failure the count currency exists to make
+impossible."""
+
+
 class SomaLawRefusalError(NotImplementedError):
     """Base: the resolved soma point denies this mechanism's theorem."""
 

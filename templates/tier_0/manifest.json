@@ -690,6 +690,28 @@
       "note": "streamed x scheduling: 3 passes, VERBATIM raster carry on every backend, carry census sealed in the record"
     },
     {
+      "name": "t0_54_lifse_simplemlp_wq_s4_nobias",
+      "config": "t0_54_lifse_simplemlp_wq_s4_nobias.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "lif+per_event-sat8",
+        "sync": "streamed",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "nobias"
+      ],
+      "expected_wall_min": 7,
+      "note": "the per-event / saturating-8-bit soma point on the streamed discipline: threshold after every event occurrence, hard-zero reset, counts (not bits) on the wire inside a segment. MEASURED 2026-08-21 (ODIN P3, 218.5 s wall): RED at Soft Core Mapping \u2014 the P2 streamed NF<->SCM RASTER gate refuses with 1004/3152 per-cycle emission mismatches (worst nf=1 scm=7 at perceptron 2), so the run never reaches deployment and there is no deployed accuracy yet. Trained/validation reads at the point: test 0.9752, validation 0.9747. The refusal is the gate working (counts alone would have hidden a rhythm difference that changes the next hop); closing it is a P2 NF-twin cycle, not a cell respec."
+    },
+    {
       "name": "t0_60_lifsync_simplemlp_wq_s4_search",
       "config": "t0_60_lifsync_simplemlp_wq_s4_search.json",
       "model_type": "simple_mlp",

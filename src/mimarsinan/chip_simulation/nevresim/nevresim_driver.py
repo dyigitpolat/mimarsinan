@@ -16,6 +16,7 @@ from mimarsinan.chip_simulation.nevresim.connectivity import (
 )
 
 from mimarsinan.chip_simulation.nevresim import instrumented_builds
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 
 import numpy as np
 import shutil
@@ -43,9 +44,13 @@ class NevresimDriver:
         connectivity_mode: ConnectivityMode | None = None,
         compile_cache_dir: str | None = None,
         simulation_step_timeout_s: float | None = None,
+        # The resolved soma point this chip runs. The default IS today's law,
+        # so every historical construction emits and caches byte-identically.
+        soma_law: SomaLaw = DEFAULT_SOMA_LAW,
     ):
         assert NevresimDriver.nevresim_path is not None, "nevresim path is not set."
 
+        self.soma_law = soma_law
         self.simulation_step_timeout_s = simulation_step_timeout_s
         self.spike_generation_mode = spike_generation_mode
         self.firing_mode = firing_mode
@@ -111,6 +116,7 @@ class NevresimDriver:
             self.spike_generation_mode, self.firing_mode,
             wt_cpp, self.spiking_mode, threshold_type=tt_cpp,
             thresholding_mode=self.thresholding_mode,
+            soma_law=self.soma_law,
         )
         if self.connectivity_mode == "runtime":
             generate_main_function_runtime(
@@ -136,6 +142,7 @@ class NevresimDriver:
             simulation_length=int(simulation_length),
             latency=int(latency),
             connectivity_mode=self.connectivity_mode,
+            soma_law=self.soma_law,
         )
         return cache_key(m_hash, p_hash)
 

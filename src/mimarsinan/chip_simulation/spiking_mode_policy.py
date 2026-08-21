@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from mimarsinan.chip_simulation.nevresim_policy_types import (
+    WHOLE_VECTOR_INTEGRATE,
+    counts_on_the_wire,
+)
 from mimarsinan.chip_simulation.soma_capability import (
     require_soma_law_supported,
     supports_soma_law,
@@ -57,9 +61,24 @@ class NevresimExecParams:
     simulation_length: int
     latency: int
     output_count: int
+    # The resolved soma point's integration policy. Defaulted, and NEVER
+    # emitted at its default value: the C++ template argument already carries
+    # that name, so every pre-axes main.cpp stays byte-identical.
+    integration_policy: str = WHOLE_VECTOR_INTEGRATE
+
+    @property
+    def counts_on_the_wire(self) -> bool:
+        """Whether this law can emit more than one spike per neuron per cycle."""
+        return counts_on_the_wire(self.integration_policy)
 
     @property
     def spike_generator(self) -> str:
+        """The C++ spike provider. A replayed train is the ONE generator whose
+        alphabet follows the law: under a counted wire the carried
+        multiplicities must survive the load, and under every other point the
+        binarizing seam is both lossless and the historical name."""
+        if self.counts_on_the_wire and self.spike_gen_mode == "SpikeTrain":
+            return f"Counted{self.spike_gen_mode}SpikeGenerator"
         return f"{self.spike_gen_mode}SpikeGenerator"
 
 
@@ -220,14 +239,21 @@ class LifModePolicy(SpikingModePolicy):
 
     def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
         lif = params.lif_fire_policy
+        # The integration policy is appended ONLY when it is not the C++
+        # default template argument: naming the default would change the text
+        # of every emitted program that predates the axis.
+        integration = (
+            f", {params.integration_policy}"
+            if params.counts_on_the_wire else ""
+        )
         return ExecPolicySpec(
-            compute_policy=f"SpikingCompute<{lif}>",
+            compute_policy=f"SpikingCompute<{lif}{integration}>",
             exec_decl=(
                 f"using exec = SpikingExecution<"
                 f"{params.simulation_length}, {params.latency}, "
                 f"{params.output_count}, "
                 f"{params.spike_generator}, {params.weight_type}, "
-                f"{lif}>;"
+                f"{lif}{integration}>;"
             ),
         )
 

@@ -7,6 +7,7 @@ from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.chip_simulation.nevresim.connectivity import ConnectivityMode
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.compile_nevresim import compile_simulator
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.chip_simulation.execution_bounds import run_tasks_in_pool_bounded
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
     execution_neural_stages,
@@ -72,6 +73,7 @@ def _emit_and_compile_segment(
     record_trains: bool = False,
     input_mode: str | None = None,
     carried_output_node_ids: tuple[int, ...] = (),
+    soma_law: SomaLaw = DEFAULT_SOMA_LAW,
 ) -> _PreparedSegment:
     """Top-level function for ProcessPoolExecutor: emit chip artifacts and compile."""
     NevresimDriver.nevresim_path = nevresim_path
@@ -94,6 +96,7 @@ def _emit_and_compile_segment(
         threshold_type=threshold_type,
         verbose=False,
         connectivity_mode=connectivity_mode,
+        soma_law=soma_law,
     )
     driver.emit_main(num_samples, sim_length, latency, verbose=False)
 
@@ -270,6 +273,7 @@ def prepare_all_segments(runner, hybrid) -> "Dict[int, _PreparedSegment]":
             record_trains,
             input_mode,
             carried_out,
+            runner.soma_law,
         )
         for seg_idx, seg_dir, seg_mapping, input_size, latency,
             export_membrane, record_mode, record_trains, input_mode,
