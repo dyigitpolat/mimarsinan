@@ -46,12 +46,15 @@ class LIFCyclePolicy:
     serial = False
 
     def __init__(self, firing_mode: str, integer_lattice: bool = False, *,
-                 membrane_bounds: "tuple[float, float] | None" = None):
+                 membrane_bounds: "tuple[float, float] | None" = None,
+                 membrane_rail_assert: bool = False):
         self.firing_mode = str(firing_mode)
         self.integer_lattice = bool(integer_lattice)
-        # The declared register interval of a saturating unsigned membrane;
-        # None is the default point's unbounded accumulator, byte-identical.
+        # The declared register interval of a saturating membrane; None is the
+        # default point's unbounded accumulator, byte-identical.
         self.membrane_bounds = membrane_bounds
+        # Whether a rail is a FAILURE rather than this register's physics.
+        self.membrane_rail_assert = bool(membrane_rail_assert)
 
     def _lattice_scale(self) -> float | None:
         return self._CHIP_LATTICE_SCALE if self.integer_lattice else None
@@ -67,6 +70,7 @@ class LIFCyclePolicy:
             firing_mode=self.firing_mode, output_dtype=output_dtype,
             lattice_scale=self._lattice_scale(),
             membrane_bounds=self.membrane_bounds,
+            membrane_rail_assert=self.membrane_rail_assert,
         )
 
     def advance(self, state, contribution, threshold, *, thresholding_mode,
@@ -79,6 +83,7 @@ class LIFCyclePolicy:
             firing_mode=self.firing_mode, output_dtype=output_dtype,
             lattice_scale=self._lattice_scale(),
             membrane_bounds=self.membrane_bounds,
+            membrane_rail_assert=self.membrane_rail_assert,
         )
 
 
@@ -129,4 +134,5 @@ def cycle_neuron_policy(
     return LIFCyclePolicy(
         firing_mode, integer_lattice=integer_lattice,
         membrane_bounds=soma_law.membrane_bounds,
+        membrane_rail_assert=soma_law.asserts_no_saturation,
     )

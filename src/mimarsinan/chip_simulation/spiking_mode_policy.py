@@ -9,6 +9,7 @@ from typing import Any, Optional
 from mimarsinan.chip_simulation.nevresim_policy_types import (
     WHOLE_VECTOR_INTEGRATE,
     counts_on_the_wire,
+    emits_integration_policy,
 )
 from mimarsinan.chip_simulation.soma_capability import (
     require_soma_law_supported,
@@ -71,6 +72,11 @@ class NevresimExecParams:
     def counts_on_the_wire(self) -> bool:
         """Whether this law can emit more than one spike per neuron per cycle."""
         return counts_on_the_wire(self.integration_policy)
+
+    @property
+    def emits_integration_policy(self) -> bool:
+        """Whether the emitted C++ must name this policy (non-default only)."""
+        return emits_integration_policy(self.integration_policy)
 
     def require_default_integration(self, family: str) -> None:
         """Refuse a point this executor has no template slot for.
@@ -272,7 +278,7 @@ class LifModePolicy(SpikingModePolicy):
         # of every emitted program that predates the axis.
         integration = (
             f", {params.integration_policy}"
-            if params.counts_on_the_wire else ""
+            if params.emits_integration_policy else ""
         )
         return ExecPolicySpec(
             compute_policy=f"SpikingCompute<{lif}{integration}>",

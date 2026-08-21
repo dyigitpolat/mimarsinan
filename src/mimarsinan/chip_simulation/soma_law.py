@@ -11,7 +11,8 @@ from mimarsinan.chip_simulation.soma_axes import (
     MEMBRANE_BITS_KEY,
     PER_CYCLE_FIRING,
     PER_EVENT_FIRING,
-    SATURATING_UNSIGNED_MEMBRANE,
+    SATURATING_MEMBRANES,
+    SATURATING_SIGNED_MEMBRANE,
     UNBOUNDED_MEMBRANE,
     firing_mode_for_granularity,
     resolved_firing_granularity,
@@ -100,20 +101,41 @@ class SomaLaw:
 
     @property
     def saturates(self) -> bool:
-        """The membrane clamps to ``[0, 2**membrane_bits - 1]`` on every update."""
-        return self.membrane_arithmetic == SATURATING_UNSIGNED_MEMBRANE
+        """The membrane clamps to its declared register interval on every update."""
+        return self.membrane_arithmetic in SATURATING_MEMBRANES
+
+    @property
+    def is_signed_membrane(self) -> bool:
+        """The register is two's complement, so the floor is a NEGATIVE rail."""
+        return self.membrane_arithmetic == SATURATING_SIGNED_MEMBRANE
+
+    @property
+    def asserts_no_saturation(self) -> bool:
+        """Whether touching a rail is a FAILURE rather than this law's physics.
+
+        The signed register exists to hold the same number the unbounded
+        accumulator holds; that claim is true only while neither rail is
+        reached, so every implementation asserts it instead of quietly
+        clamping. The unsigned register's saturation IS the modelled substrate
+        (ODIN's 8-bit soma), and asserting there would refuse real physics.
+        """
+        return self.is_signed_membrane
 
     @property
     def membrane_bounds(self) -> Optional[Tuple[float, float]]:
         """The representable membrane interval, or ``None`` when unbounded.
 
-        An unsigned fixed-width register holds ``[0, 2**bits - 1]`` and clamps
-        on EVERY update; the default accumulator declares no interval, so a
+        An unsigned fixed-width register holds ``[0, 2**bits - 1]`` and a
+        two's-complement one ``[-2**(bits-1), 2**(bits-1) - 1]``; both clamp on
+        EVERY update. The default accumulator declares no interval, so a
         consumer that reads ``None`` keeps today's arithmetic exactly.
         """
         if not self.saturates:
             return None
-        return (0.0, float(2 ** int(self.membrane_bits) - 1))
+        bits = int(self.membrane_bits)
+        if self.is_signed_membrane:
+            return (float(-(2 ** (bits - 1))), float(2 ** (bits - 1) - 1))
+        return (0.0, float(2 ** bits - 1))
 
     @property
     def membrane_lattice_quantum(self) -> Optional[float]:
@@ -142,7 +164,9 @@ class SomaLaw:
         parts = []
         if self.is_per_event:
             parts.append(PER_EVENT_FIRING)
-        if self.saturates:
+        if self.is_signed_membrane:
+            parts.append(f"ssat{self.membrane_bits}")
+        elif self.saturates:
             parts.append(f"sat{self.membrane_bits}")
         elif self.membrane_bits:
             parts.append(f"bits{self.membrane_bits}")

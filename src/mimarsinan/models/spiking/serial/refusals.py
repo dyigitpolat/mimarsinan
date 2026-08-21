@@ -11,6 +11,24 @@ from __future__ import annotations
 
 from typing import Any
 
+from mimarsinan.models.nn.lif_kernels import MembraneRailTouchedError
+
+__all__ = [
+    "CycleAtomicRefusalError",
+    "EMISSION_COUNT_CEILING",
+    "EmissionBoundExceededError",
+    "MappingTransformRefusalError",
+    "MembraneRailTouchedError",
+    "SaturatingMembraneRefusalError",
+    "SerialDecompositionMismatchError",
+    "SerialFoldUnsupportedError",
+    "SerialMembraneInitError",
+    "SerialResetLawError",
+    "SomaLawRefusalError",
+    "refuse_cycle_atomic",
+    "refuse_cycle_atomic_walk",
+    "refuse_saturating_membrane",
+]
 
 EMISSION_COUNT_CEILING = 127
 """The count currency's ceiling. A window/cycle count travels as one signed
@@ -101,13 +119,17 @@ def refuse_saturating_membrane(
     soma_law: Any, *, mechanism: str, identity: str
 ) -> None:
     """Refuse ``mechanism`` when the membrane saturates instead of accumulating."""
-    if soma_law is None or not soma_law.saturates:
+    if soma_law is None:
         return
+    bounds = soma_law.membrane_bounds
+    if bounds is None:
+        return
+    low, high = bounds
     raise SaturatingMembraneRefusalError(
         f"{mechanism} is refused under "
-        f"membrane_arithmetic='saturating_unsigned' "
+        f"membrane_arithmetic={soma_law.membrane_arithmetic!r} "
         f"(membrane_bits={soma_law.membrane_bits}): {identity} A register "
-        f"that clamps to [0, 2**bits - 1] on every update DESTROYS charge, so "
-        f"the identity is false and the reported number would be a fiction. "
-        f"Deploy an unbounded membrane, or read counts only."
+        f"confined to [{low:.0f}, {high:.0f}] cannot hold the residual charge "
+        f"in general, so the identity is false and the reported number would "
+        f"be a fiction. Deploy an unbounded membrane, or read counts only."
     )

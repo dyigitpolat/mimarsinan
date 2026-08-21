@@ -164,6 +164,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
@@ -422,6 +423,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
@@ -680,6 +682,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
@@ -997,6 +1000,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {},
     "model_config_mode": "user",
@@ -1324,6 +1328,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
@@ -1582,6 +1587,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
@@ -1845,6 +1851,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "mlp_width_1": 256,
@@ -2092,6 +2099,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
@@ -2331,6 +2339,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
@@ -2576,6 +2585,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
@@ -2826,6 +2836,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
@@ -3087,6 +3098,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
@@ -3354,6 +3366,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "mlp_width_1": 256,
@@ -3607,6 +3620,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
@@ -3859,6 +3873,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "mlp_width_1": 256,
@@ -4111,6 +4126,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
@@ -4365,6 +4381,7 @@
     "max_simulation_samples": 25,
     "membrane_arithmetic": "unbounded",
     "membrane_bits": 0,
+    "membrane_signed": false,
     "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",

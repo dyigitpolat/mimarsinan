@@ -49,6 +49,15 @@ class CaptureResult:
     cycles: int
     tag_opened: Tuple[Tuple[int, int], ...] = ()
     barriers: Tuple[BarrierRecord, ...] = ()
+    # [ODIN P6] the generated-core testbench's two extra verdicts: the emitted
+    # RTL's own spec against the harness's parameters, and the sticky rail flag
+    # of a law whose contract says the rails are unreachable.
+    spec_checks: int = 0
+    spec_failures: int = 0
+    rail_checks: int = 0
+    rail_failures: int = 0
+    spec_failure_lines: Tuple[str, ...] = ()
+    rail_failure_lines: Tuple[str, ...] = ()
 
     def counts_by_tag(self) -> Dict[Tuple[int, int, int], int]:
         """``(tag, core, neuron) -> spike count`` — the per-window READOUT."""
@@ -98,6 +107,9 @@ def parse_capture(stdout: str) -> CaptureResult:
     tags: List[Tuple[int, int]] = []
     barriers: List[BarrierRecord] = []
     reads = read_fails = shadow_checks = shadow_fails = 0
+    spec_checks = spec_fails = rail_checks = rail_fails = 0
+    spec_failure_lines: List[str] = []
+    rail_failure_lines: List[str] = []
     cycles = -1
     for line in stdout.splitlines():
         fields = line.split()
@@ -113,6 +125,14 @@ def parse_capture(stdout: str) -> CaptureResult:
             read_failures.append(line.strip())
         elif fields[0] == "SHFAIL":
             shadow_failures.append(line.strip())
+        elif fields[0] == "SPECFAIL":
+            spec_failure_lines.append(line.strip())
+        elif fields[0] == "RAILFAIL":
+            rail_failure_lines.append(line.strip())
+        elif fields[0] == "SPECSTAT" and len(fields) == 3:
+            spec_checks, spec_fails = int(fields[1]), int(fields[2])
+        elif fields[0] == "RAILSTAT" and len(fields) == 3:
+            rail_checks, rail_fails = int(fields[1]), int(fields[2])
         elif fields[0] == "RBSTAT" and len(fields) == 3:
             reads, read_fails = int(fields[1]), int(fields[2])
         elif fields[0] == "SHSTAT" and len(fields) == 3:
@@ -137,4 +157,8 @@ def parse_capture(stdout: str) -> CaptureResult:
         cycles=cycles,
         tag_opened=tuple(tags),
         barriers=tuple(barriers),
+        spec_checks=spec_checks, spec_failures=spec_fails,
+        rail_checks=rail_checks, rail_failures=rail_fails,
+        spec_failure_lines=tuple(spec_failure_lines),
+        rail_failure_lines=tuple(rail_failure_lines),
     )

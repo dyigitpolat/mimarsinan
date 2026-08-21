@@ -24,6 +24,11 @@ from mimarsinan.code_generation.generate_main import (
     resolve_exec_policy,
 )
 
+_SYNC_FIRE_16 = SomaLaw.resolve({
+    "spiking_family": "lif", "spiking_variant": "streamed",
+    "firing_mode": "Novena", "membrane_bits": 16, "membrane_signed": True,
+})
+
 _PER_EVENT_8 = SomaLaw.resolve({
     "spiking_family": "lif", "spiking_variant": "streamed",
     "firing_mode": "Novena", "firing_granularity": "per_event",
@@ -72,6 +77,10 @@ class TestTheResolverMapsThePoint:
         )
         with pytest.raises(NevresimPolicyTypeError, match="per_cycle"):
             nevresim_integration_policy(law)
+
+    def test_the_sync_fire_point_names_the_signed_whole_vector_policy(self):
+        assert nevresim_integration_policy(_SYNC_FIRE_16) == (
+            "WholeVectorSaturatingSigned<16>")
 
 
 class TestTheDefaultPointEmitsNothingNew:
@@ -137,3 +146,32 @@ class TestThePointNamesTheFoldInBothStrings:
         text = Path(tmp_path / "main" / "main.cpp").read_text()
         assert text.count("EventSerialIntegrate<8>") == 2
         assert "CountedSpikeTrainSpikeGenerator" in text
+
+
+class TestTheSyncFirePointNamesItsPolicyButKeepsABinaryWire:
+    """[ODIN P6] a non-default law that still fires at most once per cycle:
+    the template argument is emitted, and the counted raster must NOT arm."""
+
+    def test_both_emitted_types_name_the_signed_policy(self):
+        spec = _spec(integration_policy="WholeVectorSaturatingSigned<16>")
+        assert spec.compute_policy == (
+            "SpikingCompute<LIFirePolicy<ZeroReset, InclusiveCompare>, "
+            "WholeVectorSaturatingSigned<16>>")
+        assert spec.exec_decl.endswith(
+            "LIFirePolicy<ZeroReset, InclusiveCompare>, "
+            "WholeVectorSaturatingSigned<16>>;")
+
+    def test_the_carry_seam_keeps_the_binarizing_generator(self):
+        spec = _spec(integration_policy="WholeVectorSaturatingSigned<16>")
+        assert "CountedSpikeTrainSpikeGenerator" not in spec.exec_decl
+        assert "SpikeTrainSpikeGenerator" in spec.exec_decl
+
+    def test_the_emitted_program_names_the_policy_twice(self, tmp_path):
+        generate_main_function_runtime(
+            str(tmp_path), 4, 2, 6, 1,
+            simulation_config=get_config(
+                "SpikeTrain", "Novena", "int", "lif", threshold_type="int",
+                thresholding_mode="<=", soma_law=_SYNC_FIRE_16))
+        text = Path(tmp_path / "main" / "main.cpp").read_text()
+        assert text.count("WholeVectorSaturatingSigned<16>") == 2
+        assert "CountedSpikeTrainSpikeGenerator" not in text

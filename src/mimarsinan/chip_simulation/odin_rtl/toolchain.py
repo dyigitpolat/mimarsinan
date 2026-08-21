@@ -9,7 +9,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import Dict, List, Mapping, Sequence, Tuple
 
 from mimarsinan.common.env import DEFAULT_HW_SIM_BIN_DIR, HW_SIM_BIN_VAR, hw_sim_bin_dir
 
@@ -26,6 +26,9 @@ VENDOR_SRC = HW_ROOT / "vendor" / "odin" / "src"
 OVERLAY_MEM = HW_ROOT / "fpga" / "mem"
 TB_ROOT = HW_ROOT / "tb"
 BUILD_CACHE = _REPO_ROOT / "build" / "odin_rtl_cache"
+#: Where a GENERATED variant's RTL is materialised before it is compiled; the
+#: generator owns the text, this directory only makes it a file the tools read.
+GEN_SOURCE_CACHE = _REPO_ROOT / "build" / "odin_rtl_gen"
 
 #: The tb's program array is a compile-time parameter, so the harness rounds the
 #: token count up to one of a few sizes and the build cache stays small.
@@ -103,6 +106,20 @@ def source_list(tb: Path, *, overlay: bool) -> List[Path]:
     return [tb] + (overlay_sources() if overlay else []) + vendor_sources()
 
 
+def materialize_sources(
+    files: Sequence[Tuple[str, bytes]], key: str
+) -> List[Path]:
+    """Write a generated core's files under the source cache and return them."""
+    root = GEN_SOURCE_CACHE / str(key)
+    paths: List[Path] = []
+    for name, payload in files:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        paths.append(path)
+    return sorted(paths)
+
+
 def program_array_size(token_count: int) -> int:
     """The tb ``PROGWORDS`` parameter for a program of ``token_count`` tokens."""
     for step in PROGRAM_SIZE_STEPS:
@@ -150,12 +167,18 @@ def build_testbench(
     engine: str | None = None,
     tb_name: str = "tb_odin_core",
     parameterised: bool = True,
+    rtl_sources: Sequence[Path] | None = None,
+    extra_params: Mapping[str, int] | None = None,
 ) -> TestbenchBuild:
     """Compile (or reuse) the testbench for one geometry.
 
     ``parameterised`` is False for testbenches that declare no geometry
     parameters (the memory-overlay harness), so no override is passed for a
-    parameter the source does not have.
+    parameter the source does not have. ``rtl_sources`` replaces the vendored
+    tree for a GENERATED variant (whose whole point is that it is not the
+    vendored core), and ``extra_params`` carries that variant's geometry to the
+    testbench so a build sized from a different spec than the file declares
+    fails at elaboration instead of truncating an address.
     """
     engine = engine or available_engine()
     if engine not in ENGINES:
@@ -170,9 +193,15 @@ def build_testbench(
     if not tb.is_file():
         raise SimulatorBuildError(f"no testbench source at {tb}")
     program_words = program_array_size(token_count)
-    sources = source_list(tb, overlay=overlay)
+    sources = (
+        [tb] + list(rtl_sources) if rtl_sources is not None
+        else source_list(tb, overlay=overlay)
+    )
+    params: Dict[str, int] = {"NC": int(n_cores), "PROGWORDS": program_words}
+    params.update({str(k): int(v) for k, v in (extra_params or {}).items()})
     key = _fingerprint(
-        sources, engine, tb_name, str(n_cores), str(program_words), str(overlay))
+        sources, engine, tb_name, str(overlay),
+        *(f"{name}={value}" for name, value in sorted(params.items())))
     workdir = BUILD_CACHE / f"{tb_name}_{engine}_{n_cores}c_{program_words}w_{key}"
     binary = workdir / ("vtb" if engine == ENGINE_COMPILED else "tb.vvp")
     if binary.is_file():
@@ -182,7 +211,7 @@ def build_testbench(
     started = time.monotonic()
     if engine == ENGINE_COMPILED:
         overrides = (
-            [f"-GNC={n_cores}", f"-GPROGWORDS={program_words}"]
+            [f"-G{name}={value}" for name, value in sorted(params.items())]
             if parameterised else []
         )
         command = [
@@ -194,8 +223,9 @@ def build_testbench(
         ] + [str(path) for path in sources]
     else:
         overrides = (
-            ["-P", f"{tb_name}.NC={n_cores}",
-             "-P", f"{tb_name}.PROGWORDS={program_words}"]
+            [token
+             for name, value in sorted(params.items())
+             for token in ("-P", f"{tb_name}.{name}={value}")]
             if parameterised else []
         )
         command = [

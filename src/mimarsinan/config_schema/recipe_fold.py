@@ -45,13 +45,19 @@ def _fold_sim_enables(
 
 def _soma_law_denies_membrane_readout(law: SomaLaw) -> Optional[str]:
     """The membrane decode ``Q_T = theta*c_T + m_T`` needs a lossless membrane."""
-    if not law.saturates:
+    bounds = law.membrane_bounds
+    if bounds is None:
         return None
+    low, high = bounds
     return (
         f"membrane_arithmetic={law.membrane_arithmetic!r} "
-        f"(membrane_bits={law.membrane_bits}) destroys charge on every clamp, "
-        f"so the residual membrane is NOT the unemitted charge and the decode "
-        f"Q_T = theta*c_T + m_T reports a fiction"
+        f"(membrane_bits={law.membrane_bits}) confines the membrane to "
+        f"[{low:.0f}, {high:.0f}], and a fixed-width register cannot hold the "
+        f"residual charge in general, so the residual membrane is NOT the "
+        f"unemitted charge and the decode Q_T = theta*c_T + m_T reports a "
+        f"fiction. A per-deployment no-saturation bound is proved at "
+        f"GENERATION time against a mapped network, which this config-level "
+        f"fold cannot see"
     )
 
 

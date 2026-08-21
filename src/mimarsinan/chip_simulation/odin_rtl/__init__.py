@@ -6,6 +6,11 @@ from mimarsinan.chip_simulation.odin_rtl.cosim import (
     build_cosim_ops,
     run_cosim,
 )
+from mimarsinan.chip_simulation.odin_rtl.gen_cosim import (
+    build_variant_ops,
+    run_variant_cosim,
+    variant_testbench_params,
+)
 from mimarsinan.chip_simulation.odin_rtl.reference import (
     CycleTrace,
     ReferenceTraceError,
@@ -45,11 +50,14 @@ __all__ = [
     "available_engine",
     "build_cosim_ops",
     "build_testbench",
+    "build_variant_ops",
     "decode_ops",
     "encode_ops",
     "gather_axon_counts",
     "parse_capture",
     "run_cosim",
+    "run_variant_cosim",
     "simulate_cycles",
+    "variant_testbench_params",
     "unavailable_reason",
 ]

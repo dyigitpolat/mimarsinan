@@ -8,11 +8,14 @@ from mimarsinan.chip_simulation.soma_axes import (
     FIRING_GRANULARITY_KEY,
     MEMBRANE_ARITHMETIC_KEY,
     MEMBRANE_BITS_KEY,
+    MEMBRANE_SIGNED_KEY,
+    SATURATING_SIGNED_MEMBRANE,
     SATURATING_UNSIGNED_MEMBRANE,
     UNBOUNDED_MEMBRANE,
     resolved_firing_granularity,
     resolved_membrane_arithmetic,
     resolved_membrane_bits,
+    resolved_membrane_signed,
 )
 from mimarsinan.chip_simulation.soma_law import FIRING_MODE_KEY, SomaLaw
 from mimarsinan.mapping.platform.platform_constraints import bias_mode_for_cores
@@ -22,7 +25,8 @@ _MEMBRANE_INIT_KEY = "lif_membrane_init"
 
 # Which keys a violation's one-click remedy may clear, per offending key.
 _REMEDY_KEYS: Dict[str, Tuple[str, ...]] = {
-    MEMBRANE_ARITHMETIC_KEY: (MEMBRANE_ARITHMETIC_KEY, MEMBRANE_BITS_KEY),
+    MEMBRANE_ARITHMETIC_KEY: (
+        MEMBRANE_ARITHMETIC_KEY, MEMBRANE_BITS_KEY, MEMBRANE_SIGNED_KEY),
     FIRING_GRANULARITY_KEY: (FIRING_GRANULARITY_KEY,),
     FIRING_MODE_KEY: (FIRING_MODE_KEY, FIRING_GRANULARITY_KEY),
     _MEMBRANE_INIT_KEY: (_MEMBRANE_INIT_KEY, FIRING_GRANULARITY_KEY),
@@ -88,13 +92,36 @@ def _contract_violations(cfg: Mapping[str, Any]) -> Iterator[Tuple[str, str]]:
         )
     if bits == 0 and law.saturates:
         yield MEMBRANE_ARITHMETIC_KEY, (
-            f"membrane_arithmetic={SATURATING_UNSIGNED_MEMBRANE!r} needs a "
-            f"declared membrane_bits width: an unsigned register that "
-            f"saturates has to say where. Declare platform membrane_bits, or "
-            f"remove membrane_arithmetic."
+            f"membrane_arithmetic={law.membrane_arithmetic!r} needs a declared "
+            f"membrane_bits width: a register that saturates has to say where. "
+            f"Declare platform membrane_bits, or remove membrane_arithmetic."
         )
+    if bits > 0 and law.saturates:
+        declared_signed = resolved_membrane_signed(cfg)
+        if declared_signed != law.is_signed_membrane:
+            yield MEMBRANE_ARITHMETIC_KEY, (
+                f"membrane_arithmetic={law.membrane_arithmetic!r} contradicts "
+                f"the declared membrane_signed={declared_signed}: signedness is "
+                f"physical structure of the register, declared once beside its "
+                f"width, and the arithmetic falls out of the pair "
+                f"({SATURATING_SIGNED_MEMBRANE!r} when signed, "
+                f"{SATURATING_UNSIGNED_MEMBRANE!r} when not). Remove "
+                f"membrane_arithmetic to accept the derivation, or declare the "
+                f"register the target actually has."
+            )
     if not law.is_per_event:
         return
+    if law.is_signed_membrane:
+        yield MEMBRANE_ARITHMETIC_KEY, (
+            f"membrane_arithmetic={SATURATING_SIGNED_MEMBRANE!r} is refused "
+            f"under firing_granularity='per_event': the event-serial law is "
+            f"realized as ROW PAIRS whose zero-magnitude member is a no-op "
+            f"only against a register that floors at zero, and no executor "
+            f"here folds events on a two's-complement membrane. The signed "
+            f"register exists to make a per-CYCLE window hold the same number "
+            f"the unbounded accumulator holds. Declare membrane_signed=false, "
+            f"or deploy per_cycle."
+        )
     if law.firing_mode != law.required_firing_mode:
         yield FIRING_MODE_KEY, (
             f"firing_granularity='per_event' requires "

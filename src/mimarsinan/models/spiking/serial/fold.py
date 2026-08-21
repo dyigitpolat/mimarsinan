@@ -26,6 +26,7 @@ import torch
 from mimarsinan.chip_simulation.soma_law import BIAS_SLOT_TAIL, SomaLaw
 from mimarsinan.mapping.platform.event_order import canonical_slot_order
 from mimarsinan.models.nn.lif_kernels import (
+    enforce_membrane_rails,
     in_measurement_plane,
     lif_fire_and_reset,
     snap_membrane_to_lattice,
@@ -106,6 +107,8 @@ def _apply_event(
     """One event occurrence: charge, saturate, snap, compare, reset, count."""
     memb += delta
     if bounds is not None:
+        if soma_law.asserts_no_saturation:
+            enforce_membrane_rails(memb, bounds)
         memb.clamp_(bounds[0], bounds[1])
     if lattice_scale is not None and in_measurement_plane():
         snap_membrane_to_lattice(memb, lattice_scale)
