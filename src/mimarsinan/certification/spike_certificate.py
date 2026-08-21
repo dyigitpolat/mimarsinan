@@ -23,6 +23,11 @@ BACKEND_CLASSES: dict[str, str] = {
     "scm": "exact",
     "nevresim": "exact",
     "sanafe": "exact",
+    # RTL cosimulation of the vendored stock ODIN core: the crossbar's own
+    # integer arithmetic, so the demand is bit equality like every other
+    # executor we control. It is an INSTRUMENT, not a `BACKEND_REGISTRY`
+    # backend; the physical board backend classifies separately when it lands.
+    "odin_rtl": "exact",
     "loihi": "counts-export",
 }
 

@@ -47,8 +47,15 @@ docs in sync with the files they describe.
 - `tests/` — unit suite (`tests/unit/`), integration tests, shared fixtures.
 - `templates/` + `scripts/run_tier.py` — tiered end-to-end run matrices
   (doubling as the wizard's template library).
-- `scripts/` — commit gates: typecheck, module budget, undefined names.
+- `scripts/` — commit gates: typecheck, module budget, undefined names;
+  `scripts/hw_tests/run_hw_tests.sh` is the NAMED runner for the RTL
+  cosimulation gates, which the default suite deliberately does not run.
 - `nevresim/`, `spikingjelly/` — vendored simulator / spiking dependencies.
+- `hw/` — RTL only, never Python: `hw/vendor/odin/` (byte-identical
+  ChFrenkel/ODIN @ 1781931 under Solderpad SHL-2.0, hashed against a
+  recorded manifest and never edited), `hw/fpga/mem/` (the
+  upstream-mandated BRAM substitution, a source-file-order overlay), and
+  `hw/tb/` (the cosimulation testbenches). See the root `NOTICE`.
 - `generated/` — per-run working directories (configs, caches, artifacts).
 
 ## Entry points and execution flow
@@ -158,7 +165,7 @@ before editing that module.
 | `transformations` | Pure weight/activation transforms: effective-parameter view, quantization, normalization fusion, pruning | [doc](src/mimarsinan/transformations/ARCHITECTURE.md) |
 | `mapping` | Mapper graph → IR → packed hard cores: pruning, packing, latency, layout estimation, verification, chip export | [doc](src/mimarsinan/mapping/ARCHITECTURE.md) |
 | `spiking` | Spike-train encoding, segment-boundary transcoding SSOT, unified segment-aware NF forward, cascade calibration | [doc](src/mimarsinan/spiking/ARCHITECTURE.md) |
-| `chip_simulation` | Simulation backends (nevresim, SANA-FE, Lava Loihi, TTFS), spiking-semantics SSOTs, certification/coverage/Pareto instruments | [doc](src/mimarsinan/chip_simulation/ARCHITECTURE.md) |
+| `chip_simulation` | Simulation backends (nevresim, SANA-FE, Lava Loihi, TTFS), the ODIN RTL cosimulation instrument (`odin_rtl/`, gate R11a), spiking-semantics SSOTs, certification/coverage/Pareto instruments | [doc](src/mimarsinan/chip_simulation/ARCHITECTURE.md) |
 | `certification` | Deployment-faithfulness certificates: the per-neuron spike-count observable, typed reference↔backend comparison, per-backend exactness classes | [doc](src/mimarsinan/certification/ARCHITECTURE.md) |
 | `deployment_record` | The typed, versioned, provenance-carrying per-run deployment artifact (`deployment_record.json` schema) and its attach-once, seal-validated builder | [doc](src/mimarsinan/deployment_record/ARCHITECTURE.md) |
 | `code_generation` | nevresim C++ source generation from mapped chips (`ChipModel`, main templates, span export) | [doc](src/mimarsinan/code_generation/ARCHITECTURE.md) |
