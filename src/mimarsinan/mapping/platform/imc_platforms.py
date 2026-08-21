@@ -20,6 +20,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from mimarsinan.chip_simulation.soma_axes import (
+    MEMBRANE_BITS_KEY,
+    PER_AXON_SIGN,
+    WEIGHT_SIGN_GRANULARITY_KEY,
+)
+
 PLACEHOLDER_PROVENANCE = "PLACEHOLDER — geometry not yet sourced from literature"
 
 #: Claim-eligibility classes a registered platform can carry (charter gate G5,
@@ -203,6 +209,49 @@ register_imc_platform(
     heterogeneous_platform(
         "imc_mixed_tile", ((512, 512, 16), (128, 128, 128)), weight_bits=4,
         provenance=_SYNTHETIC_PROVENANCE, claim_eligibility="synthetic",
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# Deployment targets registered outside the literature-transcription pipeline.
+# These carry their OWN provenance quote (they are not rows of
+# `13_chip_geometries.json`, whose 12-platform table is untouched) and their own
+# eligibility ruling.
+# ---------------------------------------------------------------------------
+
+_ODIN_PROVENANCE = (
+    'frenkel2019odin: "ODIN is based on a single 256-neuron 64k-synapse crossbar '
+    'neurosynaptic core ... each synapse occupies 4 bits" (Trans. BioCAS 13(1), '
+    "pp.145-158; upstream doc/README.md Sec.1 and Sec.3.2), transcribed from the "
+    "RTL at ChFrenkel/ODIN @ 1781931. The DECLARED max_axons is the LOGICAL twin "
+    "of the quoted 256 physical rows: weight_sign_granularity='per_axon' spends "
+    "an excitatory/inhibitory row pair per logical slot (SPI_SYN_SIGN, "
+    "src/synaptic_core.v:128), so 128 logical x 2 = the 256 quoted rows and "
+    "128 x 256 x 2 = the quoted 64k synapses."
+)
+
+register_imc_platform(
+    IMCPlatform(
+        name="odin_stock_core",
+        cores=({"max_axons": 128, "max_neurons": 256, "count": 1,
+                "has_bias": False},),
+        weight_bits=4,
+        provenance=_ODIN_PROVENANCE,
+        capabilities={
+            WEIGHT_SIGN_GRANULARITY_KEY: PER_AXON_SIGN,
+            MEMBRANE_BITS_KEY: 8,
+            # No inter-core partial-sum transfer and no re-thresholding of a
+            # partial sum: a per-event soma law makes both count-changing.
+            "allow_coalescing": False,
+            "allow_neuron_splitting": False,
+            "allow_scheduling": False,
+        },
+        # Population 1 is the degenerate single-core case the curated table
+        # quarantines, and the geometry above is a conditioned LOGICAL model of
+        # the quoted crossbar — so this is occupancy/geometry evidence only,
+        # never an allocation headline.
+        claim_eligibility="quarantined",
     )
 )
 

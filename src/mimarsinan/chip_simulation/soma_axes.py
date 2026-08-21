@@ -42,6 +42,27 @@ PER_AXON_SIGN = "per_axon"
 WEIGHT_SIGN_GRANULARITIES: Tuple[str, ...] = (PER_SYNAPSE_SIGN, PER_AXON_SIGN)
 
 
+def physical_row_expansion(weight_sign_granularity: Any) -> int:
+    """How many PHYSICAL crossbar rows one logical axon slot occupies.
+
+    Where the weight sign lives is a physical-substrate declaration: a cell that
+    stores its own sign needs one row, while a substrate that stores the sign
+    once per row needs an excitatory/inhibitory PAIR. The factor multiplies the
+    physical ledger only — every logical count (``cells_used``, ``macs``,
+    ``params_bytes``) is a model quantity and stays untouched.
+    """
+    if weight_sign_granularity is None:
+        return 1
+    if weight_sign_granularity == PER_SYNAPSE_SIGN:
+        return 1
+    if weight_sign_granularity == PER_AXON_SIGN:
+        return 2
+    raise ValueError(
+        f"unknown weight_sign_granularity {weight_sign_granularity!r}; declare "
+        f"{PER_SYNAPSE_SIGN!r} or {PER_AXON_SIGN!r} — the physical row cost of a "
+        f"logical slot differs between them and cannot be guessed")
+
+
 def resolved_membrane_bits(cfg: Mapping[str, Any]) -> int:
     """The declared fixed membrane width; 0 = not fixed-width.
 
