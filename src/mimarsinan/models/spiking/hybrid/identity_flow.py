@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_identity_hybrid_mapping,
@@ -29,6 +30,7 @@ def build_identity_spiking_flow(
     phase_dither: bool = False,
     lif_membrane_init: float = 0.0,
     membrane_integer_lattice: bool = False,
+    soma_law: SomaLaw = DEFAULT_SOMA_LAW,
 ) -> SpikingHybridCoreFlow:
     """Run an IRGraph through the hybrid executor on a 1:1 identity mapping.
 
@@ -56,4 +58,5 @@ def build_identity_spiking_flow(
         phase_dither=phase_dither,
         lif_membrane_init=lif_membrane_init,
         membrane_integer_lattice=membrane_integer_lattice,
+        soma_law=soma_law,
     )

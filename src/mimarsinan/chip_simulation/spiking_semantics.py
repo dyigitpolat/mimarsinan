@@ -223,13 +223,20 @@ class BackendSpikingCapabilities:
 
 
 _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
-    "hcm": BackendSpikingCapabilities(True, True, True, True),
+    # [ODIN P2] the torch executors implement the event-serial fold and the
+    # saturating unsigned membrane (models/spiking/serial); every other
+    # backend still refuses the point by name until its own phase lands.
+    "hcm": BackendSpikingCapabilities(True, True, True, True, True, True),
     "nevresim": BackendSpikingCapabilities(True, True, True, True),
-    "unified": BackendSpikingCapabilities(True, True, True, True),
-    "hybrid": BackendSpikingCapabilities(True, True, True, True),
+    "unified": BackendSpikingCapabilities(True, True, True, True, True, True),
+    "hybrid": BackendSpikingCapabilities(True, True, True, True, True, True),
     "sanafe": BackendSpikingCapabilities(True, True, True, True),
     "lava": BackendSpikingCapabilities(True, False, False, False),
     "loihi": BackendSpikingCapabilities(True, False, False, False),
+    # The NF twin executes the SAME fold as a parity instrument under eval,
+    # but only for perceptrons whose pre-activation decomposes into an
+    # effective weight matrix, and no gradient is defined for a count fold —
+    # so training refuses the point rather than claim an executor it lacks.
     "training": BackendSpikingCapabilities(True, False, False, False),
 }
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.chip_simulation.soma_axes import (
     FIRING_GRANULARITY_KEY,
@@ -13,6 +13,7 @@ from mimarsinan.chip_simulation.soma_axes import (
     PER_EVENT_FIRING,
     SATURATING_UNSIGNED_MEMBRANE,
     UNBOUNDED_MEMBRANE,
+    firing_mode_for_granularity,
     resolved_firing_granularity,
     resolved_membrane_arithmetic,
     resolved_membrane_bits,
@@ -22,7 +23,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     DEFAULT_THRESHOLDING_MODE,
 )
 
-_FIRING_MODE_KEY = "firing_mode"
+FIRING_MODE_KEY = "firing_mode"
 _THRESHOLDING_MODE_KEY = "thresholding_mode"
 
 # Where the always-on (parameter-encoded) bias row sits in the canonical event
@@ -30,7 +31,7 @@ _THRESHOLDING_MODE_KEY = "thresholding_mode"
 BIAS_SLOT_TAIL = "tail"
 
 _LAW_KEYS = (
-    _FIRING_MODE_KEY, _THRESHOLDING_MODE_KEY, FIRING_GRANULARITY_KEY,
+    FIRING_MODE_KEY, _THRESHOLDING_MODE_KEY, FIRING_GRANULARITY_KEY,
     MEMBRANE_ARITHMETIC_KEY, MEMBRANE_BITS_KEY,
 )
 
@@ -64,17 +65,19 @@ class SomaLaw:
     def resolve(cls, source: Any) -> "SomaLaw":
         """THE constructor: the resolved point of a config mapping or contract."""
         view = _mapping_view(source)
-        firing_mode = view.get(_FIRING_MODE_KEY)
+        firing_mode = view.get(FIRING_MODE_KEY)
         thresholding_mode = view.get(_THRESHOLDING_MODE_KEY)
+        granularity = resolved_firing_granularity(view)
         return cls(
             firing_mode=(
-                DEFAULT_FIRING_MODE if firing_mode is None else str(firing_mode)
+                firing_mode_for_granularity(granularity, DEFAULT_FIRING_MODE)
+                if firing_mode is None else str(firing_mode)
             ),
             thresholding_mode=(
                 DEFAULT_THRESHOLDING_MODE if thresholding_mode is None
                 else str(thresholding_mode)
             ),
-            firing_granularity=resolved_firing_granularity(view),
+            firing_granularity=granularity,
             membrane_arithmetic=resolved_membrane_arithmetic(view),
             membrane_bits=resolved_membrane_bits(view),
         )
@@ -85,9 +88,44 @@ class SomaLaw:
         return self.firing_granularity == PER_EVENT_FIRING
 
     @property
+    def required_firing_mode(self) -> str:
+        """The reset law this granularity's physical realization REQUIRES.
+
+        Equal to ``firing_mode`` wherever the granularity constrains nothing,
+        so ``firing_mode != required_firing_mode`` is exactly the contradiction
+        (per_event demands the hard-zero reset — the row-pair lemma).
+        """
+        return firing_mode_for_granularity(
+            self.firing_granularity, self.firing_mode)
+
+    @property
     def saturates(self) -> bool:
         """The membrane clamps to ``[0, 2**membrane_bits - 1]`` on every update."""
         return self.membrane_arithmetic == SATURATING_UNSIGNED_MEMBRANE
+
+    @property
+    def membrane_bounds(self) -> Optional[Tuple[float, float]]:
+        """The representable membrane interval, or ``None`` when unbounded.
+
+        An unsigned fixed-width register holds ``[0, 2**bits - 1]`` and clamps
+        on EVERY update; the default accumulator declares no interval, so a
+        consumer that reads ``None`` keeps today's arithmetic exactly.
+        """
+        if not self.saturates:
+            return None
+        return (0.0, float(2 ** int(self.membrane_bits) - 1))
+
+    @property
+    def membrane_lattice_quantum(self) -> Optional[float]:
+        """The exact arithmetic quantum of the membrane, or ``None``.
+
+        A fixed-width unsigned register counts in whole LSBs, so the quantum
+        is 1 in the chip's own units — the value a per-event snap projects
+        onto. An unbounded accumulator declares no lattice here: the default
+        points keep their own ``membrane_integer_lattice`` machinery
+        untouched (plan §2.4).
+        """
+        return 1.0 if self.saturates else None
 
     @property
     def is_default_point(self) -> bool:

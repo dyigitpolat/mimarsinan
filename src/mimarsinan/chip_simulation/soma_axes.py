@@ -13,6 +13,7 @@ from mimarsinan.chip_simulation.core_semantics import (
     is_mvm_core_semantics,
     resolve_core_semantics,
 )
+from mimarsinan.chip_simulation.spiking_semantics import NOVENA_FIRING_MODE
 
 FIRING_GRANULARITY_KEY = "firing_granularity"
 MEMBRANE_ARITHMETIC_KEY = "membrane_arithmetic"
@@ -129,3 +130,18 @@ def resolved_membrane_arithmetic(cfg: Mapping[str, Any]) -> str:
     """The effective membrane arithmetic: the declaration, else bits-driven."""
     declared = cfg.get(MEMBRANE_ARITHMETIC_KEY)
     return derived_membrane_arithmetic(cfg) if declared is None else str(declared)
+
+
+def firing_mode_for_granularity(firing_granularity: str, otherwise: str) -> str:
+    """The reset law a granularity REQUIRES; ``otherwise`` at every other point.
+
+    ``per_event`` admits ONLY the hard-zero reset. Its physical realization
+    folds a zero-magnitude row beside every event row, and such a row is a
+    no-op only while a fire leaves ``m < theta`` — true of the zero reset, and
+    FALSE of the subtractive one the moment one event carries ``>= 2*theta``
+    (the row-pair lemma). The subtractive reset is therefore not a slower
+    per-event law, it is an unrealizable one.
+    """
+    if firing_granularity == PER_EVENT_FIRING:
+        return NOVENA_FIRING_MODE
+    return otherwise

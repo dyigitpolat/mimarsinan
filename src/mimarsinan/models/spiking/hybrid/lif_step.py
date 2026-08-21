@@ -15,8 +15,8 @@ from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharg
 from mimarsinan.models.spiking.hybrid.executors import (
     run_neural_segment_counts, run_neural_segment_packed,)
 from mimarsinan.models.spiking.hybrid.executors.reference_loop import (
-    accumulate_output_spans, allocate_record_tensors, append_core_spike_counts,
-    build_cycle_activity_plan, fill_core_inputs)
+    accumulate_output_spans, allocate_record_rasters, allocate_record_tensors,
+    append_core_spike_counts, build_cycle_activity_plan, fill_core_inputs)
 from mimarsinan.models.spiking.hybrid.executors.single_spike import (
     single_spike_output_step)
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
@@ -77,6 +77,7 @@ class HybridLifStepMixin(HybridFlowHost):
             integer_lattice=bool(
                 getattr(self, "membrane_integer_lattice", False)
             ),
+            soma_law=self.soma_law,
         )
         neuron_states = [
             policy.make_state(
@@ -93,6 +94,11 @@ class HybridLifStepMixin(HybridFlowHost):
 
         record_in_t, record_out_t = (
             allocate_record_tensors(cores, device) if recording else (None, None))
+        # The rhythm is only load-bearing where a cycle may emit more than
+        # one spike; every other law's count IS the complete record.
+        record_raster_t = (
+            allocate_record_rasters(cores, T, device)
+            if recording and self.soma_law.is_per_event else None)
 
         input_spike_train = input_spike_train.to(COMPUTE_DTYPE)
         latency_gated = policy.latency_gated
@@ -111,7 +117,7 @@ class HybridLifStepMixin(HybridFlowHost):
         if synchronized_path:
             return run_neural_segment_counts(
                 self, input_spike_train, seg=seg, T=T,
-                batch_size=batch_size, device=device)
+                batch_size=batch_size, device=device, soma_law=self.soma_law)
 
         # [cert-plan W1] stage-flat executor: same policy physics, batched
         # charge layout; recording/single-spike paths keep the per-core
@@ -168,7 +174,12 @@ class HybridLifStepMixin(HybridFlowHost):
 
                 if record_in_t is not None and record_out_t is not None:
                     record_in_t[core_idx] += input_signals[core_idx][0].to(torch.int64)
-                    record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64).detach()
+                    fired = buffers[core_idx][0].to(torch.int64).detach()
+                    record_out_t[core_idx] += fired
+                    if record_raster_t is not None:
+                        local = cycle - core_latencies[core_idx]
+                        if 0 <= local < T:
+                            record_raster_t[core_idx][local] = fired
 
             if single_spike:
                 assert out_arrival is not None
@@ -205,7 +216,8 @@ class HybridLifStepMixin(HybridFlowHost):
             assert record_in_t is not None and record_out_t is not None
             append_core_spike_counts(
                 recorder_seg, cores, axon_spans=axon_spans,
-                record_in_t=record_in_t, record_out_t=record_out_t)
+                record_in_t=record_in_t, record_out_t=record_out_t,
+                record_raster_t=record_raster_t)
 
         return output_counts
 

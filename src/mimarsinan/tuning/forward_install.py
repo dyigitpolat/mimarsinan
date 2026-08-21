@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
+
 
 class LazyExecutorForward:
     """Picklable ``model.forward`` override running a cross-layer NF forward.
@@ -48,12 +50,13 @@ class ChipAlignedNFForward(LazyExecutorForward):
 
     def __init__(
         self, model, T: int, retime: bool = False, phase_dither: bool = False,
-        synchronized: bool = False,
+        synchronized: bool = False, soma_law: SomaLaw = DEFAULT_SOMA_LAW,
     ):
         super().__init__(model, T)
         self.retime = bool(retime)
         self.phase_dither = bool(phase_dither)
         self.synchronized = bool(synchronized)
+        self.soma_law = soma_law
 
     def _run(self, x):
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
@@ -62,6 +65,7 @@ class ChipAlignedNFForward(LazyExecutorForward):
             self.model, x, self.T, retime=getattr(self, "retime", False),
             phase_dither=getattr(self, "phase_dither", False),
             synchronized=getattr(self, "synchronized", False),
+            soma_law=getattr(self, "soma_law", DEFAULT_SOMA_LAW),
         )
 
 

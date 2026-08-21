@@ -124,7 +124,12 @@ class HybridRateForwardMixin(HybridFlowHost):
                     and getattr(self, "pass_transfer", VERBATIM) == VERBATIM)
                 else ()
             )
-            output_train: list | None = [] if carried_ids else None
+            # [ODIN P2] the per-cycle raster seam: the window count hides the
+            # multiplicity a per-event law produces, so a gate that must see
+            # the RHYTHM asks for the segment's own raster here.
+            raster_recorder = getattr(self, "stage_raster_recorder", None)
+            output_train: list | None = (
+                [] if (carried_ids or raster_recorder is not None) else None)
             counts = self._run_neural_segment_rate(
                 stage,
                 input_spike_train=spike_train,
@@ -133,12 +138,16 @@ class HybridRateForwardMixin(HybridFlowHost):
                 output_train=output_train,
             )
             if output_train:
-                # A pass boundary INSIDE a segment carries the raster verbatim:
-                # publishing it here is what makes the cut semantically invisible,
-                # and is the exact mirror of what a host ComputeOp already does.
-                self._publish_carried_trains(
-                    stage, output_train[0], carried_ids, spikes_buffer,
-                )
+                if carried_ids:
+                    # A pass boundary INSIDE a segment carries the raster
+                    # verbatim: publishing it here is what makes the cut
+                    # semantically invisible, and is the exact mirror of what a
+                    # host ComputeOp already does.
+                    self._publish_carried_trains(
+                        stage, output_train[0], carried_ids, spikes_buffer,
+                    )
+                if raster_recorder is not None:
+                    raster_recorder(stage, output_train[0])
             count_recorder = getattr(self, "stage_count_recorder", None)
             if count_recorder is not None:
                 count_recorder(stage, counts)

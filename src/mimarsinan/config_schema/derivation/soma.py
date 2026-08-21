@@ -14,7 +14,7 @@ from mimarsinan.chip_simulation.soma_axes import (
     resolved_membrane_arithmetic,
     resolved_membrane_bits,
 )
-from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.chip_simulation.soma_law import FIRING_MODE_KEY, SomaLaw
 from mimarsinan.mapping.platform.platform_constraints import bias_mode_for_cores
 
 _PARAM_ENCODED_BIAS = "param_encoded"
@@ -24,6 +24,7 @@ _MEMBRANE_INIT_KEY = "lif_membrane_init"
 _REMEDY_KEYS: Dict[str, Tuple[str, ...]] = {
     MEMBRANE_ARITHMETIC_KEY: (MEMBRANE_ARITHMETIC_KEY, MEMBRANE_BITS_KEY),
     FIRING_GRANULARITY_KEY: (FIRING_GRANULARITY_KEY,),
+    FIRING_MODE_KEY: (FIRING_MODE_KEY, FIRING_GRANULARITY_KEY),
     _MEMBRANE_INIT_KEY: (_MEMBRANE_INIT_KEY, FIRING_GRANULARITY_KEY),
 }
 
@@ -94,6 +95,19 @@ def _contract_violations(cfg: Mapping[str, Any]) -> Iterator[Tuple[str, str]]:
         )
     if not law.is_per_event:
         return
+    if law.firing_mode != law.required_firing_mode:
+        yield FIRING_MODE_KEY, (
+            f"firing_granularity='per_event' requires "
+            f"firing_mode={law.required_firing_mode!r} (the hard-zero reset), "
+            f"but the point declares {law.firing_mode!r}. The per-event law is "
+            f"realized as ROW PAIRS — a zero-magnitude row folded beside every "
+            f"event row — and that row is a no-op only while every fire leaves "
+            f"the membrane below theta. The zero reset guarantees it; a "
+            f"subtractive reset leaves m >= theta whenever one event carries "
+            f">= 2*theta, and the deployed count would then depend on which "
+            f"rows happen to be masked. Clear firing_mode to derive "
+            f"{law.required_firing_mode!r}, or deploy per_cycle."
+        )
     if bias_mode_for_cores(cfg.get("cores")) != _PARAM_ENCODED_BIAS:
         yield FIRING_GRANULARITY_KEY, (
             "firing_granularity='per_event' requires a param_encoded bias: the "

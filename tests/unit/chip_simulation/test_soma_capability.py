@@ -1,9 +1,11 @@
-"""Point-keyed backend capability: every backend refuses the new soma law BY NAME.
+"""Point-keyed backend capability: a backend answers on the POINT, by name.
 
-Nothing executes ``per_event`` firing or a saturating membrane yet, so at P1
-EVERY backend — hcm and nevresim included — must refuse the point rather than
-run a different physics and report it as the deployed number. The default point
-must answer byte-identically to the mode-keyed matrix that preceded the axes.
+At P1 nothing executed the new axes and every backend refused. P2 opens the
+TORCH executors (hcm / hybrid / unified) — and only those: the legal set grows
+exactly where an executor landed, so a backend without one still refuses
+rather than run a different physics and report it as the deployed number. The
+default point must answer byte-identically to the mode-keyed matrix that
+preceded the axes.
 """
 
 import pytest
@@ -27,8 +29,11 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-_BACKENDS = ("hcm", "nevresim", "unified", "hybrid", "sanafe", "lava", "loihi",
-             "training")
+# [ODIN P2] the torch executors implement the fold; everything else waits for
+# its own phase (nevresim P3, exporter/RTL P4-P7) or refuses permanently.
+_EXECUTING_BACKENDS = ("hcm", "unified", "hybrid")
+_REFUSING_BACKENDS = ("nevresim", "sanafe", "lava", "loihi", "training")
+_BACKENDS = _EXECUTING_BACKENDS + _REFUSING_BACKENDS
 _REGISTERED_BACKENDS = tuple(
     backend.name for backend in BACKEND_REGISTRY.simulation_backends()
 )
@@ -44,11 +49,17 @@ _SATURATING = SomaLaw.resolve({
 
 
 class TestTheCapabilityMatrixDeclaresTheNewAxes:
-    @pytest.mark.parametrize("backend", _BACKENDS)
-    def test_no_backend_declares_per_event_or_saturating_at_p1(self, backend):
+    @pytest.mark.parametrize("backend", _REFUSING_BACKENDS)
+    def test_a_backend_without_an_executor_declares_neither_axis(self, backend):
         caps = backend_capabilities(backend)
         assert caps.per_event_firing is False, backend
         assert caps.saturating_membrane is False, backend
+
+    @pytest.mark.parametrize("backend", _EXECUTING_BACKENDS)
+    def test_the_torch_executors_declare_both_axes(self, backend):
+        caps = backend_capabilities(backend)
+        assert caps.per_event_firing is True, backend
+        assert caps.saturating_membrane is True, backend
 
     def test_the_existing_eight_positional_entries_stay_valid(self):
         for backend in _BACKENDS:
@@ -57,17 +68,25 @@ class TestTheCapabilityMatrixDeclaresTheNewAxes:
 
 
 class TestRefusalByName:
-    @pytest.mark.parametrize("backend", _BACKENDS)
+    @pytest.mark.parametrize("backend", _REFUSING_BACKENDS)
     @pytest.mark.parametrize("law,axis", [
         (_PER_EVENT, "per_event"), (_SATURATING, "saturating_unsigned"),
     ])
-    def test_every_backend_refuses_the_point_by_name(self, backend, law, axis):
+    def test_every_executorless_backend_refuses_the_point_by_name(
+        self, backend, law, axis
+    ):
         assert supports_soma_law(backend, law) is False
         with pytest.raises(BackendSomaLawError) as exc:
             require_soma_law_supported(law, backend=backend, context="ctx")
         message = str(exc.value)
         assert backend in message and axis in message
         assert "ctx" in message
+
+    @pytest.mark.parametrize("backend", _EXECUTING_BACKENDS)
+    @pytest.mark.parametrize("law", [_PER_EVENT, _SATURATING])
+    def test_the_torch_executors_admit_the_point(self, backend, law):
+        assert supports_soma_law(backend, law) is True
+        require_soma_law_supported(law, backend=backend, context="ctx")
 
     @pytest.mark.parametrize("backend", _BACKENDS)
     def test_the_default_point_is_never_refused(self, backend):
@@ -82,7 +101,7 @@ class TestRefusalByName:
 
 
 class TestThePolicyChainIsPointAware:
-    @pytest.mark.parametrize("backend", _BACKENDS)
+    @pytest.mark.parametrize("backend", _REFUSING_BACKENDS)
     def test_the_policy_refuses_the_point(self, backend):
         policy = policy_for_spiking_mode("lif", soma_law=_PER_EVENT)
         assert policy.supports_backend(backend) is False
@@ -102,9 +121,9 @@ class TestThePolicyChainIsPointAware:
             is supports_spiking_mode(backend, mode)
         )
 
-    def test_valid_backends_drops_every_backend_under_the_point(self):
+    def test_valid_backends_keeps_exactly_the_backends_with_an_executor(self):
         policy = policy_for_spiking_mode("lif", soma_law=_PER_EVENT)
-        assert policy.valid_backends(_BACKENDS) == ()
+        assert policy.valid_backends(_BACKENDS) == _EXECUTING_BACKENDS
 
     def test_the_policy_carries_the_law_it_was_given(self):
         assert policy_for_spiking_mode("lif", soma_law=_PER_EVENT).soma_law is (

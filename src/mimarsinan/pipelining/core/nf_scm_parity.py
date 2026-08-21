@@ -188,6 +188,7 @@ def _build_streamed_identity_executor(pipeline, model, ir_graph):
         phase_dither=contract.spike_phase_dither,
         lif_membrane_init=contract.lif_membrane_init,
         membrane_integer_lattice=bool(plan.weight_quantization),
+        soma_law=contract.soma_law(),
     ).eval()
 
 
@@ -201,6 +202,7 @@ def assert_streamed_nf_scm_exact_or_raise(
     forward must equal the identity-mapped streaming executor at atol=0 —
     no mismatch budget; parity holds by construction or the deployment is
     wrong."""
+    from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
     from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
     from mimarsinan.models.nn.lif_kernels import measurement_plane
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -219,17 +221,37 @@ def assert_streamed_nf_scm_exact_or_raise(
         executor = executor.to(device)
     T = float(executor.simulation_length)
 
+    # Under a per-event law the window count is a PROJECTION of the record:
+    # equal counts with a different per-cycle rhythm are different
+    # computations at the next hop, so the gate compares rasters too.
+    per_event = SpikingDeploymentContract.from_pipeline_config(
+        pipeline.config).soma_law().is_per_event
+
     def _counts(core_record):
         return core_record.output_spike_count[: core_record.n_out_used]
+
+    def _raster(core_record):
+        raster = core_record.output_spike_raster
+        assert raster is not None, (
+            "streamed NF↔SCM raster gate: the executor recorded no per-cycle "
+            "raster under firing_granularity='per_event'"
+        )
+        # Neuron-major flatten so a perceptron's tiles concatenate in the same
+        # order the NF's own (T, n) train does.
+        return raster[:, : core_record.n_out_used].T.reshape(-1)
 
     # BOTH twins read inside the SAME measurement plane: an asymmetric wrap
     # re-introduces tie mismatches in opposite directions (n8e canary).
     per_sample: List[Dict[int, np.ndarray]] = []
+    per_sample_raster: List[Dict[int, np.ndarray]] = []
     with measurement_plane():
         nf_counts_by_pi = _capture_nf_streamed_counts(model, samples)
         # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority; no-op when nothing was pruned).
         nf_counts_by_pi = derive_deployed_neuron_survival(ir_graph).project(
             nf_counts_by_pi,
+        )
+        nf_rasters_by_pi = (
+            _capture_nf_streamed_rasters(model, samples) if per_event else {}
         )
         with torch.no_grad():
             for i in range(samples.shape[0]):
@@ -239,10 +261,18 @@ def assert_streamed_nf_scm_exact_or_raise(
                 per_sample.append(_group_record_by_perceptron(
                     record, executor.hybrid_mapping, values_of=_counts,
                 ))
+                if per_event:
+                    per_sample_raster.append(_group_record_by_perceptron(
+                        record, executor.hybrid_mapping, values_of=_raster,
+                    ))
     scm_counts = {
         pi: np.stack([sample_vals[pi] for sample_vals in per_sample])
         for pi in per_sample[0]
     }
+    if per_event:
+        _assert_raster_exact_or_raise(
+            nf_rasters_by_pi, per_sample_raster, n_samples=int(samples.shape[0]),
+        )
     # Per-cycle spike sums ÷ scale are the integer window counts; rint
     # recovers them exactly (float noise ≪ 0.5, a real miss is ≥ 1 count).
     nf_counts = {pi: np.rint(nf_counts_by_pi[pi]) for pi in scm_counts}
@@ -424,6 +454,63 @@ def compare_normalized_records(
     return mismatches, total, worst
 
 
+def _assert_raster_exact_or_raise(
+    nf_rasters: Dict[int, np.ndarray],
+    per_sample_raster: List[Dict[int, np.ndarray]],
+    *,
+    n_samples: int,
+) -> None:
+    """[ODIN P2] the per-CYCLE multiplicity comparison, atol=0."""
+    if not per_sample_raster:
+        return
+    scm_rasters = {
+        pi: np.stack([sample_vals[pi] for sample_vals in per_sample_raster])
+        for pi in per_sample_raster[0]
+    }
+    if not scm_rasters:
+        raise NfScmParityError(
+            "streamed NF↔SCM raster gate armed under "
+            "firing_granularity='per_event' but the executor recorded NO "
+            "per-cycle rasters, so the window-count agreement above proves "
+            "nothing about rhythm."
+        )
+    # COVERAGE, not intersection: a hop the executor recorded but the NF twin
+    # did not stack is a hop whose rhythm nothing compares, and the count arm
+    # cannot see a rhythm difference. Name it instead of dropping it.
+    uncovered = sorted(pi for pi in scm_rasters if pi not in nf_rasters)
+    if uncovered:
+        raise NfScmParityError(
+            f"streamed NF↔SCM raster gate armed under "
+            f"firing_granularity='per_event' but the NF twin captured no "
+            f"per-cycle train for perceptron(s) {uncovered} that the executor "
+            f"recorded (captured: {sorted(nf_rasters)}): those hops did not "
+            f"run the event-serial fold under the streamed walk, so their "
+            f"per-cycle multiplicity is UNCHECKED while their window counts "
+            f"are compared as if it were."
+        )
+    mismatches, total, worst = compare_normalized_records(
+        {pi: np.rint(nf_rasters[pi]) for pi in scm_rasters}, scm_rasters,
+        atol=0.0,
+    )
+    if mismatches:
+        raise NfScmParityError(
+            f"streamed NF↔SCM RASTER exactness violated: {mismatches}/{total} "
+            f"per-cycle emission mismatches over {n_samples} samples (atol=0; "
+            f"worst={worst}). Under firing_granularity='per_event' the window "
+            f"count is a projection — equal counts with a different per-cycle "
+            f"multiplicity are a DIFFERENT computation at the next hop."
+        )
+
+
+def _capture_nf_streamed_rasters(model, samples: torch.Tensor) -> Dict[int, np.ndarray]:
+    """Per-perceptron NF per-cycle emission multiplicities, neuron-major.
+
+    The streamed NF calls each spiking node once PER CYCLE; stacking (rather
+    than accumulating) those emissions is the rhythm the count hides.
+    """
+    return _capture_nf_streamed(model, samples, accumulate=False)
+
+
 def _capture_nf_streamed_counts(model, samples: torch.Tensor) -> Dict[int, np.ndarray]:
     """Per-perceptron NF WINDOW COUNTS over the batch for the streaming walk.
 
@@ -432,6 +519,13 @@ def _capture_nf_streamed_counts(model, samples: torch.Tensor) -> Dict[int, np.nd
     the window count. (The single-shot ``_capture_nf_normalized`` would keep
     only the last cycle.)
     """
+    return _capture_nf_streamed(model, samples, accumulate=True)
+
+
+def _capture_nf_streamed(
+    model, samples: torch.Tensor, *, accumulate: bool,
+) -> Dict[int, np.ndarray]:
+    """One streamed capture: window counts (accumulate) or the raster (stack)."""
     from mimarsinan.models.nn.activations.ttfs_spiking import _channel_broadcast_view
 
     device = _unify_model_device(model)
@@ -439,6 +533,7 @@ def _capture_nf_streamed_counts(model, samples: torch.Tensor) -> Dict[int, np.nd
         samples = samples.to(device)
     perceptrons = list(model.get_perceptrons())
     captured: Dict[int, torch.Tensor] = {}
+    cycles: Dict[int, list] = defaultdict(list)
 
     def _make_hook(index, perceptron):
         def hook(_module, _inp, out):
@@ -450,6 +545,9 @@ def _capture_nf_streamed_counts(model, samples: torch.Tensor) -> Dict[int, np.nd
             else:
                 normalized = out / _channel_broadcast_view(scale, out).clamp(min=1e-12)
             flat = normalized.detach().reshape(out.shape[0], -1)
+            if not accumulate:
+                cycles[index].append(flat)
+                return
             prev = captured.get(index)
             captured[index] = flat if prev is None else prev + flat
         return hook
@@ -464,6 +562,13 @@ def _capture_nf_streamed_counts(model, samples: torch.Tensor) -> Dict[int, np.nd
     finally:
         for handle in handles:
             handle.remove()
+    if not accumulate:
+        # (B, T*n) neuron-major, mirroring the record's raster flatten.
+        captured = {
+            index: torch.stack(trains, dim=1).permute(0, 2, 1).reshape(
+                trains[0].shape[0], -1)
+            for index, trains in cycles.items() if len(trains) > 1
+        }
     return {i: v.cpu().numpy().astype(np.float64) for i, v in captured.items()}
 
 

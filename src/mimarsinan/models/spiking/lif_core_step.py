@@ -19,12 +19,18 @@ def lif_core_advance(
     firing_mode: str,
     output_dtype: torch.dtype | None = None,
     lattice_scale: float | None = None,
+    membrane_bounds: tuple[float, float] | None = None,
 ) -> torch.Tensor:
     """The elementwise LIF cycle: integrate a precomputed contribution, fire,
     reset. Shape-agnostic — the physics shared by every charge layout.
     ``lattice_scale`` projects the membrane onto the exact chip lattice
-    before the compare (integer-chip cells; ties must fire on both twins)."""
+    before the compare (integer-chip cells; ties must fire on both twins).
+    ``membrane_bounds`` is the declared register interval a saturating
+    unsigned accumulator clamps to on every update; ``None`` (the default
+    point) leaves today's unbounded arithmetic bit-identical."""
     memb += contribution
+    if membrane_bounds is not None:
+        memb.clamp_(membrane_bounds[0], membrane_bounds[1])
     if lattice_scale is not None:
         snap_membrane_to_lattice(memb, lattice_scale)
     return lif_fire_and_reset(
@@ -47,6 +53,7 @@ def lif_core_contribute_and_fire(
     firing_mode: str,
     output_dtype: torch.dtype | None = None,
     lattice_scale: float | None = None,
+    membrane_bounds: tuple[float, float] | None = None,
 ) -> torch.Tensor:
     """Integrate inputs into ``memb``, return spike tensor for this cycle."""
     contribution = torch.matmul(weight, inp.T).T
@@ -60,4 +67,5 @@ def lif_core_contribute_and_fire(
         firing_mode=firing_mode,
         output_dtype=output_dtype,
         lattice_scale=lattice_scale,
+        membrane_bounds=membrane_bounds,
     )

@@ -2,6 +2,7 @@
 
 import torch
 
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.models.spiking.cycle_policy import (
     LIFCyclePolicy,
     TTFSGreedyCyclePolicy,
@@ -10,10 +11,26 @@ from mimarsinan.models.spiking.cycle_policy import (
 
 
 def test_factory_selects_by_mode_and_schedule():
+    law = DEFAULT_SOMA_LAW
     assert isinstance(
-        cycle_neuron_policy("ttfs_cycle_based", "cascaded", "TTFS"), TTFSGreedyCyclePolicy)
-    assert isinstance(cycle_neuron_policy("lif", "cascaded", "Default"), LIFCyclePolicy)
-    assert isinstance(cycle_neuron_policy("rate", "synchronized", "Default"), LIFCyclePolicy)
+        cycle_neuron_policy("ttfs_cycle_based", "cascaded", "TTFS", soma_law=law),
+        TTFSGreedyCyclePolicy)
+    assert isinstance(
+        cycle_neuron_policy("lif", "cascaded", "Default", soma_law=law),
+        LIFCyclePolicy)
+    assert isinstance(
+        cycle_neuron_policy("rate", "synchronized", "Default", soma_law=law),
+        LIFCyclePolicy)
+
+
+def test_default_point_returns_the_identical_policy_class():
+    """Byte-identical default-off: the serial class is NEVER constructed at
+    the default point, and the object the executor gets is exactly today's."""
+    policy = cycle_neuron_policy("lif", "cascaded", "Default",
+                                 soma_law=DEFAULT_SOMA_LAW)
+    assert type(policy) is LIFCyclePolicy
+    assert policy.serial is False
+    assert policy.membrane_bounds is None
 
 
 def _run_spikes(policy, weight, inputs, th):

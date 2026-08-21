@@ -9,6 +9,7 @@ import numpy as np
 
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategy, FiringStrategyFactory
 from mimarsinan.chip_simulation.recording._spike_encoding import encode_segment_input
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_default_firing_mode,
@@ -29,7 +30,9 @@ class NeuralBehaviorConfig:
     def from_deployment_config(cls, cfg: dict[str, Any]) -> NeuralBehaviorConfig:
         return cls(
             spiking_mode=str(cfg.get("spiking_mode", "lif")),
-            firing_mode=str(cfg.get("firing_mode", "Default")),
+            # An absent firing_mode is the soma law's question, not a literal:
+            # a per_event document resolves to the hard-zero reset it requires.
+            firing_mode=str(cfg.get("firing_mode") or SomaLaw.resolve(cfg).firing_mode),
             thresholding_mode=str(cfg.get("thresholding_mode", "<=")),
             spike_generation_mode=str(cfg.get("spike_generation_mode", "Uniform")),
             spike_encoding_seed=cfg.get("spike_encoding_seed"),

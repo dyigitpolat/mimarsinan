@@ -7,6 +7,7 @@ from typing import Any, cast
 import torch
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.models.nn.activations import run_cycle_accurate
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 
@@ -16,6 +17,7 @@ def chip_aligned_segment_forward(
     *, retime: bool = False,
     phase_dither: bool = False,
     synchronized: bool = False,
+    soma_law: SomaLaw = DEFAULT_SOMA_LAW,
     compute_min_recorder: dict | None = None,
     node_value_recorder: dict | None = None,
 ) -> torch.Tensor:
@@ -32,7 +34,8 @@ def chip_aligned_segment_forward(
     driver = SegmentForwardDriver(
         mapper_repr, T,
         LifSegmentPolicy(
-            retime=retime, phase_dither=phase_dither, synchronized=synchronized
+            retime=retime, phase_dither=phase_dither,
+            synchronized=synchronized, soma_law=soma_law,
         ),
     )
     return driver(

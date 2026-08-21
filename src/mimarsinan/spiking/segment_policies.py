@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.mapping.support.value_domain import value_domain_map
 from mimarsinan.models.nn.activations.autograd import RoundedStaircaseFunction
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.segment_partition import perceptron_of
+from mimarsinan.spiking.segment_policy_lif_serial import run_streamed_lif_cycles
 from mimarsinan.spiking.segment_policy_ttfs import TtfsSegmentPolicy
 from mimarsinan.spiking.spike_trains import uniform_spike_train
 
@@ -59,11 +61,15 @@ class LifSegmentPolicy:
     _seam_ablation: tuple | None = None
 
     def __init__(self, retime: bool = False, phase_dither: bool = False,
-                 synchronized: bool = False):
+                 synchronized: bool = False,
+                 soma_law: SomaLaw = DEFAULT_SOMA_LAW):
         self.retime = bool(retime)
         self.phase_dither = bool(phase_dither)
         # [§16] two-window: one staircase eval per hop, no per-cycle loop.
         self.synchronized = bool(synchronized)
+        # The resolved soma point the twin must reproduce; the default IS
+        # today's law, so every historical construction is unchanged.
+        self.soma_law = soma_law
 
     def prepare(self, driver):
         from spikingjelly.activation_based import functional
@@ -122,6 +128,9 @@ class LifSegmentPolicy:
         assert boundary_scales is not None, "prepare() must run before run_segment()"
         node_train: dict = {}
         node_rate: dict = {}
+        # Per-cycle emission MULTIPLICITIES, the currency the per-event fold
+        # consumes: a train is ``events * producer scale`` by construction.
+        node_events: dict = {}
 
         def rate_of(dep):
             return node_rate[dep] if dep in seg_set else values[dep]
@@ -171,6 +180,7 @@ class LifSegmentPolicy:
             else:
                 rate = value.clamp(0.0, 1.0)
             t = uniform_spike_train(rate, T, phase_dither=self.phase_dither)
+            node_events[dep] = t
             if scale != 1.0:
                 t = t * scale
             node_train[dep] = t
@@ -198,9 +208,9 @@ class LifSegmentPolicy:
                     node_rate[node] = rate_norm
                     # Mirror of encode_compute_boundary: the deployed boundary is
                     # a uniform wire train; *scale keeps NF value-domain magnitudes.
-                    node_train[node] = uniform_spike_train(
-                        rate_norm, T, phase_dither=self.phase_dither,
-                    ) * scale
+                    node_events[node] = uniform_spike_train(
+                        rate_norm, T, phase_dither=self.phase_dither)
+                    node_train[node] = node_events[node] * scale
                 elif self.synchronized:
                     # [§16] two-window discipline: ONE value eval per hop —
                     # LIF hops and their theorem-equal staircase QAT stand-ins
@@ -220,22 +230,15 @@ class LifSegmentPolicy:
                     assert lif is not None, (
                         "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"
                     )
-                    lif.set_cycle_accurate(True)
-                    functional.reset_net(lif.if_node)
                     dep_trains = [train_of(dep) for dep in d]
-                    outs = [forward_node(node, [dt[t] for dt in dep_trains]) for t in range(T)]
-                    lif.set_cycle_accurate(False)
-                    train = torch.stack(outs, dim=0)
-                    if self.retime:
-                        # STE re-encode: forward = the deployed uniform train of
-                        # the window count; backward = the raw cascade's per-cycle
-                        # surrogate path (a hard re-encode severs every hop's
-                        # gradient — the boundary-grad-severance failure mode).
-                        retimed = uniform_spike_train(
-                            (train / scale).mean(dim=0).clamp(0.0, 1.0).detach(), T,
-                            phase_dither=self.phase_dither,
-                        ) * scale
-                        train = retimed.detach() + (train - train.detach())
+                    train, events = run_streamed_lif_cycles(
+                        self, node=node, perceptron=p, lif=lif,
+                        forward_node=forward_node, dep_trains=dep_trains,
+                        dep_events=[node_events.get(dep) for dep in d],
+                        T=T, scale=scale,
+                    )
+                    if events is not None:
+                        node_events[node] = events
                     node_train[node] = train
                     node_rate[node] = (train / scale).mean(dim=0)
                 if node in node_train:
