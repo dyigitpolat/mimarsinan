@@ -207,7 +207,12 @@ The sync-fire generator variant (P6) is `per_cycle` with a wider `membrane_bits`
 - Cross-key validation: `per_event` requires `resolve_bias_mode(cfg) == "param_encoded"`;
   `saturating_unsigned` requires `membrane_bits ≥ 1`; under `per_event`,
   `lif_membrane_init` must satisfy `V0·θ` integral and `0 ≤ V0·θ < θ` (a keyed error, not
-  a projection — the row-pair lemma's precondition, §2.3).
+  a projection — the row-pair lemma's precondition, §2.3); **`per_event` requires the
+  zero-reset law** (`firing_mode` derives to `Novena`; an explicit `Default` is a keyed
+  contradiction) — the row-pair realization needs every fire to leave `m < θ`, which a
+  single subtractive reset violates, so `per_event × Default` is not a realizable law
+  (found by the P2 verifier: the vectorized fold was silently wrong and batch-dependent
+  under `Default`; refusal on the lemma's precondition is the fix, §14 addendum).
 - Resolution ordering: the two deployment axes are folded **early**, by a sibling fold
   beside `fold_spiking_axes` (which itself still writes exactly four keys), so the recipe
   fold and `sim_enables` derivation see a resolved point without any raw `config.get`
@@ -249,8 +254,11 @@ nevresim C++, RTL — implement exactly this; §7 proves it.
 
 **Emission bound** (revised per §14, J3-5): `e_max` is a **propagated** per-wire quantity —
 seeded `1` at every segment entry (the encode emits ≤1/cycle), and for each core,
-`e_out(n) = ⌈(Σ_a max(w[a],0)·e_in(a) + (θ−1)) / θ⌉` (the `θ−1` term is the entering
-membrane), propagated in topological order within the segment. The deployment refuses at
+`e_out(n) = ⌊(Σ_a max(w[a],0)·e_in(a) + (θ−1)) / θ⌋` — total available charge is the
+entering membrane (≤ θ−1) plus the summed positive drive, and each fire consumes ≥ θ
+under zero reset, so the floor is a proven upper bound (the earlier ⌈·⌉ form was loose:
+Σ=3, θ=4 bounded 2 where 1 is true; tightened in the P4 fix cycle, §14 addendum) —
+propagated in topological order within the segment. The deployment refuses at
 mapping/export time when any `e_out > 127` (the count-currency ceiling), **and** every
 implementation carries a runtime assertion at the same bound so a violation fails loud
 identically everywhere rather than overflowing one of the four.
@@ -371,10 +379,10 @@ deterministic cycle bound, vendor tree strictly untouched (§5.4).
 | Axes vocabulary + legality + derived defaults + early fold | `chip_simulation/activation_semantics.py` + P0 subpackage | registry entries, wizard, derivations, recipe fold | golden snapshot; legality harness |
 | `SomaLaw` (the resolved point) | one frozen dataclass, one constructor from the contract | capability query, kernels, cache key, exporter manifest, generator descriptor, cell identity | point-construction tests |
 | Point-keyed capability query | the re-keyed existing query (`supports_backend` chain) | registry validation, steps, cross-sim applicability, sim_enables | refusal tests + capability-guard audit |
-| The serial fold (torch) | `models/spiking/hybrid/serial/` kernel | `SerialLIFCyclePolicy.step`/`advance_events`, NF decomposition | packed↔reference equivalence; NF↔SCM atol=0 |
+| The serial fold (torch) | `models/spiking/serial/` kernel (landed one level up from the planned `hybrid/serial/` — `hybrid/__init__` would have made the import cyclic; §14 addendum) | `SerialLIFCyclePolicy.step`/`advance_events`, NF decomposition | packed↔reference equivalence; NF↔SCM atol=0 |
 | The serial fold (C++) | `nevresim …/integration_policy/event_serial_integrate.hpp` | `SpikingCompute<Fire, Integration>` | nevresim↔HCM parity; constexpr self-tests |
 | Canonical event order (incl. adjacency + drain rule) | new module in `mapping/`, beside axon-slot assignment | codegen spans, exporter, torch kernels, NF, v1 host router, cosim tb driver | cross-implementation order test; row-pair lemma property test; sweep-order normalization gate |
-| Sequencer program format (versioned schema: CONFIG/CLEAR/INJECT/TREF/BARRIER/READOUT) | one emitter/decoder in `mapping/export/odin/` | exporter (write), cosim tb (read), XRT runtime (read) | golden round-trip; ≥2-sample cosim |
+| Sequencer program format (versioned schema: CONFIG/GATE/CLEAR/INJECT/TREF/BARRIER/READOUT — CLEAR inside gate-on windows, INJECT/TREF gate-off) | one emitter/decoder in `mapping/export/odin/` | exporter (write), cosim tb (read), XRT runtime (read) | golden round-trip; ≥2-sample cosim |
 | Memory-image bit layouts (params + state fields) | `mapping/export/odin/` packer tables | exporter, cosim tb, runtime, SPI readback gate | pack/unpack golden; SPI readback byte-compare |
 | nevresim reset+compare resolver (the two duplicated pairs) | one total resolver, consolidated at P3 | codegen + behavior config | mutation-tested equivalence; raises on unknown |
 | Boundary ceiling + upper-rail warn | `spiking/segment_boundary.py` (post-P0 relief) | HCM, NF, compute-boundary, v1 runtime | boundary locks; seam-audit class |
@@ -497,7 +505,7 @@ in the default suite (§14, J1-7).
 
 - **P0 — headroom extractions** (pure moves): `config_schema/derivation/` **subpackage**
   (the flat sibling is illegal — `config_schema/` is at the 10-cap and unallowlisted);
-  `models/spiking/hybrid/serial/` **subpackage** seeded with extracted helpers from
+  a kernel subpackage (landed as `models/spiking/serial/`) seeded with extracted helpers from
   `lif_step.py` (289) and `packed_cycle.py` (289); relief for `segment_boundary.py` (299)
   and `activation_semantics.py` (291); the D7 module-count doc fix. Every target checked
   against the corrected 19-at-cap census (F11). *Acceptance:* §7 rows 2, 23; moves only.
@@ -605,6 +613,17 @@ partitions, hacc-gpu2/3, hand-written `sbatch` v1 (J4-8/9/14/15); the program-fo
 row (J4-10); license notices for derivative RTL (J4-16); the vendor manifest gate and
 pinned SHA `1781931` (J4-17); the wizard row and the in-P1 fix of the schema hardcode
 (J4-18); P8's input artifact from P5.5 (J4-19).
+
+**Addendum (P2/P4 fix cycles, 2026-08-21).** Both parallel phases were refuted once and
+fixed: P2 — the fold was silently wrong and batch-dependent under `per_event × Default`
+(the masked-add lemma holds only for zero reset); resolved by refusing `Default` under
+`per_event` on the lemma's own precondition, now §1.2 law; the V0 window check moved to
+the executor seam; the NF-order assert became a real raise; the raster parity arm's
+hop-coverage tightened. P4 — the INJECT payload and `bias_row_count()` had zero coverage
+(a scan-order mutant survived the whole suite); resolved with exporter-payload pins;
+plus: `weight_sign_granularity` is now enforced (stock packer refuses `per_synapse`),
+the program schema gained the GATE stage, and the emission bound tightened to the proven
+floor form. The serial kernel landed at `models/spiking/serial/` (import-cycle reason).
 
 ## Deliberately unchanged (the protection contract)
 
