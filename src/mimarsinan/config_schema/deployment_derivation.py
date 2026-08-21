@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set, Tuple
+from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
 
 from mimarsinan.chip_simulation.activation_semantics import fold_spiking_axes
 from mimarsinan.chip_simulation.core_semantics import (
@@ -17,6 +17,10 @@ from mimarsinan.common.env import (
     UNSAFE_QUANT_OVERRIDES_VAR,
     unsafe_quant_overrides_enabled,
 )
+from mimarsinan.config_schema.derivation.legality import (
+    legal_value_error, legal_values_for, legality_bearing_keys)
+from mimarsinan.config_schema.derivation.platform import (
+    derive_platform_constraints as derive_platform_constraints)
 from mimarsinan.config_schema.recipe_fold import fold_conversion_recipe, fold_mvm_recipe
 from mimarsinan.config_schema.registry import REGISTRY
 
@@ -176,91 +180,6 @@ def enforce_quantization_assembly_contract(
             _unsafe_override_log(detail + " Legacy float collapse honored")
             return
         raise _contract_error(detail, rule)
-
-
-def _require_tq_divides_simulation_steps(pc: Mapping[str, Any]) -> None:
-    """[registry: target_tq doc] The QAT quantization level Tq must tile the
-    deployment spike window S — the deployment identity needs the trained grid
-    to divide the simulator window. Enforced fail-loud over already-valid
-    positive ints; a one-operand config (search sets Tq without S) or a
-    per-field-invalid value (type/bounds — the registry surfaces its own keyed
-    error) is not cross-checkable and passes through untouched."""
-    tq = pc.get("target_tq")
-    s = pc.get("simulation_steps")
-    if not isinstance(tq, int) or not isinstance(s, int):
-        return
-    if isinstance(tq, bool) or isinstance(s, bool) or tq <= 0 or s <= 0:
-        return
-    if s % tq != 0:
-        raise ValueError(
-            f"target_tq={tq} must divide simulation_steps={s} (the QAT "
-            f"activation-quantization level must tile the deployment spike "
-            f"window; the tier configs set them equal). Fix target_tq or "
-            f"simulation_steps so simulation_steps % target_tq == 0."
-        )
-
-
-def derive_platform_constraints(
-    pc: MutableMapping[str, Any], *, cores_declared: bool = True
-) -> None:
-    """Derive the scalar per-core maxima from the core grid (wizard parity).
-
-    ``max_axons``/``max_neurons`` are derivable from ``cores`` (the mapping
-    itself always re-derives them via ``resolve_platform_mapping_params``);
-    an absent scalar is filled, a consistent explicit one accepted, and a
-    contradicting one rejected — a scalar the mapping would ignore must not
-    masquerade as a constraint. When the document declares only scalars (the
-    legacy / hardware-search shape), ``cores_declared=False`` skips the pass:
-    the scalars are the only constraint information there.
-    """
-    _require_tq_divides_simulation_steps(pc)
-    if not cores_declared:
-        return
-    cores = pc.get("cores")
-    if not isinstance(cores, list) or not cores:
-        return
-    for dim in ("max_axons", "max_neurons"):
-        values = [
-            int(core[dim]) for core in cores
-            if isinstance(core, dict)
-            and isinstance(core.get(dim), (int, float))
-            and not isinstance(core.get(dim), bool)
-        ]
-        if len(values) != len(cores):
-            continue  # incomplete grid mid-edit; shape validation reports it
-        derived = max(values)
-        explicit = pc.get(dim)
-        if explicit is None:
-            pc[dim] = derived
-        elif int(explicit) != derived:
-            raise ValueError(
-                f"{dim}={explicit} contradicts the cores-derived value {derived} "
-                f"(the largest per-core value across the declared core types; "
-                f"the mapping uses the derived value). Drop {dim} to accept "
-                f"the derivation, or fix the core grid."
-            )
-
-
-def legal_value_error(flat_key: str, value: Any, legal: Iterable[Any]) -> ValueError:
-    """THE canonical illegal-value message (the wizard renders the same text)."""
-    options = ", ".join(repr(option) for option in legal)
-    return ValueError(
-        f"{flat_key}={value!r} is not legal here: the current config admits "
-        f"{{{options}}}. Remove {flat_key} to accept the derived value."
-    )
-
-
-def legal_values_for(flat_key: str, cfg: Mapping[str, Any]) -> Optional[Tuple[Any, ...]]:
-    """The registry's legal value set for ``flat_key`` under this config state.
-    ``None`` = legality does not apply here (the rule was not consulted): neither
-    locked nor judged. An EMPTY tuple = consulted and admits nothing."""
-    result = REGISTRY[flat_key].legal_values(cfg)  # type: ignore[misc]
-    return None if result is None else tuple(result)
-
-
-def legality_bearing_keys() -> Tuple[str, ...]:
-    """Keys whose legality depends on other config (registry-declared)."""
-    return tuple(k for k, e in REGISTRY.items() if e.legal_values is not None)
 
 
 def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:

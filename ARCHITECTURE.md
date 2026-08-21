@@ -42,7 +42,7 @@ docs in sync with the files they describe.
 
 ## Repository layout
 
-- `src/mimarsinan/` — the Python package (18 modules, one doc each).
+- `src/mimarsinan/` — the Python package (19 modules, one doc each).
 - `run.py` / `src/main.py` — the deployment entry points (below).
 - `tests/` — unit suite (`tests/unit/`), integration tests, shared fixtures.
 - `templates/` + `scripts/run_tier.py` — tiered end-to-end run matrices
