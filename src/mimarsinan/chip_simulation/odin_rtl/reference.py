@@ -22,7 +22,7 @@ import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
-from mimarsinan.models.spiking.serial.fold import lif_serial_fold
+from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 
 #: ``SpikeSource.core_`` sentinels, mirroring nevresim's ``constants.hpp``.
 SOURCE_OFF = -1
@@ -134,6 +134,8 @@ def simulate_cycles(
     ``ChipLatency.calculate()``'s figure is what nevresim's executor uses and is
     accepted here so the two run the SAME number of cycles.
     """
+    policy = cycle_neuron_policy(
+        "lif", "", soma_law.firing_mode, soma_law=soma_law)
     latencies = tuple(int(core.latency) for core in mapping.cores)
     depth = max(latencies, default=0) if chip_latency is None else int(chip_latency)
     total = int(simulation_length) + depth
@@ -169,9 +171,10 @@ def simulate_cycles(
                 continue
             events = torch.as_tensor(
                 [list(gathered[index])], dtype=torch.float64)
-            counts = lif_serial_fold(
-                membranes[index], weights[index], events, thresholds[index],
-                soma_law=soma_law,
+            counts = policy.step(
+                {"memb": membranes[index]}, weights[index], events,
+                thresholds[index], hw_bias=None,
+                thresholding_mode=soma_law.thresholding_mode,
             )
             outputs[index] = [int(value) for value in counts[0].tolist()]
         trace_outputs.append(tuple(tuple(row) for row in outputs))

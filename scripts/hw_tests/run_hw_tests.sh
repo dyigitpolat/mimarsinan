@@ -8,6 +8,11 @@
 # simulated cycles per core. Run them here, deliberately, and read the per-test
 # walls off the `[odin-rtl] ...` lines.
 #
+# [ODIN6] The last two files are plan row 20: a GENERATED variant core
+# (`hw/gen/odin_gen_core.v.tmpl` expanded from a `CoreSpec`) proved equal to its
+# nevresim and torch twins at zero difference, plus the stock spec's vendored
+# passthrough. Their walls print on `[odin-gen] ...` lines.
+#
 #   scripts/hw_tests/run_hw_tests.sh                 # every RTL gate
 #   scripts/hw_tests/run_hw_tests.sh -k r11a         # one of them
 #   scripts/hw_tests/run_hw_tests.sh -k synth        # the yosys synthesis gate
@@ -38,6 +43,8 @@ exec "${PYTHON}" -m pytest \
     tests/integration/test_odin_rtl_overlay.py \
     tests/integration/test_odin_rtl_engines.py \
     tests/integration/test_odin_rtl_synth.py \
+    tests/integration/test_odin_gen_geometry.py \
+    tests/integration/test_odin_gen_sync_fire.py \
     -m "slow and integration" \
     -p no:randomly -n0 -v -s --timeout=5400 --durations=0 \
     "$@"

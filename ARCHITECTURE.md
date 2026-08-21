@@ -54,8 +54,11 @@ docs in sync with the files they describe.
 - `hw/` — RTL only, never Python: `hw/vendor/odin/` (byte-identical
   ChFrenkel/ODIN @ 1781931 under Solderpad SHL-2.0, hashed against a
   recorded manifest and never edited), `hw/fpga/mem/` (the
-  upstream-mandated BRAM substitution, a source-file-order overlay), and
-  `hw/tb/` (the cosimulation testbenches). See the root `NOTICE`.
+  upstream-mandated BRAM substitution, a source-file-order overlay),
+  `hw/gen/` (the parametric variant-core TEMPLATES the generator expands
+  from a `CoreSpec` — Modified Works under SHL-2.0 §4(b)), and `hw/tb/`
+  (the cosimulation testbenches, for the vendored core and for a
+  generated variant). See the root `NOTICE`.
 - `generated/` — per-run working directories (configs, caches, artifacts).
 
 ## Entry points and execution flow

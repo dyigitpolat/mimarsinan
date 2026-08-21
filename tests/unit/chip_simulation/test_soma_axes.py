@@ -212,5 +212,6 @@ class TestVocabularyIsClosed:
         """'windowed' already means variant == synchronized (§14 J2-4)."""
         assert "windowed" not in FIRING_GRANULARITIES
         assert FIRING_GRANULARITIES == ("per_cycle", "per_event")
-        assert MEMBRANE_ARITHMETICS == ("unbounded", "saturating_unsigned")
+        assert MEMBRANE_ARITHMETICS == (
+            "unbounded", "saturating_unsigned", "saturating_signed")
         assert WEIGHT_SIGN_GRANULARITIES == ("per_synapse", "per_axon")

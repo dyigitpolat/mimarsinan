@@ -220,6 +220,7 @@ class BackendSpikingCapabilities:
     ttfs_cycle_based: bool
     per_event_firing: bool = False
     saturating_membrane: bool = False
+    signed_membrane: bool = False
 
 
 _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
@@ -227,10 +228,18 @@ _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
     # integration-policy axis both implement the event-serial fold on the
     # saturating unsigned membrane; every other backend still refuses the point
     # by name until its own phase lands.
-    "hcm": BackendSpikingCapabilities(True, True, True, True, True, True),
-    "nevresim": BackendSpikingCapabilities(True, True, True, True, True, True),
-    "unified": BackendSpikingCapabilities(True, True, True, True, True, True),
-    "hybrid": BackendSpikingCapabilities(True, True, True, True, True, True),
+    "hcm": BackendSpikingCapabilities(True, True, True, True, True, True, True),
+    "nevresim": BackendSpikingCapabilities(
+        True, True, True, True, True, True, True),
+    "unified": BackendSpikingCapabilities(
+        True, True, True, True, True, True, True),
+    "hybrid": BackendSpikingCapabilities(
+        True, True, True, True, True, True, True),
+    # [ODIN P6] the RTL cosimulation instrument, not a BACKEND_REGISTRY
+    # backend: it executes the stock per-event core and every generated
+    # variant, including the sync-fire core's two's-complement membrane.
+    "odin_rtl": BackendSpikingCapabilities(
+        True, False, False, False, True, True, True),
     "sanafe": BackendSpikingCapabilities(True, True, True, True),
     "lava": BackendSpikingCapabilities(True, False, False, False),
     "loihi": BackendSpikingCapabilities(True, False, False, False),

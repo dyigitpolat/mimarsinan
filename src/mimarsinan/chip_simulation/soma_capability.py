@@ -6,6 +6,7 @@ from typing import Optional
 
 from mimarsinan.chip_simulation.soma_axes import (
     PER_EVENT_FIRING,
+    SATURATING_SIGNED_MEMBRANE,
     SATURATING_UNSIGNED_MEMBRANE,
 )
 from mimarsinan.chip_simulation.soma_law import SomaLaw
@@ -29,6 +30,15 @@ def unsupported_soma_law_reason(
     caps = backend_capabilities(backend)
     if soma_law.is_per_event and not caps.per_event_firing:
         return f"firing_granularity={PER_EVENT_FIRING!r}"
+    # The signed register is asked about FIRST: it is also a saturating one,
+    # and a refusal must name the value the config actually declares.
+    if soma_law.is_signed_membrane:
+        if not (caps.saturating_membrane and caps.signed_membrane):
+            return (
+                f"membrane_arithmetic={SATURATING_SIGNED_MEMBRANE!r} "
+                f"(membrane_bits={soma_law.membrane_bits})"
+            )
+        return None
     if soma_law.saturates and not caps.saturating_membrane:
         return (
             f"membrane_arithmetic={SATURATING_UNSIGNED_MEMBRANE!r} "

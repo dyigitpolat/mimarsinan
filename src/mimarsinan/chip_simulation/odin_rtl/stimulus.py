@@ -6,9 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
-# CROSS-LANGUAGE CONTRACT — every constant below is also written, once, in
-# `hw/tb/tb_odin_core.v`; the round-trip test in the default suite is what keeps
-# the two copies of the opcode table from drifting apart.
+# CROSS-LANGUAGE CONTRACT — every constant below is also written, once, in the
+# testbench that executes it: `hw/tb/tb_odin_core.v` for the vendored stock core
+# and `hw/tb/tb_odin_gen_core.v` for a generated variant. The round-trip test in
+# the default suite is what keeps the copies of the opcode table from drifting.
+# The two testbenches share the EVENT program (AER/WAIT/TAG/END) and differ only
+# in how a core is programmed: SPI transactions on the stock core, one
+# configuration-port write per clock on a generated one.
 OP_END = 0
 OP_SPI_W = 1
 OP_SPI_R = 2
@@ -16,15 +20,16 @@ OP_AER = 3
 OP_WAIT = 4
 OP_TAG = 5
 OP_SHADOW = 6
+OP_PROG = 7
 
 OP_ARITY: Dict[int, int] = {
     OP_END: 0, OP_SPI_W: 3, OP_SPI_R: 3, OP_AER: 2,
-    OP_WAIT: 1, OP_TAG: 1, OP_SHADOW: 3,
+    OP_WAIT: 1, OP_TAG: 1, OP_SHADOW: 3, OP_PROG: 4,
 }
 
 OP_NAMES: Dict[int, str] = {
     OP_END: "END", OP_SPI_W: "SPI_W", OP_SPI_R: "SPI_R", OP_AER: "AER",
-    OP_WAIT: "WAIT", OP_TAG: "TAG", OP_SHADOW: "SHADOW",
+    OP_WAIT: "WAIT", OP_TAG: "TAG", OP_SHADOW: "SHADOW", OP_PROG: "PROG",
 }
 
 TOKEN_BITS = 32
@@ -135,6 +140,16 @@ def neuron_spike_event(pre_neuron: int) -> int:
 def all_neuron_tref_event() -> int:
     """The 17-bit AER-in address of the all-neurons time-reference event."""
     return AER_ALL_NEURON_TREF
+
+
+def variant_axon_event(axon: int, *, axon_address_bits: int) -> int:
+    """A generated core's AER-in word for one occurrence of one axon slot."""
+    return _checked("axon slot", axon, axon_address_bits)
+
+
+def variant_tref_event(*, axon_address_bits: int) -> int:
+    """A generated core's AER-in word for the all-neurons time reference."""
+    return 1 << int(axon_address_bits)
 
 
 def word_bytes(word: int, n_bytes: int) -> Tuple[int, ...]:

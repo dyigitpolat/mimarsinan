@@ -18,6 +18,7 @@ from mimarsinan.chip_simulation.spiking_semantics import NOVENA_FIRING_MODE
 FIRING_GRANULARITY_KEY = "firing_granularity"
 MEMBRANE_ARITHMETIC_KEY = "membrane_arithmetic"
 MEMBRANE_BITS_KEY = "membrane_bits"
+MEMBRANE_SIGNED_KEY = "membrane_signed"
 WEIGHT_SIGN_GRANULARITY_KEY = "weight_sign_granularity"
 
 # WHEN the threshold is evaluated. ``per_cycle`` is today's law: one compare
@@ -33,8 +34,16 @@ FIRING_GRANULARITIES: Tuple[str, ...] = (PER_CYCLE_FIRING, PER_EVENT_FIRING)
 # default is not "exact": it is lattice-exact only under armed conditions).
 UNBOUNDED_MEMBRANE = "unbounded"
 SATURATING_UNSIGNED_MEMBRANE = "saturating_unsigned"
+# A fixed-width TWO'S-COMPLEMENT register: it clamps to
+# [-2^(bits-1), 2^(bits-1)-1] instead of flooring at zero, which is the only
+# way a per-cycle window whose net charge goes negative can still hold the same
+# number the unbounded accumulator holds.
+SATURATING_SIGNED_MEMBRANE = "saturating_signed"
 MEMBRANE_ARITHMETICS: Tuple[str, ...] = (
-    UNBOUNDED_MEMBRANE, SATURATING_UNSIGNED_MEMBRANE,
+    UNBOUNDED_MEMBRANE, SATURATING_UNSIGNED_MEMBRANE, SATURATING_SIGNED_MEMBRANE,
+)
+SATURATING_MEMBRANES: Tuple[str, ...] = (
+    SATURATING_UNSIGNED_MEMBRANE, SATURATING_SIGNED_MEMBRANE,
 )
 
 # WHERE the weight sign physically lives (a platform width, not a soma law).
@@ -80,6 +89,19 @@ def resolved_membrane_bits(cfg: Mapping[str, Any]) -> int:
     return bits if bits > 0 else 0
 
 
+def resolved_membrane_signed(cfg: Mapping[str, Any]) -> bool:
+    """Whether the declared fixed-width register is TWO'S COMPLEMENT.
+
+    Signedness is a property of the physical register, so it is declared beside
+    its width on the platform rather than derived from the deployment key it
+    drives — the same doctrine that puts ``weight_bits`` on the platform and
+    lets the quantized artifact fall out of it. TOTAL over every config shape:
+    a malformed declaration reads as undeclared here because the registry's own
+    type error is the single truth.
+    """
+    return bool(cfg.get(MEMBRANE_SIGNED_KEY) is True)
+
+
 def legal_firing_granularities(cfg: Mapping[str, Any]) -> Tuple[str, ...]:
     """``per_event`` is declarable ONLY at the (lif, streamed) point.
 
@@ -111,7 +133,7 @@ def derived_firing_granularity(cfg: Mapping[str, Any]) -> str:
 
 
 def legal_membrane_arithmetics(cfg: Mapping[str, Any]) -> Tuple[str, ...]:
-    """A saturating unsigned accumulator is a LIF-family law only.
+    """A saturating register — unsigned or signed — is a LIF-family law only.
 
     TTFS latches a single spike and never re-accumulates, so a saturating
     register has nothing to mean there; an unknown family rules nothing out
@@ -128,17 +150,20 @@ def legal_membrane_arithmetics(cfg: Mapping[str, Any]) -> Tuple[str, ...]:
 
 def derived_membrane_arithmetic(cfg: Mapping[str, Any]) -> str:
     """BITS-DRIVEN, exactly like weight quantization: a declared
-    ``membrane_bits`` width IS the declaration of a saturating register.
+    ``membrane_bits`` width IS the declaration of a saturating register, and
+    the declared ``membrane_signed`` flag says WHICH register it is.
 
     The derived value never leaves the legal set — a width declared against a
     family that has no accumulator is reported by the soma-law contract, not
     by a silently illegal derivation.
     """
-    saturating = (
-        resolved_membrane_bits(cfg) > 0
-        and SATURATING_UNSIGNED_MEMBRANE in legal_membrane_arithmetics(cfg)
+    if resolved_membrane_bits(cfg) <= 0:
+        return UNBOUNDED_MEMBRANE
+    value = (
+        SATURATING_SIGNED_MEMBRANE if resolved_membrane_signed(cfg)
+        else SATURATING_UNSIGNED_MEMBRANE
     )
-    return SATURATING_UNSIGNED_MEMBRANE if saturating else UNBOUNDED_MEMBRANE
+    return value if value in legal_membrane_arithmetics(cfg) else UNBOUNDED_MEMBRANE
 
 
 def resolved_firing_granularity(cfg: Mapping[str, Any]) -> str:

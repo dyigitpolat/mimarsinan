@@ -33,6 +33,19 @@ name a defaulted C++ template parameter already resolves to, so it is NEVER
 emitted — an emitted argument would change the text of every existing
 ``main.cpp``."""
 
+EVENT_SERIAL_INTEGRATE = "EventSerialIntegrate"
+"""The event-serial fold on a saturating UNSIGNED register (stock ODIN)."""
+
+WHOLE_VECTOR_SATURATING_SIGNED = "WholeVectorSaturatingSigned"
+"""[ODIN P6] the sync-fire law: today's whole-vector reduction and single
+compare, on a fixed-width TWO'S-COMPLEMENT register that asserts rather than
+saturates — so it holds exactly the number the unbounded accumulator holds."""
+
+#: Integration policies whose cycle can emit MORE than one spike per neuron.
+#: The wire's alphabet is a consequence of the law, so it is declared here once
+#: rather than inferred from "is it the default".
+_COUNTED_POLICIES = frozenset({EVENT_SERIAL_INTEGRATE})
+
 # The reset law each firing mode deploys. TTFS neurons never read this string
 # (their compute policies take the comparator alone), but the codegen path
 # builds it unconditionally, so the table is total over the firing-mode
@@ -98,8 +111,20 @@ def nevresim_integration_policy(soma_law: Optional[SomaLaw]) -> str:
     """
     if soma_law is None or soma_law.is_default_point:
         return WHOLE_VECTOR_INTEGRATE
+    if soma_law.is_per_event and soma_law.is_signed_membrane:
+        raise NevresimPolicyTypeError(
+            f"nevresim folds events on a register that FLOORS at zero; the "
+            f"point declares firing_granularity='per_event' with "
+            f"membrane_arithmetic={soma_law.membrane_arithmetic!r}, and no "
+            f"executor here folds events on a two's-complement membrane. The "
+            f"signed register is the per-CYCLE sync-fire law."
+        )
     if soma_law.is_per_event and soma_law.saturates:
-        return f"EventSerialIntegrate<{int(soma_law.membrane_bits)}>"
+        return f"{EVENT_SERIAL_INTEGRATE}<{int(soma_law.membrane_bits)}>"
+    if soma_law.is_signed_membrane:
+        return (
+            f"{WHOLE_VECTOR_SATURATING_SIGNED}<{int(soma_law.membrane_bits)}>"
+        )
     if soma_law.is_per_event:
         raise NevresimPolicyTypeError(
             f"nevresim runs the event-serial fold on a FIXED-WIDTH saturating "
@@ -118,11 +143,27 @@ def nevresim_integration_policy(soma_law: Optional[SomaLaw]) -> str:
     )
 
 
+def integration_policy_base(integration_policy: str) -> str:
+    """The policy's TEMPLATE name, without its register-width argument."""
+    return str(integration_policy).split("<", 1)[0]
+
+
 def counts_on_the_wire(integration_policy: str) -> bool:
     """Whether this integration policy can emit more than one spike per cycle.
 
     The wire's alphabet is a consequence of the LAW, never a separate switch:
     the counted raster, the counted carry seam and the cache sub-object all
-    arm off this one predicate.
+    arm off this one predicate. It is NOT "is this the default policy" — the
+    sync-fire register is a non-default law that still fires at most once per
+    cycle, and binarizing its raster is lossless.
     """
-    return integration_policy != WHOLE_VECTOR_INTEGRATE
+    return integration_policy_base(integration_policy) in _COUNTED_POLICIES
+
+
+def emits_integration_policy(integration_policy: str) -> bool:
+    """Whether the emitter must NAME this policy in the generated ``main.cpp``.
+
+    Only the C++ default template argument is omitted; naming it would change
+    the text of every program that predates the axis.
+    """
+    return integration_policy_base(integration_policy) != WHOLE_VECTOR_INTEGRATE

@@ -42,9 +42,13 @@ ENTRIES = (
        effect="The membrane accumulator: unbounded, or a saturating unsigned register",
        doc="unbounded: today's signed accumulator with no clamp. "
            "saturating_unsigned: the membrane clamps to [0, 2^membrane_bits-1] "
-           "on every update. BITS-DRIVEN like weight quantization — declaring "
-           "platform membrane_bits IS declaring a saturating register, and a "
-           "contradicting explicit value is refused by key.",
+           "on every update. saturating_signed: a two's-complement register "
+           "clamping to [-2^(membrane_bits-1), 2^(membrane_bits-1)-1], so a "
+           "net-negative cycle keeps its charge instead of flooring at zero. "
+           "BITS-DRIVEN like weight quantization — declaring platform "
+           "membrane_bits IS declaring a saturating register and "
+           "membrane_signed says which one; a contradicting explicit value is "
+           "refused by key.",
        provenance="derivation rule",
        derived_default=derived_membrane_arithmetic,
        legal_values=lambda cfg: legal_membrane_arithmetics(cfg),
@@ -58,6 +62,16 @@ ENTRIES = (
            "accumulator). A positive width declares the saturating unsigned "
            "law, exactly as weight_bits declares a quantized artifact.",
        bounds=(0, 64)),
+    _E("membrane_signed", domain="event", section=_PC, group="hardware",
+       owner="SomaLaw/platform", type=T.BOOL, category=Category.ADVANCED,
+       exposure="user", label="Signed Membrane Register",
+       effect="Declares the fixed-width membrane register two's complement",
+       doc="Whether the target's membrane register holds negative values. "
+           "false (the default) is the unsigned register that floors at zero; "
+           "true is the two's-complement register that clamps at "
+           "-2^(membrane_bits-1). Signedness is physical structure, so it is "
+           "declared beside membrane_bits and membrane_arithmetic falls out of "
+           "the pair — nothing changes for a platform that declares no width."),
     _E("weight_sign_granularity", group="hardware", section=_PC,
        owner="mapping/packing", type=T.ENUM,
        options=WEIGHT_SIGN_GRANULARITIES, category=Category.ADVANCED,
