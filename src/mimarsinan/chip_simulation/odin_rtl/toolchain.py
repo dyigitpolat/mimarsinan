@@ -20,12 +20,12 @@ ENGINE_COMPILED = "verilator"
 ENGINE_INTERPRETED = "iverilog"
 ENGINES: Tuple[str, ...] = (ENGINE_COMPILED, ENGINE_INTERPRETED)
 
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-HW_ROOT = _REPO_ROOT / "hw"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+HW_ROOT = REPO_ROOT / "hw"
 VENDOR_SRC = HW_ROOT / "vendor" / "odin" / "src"
 OVERLAY_MEM = HW_ROOT / "fpga" / "mem"
 TB_ROOT = HW_ROOT / "tb"
-BUILD_CACHE = _REPO_ROOT / "build" / "odin_rtl_cache"
+BUILD_CACHE = REPO_ROOT / "build" / "odin_rtl_cache"
 
 #: The tb's program array is a compile-time parameter, so the harness rounds the
 #: token count up to one of a few sizes and the build cache stays small.
@@ -45,7 +45,7 @@ class SimulatorBuildError(RuntimeError):
 def simulator_bin_dir() -> Path:
     """The configured simulator directory, absolute, without checking it exists."""
     configured = Path(hw_sim_bin_dir())
-    return configured if configured.is_absolute() else (_REPO_ROOT / configured)
+    return configured if configured.is_absolute() else (REPO_ROOT / configured)
 
 
 def find_tool(name: str) -> Path | None:
@@ -54,14 +54,20 @@ def find_tool(name: str) -> Path | None:
     return candidate if candidate.is_file() and os.access(candidate, os.X_OK) else None
 
 
-def unavailable_reason(tools: Sequence[str]) -> str:
-    """The LOUD skip message: which tools, which directory, which override."""
+def missing_tool_reason(tools: Sequence[str], *, subject: str, gates: str) -> str:
+    """The LOUD skip message: which tools, which directory, which override, which gates."""
     return (
-        f"RTL simulator unavailable: none of {', '.join(tools)} is executable in "
+        f"{subject} unavailable: none of {', '.join(tools)} is executable in "
         f"{simulator_bin_dir()} (default {DEFAULT_HW_SIM_BIN_DIR!r}, override with "
-        f"{HW_SIM_BIN_VAR}). The ODIN cosimulation gates cannot run without it "
+        f"{HW_SIM_BIN_VAR}). {gates} cannot run without it "
         f"and are NOT being reported as passing."
     )
+
+
+def unavailable_reason(tools: Sequence[str]) -> str:
+    """The LOUD skip message for the cosimulation gates."""
+    return missing_tool_reason(
+        tools, subject="RTL simulator", gates="The ODIN cosimulation gates")
 
 
 def available_engine() -> str:
@@ -90,17 +96,23 @@ def overlay_sources() -> List[Path]:
     return sorted(OVERLAY_MEM.glob("*.v"))
 
 
-def source_list(tb: Path, *, overlay: bool) -> List[Path]:
-    """The compile order: testbench, then (optionally) the overlay, then vendor.
+def design_sources(*, overlay: bool) -> List[Path]:
+    """The design's compile order: (optionally) the overlay, then the vendor tree.
 
     Overlay selection is FILE ORDER: the first declaration of
     ``SRAM_256x128_wrapper`` / ``SRAM_8192x32_wrapper`` wins and the vendored
     behavioural copies inside ``neuron_core.v`` / ``synaptic_core.v`` are
-    shadowed. The vendor tree is not touched, and only the compiled engine
-    implements that rule (iverilog rejects duplicate module declarations
-    outright), so an overlay build asks for that engine by name.
+    shadowed. The vendor tree is not touched. Each tool spells that rule its own
+    way -- verilator implements it by default, yosys wants ``-nooverwrite``, and
+    iverilog rejects duplicate module declarations outright, so an overlay build
+    asks for the compiled engine by name.
     """
-    return [tb] + (overlay_sources() if overlay else []) + vendor_sources()
+    return (overlay_sources() if overlay else []) + vendor_sources()
+
+
+def source_list(tb: Path, *, overlay: bool) -> List[Path]:
+    """The simulation compile order: testbench first, then the design sources."""
+    return [tb] + design_sources(overlay=overlay)
 
 
 def program_array_size(token_count: int) -> int:
@@ -202,7 +214,7 @@ def build_testbench(
             str(require_tool("iverilog")), "-g2005", "-o", str(binary),
             "-s", tb_name,
         ] + overrides + [str(path) for path in sources]
-    result = subprocess.run(command, capture_output=True, text=True, cwd=str(_REPO_ROOT))
+    result = subprocess.run(command, capture_output=True, text=True, cwd=str(REPO_ROOT))
     if result.returncode != 0 or not binary.is_file():
         shutil.rmtree(workdir, ignore_errors=True)
         raise SimulatorBuildError(

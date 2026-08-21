@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The NAMED runner for the RTL cosimulation gates (plan §7 rows 15-18).
+# The NAMED runner for the RTL cosimulation gates (plan §7 rows 15-18) and the
+# local synthesizability gate (row 19, P5.5a).
 #
 # These rows are marked `slow` + `integration` and the default suite does NOT
 # run them: they build and execute a Verilog testbench around the byte-identical
@@ -9,10 +10,13 @@
 #
 #   scripts/hw_tests/run_hw_tests.sh                 # every RTL gate
 #   scripts/hw_tests/run_hw_tests.sh -k r11a         # one of them
+#   scripts/hw_tests/run_hw_tests.sh -k synth        # the yosys synthesis gate
 #
-# The simulator is looked up in MIMARSINAN_HW_SIM_BIN (default
-# build/tools/oss-cad-suite/bin); when it is absent every gate skips LOUDLY,
-# naming that path, instead of reporting green.
+# The simulator (iverilog/vvp/verilator) AND the synthesizer (yosys) are looked
+# up in MIMARSINAN_HW_SIM_BIN (default build/tools/oss-cad-suite/bin); when one
+# is absent the gates that need it skip LOUDLY, naming that path, instead of
+# reporting green. Regenerate the committed synthesis evidence deliberately with
+# scripts/hw_tests/regen_synth_report.py.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -33,6 +37,7 @@ exec "${PYTHON}" -m pytest \
     tests/integration/test_odin_rtl_barrier.py \
     tests/integration/test_odin_rtl_overlay.py \
     tests/integration/test_odin_rtl_engines.py \
+    tests/integration/test_odin_rtl_synth.py \
     -m "slow and integration" \
     -p no:randomly -n0 -v -s --timeout=5400 --durations=0 \
     "$@"

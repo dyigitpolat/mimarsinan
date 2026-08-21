@@ -1,0 +1,106 @@
+{
+  "schema": "odin_synth_resources/v1",
+  "top": "ODIN",
+  "family": "xcup",
+  "tool": {
+    "name": "yosys",
+    "version": "Yosys 0.68+118 (git sha1 144c707b7-dirty, Release, Clang /usr/bin/clang++ 21.1.8)"
+  },
+  "sources": [
+    "hw/fpga/mem/SRAM_256x128_wrapper.v",
+    "hw/fpga/mem/SRAM_8192x32_wrapper.v",
+    "hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v",
+    "hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v",
+    "hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v",
+    "hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v",
+    "hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v",
+    "hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v",
+    "hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v",
+    "hw/vendor/odin/src/ODIN.v",
+    "hw/vendor/odin/src/aer_out.v",
+    "hw/vendor/odin/src/controller.v",
+    "hw/vendor/odin/src/fifo.v",
+    "hw/vendor/odin/src/izh_neuron.v",
+    "hw/vendor/odin/src/lif_neuron.v",
+    "hw/vendor/odin/src/neuron_core.v",
+    "hw/vendor/odin/src/scheduler.v",
+    "hw/vendor/odin/src/sdsp_update.v",
+    "hw/vendor/odin/src/spi_slave.v",
+    "hw/vendor/odin/src/synaptic_core.v"
+  ],
+  "script": [
+    "read_verilog -nooverwrite hw/fpga/mem/SRAM_256x128_wrapper.v hw/fpga/mem/SRAM_8192x32_wrapper.v hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v hw/vendor/odin/src/ODIN.v hw/vendor/odin/src/aer_out.v hw/vendor/odin/src/controller.v hw/vendor/odin/src/fifo.v hw/vendor/odin/src/izh_neuron.v hw/vendor/odin/src/lif_neuron.v hw/vendor/odin/src/neuron_core.v hw/vendor/odin/src/scheduler.v hw/vendor/odin/src/sdsp_update.v hw/vendor/odin/src/spi_slave.v hw/vendor/odin/src/synaptic_core.v",
+    "synth_xilinx -family xcup -top ODIN",
+    "stat -top ODIN -json"
+  ],
+  "per_core": {
+    "luts": 5209,
+    "inverters": 450,
+    "lut_equivalent": 5659,
+    "flip_flops": 4362,
+    "carry": 381,
+    "muxf": 12,
+    "bram36": 10,
+    "bram18": 0,
+    "bram_tiles": 10.0,
+    "uram": 0,
+    "io_buffers": 36,
+    "unclassified": {},
+    "total_cells": 10460
+  },
+  "cells_by_type": {
+    "BUFG": 2,
+    "CARRY4": 381,
+    "FDCE": 919,
+    "FDCE_1": 70,
+    "FDPE": 59,
+    "FDRE": 3313,
+    "FDRE_1": 1,
+    "IBUF": 23,
+    "INV": 450,
+    "LUT1": 2,
+    "LUT2": 991,
+    "LUT3": 721,
+    "LUT4": 939,
+    "LUT5": 1214,
+    "LUT6": 1342,
+    "MUXF7": 10,
+    "MUXF8": 2,
+    "OBUF": 11,
+    "RAMB36E2": 10
+  },
+  "memories": [
+    {
+      "module": "SRAM_256x128_wrapper",
+      "geometry": "256x128",
+      "words": 256,
+      "width": 128,
+      "present": true,
+      "bram_cells": {
+        "RAMB36E2": 2
+      },
+      "distributed_cells": {},
+      "flip_flops": 0,
+      "inferred_as_bram": true
+    },
+    {
+      "module": "SRAM_8192x32_wrapper",
+      "geometry": "8192x32",
+      "words": 8192,
+      "width": 32,
+      "present": true,
+      "bram_cells": {
+        "RAMB36E2": 8
+      },
+      "distributed_cells": {},
+      "flip_flops": 0,
+      "inferred_as_bram": true
+    }
+  ],
+  "vendor_only_control": {
+    "synthesis_succeeded": false,
+    "block_ram_reached": false,
+    "memories_in_block_ram": [],
+    "detail": "ERROR: invalid OPTION_ABITS/WIDTH combination."
+  }
+}
