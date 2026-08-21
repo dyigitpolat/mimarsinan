@@ -97,21 +97,43 @@ class CosimResult:
     def window_counts(self, *, latencies: Sequence[int], simulation_length: int,
                       neurons: Sequence[int]) -> Tuple[Tuple[Tuple[int, ...], ...], ...]:
         """Per-sample per-core per-neuron counts over each core's own window."""
-        totals = []
-        for sample in range(self.plan.samples):
-            per_core = []
-            for core, count in enumerate(neurons):
-                row = [0] * count
-                for cycle in range(self.plan.cycles_per_sample):
-                    local = cycle - int(latencies[core])
-                    if not 0 <= local < int(simulation_length):
-                        continue
-                    for neuron in range(count):
-                        row[neuron] += self.counts.get(
-                            (sample, cycle, core, neuron), 0)
-                per_core.append(tuple(row))
-            totals.append(tuple(per_core))
-        return tuple(totals)
+        return window_counts_of(
+            self.counts, samples=self.plan.samples,
+            cycles_per_sample=self.plan.cycles_per_sample,
+            latencies=latencies, simulation_length=simulation_length,
+            neurons=neurons,
+        )
+
+
+def window_counts_of(
+    counts: Mapping[Tuple[int, int, int, int], int],
+    *,
+    samples: int,
+    cycles_per_sample: int,
+    latencies: Sequence[int],
+    simulation_length: int,
+    neurons: Sequence[int],
+) -> Tuple[Tuple[Tuple[int, ...], ...], ...]:
+    """Fold per-cycle counts into each core's own window ``[lat, lat + S)``.
+
+    The window convention is nevresim's ``SpikeCountRecorder::accumulate``, and
+    it has exactly one implementation so a cosimulated run and a board run can
+    never be summed by two different rules.
+    """
+    totals = []
+    for sample in range(int(samples)):
+        per_core = []
+        for core, count in enumerate(neurons):
+            row = [0] * int(count)
+            for cycle in range(int(cycles_per_sample)):
+                local = cycle - int(latencies[core])
+                if not 0 <= local < int(simulation_length):
+                    continue
+                for neuron in range(int(count)):
+                    row[neuron] += counts.get((sample, cycle, core, neuron), 0)
+            per_core.append(tuple(row))
+        totals.append(tuple(per_core))
+    return tuple(totals)
 
 
 def _barrier_cycles(program: Any) -> int:

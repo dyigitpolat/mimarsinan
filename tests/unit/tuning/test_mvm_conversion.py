@@ -28,6 +28,7 @@ class TestMvmRecipe:
             "enable_nevresim_simulation": False,
             "enable_sanafe_simulation": False,
             "enable_loihi_simulation": False,
+            "enable_odin_fpga_simulation": False,
         }
 
     def test_recipe_is_deterministic(self):

@@ -15,6 +15,7 @@ from mimarsinan.config_schema.registry.entries_conversion import ENTRIES as _CON
 from mimarsinan.config_schema.registry.entries_endpoint import ENTRIES as _ENDPOINT
 from mimarsinan.config_schema.registry.entries_execution import ENTRIES as _EXECUTION
 from mimarsinan.config_schema.registry.entries_model import ENTRIES as _MODEL
+from mimarsinan.config_schema.registry.entries_odin_fpga import ENTRIES as _ODIN_FPGA
 from mimarsinan.config_schema.registry.entries_physics import ENTRIES as _PHYSICS
 from mimarsinan.config_schema.registry.entries_platform import ENTRIES as _PLATFORM
 from mimarsinan.config_schema.registry.entries_pruning import ENTRIES as _PRUNING
@@ -177,7 +178,7 @@ def _assert_domain_tags(entries) -> None:
 _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
         _inject_domain_relevance(_inject_default(e))
-        for e in (_RUN + _MODEL + _SEMANTICS + _SOMA + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM + _PHYSICS)
+        for e in (_RUN + _MODEL + _SEMANTICS + _SOMA + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM + _ODIN_FPGA + _PHYSICS)
     )
 )
 _assert_domain_tags(_REGISTRY.values())

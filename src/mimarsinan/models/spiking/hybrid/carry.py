@@ -180,6 +180,10 @@ VERBATIM_BACKENDS = frozenset({"hcm", "sanafe", "nevresim", "lava"})
 #: config key that enables each backend, so the run's discipline is read from the
 #: same declaration the pipeline runs on.
 _BACKEND_ENABLE_KEYS = {
+    # [ODIN P7a] the physical device buffers no producer raster across a pass
+    # boundary, so enabling it costs the run its verbatim boundaries — the
+    # documented price, never a refusal.
+    "odin_fpga": "enable_odin_fpga_simulation",
     "sanafe": "enable_sanafe_simulation",
     "nevresim": "enable_nevresim_simulation",
     "lava": "enable_loihi_simulation",

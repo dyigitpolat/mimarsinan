@@ -29,9 +29,9 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-# [ODIN P2/P3] the torch executors and nevresim implement the fold; everything
-# else waits for its own phase (exporter/RTL P4-P7) or refuses permanently.
-_EXECUTING_BACKENDS = ("hcm", "unified", "hybrid", "nevresim")
+# [ODIN P2/P3/P7a] the torch executors, nevresim and the physical ODIN backend
+# implement the fold; everything else refuses permanently.
+_EXECUTING_BACKENDS = ("hcm", "unified", "hybrid", "nevresim", "odin_fpga")
 _REFUSING_BACKENDS = ("sanafe", "lava", "loihi", "training")
 _BACKENDS = _EXECUTING_BACKENDS + _REFUSING_BACKENDS
 _REGISTERED_BACKENDS = tuple(

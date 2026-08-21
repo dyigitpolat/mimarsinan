@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional
+from typing import Any, FrozenSet, Mapping, Optional
 
 from mimarsinan.tuning.orchestration.conversion_rationales import (
     _BIT_PARITY_LOSSLESS_RATIONALE,
@@ -176,6 +176,11 @@ __all__ = [
 ]
 
 
+#: Enable keys whose backend needs a physical device: admitted by capability,
+#: turned on only by an explicit declaration.
+DEVICE_OPT_IN_ENABLES: FrozenSet[str] = frozenset({"enable_odin_fpga_simulation"})
+
+
 @dataclass(frozen=True)
 class ConversionRecipe:
     """The proven recipe derived for one deployment mode by ``ConversionPolicy.derive``.
@@ -183,11 +188,15 @@ class ConversionRecipe:
     ``driver`` is always the fast ladder; ``knobs`` is the per-mode recipe knob set;
     ``sim_enables`` is the capability-derived backend-enable set; ``special_case`` /
     ``rationale`` mark and justify the rows that diverge from the generic flow.
+
+    ``sim_opt_in`` names enables the capability derivation ADMITS but never
+    turns on: capability and AVAILABILITY (a device) are different questions.
     """
 
     driver: str
     knobs: Mapping[str, Any] = field(default_factory=dict)
     sim_enables: Mapping[str, bool] = field(default_factory=dict)
+    sim_opt_in: FrozenSet[str] = frozenset()
     special_case: Optional[str] = None
     rationale: str = ""
 
@@ -275,12 +284,17 @@ class ConversionPolicy:
             # comparator/reset), and the integer-theta lattice makes vth
             # exactly representable. The step's spike-parity gate is FATAL.
             "enable_loihi_simulation": policy.supports_backend("loihi"),
+            # [ODIN P7a] the point-keyed capability decides whether the
+            # crossbar executes this law; the opt-in set decides that a run
+            # reaches for hardware only when the document asks.
+            "enable_odin_fpga_simulation": policy.supports_backend("odin_fpga"),
         }
 
         return ConversionRecipe(
             driver=OPTIMIZATION_DRIVER_FAST,
             knobs=dict(knobs),
             sim_enables=sim_enables,
+            sim_opt_in=DEVICE_OPT_IN_ENABLES,
             special_case=special_case,
             rationale=rationale,
         )

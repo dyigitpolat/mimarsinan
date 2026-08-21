@@ -55,6 +55,12 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "allow_scheduling": False,
     "nevresim_connectivity_mode": "runtime",
     "enable_training_noise": False,
+    # [ODIN P7a] the physical backend's device selection; the enable key
+    # itself carries NO default (derivation owns it, opt-in).
+    "odin_fpga_transport": "rtl_cosim",
+    "odin_fpga_sample_count": 1,
+    "odin_fpga_xclbin_path": None,
+    "odin_fpga_device_index": 0,
     "sanafe_sample_count": 1,
     "sanafe_arch_preset": "loihi",
     "sanafe_custom_arch_path": None,
@@ -120,6 +126,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "scm_torch_sim_parity_check", "scm_torch_sim_parity_samples", "scm_torch_sim_parity_min_agreement",
     "onchip_majority_gate", "onchip_min_fraction", "onchip_majority_fraction", "pretrain_floor_chance_multiple",
     "capacity_gate", "loihi_parity_sample_index", "sanafe_sample_count", "sanafe_arch_preset", "sanafe_custom_arch_path",
+    # [ODIN P7a] the physical ODIN backend: the opt-in enable plus the device
+    # selection its transports read.
+    "enable_odin_fpga_simulation", "odin_fpga_transport", "odin_fpga_sample_count",
+    "odin_fpga_xclbin_path", "odin_fpga_device_index",
     "sanafe_log_potential_trace", "simulation_batch_count", "simulation_batch_size", "simulation_step_timeout_s",
     # Endpoint floor: RUN-total STEP budget (never wall) + [C3'] min-cover.
     "endpoint_floor_steps", "endpoint_floor_min_cover_steps",

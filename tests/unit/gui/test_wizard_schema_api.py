@@ -213,6 +213,10 @@ class TestVehiclesAlwaysServed:
         "enable_nevresim_simulation", "enable_loihi_simulation",
         "enable_sanafe_simulation",
     )
+    # [ODIN P7a] the physical backend renders as a vehicle row too, but it is
+    # OPT-IN: supported (the crossbar executes the streamed LIF law) and OFF
+    # until the document asks, because a device is not a config fact.
+    _OPT_IN_ENABLES = ("enable_odin_fpga_simulation",)
 
     def test_starter_serves_all_vehicle_rows(self, client):
         # [N5] the starter streams by default and ALL simulators are
@@ -220,10 +224,15 @@ class TestVehiclesAlwaysServed:
         draft = client.get("/api/config/starter").json()
         body = client.post("/api/config/resolve", json=draft).json()
         rows = {r["key"]: r for r in body["vehicles"]}
-        assert set(rows) == set(self._ENABLES)
+        assert set(rows) == set(self._ENABLES) | set(self._OPT_IN_ENABLES)
         for key in self._ENABLES:
             assert rows[key]["supported"] is True, key
             assert rows[key]["on"] is True, key
+            assert rows[key]["declared"] is False, key
+            assert rows[key]["why"], key
+        for key in self._OPT_IN_ENABLES:
+            assert rows[key]["supported"] is True, key
+            assert rows[key]["on"] is False, key
             assert rows[key]["declared"] is False, key
             assert rows[key]["why"], key
 
@@ -233,7 +242,7 @@ class TestVehiclesAlwaysServed:
         body = client.post("/api/config/resolve", json=draft).json()
         assert body["ok"] is False and body["errors"]
         rows = {r["key"]: r for r in body["vehicles"]}
-        assert set(rows) == set(self._ENABLES)
+        assert set(rows) == set(self._ENABLES) | set(self._OPT_IN_ENABLES)
         assert rows["enable_sanafe_simulation"]["on"] is True
 
     def test_declared_off_is_reported(self, client):
@@ -259,7 +268,7 @@ class TestVehiclesAlwaysServed:
         body = client.post("/api/config/resolve", json=draft).json()
         assert body["ok"] is False
         rows = {r["key"]: r for r in body["vehicles"]}
-        assert set(rows) == set(self._ENABLES)
+        assert set(rows) == set(self._ENABLES) | set(self._OPT_IN_ENABLES)
         for row in rows.values():
             assert row["supported"] is None
             assert row["why"]

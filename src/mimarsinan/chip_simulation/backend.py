@@ -205,6 +205,7 @@ def _loihi_ttfs_error(contract: Any) -> str:
 def _build_default_registry() -> BackendRegistry:
     from mimarsinan.pipelining.pipeline_steps import (
         LoihiSimulationStep,
+        OdinFpgaDeploymentStep,
         SanafeSimulationStep,
         SimulationStep,
     )
@@ -238,6 +239,20 @@ def _build_default_registry() -> BackendRegistry:
             enabled_for=lambda plan: plan.enable_sanafe_simulation,
             # Plugin somas expose get_potential via the potential trace.
             exports_final_membrane=True,
+        ),
+        SimulationBackend(
+            "odin_fpga",
+            step_name="ODIN FPGA Deployment",
+            step_class=OdinFpgaDeploymentStep,
+            # OPT-IN, never recipe-defaulted: this backend needs a DEVICE (an
+            # RTL simulator or an Alveo board), which no config can assume is
+            # present, so the capability derivation offers it and the document
+            # asks for it.
+            enabled_for=lambda plan: plan.enable_odin_fpga_simulation,
+            # The crossbar exports spikes only; there is no membrane read port
+            # on the stock core (doc Sec.2.1 — the config registers are
+            # write-only and the memories are read back over SPI, not live).
+            exports_final_membrane=False,
         ),
     ])
 

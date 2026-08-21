@@ -136,6 +136,25 @@ EXTERNAL_DEPENDENCY_BOUNDARIES: Tuple[DependencyBoundary, ...] = (
         verify=_verify_backend_capability_guard("lava"),
     ),
     DependencyBoundary(
+        package="pyxrt",
+        integration_module="mimarsinan.chip_simulation.odin_fpga.xrt_transport",
+        guards=("capability_gate", "lazy_import"),
+        rationale=(
+            "The Xilinx runtime's Python binding, which reaches a physical "
+            "Alveo board. It ships with XRT and never with pip, so the import "
+            "lives inside load_pyxrt() and every entry refuses by name when it "
+            "is absent — importing mimarsinan on a machine with no Alveo "
+            "installation must keep working. The capability registry gates the "
+            "backend itself: odin_fpga declares which (firing x mode x soma "
+            "law) the crossbar executes, so a board can never be handed a law "
+            "it does not implement. There is no version pin: XRT's version is "
+            "the CLUSTER's (Vitis 2022.2 on HACC), the shell is pinned by the "
+            "xclbin the run loads, and pinning a host library we do not "
+            "install would be a claim we cannot enforce."
+        ),
+        verify=_verify_backend_capability_guard("odin_fpga"),
+    ),
+    DependencyBoundary(
         package="ffcv",
         integration_module="mimarsinan.data_handling.ffcv.loader_factory",
         guards=("lazy_import",),

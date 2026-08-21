@@ -240,6 +240,12 @@ _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
     # variant, including the sync-fire core's two's-complement membrane.
     "odin_rtl": BackendSpikingCapabilities(
         True, False, False, False, True, True, True),
+    # [ODIN P7a] the physical backend: the same per-event saturating soma the
+    # cosimulation and nevresim execute, and the per-cycle unbounded law only
+    # where a generated variant declares it. No TTFS executor exists on the
+    # crossbar, so every timing-domain mode refuses by name.
+    "odin_fpga": BackendSpikingCapabilities(
+        True, False, False, False, True, True, True),
     "sanafe": BackendSpikingCapabilities(True, True, True, True),
     "lava": BackendSpikingCapabilities(True, False, False, False),
     "loihi": BackendSpikingCapabilities(True, False, False, False),

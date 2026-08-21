@@ -11,7 +11,8 @@ from mimarsinan.deployment_record.schema.serde import (
     tuple_of,
 )
 
-READ_BACKENDS = frozenset({"hcm", "nevresim", "value_census", "pipeline"})
+READ_BACKENDS = frozenset({
+    "hcm", "nevresim", "odin_fpga", "value_census", "pipeline"})
 READ_KINDS = frozenset({"measured", "carried"})
 
 

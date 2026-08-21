@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
+from typing import Any, FrozenSet, Iterable, Mapping, MutableMapping, Optional, Set
 
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.soma_law import SomaLaw
@@ -19,15 +19,35 @@ from mimarsinan.tuning.orchestration.mvm_conversion import derive_mvm_recipe
 RECIPE_OWNED_CORRECTNESS_KEYS = frozenset({"cycle_accurate_lif_forward"})
 
 
+def resolve_backend_enable(
+    *, supported: bool, declared: Any, opt_in: bool,
+) -> bool:
+    """The ONE backend-enable rule, shared by the fold and the wizard rows.
+
+    A capability-off backend is off. A supported backend that needs a DEVICE is
+    on only when the document declares it; every other supported backend is on
+    unless the document declares it off.
+    """
+    if not supported:
+        return False
+    return declared is True if opt_in else declared is not False
+
+
 def _fold_sim_enables(
     dp: MutableMapping[str, Any],
     sim_enables: Mapping[str, bool],
     spiking_mode: str,
     explicit_keys: Set[str],
+    opt_in: FrozenSet[str] | Set[str] = frozenset(),
 ) -> None:
-    """Backend enables: capability off is authoritative (an explicit ON is
-    rejected loudly); a supported backend defaults ON per the recipe and a
-    declared OFF is honored — a legitimate, stored override."""
+    """Backend enables, three states, in this order.
+
+    Capability OFF is authoritative (an explicit ON is rejected loudly). A
+    supported backend that needs a DEVICE is opt-in: it derives off and an
+    explicit ON is honored — capability admits it, availability declares it.
+    Everything else defaults ON per the recipe, and a declared OFF is honored:
+    a legitimate, stored override.
+    """
     for key, supported in sim_enables.items():
         declared = dp.get(key) if key in explicit_keys else None
         if not supported:
@@ -40,7 +60,8 @@ def _fold_sim_enables(
                 )
             dp[key] = False
         else:
-            dp[key] = declared is not False
+            dp[key] = resolve_backend_enable(
+                supported=True, declared=declared, opt_in=key in opt_in)
 
 
 def _soma_law_denies_membrane_readout(law: SomaLaw) -> Optional[str]:
@@ -201,7 +222,8 @@ def fold_conversion_recipe(
         spiking_variant=dp.get("spiking_variant"),
         soma_law=SomaLaw.resolve(dp),
     )
-    _fold_sim_enables(dp, recipe.sim_enables, spiking_mode, explicit)
+    _fold_sim_enables(
+        dp, recipe.sim_enables, spiking_mode, explicit, set(recipe.sim_opt_in))
     dp["optimization_driver"] = recipe.driver
     for key, value in recipe.knobs.items():
         if (

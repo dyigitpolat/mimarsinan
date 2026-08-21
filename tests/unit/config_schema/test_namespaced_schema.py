@@ -58,6 +58,10 @@ DERIVED_NON_DEFAULT_KEYS = {
     "enable_nevresim_simulation",
     "enable_loihi_simulation",
     "enable_sanafe_simulation",
+    # [ODIN P7a] the physical-device enable: capability-derived like its
+    # siblings, but OPT-IN (a device is not a config fact), so it derives OFF
+    # and an explicit declaration turns it on.
+    "enable_odin_fpga_simulation",
     "max_axons",
     "max_neurons",
     "weight_source",

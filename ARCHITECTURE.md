@@ -49,16 +49,22 @@ docs in sync with the files they describe.
   (doubling as the wizard's template library).
 - `scripts/` — commit gates: typecheck, module budget, undefined names;
   `scripts/hw_tests/run_hw_tests.sh` is the NAMED runner for the RTL
-  cosimulation gates, which the default suite deliberately does not run.
+  cosimulation gates, which the default suite deliberately does not run;
+  `scripts/hacc/` holds the HACC@NUS packaging (`build_xclbn.sh`,
+  `run_board.sh`, the `sbatch` template and the owner's `RUNBOOK.md`),
+  every script refusing loud when run off-cluster.
 - `nevresim/`, `spikingjelly/` — vendored simulator / spiking dependencies.
 - `hw/` — RTL only, never Python: `hw/vendor/odin/` (byte-identical
   ChFrenkel/ODIN @ 1781931 under Solderpad SHL-2.0, hashed against a
   recorded manifest and never edited), `hw/fpga/mem/` (the
   upstream-mandated BRAM substitution, a source-file-order overlay),
   `hw/gen/` (the parametric variant-core TEMPLATES the generator expands
-  from a `CoreSpec` — Modified Works under SHL-2.0 §4(b)), and `hw/tb/`
-  (the cosimulation testbenches, for the vendored core and for a
-  generated variant). See the root `NOTICE`.
+  from a `CoreSpec` — Modified Works under SHL-2.0 §4(b)), `hw/fpga/kernel/`
+  (the Vitis RTL kernel: per-core SPI masters, AER bridges, the on-fabric
+  sequencer that executes the SAME token program the testbench does, and
+  the AXI wrapper `v++` packages), and `hw/tb/` (the cosimulation
+  testbenches, for the vendored core, a generated variant, and the
+  kernel). See the root `NOTICE`.
 - `generated/` — per-run working directories (configs, caches, artifacts).
 
 ## Entry points and execution flow

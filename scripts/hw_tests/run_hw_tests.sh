@@ -8,14 +8,22 @@
 # simulated cycles per core. Run them here, deliberately, and read the per-test
 # walls off the `[odin-rtl] ...` lines.
 #
-# [ODIN6] The last two files are plan row 20: a GENERATED variant core
+# [ODIN6] `test_odin_gen_*` are plan row 20: a GENERATED variant core
 # (`hw/gen/odin_gen_core.v.tmpl` expanded from a `CoreSpec`) proved equal to its
 # nevresim and torch twins at zero difference, plus the stock spec's vendored
 # passthrough. Their walls print on `[odin-gen] ...` lines.
 #
+# [ODIN7a] `test_odin_fpga_*` are the physical backend: the END-TO-END gate
+# (the REAL pipeline step deploying onto the RTL cosimulation transport, its
+# counts certified against the HCM reference and nevresim at zero difference)
+# and the Vitis KERNEL gates (the packaged wrapper elaborates under iverilog;
+# the on-fabric sequencer reproduces the host testbench's counts on the same
+# program). Their walls print on `[odin-fpga] ...` / `[odin-kernel] ...` lines.
+#
 #   scripts/hw_tests/run_hw_tests.sh                 # every RTL gate
 #   scripts/hw_tests/run_hw_tests.sh -k r11a         # one of them
 #   scripts/hw_tests/run_hw_tests.sh -k synth        # the yosys synthesis gate
+#   scripts/hw_tests/run_hw_tests.sh -k fpga         # the P7a backend gates
 #
 # The simulator (iverilog/vvp/verilator) AND the synthesizer (yosys) are looked
 # up in MIMARSINAN_HW_SIM_BIN (default build/tools/oss-cad-suite/bin); when one
@@ -45,6 +53,8 @@ exec "${PYTHON}" -m pytest \
     tests/integration/test_odin_rtl_synth.py \
     tests/integration/test_odin_gen_geometry.py \
     tests/integration/test_odin_gen_sync_fire.py \
+    tests/integration/test_odin_fpga_e2e.py \
+    tests/integration/test_odin_fpga_kernel.py \
     -m "slow and integration" \
     -p no:randomly -n0 -v -s --timeout=5400 --durations=0 \
     "$@"

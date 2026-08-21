@@ -15,7 +15,10 @@ SKIP_SUBSTR = "mimarsinan-baseline-test"
 
 # Optional third-party backends: modules requiring them are skipped (not broken)
 # when the package is absent from the environment.
-OPTIONAL_TOP_LEVEL_DEPS = {"ffcv", "lava", "sanafe", "compilagent", "torchsummary"}
+# pyxrt ships with the Xilinx Runtime (never pip): the ODIN board transport
+# imports it lazily, so a module reaching it is skipped, not broken, off-cluster.
+OPTIONAL_TOP_LEVEL_DEPS = {
+    "ffcv", "lava", "sanafe", "compilagent", "torchsummary", "pyxrt"}
 
 
 def _scan_paths() -> list[Path]:

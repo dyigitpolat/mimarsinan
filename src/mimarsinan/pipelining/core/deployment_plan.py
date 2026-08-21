@@ -96,6 +96,7 @@ class DeploymentPlan(PlanPredicates):
     enable_nevresim_simulation: bool
     enable_loihi_simulation: bool
     enable_sanafe_simulation: bool
+    enable_odin_fpga_simulation: bool
 
     degradation_tolerance: float
     scm_degradation_tolerance: float | None
@@ -170,6 +171,8 @@ class DeploymentPlan(PlanPredicates):
             enable_nevresim_simulation=bool(get("enable_nevresim_simulation", True)),
             enable_loihi_simulation=bool(get("enable_loihi_simulation", False)),
             enable_sanafe_simulation=bool(get("enable_sanafe_simulation", False)),
+            enable_odin_fpga_simulation=bool(
+                get("enable_odin_fpga_simulation", False)),
             degradation_tolerance=degradation_tolerance,
             scm_degradation_tolerance=None if scm_dt is None else float(scm_dt),
             degradation_budget_total=float(
