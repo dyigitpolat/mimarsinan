@@ -27,10 +27,30 @@ class CoreOccupancy:
     neurons_used: int
     neurons_physical: int
     unusable_space: int
+    #: Physical rows per logical axon slot (``platform.physical_row_expansion``).
+    #: 1 on a substrate whose cell stores its own weight sign — the framework
+    #: default, under which every ``*_expanded`` figure equals its logical twin.
+    sign_expansion: int = 1
+
+    def __post_init__(self) -> None:
+        if int(self.sign_expansion) < 1:
+            raise ValueError(
+                f"sign_expansion is a physical row multiplier and must be >= 1, "
+                f"got {self.sign_expansion}")
 
     @property
     def cells_physical(self) -> int:
         return self.axons_physical * self.neurons_physical
+
+    @property
+    def rows_physical(self) -> int:
+        """Crossbar ROWS the declared substrate spends on ``axons_physical``."""
+        return self.axons_physical * int(self.sign_expansion)
+
+    @property
+    def cells_physical_expanded(self) -> int:
+        """The substrate-cost twin of ``cells_physical``; equal to it by default."""
+        return self.rows_physical * self.neurons_physical
 
     @property
     def cells_used(self) -> int:
@@ -41,7 +61,7 @@ class CoreOccupancy:
         return _ratio(self.cells_used, self.cells_physical)
 
     @classmethod
-    def from_hard_core(cls, core: Any) -> "CoreOccupancy":
+    def from_hard_core(cls, core: Any, *, sign_expansion: int = 1) -> "CoreOccupancy":
         """Read a ``HardCore``: used = geometry minus the capacity still available."""
         axons = int(getattr(core, "axons_per_core", 0) or 0)
         neurons = int(getattr(core, "neurons_per_core", 0) or 0)
@@ -51,6 +71,7 @@ class CoreOccupancy:
             neurons_used=neurons - int(getattr(core, "available_neurons", 0) or 0),
             neurons_physical=neurons,
             unusable_space=int(getattr(core, "unusable_space", 0) or 0),
+            sign_expansion=int(sign_expansion),
         )
 
 
@@ -68,16 +89,21 @@ class CrossbarUtilizationReport:
 
     @classmethod
     def from_hard_cores(
-        cls, cores: Iterable[Any], *, weight_bits: int | None = None
+        cls, cores: Iterable[Any], *, weight_bits: int | None = None,
+        sign_expansion: int = 1,
     ) -> "CrossbarUtilizationReport":
         return cls(
-            cores=tuple(CoreOccupancy.from_hard_core(c) for c in cores),
+            cores=tuple(
+                CoreOccupancy.from_hard_core(c, sign_expansion=sign_expansion)
+                for c in cores
+            ),
             weight_bits=None if weight_bits is None else int(weight_bits),
         )
 
     @classmethod
     def from_hybrid_mapping(
-        cls, hybrid_mapping: Any, *, weight_bits: int | None = None
+        cls, hybrid_mapping: Any, *, weight_bits: int | None = None,
+        sign_expansion: int = 1,
     ) -> "CrossbarUtilizationReport":
         """Aggregate every neural stage's packed cores across the whole program."""
         cores: list[Any] = []
@@ -85,7 +111,8 @@ class CrossbarUtilizationReport:
             hcm = getattr(stage, "hard_core_mapping", None)
             if hcm is not None:
                 cores.extend(hcm.cores)
-        return cls.from_hard_cores(cores, weight_bits=weight_bits)
+        return cls.from_hard_cores(
+            cores, weight_bits=weight_bits, sign_expansion=sign_expansion)
 
     @property
     def cores_allocated(self) -> int:
@@ -114,6 +141,20 @@ class CrossbarUtilizationReport:
     @property
     def cells_physical(self) -> int:
         return sum(c.cells_physical for c in self.cores)
+
+    @property
+    def rows_physical(self) -> int:
+        return sum(c.rows_physical for c in self.cores)
+
+    @property
+    def cells_physical_expanded(self) -> int:
+        """The physical twin the declared sign granularity buys; default-equal.
+
+        Deliberately NOT in ``to_dict()``: the flat record is the sealed
+        deployment record's 14-key mirror, and a signed-cell substrate's 2x is a
+        substrate-cost multiplier, never a re-reading of ``cells_used``.
+        """
+        return sum(c.cells_physical_expanded for c in self.cores)
 
     @property
     def unusable_space(self) -> int:
