@@ -323,19 +323,24 @@ T0 = [
     dict(n=54, mode="lifse", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1,
          has_bias=False, coalescing=False, splitting=False,
          firing_granularity="per_event", membrane_bits=8,
-         tags=["nobias"],
+         tags=["nobias"], wall_min=30,
          note="the per-event / saturating-8-bit soma point on the streamed "
               "discipline: threshold after every event occurrence, hard-zero "
               "reset, counts (not bits) on the wire inside a segment. "
-              "MEASURED 2026-08-21 (ODIN P3, 218.5 s wall): RED at Soft Core "
-              "Mapping — the P2 streamed NF<->SCM RASTER gate refuses with "
-              "1004/3152 per-cycle emission mismatches (worst nf=1 scm=7 at "
-              "perceptron 2), so the run never reaches deployment and there "
-              "is no deployed accuracy yet. Trained/validation reads at the "
-              "point: test 0.9752, validation 0.9747. The refusal is the "
-              "gate working (counts alone would have hidden a rhythm "
-              "difference that changes the next hop); closing it is a P2 "
-              "NF-twin cycle, not a cell respec."),
+              "MEASURED GREEN 2026-08-21 (ODIN P3 fix cycle, 1542.2 s wall, "
+              "rc 0): deployed accuracy hcm 0.9525 / nevresim 0.96 (25 "
+              "samples) against a trained 0.9533 read, both parity gates "
+              "green (streamed NF<->SCM counts AND per-cycle raster exact at "
+              "atol=0) and both spike-count certificates exact "
+              "(max|dcount|=0 over 20 neuron-windows, hcm streaming-twin and "
+              "nevresim-vs-hcm). The wall is the point's own price: the "
+              "event-serial fold is ~7x the per-cycle walk, and Weight "
+              "Quantization's endpoint recovery (1122 s of it) trains "
+              "through that fold. The first run of this cell (2026-08-21, "
+              "218.5 s) was RED at Soft Core Mapping with 1004/3152 "
+              "per-cycle emission mismatches: the NF forward the LIF "
+              "adaptation step installs carried no soma point and ran the "
+              "DEFAULT per-cycle law against a per-event deployment."),
     # n=52 IS DELIBERATELY UNUSED. A lifs/vitleaf/offload MIXED-DOMAIN SEAM cell
     # was authored here on 2026-08-13 and WITHDRAWN the same day: it runs to
     # Soft Core Mapping and then fails the FATAL streamed NF<->SCM exactness

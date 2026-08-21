@@ -14,6 +14,7 @@ from mimarsinan.mapping.channel_axis_walk import (
 )
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.models.nn.activations.lif import LIFActivation
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.segment_partition import perceptron_of
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
@@ -141,24 +142,20 @@ def float_envelope_rates_by_perceptron(model, x: torch.Tensor) -> Dict[int, torc
 
 
 def deployed_rates_by_perceptron(
-    model, x: torch.Tensor, simulation_steps: int,
+    model, x: torch.Tensor, simulation_steps: int, *, soma_law: SomaLaw,
 ) -> Dict[int, torch.Tensor]:
-    """Per-perceptron deployed cycle-accurate rates (counts/T) via the
-    chip-aligned segment forward's value recorder."""
+    """Per-perceptron deployed rates (counts/T) from the chip-aligned walk."""
     recorder: dict = {}
     with torch.no_grad():
         chip_aligned_segment_forward(
-            model, x, int(simulation_steps), node_value_recorder=recorder,
+            model, x, int(simulation_steps), soma_law=soma_law,
+            node_value_recorder=recorder,
         )
-    out: Dict[int, torch.Tensor] = {}
-    for perceptron in model.get_perceptrons():
-        value = recorder.get(id(perceptron))
-        if value is None:
-            continue
-        normalized = _normalized(perceptron, value)
-        if normalized is not None:
-            out[id(perceptron)] = normalized
-    return out
+    rates = (
+        (id(p), _normalized(p, recorder[id(p)]))
+        for p in model.get_perceptrons() if id(p) in recorder
+    )
+    return {key: rate for key, rate in rates if rate is not None}
 
 
 def _only_reaches_host_output(node, consumers_map) -> bool:
@@ -228,7 +225,9 @@ def evaluate_crater_premise(
     )
 
 
-def apply_lif_affine_fold(model, cal_x: torch.Tensor, simulation_steps: int) -> dict:
+def apply_lif_affine_fold(
+    model, cal_x: torch.Tensor, simulation_steps: int, *, soma_law: SomaLaw,
+) -> dict:
     """Layer-sequential per-channel affine folds over the mapper graph.
 
     Each non-encoding producer's deployed rate is refit against the fixed
@@ -277,7 +276,8 @@ def apply_lif_affine_fold(model, cal_x: torch.Tensor, simulation_steps: int) -> 
             kind = "consumer"
             consumers = resolved
 
-        deployed = deployed_rates_by_perceptron(model, cal_x, simulation_steps)
+        deployed = deployed_rates_by_perceptron(
+            model, cal_x, simulation_steps, soma_law=soma_law)
         r_dep = deployed.get(id(producer))
         if r_dep is None or r_dep.shape != target.shape:
             report["skipped"][name] = "no_deployed_rates"

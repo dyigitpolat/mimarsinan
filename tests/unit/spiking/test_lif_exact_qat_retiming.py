@@ -25,6 +25,7 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 8
 
@@ -91,7 +92,7 @@ def test_train_forward_equals_retimed_deployed_forward_bit_exact(thresholding):
     with torch.no_grad():
         train_forward = type(flow).forward(flow, x)
         deployed = SegmentForwardDriver(
-            flow.get_mapper_repr(), T, LifSegmentPolicy(retime=True),
+            flow.get_mapper_repr(), T, LifSegmentPolicy(retime=True, soma_law=DEFAULT_SOMA_LAW),
         )(x)
     assert torch.equal(train_forward, deployed)
 
@@ -106,7 +107,7 @@ def test_retime_preserves_per_hop_counts():
         recorder = {}
         driver = SegmentForwardDriver(
             flow.get_mapper_repr(), T,
-            LifSegmentPolicy(retime=(tag == "retimed")),
+            LifSegmentPolicy(retime=(tag == "retimed"), soma_law=DEFAULT_SOMA_LAW),
         )
         with torch.no_grad():
             driver(x, node_value_recorder=recorder)
@@ -125,7 +126,7 @@ def test_retimed_walk_passes_gradients_to_every_hop():
     flow.train()
     x = _exact_inputs()
     driver = SegmentForwardDriver(
-        flow.get_mapper_repr(), T, LifSegmentPolicy(retime=True),
+        flow.get_mapper_repr(), T, LifSegmentPolicy(retime=True, soma_law=DEFAULT_SOMA_LAW),
     )
     out = driver(x)
     out.sum().backward()
@@ -137,14 +138,14 @@ def test_retimed_walk_passes_gradients_to_every_hop():
 def test_retime_default_off_is_byte_identical():
     flow = _Flow().eval()
     x = _exact_inputs()
-    policy = LifSegmentPolicy()
+    policy = LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW)
     assert policy.retime is False
     with torch.no_grad():
         default_out = SegmentForwardDriver(flow.get_mapper_repr(), T, policy)(x)
         explicit_raw = SegmentForwardDriver(
-            flow.get_mapper_repr(), T, LifSegmentPolicy(retime=False),
+            flow.get_mapper_repr(), T, LifSegmentPolicy(retime=False, soma_law=DEFAULT_SOMA_LAW),
         )(x)
-        chip_aligned = chip_aligned_segment_forward(flow, x, T)
+        chip_aligned = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
     assert torch.equal(default_out, explicit_raw)
     assert torch.equal(default_out, chip_aligned)
 
@@ -153,9 +154,9 @@ def test_chip_aligned_forward_plumbs_retime():
     flow = _Flow().eval()
     x = _exact_inputs()
     with torch.no_grad():
-        retimed = chip_aligned_segment_forward(flow, x, T, retime=True)
+        retimed = chip_aligned_segment_forward(flow, x, T, retime=True, soma_law=DEFAULT_SOMA_LAW)
         driver_out = SegmentForwardDriver(
-            flow.get_mapper_repr(), T, LifSegmentPolicy(retime=True),
+            flow.get_mapper_repr(), T, LifSegmentPolicy(retime=True, soma_law=DEFAULT_SOMA_LAW),
         )(x)
     assert torch.equal(retimed, driver_out)
 
@@ -169,21 +170,21 @@ class TestChipAlignedNFForwardRetime:
     def test_retimed_install_runs_the_retimed_walk(self):
         flow = _Flow().eval()
         x = _exact_inputs()
-        fwd = self._forward_cls()(flow, T, retime=True)
+        fwd = self._forward_cls()(flow, T, retime=True, soma_law=DEFAULT_SOMA_LAW)
         with torch.no_grad():
             got = fwd(x)
-            expected = chip_aligned_segment_forward(flow, x, T, retime=True)
+            expected = chip_aligned_segment_forward(flow, x, T, retime=True, soma_law=DEFAULT_SOMA_LAW)
         assert torch.equal(got, expected)
 
     def test_legacy_pickle_without_retime_attr_defaults_raw(self):
         flow = _Flow().eval()
         x = _exact_inputs()
-        fwd = self._forward_cls()(flow, T)
+        fwd = self._forward_cls()(flow, T, soma_law=DEFAULT_SOMA_LAW)
         assert fwd.retime is False
         del fwd.__dict__["retime"]  # a pre-retime cache artifact
         with torch.no_grad():
             got = fwd(x)
-            expected = chip_aligned_segment_forward(flow, x, T, retime=False)
+            expected = chip_aligned_segment_forward(flow, x, T, retime=False, soma_law=DEFAULT_SOMA_LAW)
         assert torch.equal(got, expected)
 
 

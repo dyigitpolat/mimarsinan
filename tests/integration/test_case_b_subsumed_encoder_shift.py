@@ -29,6 +29,7 @@ from mimarsinan.mapping.support.bias_compensation import (
     propagate_negative_shifts_to_hybrid,
 )
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _BareLinearThenEncoder(nn.Module):
@@ -73,7 +74,7 @@ def _build(T, *, shift: bool, calib_x=None):
         shifts = apply_negative_value_shifts(
             flow,
             calibrated_compute_op_minima(
-                flow, calib_x, T, forward_fn=calibration_forward_for_mode("lif"),
+                flow, calib_x, T, forward_fn=calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW),
             ),
         )
         assert shifts, "the bare Linear boundary must derive a shift"
@@ -109,8 +110,8 @@ def test_case_b_shift_is_value_preserving_and_nf_hcm_parity_holds():
     flow_s, hcm_s = _build(T, shift=True, calib_x=calib)
     flow_n, hcm_n = _build(T, shift=False)
     with torch.no_grad():
-        nf_s, hc_s = chip_aligned_segment_forward(flow_s, x, T), hcm_s(x) / T
-        nf_n, hc_n = chip_aligned_segment_forward(flow_n, x, T), hcm_n(x) / T
+        nf_s, hc_s = chip_aligned_segment_forward(flow_s, x, T, soma_law=DEFAULT_SOMA_LAW), hcm_s(x) / T
+        nf_n, hc_n = chip_aligned_segment_forward(flow_n, x, T, soma_law=DEFAULT_SOMA_LAW), hcm_n(x) / T
 
     # The subsumed encoder's host boundary is lossless: NF == HCM, both flows.
     torch.testing.assert_close(nf_s, hc_s, atol=1e-6, rtol=0.0)
@@ -122,5 +123,5 @@ def test_case_b_shift_is_value_preserving_and_nf_hcm_parity_holds():
     # Non-vacuous: the bare Linear genuinely produced negatives on this input.
     recorder: dict = {}
     with torch.no_grad():
-        chip_aligned_segment_forward(flow_n, x, T, compute_min_recorder=recorder)
+        chip_aligned_segment_forward(flow_n, x, T, compute_min_recorder=recorder, soma_law=DEFAULT_SOMA_LAW)
     assert min(float(v.min()) for v in recorder.values()) < 0.0

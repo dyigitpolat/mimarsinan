@@ -33,6 +33,7 @@ from mimarsinan.spiking.scale_aware_boundaries import (
 )
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 32
 
@@ -119,7 +120,7 @@ class TestRepresentationDispatch:
         repr_, host, p = self._absolute_chain_model()
         torch.manual_seed(2)
         x = 2.0 * torch.rand(64, 8)
-        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
         with torch.no_grad():
             nf = driver(x)
             v = host.module(x)
@@ -150,7 +151,7 @@ class TestRepresentationDispatch:
         host.is_wire_value_op = True
         torch.manual_seed(4)
         x = 2.0 * torch.rand(32, 8)
-        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
         with torch.no_grad():
             before = driver(x)
 
@@ -169,7 +170,7 @@ class TestRepresentationDispatch:
         )
         assert float(after_table[host]) == pytest.approx(float(table[host]))
 
-        driver2 = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+        driver2 = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
         with torch.no_grad():
             after = driver2(x)
         torch.testing.assert_close(after, before)
@@ -215,7 +216,7 @@ class TestRepresentationDispatch:
         p2 = _lif_perceptron(3, 6, 0.9)
         repr_ = ModelRepresentation(PerceptronMapper(mixed, p2))
         mark_encoding_layers(repr_, placement="offload")
-        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
         with pytest.raises(NotImplementedError, match="wire/absolute"):
             with torch.no_grad():
                 driver(torch.rand(4, 6))

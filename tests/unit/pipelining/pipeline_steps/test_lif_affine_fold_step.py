@@ -317,7 +317,7 @@ class TestFoldRollback:
             ),
         )
 
-        def _destroy(model, cal_x, steps):
+        def _destroy(model, cal_x, steps, *, soma_law):
             with torch.no_grad():
                 for p in model.parameters():
                     p.mul_(0.0)

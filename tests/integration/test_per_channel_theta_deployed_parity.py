@@ -38,6 +38,7 @@ from mimarsinan.spiking.scale_aware_boundaries import (
 )
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 4
 INPUT_SHAPE = (1, 28, 28)
@@ -52,7 +53,7 @@ class _TwinForward(nn.Module):
         self.T = T
 
     def forward(self, x):
-        return chip_aligned_segment_forward(self.flow, x, self.T)
+        return chip_aligned_segment_forward(self.flow, x, self.T, soma_law=DEFAULT_SOMA_LAW)
 
 
 def _build(promote: bool):
@@ -125,7 +126,7 @@ def test_scalar_theta_twin_and_deployed_stay_bit_consistent():
     flow, flow_hcm, _, _ = _build(promote=False)
     x = _samples()
     with torch.no_grad():
-        twin = chip_aligned_segment_forward(flow, x, T)
+        twin = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
         deployed = flow_hcm(x)
     assert float((deployed - twin * T).abs().max()) == 0.0
 
@@ -166,7 +167,7 @@ def test_promoted_unequal_theta_twin_and_deployed_logits_match():
 
     x = _samples()
     with torch.no_grad():
-        twin = chip_aligned_segment_forward(flow, x, T)
+        twin = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
         deployed = flow_hcm(x)
     torch.testing.assert_close(
         deployed.to(torch.float32), (twin * T).to(torch.float32),
@@ -196,7 +197,7 @@ def test_promoted_unequal_theta_per_neuron_counts_stay_exact():
         handles.append(lif.register_forward_hook(hook))
     try:
         with torch.no_grad():
-            chip_aligned_segment_forward(flow, x, T)
+            chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
     finally:
         for h in handles:
             h.remove()

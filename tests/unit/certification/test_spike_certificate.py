@@ -9,6 +9,7 @@ from mimarsinan.certification.spike_certificate import (
     SpikeCountCertificate,
     certify_spike_counts,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _ref(_batch):
@@ -82,7 +83,7 @@ def test_integration_nf_walk_vs_hcm_counts_on_the_tiny_fixture():
 
     def reference(batch):
         driver = SegmentForwardDriver(
-            repr_, _T, LifSegmentPolicy(synchronized=True))
+            repr_, _T, LifSegmentPolicy(synchronized=True, soma_law=DEFAULT_SOMA_LAW))
         rec = {}
         with torch.no_grad():
             driver(batch, node_value_recorder=rec)

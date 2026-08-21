@@ -25,6 +25,7 @@ from mimarsinan.mapping.support.bias_compensation import (
     transfer_negative_shifts_to_ir,
     propagate_negative_shifts_to_hybrid,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _TwoSegLayerNorm(nn.Module):
@@ -62,7 +63,7 @@ def _build_cascade(T, *, shift: bool, calib_x=None):
             flow,
             calibrated_compute_op_minima(
                 flow, calib_x, T,
-                forward_fn=calibration_forward_for_mode("ttfs_cycle_based"),
+                forward_fn=calibration_forward_for_mode("ttfs_cycle_based", soma_law=DEFAULT_SOMA_LAW),
             ),
         )
     repr_.assign_perceptron_indices()
@@ -86,7 +87,7 @@ def _build_cascade(T, *, shift: bool, calib_x=None):
 
 def test_cascade_nf_matches_hcm_across_layernorm():
     T = 8
-    fwd = calibration_forward_for_mode("ttfs_cycle_based")
+    fwd = calibration_forward_for_mode("ttfs_cycle_based", soma_law=DEFAULT_SOMA_LAW)
     flow, hcm = _build_cascade(T, shift=False)
     x = torch.rand(4, 8, dtype=torch.float64)
     with torch.no_grad():
@@ -100,7 +101,7 @@ def test_cascade_negative_shift_nf_hcm_consistent_and_recovers():
     torch.manual_seed(7)
     x = torch.rand(4, 8, dtype=torch.float64)
     calib = torch.cat([x, torch.rand(12, 8, dtype=torch.float64)], dim=0)
-    fwd = calibration_forward_for_mode("ttfs_cycle_based")
+    fwd = calibration_forward_for_mode("ttfs_cycle_based", soma_law=DEFAULT_SOMA_LAW)
 
     flow_s, hcm_s = _build_cascade(T, shift=True, calib_x=calib)
     flow_n, hcm_n = _build_cascade(T, shift=False)

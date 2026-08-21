@@ -38,10 +38,12 @@ def walk_recovery_armed(pipeline_config) -> bool:
 def exact_qat_training_forward(model, pipeline_config):
     """The value-domain chip-aligned walk as a ``model.forward`` override
     (staircase hops are theorem-equal to LIF hops, calculus §16)."""
+    from mimarsinan.chip_simulation.soma_law import SomaLaw
     from mimarsinan.tuning.forward_install import ChipAlignedNFForward
 
     return ChipAlignedNFForward(
         model, int(pipeline_config["simulation_steps"]), synchronized=True,
+        soma_law=SomaLaw.resolve(pipeline_config),
     )
 
 

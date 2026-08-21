@@ -27,6 +27,7 @@ from mimarsinan.mapping.support.negative_boundary import (
     subsume_forward_negative_boundaries,
 )
 from mimarsinan.torch_mapping.converter import convert_torch_model
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 8
 
@@ -109,7 +110,7 @@ def _x():
 def _fwd():
     """The analytical NF: pointwise, activation-agnostic, and it never clamps —
     so it records the TRUE boundary minima whatever the mechanism does next."""
-    return calibration_forward_for_mode("ttfs")
+    return calibration_forward_for_mode("ttfs", soma_law=DEFAULT_SOMA_LAW)
 
 
 def _minima(flow, x):

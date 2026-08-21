@@ -7,6 +7,7 @@ from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.pipelining.core.steps.pipeline_step import METRIC_CARRIED, PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.latency.depth_balancing import (
@@ -640,6 +641,7 @@ class SoftCoreMappingStep(PipelineStep):
             simulation_steps=int(self.pipeline.config["simulation_steps"]),
             device=self.pipeline.config["device"],
             shift_enabled=bool(self.pipeline.config.get("negative_value_shift", True)),
+            soma_law=SomaLaw.resolve(self.pipeline.config),
         )
 
     def bring_back_bias(self, fused_linear_layer):

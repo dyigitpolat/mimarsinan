@@ -10,6 +10,7 @@ from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
     _ChipAlignedNFForward,
     LIFAdaptationTuner,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _FakePerceptronModel(nn.Module):
@@ -28,7 +29,7 @@ class _FakePerceptronModel(nn.Module):
 
 def test_double_patch_assert_blocks_reinstall() -> None:
     model = _FakePerceptronModel()
-    model.forward = _ChipAlignedNFForward(model, T=4)
+    model.forward = _ChipAlignedNFForward(model, T=4, soma_law=DEFAULT_SOMA_LAW)
     with pytest.raises(AssertionError, match="already patched"):
         # Second install on top of an existing instance-level forward must fail.
         _install_check(model, T=4)
@@ -40,7 +41,7 @@ def _install_check(model: nn.Module, T: int) -> None:
         "model.forward is already patched; a double-install would shadow the "
         "prior wrapper. Remove it first."
     )
-    model.forward = _ChipAlignedNFForward(model, T=int(T))
+    model.forward = _ChipAlignedNFForward(model, T=int(T), soma_law=DEFAULT_SOMA_LAW)
 
 
 def test_unpatch_removes_instance_forward() -> None:
@@ -85,9 +86,9 @@ def test_shared_install_mixin_blocks_double_patch() -> None:
 
     model = _FakePerceptronModel()
     tuner = _Tuner(model)
-    tuner._install_forward(_ChipAlignedNFForward(model, T=4))
+    tuner._install_forward(_ChipAlignedNFForward(model, T=4, soma_law=DEFAULT_SOMA_LAW))
     with pytest.raises(AssertionError, match="already patched"):
-        tuner._install_forward(_ChipAlignedNFForward(model, T=4))
+        tuner._install_forward(_ChipAlignedNFForward(model, T=4, soma_law=DEFAULT_SOMA_LAW))
     tuner._remove_forward()
     assert "forward" not in model.__dict__
 
@@ -104,7 +105,7 @@ def test_shared_remove_forward_is_idempotent() -> None:
 
     model = _FakePerceptronModel()
     tuner = _Tuner(model)
-    tuner._install_forward(_ChipAlignedNFForward(model, T=4))
+    tuner._install_forward(_ChipAlignedNFForward(model, T=4, soma_law=DEFAULT_SOMA_LAW))
     tuner._remove_forward()
     tuner._remove_forward()  # idempotent
     assert "forward" not in model.__dict__
@@ -147,7 +148,7 @@ def test_after_run_unpatches_ramp_forward() -> None:
         def _ensure_pipeline_threshold(self):
             return 1.0
 
-    model.forward = _ChipAlignedNFForward(model, T=4)
+    model.forward = _ChipAlignedNFForward(model, T=4, soma_law=DEFAULT_SOMA_LAW)
     stub = _Stub()
     KDBlendAdaptationTuner._after_run(stub)
     assert "forward" not in model.__dict__

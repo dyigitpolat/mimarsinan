@@ -20,6 +20,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard
 from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _TwoSegLayerNorm(nn.Module):
@@ -71,7 +72,7 @@ def test_segment_aware_nf_matches_hcm_across_layernorm():
     flow, hcm = _build(T)
     x = torch.rand(4, 8)
     with torch.no_grad():
-        nf = chip_aligned_segment_forward(flow, x, T)
+        nf = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
         hc = hcm(x) / float(T)
     torch.testing.assert_close(nf, hc, atol=1e-6, rtol=0.0)
 
@@ -99,7 +100,7 @@ def _build_with_lif(T, *, shift: bool):
             flow,
             calibrated_compute_op_minima(
                 flow, torch.rand(16, 8), T,
-                forward_fn=calibration_forward_for_mode("lif"),
+                forward_fn=calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW),
             ),
         )
     repr_.assign_perceptron_indices()
@@ -129,8 +130,8 @@ def test_negative_shift_nf_hcm_consistent_and_recovers():
     flow_s, hcm_s = _build_with_lif(T, shift=True)
     flow_n, hcm_n = _build_with_lif(T, shift=False)
     with torch.no_grad():
-        nf_s, hc_s = chip_aligned_segment_forward(flow_s, x, T), hcm_s(x) / T
-        nf_n, hc_n = chip_aligned_segment_forward(flow_n, x, T), hcm_n(x) / T
+        nf_s, hc_s = chip_aligned_segment_forward(flow_s, x, T, soma_law=DEFAULT_SOMA_LAW), hcm_s(x) / T
+        nf_n, hc_n = chip_aligned_segment_forward(flow_n, x, T, soma_law=DEFAULT_SOMA_LAW), hcm_n(x) / T
 
     # NF == HCM both with and without the shift (consistency holds either way).
     torch.testing.assert_close(nf_s, hc_s, atol=1e-6, rtol=0.0)

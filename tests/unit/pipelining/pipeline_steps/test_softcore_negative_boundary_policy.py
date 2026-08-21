@@ -9,6 +9,7 @@ from conftest import MockPipeline
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import (
     SoftCoreMappingStep,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _StubTrainer:
@@ -78,7 +79,7 @@ def test_the_calibration_forward_follows_the_spiking_mode(spy):
     from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_mode
 
     _step({"spiking_mode": "ttfs"})._apply_negative_boundary_policy(object())
-    assert spy["policy"]["forward_fn"] is calibration_forward_for_mode("ttfs")
+    assert spy["policy"]["forward_fn"] is calibration_forward_for_mode("ttfs", soma_law=DEFAULT_SOMA_LAW)
 
 
 # ── The mode gate (folded in from the retired test_negative_shift_gate.py) ──

@@ -69,6 +69,7 @@ from integration._split_reassembly import (
     hcm_per_perceptron_counts,
     torch_lif_node_counts,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 # Modes whose torch NF and deployed sim share value-domain semantics exactly
 # (every neuron's value is bit-identical) when the packing composes losslessly.
@@ -258,14 +259,14 @@ def build_torch_and_hcm(
 
 def _torch_nf(flow, x, spiking_mode, T):
     if spiking_mode == "lif":
-        return chip_aligned_segment_forward(flow, x, T)
-    return calibration_forward_for_mode(spiking_mode)(flow, x, T)
+        return chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
+    return calibration_forward_for_mode(spiking_mode, soma_law=DEFAULT_SOMA_LAW)(flow, x, T)
 
 
 def _lif_per_neuron_counts(flow, hcm, hybrid, nodes, sample, T):
     """Torch NF node counts and reassembled HCM counts, per on-chip perceptron."""
     torch_counts = torch_lif_node_counts(
-        lambda: chip_aligned_segment_forward(flow, sample, T), nodes, sample, T)
+        lambda: chip_aligned_segment_forward(flow, sample, T, soma_law=DEFAULT_SOMA_LAW), nodes, sample, T)
     with torch.no_grad():
         _, record = hcm.forward_with_recording(sample, sample_index=0)
     hcm_counts = hcm_per_perceptron_counts(record, hybrid)

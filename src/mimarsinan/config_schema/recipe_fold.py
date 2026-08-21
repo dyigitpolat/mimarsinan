@@ -43,6 +43,45 @@ def _fold_sim_enables(
             dp[key] = declared is not False
 
 
+def _soma_law_denies_membrane_readout(law: SomaLaw) -> Optional[str]:
+    """The membrane decode ``Q_T = theta*c_T + m_T`` needs a lossless membrane."""
+    if not law.saturates:
+        return None
+    return (
+        f"membrane_arithmetic={law.membrane_arithmetic!r} "
+        f"(membrane_bits={law.membrane_bits}) destroys charge on every clamp, "
+        f"so the residual membrane is NOT the unemitted charge and the decode "
+        f"Q_T = theta*c_T + m_T reports a fiction"
+    )
+
+
+# Knobs whose THEOREM the resolved soma point denies. Same contract as
+# ``_fold_sim_enables``: the point is authoritative, so the knob derives OFF,
+# and an EXPLICIT arm is a keyed contradiction rather than a late crash deep
+# in the executor that refuses it.
+_SOMA_DENIED_KNOBS = (
+    ("lif_membrane_readout", _soma_law_denies_membrane_readout),
+)
+
+
+def _fold_soma_denied_knobs(
+    dp: MutableMapping[str, Any], explicit: Set[str],
+) -> None:
+    """Derive off every knob the resolved soma point's physics denies."""
+    law = SomaLaw.resolve(dp)
+    for key, denial_of in _SOMA_DENIED_KNOBS:
+        reason = denial_of(law)
+        if reason is None:
+            continue
+        if key in explicit and dp.get(key) is True:
+            raise ValueError(
+                f"{key}=true contradicts the resolved soma point: {reason}. "
+                f"Remove the explicit key to accept the derivation, or deploy "
+                f"an unbounded membrane."
+            )
+        dp[key] = False
+
+
 def _pair_lif_exact_qat_retiming(
     dp: MutableMapping[str, Any], explicit: Set[str],
 ) -> None:
@@ -166,5 +205,6 @@ def fold_conversion_recipe(
         ):
             continue
         dp[key] = value
+    _fold_soma_denied_knobs(dp, explicit)
     _pair_lif_exact_qat_retiming(dp, explicit)
     _pair_lif_exact_qat_kd(dp, explicit)

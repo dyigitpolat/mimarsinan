@@ -17,6 +17,7 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.pipelining.core.simulation_factory import run_trainer_metric
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from conftest import MockDataProviderFactory, default_config
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _PipelineStub:
@@ -97,7 +98,7 @@ def test_nf_scm_subsample_parity_cycle_accurate() -> None:
         def forward(self, x):
             # The chip-aligned NF (segment driver) is the SCM twin: boundary
             # emission follows the deployed uniform wire contract.
-            return chip_aligned_segment_forward(self._inner, x, T)
+            return chip_aligned_segment_forward(self._inner, x, T, soma_law=DEFAULT_SOMA_LAW)
 
     nf_model = _CAWrapper(model)
     nf_acc = run_trainer_metric(pipeline, nf_model)
@@ -161,6 +162,6 @@ def test_nf_scm_per_sample_output_parity_cycle_accurate() -> None:
 
     x = torch.rand(8, 8)
     with torch.no_grad():
-        nf_out = chip_aligned_segment_forward(model, x, T)
+        nf_out = chip_aligned_segment_forward(model, x, T, soma_law=DEFAULT_SOMA_LAW)
         scm_out = flow(x) / float(T)
     torch.testing.assert_close(nf_out, scm_out.to(torch.float32), atol=1e-6, rtol=0.0)

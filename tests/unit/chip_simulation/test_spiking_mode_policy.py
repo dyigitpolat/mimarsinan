@@ -6,6 +6,8 @@ are now method overrides on one policy per (firing × sync). These tests pin the
 truth table and lock byte-identity against the pre-refactor behavior.
 """
 
+import functools
+
 import pytest
 
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
@@ -17,6 +19,7 @@ from mimarsinan.chip_simulation.spiking_mode_policy import (
     TtfsSyncCycleModePolicy,
     policy_for_spiking_mode,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _contract(mode, schedule="cascaded"):
@@ -227,13 +230,19 @@ class TestSomaModelAttributes:
 # ── calibration_forward (was neg_shift_bias.py:125-140) ───────────────────────
 
 class TestCalibrationForward:
-    def test_lif_returns_chip_aligned(self):
+    def test_lif_returns_chip_aligned_with_the_point_bound(self):
+        from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
-        assert (
+        bound = policy_for_spiking_mode(
+            "lif", soma_law=DEFAULT_SOMA_LAW).calibration_forward()
+        assert bound.func is chip_aligned_segment_forward
+        assert bound.keywords == {"soma_law": DEFAULT_SOMA_LAW}
+
+    def test_lif_without_a_point_refuses_to_hand_out_a_twin(self):
+        """The calibration walk IS the deployed twin: no point, no forward."""
+        with pytest.raises(ValueError, match="resolved soma point"):
             policy_for_spiking_mode("lif").calibration_forward()
-            is chip_aligned_segment_forward
-        )
 
     def test_analytical_modes_share_one_forward(self):
         from mimarsinan.mapping.support.bias_compensation import (
@@ -262,10 +271,19 @@ class TestCalibrationForward:
             calibration_forward_for_mode,
         )
 
+        def identity(forward):
+            """A bound point makes the forward a partial; compare its parts."""
+            return (
+                (forward.func, forward.keywords)
+                if isinstance(forward, functools.partial) else (forward, {})
+            )
+
         for mode in ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
-            assert (
-                calibration_forward_for_mode(mode)
-                is policy_for_spiking_mode(mode).calibration_forward()
+            assert identity(
+                calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW)
+            ) == identity(
+                policy_for_spiking_mode(
+                    mode, soma_law=DEFAULT_SOMA_LAW).calibration_forward()
             )
 
     def test_unsupported_mode_still_fails_loud(self):
@@ -274,7 +292,7 @@ class TestCalibrationForward:
         )
 
         with pytest.raises(NotImplementedError, match="bogus"):
-            calibration_forward_for_mode("bogus")
+            calibration_forward_for_mode("bogus", soma_law=DEFAULT_SOMA_LAW)
 
 
 # ── valid_backends ───────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ from mimarsinan.models.spiking.serial.refusals import (
     SerialResetLawError,
     SomaLawRefusalError,
     refuse_cycle_atomic,
+    refuse_cycle_atomic_walk,
     refuse_saturating_membrane,
 )
 
@@ -38,6 +39,7 @@ __all__ = [
     "SomaLawRefusalError",
     "lif_serial_fold",
     "refuse_cycle_atomic",
+    "refuse_cycle_atomic_walk",
     "refuse_saturating_membrane",
     "require_event_counts",
     "require_serial_deployment_admissible",

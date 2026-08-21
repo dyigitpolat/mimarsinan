@@ -19,6 +19,7 @@ from mimarsinan.spiking.segment_forward import (
     LifSegmentPolicy,
     TtfsSegmentPolicy,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _TwoSegLayerNorm(nn.Module):
@@ -82,10 +83,10 @@ def test_lif_driver_equals_chip_aligned_forward():
 
     T = 8
     flow = _lif_flow(_TwoSegLayerNorm(), (8,), 4, T)
-    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     x = torch.rand(4, 8)
     with torch.no_grad():
-        expected = chip_aligned_segment_forward(flow, x, T)
+        expected = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
         actual = driver(x)
     torch.testing.assert_close(actual, expected, atol=0.0, rtol=0.0)
 
@@ -95,12 +96,12 @@ def test_lif_driver_compute_min_recorder_matches_chip_aligned():
 
     T = 8
     flow = _lif_flow(_TwoSegLayerNorm(), (8,), 4, T)
-    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     x = torch.rand(4, 8)
     rec_expected: dict = {}
     rec_actual: dict = {}
     with torch.no_grad():
-        chip_aligned_segment_forward(flow, x, T, compute_min_recorder=rec_expected)
+        chip_aligned_segment_forward(flow, x, T, compute_min_recorder=rec_expected, soma_law=DEFAULT_SOMA_LAW)
         driver(x, compute_min_recorder=rec_actual)
     assert set(rec_actual) == set(rec_expected) and rec_expected
     for node in rec_expected:
@@ -121,14 +122,14 @@ def test_lif_driver_applies_negative_shift_like_chip_aligned():
         flow,
         calibrated_compute_op_minima(
             flow, torch.rand(16, 8), T,
-            forward_fn=calibration_forward_for_mode("lif"),
+            forward_fn=calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW),
         ),
     )
     assert shifts, "calibration must derive a shift for the LayerNorm boundary"
-    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     x = torch.rand(4, 8)
     with torch.no_grad():
-        expected = chip_aligned_segment_forward(flow, x, T)
+        expected = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
         actual = driver(x)
     torch.testing.assert_close(actual, expected, atol=0.0, rtol=0.0)
 
@@ -155,10 +156,10 @@ def test_lif_driver_equals_chip_aligned_forward_mmixcore():
 
     T = 4
     flow = _mmixcore_lif_flow(T)
-    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     x = torch.rand(1, 1, 28, 28)
     with torch.no_grad():
-        expected = chip_aligned_segment_forward(flow, x, T)
+        expected = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
         actual = driver(x)
     torch.testing.assert_close(actual, expected, atol=0.0, rtol=0.0)
 
@@ -167,7 +168,7 @@ def test_lif_partition_single_segment_mmixcore():
     """mmixcore is one neural segment (its compute ops sit only at the graph ends)."""
     T = 4
     flow = _mmixcore_lif_flow(T)
-    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     assert len(driver.segments) == 1
 
 
@@ -229,7 +230,7 @@ def test_tuner_forward_installs_picklable():
 
     T = 4
     lif_flow = _lif_flow(_TwoSegLayerNorm(), (8,), 4, T)
-    nf = _ChipAlignedNFForward(lif_flow, T)
+    nf = _ChipAlignedNFForward(lif_flow, T, soma_law=DEFAULT_SOMA_LAW)
     xl = torch.rand(2, 8)
     with torch.no_grad():
         out_before = nf(xl)

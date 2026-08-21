@@ -72,6 +72,31 @@ def refuse_cycle_atomic(soma_law: Any, *, mechanism: str, theorem: str) -> None:
     )
 
 
+def refuse_cycle_atomic_walk(
+    soma_law: Any, *, retime: bool, synchronized: bool
+) -> None:
+    """Refuse the NF walk disciplines whose theorem the per-event law denies."""
+    if synchronized:
+        refuse_cycle_atomic(
+            soma_law,
+            mechanism="the synchronized two-window NF walk",
+            theorem=(
+                "[calculus §16] it evaluates one hop's emission from its input "
+                "COUNTS alone, one staircase eval per window."
+            ),
+        )
+    if retime:
+        refuse_cycle_atomic(
+            soma_law,
+            mechanism="the per-hop retimed NF walk",
+            theorem=(
+                "[C3/R5] it replaces each hop's emitted train by the uniform "
+                "re-encode of its window count, which carries at most one "
+                "spike per cycle."
+            ),
+        )
+
+
 def refuse_saturating_membrane(
     soma_law: Any, *, mechanism: str, identity: str
 ) -> None:

@@ -28,6 +28,7 @@ from mimarsinan.mapping.support.bias_compensation import (
     transfer_negative_shifts_to_ir,
     propagate_negative_shifts_to_hybrid,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _TwoSegLayerNorm(nn.Module):
@@ -66,7 +67,7 @@ def _build_with_ttfs(mode, T, *, shift: bool, calib_x=None):
         apply_negative_value_shifts(
             flow,
             calibrated_compute_op_minima(
-                flow, calib_x, T, forward_fn=calibration_forward_for_mode(mode),
+                flow, calib_x, T, forward_fn=calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW),
             ),
         )
     repr_.assign_perceptron_indices()
@@ -96,7 +97,7 @@ def test_analytical_ttfs_nf_hcm_parity_with_and_without_shift():
     mode = "ttfs_quantized"
     T = 8
     x = torch.rand(4, 8, dtype=torch.float64)
-    fwd = calibration_forward_for_mode(mode)
+    fwd = calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW)
 
     flow_s, hcm_s = _build_with_ttfs(mode, T, shift=True)
     flow_n, hcm_n = _build_with_ttfs(mode, T, shift=False)
@@ -119,7 +120,7 @@ def test_shift_moves_boundary_into_encodable_domain(mode):
     T = 8
     torch.manual_seed(7)
     x = torch.rand(16, 8, dtype=torch.float64)
-    fwd = calibration_forward_for_mode(mode)
+    fwd = calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW)
 
     flow, _ = _build_with_ttfs(mode, T, shift=True, calib_x=x)
     recorder: dict = {}

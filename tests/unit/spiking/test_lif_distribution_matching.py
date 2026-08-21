@@ -28,6 +28,7 @@ from mimarsinan.spiking.dfq_bias_correction import (
 from mimarsinan.spiking.lif_distribution_matching import (
     match_lif_activation_distributions,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 T_STEPS = 8
@@ -62,7 +63,7 @@ def _deployed_lif_model_and_teacher(seed=0):
 def _lif_cascade_means(model, cal_x, T):
     rec = {}
     with torch.no_grad():
-        chip_aligned_segment_forward(model, cal_x, T, node_value_recorder=rec)
+        chip_aligned_segment_forward(model, cal_x, T, node_value_recorder=rec, soma_law=DEFAULT_SOMA_LAW)
     out = {}
     for k, p in enumerate(model.get_perceptrons()):
         v = rec.get(id(p))
@@ -94,7 +95,7 @@ def cal_x():
 class TestReturnsStats:
     def test_returns_stats_dict(self, cal_x):
         model, teacher = _deployed_lif_model_and_teacher()
-        stats = match_lif_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=10)
+        stats = match_lif_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=10, soma_law=DEFAULT_SOMA_LAW)
         assert isinstance(stats, dict)
         assert "mean_gap_before" in stats and "mean_gap_after" in stats
         assert stats["num_perceptrons"] == len(list(model.get_perceptrons()))
@@ -104,7 +105,7 @@ class TestShrinksGap:
     def test_cascade_mean_closer_to_ann_after_matching(self, cal_x):
         model, teacher = _deployed_lif_model_and_teacher()
         gap_before = _mean_abs_gap(model, teacher, cal_x, T_STEPS)
-        stats = match_lif_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=10)
+        stats = match_lif_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=10, soma_law=DEFAULT_SOMA_LAW)
         gap_after = _mean_abs_gap(model, teacher, cal_x, T_STEPS)
         assert gap_after <= gap_before + 1e-6
         assert stats["mean_gap_after"] <= stats["mean_gap_before"] + 1e-6
@@ -120,7 +121,7 @@ class TestBiasesChanged:
             for p in model.get_perceptrons()
             if getattr(p.layer, "bias", None) is not None
         ]
-        match_lif_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=10)
+        match_lif_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=10, soma_law=DEFAULT_SOMA_LAW)
         after = [
             p.layer.bias.detach().clone()
             for p in model.get_perceptrons()
@@ -137,7 +138,8 @@ class TestBiasesChanged:
         ]
         match_lif_activation_distributions(
             model, teacher, cal_x, T_STEPS, bias_iters=0,
-        )
+                soma_law=DEFAULT_SOMA_LAW,
+)
         after = [
             p.layer.bias.detach().clone()
             for p in model.get_perceptrons()
@@ -151,8 +153,8 @@ class TestDeterminism:
     def test_deterministic_given_fixed_seed(self, cal_x):
         model_a, teacher_a = _deployed_lif_model_and_teacher(seed=5)
         model_b, teacher_b = _deployed_lif_model_and_teacher(seed=5)
-        stats_a = match_lif_activation_distributions(model_a, teacher_a, cal_x, T_STEPS, bias_iters=10)
-        stats_b = match_lif_activation_distributions(model_b, teacher_b, cal_x, T_STEPS, bias_iters=10)
+        stats_a = match_lif_activation_distributions(model_a, teacher_a, cal_x, T_STEPS, bias_iters=10, soma_law=DEFAULT_SOMA_LAW)
+        stats_b = match_lif_activation_distributions(model_b, teacher_b, cal_x, T_STEPS, bias_iters=10, soma_law=DEFAULT_SOMA_LAW)
         assert stats_a["mean_gap_after"] == pytest.approx(stats_b["mean_gap_after"])
         for pa, pb in zip(model_a.get_perceptrons(), model_b.get_perceptrons()):
             if getattr(pa.layer, "bias", None) is None:
@@ -166,6 +168,6 @@ class TestDoesNotChangeScale:
         scale (that is the TTFS scale-aware-boundary stage, a no-op for LIF)."""
         model, teacher = _deployed_lif_model_and_teacher()
         before = [float(p.activation_scale) for p in model.get_perceptrons()]
-        match_lif_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=10)
+        match_lif_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=10, soma_law=DEFAULT_SOMA_LAW)
         after = [float(p.activation_scale) for p in model.get_perceptrons()]
         assert before == after

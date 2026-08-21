@@ -122,10 +122,11 @@ class _LifModel(nn.Module):
         return []
 
 
-def _lif_ramp_stub(*, cycle_accurate: bool):
+def _lif_ramp_stub(*, cycle_accurate: bool, config: dict | None = None):
     return types.SimpleNamespace(
         model=_LifModel(), _T=8, _cycle_accurate=cycle_accurate,
         _per_hop_retiming=False, _phase_dither=False, _synchronized=False,
+        pipeline=types.SimpleNamespace(config=dict(config or {})),
     )
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -230,9 +231,18 @@ class LifModePolicy(SpikingModePolicy):
         return "lif_cycle"
 
     def calibration_forward(self):
+        """The chip-aligned walk with THIS policy's point already bound."""
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
-        return chip_aligned_segment_forward
+        if self.soma_law is None:
+            raise ValueError(
+                "the LIF calibration forward IS the deployed twin, so it "
+                "needs the resolved soma point: query "
+                "policy_for_spiking_mode(mode, soma_law=...) with the "
+                "deployment's law instead of the bare mode string."
+            )
+        return functools.partial(
+            chip_aligned_segment_forward, soma_law=self.soma_law)
 
     def decode_mode(self) -> str:
         return "count"

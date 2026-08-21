@@ -129,17 +129,19 @@ _NEG_SHIFT_SUPPORTED_MODES = frozenset(
 )
 
 
-def calibration_forward_for_mode(spiking_mode: str):
+def calibration_forward_for_mode(spiking_mode: str, *, soma_law):
     """NF forward that produces ``spiking_mode``'s boundary values for calibration.
 
     The shift must live in the same domain the mode's encoder clamps, so each
-    mode calibrates through its own NF forward (resolved by the mode policy)."""
+    mode calibrates through its own NF forward (resolved by the mode policy),
+    carrying the resolved soma point — this walk is the deployed twin."""
     if spiking_mode not in _NEG_SHIFT_SUPPORTED_MODES:
         raise NotImplementedError(
             f"negative_value_shift is not implemented for spiking_mode={spiking_mode!r}"
         )
     from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
-    return policy_for_spiking_mode(spiking_mode).calibration_forward()
+    return policy_for_spiking_mode(
+        spiking_mode, soma_law=soma_law).calibration_forward()
 
 

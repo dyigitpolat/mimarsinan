@@ -22,6 +22,7 @@ from mimarsinan.pipelining.core.nf_scm_parity import (
     compare_normalized_records,
     nf_scm_parity_enabled,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 4
 
@@ -893,7 +894,7 @@ class TestStreamedPrunedParity:
                 return list(self._perceptrons)
 
             def forward(self, x):
-                return SegmentForwardDriver(self.repr_, T, LifSegmentPolicy())(x)
+                return SegmentForwardDriver(self.repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))(x)
 
         model = _StreamedNFModel(repr_, [p0, p1, p2]).eval()
         initial_node, initial_bank = get_initial_pruning_masks_from_model(

@@ -12,6 +12,7 @@ from mimarsinan.spiking.boundary_config import BoundaryConfig
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.segment_policies import LifSegmentPolicy
 from mimarsinan.spiking.spike_trains import uniform_spike_train
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _legacy_to_uniform_spikes(tensor, cycle, simulation_length):
@@ -91,8 +92,8 @@ def test_uniform_spike_train_threads_phase_dither():
 
 
 def test_policy_walk_and_boundary_config_carry_the_flag():
-    assert LifSegmentPolicy(retime=True, phase_dither=True).phase_dither is True
-    assert LifSegmentPolicy().phase_dither is False
+    assert LifSegmentPolicy(retime=True, phase_dither=True, soma_law=DEFAULT_SOMA_LAW).phase_dither is True
+    assert LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW).phase_dither is False
     assert "phase_dither" in inspect.signature(chip_aligned_segment_forward).parameters
     assert BoundaryConfig(
         simulation_length=8, spiking_mode="lif", cycle_accurate=True,

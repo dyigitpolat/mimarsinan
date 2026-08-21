@@ -173,11 +173,20 @@ is a genuinely different physics: it is its own hypervolume cell
 regression floor. What is honest to say today: two independent implementations
 (torch and nevresim) execute it and agree per neuron at zero difference on
 compiled fixtures; no hardware has run it yet; and the end-to-end tier cell
-(t0_54, simple_mlp) is RED — it stops at Soft Core Mapping because the
-streamed NF↔SCM per-cycle raster gate finds the NF twin and the chip-aligned
-executor disagreeing about rhythm (equal-looking counts, different
-multiplicity), so there is no deployed accuracy at this point yet. That is the
-gate working, and it is the next thing to close.
+(t0_54, simple_mlp) is **GREEN as of 2026-08-21** — 1542.2 s wall, deployed
+accuracy **0.9525 on the HCM torch metric and 0.96 on nevresim** (25 subsampled
+test images) against a trained 0.9533 read, with both streamed NF↔SCM arms
+(window counts AND the per-cycle raster) exact at atol=0 and both spike-count
+certificates exact (max|Δcount| = 0 over 20 neuron-windows, hcm streaming-twin
+and nevresim-vs-hcm). Its first run was RED at Soft Core Mapping — 1004/3152
+per-cycle emission mismatches, worst nf=1 vs scm=7 — because the chip-aligned
+NF forward the LIF adaptation step installs on the model carried no soma point
+and silently ran the DEFAULT per-cycle law (at most one spike per cycle) as the
+twin of a per-event deployment. The raster arm of the gate is what caught it;
+the window counts alone would not have. The point's honest price is wall time:
+the event-serial fold costs roughly 7× the per-cycle walk, and every endpoint
+stage that trains against the deployed composition pays it (1122 s of this
+cell's 1542 s is Weight Quantization's endpoint recovery).
 
 ---
 

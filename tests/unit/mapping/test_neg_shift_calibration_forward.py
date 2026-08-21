@@ -16,6 +16,7 @@ from mimarsinan.mapping.support.bias_compensation import (
     calibration_forward_for_mode,
 )
 from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _shifts(flow, x, T, forward_fn):
@@ -80,19 +81,21 @@ def _layernorm_op(flow):
 def test_calibration_forward_for_mode_lif_is_chip_aligned():
     from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
-    assert calibration_forward_for_mode("lif") is chip_aligned_segment_forward
+    bound = calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW)
+    assert bound.func is chip_aligned_segment_forward
+    assert bound.keywords == {"soma_law": DEFAULT_SOMA_LAW}
 
 
 @pytest.mark.parametrize("mode", ["rate", "bogus"])
 def test_calibration_forward_for_mode_unsupported_raises(mode):
     with pytest.raises(NotImplementedError, match="negative_value_shift"):
-        calibration_forward_for_mode(mode)
+        calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW)
 
 
 def test_apply_shifts_with_ttfs_cycle_based_forward():
     T = 8
     flow = _ttfs_flow(T)
-    fwd = calibration_forward_for_mode("ttfs_cycle_based")
+    fwd = calibration_forward_for_mode("ttfs_cycle_based", soma_law=DEFAULT_SOMA_LAW)
     shifts = _shifts(flow, torch.rand(16, 8, dtype=torch.float64), T, fwd)
     assert shifts, "LayerNorm boundary must derive a shift"
     ln = _layernorm_op(flow)
@@ -107,7 +110,7 @@ def test_apply_shifts_with_ttfs_cycle_based_forward():
 def test_apply_shifts_with_analytical_ttfs_forward(mode):
     T = 8
     flow = _ttfs_flow(T)
-    fwd = calibration_forward_for_mode(mode)
+    fwd = calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW)
     shifts = _shifts(flow, torch.rand(16, 8, dtype=torch.float64), T, fwd)
     assert shifts
     ln = _layernorm_op(flow)
@@ -118,7 +121,7 @@ def test_apply_shifts_with_analytical_ttfs_forward(mode):
 def test_apply_shifts_default_forward_is_lif():
     T = 8
     flow = _lif_flow(T)
-    shifts = _shifts(flow, torch.rand(16, 8), T, calibration_forward_for_mode("lif"))
+    shifts = _shifts(flow, torch.rand(16, 8), T, calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW))
     assert shifts
     assert _layernorm_op(flow) in shifts
 
@@ -127,7 +130,7 @@ def test_shift_value_matches_recorded_min_ttfs():
     """The derived shift equals max(0, -min) of the TTFS NF boundary values."""
     T = 8
     flow = _ttfs_flow(T)
-    fwd = calibration_forward_for_mode("ttfs_cycle_based")
+    fwd = calibration_forward_for_mode("ttfs_cycle_based", soma_law=DEFAULT_SOMA_LAW)
     x = torch.rand(16, 8, dtype=torch.float64)
     recorder: dict = {}
     with torch.no_grad():

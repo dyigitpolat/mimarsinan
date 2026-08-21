@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import torch
 
-from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.support.value_domain import value_domain_map
 from mimarsinan.models.nn.activations.autograd import RoundedStaircaseFunction
+from mimarsinan.models.spiking.serial import refuse_cycle_atomic_walk
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.segment_partition import perceptron_of
@@ -61,30 +62,34 @@ class LifSegmentPolicy:
     _seam_ablation: tuple | None = None
 
     def __init__(self, retime: bool = False, phase_dither: bool = False,
-                 synchronized: bool = False,
-                 soma_law: SomaLaw = DEFAULT_SOMA_LAW):
+                 synchronized: bool = False, *, soma_law: SomaLaw):
         self.retime = bool(retime)
         self.phase_dither = bool(phase_dither)
         # [§16] two-window: one staircase eval per hop, no per-cycle loop.
         self.synchronized = bool(synchronized)
-        # The resolved soma point the twin must reproduce; the default IS
-        # today's law, so every historical construction is unchanged.
+        # The resolved soma point the twin must reproduce. Default-FREE: a
+        # policy that silently assumed the default point is exactly how the
+        # t0_54 NF ran the per-cycle law against a per-event deployment.
         self.soma_law = soma_law
+        refuse_cycle_atomic_walk(
+            soma_law, retime=self.retime, synchronized=self.synchronized,
+        )
 
     def prepare(self, driver):
         from spikingjelly.activation_based import functional
 
         from mimarsinan.spiking.scale_aware_boundaries import (
-            read_boundary_out_scales,
-            stamped_input_boundary_scale,
+            boundary_scales_for_walk,
         )
 
         for p in driver.repr.get_perceptrons():
             functional.reset_net(p)
         self._set_all_cycle_accurate(driver, False)
-        self._boundary_scales = read_boundary_out_scales(
-            driver.repr,
-            input_data_scale=stamped_input_boundary_scale(driver.repr),
+        # The per-event twin folds the mapper's effective weights, so it owes
+        # the gauge-establishment seam its precondition; every default-point
+        # walk keeps reading the pure table and mutating nothing.
+        self._boundary_scales = boundary_scales_for_walk(
+            driver.repr, establish=self.soma_law.is_per_event,
         )
         self._absolute_nodes = _absolute_value_nodes(driver)
 

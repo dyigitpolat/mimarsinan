@@ -20,6 +20,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.segment_partition import perceptron_of
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 T_STEPS = 8
@@ -61,9 +62,9 @@ class TestRecorderIsPureSideChannel:
         model = _deployed_lif_model()
         x = _cal_x()
 
-        out_plain = chip_aligned_segment_forward(model, x, T_STEPS)
+        out_plain = chip_aligned_segment_forward(model, x, T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         rec = {}
-        out_rec = chip_aligned_segment_forward(model, x, T_STEPS, node_value_recorder=rec)
+        out_rec = chip_aligned_segment_forward(model, x, T_STEPS, node_value_recorder=rec, soma_law=DEFAULT_SOMA_LAW)
 
         torch.testing.assert_close(out_plain, out_rec, rtol=0, atol=0)
 
@@ -73,7 +74,7 @@ class TestRecorderPopulatesPerceptronValues:
         model = _deployed_lif_model()
         x = _cal_x()
         rec = {}
-        chip_aligned_segment_forward(model, x, T_STEPS, node_value_recorder=rec)
+        chip_aligned_segment_forward(model, x, T_STEPS, node_value_recorder=rec, soma_law=DEFAULT_SOMA_LAW)
 
         perceptron_ids = {id(p) for p in model.get_perceptrons()}
         assert perceptron_ids <= set(rec.keys()), (
@@ -84,7 +85,7 @@ class TestRecorderPopulatesPerceptronValues:
         model = _deployed_lif_model()
         x = _cal_x()
         rec = {}
-        chip_aligned_segment_forward(model, x, T_STEPS, node_value_recorder=rec)
+        chip_aligned_segment_forward(model, x, T_STEPS, node_value_recorder=rec, soma_law=DEFAULT_SOMA_LAW)
 
         for p in model.get_perceptrons():
             value = rec[id(p)]
@@ -97,7 +98,7 @@ class TestRecorderPopulatesPerceptronValues:
         model = _deployed_lif_model()
         x = _cal_x()
         rec = {}
-        out = chip_aligned_segment_forward(model, x, T_STEPS, node_value_recorder=rec)
+        out = chip_aligned_segment_forward(model, x, T_STEPS, node_value_recorder=rec, soma_law=DEFAULT_SOMA_LAW)
         # The output (host classifier on the last segment's decoded means) is finite
         # and the recorder captured strictly positive activity somewhere (not all dead).
         assert torch.isfinite(out).all()
@@ -110,5 +111,5 @@ class TestRecorderDefaultNone:
         model = _deployed_lif_model()
         x = _cal_x()
         # Must not raise and must return a valid tensor when no recorder is passed.
-        out = chip_aligned_segment_forward(model, x, T_STEPS)
+        out = chip_aligned_segment_forward(model, x, T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert torch.isfinite(out).all()

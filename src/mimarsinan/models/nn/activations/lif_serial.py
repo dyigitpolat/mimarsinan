@@ -25,6 +25,12 @@ from mimarsinan.models.spiking.serial import (
 )
 
 _DECOMPOSITION_ATOL = 1e-6
+# The two sides are the SAME sum reduced in two orders, so the residual scales
+# with the summed charge AND with the coarser of the two dtypes' resolution:
+# a 256-slot hop measures 1.6e-7 relative in float32 and 7e-4 under the
+# trainer's autocast, while a wrong slot order moves the sum by O(1) relative.
+# An absolute-only bound reads either as a slot-order defect.
+_DECOMPOSITION_REDUCTION_SLACK = 4.0
 
 
 class SerialFoldSlot:
@@ -75,6 +81,23 @@ class SerialFoldSlot:
             )
         self.events = flat
 
+    def _decomposition_tolerance(
+        self, charge: torch.Tensor, decomposed: torch.Tensor,
+    ) -> float:
+        """The reduction residual two orderings of one sum may differ by."""
+        eps = max(
+            float(torch.finfo(charge.dtype).eps),
+            float(torch.finfo(decomposed.dtype).eps),
+        )
+        magnitude = max(
+            float(charge.abs().max()), float(decomposed.abs().max()), 1.0,
+        )
+        depth = float(int(self.weight.shape[1])) ** 0.5
+        return (
+            _DECOMPOSITION_ATOL * max(self.theta, 1.0)
+            + _DECOMPOSITION_REDUCTION_SLACK * depth * eps * magnitude
+        )
+
     def run_cycle(self, x: torch.Tensor, safe_scale) -> torch.Tensor:
         """Fold one cycle and return the per-neuron COUNT (unscaled)."""
         events = self.events
@@ -87,7 +110,7 @@ class SerialFoldSlot:
         decomposed = torch.nn.functional.linear(
             events.to(self.weight.dtype), self.weight, self.bias)
         max_error = float((charge - decomposed).abs().max())
-        tolerated = _DECOMPOSITION_ATOL * max(self.theta, 1.0)
+        tolerated = self._decomposition_tolerance(charge, decomposed)
         if not max_error <= tolerated:
             # An `assert` would vanish under `python -O`, and this comparison
             # IS the NF-order == mapper-order contract of the whole twin.
@@ -113,7 +136,13 @@ class SerialFoldSlot:
         self.events = None
         typed = counts.to(x.dtype).reshape(x.shape)
         self.counts.append(typed.detach())
-        return typed
+        # Straight-through: the fold is a hard integer count with no gradient,
+        # and every theta of charge buys exactly one spike, so the normalized
+        # pre-activation IS the count's first-order surrogate. Forward is
+        # BYTE-identical (the residual is exactly zero without autograd); the
+        # backward path is the one the endpoint stages train through.
+        surrogate = charge.reshape(x.shape) / self.theta
+        return typed + (surrogate - surrogate.detach())
 
 
 def arm_serial_fold(lif, slot: SerialFoldSlot) -> None:
