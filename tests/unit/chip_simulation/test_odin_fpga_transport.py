@@ -107,7 +107,7 @@ FABRIC_PROGRAM_WORDS = 2 * 262144
 
 
 class _FakeKernel:
-    shared = "shared"
+    exclusive = "exclusive"
 
     def __init__(self, log, capture_words, registers):
         self.log = log
@@ -163,7 +163,7 @@ def fake_pyxrt(
     module.kernel = lambda device, uuid, name, mode: (
         log.append(("kernel", name, mode))
         or _FakeKernel(log, capture_words, registers))
-    module.kernel.shared = _FakeKernel.shared
+    module.kernel.exclusive = _FakeKernel.exclusive
     module.bo = lambda device, size, kind, group: _FakeBo(log, size, group)
     module.bo.normal = "normal"
     module.xclBOSyncDirection = SimpleNamespace(
@@ -251,7 +251,7 @@ class TestTheXrtSessionMakesTheCallsTheBoardNeeds:
         board.program(export)
         assert injected_pyxrt[0] == ("device", 1)
         assert injected_pyxrt[1] == ("load_xclbin", "/tmp/odin.xclbin")
-        assert injected_pyxrt[2] == ("kernel", "odin_fpga_kernel_top", "shared")
+        assert injected_pyxrt[2] == ("kernel", "odin_fpga_kernel_top", "exclusive")
         assert injected_pyxrt[3] == ("read_register", ADDR_CAPTURE_CAPACITY)
         assert injected_pyxrt[4] == ("read_register", ADDR_PROGRAM_CAPACITY)
         assert injected_pyxrt[5][0] == "write"

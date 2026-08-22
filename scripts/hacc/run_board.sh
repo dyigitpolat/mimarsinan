@@ -73,10 +73,11 @@ fi
 # (resolved by chip_simulation/odin_fpga/factory.py) — there is no environment
 # override, so the copy staged above must be the path that key names.
 cd "${repo}"
-./env/bin/python run.py "${CONFIG}" 2>&1 | tee "${log_path}/exec.log"
+./env/bin/python run.py "${workdir}/${CONFIG}" 2>&1 | tee "${log_path}/exec.log"
 
 cp -r generated/. "${log_path}/generated/" 2>/dev/null || true
 echo "[hacc-run] artifacts under ${log_path}"
+sync   # flush the tee process substitution before the job exits
 
 # Hot-reset the card when a run wedges it (hacc_demo/example.sh's own recipe).
 function reset_fpga {

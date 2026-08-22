@@ -17,6 +17,12 @@ set -euo pipefail
 
 TARGET="${1:-hw_emu}"
 NC="${ODIN_KERNEL_CORES:-1}"
+if [[ "${NC}" != "1" ]]; then
+    echo "REFUSING: ODIN_KERNEL_CORES=${NC}, but the packaging flow plumbs NC=1 only." >&2
+    echo "  The RTL parameter exists; passing it through package_xo is a P7b" >&2
+    echo "  follow-up. Build NC=1, bring the board up, then widen." >&2
+    exit 2
+fi
 
 PLATFORM="${ODIN_PLATFORM:-xilinx_u55c_gen3x16_xdma_3_202210_1}"
 XILINX_ROOT="${XILINX_ROOT:-/tools/xilinx}"

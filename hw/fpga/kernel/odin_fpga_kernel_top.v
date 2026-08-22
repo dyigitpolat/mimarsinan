@@ -8,7 +8,7 @@
 //
 // The register map is the Vitis RTL-kernel convention and is the SECOND copy
 // of one table whose host-side home is
-// `mimarsinan.chip_simulation.odin_fpga.xrt_transport` (ARG_* and ADDR_*):
+// `mimarsinan.chip_simulation.odin_fpga.kernel_registers` (ARG_* and ADDR_*):
 //
 //   0x00 ap_ctrl   bit0 ap_start (W1S), bit1 ap_done (RC), bit2 ap_idle,
 //                  bit3 ap_ready, bit7 auto_restart
@@ -25,7 +25,7 @@
 // token streams. The DMA loads the program at word 0 and the stimulus AT THE
 // PROGRAM'S LAST WORD, overwriting its END terminator, so the fabric executes
 // one continuous stream -- exactly the stream `payload_bytes(program.ops +
-// stimulus.ops)` would have produced. `xrt_transport.stimulus_base_word` is the
+// stimulus.ops)` would have produced. `kernel_registers.stimulus_base_word` is the
 // host-side copy of that rule.
 //
 // SCOPE: this engine is proven against a behavioural AXI4 memory model in
@@ -114,8 +114,17 @@ module odin_fpga_kernel_top #(
     localparam ADDR_CAP_CAP  = 8'h54;
     localparam ADDR_PROG_CAP = 8'h5C;
 
+    // The datapath is 32-bit-beat only (to_bound/wdata/prog_wdata all assume
+    // 4-byte beats); any other width must fail at elaboration, in simulation
+    // and in synthesis alike, not silently narrow.
+    generate
+        if (C_M_AXI_DATA_WIDTH != 32) begin : g_unsupported_axi_width
+            unsupported_C_M_AXI_DATA_WIDTH_use_32 guard_inst();
+        end
+    endgenerate
+
     // The capture layout the host decodes: two header words, four words per
-    // record (odin_fpga_kernel.v CAP_HEADER, xrt_transport.CAPTURE_*_WORDS).
+    // record (odin_fpga_kernel.v CAP_HEADER, kernel_registers.CAPTURE_*_WORDS).
     localparam [31:0] CAP_HEADER  = 32'd2;
     localparam [31:0] CAP_STRIDE  = 32'd4;
     localparam [31:0] CAP_EVENTS  = (CAP_WORDS - 2) / 4;

@@ -125,7 +125,10 @@ class XrtTransport:
         self._uuid = self._device.load_xclbin(self._xrt.xclbin(self.xclbin_path))
         self._kernel = self._xrt.kernel(
             self._device, self._uuid, self.kernel_name,
-            self._xrt.kernel.shared,
+            # Exclusive access: the deployment owns the board for the whole
+            # reservation, and XRT refuses read_register on shared-access CUs
+            # unless xrt.ini sets rw_shared=true (RUNBOOK section 8).
+            self._xrt.kernel.exclusive,
         )
         # The two read-only capacity registers: the fabric's RAM depths are
         # compile-time constants of the loaded xclbin, so the host asks the

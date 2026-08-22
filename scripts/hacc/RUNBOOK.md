@@ -96,7 +96,9 @@ Take 2.18.179 as the expected runtime and **confirm it on the node** with
 against what the xclbin was linked with is triage step 1, not a footnote.
 
 **Kernel geometry is compile-time, and it is load-bearing.** The wrapper's
-`PROG_WORDS` defaults to `NC * 262144` words and `CAP_WORDS` to `65536`
+`PROG_WORDS` defaults to `NC * 262144` words and `CAP_WORDS` to `65536`;
+the v1 packaging flow builds **NC = 1 only** (`build_xclbn.sh` refuses more:
+the RTL parameter exists, the `package_xo` plumbing for it is a P7b follow-up)
 (≈147.6k program words are needed to SPI-program ONE stock core, and a
 65536-word capture RAM holds 16383 event records). The host does not assume
 these: it reads them back from the read-only registers at `0x5C` and `0x54` and
@@ -108,7 +110,7 @@ until it fits is a way to get a number, not a way to get a result.
 **How long:** `hw_emu` ~15 minutes. `hw` is dominated by place-and-route of the
 ODIN cores; the local yosys census (`hw/fpga/synth_resources.json`) puts one
 stock core at 5,659 LUT-equivalents, 4,362 FFs and 10 RAMB36E2, so a 1-core
-kernel is small and a multi-core one scales linearly — budget **2–6 hours** and
+kernel is small — budget **2–6 hours** and
 run it inside a `screen`/`tmux` on the compile node. On top of the cores, the
 program and capture RAMs are ≈8.4 Mbit (per core) and 2.1 Mbit of on-chip
 memory; nothing local has placed them, so read the build's `utilization`
@@ -123,7 +125,7 @@ the real-shell half of gate row 19.
 
 * **`package_xo` errors on a port** — the kernel.xml and the Verilog port list
   disagree. `scripts/hacc/gen_kernel_xml.py` derives the register map from the
-  host-side SSOT (`odin_fpga/xrt_transport.py`), so fix it there, not in the XML.
+  host-side SSOT (`odin_fpga/kernel_registers.py`), so fix it there, not in the XML.
 * **Elaboration errors** — reproduce them locally in seconds:
   `scripts/hw_tests/run_hw_tests.sh -k kernel_elaborates`. That gate exists so
   a syntax error never costs you a cluster hour.
@@ -137,7 +139,7 @@ the real-shell half of gate row 19.
 
 ```bash
 mkdir -p /data/${USER}/odin
-mkdir -p /data/${USER}/log            # DO THIS BEFORE THE FIRST sbatch
+mkdir -p /data/${USER}/log            # optional: run_board.sh and the sbatch both create it
 cp build/hacc/hw_nc1/odin_fpga_hw.xclbin /data/${USER}/odin/
 cp <your deployment config>.json         /data/${USER}/odin/odin_u55c.json
 # the repository itself must be under the stage dir (run_board.sh expects
@@ -194,6 +196,20 @@ order:
    design — it means the host is talking to something that is not this kernel.
 4. The run finishes with `err = 0` on the status register at `0x4C`. An `err`
    raises `OdinFpgaKernelError` naming how many events the fabric saw.
+
+**CU access mode.** The transport opens the kernel with **exclusive** access —
+register reads (`0x4C`/`0x54`/`0x5C`) require it, and the deployment owns the
+board for the whole reservation. If a future setup must share the CU, set
+`rw_shared=true` under `[Runtime]` in `xrt.ini` and change the open mode
+deliberately; do not weaken it by default.
+
+**Known simulation-coverage limits** (the AXI model proves the payload path,
+not these): the datapath is 32-bit-beat only (any other `C_M_AXI_DATA_WIDTH`
+now fails at elaboration by design); the 4 KiB burst-boundary clamp branch is
+never exercised by the testbench (all tb buffers are 4 KiB-aligned — correct
+by inspection only); RRESP/BRESP error paths are untested (the tb slave always
+answers OKAY). A board-side AXI anomaly can therefore live in exactly these
+three shadows — check them before blaming the ODIN core, which R11a proved.
 
 If all four hold, B0 is passed: the bitstream loads, the register map answers,
 and the DMA has moved real bytes across a real shell. Only then is a campaign
