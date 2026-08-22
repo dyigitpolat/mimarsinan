@@ -1,19 +1,26 @@
-"""Simulating the Vitis RTL kernel: elaboration and the fabric-sequencer smoke run.
+"""Simulating the Vitis RTL kernel: elaboration, the fabric run, the WRAPPER run.
 
 The kernel is the P7b build's design; what can be checked LOCALLY is that it
-elaborates and that its on-fabric sequencer executes the exporter's token
-program with the same semantics as the host-driven P5 testbench. Both are
-[slow] gates under ``scripts/hw_tests/``.
+elaborates, that its on-fabric sequencer executes the exporter's token program
+with the same semantics as the host-driven P5 testbench, and — through a
+behavioural AXI4 memory model — that the WRAPPER's DMA engine moves the bytes
+itself: program in, stimulus in, capture out. All are [slow] gates under
+``scripts/hw_tests/``.
 """
 
 from __future__ import annotations
 
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence, Tuple
 
-from mimarsinan.chip_simulation.odin_rtl.capture import CaptureResult, parse_capture
+from mimarsinan.chip_simulation.odin_rtl.capture import (
+    CaptureResult,
+    TestbenchFailure,
+    parse_capture,
+)
 from mimarsinan.chip_simulation.odin_rtl.stimulus import Op, write_stimulus
 from mimarsinan.chip_simulation.odin_rtl.toolchain import (
     ENGINE_INTERPRETED,
@@ -31,6 +38,9 @@ KERNEL_ROOT = REPO_ROOT / "hw" / "fpga" / "kernel"
 
 #: The kernel testbench's own name; the wrapper elaborates through the top.
 KERNEL_TB = "tb_odin_fpga_kernel"
+#: The WRAPPER testbench: the same program delivered through an AXI4 memory
+#: model, so the DMA engine — not a preloaded write port — fills the fabric.
+KERNEL_AXI_TB = "tb_odin_fpga_kernel_axi"
 KERNEL_TOP = "odin_fpga_kernel_top"
 
 
@@ -96,3 +106,94 @@ def run_kernel_program(
             cap_words=cap_words)
         run = run_testbench(build, stimulus, timeout_s=timeout_s)
     return parse_capture(run.stdout), build, run
+
+
+@dataclass(frozen=True)
+class KernelStatus:
+    """The wrapper's register reads, as the AXI testbench reports them.
+
+    ``events_seen`` is the fabric's own count of AER-out events — it may exceed
+    ``capture_capacity``, which is exactly the truncation the host refuses.
+    """
+
+    err: bool
+    events_seen: int
+    capture_capacity: int
+    program_capacity: int
+    host_capacity: int
+    records_written: int
+    program_words: int
+    stimulus_words: int
+    ram_words: int
+
+    @property
+    def truncated(self) -> bool:
+        """Whether the fabric saw at least as many events as it can hold."""
+        return self.events_seen >= min(self.capture_capacity, self.host_capacity)
+
+
+def parse_kernel_status(stdout: str) -> KernelStatus:
+    """The KSTAT/KSPLIT lines of the wrapper testbench; loud when absent."""
+    kstat: List[int] = []
+    ksplit: List[int] = []
+    for line in stdout.splitlines():
+        fields = line.split()
+        if fields[:1] == ["KSTAT"] and len(fields) == 7:
+            kstat = [int(value) for value in fields[1:]]
+        elif fields[:1] == ["KSPLIT"] and len(fields) == 4:
+            ksplit = [int(value) for value in fields[1:]]
+    if not kstat or not ksplit:
+        raise TestbenchFailure(
+            "the wrapper testbench printed no KSTAT/KSPLIT line: its control "
+            "reads never completed, so the run has no status to report")
+    return KernelStatus(
+        err=bool(kstat[0]), events_seen=kstat[1], capture_capacity=kstat[2],
+        program_capacity=kstat[3], host_capacity=kstat[4],
+        records_written=kstat[5],
+        program_words=ksplit[0], stimulus_words=ksplit[1], ram_words=ksplit[2])
+
+
+def build_kernel_axi_testbench(
+    *, n_cores: int, token_count: int, engine: str | None = None,
+    cap_words: int = 65536, split: int, host_capacity: int,
+) -> TestbenchBuild:
+    """Elaborate the WRAPPER testbench: the DUT is `odin_fpga_kernel_top`."""
+    return build_testbench(
+        n_cores=n_cores, token_count=token_count, engine=engine,
+        tb_name=KERNEL_AXI_TB, rtl_sources=kernel_design_sources(),
+        extra_params={
+            "CAPWORDS": cap_words,
+            "SPLIT": int(split),
+            "HOSTCAP": int(host_capacity),
+        },
+    )
+
+
+def run_kernel_program_over_axi(
+    ops: Sequence[Op],
+    *,
+    n_cores: int = 1,
+    engine: str | None = None,
+    cap_words: int = 65536,
+    host_capacity: int = 0x000FFFFF,
+    timeout_s: float = 3600.0,
+    workdir: Path | None = None,
+) -> Tuple[CaptureResult, KernelStatus, TestbenchBuild, SimulationRun]:
+    """Execute one token program THROUGH THE WRAPPER's DMA engine.
+
+    The program is placed in an AXI4 memory model split into the two buffers a
+    host hands the kernel, and the capture is read back out of that same model —
+    nothing is preloaded into the fabric.
+    """
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(workdir) if workdir is not None else Path(scratch)
+        root.mkdir(parents=True, exist_ok=True)
+        stimulus = root / "odin_kernel_axi_stim.hex"
+        tokens = write_stimulus(stimulus, list(ops))
+        build = build_kernel_axi_testbench(
+            n_cores=n_cores, token_count=tokens, engine=engine,
+            cap_words=cap_words, split=max(1, tokens // 2),
+            host_capacity=host_capacity)
+        run = run_testbench(build, stimulus, timeout_s=timeout_s)
+    return (
+        parse_capture(run.stdout), parse_kernel_status(run.stdout), build, run)

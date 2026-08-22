@@ -19,10 +19,12 @@
 // An SPI READ is executed on the wire but its byte-compare stays a HOST gate:
 // the kernel has no expected image to compare against.
 //
-// Capture layout, mirrored in `chip_simulation/odin_fpga/xrt_transport.py`:
-//   word 0            : events SEEN (may exceed the record capacity -- the
-//                       host then refuses a TRUNCATED capture rather than
-//                       reading the missing events as silent neurons)
+// Capture layout, mirrored in `chip_simulation/odin_fpga/kernel_registers.py`:
+//   word 0            : events SEEN. It is counted even when the RAM is full,
+//                       so it may EXCEED the record capacity; the host reads
+//                       that capacity out of the wrapper's read-only 0x54
+//                       register and refuses at or over it rather than reading
+//                       the missing events as silent neurons.
 //   word 1            : the free-running cycle count when the program ended
 //   words 2 + 4*i ... : {tag, cycle, core, neuron} per captured event
 
@@ -32,8 +34,8 @@ module odin_fpga_kernel #(
     parameter NC         = 1,      // vendored cores instantiated
     parameter N          = 256,    // neurons per core (stock geometry)
     parameter M          = 8,      // neuron-address width (stock geometry)
-    parameter PROG_WORDS = 4096,   // program RAM depth, in 32-bit words
-    parameter CAP_WORDS  = 4096    // capture RAM depth, in 32-bit words
+    parameter PROG_WORDS = NC * 262144,  // program RAM depth, in 32-bit words
+    parameter CAP_WORDS  = 65536         // capture RAM depth, in 32-bit words
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -152,6 +154,11 @@ module odin_fpga_kernel #(
     reg [31:0] cap_core;
     reg        cap_active, cap_space;
 
+    // Each ap_start re-arms the capture: a session that runs many samples
+    // through one loaded kernel must report THIS run's events, not the sum of
+    // every run since reset.
+    wire cap_rearm;
+
     wire [31:0] cap_word =
           (cap_state == 2'd0) ? tag
         : (cap_state == 2'd1) ? cycle
@@ -160,7 +167,7 @@ module odin_fpga_kernel #(
 
     always @(posedge clk) begin : capture
         reg found;
-        if (rst) begin
+        if (rst || cap_rearm) begin
             cap_state    <= 2'd0;
             cap_core     <= 32'd0;
             cap_active   <= 1'b0;
@@ -211,6 +218,8 @@ module odin_fpga_kernel #(
 
     reg [2:0] state;
     reg [1:0] argc, argi;
+
+    assign cap_rearm = (state == S_IDLE) && ap_start;
 
     always @(posedge clk) begin
         if (rst) begin

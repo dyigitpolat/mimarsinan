@@ -42,6 +42,11 @@ time_string="$(date +%Y_%m_%d_%H_%M_%S)"
 log_path="/data/${USER}/log/odin_${time_string}"
 mkdir -p "${log_path}"
 
+# From here on EVERYTHING this script prints is also on /data, so the slurm
+# job's own .out file (which lives on the node's /tmp so that a missing
+# directory can never stop a submission from launching) is never the only copy.
+exec > >(tee -a "${log_path}/run_board.log") 2>&1
+
 # shellcheck disable=SC1090  # cluster-side script, absent in this repo
 source "${XRT_SETUP}"
 /opt/xilinx/xrt/bin/xbutil examine | tee "${log_path}/scan.log"
@@ -64,9 +69,11 @@ if [[ ! -d "${repo}" ]]; then
     exit 2
 fi
 
+# The xclbin the run loads is the DEPLOYMENT CONFIG's `odin_fpga_xclbin_path`
+# (resolved by chip_simulation/odin_fpga/factory.py) — there is no environment
+# override, so the copy staged above must be the path that key names.
 cd "${repo}"
-MIMARSINAN_ODIN_XCLBIN="${xclbin}" \
-    ./env/bin/python run.py "${CONFIG}" 2>&1 | tee "${log_path}/exec.log"
+./env/bin/python run.py "${CONFIG}" 2>&1 | tee "${log_path}/exec.log"
 
 cp -r generated/. "${log_path}/generated/" 2>/dev/null || true
 echo "[hacc-run] artifacts under ${log_path}"

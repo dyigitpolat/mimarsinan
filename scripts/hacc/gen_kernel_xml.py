@@ -2,9 +2,9 @@
 """Emit the Vitis kernel.xml for the ODIN RTL kernel from the host-side SSOT.
 
 The argument ids, offsets and types are the ones
-``mimarsinan.chip_simulation.odin_fpga.xrt_transport`` calls the kernel with, so
-the packaged kernel and the host that drives it cannot disagree about the
-register map. Run it on the cluster (``scripts/hacc/build_xclbn.sh`` does).
+``mimarsinan.chip_simulation.odin_fpga.kernel_registers`` declares, so the
+packaged kernel and the host that drives it cannot disagree about the register
+map. Run it on the cluster (``scripts/hacc/build_xclbn.sh`` does).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from xml.etree import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mimarsinan.chip_simulation.odin_fpga.xrt_transport import (  # noqa: E402
+from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (  # noqa: E402
     ARG_CAPTURE,
     ARG_CAPTURE_WORDS,
     ARG_PROGRAM,

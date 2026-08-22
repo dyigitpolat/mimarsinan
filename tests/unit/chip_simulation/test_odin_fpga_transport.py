@@ -33,16 +33,28 @@ from mimarsinan.chip_simulation.odin_fpga.transport import (
     DeviceTransport,
     DeviceTransportError,
 )
-from mimarsinan.chip_simulation.odin_fpga.xrt_transport import (
+from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
+    ADDR_CAPTURE_CAPACITY,
+    ADDR_PROGRAM_CAPACITY,
+    ADDR_STATUS,
     ARG_CAPTURE,
     ARG_PROGRAM,
     ARG_STIMULUS,
     CAPTURE_HEADER_WORDS,
     CAPTURE_RECORD_WORDS,
-    OdinFpgaDependencyError,
+    CTRL_OFFSET,
+    STATUS_ERR_BIT,
+    OdinFpgaCaptureTruncated,
+    OdinFpgaKernelError,
+    OdinFpgaProgramTooLarge,
     WORD_BYTES,
-    XrtTransport,
     decode_capture,
+    decode_status,
+    stimulus_base_word,
+)
+from mimarsinan.chip_simulation.odin_fpga.xrt_transport import (
+    OdinFpgaDependencyError,
+    XrtTransport,
     load_pyxrt,
 )
 from mimarsinan.chip_simulation.odin_rtl.stimulus import OP_END, OP_SPI_W
@@ -87,19 +99,27 @@ class _FakeRun:
         self.log.append(("wait",))
 
 
+#: The register images of the committed kernel geometry at the fixture's two
+#: cores: a 65536-word capture RAM holds (65536 - 2) // 4 = 16383 records, and
+#: PROG_WORDS is NC * 262144 (hw/fpga/kernel/odin_fpga_kernel_top.v).
+FABRIC_CAPTURE_EVENTS = 16383
+FABRIC_PROGRAM_WORDS = 2 * 262144
+
+
 class _FakeKernel:
     shared = "shared"
 
-    def __init__(self, log, capture_words):
+    def __init__(self, log, capture_words, registers):
         self.log = log
         self._capture_words = capture_words
+        self._registers = dict(registers)
 
     def group_id(self, arg):
         return int(arg)
 
     def read_register(self, offset):
         self.log.append(("read_register", int(offset)))
-        return 0b0110
+        return int(self._registers.get(int(offset), 0))
 
     def __call__(self, *args):
         self.log.append(("start", tuple(
@@ -121,14 +141,28 @@ class _FakeDevice:
         return "uuid"
 
 
-def fake_pyxrt(log, capture_words=(0, 0)):
+def fake_pyxrt(
+    log,
+    capture_words=(0, 0),
+    *,
+    capture_capacity=FABRIC_CAPTURE_EVENTS,
+    program_capacity=FABRIC_PROGRAM_WORDS,
+    status=0,
+):
     """A module object shaped exactly like the pyxrt surface the transport uses."""
+    registers = {
+        CTRL_OFFSET: 0b0110,
+        ADDR_STATUS: status,
+        ADDR_CAPTURE_CAPACITY: capture_capacity,
+        ADDR_PROGRAM_CAPACITY: program_capacity,
+    }
     module = SimpleNamespace()
     module.device = lambda index: (
         log.append(("device", int(index))) or _FakeDevice(log, index))
     module.xclbin = lambda path: SimpleNamespace(path=path)
     module.kernel = lambda device, uuid, name, mode: (
-        log.append(("kernel", name, mode)) or _FakeKernel(log, capture_words))
+        log.append(("kernel", name, mode))
+        or _FakeKernel(log, capture_words, registers))
     module.kernel.shared = _FakeKernel.shared
     module.bo = lambda device, size, kind, group: _FakeBo(log, size, group)
     module.bo.normal = "normal"
@@ -218,9 +252,11 @@ class TestTheXrtSessionMakesTheCallsTheBoardNeeds:
         assert injected_pyxrt[0] == ("device", 1)
         assert injected_pyxrt[1] == ("load_xclbin", "/tmp/odin.xclbin")
         assert injected_pyxrt[2] == ("kernel", "odin_fpga_kernel_top", "shared")
-        assert injected_pyxrt[3][0] == "write"
-        assert injected_pyxrt[4] == (
-            "sync", ARG_PROGRAM, "to", injected_pyxrt[3][2], 0)
+        assert injected_pyxrt[3] == ("read_register", ADDR_CAPTURE_CAPACITY)
+        assert injected_pyxrt[4] == ("read_register", ADDR_PROGRAM_CAPACITY)
+        assert injected_pyxrt[5][0] == "write"
+        assert injected_pyxrt[6] == (
+            "sync", ARG_PROGRAM, "to", injected_pyxrt[5][2], 0)
 
     def test_a_run_dmas_the_stimulus_starts_the_kernel_and_syncs_the_capture_back(
         self, export, monkeypatch,
@@ -275,12 +311,124 @@ class TestTheXrtSessionMakesTheCallsTheBoardNeeds:
         assert run.device_cycles == 7
 
     def test_a_truncated_capture_refuses_instead_of_reporting_silent_neurons(self):
-        with pytest.raises(DeviceTransportError, match="TRUNCATED"):
+        with pytest.raises(OdinFpgaCaptureTruncated, match="silent neurons"):
             decode_capture((9, 100), capacity=4)
+
+    def test_a_capture_exactly_at_capacity_refuses_too(self):
+        # At capacity the fabric's own count is indistinguishable from one that
+        # dropped the next event, so the honest answer is a refusal.
+        with pytest.raises(OdinFpgaCaptureTruncated, match="capacity of 4"):
+            decode_capture((4, 100), capacity=4)
 
     def test_a_capture_shorter_than_its_header_refuses(self):
         with pytest.raises(DeviceTransportError, match="two-word header"):
             decode_capture((0,), capacity=4)
+
+
+class TestTheCapacitiesComeFromTheBitstreamNotFromAnAssumption:
+    """A1/A4: the kernel is asked what it can hold and what went wrong."""
+
+    def test_open_reads_both_capacity_registers_and_takes_the_minimum(
+        self, monkeypatch,
+    ):
+        log: list = []
+        monkeypatch.setitem(sys.modules, "pyxrt", fake_pyxrt(log))
+        board = XrtTransport(xclbin_path="/x.xclbin", capture_events=1 << 20)
+        board.open()
+        assert board.capture_capacity == FABRIC_CAPTURE_EVENTS
+        assert board.program_capacity == FABRIC_PROGRAM_WORDS
+
+    def test_a_smaller_host_declaration_wins_over_the_fabric(self, monkeypatch):
+        log: list = []
+        monkeypatch.setitem(sys.modules, "pyxrt", fake_pyxrt(log))
+        board = XrtTransport(xclbin_path="/x.xclbin", capture_events=16)
+        board.open()
+        assert board.capture_capacity == 16
+
+    def test_a_bitstream_that_reports_no_storage_refuses_at_open(self, monkeypatch):
+        log: list = []
+        monkeypatch.setitem(
+            sys.modules, "pyxrt", fake_pyxrt(log, capture_capacity=0))
+        with pytest.raises(DeviceTransportError, match="silent empty one"):
+            XrtTransport(xclbin_path="/x.xclbin").open()
+
+    def test_the_capture_buffer_is_sized_from_the_capacity_the_kernel_reports(
+        self, export, monkeypatch,
+    ):
+        log: list = []
+        monkeypatch.setitem(sys.modules, "pyxrt", fake_pyxrt(log, (0, 0)))
+        board = XrtTransport(xclbin_path="/x.xclbin", capture_events=1 << 20)
+        board.open()
+        board.program(export)
+        run = board.run_samples([[{0: (0,) * 5, 1: (0,) * 4}]], latencies=(0, 1))
+        reads = [entry for entry in log if entry[0] == "read"]
+        assert reads[0][2] == WORD_BYTES * (
+            CAPTURE_HEADER_WORDS
+            + CAPTURE_RECORD_WORDS * FABRIC_CAPTURE_EVENTS)
+        start = next(entry for entry in log if entry[0] == "start")
+        assert start[1][5] == FABRIC_CAPTURE_EVENTS
+        assert run.detail["capture_capacity"] == FABRIC_CAPTURE_EVENTS
+
+    def test_an_overflowing_capture_refuses_with_the_reported_capacity(
+        self, export, monkeypatch,
+    ):
+        # One event past the fabric's own record capacity.
+        log: list = []
+        monkeypatch.setitem(
+            sys.modules, "pyxrt",
+            fake_pyxrt(log, (FABRIC_CAPTURE_EVENTS + 1, 9)))
+        board = XrtTransport(xclbin_path="/x.xclbin")
+        board.open()
+        board.program(export)
+        with pytest.raises(
+            OdinFpgaCaptureTruncated, match=str(FABRIC_CAPTURE_EVENTS),
+        ):
+            board.run_samples([[{0: (0,) * 5, 1: (0,) * 4}]], latencies=(0, 1))
+
+    def test_the_status_register_is_read_after_the_run_and_err_refuses(
+        self, export, monkeypatch,
+    ):
+        log: list = []
+        monkeypatch.setitem(
+            sys.modules, "pyxrt",
+            fake_pyxrt(log, (0, 0), status=STATUS_ERR_BIT | 17))
+        board = XrtTransport(xclbin_path="/x.xclbin")
+        board.open()
+        board.program(export)
+        with pytest.raises(OdinFpgaKernelError, match="17 event"):
+            board.run_samples([[{0: (0,) * 5, 1: (0,) * 4}]], latencies=(0, 1))
+        kinds = [entry for entry in log if entry[0] == "read_register"]
+        assert (("read_register", ADDR_STATUS)) in kinds
+        # ... and it is read BEFORE the capture is synced back, so a refused
+        # run never decodes a buffer the kernel did not fill.
+        order = [entry[0] for entry in log]
+        status_at = max(
+            index for index, entry in enumerate(log)
+            if entry[0] == "read_register" and entry[1] == ADDR_STATUS)
+        assert "read" not in order[status_at:]
+
+    def test_a_run_that_outgrows_the_program_ram_refuses_before_starting(
+        self, export, monkeypatch,
+    ):
+        log: list = []
+        monkeypatch.setitem(
+            sys.modules, "pyxrt", fake_pyxrt(log, (0, 0), program_capacity=64))
+        board = XrtTransport(xclbin_path="/x.xclbin")
+        board.open()
+        board.program(export)
+        with pytest.raises(OdinFpgaProgramTooLarge, match="program RAM holds 64"):
+            board.run_samples([[{0: (0,) * 5, 1: (0,) * 4}]], latencies=(0, 1))
+        assert not any(entry[0] == "start" for entry in log)
+
+    def test_the_stimulus_lands_on_the_programming_payloads_terminator(self):
+        assert stimulus_base_word(4) == 3
+        assert stimulus_base_word(1) == 0
+        assert stimulus_base_word(0) == 0
+
+    def test_the_status_word_splits_into_err_and_the_events_the_fabric_saw(self):
+        assert decode_status(0) == (False, 0)
+        assert decode_status(STATUS_ERR_BIT | 5) == (True, 5)
+        assert decode_status(5) == (False, 5)
 
 
 class TestEveryEntryRefusesLoudWithoutXrt:

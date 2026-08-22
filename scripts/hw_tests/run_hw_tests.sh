@@ -18,7 +18,10 @@
 # counts certified against the HCM reference and nevresim at zero difference)
 # and the Vitis KERNEL gates (the packaged wrapper elaborates under iverilog;
 # the on-fabric sequencer reproduces the host testbench's counts on the same
-# program). Their walls print on `[odin-fpga] ...` / `[odin-kernel] ...` lines.
+# program; and the WRAPPER's own AXI4 DMA engine delivers that program through
+# a behavioural AXI4 memory model and drains the capture back into it, with the
+# capacity/status registers refusing an overflow and a bad opcode). Their walls
+# print on `[odin-fpga] ...` / `[odin-kernel] ...` / `[odin-wrapper] ...` lines.
 #
 #   scripts/hw_tests/run_hw_tests.sh                 # every RTL gate
 #   scripts/hw_tests/run_hw_tests.sh -k r11a         # one of them

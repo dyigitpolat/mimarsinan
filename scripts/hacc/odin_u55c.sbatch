@@ -2,10 +2,18 @@
 #SBATCH --chdir /tmp/
 #SBATCH --account=slurm
 #SBATCH --job-name=odin_u55c
-#SBATCH --output=/data/%u/log/slurm-%j.out
-#SBATCH --error=/data/%u/log/slurm-%j.err
+#SBATCH --output=slurm-odin-%j.out
+#SBATCH --error=slurm-odin-%j.err
 #
 # The ODIN U55C parity campaign, submitted from hacchead.
+#
+# LOG PATHS: slurm opens --output/--error BEFORE the job body runs, so a path
+# under a directory that does not exist yet makes the submission fail to launch
+# with nothing to read. These are therefore relative to --chdir (/tmp on the
+# allocated node, which always exists); the run's own artifacts still land under
+# /data/${USER}/log/odin_<timestamp>/, which run_board.sh creates, and RUNBOOK
+# §4 creates /data/${USER}/log before the first submission so the copy step at
+# the end of the job has somewhere to go.
 #
 # The first two #SBATCH lines are the cluster's own required preamble
 # (Xtra-Computing/hacc_demo/example.sh). PARTITION IS NOT SET HERE ON PURPOSE:
@@ -32,4 +40,5 @@ STAGE="${ODIN_STAGE:-/data/${USER}/odin}"
 CONFIG="${ODIN_CONFIG:-odin_u55c.json}"
 
 echo "[sbatch] job ${SLURM_JOB_ID:-?} on $(hostname) partition ${SLURM_JOB_PARTITION:-?}"
+mkdir -p "/data/${USER}/log"
 exec "${STAGE}/mimarsinan/scripts/hacc/run_board.sh" "${STAGE}" "${CONFIG}"

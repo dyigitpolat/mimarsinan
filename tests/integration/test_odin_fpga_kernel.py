@@ -1,6 +1,6 @@
-"""[ODIN P7a] the Vitis RTL kernel: it elaborates, and its sequencer is the tb's.
+"""[ODIN P7a] the Vitis RTL kernel: it elaborates, moves its own bytes, and agrees.
 
-Two gates, both local, both cheap compared with a HACC build hour:
+Three gates, all local, all cheap compared with a HACC build hour:
 
   * ELABORATION — the packaged wrapper (`odin_fpga_kernel_top`, the module
     `package_xo` consumes) elaborates under iverilog. A syntax or width error
@@ -13,6 +13,14 @@ Two gates, both local, both cheap compared with a HACC build hour:
     inside the kernel (`hw/fpga/kernel/odin_fpga_kernel.v`), and the per-neuron
     counts must be identical. That is what makes the board a TRANSPORT SWAP:
     the fabric executes the host's program with the host's semantics.
+
+  * DELIVERY — the WRAPPER (`odin_fpga_kernel_top`) is driven the way the XDMA
+    shell drives it and no other way: the program is placed in a behavioural
+    AXI4 memory model, split into the program and stimulus buffers a host hands
+    the kernel, the six arguments go in over AXI4-Lite, ap_start is pulsed, and
+    the capture is read back OUT OF THAT MEMORY. Its counts must equal the host
+    testbench's. Nothing is preloaded into the fabric, so this is the gate that
+    a hardwired-inert AXI master cannot pass.
 
 The witness is a per-EVENT one — a neuron that emits several spikes in a single
 cycle — so a sequencer that collapsed multiplicities would fail here.
@@ -34,13 +42,27 @@ from integration.odin_rtl_harness import (
     timed,
 )
 
+from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
+    STATUS_ERR_BIT,
+    OdinFpgaCaptureTruncated,
+    OdinFpgaKernelError,
+    decode_capture,
+    require_no_kernel_error,
+)
 from mimarsinan.chip_simulation.odin_fpga.kernel_sim import (
     KERNEL_TOP,
     elaborate_kernel_top,
     kernel_sources,
     run_kernel_program,
+    run_kernel_program_over_axi,
 )
 from mimarsinan.chip_simulation.odin_rtl.cosim import build_cosim_ops, run_cosim
+from mimarsinan.chip_simulation.odin_rtl.stimulus import (
+    OP_SHADOW,
+    OP_TAG,
+    OP_WAIT,
+    Op,
+)
 from mimarsinan.chip_simulation.odin_rtl.reference import (
     per_slot_counts_by_cycle,
     simulate_cycles,
@@ -121,6 +143,106 @@ def executions(micro_program):
         f"kernel_events={len(capture.events)} kernel_cycles={capture.cycles} "
         f"kernel_wall={kernel_clock.seconds:.1f}s")
     return host, capture
+
+
+@pytest.fixture(scope="module")
+def over_axi(micro_program):
+    """The same program, delivered through the wrapper's own DMA engine."""
+    _mapping, _export, _trace, _plan_inputs, ops = micro_program
+    with timed("P7a wrapper over AXI") as clock:
+        capture, status, build, _run = run_kernel_program_over_axi(
+            ops, n_cores=1)
+    print(
+        f"[odin-wrapper] engine={build.engine} events={len(capture.events)} "
+        f"cycles={capture.cycles} err={int(status.err)} "
+        f"seen={status.events_seen} cap_events={status.capture_capacity} "
+        f"prog_words={status.program_words} stim_words={status.stimulus_words} "
+        f"ram_words={status.ram_words} wall={clock.seconds:.1f}s")
+    return capture, status
+
+
+class TestTheWrapperMovesItsOwnBytes:
+    """D1: the DMA engine, proven against a behavioural AXI4 memory model."""
+
+    def test_the_counts_survive_the_round_trip_through_host_memory(
+        self, over_axi, executions,
+    ):
+        host, _fabric = executions
+        capture, _status = over_axi
+        assert _fold(capture.events) == _fold(host.capture.events)
+
+    def test_the_witness_is_still_a_per_event_one_after_the_dma(self, over_axi):
+        capture, _status = over_axi
+        assert max(_fold(capture.events).values()) >= 3, (
+            "no multiplicity survived the DMA: a delivery that dropped or "
+            "duplicated beats would show up exactly here")
+
+    def test_the_program_really_arrived_in_two_buffers(self, over_axi):
+        _capture, status = over_axi
+        # The stimulus buffer is not a formality: the split lands inside the
+        # real token stream, so a DMA that read only the program buffer would
+        # execute a truncated program.
+        assert status.program_words > 1 and status.stimulus_words > 1
+        assert status.program_words + status.stimulus_words - 1 <= status.ram_words
+
+    def test_the_run_was_clean_and_within_capacity(self, over_axi):
+        capture, status = over_axi
+        assert not status.err
+        assert status.events_seen == len(capture.events)
+        assert status.records_written == len(capture.events)
+        assert status.events_seen < status.capture_capacity
+
+    def test_the_capacity_registers_report_the_fabric_geometry(self, over_axi):
+        _capture, status = over_axi
+        assert status.capture_capacity == (65536 - 2) // 4
+        assert status.program_capacity == status.ram_words
+
+
+class TestTheKernelIsHonestWhenItCannotComply:
+    """A1/A4: capacity and `err` reach the host instead of reading as silence."""
+
+    def test_a_capture_over_capacity_stops_at_the_limit_and_reports_the_truth(
+        self, micro_program,
+    ):
+        _mapping, _export, _trace, _plan_inputs, ops = micro_program
+        # An 8-word capture RAM holds the two-word header and ONE record; the
+        # program emits more than that.
+        with timed("P7a wrapper capture overflow"):
+            capture, status, _build, _run = run_kernel_program_over_axi(
+                ops, n_cores=1, cap_words=8)
+        assert status.capture_capacity == 1
+        assert status.events_seen > status.capture_capacity, (
+            "the overflow witness did not overflow: raise the program's event "
+            "count or lower CAP_WORDS")
+        assert status.records_written == status.capture_capacity
+        assert len(capture.events) == status.capture_capacity
+        assert status.truncated
+        # ... and the numbers the FABRIC reported, handed to the HOST's own
+        # decoder with the capacity the HOST read off 0x54, refuse the run.
+        with pytest.raises(OdinFpgaCaptureTruncated):
+            decode_capture(
+                (status.events_seen, capture.cycles),
+                capacity=status.capture_capacity)
+
+    def test_an_unimplemented_opcode_raises_err_on_the_status_register(self):
+        # SHADOW has no fabric implementation (config registers have no
+        # readback path on silicon), so the sequencer must REFUSE it.
+        with timed("P7a wrapper bad opcode"):
+            _capture, status, _build, _run = run_kernel_program_over_axi(
+                [Op(OP_SHADOW, (0, 0, 0))], n_cores=1)
+        assert status.err
+        assert status.events_seen == 0
+        # The host reads that same status word and REFUSES by name rather than
+        # decoding a capture the fabric never filled.
+        with pytest.raises(OdinFpgaKernelError, match="REFUSED"):
+            require_no_kernel_error(
+                STATUS_ERR_BIT | status.events_seen, transport="xrt")
+
+    def test_the_same_program_without_the_bad_opcode_does_not_raise_err(self):
+        with timed("P7a wrapper clean control program"):
+            _capture, status, _build, _run = run_kernel_program_over_axi(
+                [Op(OP_TAG, (7,)), Op(OP_WAIT, (32,))], n_cores=1)
+        assert not status.err
 
 
 class TestTheWrapperElaborates:

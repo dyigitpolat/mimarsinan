@@ -2,11 +2,15 @@
 
 STRUCTURE, NOT SILICON. Every call this module makes against ``pyxrt`` is the
 call the board needs — open the device, load the xclbin, resolve the kernel,
-allocate one buffer object per kernel argument in that argument's memory bank,
-DMA the program and the stimulus, start the kernel, wait, sync the capture back
-— and its unit coverage drives that sequence through an injected fake. What the
-tests prove is the CALL CONTRACT (order, sizes, bytes); what only P7b can prove
-is that a real U55C answers it.
+read back the geometry the bitstream was compiled with, allocate one buffer
+object per kernel argument in that argument's memory bank, DMA the program and
+the stimulus, start the kernel, wait, read the status register, sync the capture
+back — and its unit coverage drives that sequence through an injected fake. What
+the tests prove is the CALL CONTRACT (order, sizes, bytes, refusals); what only
+P7b can prove is that a real U55C answers it.
+
+The register map itself lives in ``kernel_registers`` — this module is the
+session, not the table.
 
 ``pyxrt`` ships with XRT and is not a pip dependency of this project: it is
 imported inside the session seam only, and every entry refuses by name when it
@@ -16,10 +20,26 @@ is absent, so importing mimarsinan on a machine with no Alveo runtime works.
 from __future__ import annotations
 
 import importlib.util
-import struct
 import time
-from typing import Any, Dict, List, Mapping, Sequence
+from typing import Any, Dict, Mapping, Sequence
 
+from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
+    ADDR_CAPTURE_CAPACITY,
+    ADDR_PROGRAM_CAPACITY,
+    ADDR_STATUS,
+    ARG_CAPTURE,
+    ARG_PROGRAM,
+    ARG_STIMULUS,
+    CTRL_OFFSET,
+    DEFAULT_CAPTURE_EVENTS,
+    KERNEL_NAME,
+    WORD_BYTES,
+    capture_buffer_bytes,
+    capture_words,
+    decode_capture,
+    require_no_kernel_error,
+    require_program_fits,
+)
 from mimarsinan.chip_simulation.odin_fpga.payload import (
     program_plan,
     payload_bytes,
@@ -31,37 +51,8 @@ from mimarsinan.chip_simulation.odin_fpga.transport import (
     ProgramReceipt,
     TransportRun,
 )
-from mimarsinan.chip_simulation.odin_rtl.capture import CaptureEvent
 
 TRANSPORT_NAME = "xrt"
-
-#: The Vitis RTL-kernel name the packaging scripts build (scripts/hacc/): the
-#: AXI WRAPPER is the packaged kernel, and the host resolves it by that name.
-KERNEL_NAME = "odin_fpga_kernel_top"
-
-#: The kernel's argument order — the s_axilite register map the Verilog
-#: declares (CROSS-LANGUAGE CONTRACT with hw/fpga/kernel/odin_fpga_kernel.v).
-ARG_PROGRAM = 0
-ARG_STIMULUS = 1
-ARG_CAPTURE = 2
-ARG_PROGRAM_WORDS = 3
-ARG_STIMULUS_WORDS = 4
-ARG_CAPTURE_WORDS = 5
-
-#: AXI-lite control offsets (Vitis RTL-kernel convention: 0x00 is ap_ctrl).
-CTRL_OFFSET = 0x00
-AP_DONE = 1 << 1
-
-#: The capture buffer's layout, in 32-bit words: a two-word header (how many
-#: events were written, how many device cycles the run took) followed by one
-#: four-word record per AER-out event.
-CAPTURE_HEADER_WORDS = 2
-CAPTURE_RECORD_WORDS = 4
-WORD_BYTES = 4
-
-#: Capture capacity in events; the kernel refuses to overflow it and reports
-#: the count it wrote, so a truncated capture is loud, never silent.
-DEFAULT_CAPTURE_EVENTS = 1 << 20
 
 
 class OdinFpgaDependencyError(DeviceTransportError):
@@ -123,6 +114,8 @@ class XrtTransport:
         self._program_bo: Any = None
         self._receipt: ProgramReceipt | None = None
         self._export: Any = None
+        self._capture_capacity = 0
+        self._program_capacity = 0
 
     # -- session ---------------------------------------------------------
 
@@ -134,6 +127,30 @@ class XrtTransport:
             self._device, self._uuid, self.kernel_name,
             self._xrt.kernel.shared,
         )
+        # The two read-only capacity registers: the fabric's RAM depths are
+        # compile-time constants of the loaded xclbin, so the host asks the
+        # bitstream instead of assuming what it was built with.
+        fabric_events = int(self._kernel.read_register(ADDR_CAPTURE_CAPACITY))
+        self._program_capacity = int(
+            self._kernel.read_register(ADDR_PROGRAM_CAPACITY))
+        self._capture_capacity = min(self.capture_events, fabric_events)
+        if self._capture_capacity <= 0 or self._program_capacity <= 0:
+            raise DeviceTransportError(
+                f"{self.name}: the kernel reports a capture capacity of "
+                f"{fabric_events} events and a program capacity of "
+                f"{self._program_capacity} words — an xclbin built with no "
+                f"storage cannot run anything, and reading it as zero would "
+                f"turn every run into a silent empty one")
+
+    @property
+    def capture_capacity(self) -> int:
+        """Events this session can decode: min(host declaration, fabric RAM)."""
+        return self._capture_capacity
+
+    @property
+    def program_capacity(self) -> int:
+        """Words the fabric's program RAM holds, as the bitstream reports it."""
+        return self._program_capacity
 
     def close(self) -> None:
         self._program_bo = None
@@ -142,6 +159,10 @@ class XrtTransport:
         self._device = None
         self._receipt = None
         self._export = None
+        # The capacities belong to the bitstream that was loaded, not to this
+        # object: a reopened session re-reads them rather than trusting them.
+        self._capture_capacity = 0
+        self._program_capacity = 0
 
     def _require_session(self, what: str) -> Any:
         if self._kernel is None or self._xrt is None:
@@ -198,8 +219,12 @@ class XrtTransport:
         program = program_plan(self._export)
         full = run_plan(self._export, per_cycle_inputs, latencies=latencies)
         stimulus = payload_bytes(stimulus_ops(program, full))
-        capture_bytes = WORD_BYTES * (
-            CAPTURE_HEADER_WORDS + CAPTURE_RECORD_WORDS * self.capture_events)
+        program_words = len(self._receipt.payload) // WORD_BYTES
+        stimulus_words = len(stimulus) // WORD_BYTES
+        require_program_fits(
+            program_words, stimulus_words, self._program_capacity,
+            transport=self.name)
+        capture_bytes = capture_buffer_bytes(self._capture_capacity)
 
         started = time.monotonic()
         stim_bo = self._buffer(len(stimulus), ARG_STIMULUS)
@@ -208,18 +233,18 @@ class XrtTransport:
         assert self._kernel is not None
         run = self._kernel(
             self._program_bo, stim_bo, capture_bo,
-            len(self._receipt.payload) // WORD_BYTES,
-            len(stimulus) // WORD_BYTES,
-            self.capture_events,
+            program_words, stimulus_words, self._capture_capacity,
         )
         run.wait()
+        status = self._kernel.read_register(ADDR_STATUS)
+        require_no_kernel_error(status, transport=self.name)
         capture_bo.sync(
             self._xrt.xclBOSyncDirection.XCL_BO_SYNC_BO_FROM_DEVICE,
             capture_bytes, 0)
-        words = _words(capture_bo.read(capture_bytes, 0))
+        words = capture_words(capture_bo.read(capture_bytes, 0))
         wall = time.monotonic() - started
 
-        events, device_cycles = decode_capture(words, self.capture_events)
+        events, device_cycles = decode_capture(words, self._capture_capacity)
         counts: Dict[tuple, int] = {}
         for event in events:
             sample, cycle = full.decode_tag(event.tag)
@@ -234,38 +259,11 @@ class XrtTransport:
                 "xclbin": self.xclbin_path,
                 "kernel": self.kernel_name,
                 "device_index": self.device_index,
-                "stimulus_words": len(stimulus) // WORD_BYTES,
+                "stimulus_words": stimulus_words,
                 "capture_events": len(events),
+                "capture_capacity": self._capture_capacity,
+                "program_capacity": self._program_capacity,
+                "status": int(status),
                 "ctrl": self._kernel.read_register(CTRL_OFFSET),
             },
         )
-
-
-def decode_capture(words: Sequence[int], capacity: int) -> tuple:
-    """``(events, device_cycles)`` from the capture buffer's word image."""
-    if len(words) < CAPTURE_HEADER_WORDS:
-        raise DeviceTransportError(
-            "the capture buffer came back shorter than its own two-word header; "
-            "the kernel never wrote a verdict and the run has no counts")
-    written = int(words[0])
-    device_cycles = int(words[1])
-    if written > int(capacity):
-        raise DeviceTransportError(
-            f"the kernel reports {written} captured events over a capacity of "
-            f"{capacity}: the capture was TRUNCATED and the missing events "
-            f"would read as silent neurons. Raise the capture buffer.")
-    events: List[CaptureEvent] = []
-    for index in range(written):
-        base = CAPTURE_HEADER_WORDS + index * CAPTURE_RECORD_WORDS
-        tag, cycle, core, neuron = words[base:base + CAPTURE_RECORD_WORDS]
-        events.append(CaptureEvent(
-            core=int(core), neuron=int(neuron), cycle=int(cycle), tag=int(tag)))
-    return tuple(events), device_cycles
-
-
-def _words(raw: Any) -> List[int]:
-    """The capture buffer's bytes (or word list) as little-endian words."""
-    if isinstance(raw, (bytes, bytearray, memoryview)):
-        buffer = bytes(raw)
-        return list(struct.unpack(f"<{len(buffer) // WORD_BYTES}I", buffer))
-    return [int(value) for value in raw]
