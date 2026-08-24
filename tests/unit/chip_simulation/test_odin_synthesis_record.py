@@ -84,6 +84,7 @@ class TestTheCellCensusBecomesTheResourceTable:
         assert table.bram18 == 0
         assert table.uram == 0
         assert table.io_buffers == 23 + 11 + 2
+        assert table.lutram == 0
         assert table.unclassified == {}
 
     def test_a_half_width_block_ram_counts_as_half_a_tile(self):
@@ -95,6 +96,18 @@ class TestTheCellCensusBecomesTheResourceTable:
         table = resource_table({"URAM288": 4})
         assert (table.uram, table.bram_tiles) == (4, 0.0)
 
+    def test_distributed_ram_has_its_own_column_and_is_not_unclassified(self):
+        table = resource_table({"LUT6": 4, "RAM64M8": 164, "SRL16E": 3})
+        assert table.lutram_cells == {"RAM64M8": 164, "SRL16E": 3}
+        assert table.lutram == 167
+        assert table.unclassified == {}
+        assert table.as_record()["lutram_cells"] == {"RAM64M8": 164, "SRL16E": 3}
+
+    def test_block_ram_is_never_counted_as_distributed_ram(self):
+        table = resource_table({"RAMB36E2": 10, "RAMB18E2": 1, "URAM288": 2})
+        assert table.lutram_cells == {}
+        assert (table.bram36, table.bram18, table.uram) == (10, 1, 2)
+
     def test_a_cell_no_column_claims_is_named_not_absorbed(self):
         table = resource_table({"LUT6": 1, "DSP48E2": 7})
         assert table.unclassified == {"DSP48E2": 7}
@@ -102,11 +115,13 @@ class TestTheCellCensusBecomesTheResourceTable:
         assert "DSP48E2" in table.as_record()["unclassified"]
 
     def test_the_columns_and_the_leftovers_account_for_every_cell(self):
-        cells = {"LUT4": 9, "FDRE": 4, "CARRY8": 2, "RAMB18E2": 1, "PS8": 1}
+        cells = {"LUT4": 9, "FDRE": 4, "CARRY8": 2, "RAMB18E2": 1, "RAM64M8": 3,
+                 "PS8": 1}
         table = resource_table(cells)
         counted = (table.luts + table.inverters + table.flip_flops + table.carry
                    + table.muxf + table.bram36 + table.bram18 + table.uram
-                   + table.io_buffers + sum(table.unclassified.values()))
+                   + table.lutram + table.io_buffers
+                   + sum(table.unclassified.values()))
         assert counted == table.total_cells == sum(cells.values())
 
     def test_hierarchy_instances_are_not_primitives(self):
@@ -175,12 +190,21 @@ class TestTheYosysScriptIsTheOneTheReportQuotes:
         assert sources[:len(overlay)] == overlay
 
     def test_the_first_declaration_wins_flag_is_what_shadows_the_vendor_copy(self):
-        read, synth, stat = script_lines(
-            sources=design_sources(overlay=True), stat_path=None)
+        lines = script_lines(sources=design_sources(overlay=True), stat_path=None)
+        read, synth, stat = lines
         assert read.startswith("read_verilog -nooverwrite ")
         assert read.index("hw/fpga/mem/") < read.index("hw/vendor/odin/src/")
         assert synth == f"synth_xilinx -family {TARGET_FAMILY} -top {TOP_MODULE}"
         assert stat == f"stat -top {TOP_MODULE} -json"
+
+    def test_a_parameter_override_becomes_a_chparam_line_and_nothing_else(self):
+        plain = script_lines(sources=design_sources(overlay=True), stat_path=None)
+        parameterised = script_lines(
+            sources=design_sources(overlay=True), stat_path=None,
+            top="odin_fpga_kernel_top", parameters={"CAP_WORDS": 1024})
+        assert len(plain) == 3 and len(parameterised) == 4
+        assert parameterised[1] == "chparam -set CAP_WORDS 1024 odin_fpga_kernel_top"
+        assert parameterised[2].endswith("-top odin_fpga_kernel_top")
 
     def test_the_script_paths_are_repo_relative_so_the_record_travels(self):
         read = script_lines(sources=design_sources(overlay=True), stat_path=None)[0]

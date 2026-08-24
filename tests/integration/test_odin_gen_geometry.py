@@ -41,6 +41,7 @@ from mimarsinan.mapping.export.odin_gen import (
     stock_core_spec,
 )
 from mimarsinan.mapping.export.odin_gen.passthrough import vendored_file_set
+from mimarsinan.mapping.export.odin_gen.variants import variant_named
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
@@ -51,8 +52,11 @@ STOCK_MEMBRANE_CEILING = 255
 # Variant 1 — 128 x 128, 8-bit unsigned membrane, two cores
 # ---------------------------------------------------------------------------
 
-SMALL_AXONS = 128
-SMALL_NEURONS = 128
+#: The geometry is READ from the catalog the compile-limits study costs, so a
+#: variant can never be measured at a geometry no cosimulation proved.
+SMALL_VARIANT = variant_named("gen_a128n128_mb8_per_event")
+SMALL_AXONS = SMALL_VARIANT.spec.max_axons
+SMALL_NEURONS = SMALL_VARIANT.spec.max_neurons
 SMALL_S = 3
 PRODUCER = 0
 CONSUMER = 1
@@ -107,7 +111,7 @@ def _small_rasters():
 @pytest.fixture(scope="module")
 def small_variant():
     require_simulator()
-    law = per_event_law(8)
+    law = SMALL_VARIANT.spec.soma_law
     spec = spec_for(law, axons=SMALL_AXONS, neurons=SMALL_NEURONS, count=2)
     mapping = _small_mapping()
     generated = generate_core(spec)
@@ -166,8 +170,9 @@ class TestTheSmallGeometryVariantReproducesTheFold:
 # stock ceiling
 # ---------------------------------------------------------------------------
 
-WIDE_AXONS = 512
-WIDE_NEURONS = 256
+WIDE_VARIANT = variant_named("gen_a512n256_mb16_per_event")
+WIDE_AXONS = WIDE_VARIANT.spec.max_axons
+WIDE_NEURONS = WIDE_VARIANT.spec.max_neurons
 WIDE_S = 2
 WIDE_THETA = 300.0
 
@@ -202,7 +207,7 @@ def _wide_raster():
 @pytest.fixture(scope="module")
 def wide_variant():
     require_simulator()
-    law = per_event_law(16)
+    law = WIDE_VARIANT.spec.soma_law
     spec = spec_for(law, axons=WIDE_AXONS, neurons=WIDE_NEURONS)
     mapping = _wide_mapping()
     generated = generate_core(spec)

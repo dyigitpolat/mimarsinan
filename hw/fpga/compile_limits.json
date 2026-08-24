@@ -1,0 +1,1379 @@
+{
+  "schema": "odin_compile_limits/v1",
+  "family": "xcup",
+  "tool": {
+    "name": "yosys",
+    "version": "Yosys 0.68+118 (git sha1 144c707b7-dirty, Release, Clang /usr/bin/clang++ 21.1.8)"
+  },
+  "reported_columns": [
+    "lut_equivalent",
+    "flip_flops",
+    "carry",
+    "muxf",
+    "lutram",
+    "bram36",
+    "bram18",
+    "bram_tiles",
+    "uram"
+  ],
+  "configurations": [
+    {
+      "key": "stock_a256n256_vendored",
+      "label": "stock ODIN core, 256 axons x 256 neurons (vendored + BRAM overlay)",
+      "kind": "vendored",
+      "top": "ODIN",
+      "parameters": {},
+      "geometry": {
+        "max_axons": 256,
+        "max_neurons": 256,
+        "weight_bits": 4,
+        "membrane_bits": 8,
+        "law": "stock ODIN LIF (SPI-programmed)"
+      },
+      "memories": [
+        {
+          "array": "SRAM_256x128_wrapper (neuron)",
+          "words": 256,
+          "width": 128,
+          "bits": 32768
+        },
+        {
+          "array": "SRAM_8192x32_wrapper (synapse)",
+          "words": 8192,
+          "width": 32,
+          "bits": 262144
+        }
+      ],
+      "memory_bits": 294912,
+      "measured_by": "hw/fpga/synth_resources.json",
+      "sources": [
+        "hw/fpga/mem/SRAM_256x128_wrapper.v",
+        "hw/fpga/mem/SRAM_8192x32_wrapper.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v",
+        "hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v",
+        "hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v",
+        "hw/vendor/odin/src/ODIN.v",
+        "hw/vendor/odin/src/aer_out.v",
+        "hw/vendor/odin/src/controller.v",
+        "hw/vendor/odin/src/fifo.v",
+        "hw/vendor/odin/src/izh_neuron.v",
+        "hw/vendor/odin/src/lif_neuron.v",
+        "hw/vendor/odin/src/neuron_core.v",
+        "hw/vendor/odin/src/scheduler.v",
+        "hw/vendor/odin/src/sdsp_update.v",
+        "hw/vendor/odin/src/spi_slave.v",
+        "hw/vendor/odin/src/synaptic_core.v"
+      ],
+      "script": [
+        "read_verilog -nooverwrite hw/fpga/mem/SRAM_256x128_wrapper.v hw/fpga/mem/SRAM_8192x32_wrapper.v hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v hw/vendor/odin/src/ODIN.v hw/vendor/odin/src/aer_out.v hw/vendor/odin/src/controller.v hw/vendor/odin/src/fifo.v hw/vendor/odin/src/izh_neuron.v hw/vendor/odin/src/lif_neuron.v hw/vendor/odin/src/neuron_core.v hw/vendor/odin/src/scheduler.v hw/vendor/odin/src/sdsp_update.v hw/vendor/odin/src/spi_slave.v hw/vendor/odin/src/synaptic_core.v",
+        "synth_xilinx -family xcup -top ODIN",
+        "stat -top ODIN -json"
+      ],
+      "census": {
+        "luts": 5209,
+        "inverters": 450,
+        "lut_equivalent": 5659,
+        "flip_flops": 4362,
+        "carry": 381,
+        "muxf": 12,
+        "bram36": 10,
+        "bram18": 0,
+        "bram_tiles": 10.0,
+        "uram": 0,
+        "lutram": 0,
+        "lutram_cells": {},
+        "io_buffers": 36,
+        "unclassified": {},
+        "total_cells": 10460
+      },
+      "cells_by_type": {
+        "BUFG": 2,
+        "CARRY4": 381,
+        "FDCE": 919,
+        "FDCE_1": 70,
+        "FDPE": 59,
+        "FDRE": 3313,
+        "FDRE_1": 1,
+        "IBUF": 23,
+        "INV": 450,
+        "LUT1": 2,
+        "LUT2": 991,
+        "LUT3": 721,
+        "LUT4": 939,
+        "LUT5": 1214,
+        "LUT6": 1342,
+        "MUXF7": 10,
+        "MUXF8": 2,
+        "OBUF": 11,
+        "RAMB36E2": 10
+      }
+    },
+    {
+      "key": "gen_a128n128_mb8_per_event",
+      "label": "generated core, 128 axons x 128 neurons, 8-bit unsigned membrane, per-event law",
+      "kind": "generated",
+      "top": "odin_gen_core",
+      "parameters": {},
+      "geometry": {
+        "max_axons": 128,
+        "max_neurons": 128,
+        "weight_bits": 4,
+        "membrane_bits": 8,
+        "membrane_signed": false,
+        "per_event": true,
+        "spec_key": "a128n128w4m8u_pe",
+        "proven_by": "tests/integration/test_odin_gen_geometry.py::small_variant"
+      },
+      "memories": [
+        {
+          "array": "syn_mem",
+          "words": 2048,
+          "width": 32,
+          "bits": 65536
+        },
+        {
+          "array": "thr_arr",
+          "words": 128,
+          "width": 8,
+          "bits": 1024
+        },
+        {
+          "array": "vmem_arr",
+          "words": 128,
+          "width": 8,
+          "bits": 1024
+        }
+      ],
+      "memory_bits": 67584,
+      "measured_by": "this run",
+      "sources": [
+        "build/odin_rtl_gen/a128n128w4m8u_pe/odin_gen_core.v"
+      ],
+      "script": [
+        "read_verilog -nooverwrite build/odin_rtl_gen/a128n128w4m8u_pe/odin_gen_core.v",
+        "synth_xilinx -family xcup -top odin_gen_core",
+        "stat -top odin_gen_core -json"
+      ],
+      "census": {
+        "luts": 2273,
+        "inverters": 1,
+        "lut_equivalent": 2274,
+        "flip_flops": 1064,
+        "carry": 8,
+        "muxf": 2,
+        "bram36": 0,
+        "bram18": 0,
+        "bram_tiles": 0.0,
+        "uram": 0,
+        "lutram": 164,
+        "lutram_cells": {
+          "RAM64M8": 164
+        },
+        "io_buffers": 250,
+        "unclassified": {},
+        "total_cells": 3762
+      },
+      "cells_by_type": {
+        "BUFG": 1,
+        "CARRY4": 8,
+        "FDRE": 1063,
+        "FDSE": 1,
+        "IBUF": 79,
+        "INV": 1,
+        "LUT2": 152,
+        "LUT3": 106,
+        "LUT4": 380,
+        "LUT5": 480,
+        "LUT6": 1155,
+        "MUXF7": 2,
+        "OBUF": 170,
+        "RAM64M8": 164
+      }
+    },
+    {
+      "key": "gen_a512n256_mb16_per_event",
+      "label": "generated core, 512 axons x 256 neurons, 16-bit unsigned membrane, per-event law",
+      "kind": "generated",
+      "top": "odin_gen_core",
+      "parameters": {},
+      "geometry": {
+        "max_axons": 512,
+        "max_neurons": 256,
+        "weight_bits": 4,
+        "membrane_bits": 16,
+        "membrane_signed": false,
+        "per_event": true,
+        "spec_key": "a512n256w4m16u_pe",
+        "proven_by": "tests/integration/test_odin_gen_geometry.py::wide_variant"
+      },
+      "memories": [
+        {
+          "array": "syn_mem",
+          "words": 16384,
+          "width": 32,
+          "bits": 524288
+        },
+        {
+          "array": "thr_arr",
+          "words": 256,
+          "width": 16,
+          "bits": 4096
+        },
+        {
+          "array": "vmem_arr",
+          "words": 256,
+          "width": 16,
+          "bits": 4096
+        }
+      ],
+      "memory_bits": 532480,
+      "measured_by": "this run",
+      "sources": [
+        "build/odin_rtl_gen/a512n256w4m16u_pe/odin_gen_core.v"
+      ],
+      "script": [
+        "read_verilog -nooverwrite build/odin_rtl_gen/a512n256w4m16u_pe/odin_gen_core.v",
+        "synth_xilinx -family xcup -top odin_gen_core",
+        "stat -top odin_gen_core -json"
+      ],
+      "census": {
+        "luts": 10161,
+        "inverters": 1,
+        "lut_equivalent": 10162,
+        "flip_flops": 4158,
+        "carry": 13,
+        "muxf": 4,
+        "bram36": 0,
+        "bram18": 1,
+        "bram_tiles": 0.5,
+        "uram": 0,
+        "lutram": 1280,
+        "lutram_cells": {
+          "RAM64M8": 1280
+        },
+        "io_buffers": 253,
+        "unclassified": {},
+        "total_cells": 15871
+      },
+      "cells_by_type": {
+        "BUFG": 1,
+        "CARRY4": 13,
+        "FDRE": 4157,
+        "FDSE": 1,
+        "IBUF": 81,
+        "INV": 1,
+        "LUT2": 661,
+        "LUT3": 396,
+        "LUT4": 398,
+        "LUT5": 1772,
+        "LUT6": 6934,
+        "MUXF7": 3,
+        "MUXF8": 1,
+        "OBUF": 171,
+        "RAM64M8": 1280,
+        "RAMB18E2": 1
+      }
+    },
+    {
+      "key": "gen_a256n256_mb16s_sync_fire",
+      "label": "generated core, 256 axons x 256 neurons, 16-bit signed membrane, sync-fire law",
+      "kind": "generated",
+      "top": "odin_gen_core",
+      "parameters": {},
+      "geometry": {
+        "max_axons": 256,
+        "max_neurons": 256,
+        "weight_bits": 4,
+        "membrane_bits": 16,
+        "membrane_signed": true,
+        "per_event": false,
+        "spec_key": "a256n256w4m16s_pc",
+        "proven_by": "tests/integration/test_odin_gen_sync_fire.py"
+      },
+      "memories": [
+        {
+          "array": "syn_mem",
+          "words": 8192,
+          "width": 32,
+          "bits": 262144
+        },
+        {
+          "array": "thr_arr",
+          "words": 256,
+          "width": 16,
+          "bits": 4096
+        },
+        {
+          "array": "vmem_arr",
+          "words": 256,
+          "width": 16,
+          "bits": 4096
+        }
+      ],
+      "memory_bits": 270336,
+      "measured_by": "this run",
+      "sources": [
+        "build/odin_rtl_gen/a256n256w4m16s_pc/odin_gen_core.v"
+      ],
+      "script": [
+        "read_verilog -nooverwrite build/odin_rtl_gen/a256n256w4m16s_pc/odin_gen_core.v",
+        "synth_xilinx -family xcup -top odin_gen_core",
+        "stat -top odin_gen_core -json"
+      ],
+      "census": {
+        "luts": 8570,
+        "inverters": 1,
+        "lut_equivalent": 8571,
+        "flip_flops": 4158,
+        "carry": 16,
+        "muxf": 13,
+        "bram36": 0,
+        "bram18": 1,
+        "bram_tiles": 0.5,
+        "uram": 0,
+        "lutram": 640,
+        "lutram_cells": {
+          "RAM64M8": 640
+        },
+        "io_buffers": 252,
+        "unclassified": {},
+        "total_cells": 13651
+      },
+      "cells_by_type": {
+        "BUFG": 1,
+        "CARRY4": 16,
+        "FDRE": 4157,
+        "FDSE": 1,
+        "IBUF": 80,
+        "INV": 1,
+        "LUT2": 520,
+        "LUT3": 1095,
+        "LUT4": 331,
+        "LUT5": 1708,
+        "LUT6": 4916,
+        "MUXF7": 9,
+        "MUXF8": 4,
+        "OBUF": 171,
+        "RAM64M8": 640,
+        "RAMB18E2": 1
+      }
+    },
+    {
+      "key": "wrapper_nc1_prog4096_cap1024",
+      "label": "kernel wrapper `odin_fpga_kernel_top` at NC=1 (PROG_WORDS=4096, CAP_WORDS=1024) -- sequencer + AXI DMA + capture + one stock core",
+      "kind": "wrapper",
+      "top": "odin_fpga_kernel_top",
+      "parameters": {
+        "CAP_WORDS": 1024,
+        "PROG_WORDS": 4096
+      },
+      "geometry": {
+        "n_cores": 1,
+        "prog_words": 4096,
+        "cap_words": 1024,
+        "shipped_prog_words_per_core": 262144,
+        "shipped_cap_words": 65536
+      },
+      "memories": [
+        {
+          "array": "prog_ram",
+          "words": 4096,
+          "width": 32,
+          "bits": 131072
+        },
+        {
+          "array": "cap_ram",
+          "words": 1024,
+          "width": 32,
+          "bits": 32768
+        }
+      ],
+      "memory_bits": 163840,
+      "measured_by": "this run",
+      "sources": [
+        "hw/fpga/mem/SRAM_256x128_wrapper.v",
+        "hw/fpga/mem/SRAM_8192x32_wrapper.v",
+        "hw/fpga/kernel/odin_aer_bridge.v",
+        "hw/fpga/kernel/odin_fpga_kernel.v",
+        "hw/fpga/kernel/odin_fpga_kernel_top.v",
+        "hw/fpga/kernel/odin_spi_master.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v",
+        "hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v",
+        "hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v",
+        "hw/vendor/odin/src/ODIN.v",
+        "hw/vendor/odin/src/aer_out.v",
+        "hw/vendor/odin/src/controller.v",
+        "hw/vendor/odin/src/fifo.v",
+        "hw/vendor/odin/src/izh_neuron.v",
+        "hw/vendor/odin/src/lif_neuron.v",
+        "hw/vendor/odin/src/neuron_core.v",
+        "hw/vendor/odin/src/scheduler.v",
+        "hw/vendor/odin/src/sdsp_update.v",
+        "hw/vendor/odin/src/spi_slave.v",
+        "hw/vendor/odin/src/synaptic_core.v"
+      ],
+      "script": [
+        "read_verilog -nooverwrite hw/fpga/mem/SRAM_256x128_wrapper.v hw/fpga/mem/SRAM_8192x32_wrapper.v hw/fpga/kernel/odin_aer_bridge.v hw/fpga/kernel/odin_fpga_kernel.v hw/fpga/kernel/odin_fpga_kernel_top.v hw/fpga/kernel/odin_spi_master.v hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v hw/vendor/odin/src/ODIN.v hw/vendor/odin/src/aer_out.v hw/vendor/odin/src/controller.v hw/vendor/odin/src/fifo.v hw/vendor/odin/src/izh_neuron.v hw/vendor/odin/src/lif_neuron.v hw/vendor/odin/src/neuron_core.v hw/vendor/odin/src/scheduler.v hw/vendor/odin/src/sdsp_update.v hw/vendor/odin/src/spi_slave.v hw/vendor/odin/src/synaptic_core.v",
+        "chparam -set CAP_WORDS 1024 -set PROG_WORDS 4096 odin_fpga_kernel_top",
+        "synth_xilinx -family xcup -top odin_fpga_kernel_top",
+        "stat -top odin_fpga_kernel_top -json"
+      ],
+      "census": {
+        "luts": 25349,
+        "inverters": 579,
+        "lut_equivalent": 25928,
+        "flip_flops": 38245,
+        "carry": 508,
+        "muxf": 13,
+        "bram36": 14,
+        "bram18": 0,
+        "bram_tiles": 14.0,
+        "uram": 0,
+        "lutram": 0,
+        "lutram_cells": {},
+        "io_buffers": 349,
+        "unclassified": {},
+        "total_cells": 65057
+      },
+      "cells_by_type": {
+        "BUFG": 2,
+        "CARRY4": 508,
+        "FDCE": 919,
+        "FDCE_1": 70,
+        "FDPE": 59,
+        "FDRE": 37193,
+        "FDRE_1": 1,
+        "FDSE": 3,
+        "IBUF": 109,
+        "INV": 579,
+        "LUT1": 2,
+        "LUT2": 2300,
+        "LUT3": 1326,
+        "LUT4": 3179,
+        "LUT5": 13081,
+        "LUT6": 5461,
+        "MUXF7": 11,
+        "MUXF8": 2,
+        "OBUF": 238,
+        "RAMB36E2": 14
+      }
+    },
+    {
+      "key": "wrapper_nc1_prog4096_cap2048",
+      "label": "kernel wrapper `odin_fpga_kernel_top` at NC=1 (PROG_WORDS=4096, CAP_WORDS=2048) -- sequencer + AXI DMA + capture + one stock core",
+      "kind": "wrapper",
+      "top": "odin_fpga_kernel_top",
+      "parameters": {
+        "CAP_WORDS": 2048,
+        "PROG_WORDS": 4096
+      },
+      "geometry": {
+        "n_cores": 1,
+        "prog_words": 4096,
+        "cap_words": 2048,
+        "shipped_prog_words_per_core": 262144,
+        "shipped_cap_words": 65536
+      },
+      "memories": [
+        {
+          "array": "prog_ram",
+          "words": 4096,
+          "width": 32,
+          "bits": 131072
+        },
+        {
+          "array": "cap_ram",
+          "words": 2048,
+          "width": 32,
+          "bits": 65536
+        }
+      ],
+      "memory_bits": 196608,
+      "measured_by": "this run",
+      "sources": [
+        "hw/fpga/mem/SRAM_256x128_wrapper.v",
+        "hw/fpga/mem/SRAM_8192x32_wrapper.v",
+        "hw/fpga/kernel/odin_aer_bridge.v",
+        "hw/fpga/kernel/odin_fpga_kernel.v",
+        "hw/fpga/kernel/odin_fpga_kernel_top.v",
+        "hw/fpga/kernel/odin_spi_master.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v",
+        "hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v",
+        "hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v",
+        "hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v",
+        "hw/vendor/odin/src/ODIN.v",
+        "hw/vendor/odin/src/aer_out.v",
+        "hw/vendor/odin/src/controller.v",
+        "hw/vendor/odin/src/fifo.v",
+        "hw/vendor/odin/src/izh_neuron.v",
+        "hw/vendor/odin/src/lif_neuron.v",
+        "hw/vendor/odin/src/neuron_core.v",
+        "hw/vendor/odin/src/scheduler.v",
+        "hw/vendor/odin/src/sdsp_update.v",
+        "hw/vendor/odin/src/spi_slave.v",
+        "hw/vendor/odin/src/synaptic_core.v"
+      ],
+      "script": [
+        "read_verilog -nooverwrite hw/fpga/mem/SRAM_256x128_wrapper.v hw/fpga/mem/SRAM_8192x32_wrapper.v hw/fpga/kernel/odin_aer_bridge.v hw/fpga/kernel/odin_fpga_kernel.v hw/fpga/kernel/odin_fpga_kernel_top.v hw/fpga/kernel/odin_spi_master.v hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v hw/vendor/odin/src/ODIN.v hw/vendor/odin/src/aer_out.v hw/vendor/odin/src/controller.v hw/vendor/odin/src/fifo.v hw/vendor/odin/src/izh_neuron.v hw/vendor/odin/src/lif_neuron.v hw/vendor/odin/src/neuron_core.v hw/vendor/odin/src/scheduler.v hw/vendor/odin/src/sdsp_update.v hw/vendor/odin/src/spi_slave.v hw/vendor/odin/src/synaptic_core.v",
+        "chparam -set CAP_WORDS 2048 -set PROG_WORDS 4096 odin_fpga_kernel_top",
+        "synth_xilinx -family xcup -top odin_fpga_kernel_top",
+        "stat -top odin_fpga_kernel_top -json"
+      ],
+      "census": {
+        "luts": 44880,
+        "inverters": 579,
+        "lut_equivalent": 45459,
+        "flip_flops": 71013,
+        "carry": 508,
+        "muxf": 13,
+        "bram36": 14,
+        "bram18": 0,
+        "bram_tiles": 14.0,
+        "uram": 0,
+        "lutram": 0,
+        "lutram_cells": {},
+        "io_buffers": 349,
+        "unclassified": {},
+        "total_cells": 117356
+      },
+      "cells_by_type": {
+        "BUFG": 2,
+        "CARRY4": 508,
+        "FDCE": 919,
+        "FDCE_1": 70,
+        "FDPE": 59,
+        "FDRE": 69961,
+        "FDRE_1": 1,
+        "FDSE": 3,
+        "IBUF": 109,
+        "INV": 579,
+        "LUT1": 2,
+        "LUT2": 3318,
+        "LUT3": 1699,
+        "LUT4": 5431,
+        "LUT5": 25261,
+        "LUT6": 9169,
+        "MUXF7": 11,
+        "MUXF8": 2,
+        "OBUF": 238,
+        "RAMB36E2": 14
+      }
+    }
+  ],
+  "wrapper_overhead": {
+    "wrapper": "wrapper_nc1_prog4096_cap1024",
+    "minus": "stock_a256n256_vendored",
+    "at_parameters": {
+      "CAP_WORDS": 1024,
+      "PROG_WORDS": 4096
+    },
+    "delta": {
+      "lut_equivalent": 20269.0,
+      "flip_flops": 33883.0,
+      "carry": 127.0,
+      "muxf": 1.0,
+      "lutram": 0.0,
+      "bram36": 4.0,
+      "bram18": 0.0,
+      "bram_tiles": 4.0,
+      "uram": 0.0
+    },
+    "delta_costs": {
+      "lut_sites": 20269.0,
+      "flip_flops": 33883.0,
+      "bram36": 4.0,
+      "uram": 0.0
+    },
+    "meaning": "the wrapper census less the stock core's, i.e. the AXI4-Lite control block, the AXI4 DMA engine, the token sequencer, the SPI master, the AER bridge, the program RAM and the capture RAM, at the SHRUNK RAM depths named in `at_parameters` -- NOT at the depths the wrapper ships with"
+  },
+  "capture_ram_slope": {
+    "points": [
+      "wrapper_nc1_prog4096_cap1024",
+      "wrapper_nc1_prog4096_cap2048"
+    ],
+    "extra_capture_words": 1024,
+    "delta": {
+      "lut_equivalent": 19531.0,
+      "flip_flops": 32768.0,
+      "carry": 0.0,
+      "muxf": 0.0,
+      "lutram": 0.0,
+      "bram36": 0.0,
+      "bram18": 0.0,
+      "bram_tiles": 0.0,
+      "uram": 0.0
+    },
+    "per_capture_word": {
+      "lut_equivalent": 19.0732421875,
+      "flip_flops": 32.0,
+      "carry": 0.0,
+      "muxf": 0.0,
+      "lutram": 0.0,
+      "bram36": 0.0,
+      "bram18": 0.0,
+      "bram_tiles": 0.0,
+      "uram": 0.0
+    },
+    "meaning": "two wrapper points differing ONLY in CAP_WORDS. The flip-flop slope is what the capture RAM costs per 32-bit word today, and it is a measurement, not an inference"
+  },
+  "device": {
+    "part": "XCU55C",
+    "card": "AMD Alveo U55C",
+    "provenance": "datasheet -- AMD Alveo U55C product table / DS978 (XCU55C, three SLRs, 16 GB HBM2). No figure in this table was measured on hardware.",
+    "totals": {
+      "luts": {
+        "value": 1304000,
+        "published": "1,304K",
+        "derivation": "product-table LUT count, taken as published"
+      },
+      "registers": {
+        "value": 2607000,
+        "published": "2,607K",
+        "derivation": "product-table register count, taken as published"
+      },
+      "bram36_tiles": {
+        "value": 2016,
+        "published": "70.9 Mb total block RAM",
+        "derivation": "70.9 Mib / 36 Kib per RAMB36 tile = 2,016 tiles"
+      },
+      "uram_blocks": {
+        "value": 960,
+        "published": "270 Mb UltraRAM",
+        "derivation": "270 Mib / 288 Kib per URAM288 block = 960 blocks"
+      },
+      "dsp_slices": {
+        "value": 9024,
+        "published": "9,024",
+        "derivation": "product-table DSP count; no configuration in this study uses a DSP, so it never binds"
+      }
+    },
+    "shell_overhead": "UNKNOWN UNTIL P7b: the Alveo shell (XDMA/HBM AXI infrastructure, the dynamic-region boundary) consumes device resources this study has not measured. A Vivado `report_utilization` on the linked `xilinx_u55c_gen3x16_xdma_base_3` design is the only source of that number, and Vivado exists only on HACC (owner-gated login), so it is the B0-adjacent step of the BOARD half of P8."
+  },
+  "availability": [
+    {
+      "key": "datasheet_total",
+      "label": "datasheet total (naive: the whole device is the user's)",
+      "shell_fraction": 0.0,
+      "status": "datasheet, but NOT achievable -- it ignores the shell entirely",
+      "available": {
+        "luts": 1304000,
+        "registers": 2607000,
+        "bram36_tiles": 2016,
+        "uram_blocks": 960
+      }
+    },
+    {
+      "key": "assumed_shell_30pct",
+      "label": "conservative: the shell is ASSUMED to reserve 30% of every class",
+      "shell_fraction": 0.3,
+      "status": "ASSUMPTION, not a measurement. UNKNOWN UNTIL P7b: the Alveo shell (XDMA/HBM AXI infrastructure, the dynamic-region boundary) consumes device resources this study has not measured. A Vivado `report_utilization` on the linked `xilinx_u55c_gen3x16_xdma_base_3` design is the only source of that number, and Vivado exists only on HACC (owner-gated login), so it is the B0-adjacent step of the BOARD half of P8.",
+      "available": {
+        "luts": 912800,
+        "registers": 1824900,
+        "bram36_tiles": 1411,
+        "uram_blocks": 672
+      }
+    }
+  ],
+  "bounds": [
+    {
+      "configuration": "stock_a256n256_vendored",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 5659.0,
+        "flip_flops": 4362.0,
+        "bram36": 10.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 5659.0,
+          "fixed_overhead": 0.0,
+          "available": 1304000,
+          "n_max": 230
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4362.0,
+          "fixed_overhead": 0.0,
+          "available": 2607000,
+          "n_max": 597
+        },
+        {
+          "resource": "bram36",
+          "per_core": 10.0,
+          "fixed_overhead": 0.0,
+          "available": 2016,
+          "n_max": 201
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 201
+    },
+    {
+      "configuration": "stock_a256n256_vendored",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 5659.0,
+        "flip_flops": 4362.0,
+        "bram36": 10.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 5659.0,
+          "fixed_overhead": 20269.0,
+          "available": 1304000,
+          "n_max": 226
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4362.0,
+          "fixed_overhead": 33883.0,
+          "available": 2607000,
+          "n_max": 589
+        },
+        {
+          "resource": "bram36",
+          "per_core": 10.0,
+          "fixed_overhead": 4.0,
+          "available": 2016,
+          "n_max": 201
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 201
+    },
+    {
+      "configuration": "stock_a256n256_vendored",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 5659.0,
+        "flip_flops": 4362.0,
+        "bram36": 10.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 5659.0,
+          "fixed_overhead": 0.0,
+          "available": 912800,
+          "n_max": 161
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4362.0,
+          "fixed_overhead": 0.0,
+          "available": 1824900,
+          "n_max": 418
+        },
+        {
+          "resource": "bram36",
+          "per_core": 10.0,
+          "fixed_overhead": 0.0,
+          "available": 1411,
+          "n_max": 141
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 141
+    },
+    {
+      "configuration": "stock_a256n256_vendored",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 5659.0,
+        "flip_flops": 4362.0,
+        "bram36": 10.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 5659.0,
+          "fixed_overhead": 20269.0,
+          "available": 912800,
+          "n_max": 157
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4362.0,
+          "fixed_overhead": 33883.0,
+          "available": 1824900,
+          "n_max": 410
+        },
+        {
+          "resource": "bram36",
+          "per_core": 10.0,
+          "fixed_overhead": 4.0,
+          "available": 1411,
+          "n_max": 140
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 140
+    },
+    {
+      "configuration": "gen_a128n128_mb8_per_event",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 3586.0,
+        "flip_flops": 1064.0,
+        "bram36": 0.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 3586.0,
+          "fixed_overhead": 0.0,
+          "available": 1304000,
+          "n_max": 363
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 1064.0,
+          "fixed_overhead": 0.0,
+          "available": 2607000,
+          "n_max": 2450
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 2016,
+          "n_max": null
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 363
+    },
+    {
+      "configuration": "gen_a128n128_mb8_per_event",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 3586.0,
+        "flip_flops": 1064.0,
+        "bram36": 0.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 3586.0,
+          "fixed_overhead": 20269.0,
+          "available": 1304000,
+          "n_max": 357
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 1064.0,
+          "fixed_overhead": 33883.0,
+          "available": 2607000,
+          "n_max": 2418
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.0,
+          "fixed_overhead": 4.0,
+          "available": 2016,
+          "n_max": null
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 357
+    },
+    {
+      "configuration": "gen_a128n128_mb8_per_event",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 3586.0,
+        "flip_flops": 1064.0,
+        "bram36": 0.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 3586.0,
+          "fixed_overhead": 0.0,
+          "available": 912800,
+          "n_max": 254
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 1064.0,
+          "fixed_overhead": 0.0,
+          "available": 1824900,
+          "n_max": 1715
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 1411,
+          "n_max": null
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 254
+    },
+    {
+      "configuration": "gen_a128n128_mb8_per_event",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 3586.0,
+        "flip_flops": 1064.0,
+        "bram36": 0.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 3586.0,
+          "fixed_overhead": 20269.0,
+          "available": 912800,
+          "n_max": 248
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 1064.0,
+          "fixed_overhead": 33883.0,
+          "available": 1824900,
+          "n_max": 1683
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.0,
+          "fixed_overhead": 4.0,
+          "available": 1411,
+          "n_max": null
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 248
+    },
+    {
+      "configuration": "gen_a512n256_mb16_per_event",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 20402.0,
+        "flip_flops": 4158.0,
+        "bram36": 0.5,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 20402.0,
+          "fixed_overhead": 0.0,
+          "available": 1304000,
+          "n_max": 63
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4158.0,
+          "fixed_overhead": 0.0,
+          "available": 2607000,
+          "n_max": 626
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.5,
+          "fixed_overhead": 0.0,
+          "available": 2016,
+          "n_max": 4032
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 63
+    },
+    {
+      "configuration": "gen_a512n256_mb16_per_event",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 20402.0,
+        "flip_flops": 4158.0,
+        "bram36": 0.5,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 20402.0,
+          "fixed_overhead": 20269.0,
+          "available": 1304000,
+          "n_max": 62
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4158.0,
+          "fixed_overhead": 33883.0,
+          "available": 2607000,
+          "n_max": 618
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.5,
+          "fixed_overhead": 4.0,
+          "available": 2016,
+          "n_max": 4024
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 62
+    },
+    {
+      "configuration": "gen_a512n256_mb16_per_event",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 20402.0,
+        "flip_flops": 4158.0,
+        "bram36": 0.5,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 20402.0,
+          "fixed_overhead": 0.0,
+          "available": 912800,
+          "n_max": 44
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4158.0,
+          "fixed_overhead": 0.0,
+          "available": 1824900,
+          "n_max": 438
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.5,
+          "fixed_overhead": 0.0,
+          "available": 1411,
+          "n_max": 2822
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 44
+    },
+    {
+      "configuration": "gen_a512n256_mb16_per_event",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 20402.0,
+        "flip_flops": 4158.0,
+        "bram36": 0.5,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 20402.0,
+          "fixed_overhead": 20269.0,
+          "available": 912800,
+          "n_max": 43
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4158.0,
+          "fixed_overhead": 33883.0,
+          "available": 1824900,
+          "n_max": 430
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.5,
+          "fixed_overhead": 4.0,
+          "available": 1411,
+          "n_max": 2814
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 43
+    },
+    {
+      "configuration": "gen_a256n256_mb16s_sync_fire",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 13691.0,
+        "flip_flops": 4158.0,
+        "bram36": 0.5,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 13691.0,
+          "fixed_overhead": 0.0,
+          "available": 1304000,
+          "n_max": 95
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4158.0,
+          "fixed_overhead": 0.0,
+          "available": 2607000,
+          "n_max": 626
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.5,
+          "fixed_overhead": 0.0,
+          "available": 2016,
+          "n_max": 4032
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 95
+    },
+    {
+      "configuration": "gen_a256n256_mb16s_sync_fire",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 13691.0,
+        "flip_flops": 4158.0,
+        "bram36": 0.5,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 13691.0,
+          "fixed_overhead": 20269.0,
+          "available": 1304000,
+          "n_max": 93
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4158.0,
+          "fixed_overhead": 33883.0,
+          "available": 2607000,
+          "n_max": 618
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.5,
+          "fixed_overhead": 4.0,
+          "available": 2016,
+          "n_max": 4024
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 93
+    },
+    {
+      "configuration": "gen_a256n256_mb16s_sync_fire",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 13691.0,
+        "flip_flops": 4158.0,
+        "bram36": 0.5,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 13691.0,
+          "fixed_overhead": 0.0,
+          "available": 912800,
+          "n_max": 66
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4158.0,
+          "fixed_overhead": 0.0,
+          "available": 1824900,
+          "n_max": 438
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.5,
+          "fixed_overhead": 0.0,
+          "available": 1411,
+          "n_max": 2822
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 66
+    },
+    {
+      "configuration": "gen_a256n256_mb16s_sync_fire",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 13691.0,
+        "flip_flops": 4158.0,
+        "bram36": 0.5,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 13691.0,
+          "fixed_overhead": 20269.0,
+          "available": 912800,
+          "n_max": 65
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4158.0,
+          "fixed_overhead": 33883.0,
+          "available": 1824900,
+          "n_max": 430
+        },
+        {
+          "resource": "bram36",
+          "per_core": 0.5,
+          "fixed_overhead": 4.0,
+          "available": 1411,
+          "n_max": 2814
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "lut_sites",
+      "n_max": 65
+    }
+  ]
+}

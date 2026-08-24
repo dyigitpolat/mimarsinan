@@ -44,6 +44,8 @@
     "bram18": 0,
     "bram_tiles": 10.0,
     "uram": 0,
+    "lutram": 0,
+    "lutram_cells": {},
     "io_buffers": 36,
     "unclassified": {},
     "total_cells": 10460

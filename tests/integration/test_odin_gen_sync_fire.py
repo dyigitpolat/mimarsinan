@@ -52,12 +52,15 @@ from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.export.odin_gen import generate_core
 from mimarsinan.mapping.export.odin_gen.feasibility import require_no_saturation
+from mimarsinan.mapping.export.odin_gen.variants import variant_named
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
-AXONS = 256
-NEURONS = 256
-MEMBRANE_BITS = 16
+#: The geometry is READ from the catalog the compile-limits study costs.
+SYNC_VARIANT = variant_named("gen_a256n256_mb16s_sync_fire")
+AXONS = SYNC_VARIANT.spec.max_axons
+NEURONS = SYNC_VARIANT.spec.max_neurons
+MEMBRANE_BITS = SYNC_VARIANT.spec.membrane_bits
 S = 5
 THETA = 5.0
 PRODUCER = 0

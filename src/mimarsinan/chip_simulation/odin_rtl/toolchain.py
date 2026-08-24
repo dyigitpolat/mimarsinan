@@ -95,6 +95,11 @@ def vendor_sources() -> List[Path]:
     return sorted(VENDOR_SRC.rglob("*.v"))
 
 
+def kernel_sources() -> List[Path]:
+    """The Vitis kernel wrapper's RTL: the sequencer, the DMA and the AER bridge."""
+    return sorted((HW_ROOT / "fpga" / "kernel").glob("*.v"))
+
+
 def overlay_sources() -> List[Path]:
     """The BRAM overlay, which must precede the vendor tree in the source list."""
     return sorted(OVERLAY_MEM.glob("*.v"))

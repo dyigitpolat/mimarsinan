@@ -62,6 +62,7 @@ stat -top ODIN -json
 | `RAMB18` | 0 |
 | **BRAM tiles (36 kb equivalent)** | **10** |
 | `URAM` | 0 |
+| Distributed-RAM/SRL cells | 0 |
 | I/O and clock buffers | 36 |
 | Unclassified cells | 0 |
 | Total primitive cells | 10,460 |

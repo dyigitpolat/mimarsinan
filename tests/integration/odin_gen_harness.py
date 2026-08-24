@@ -30,47 +30,16 @@ from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.export.odin_gen import CoreSpec
 from mimarsinan.mapping.export.odin_gen.packer import build_variant_core_image
+from mimarsinan.mapping.export.odin_gen.variants import (  # noqa: F401
+    SIGN_GRANULARITY,
+    WEIGHT_BITS,
+    per_event_law,
+    spec_for,
+    sync_fire_law,
+    unbounded_law,
+)
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
-
-WEIGHT_BITS = 4
-
-#: The generated substrate signs its own synapse cell, which is the OTHER value
-#: of the weight-sign axis from the stock crossbar's per-row SPI_SYN_SIGN.
-SIGN_GRANULARITY = "per_synapse"
-
-_BASE = {"spiking_family": "lif", "spiking_variant": "streamed",
-         "firing_mode": "Novena", "thresholding_mode": "<="}
-
-
-def per_event_law(membrane_bits: int) -> SomaLaw:
-    """The event-serial law on an unsigned register of the declared width."""
-    return SomaLaw.resolve({
-        **_BASE, "firing_granularity": "per_event",
-        "membrane_bits": membrane_bits,
-    })
-
-
-def sync_fire_law(membrane_bits: int) -> SomaLaw:
-    """The sync-fire law: per-cycle compare on a two's-complement register."""
-    return SomaLaw.resolve({
-        **_BASE, "membrane_bits": membrane_bits, "membrane_signed": True,
-    })
-
-
-def unbounded_law() -> SomaLaw:
-    """The contract the sync-fire law claims to reproduce exactly."""
-    return SomaLaw.resolve(dict(_BASE))
-
-
-def spec_for(law: SomaLaw, *, axons: int, neurons: int, count: int = 1) -> CoreSpec:
-    """One declared core type times the law — the projection, never a literal."""
-    return CoreSpec.project(
-        {"max_axons": axons, "max_neurons": neurons, "count": count,
-         "has_bias": False},
-        soma_law=law, weight_bits=WEIGHT_BITS,
-        weight_sign_granularity=SIGN_GRANULARITY,
-    )
 
 
 def require_simulator() -> str:

@@ -182,6 +182,7 @@ def render_report(record: Mapping[str, Any]) -> str:
         f"| `RAMB18` | {per_core['bram18']:,} |",
         f"| **BRAM tiles (36 kb equivalent)** | **{per_core['bram_tiles']:g}** |",
         f"| `URAM` | {per_core['uram']:,} |",
+        f"| Distributed-RAM/SRL cells | {per_core['lutram']:,} |",
         f"| I/O and clock buffers | {per_core['io_buffers']:,} |",
         f"| Unclassified cells | {sum(unclassified.values()):,} |",
         f"| Total primitive cells | {per_core['total_cells']:,} |",

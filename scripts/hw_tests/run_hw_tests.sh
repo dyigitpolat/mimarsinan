@@ -26,13 +26,21 @@
 #   scripts/hw_tests/run_hw_tests.sh                 # every RTL gate
 #   scripts/hw_tests/run_hw_tests.sh -k r11a         # one of them
 #   scripts/hw_tests/run_hw_tests.sh -k synth        # the yosys synthesis gate
+#   scripts/hw_tests/run_hw_tests.sh -k limits       # the P8 compile-limits sweep
 #   scripts/hw_tests/run_hw_tests.sh -k fpga         # the P7a backend gates
 #
 # The simulator (iverilog/vvp/verilator) AND the synthesizer (yosys) are looked
 # up in MIMARSINAN_HW_SIM_BIN (default build/tools/oss-cad-suite/bin); when one
 # is absent the gates that need it skip LOUDLY, naming that path, instead of
 # reporting green. Regenerate the committed synthesis evidence deliberately with
-# scripts/hw_tests/regen_synth_report.py.
+# scripts/hw_tests/regen_synth_report.py, and the committed compile-limits study
+# (hw/fpga/compile_limits.json + docs/odin_fpga_compile_limits_study.md) with
+# scripts/hw_tests/regen_compile_limits.py.
+#
+# [ODIN8] `test_odin_compile_limits.py` is the P8 compile-limits sweep: every
+# studied configuration re-synthesized and matched against the committed record,
+# with the two findings the packing bounds rest on re-derived rather than
+# trusted. Its walls print on `[odin-limits] ...` lines.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -54,6 +62,7 @@ exec "${PYTHON}" -m pytest \
     tests/integration/test_odin_rtl_overlay.py \
     tests/integration/test_odin_rtl_engines.py \
     tests/integration/test_odin_rtl_synth.py \
+    tests/integration/test_odin_compile_limits.py \
     tests/integration/test_odin_gen_geometry.py \
     tests/integration/test_odin_gen_sync_fire.py \
     tests/integration/test_odin_fpga_e2e.py \

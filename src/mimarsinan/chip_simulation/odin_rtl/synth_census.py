@@ -61,6 +61,7 @@ class ResourceTable:
     bram36: int
     bram18: int
     uram: int
+    lutram_cells: Mapping[str, int]
     io_buffers: int
     unclassified: Mapping[str, int]
     total_cells: int
@@ -69,6 +70,11 @@ class ResourceTable:
     def bram_tiles(self) -> float:
         """RAMB18 is half a physical tile; RAMB36 is one."""
         return self.bram36 + self.bram18 / 2.0
+
+    @property
+    def lutram(self) -> int:
+        """Distributed-RAM/SRL cells: memory that stayed in the CLB fabric."""
+        return sum(self.lutram_cells.values())
 
     def as_record(self) -> Dict[str, Any]:
         return {
@@ -82,6 +88,8 @@ class ResourceTable:
             "bram18": self.bram18,
             "bram_tiles": self.bram_tiles,
             "uram": self.uram,
+            "lutram": self.lutram,
+            "lutram_cells": dict(sorted(self.lutram_cells.items())),
             "io_buffers": self.io_buffers,
             "unclassified": dict(sorted(self.unclassified.items())),
             "total_cells": self.total_cells,
@@ -99,6 +107,7 @@ def resource_table(cells_by_type: Mapping[str, int]) -> ResourceTable:
         "bram36": lambda c: c.startswith("RAMB36"),
         "bram18": lambda c: c.startswith("RAMB18"),
         "uram": lambda c: _has_prefix(c, URAM_PREFIXES),
+        "lutram": _is_distributed_ram,
         "io": lambda c: _has_prefix(c, IO_PREFIXES),
     }
     unclassified = _selected(
@@ -113,6 +122,7 @@ def resource_table(cells_by_type: Mapping[str, int]) -> ResourceTable:
         bram36=_total(cells_by_type, claimed["bram36"]),
         bram18=_total(cells_by_type, claimed["bram18"]),
         uram=_total(cells_by_type, claimed["uram"]),
+        lutram_cells=_selected(cells_by_type, claimed["lutram"]),
         io_buffers=_total(cells_by_type, claimed["io"]),
         unclassified=unclassified,
         total_cells=sum(cells_by_type.values()),
