@@ -261,9 +261,15 @@ pick_partition() {
         return 0
     fi
     if ! command -v scontrol > /dev/null 2>&1 || ! command -v sinfo > /dev/null 2>&1; then
-        PICKED="$1"
+        # Blind fallback: prefer the second candidate — the candidate lists put
+        # the docs-canonical venue first and the field-proven one (2026-08-25:
+        # cpu_only's node dead, vck5000_compile/mi210_u280_u55c alive and
+        # permitted) second, and with no slurm to consult, field evidence beats
+        # stale docs.
+        PICKED="${2:-$1}"
         say "[pick/${role}] no scontrol/sinfo on PATH — cannot filter anything."
-        say "[pick/${role}] falling back to the first candidate: ${PICKED}"
+        say "[pick/${role}] falling back to ${PICKED} (field-proven 2026-08-25);"
+        say "[pick/${role}] override with the env var if the cluster changed."
         return 0
     fi
     load_groups
@@ -407,7 +413,9 @@ phase_0() {
         say "  FIX: run this from hacchead (source /home/hacc_env)."
         failures=$((failures + 1))
     fi
-    if grep -q "${EXPECTED_XRT}" "${report}"; then
+    # The report contains our own "expect XRT:" line; exclude it so this greps
+    # only actual probe evidence (version.json, xbutil output), not the wish.
+    if grep -v '^expect XRT:' "${report}" | grep -q "${EXPECTED_XRT}"; then
         say "[phase0] XRT ${EXPECTED_XRT} seen in the probe."
     else
         say "[phase0] NOTE: XRT ${EXPECTED_XRT} (hacc_demo/README.md line 32) was"
