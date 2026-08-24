@@ -43,6 +43,8 @@ from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
     CAPTURE_HEADER_WORDS,
     CAPTURE_RECORD_WORDS,
     CTRL_OFFSET,
+    SHIPPED_CAPTURE_EVENTS,
+    SHIPPED_CAPTURE_WORDS,
     STATUS_ERR_BIT,
     OdinFpgaCaptureTruncated,
     OdinFpgaKernelError,
@@ -56,6 +58,9 @@ from mimarsinan.chip_simulation.odin_fpga.xrt_transport import (
     OdinFpgaDependencyError,
     XrtTransport,
     load_pyxrt,
+)
+from mimarsinan.chip_simulation.odin_rtl.limits.configurations import (
+    wrapper_shipped_depths,
 )
 from mimarsinan.chip_simulation.odin_rtl.stimulus import OP_END, OP_SPI_W
 
@@ -100,9 +105,9 @@ class _FakeRun:
 
 
 #: The register images of the committed kernel geometry at the fixture's two
-#: cores: a 65536-word capture RAM holds (65536 - 2) // 4 = 16383 records, and
+#: cores: the shipped capture RAM holds SHIPPED_CAPTURE_EVENTS records, and
 #: PROG_WORDS is NC * 262144 (hw/fpga/kernel/odin_fpga_kernel_top.v).
-FABRIC_CAPTURE_EVENTS = 16383
+FABRIC_CAPTURE_EVENTS = SHIPPED_CAPTURE_EVENTS
 FABRIC_PROGRAM_WORDS = 2 * 262144
 
 
@@ -525,3 +530,24 @@ class TestTheFactoryResolvesTheDeclaredDevice:
 
 def test_the_payload_of_an_empty_op_list_is_just_the_terminator():
     assert payload_bytes(()) == struct.pack("<I", OP_END)
+
+
+class TestTheShippedCaptureDepthIsOneNumber:
+    """CROSS-LANGUAGE CONTRACT: the host's copy of `CAP_WORDS` is the RTL's.
+
+    The host refuses a truncated run against the capacity the DEVICE reports,
+    so a host constant that drifted from the fabric would not corrupt a count —
+    but it WOULD size buffers and print advice for a kernel nobody built.
+    """
+
+    def test_the_host_constant_is_the_rtl_default(self):
+        assert wrapper_shipped_depths()["CAP_WORDS"] == SHIPPED_CAPTURE_WORDS
+
+    def test_the_event_capacity_is_the_wrapper_s_own_arithmetic(self):
+        assert SHIPPED_CAPTURE_EVENTS == (
+            SHIPPED_CAPTURE_WORDS - CAPTURE_HEADER_WORDS) // CAPTURE_RECORD_WORDS
+
+    def test_the_depth_is_a_whole_number_of_block_ram_tiles(self):
+        """A tile is 1,024 words of 36 bits: the shipped depth is chosen so the
+        capture buffer costs whole tiles and not a partial one plus fabric."""
+        assert SHIPPED_CAPTURE_WORDS % 1024 == 0

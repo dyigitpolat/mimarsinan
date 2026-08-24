@@ -159,39 +159,40 @@
         "stat -top odin_gen_core -json"
       ],
       "census": {
-        "luts": 2273,
+        "luts": 1933,
         "inverters": 1,
-        "lut_equivalent": 2274,
-        "flip_flops": 1064,
+        "lut_equivalent": 1934,
+        "flip_flops": 1057,
         "carry": 8,
-        "muxf": 2,
-        "bram36": 0,
+        "muxf": 1,
+        "bram36": 2,
         "bram18": 0,
-        "bram_tiles": 0.0,
+        "bram_tiles": 2.0,
         "uram": 0,
-        "lutram": 164,
+        "lutram": 4,
         "lutram_cells": {
-          "RAM64M8": 164
+          "RAM64M8": 4
         },
         "io_buffers": 250,
         "unclassified": {},
-        "total_cells": 3762
+        "total_cells": 3256
       },
       "cells_by_type": {
         "BUFG": 1,
         "CARRY4": 8,
-        "FDRE": 1063,
+        "FDRE": 1056,
         "FDSE": 1,
         "IBUF": 79,
         "INV": 1,
-        "LUT2": 152,
-        "LUT3": 106,
-        "LUT4": 380,
-        "LUT5": 480,
-        "LUT6": 1155,
-        "MUXF7": 2,
+        "LUT2": 231,
+        "LUT3": 38,
+        "LUT4": 210,
+        "LUT5": 246,
+        "LUT6": 1208,
+        "MUXF7": 1,
         "OBUF": 170,
-        "RAM64M8": 164
+        "RAM64M8": 4,
+        "RAMB36E2": 2
       }
     },
     {
@@ -241,41 +242,41 @@
         "stat -top odin_gen_core -json"
       ],
       "census": {
-        "luts": 10161,
+        "luts": 6521,
         "inverters": 1,
-        "lut_equivalent": 10162,
-        "flip_flops": 4158,
+        "lut_equivalent": 6522,
+        "flip_flops": 4133,
         "carry": 13,
-        "muxf": 4,
-        "bram36": 0,
-        "bram18": 1,
-        "bram_tiles": 0.5,
+        "muxf": 7,
+        "bram36": 16,
+        "bram18": 0,
+        "bram_tiles": 16.0,
         "uram": 0,
-        "lutram": 1280,
+        "lutram": 12,
         "lutram_cells": {
-          "RAM64M8": 1280
+          "RAM64M8": 12
         },
         "io_buffers": 253,
         "unclassified": {},
-        "total_cells": 15871
+        "total_cells": 10956
       },
       "cells_by_type": {
         "BUFG": 1,
         "CARRY4": 13,
-        "FDRE": 4157,
+        "FDRE": 4132,
         "FDSE": 1,
         "IBUF": 81,
         "INV": 1,
-        "LUT2": 661,
-        "LUT3": 396,
-        "LUT4": 398,
-        "LUT5": 1772,
-        "LUT6": 6934,
-        "MUXF7": 3,
-        "MUXF8": 1,
+        "LUT2": 405,
+        "LUT3": 506,
+        "LUT4": 463,
+        "LUT5": 708,
+        "LUT6": 4439,
+        "MUXF7": 5,
+        "MUXF8": 2,
         "OBUF": 171,
-        "RAM64M8": 1280,
-        "RAMB18E2": 1
+        "RAM64M8": 12,
+        "RAMB36E2": 16
       }
     },
     {
@@ -325,58 +326,58 @@
         "stat -top odin_gen_core -json"
       ],
       "census": {
-        "luts": 8570,
+        "luts": 6473,
         "inverters": 1,
-        "lut_equivalent": 8571,
-        "flip_flops": 4158,
+        "lut_equivalent": 6474,
+        "flip_flops": 4133,
         "carry": 16,
-        "muxf": 13,
-        "bram36": 0,
-        "bram18": 1,
-        "bram_tiles": 0.5,
+        "muxf": 15,
+        "bram36": 8,
+        "bram18": 0,
+        "bram_tiles": 8.0,
         "uram": 0,
-        "lutram": 640,
+        "lutram": 12,
         "lutram_cells": {
-          "RAM64M8": 640
+          "RAM64M8": 12
         },
         "io_buffers": 252,
         "unclassified": {},
-        "total_cells": 13651
+        "total_cells": 10910
       },
       "cells_by_type": {
         "BUFG": 1,
         "CARRY4": 16,
-        "FDRE": 4157,
+        "FDRE": 4132,
         "FDSE": 1,
         "IBUF": 80,
         "INV": 1,
-        "LUT2": 520,
-        "LUT3": 1095,
-        "LUT4": 331,
-        "LUT5": 1708,
-        "LUT6": 4916,
-        "MUXF7": 9,
-        "MUXF8": 4,
+        "LUT2": 407,
+        "LUT3": 199,
+        "LUT4": 424,
+        "LUT5": 653,
+        "LUT6": 4790,
+        "MUXF7": 10,
+        "MUXF8": 5,
         "OBUF": 171,
-        "RAM64M8": 640,
-        "RAMB18E2": 1
+        "RAM64M8": 12,
+        "RAMB36E2": 8
       }
     },
     {
-      "key": "wrapper_nc1_prog4096_cap1024",
-      "label": "kernel wrapper `odin_fpga_kernel_top` at NC=1 (PROG_WORDS=4096, CAP_WORDS=1024) -- sequencer + AXI DMA + capture + one stock core",
+      "key": "wrapper_nc1_prog4096_cap16384",
+      "label": "kernel wrapper `odin_fpga_kernel_top` at NC=1 (PROG_WORDS=4096, CAP_WORDS=16384) -- sequencer + AXI DMA + capture + one stock core",
       "kind": "wrapper",
       "top": "odin_fpga_kernel_top",
       "parameters": {
-        "CAP_WORDS": 1024,
+        "CAP_WORDS": 16384,
         "PROG_WORDS": 4096
       },
       "geometry": {
         "n_cores": 1,
         "prog_words": 4096,
-        "cap_words": 1024,
+        "cap_words": 16384,
         "shipped_prog_words_per_core": 262144,
-        "shipped_cap_words": 65536
+        "shipped_cap_words": 16384
       },
       "memories": [
         {
@@ -387,12 +388,12 @@
         },
         {
           "array": "cap_ram",
-          "words": 1024,
+          "words": 16384,
           "width": 32,
-          "bits": 32768
+          "bits": 524288
         }
       ],
-      "memory_bits": 163840,
+      "memory_bits": 655360,
       "measured_by": "this run",
       "sources": [
         "hw/fpga/mem/SRAM_256x128_wrapper.v",
@@ -422,26 +423,26 @@
       ],
       "script": [
         "read_verilog -nooverwrite hw/fpga/mem/SRAM_256x128_wrapper.v hw/fpga/mem/SRAM_8192x32_wrapper.v hw/fpga/kernel/odin_aer_bridge.v hw/fpga/kernel/odin_fpga_kernel.v hw/fpga/kernel/odin_fpga_kernel_top.v hw/fpga/kernel/odin_spi_master.v hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v hw/vendor/odin/src/ODIN.v hw/vendor/odin/src/aer_out.v hw/vendor/odin/src/controller.v hw/vendor/odin/src/fifo.v hw/vendor/odin/src/izh_neuron.v hw/vendor/odin/src/lif_neuron.v hw/vendor/odin/src/neuron_core.v hw/vendor/odin/src/scheduler.v hw/vendor/odin/src/sdsp_update.v hw/vendor/odin/src/spi_slave.v hw/vendor/odin/src/synaptic_core.v",
-        "chparam -set CAP_WORDS 1024 -set PROG_WORDS 4096 odin_fpga_kernel_top",
+        "chparam -set CAP_WORDS 16384 -set PROG_WORDS 4096 odin_fpga_kernel_top",
         "synth_xilinx -family xcup -top odin_fpga_kernel_top",
         "stat -top odin_fpga_kernel_top -json"
       ],
       "census": {
-        "luts": 25349,
+        "luts": 6156,
         "inverters": 579,
-        "lut_equivalent": 25928,
-        "flip_flops": 38245,
+        "lut_equivalent": 6735,
+        "flip_flops": 5447,
         "carry": 508,
-        "muxf": 13,
-        "bram36": 14,
+        "muxf": 10,
+        "bram36": 30,
         "bram18": 0,
-        "bram_tiles": 14.0,
+        "bram_tiles": 30.0,
         "uram": 0,
         "lutram": 0,
         "lutram_cells": {},
         "io_buffers": 349,
         "unclassified": {},
-        "total_cells": 65057
+        "total_cells": 13079
       },
       "cells_by_type": {
         "BUFG": 2,
@@ -449,38 +450,37 @@
         "FDCE": 919,
         "FDCE_1": 70,
         "FDPE": 59,
-        "FDRE": 37193,
+        "FDRE": 4395,
         "FDRE_1": 1,
         "FDSE": 3,
         "IBUF": 109,
         "INV": 579,
-        "LUT1": 2,
-        "LUT2": 2300,
-        "LUT3": 1326,
-        "LUT4": 3179,
-        "LUT5": 13081,
-        "LUT6": 5461,
-        "MUXF7": 11,
-        "MUXF8": 2,
+        "LUT2": 1161,
+        "LUT3": 873,
+        "LUT4": 1183,
+        "LUT5": 1395,
+        "LUT6": 1544,
+        "MUXF7": 9,
+        "MUXF8": 1,
         "OBUF": 238,
-        "RAMB36E2": 14
+        "RAMB36E2": 30
       }
     },
     {
-      "key": "wrapper_nc1_prog4096_cap2048",
-      "label": "kernel wrapper `odin_fpga_kernel_top` at NC=1 (PROG_WORDS=4096, CAP_WORDS=2048) -- sequencer + AXI DMA + capture + one stock core",
+      "key": "wrapper_nc1_prog4096_cap32768",
+      "label": "kernel wrapper `odin_fpga_kernel_top` at NC=1 (PROG_WORDS=4096, CAP_WORDS=32768) -- sequencer + AXI DMA + capture + one stock core",
       "kind": "wrapper",
       "top": "odin_fpga_kernel_top",
       "parameters": {
-        "CAP_WORDS": 2048,
+        "CAP_WORDS": 32768,
         "PROG_WORDS": 4096
       },
       "geometry": {
         "n_cores": 1,
         "prog_words": 4096,
-        "cap_words": 2048,
+        "cap_words": 32768,
         "shipped_prog_words_per_core": 262144,
-        "shipped_cap_words": 65536
+        "shipped_cap_words": 16384
       },
       "memories": [
         {
@@ -491,12 +491,12 @@
         },
         {
           "array": "cap_ram",
-          "words": 2048,
+          "words": 32768,
           "width": 32,
-          "bits": 65536
+          "bits": 1048576
         }
       ],
-      "memory_bits": 196608,
+      "memory_bits": 1179648,
       "measured_by": "this run",
       "sources": [
         "hw/fpga/mem/SRAM_256x128_wrapper.v",
@@ -526,26 +526,26 @@
       ],
       "script": [
         "read_verilog -nooverwrite hw/fpga/mem/SRAM_256x128_wrapper.v hw/fpga/mem/SRAM_8192x32_wrapper.v hw/fpga/kernel/odin_aer_bridge.v hw/fpga/kernel/odin_fpga_kernel.v hw/fpga/kernel/odin_fpga_kernel_top.v hw/fpga/kernel/odin_spi_master.v hw/vendor/odin/src/IZH_neuron_blocks/izh_calcium.v hw/vendor/odin/src/IZH_neuron_blocks/izh_effective_threshold.v hw/vendor/odin/src/IZH_neuron_blocks/izh_input_accumulator.v hw/vendor/odin/src/IZH_neuron_blocks/izh_neuron_state.v hw/vendor/odin/src/IZH_neuron_blocks/izh_stimulation_strength.v hw/vendor/odin/src/LIF_neuron_blocks/lif_calcium.v hw/vendor/odin/src/LIF_neuron_blocks/lif_neuron_state.v hw/vendor/odin/src/ODIN.v hw/vendor/odin/src/aer_out.v hw/vendor/odin/src/controller.v hw/vendor/odin/src/fifo.v hw/vendor/odin/src/izh_neuron.v hw/vendor/odin/src/lif_neuron.v hw/vendor/odin/src/neuron_core.v hw/vendor/odin/src/scheduler.v hw/vendor/odin/src/sdsp_update.v hw/vendor/odin/src/spi_slave.v hw/vendor/odin/src/synaptic_core.v",
-        "chparam -set CAP_WORDS 2048 -set PROG_WORDS 4096 odin_fpga_kernel_top",
+        "chparam -set CAP_WORDS 32768 -set PROG_WORDS 4096 odin_fpga_kernel_top",
         "synth_xilinx -family xcup -top odin_fpga_kernel_top",
         "stat -top odin_fpga_kernel_top -json"
       ],
       "census": {
-        "luts": 44880,
-        "inverters": 579,
-        "lut_equivalent": 45459,
-        "flip_flops": 71013,
+        "luts": 6154,
+        "inverters": 580,
+        "lut_equivalent": 6734,
+        "flip_flops": 5447,
         "carry": 508,
-        "muxf": 13,
-        "bram36": 14,
+        "muxf": 10,
+        "bram36": 46,
         "bram18": 0,
-        "bram_tiles": 14.0,
+        "bram_tiles": 46.0,
         "uram": 0,
         "lutram": 0,
         "lutram_cells": {},
         "io_buffers": 349,
         "unclassified": {},
-        "total_cells": 117356
+        "total_cells": 13094
       },
       "cells_by_type": {
         "BUFG": 2,
@@ -553,76 +553,75 @@
         "FDCE": 919,
         "FDCE_1": 70,
         "FDPE": 59,
-        "FDRE": 69961,
+        "FDRE": 4395,
         "FDRE_1": 1,
         "FDSE": 3,
         "IBUF": 109,
-        "INV": 579,
-        "LUT1": 2,
-        "LUT2": 3318,
-        "LUT3": 1699,
-        "LUT4": 5431,
-        "LUT5": 25261,
-        "LUT6": 9169,
-        "MUXF7": 11,
-        "MUXF8": 2,
+        "INV": 580,
+        "LUT2": 1161,
+        "LUT3": 874,
+        "LUT4": 1179,
+        "LUT5": 1397,
+        "LUT6": 1543,
+        "MUXF7": 9,
+        "MUXF8": 1,
         "OBUF": 238,
-        "RAMB36E2": 14
+        "RAMB36E2": 46
       }
     }
   ],
   "wrapper_overhead": {
-    "wrapper": "wrapper_nc1_prog4096_cap1024",
+    "wrapper": "wrapper_nc1_prog4096_cap16384",
     "minus": "stock_a256n256_vendored",
     "at_parameters": {
-      "CAP_WORDS": 1024,
+      "CAP_WORDS": 16384,
       "PROG_WORDS": 4096
     },
     "delta": {
-      "lut_equivalent": 20269.0,
-      "flip_flops": 33883.0,
+      "lut_equivalent": 1076.0,
+      "flip_flops": 1085.0,
       "carry": 127.0,
-      "muxf": 1.0,
+      "muxf": -2.0,
       "lutram": 0.0,
-      "bram36": 4.0,
+      "bram36": 20.0,
       "bram18": 0.0,
-      "bram_tiles": 4.0,
+      "bram_tiles": 20.0,
       "uram": 0.0
     },
     "delta_costs": {
-      "lut_sites": 20269.0,
-      "flip_flops": 33883.0,
-      "bram36": 4.0,
+      "lut_sites": 1076.0,
+      "flip_flops": 1085.0,
+      "bram36": 20.0,
       "uram": 0.0
     },
-    "meaning": "the wrapper census less the stock core's, i.e. the AXI4-Lite control block, the AXI4 DMA engine, the token sequencer, the SPI master, the AER bridge, the program RAM and the capture RAM, at the SHRUNK RAM depths named in `at_parameters` -- NOT at the depths the wrapper ships with"
+    "meaning": "the wrapper census less the stock core's, i.e. the AXI4-Lite control block, the AXI4 DMA engine, the token sequencer, the SPI master, the AER bridge, the program RAM and the capture RAM, at the depths named in `at_parameters` -- the capture RAM at the depth the wrapper SHIPS with, the program RAM shrunk from its shipped `NC * 262144` words"
   },
   "capture_ram_slope": {
     "points": [
-      "wrapper_nc1_prog4096_cap1024",
-      "wrapper_nc1_prog4096_cap2048"
+      "wrapper_nc1_prog4096_cap16384",
+      "wrapper_nc1_prog4096_cap32768"
     ],
-    "extra_capture_words": 1024,
+    "extra_capture_words": 16384,
     "delta": {
-      "lut_equivalent": 19531.0,
-      "flip_flops": 32768.0,
+      "lut_equivalent": -1.0,
+      "flip_flops": 0.0,
       "carry": 0.0,
       "muxf": 0.0,
       "lutram": 0.0,
-      "bram36": 0.0,
+      "bram36": 16.0,
       "bram18": 0.0,
-      "bram_tiles": 0.0,
+      "bram_tiles": 16.0,
       "uram": 0.0
     },
     "per_capture_word": {
-      "lut_equivalent": 19.0732421875,
-      "flip_flops": 32.0,
+      "lut_equivalent": -6.103515625e-05,
+      "flip_flops": 0.0,
       "carry": 0.0,
       "muxf": 0.0,
       "lutram": 0.0,
-      "bram36": 0.0,
+      "bram36": 0.0009765625,
       "bram18": 0.0,
-      "bram_tiles": 0.0,
+      "bram_tiles": 0.0009765625,
       "uram": 0.0
     },
     "meaning": "two wrapper points differing ONLY in CAP_WORDS. The flip-flop slope is what the capture RAM costs per 32-bit word today, and it is a measurement, not an inference"
@@ -744,23 +743,23 @@
         {
           "resource": "lut_sites",
           "per_core": 5659.0,
-          "fixed_overhead": 20269.0,
+          "fixed_overhead": 1076.0,
           "available": 1304000,
-          "n_max": 226
+          "n_max": 230
         },
         {
           "resource": "flip_flops",
           "per_core": 4362.0,
-          "fixed_overhead": 33883.0,
+          "fixed_overhead": 1085.0,
           "available": 2607000,
-          "n_max": 589
+          "n_max": 597
         },
         {
           "resource": "bram36",
           "per_core": 10.0,
-          "fixed_overhead": 4.0,
+          "fixed_overhead": 20.0,
           "available": 2016,
-          "n_max": 201
+          "n_max": 199
         },
         {
           "resource": "uram",
@@ -771,7 +770,7 @@
         }
       ],
       "binding_resource": "bram36",
-      "n_max": 201
+      "n_max": 199
     },
     {
       "configuration": "stock_a256n256_vendored",
@@ -830,23 +829,23 @@
         {
           "resource": "lut_sites",
           "per_core": 5659.0,
-          "fixed_overhead": 20269.0,
+          "fixed_overhead": 1076.0,
           "available": 912800,
-          "n_max": 157
+          "n_max": 161
         },
         {
           "resource": "flip_flops",
           "per_core": 4362.0,
-          "fixed_overhead": 33883.0,
+          "fixed_overhead": 1085.0,
           "available": 1824900,
-          "n_max": 410
+          "n_max": 418
         },
         {
           "resource": "bram36",
           "per_core": 10.0,
-          "fixed_overhead": 4.0,
+          "fixed_overhead": 20.0,
           "available": 1411,
-          "n_max": 140
+          "n_max": 139
         },
         {
           "resource": "uram",
@@ -857,39 +856,39 @@
         }
       ],
       "binding_resource": "bram36",
-      "n_max": 140
+      "n_max": 139
     },
     {
       "configuration": "gen_a128n128_mb8_per_event",
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 3586.0,
-        "flip_flops": 1064.0,
-        "bram36": 0.0,
+        "lut_sites": 1966.0,
+        "flip_flops": 1057.0,
+        "bram36": 2.0,
         "uram": 0.0
       },
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 3586.0,
+          "per_core": 1966.0,
           "fixed_overhead": 0.0,
           "available": 1304000,
-          "n_max": 363
+          "n_max": 663
         },
         {
           "resource": "flip_flops",
-          "per_core": 1064.0,
+          "per_core": 1057.0,
           "fixed_overhead": 0.0,
           "available": 2607000,
-          "n_max": 2450
+          "n_max": 2466
         },
         {
           "resource": "bram36",
-          "per_core": 0.0,
+          "per_core": 2.0,
           "fixed_overhead": 0.0,
           "available": 2016,
-          "n_max": null
+          "n_max": 1008
         },
         {
           "resource": "uram",
@@ -900,39 +899,39 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 363
+      "n_max": 663
     },
     {
       "configuration": "gen_a128n128_mb8_per_event",
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 3586.0,
-        "flip_flops": 1064.0,
-        "bram36": 0.0,
+        "lut_sites": 1966.0,
+        "flip_flops": 1057.0,
+        "bram36": 2.0,
         "uram": 0.0
       },
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 3586.0,
-          "fixed_overhead": 20269.0,
+          "per_core": 1966.0,
+          "fixed_overhead": 1076.0,
           "available": 1304000,
-          "n_max": 357
+          "n_max": 662
         },
         {
           "resource": "flip_flops",
-          "per_core": 1064.0,
-          "fixed_overhead": 33883.0,
+          "per_core": 1057.0,
+          "fixed_overhead": 1085.0,
           "available": 2607000,
-          "n_max": 2418
+          "n_max": 2465
         },
         {
           "resource": "bram36",
-          "per_core": 0.0,
-          "fixed_overhead": 4.0,
+          "per_core": 2.0,
+          "fixed_overhead": 20.0,
           "available": 2016,
-          "n_max": null
+          "n_max": 998
         },
         {
           "resource": "uram",
@@ -943,39 +942,39 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 357
+      "n_max": 662
     },
     {
       "configuration": "gen_a128n128_mb8_per_event",
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 3586.0,
-        "flip_flops": 1064.0,
-        "bram36": 0.0,
+        "lut_sites": 1966.0,
+        "flip_flops": 1057.0,
+        "bram36": 2.0,
         "uram": 0.0
       },
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 3586.0,
+          "per_core": 1966.0,
           "fixed_overhead": 0.0,
           "available": 912800,
-          "n_max": 254
+          "n_max": 464
         },
         {
           "resource": "flip_flops",
-          "per_core": 1064.0,
+          "per_core": 1057.0,
           "fixed_overhead": 0.0,
           "available": 1824900,
-          "n_max": 1715
+          "n_max": 1726
         },
         {
           "resource": "bram36",
-          "per_core": 0.0,
+          "per_core": 2.0,
           "fixed_overhead": 0.0,
           "available": 1411,
-          "n_max": null
+          "n_max": 705
         },
         {
           "resource": "uram",
@@ -986,39 +985,39 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 254
+      "n_max": 464
     },
     {
       "configuration": "gen_a128n128_mb8_per_event",
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 3586.0,
-        "flip_flops": 1064.0,
-        "bram36": 0.0,
+        "lut_sites": 1966.0,
+        "flip_flops": 1057.0,
+        "bram36": 2.0,
         "uram": 0.0
       },
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 3586.0,
-          "fixed_overhead": 20269.0,
+          "per_core": 1966.0,
+          "fixed_overhead": 1076.0,
           "available": 912800,
-          "n_max": 248
+          "n_max": 463
         },
         {
           "resource": "flip_flops",
-          "per_core": 1064.0,
-          "fixed_overhead": 33883.0,
+          "per_core": 1057.0,
+          "fixed_overhead": 1085.0,
           "available": 1824900,
-          "n_max": 1683
+          "n_max": 1725
         },
         {
           "resource": "bram36",
-          "per_core": 0.0,
-          "fixed_overhead": 4.0,
+          "per_core": 2.0,
+          "fixed_overhead": 20.0,
           "available": 1411,
-          "n_max": null
+          "n_max": 695
         },
         {
           "resource": "uram",
@@ -1029,39 +1028,211 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 248
+      "n_max": 463
     },
     {
       "configuration": "gen_a512n256_mb16_per_event",
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 20402.0,
-        "flip_flops": 4158.0,
-        "bram36": 0.5,
+        "lut_sites": 6618.0,
+        "flip_flops": 4133.0,
+        "bram36": 16.0,
         "uram": 0.0
       },
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 20402.0,
+          "per_core": 6618.0,
           "fixed_overhead": 0.0,
           "available": 1304000,
-          "n_max": 63
+          "n_max": 197
         },
         {
           "resource": "flip_flops",
-          "per_core": 4158.0,
+          "per_core": 4133.0,
           "fixed_overhead": 0.0,
           "available": 2607000,
-          "n_max": 626
+          "n_max": 630
         },
         {
           "resource": "bram36",
-          "per_core": 0.5,
+          "per_core": 16.0,
           "fixed_overhead": 0.0,
           "available": 2016,
-          "n_max": 4032
+          "n_max": 126
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 126
+    },
+    {
+      "configuration": "gen_a512n256_mb16_per_event",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 6618.0,
+        "flip_flops": 4133.0,
+        "bram36": 16.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 6618.0,
+          "fixed_overhead": 1076.0,
+          "available": 1304000,
+          "n_max": 196
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4133.0,
+          "fixed_overhead": 1085.0,
+          "available": 2607000,
+          "n_max": 630
+        },
+        {
+          "resource": "bram36",
+          "per_core": 16.0,
+          "fixed_overhead": 20.0,
+          "available": 2016,
+          "n_max": 124
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 124
+    },
+    {
+      "configuration": "gen_a512n256_mb16_per_event",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 6618.0,
+        "flip_flops": 4133.0,
+        "bram36": 16.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 6618.0,
+          "fixed_overhead": 0.0,
+          "available": 912800,
+          "n_max": 137
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4133.0,
+          "fixed_overhead": 0.0,
+          "available": 1824900,
+          "n_max": 441
+        },
+        {
+          "resource": "bram36",
+          "per_core": 16.0,
+          "fixed_overhead": 0.0,
+          "available": 1411,
+          "n_max": 88
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 88
+    },
+    {
+      "configuration": "gen_a512n256_mb16_per_event",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 6618.0,
+        "flip_flops": 4133.0,
+        "bram36": 16.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 6618.0,
+          "fixed_overhead": 1076.0,
+          "available": 912800,
+          "n_max": 137
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4133.0,
+          "fixed_overhead": 1085.0,
+          "available": 1824900,
+          "n_max": 441
+        },
+        {
+          "resource": "bram36",
+          "per_core": 16.0,
+          "fixed_overhead": 20.0,
+          "available": 1411,
+          "n_max": 86
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 86
+    },
+    {
+      "configuration": "gen_a256n256_mb16s_sync_fire",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 6570.0,
+        "flip_flops": 4133.0,
+        "bram36": 8.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 6570.0,
+          "fixed_overhead": 0.0,
+          "available": 1304000,
+          "n_max": 198
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4133.0,
+          "fixed_overhead": 0.0,
+          "available": 2607000,
+          "n_max": 630
+        },
+        {
+          "resource": "bram36",
+          "per_core": 8.0,
+          "fixed_overhead": 0.0,
+          "available": 2016,
+          "n_max": 252
         },
         {
           "resource": "uram",
@@ -1072,39 +1243,39 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 63
+      "n_max": 198
     },
     {
-      "configuration": "gen_a512n256_mb16_per_event",
+      "configuration": "gen_a256n256_mb16s_sync_fire",
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 20402.0,
-        "flip_flops": 4158.0,
-        "bram36": 0.5,
+        "lut_sites": 6570.0,
+        "flip_flops": 4133.0,
+        "bram36": 8.0,
         "uram": 0.0
       },
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 20402.0,
-          "fixed_overhead": 20269.0,
+          "per_core": 6570.0,
+          "fixed_overhead": 1076.0,
           "available": 1304000,
-          "n_max": 62
+          "n_max": 198
         },
         {
           "resource": "flip_flops",
-          "per_core": 4158.0,
-          "fixed_overhead": 33883.0,
+          "per_core": 4133.0,
+          "fixed_overhead": 1085.0,
           "available": 2607000,
-          "n_max": 618
+          "n_max": 630
         },
         {
           "resource": "bram36",
-          "per_core": 0.5,
-          "fixed_overhead": 4.0,
+          "per_core": 8.0,
+          "fixed_overhead": 20.0,
           "available": 2016,
-          "n_max": 4024
+          "n_max": 249
         },
         {
           "resource": "uram",
@@ -1115,211 +1286,39 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 62
-    },
-    {
-      "configuration": "gen_a512n256_mb16_per_event",
-      "scenario": "assumed_shell_30pct",
-      "wrapper_overhead_reserved": false,
-      "per_core": {
-        "lut_sites": 20402.0,
-        "flip_flops": 4158.0,
-        "bram36": 0.5,
-        "uram": 0.0
-      },
-      "bounds": [
-        {
-          "resource": "lut_sites",
-          "per_core": 20402.0,
-          "fixed_overhead": 0.0,
-          "available": 912800,
-          "n_max": 44
-        },
-        {
-          "resource": "flip_flops",
-          "per_core": 4158.0,
-          "fixed_overhead": 0.0,
-          "available": 1824900,
-          "n_max": 438
-        },
-        {
-          "resource": "bram36",
-          "per_core": 0.5,
-          "fixed_overhead": 0.0,
-          "available": 1411,
-          "n_max": 2822
-        },
-        {
-          "resource": "uram",
-          "per_core": 0.0,
-          "fixed_overhead": 0.0,
-          "available": 672,
-          "n_max": null
-        }
-      ],
-      "binding_resource": "lut_sites",
-      "n_max": 44
-    },
-    {
-      "configuration": "gen_a512n256_mb16_per_event",
-      "scenario": "assumed_shell_30pct",
-      "wrapper_overhead_reserved": true,
-      "per_core": {
-        "lut_sites": 20402.0,
-        "flip_flops": 4158.0,
-        "bram36": 0.5,
-        "uram": 0.0
-      },
-      "bounds": [
-        {
-          "resource": "lut_sites",
-          "per_core": 20402.0,
-          "fixed_overhead": 20269.0,
-          "available": 912800,
-          "n_max": 43
-        },
-        {
-          "resource": "flip_flops",
-          "per_core": 4158.0,
-          "fixed_overhead": 33883.0,
-          "available": 1824900,
-          "n_max": 430
-        },
-        {
-          "resource": "bram36",
-          "per_core": 0.5,
-          "fixed_overhead": 4.0,
-          "available": 1411,
-          "n_max": 2814
-        },
-        {
-          "resource": "uram",
-          "per_core": 0.0,
-          "fixed_overhead": 0.0,
-          "available": 672,
-          "n_max": null
-        }
-      ],
-      "binding_resource": "lut_sites",
-      "n_max": 43
-    },
-    {
-      "configuration": "gen_a256n256_mb16s_sync_fire",
-      "scenario": "datasheet_total",
-      "wrapper_overhead_reserved": false,
-      "per_core": {
-        "lut_sites": 13691.0,
-        "flip_flops": 4158.0,
-        "bram36": 0.5,
-        "uram": 0.0
-      },
-      "bounds": [
-        {
-          "resource": "lut_sites",
-          "per_core": 13691.0,
-          "fixed_overhead": 0.0,
-          "available": 1304000,
-          "n_max": 95
-        },
-        {
-          "resource": "flip_flops",
-          "per_core": 4158.0,
-          "fixed_overhead": 0.0,
-          "available": 2607000,
-          "n_max": 626
-        },
-        {
-          "resource": "bram36",
-          "per_core": 0.5,
-          "fixed_overhead": 0.0,
-          "available": 2016,
-          "n_max": 4032
-        },
-        {
-          "resource": "uram",
-          "per_core": 0.0,
-          "fixed_overhead": 0.0,
-          "available": 960,
-          "n_max": null
-        }
-      ],
-      "binding_resource": "lut_sites",
-      "n_max": 95
-    },
-    {
-      "configuration": "gen_a256n256_mb16s_sync_fire",
-      "scenario": "datasheet_total",
-      "wrapper_overhead_reserved": true,
-      "per_core": {
-        "lut_sites": 13691.0,
-        "flip_flops": 4158.0,
-        "bram36": 0.5,
-        "uram": 0.0
-      },
-      "bounds": [
-        {
-          "resource": "lut_sites",
-          "per_core": 13691.0,
-          "fixed_overhead": 20269.0,
-          "available": 1304000,
-          "n_max": 93
-        },
-        {
-          "resource": "flip_flops",
-          "per_core": 4158.0,
-          "fixed_overhead": 33883.0,
-          "available": 2607000,
-          "n_max": 618
-        },
-        {
-          "resource": "bram36",
-          "per_core": 0.5,
-          "fixed_overhead": 4.0,
-          "available": 2016,
-          "n_max": 4024
-        },
-        {
-          "resource": "uram",
-          "per_core": 0.0,
-          "fixed_overhead": 0.0,
-          "available": 960,
-          "n_max": null
-        }
-      ],
-      "binding_resource": "lut_sites",
-      "n_max": 93
+      "n_max": 198
     },
     {
       "configuration": "gen_a256n256_mb16s_sync_fire",
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 13691.0,
-        "flip_flops": 4158.0,
-        "bram36": 0.5,
+        "lut_sites": 6570.0,
+        "flip_flops": 4133.0,
+        "bram36": 8.0,
         "uram": 0.0
       },
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 13691.0,
+          "per_core": 6570.0,
           "fixed_overhead": 0.0,
           "available": 912800,
-          "n_max": 66
+          "n_max": 138
         },
         {
           "resource": "flip_flops",
-          "per_core": 4158.0,
+          "per_core": 4133.0,
           "fixed_overhead": 0.0,
           "available": 1824900,
-          "n_max": 438
+          "n_max": 441
         },
         {
           "resource": "bram36",
-          "per_core": 0.5,
+          "per_core": 8.0,
           "fixed_overhead": 0.0,
           "available": 1411,
-          "n_max": 2822
+          "n_max": 176
         },
         {
           "resource": "uram",
@@ -1330,39 +1329,39 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 66
+      "n_max": 138
     },
     {
       "configuration": "gen_a256n256_mb16s_sync_fire",
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 13691.0,
-        "flip_flops": 4158.0,
-        "bram36": 0.5,
+        "lut_sites": 6570.0,
+        "flip_flops": 4133.0,
+        "bram36": 8.0,
         "uram": 0.0
       },
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 13691.0,
-          "fixed_overhead": 20269.0,
+          "per_core": 6570.0,
+          "fixed_overhead": 1076.0,
           "available": 912800,
-          "n_max": 65
+          "n_max": 138
         },
         {
           "resource": "flip_flops",
-          "per_core": 4158.0,
-          "fixed_overhead": 33883.0,
+          "per_core": 4133.0,
+          "fixed_overhead": 1085.0,
           "available": 1824900,
-          "n_max": 430
+          "n_max": 441
         },
         {
           "resource": "bram36",
-          "per_core": 0.5,
-          "fixed_overhead": 4.0,
+          "per_core": 8.0,
+          "fixed_overhead": 20.0,
           "available": 1411,
-          "n_max": 2814
+          "n_max": 173
         },
         {
           "resource": "uram",
@@ -1373,7 +1372,7 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 65
+      "n_max": 138
     }
   ]
 }

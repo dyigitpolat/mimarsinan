@@ -41,9 +41,17 @@
 //       selects the two's-complement register, and `ASSERT_NO_SAT` makes a
 //       rail a reported failure instead of a clamp for the law whose contract
 //       says the rails are unreachable.
-//     * The synapse and neuron memories are behavioural arrays, exactly as
-//       upstream's are, and carry the same instruction: replace them with SRAM
-//       macros or Block RAM for an implementation (upstream doc Section 5).
+//     * THE SYNAPSE MEMORY IS A BLOCK RAM. Upstream leaves its arrays
+//       behavioural and instructs the implementer to "replace them with SRAM
+//       macros or Block RAM" (upstream doc Section 5); `syn_mem` below is that
+//       substitution performed in the template -- one synchronous write port,
+//       one REGISTERED read port, `ram_style = "block"` -- because a tile has
+//       no asynchronous read port and an array read combinationally can only
+//       land in SLICEM distributed RAM. The read address is the sweep position
+//       ONE CYCLE AHEAD, so the datapath sees the same weight in the same cycle
+//       as the asynchronous read did and no count moves. The neuron arrays
+//       (`thr_arr`, `vmem_arr`) stay behavioural: `vmem_arr` is read AND
+//       written in one cycle by the soma, which is not a tile access pattern.
 //
 //   GENERATED FILE -- do not edit. `mapping/export/odin_gen/` expands this
 //   template from a `CoreSpec`, which is itself a projection of one declared
@@ -130,6 +138,7 @@ module odin_gen_core #(
     localparam M_EVENT = 1'b0;
     localparam M_TREF  = 1'b1;
 
+    (* ram_style = "block" *)
     reg  [31:0]      syn_mem  [0:SDEPTH-1];
     reg  [MBITS-1:0] thr_arr  [0:NEURONS-1];
     reg  [MBITS-1:0] vmem_arr [0:NEURONS-1];
@@ -166,9 +175,38 @@ module odin_gen_core #(
     wire             is_tref  = AERIN_ADDR[AW];
     wire [AW-1:0]    ev_axon  = AERIN_ADDR[AW-1:0];
 
-    wire [31:0]      n_wide    = { {(32-(NW+1)){1'b0}}, n };
-    wire [31:0]      syn_index = axon * SWPR + (n_wide >> CPWW);
-    wire [31:0]      syn_word  = syn_mem[syn_index[SAW-1:0]];
+    // Declared here, driven by the soma below: the next-state terms the memory
+    // address register needs are written before the datapath that produces them.
+    wire             fire_now;
+    wire             last_neuron;
+
+    // The sweep position ONE CYCLE AHEAD. Every place `axon` and `n` move in
+    // the controller below is exactly one of these terms, so the block RAM's
+    // address register holds the position the datapath will occupy when its
+    // registered word arrives: `syn_word` is, in every cycle, the word an
+    // asynchronous read of the CURRENT position would have returned.
+    wire             accept    = (state == S_IDLE) && aerin_req_sync && !gate;
+    wire             advance   = ((state == S_SWEEP)  && !fire_now && !last_neuron)
+                              || ((state == S_EMITDN) && !AEROUT_ACK && !last_neuron);
+    wire [AW-1:0]    axon_nxt  = RST ? {AW{1'b0}}
+                               : ((accept && !is_tref) ? ev_axon : axon);
+    wire [NW:0]      n_nxt     = (RST || accept) ? {(NW+1){1'b0}}
+                               : (advance ? (n + 1'b1) : n);
+
+    wire [31:0]      n_wide    = { {(32-(NW+1)){1'b0}}, n_nxt };
+    wire [31:0]      syn_index = axon_nxt * SWPR + (n_wide >> CPWW);
+
+    reg  [31:0]      syn_word;
+
+    // The one write port and the one registered read port of the tile. The
+    // programming port is the only writer, and it is exercised while the core
+    // is gated, so no run reads a word in the cycle it is written.
+    always @(posedge CLK) begin
+        syn_word <= syn_mem[syn_index[SAW-1:0]];
+        if (PROG_EN && (PROG_SEL == 2'd3))
+            syn_mem[PROG_ADDR[SAW-1:0]] <= PROG_DATA;
+    end
+
     wire [31:0]      cell_lsb  = n[CPWW-1:0] * WBITS;
     wire [WBITS-1:0] w_raw     = syn_word[cell_lsb +: WBITS];
 
@@ -189,7 +227,7 @@ module odin_gen_core #(
     wire                   rail = (acc <= V_LO) || (acc >= V_HI);
 
     wire compares = (mode == M_TREF) || (PER_EVENT != 0);
-    wire fire_now = compares
+    assign fire_now = compares
         && ((CMP_INCL != 0) ? (sat >= thr_ext) : (sat > thr_ext));
 
     wire signed [ACCW-1:0] reset_v =
@@ -199,15 +237,18 @@ module odin_gen_core #(
         (post_raw < V_LO) ? V_LO : ((post_raw > V_HI) ? V_HI : post_raw);
     wire [MBITS-1:0]       new_v = post[MBITS-1:0];
 
-    wire last_neuron = (n == (NEURONS - 1));
+    assign last_neuron = (n == (NEURONS - 1));
 
     always @(posedge CLK) begin
+        // The sweep position is driven ONLY from the next-state terms above --
+        // the same terms the memory's address register sees, which is what
+        // keeps the pipelined read exact.
+        axon <= axon_nxt;
+        n    <= n_nxt;
         if (RST) begin
             state        <= S_IDLE;
             mode         <= M_EVENT;
             gate         <= 1'b1;
-            n            <= {(NW+1){1'b0}};
-            axon         <= {AW{1'b0}};
             AERIN_ACK    <= 1'b0;
             AEROUT_REQ   <= 1'b0;
             AEROUT_ADDR  <= {NW{1'b0}};
@@ -218,14 +259,15 @@ module odin_gen_core #(
                     2'd0: if (PROG_ADDR == 32'd0) gate <= PROG_DATA[0];
                     2'd1: thr_arr[PROG_ADDR[NW-1:0]]  <= PROG_DATA[MBITS-1:0];
                     2'd2: vmem_arr[PROG_ADDR[NW-1:0]] <= PROG_DATA[MBITS-1:0];
-                    2'd3: syn_mem[PROG_ADDR[SAW-1:0]] <= PROG_DATA;
+                    // 2'd3 (the synapse word) is written by the memory's own
+                    // single write port above.
+                    default: ;
                 endcase
             end
 
             case (state)
                 S_IDLE: begin
                     if (aerin_req_sync && !gate) begin
-                        n <= {(NW+1){1'b0}};
                         if (is_tref) begin
                             mode <= M_TREF;
                             // Under the event-serial law the time reference
@@ -239,7 +281,6 @@ module odin_gen_core #(
                             end
                         end else begin
                             mode  <= M_EVENT;
-                            axon  <= ev_axon;
                             state <= S_SWEEP;
                         end
                     end
@@ -256,8 +297,6 @@ module odin_gen_core #(
                     end else if (last_neuron) begin
                         AERIN_ACK <= 1'b1;
                         state     <= S_ACK;
-                    end else begin
-                        n <= n + 1'b1;
                     end
                 end
 
@@ -274,7 +313,6 @@ module odin_gen_core #(
                             AERIN_ACK <= 1'b1;
                             state     <= S_ACK;
                         end else begin
-                            n     <= n + 1'b1;
                             state <= S_SWEEP;
                         end
                     end

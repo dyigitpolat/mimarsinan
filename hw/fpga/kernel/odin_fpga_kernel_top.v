@@ -19,6 +19,8 @@
 //   0x34 program words   0x3C stimulus words   0x44 capture events
 //   0x4C status: {err, events_seen[30:0]} -- read after ap_done
 //   0x54 capture capacity, in EVENTS, of the fabric's capture RAM  (read-only)
+//        -- (CAP_WORDS - 2) / 4; at the shipped CAP_WORDS = 16,384 that is
+//        4,095 records. See the CAP_WORDS parameter for why that depth.
 //   0x5C program capacity, in WORDS, of the fabric's program RAM   (read-only)
 //
 // CROSS-LANGUAGE CONTRACT (the payload split). The host hands two END-terminated
@@ -43,7 +45,18 @@ module odin_fpga_kernel_top #(
     // host reads the real depth back at 0x5C and REFUSES a run that overruns
     // it rather than wrapping the address.
     parameter PROG_WORDS  = NC * 262144,
-    parameter CAP_WORDS   = 65536,
+    // The SHIPPED capture depth, and why it is this number: `cap_ram` is a
+    // block RAM (one write port, one registered read), so a capture word costs
+    // a slice of a tile -- one RAMB36E2 per 1,024 words -- and no longer 32
+    // flip-flops. 16,384 words is 16 tiles and 4,095 records
+    // -- deep enough for the per-sample event counts the cosimulated programs
+    // produce -- and it is a MEASURED cost, not an estimate: the P8
+    // compile-limits record (`hw/fpga/compile_limits.json`) carries the tile
+    // census of the wrapper at exactly this depth. The host is never left to
+    // guess it: 0x54 reports the compiled capacity in EVENTS and
+    // `kernel_registers.decode_capture` REFUSES a run that reached it rather
+    // than reading the missing events as silent neurons.
+    parameter CAP_WORDS   = 16384,
     parameter C_S_AXI_ADDR_WIDTH = 12,
     parameter C_M_AXI_ADDR_WIDTH = 64,
     parameter C_M_AXI_DATA_WIDTH = 32

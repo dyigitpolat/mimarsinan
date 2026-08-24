@@ -13,12 +13,21 @@ from mimarsinan.chip_simulation.odin_rtl.limits.device import (
     CENSUS_TO_DEVICE,
     RESOURCE_CLASSES,
     census_costs,
-    lutram_bits,
-    lutram_lut_sites,
 )
 
 #: One RAMB36E2 tile, in bits.
 BRAM36_BITS = 36 * 1024
+
+#: A RAMB36E2 is 1,024 x 36 at its true-dual-port width, so an array up to 36
+#: bits wide costs one tile per 1,024 words however few of those bits it uses.
+BRAM36_WORDS = 1024
+
+#: A tile's DATA word, parity bits excluded. Every array in this study that
+#: reaches a tile is declared at exactly this width -- `syn_mem`, `prog_ram`,
+#: `cap_ram` and the stock synapse memory all are -- and the narrower neuron
+#: arrays land in distributed RAM or in flip-flops instead, which is what the
+#: two paragraphs after the tile arithmetic measure.
+TILE_DATA_WIDTH = 32
 
 #: The census columns the measurements table prints, with their headings.
 COLUMN_TITLES = (
@@ -58,7 +67,8 @@ def measurements_table(record: Mapping[str, Any]) -> List[str]:
 
 def memory_table(record: Mapping[str, Any]) -> List[str]:
     lines = [
-        "| Configuration | Array | Words x width | Bits | 36 Kb tiles if in BRAM |",
+        "| Configuration | Array | Words x width | Bits "
+        "| 36 Kb tiles of bits (a FLOOR, not the tile count) |",
         "| --- | --- | --- | ---: | ---: |",
     ]
     for row in rows_of(record):
@@ -71,24 +81,15 @@ def memory_table(record: Mapping[str, Any]) -> List[str]:
     return lines
 
 
-def lutram_paragraph(record: Mapping[str, Any]) -> List[str]:
-    lines: List[str] = []
-    for row in rows_of(record):
-        cells = row["census"]["lutram_cells"]
-        if not cells:
-            continue
-        bits = lutram_bits(row["census"])
-        sites = lutram_lut_sites(row["census"])
-        declared = int(row["memory_bits"])
-        lines.append(
-            f"- `{row['key']}`: "
-            f"{', '.join(f'{n:,} x `{name}`' for name, n in cells.items())}"
-            f" = {bits:,} bits of distributed RAM in {sites:,} LUT6 sites, against "
-            f"{declared:,} bits declared by its arrays ({bits / declared:.2f}x -- "
-            f"a LUT-RAM column is 64 words deep, so both the depth and the width "
-            f"round up). The read multiplexing over those columns is counted "
-            f"separately, in the LUT-equivalent column.")
-    return lines
+def tiles_for(memory: Mapping[str, Any]) -> int:
+    """Tiles an array of this shape occupies, by the tile's own geometry."""
+    return -(-int(memory["words"]) // BRAM36_WORDS)
+
+
+def tile_arrays(row: Mapping[str, Any]) -> List[Mapping[str, Any]]:
+    """The arrays of one row declared at a tile's full data width."""
+    return [memory for memory in row["memories"]
+            if int(memory["width"]) == TILE_DATA_WIDTH]
 
 
 def bound_lines(record: Mapping[str, Any], *, configuration: str,

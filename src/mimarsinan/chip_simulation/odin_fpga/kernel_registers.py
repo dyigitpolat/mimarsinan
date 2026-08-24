@@ -57,6 +57,19 @@ WORD_BYTES = 4
 #: ADDR_CAPTURE_CAPACITY.
 DEFAULT_CAPTURE_EVENTS = 1 << 20
 
+#: What the SHIPPED fabric actually holds, and why — the second copy of the
+#: ``CAP_WORDS`` default in ``hw/fpga/kernel/odin_fpga_kernel_top.v``. The
+#: capture RAM is a block RAM (one write port, one registered read), so its
+#: depth is bought in tiles rather than in the 32 flip-flops per word the P8
+#: compile-limits study measured before that fix; 16,384 words is the depth the
+#: committed synthesis record (``hw/fpga/compile_limits.json``) costs, and
+#: 4,095 records is what it leaves after the two header words. No host may
+#: ASSUME it: a session reads ADDR_CAPTURE_CAPACITY and ``decode_capture``
+#: refuses a run that reached whatever the device reported.
+SHIPPED_CAPTURE_WORDS = 16384
+SHIPPED_CAPTURE_EVENTS = (SHIPPED_CAPTURE_WORDS - CAPTURE_HEADER_WORDS) // (
+    CAPTURE_RECORD_WORDS)
+
 
 class OdinFpgaCaptureTruncated(DeviceTransportError):
     """The device saw at least as many events as the capture can hold."""

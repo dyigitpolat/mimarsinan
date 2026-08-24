@@ -35,7 +35,7 @@ module odin_fpga_kernel #(
     parameter N          = 256,    // neurons per core (stock geometry)
     parameter M          = 8,      // neuron-address width (stock geometry)
     parameter PROG_WORDS = NC * 262144,  // program RAM depth, in 32-bit words
-    parameter CAP_WORDS  = 65536         // capture RAM depth, in 32-bit words
+    parameter CAP_WORDS  = 16384         // capture RAM depth, in 32-bit words
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -71,8 +71,13 @@ module odin_fpga_kernel #(
     localparam CAP_AW   = $clog2(CAP_WORDS);
     localparam AER_BITS = 2 * M + 1;
 
-    reg [31:0] prog_ram [0:PROG_WORDS-1];
-    reg [31:0] cap_ram  [0:CAP_WORDS-1];
+    // Both RAMs are BLOCK RAMs: a registered read port and exactly ONE write
+    // port each. `cap_ram`'s two header words are written through that same
+    // port by the drain arbiter below rather than by fixed-address writes of
+    // their own -- three write ports do not fit a tile, and the capture buffer
+    // paid 32 flip-flops per word for it (P8, compile-limits study).
+    (* ram_style = "block" *) reg [31:0] prog_ram [0:PROG_WORDS-1];
+    (* ram_style = "block" *) reg [31:0] cap_ram  [0:CAP_WORDS-1];
 
     reg [31:0] pc, op, arg0, arg1, arg2;
     reg [31:0] tag, cycle, events_seen, cap_ptr, wait_left;
@@ -96,8 +101,6 @@ module odin_fpga_kernel #(
 
     always @(posedge clk)
         if (prog_we) prog_ram[prog_waddr[PROG_AW-1:0]] <= prog_wdata;
-
-    always @(posedge clk) cap_rdata <= cap_ram[cap_raddr[CAP_AW-1:0]];
 
     always @(posedge clk)
         if (rst) cycle <= 32'd0;
@@ -153,17 +156,37 @@ module odin_fpga_kernel #(
     reg [1:0]  cap_state;
     reg [31:0] cap_core;
     reg        cap_active, cap_space;
+    reg [1:0]  hdr_written;
 
     // Each ap_start re-arms the capture: a session that runs many samples
     // through one loaded kernel must report THIS run's events, not the sum of
     // every run since reset.
     wire cap_rearm;
 
+    // Raised for good when the sequencer reaches its terminal state; the two
+    // header words are written once each, at DRAIN time, when the streaming
+    // writes have stopped and the port is free.
+    reg  run_ended;
+
     wire [31:0] cap_word =
           (cap_state == 2'd0) ? tag
         : (cap_state == 2'd1) ? cycle
         : (cap_state == 2'd2) ? cap_core
         : {{(32-M){1'b0}}, aerout_addr_w[M*cap_core[7:0] +: M]};
+
+    wire        hdr_we    = run_ended && !cap_active && (hdr_written != 2'd2);
+    wire        cap_we    = (cap_active && cap_space) || hdr_we;
+    wire [31:0] cap_waddr = cap_active ? cap_ptr : {31'd0, hdr_written[0]};
+    wire [31:0] cap_wdata = cap_active ? cap_word
+                          : (hdr_written[0] ? cycle : events_seen);
+
+    // The capture RAM's ONLY port pair: one registered read, one write whose
+    // address and data the arbiter above muxes between the streaming record
+    // and the two header words.
+    always @(posedge clk) begin
+        cap_rdata <= cap_ram[cap_raddr[CAP_AW-1:0]];
+        if (cap_we) cap_ram[cap_waddr[CAP_AW-1:0]] <= cap_wdata;
+    end
 
     always @(posedge clk) begin : capture
         reg found;
@@ -174,6 +197,7 @@ module odin_fpga_kernel #(
             cap_space    <= 1'b0;
             cap_ptr      <= CAP_HEADER;
             events_seen  <= 32'd0;
+            hdr_written  <= 2'd0;
             aerout_ack_r <= {NC{1'b0}};
         end else if (!cap_active) begin
             found = 1'b0;
@@ -187,11 +211,9 @@ module odin_fpga_kernel #(
                 end
                 if (aerout_ack_r[i] && !aerout_req_w[i]) aerout_ack_r[i] <= 1'b0;
             end
+            if (hdr_we) hdr_written <= hdr_written + 2'd1;
         end else begin
-            if (cap_space) begin
-                cap_ram[cap_ptr[CAP_AW-1:0]] <= cap_word;
-                cap_ptr <= cap_ptr + 32'd1;
-            end
+            if (cap_space) cap_ptr <= cap_ptr + 32'd1;
             cap_state <= cap_state + 2'd1;
             if (cap_state == 2'd3) begin
                 // Counted even when the RAM is full: the host reads
@@ -227,7 +249,7 @@ module odin_fpga_kernel #(
             ap_done <= 1'b0; ap_idle <= 1'b1; ap_ready <= 1'b0; err <= 1'b0;
             spi_start <= 1'b0; aer_start <= 1'b0; active_core <= 32'd0;
             argc <= 2'd0; argi <= 2'd0; is_read <= 1'b0;
-            issued <= 1'b0; saw_busy <= 1'b0;
+            issued <= 1'b0; saw_busy <= 1'b0; run_ended <= 1'b0;
         end else begin
             spi_start <= 1'b0;
             aer_start <= 1'b0;
@@ -237,7 +259,7 @@ module odin_fpga_kernel #(
                     ap_idle <= 1'b1;
                     if (ap_start) begin
                         pc <= 32'd0; ap_done <= 1'b0; ap_idle <= 1'b0;
-                        err <= 1'b0; state <= S_FETCH;
+                        err <= 1'b0; run_ended <= 1'b0; state <= S_FETCH;
                     end
                 end
                 S_FETCH: begin
@@ -325,8 +347,10 @@ module odin_fpga_kernel #(
                     end
                 end
                 default: begin
-                    cap_ram[0] <= events_seen;
-                    cap_ram[1] <= cycle;
+                    // The header goes out through the capture RAM's single
+                    // write port: `run_ended` hands the two words to the
+                    // arbiter above, which writes them while the port is idle.
+                    run_ended <= 1'b1;
                     if (|aer_timeout_w) err <= 1'b1;
                     ap_done  <= 1'b1;
                     ap_ready <= 1'b1;

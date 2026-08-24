@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence, Tuple
 
+from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
+    SHIPPED_CAPTURE_WORDS,
+)
 from mimarsinan.chip_simulation.odin_rtl.capture import (
     CaptureResult,
     TestbenchFailure,
@@ -76,7 +79,7 @@ def elaborate_kernel_top(*, n_cores: int = 1) -> str:
 
 def build_kernel_testbench(
     *, n_cores: int, token_count: int, engine: str | None = None,
-    cap_words: int = 65536,
+    cap_words: int = SHIPPED_CAPTURE_WORDS,
 ) -> TestbenchBuild:
     """Elaborate the kernel smoke testbench around ``n_cores`` vendored cores."""
     return build_testbench(
@@ -91,7 +94,7 @@ def run_kernel_program(
     *,
     n_cores: int = 1,
     engine: str | None = None,
-    cap_words: int = 65536,
+    cap_words: int = SHIPPED_CAPTURE_WORDS,
     timeout_s: float = 3600.0,
     workdir: Path | None = None,
 ) -> Tuple[CaptureResult, TestbenchBuild, SimulationRun]:
@@ -155,7 +158,7 @@ def parse_kernel_status(stdout: str) -> KernelStatus:
 
 def build_kernel_axi_testbench(
     *, n_cores: int, token_count: int, engine: str | None = None,
-    cap_words: int = 65536, split: int, host_capacity: int,
+    cap_words: int = SHIPPED_CAPTURE_WORDS, split: int, host_capacity: int,
 ) -> TestbenchBuild:
     """Elaborate the WRAPPER testbench: the DUT is `odin_fpga_kernel_top`."""
     return build_testbench(
@@ -174,7 +177,7 @@ def run_kernel_program_over_axi(
     *,
     n_cores: int = 1,
     engine: str | None = None,
-    cap_words: int = 65536,
+    cap_words: int = SHIPPED_CAPTURE_WORDS,
     host_capacity: int = 0x000FFFFF,
     timeout_s: float = 3600.0,
     workdir: Path | None = None,

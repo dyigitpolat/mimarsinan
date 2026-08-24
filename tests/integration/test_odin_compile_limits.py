@@ -7,10 +7,12 @@ points -- and the resulting record must match `hw/fpga/compile_limits.json`
 section for section. The stock row is not re-measured here; it is the P5.5a
 artifact, and the fast test asserts the study carries it unchanged.
 
-Two things this gate deliberately re-derives rather than trusts: that the
-generated cores still keep their synapse memory OUT of block RAM (the finding
-the whole LUT bound rests on), and that the capture RAM still costs 32
-flip-flops per word (the finding that says the wrapper cannot ship as written).
+Three things this gate deliberately re-derives rather than trusts: that the
+generated cores still hold their synapse memory IN block RAM, exactly one tile
+per 1,024 declared words (the finding the whole bound rests on); that the
+capture RAM still costs tiles and ZERO flip-flops per word (the finding that
+says the wrapper can ship at its declared depth); and that the wrapper overhead
+the bounds reserve was measured at that shipped depth and not at a stand-in.
 
 yosys-synthesizability is NECESSARY, NOT SUFFICIENT for Vivado closure on the
 U55C shell, and no bound in the study is a claim about a card until P7b's
@@ -30,6 +32,10 @@ from mimarsinan.chip_simulation.odin_rtl.limits.artifacts import (
     measure_all,
 )
 from mimarsinan.chip_simulation.odin_rtl.limits.configurations import STOCK_KEY
+from mimarsinan.chip_simulation.odin_rtl.limits.tables import (
+    tile_arrays,
+    tiles_for,
+)
 from mimarsinan.chip_simulation.odin_rtl.synthesis import (
     SynthesisUnavailable,
     synthesis_unavailable_reason,
@@ -76,33 +82,60 @@ class TestEveryStudiedConfigurationStillSynthesizes:
 
 
 class TestTheFindingsTheBoundsRestOnAreStillTrue:
-    def test_no_generated_variant_reaches_block_ram_for_its_synapse_memory(
+    def test_every_generated_variant_holds_its_synapse_memory_in_block_ram(
             self, fresh):
+        """The registered, address-ahead read of `syn_mem`, re-derived. The
+        tile count must be the array's declared DEPTH exactly: one tile short
+        and part of the crossbar went back to SLICEM LUTs, one tile long and
+        something else moved into the tiles without the study noticing."""
         for row in fresh["configurations"]:
             if row["kind"] != "generated":
                 continue
-            synapse_bits = next(
-                m["bits"] for m in row["memories"] if m["array"] == "syn_mem")
-            held_in_bram = row["census"]["bram36"] * 36 * 1024
-            assert row["census"]["lutram"] > 0, row["key"]
-            assert held_in_bram < synapse_bits, (
-                f"{row['key']} now holds its synapse memory in block RAM; the "
-                f"LUT-bound analysis in docs/odin_fpga_compile_limits_study.md "
-                f"is stale and must be re-derived, not patched")
+            synapse = next(
+                m for m in row["memories"] if m["array"] == "syn_mem")
+            assert row["census"]["bram36"] == tiles_for(synapse), (
+                f"{row['key']} holds {row['census']['bram36']} RAMB36E2 where "
+                f"its {synapse['words']}-word synapse memory needs "
+                f"{tiles_for(synapse)}; the bounds in "
+                f"docs/odin_fpga_compile_limits_study.md are derived from that "
+                f"tile count and must be re-derived, not patched")
+            assert row["census"]["lutram"] * 512 < synapse["bits"], (
+                f"{row['key']} put synapse-sized distributed RAM back on the "
+                f"fabric: the LUT bound is stale")
 
-    def test_the_capture_ram_still_costs_flip_flops_per_word(self, fresh):
+    def test_the_capture_ram_costs_tiles_and_not_flip_flops_per_word(self, fresh):
+        """The single-write-port capture RAM, re-derived. A per-word flip-flop
+        cost coming back means the header writes escaped the arbiter and the
+        wrapper cannot be built at its shipped depth again."""
         slope = fresh["capture_ram_slope"]["per_capture_word"]
-        assert slope["flip_flops"] == 32.0, (
-            f"the capture RAM's per-word flip-flop cost moved to "
-            f"{slope['flip_flops']}; the wrapper's shipped-depth verdict in the "
-            f"study is derived from it")
-        assert slope["bram36"] == 0.0
+        assert slope["flip_flops"] == 0.0, (
+            f"the capture RAM costs {slope['flip_flops']} flip-flops per word "
+            f"again; the wrapper's shipped-depth verdict in the study is "
+            f"derived from that being zero")
+        assert slope["bram36"] == pytest.approx(1 / 1024)
 
-    def test_the_stock_core_is_the_one_that_binds_on_block_ram(self, fresh):
+    def test_the_wrapper_is_measured_at_the_depth_it_ships_with(self, fresh):
+        """The overhead the bounds reserve is a real kernel's, not a stand-in's."""
+        overhead = fresh["wrapper_overhead"]
+        wrapper = next(row for row in fresh["configurations"]
+                       if row["key"] == overhead["wrapper"])
+        assert (overhead["at_parameters"]["CAP_WORDS"]
+                == wrapper["geometry"]["shipped_cap_words"])
+        assert overhead["delta_costs"]["flip_flops"] > 0
+        assert overhead["delta_costs"]["bram36"] == sum(
+            tiles_for(memory) for memory in tile_arrays(wrapper))
+
+    def test_the_binding_resource_is_read_off_the_record_and_is_one_of_two(
+            self, fresh):
+        """The stock core still binds on block RAM; the generated variants no
+        longer bind as a family, and the study's verdict section says which."""
         binding = {entry["configuration"]: entry["binding_resource"]
                    for entry in fresh["bounds"]}
         assert binding[STOCK_KEY] == "bram36"
-        assert set(binding.values()) - {"bram36"} == {"lut_sites"}
+        assert set(binding.values()) <= {"bram36", "lut_sites"}
+        generated = {row["key"] for row in fresh["configurations"]
+                     if row["kind"] == "generated"}
+        assert {binding[key] for key in generated} == {"bram36", "lut_sites"}
 
 
 class TestTheStudyIsTheCommittedOne:

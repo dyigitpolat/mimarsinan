@@ -121,8 +121,9 @@ def wrapper_overhead_record(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]
             "the wrapper census less the stock core's, i.e. the AXI4-Lite "
             "control block, the AXI4 DMA engine, the token sequencer, the SPI "
             "master, the AER bridge, the program RAM and the capture RAM, at "
-            "the SHRUNK RAM depths named in `at_parameters` -- NOT at the "
-            "depths the wrapper ships with"),
+            "the depths named in `at_parameters` -- the capture RAM at the "
+            "depth the wrapper SHIPS with, the program RAM shrunk from its"
+            " shipped `NC * 262144` words"),
     }
 
 

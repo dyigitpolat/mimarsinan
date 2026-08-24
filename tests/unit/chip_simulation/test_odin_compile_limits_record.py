@@ -121,8 +121,12 @@ class TestTheStudiedConfigurationsAreTheProvenOnes:
         assert {c.geometry["prog_words"] for c in wrappers} == {WRAPPER_PROG_WORDS}
 
     def test_the_shipped_capture_depth_is_read_from_the_rtl_not_assumed(self):
+        """And it is MEASURED, not extrapolated to: the shipped `CAP_WORDS` is
+        itself one of the two synthesized points, so the wrapper overhead the
+        bounds reserve is the overhead of the kernel that actually ships. The
+        program RAM is still shrunk, and every row that carries it says so."""
         depths = wrapper_shipped_depths()
-        assert depths["CAP_WORDS"] > max(WRAPPER_CAP_WORDS)
+        assert depths["CAP_WORDS"] == min(WRAPPER_CAP_WORDS)
         assert depths["PROG_WORDS"] > WRAPPER_PROG_WORDS
 
     def test_a_configuration_the_study_does_not_carry_is_refused(self):

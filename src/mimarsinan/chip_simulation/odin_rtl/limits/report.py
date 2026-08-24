@@ -6,20 +6,24 @@ explains it; the fast gate asserts the file on disk equals this rendering.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping
+from typing import Any, List, Mapping
 
 from mimarsinan.chip_simulation.odin_rtl.limits.configurations import (
     STOCK_KEY,
     WRAPPER_TOP,
 )
-from mimarsinan.chip_simulation.odin_rtl.limits.device import LUTRAM_PROVENANCE
+from mimarsinan.chip_simulation.odin_rtl.limits.readings import (
+    memory_cross_check_lines,
+    verdict_lines,
+    widest_ratio_sentence,
+    wrapper_tile_lines,
+)
 from mimarsinan.chip_simulation.odin_rtl.limits.tables import (
-    BRAM36_BITS,
+    BRAM36_WORDS,
     COLUMN_TITLES,
     availability_lines,
     bound_lines,
     device_lines,
-    lutram_paragraph,
     measurements_table,
     memory_table,
     ratio_lines,
@@ -87,42 +91,16 @@ def render_study(record: Mapping[str, Any]) -> str:
         "",
         "Every array is sized by the spec that generated it (or, for the stock",
         "core, by the overlay wrapper's declared geometry), so the bits column",
-        "below is the RTL's own arithmetic and not a second derivation.",
+        "below is the RTL's own arithmetic and not a second derivation. The last",
+        "column divides those bits by a tile and is a FLOOR only: tiles are",
+        "allocated by DEPTH and WIDTH, not by bit count, and the paragraphs that",
+        "follow do that arithmetic per array against what was measured.",
         "",
         *memory_table(record),
         "",
         "Cross-checking that against the censuses above:",
         "",
-        "- The STOCK core is the only configuration whose SYNAPSE memory reaches",
-        f"  block RAM. Its {stock['memories'][0]['bits']:,} + "
-        f"{stock['memories'][1]['bits']:,} = {stock['memory_bits']:,} declared "
-        f"bits occupy {stock['census']['bram36']} RAMB36E2 tiles = "
-        f"{stock['census']['bram36'] * BRAM36_BITS:,} bits of tile "
-        f"({stock['census']['bram36'] * BRAM36_BITS / stock['memory_bits']:.2f}x).",
-        "  The arithmetic is per memory and not per bit: a RAMB36E2 is 1,024 x 36",
-        "  at its true-dual-port width and 512 x 72 in simple-dual-port mode, so",
-        "  the 8,192 x 32 synapse memory needs 8,192 / 1,024 = 8 tiles and leaves",
-        "  4 of each 36 bits unused, while the 256 x 128 neuron memory needs two",
-        "  tiles side by side to make a 128-bit word and then uses only 256 of",
-        "  each tile's entries. 8 + 2 is the measured 10.",
-        "- Every GENERATED variant puts its SYNAPSE memory in DISTRIBUTED RAM",
-        "  instead. That is not a synthesis accident: the template reads the",
-        "  synapse word combinationally (`wire syn_word = syn_mem[syn_index]` in",
-        "  `hw/gen/odin_gen_core.v.tmpl`), and a block-RAM tile has no",
-        "  asynchronous read port. The stock core reaches BRAM only because the",
-        "  `hw/fpga/mem/` overlay gives it a REGISTERED read. Measured, per",
-        f"  variant -- {LUTRAM_PROVENANCE}:",
-        "",
-        *lutram_paragraph(record),
-        "",
-        "- The generated `thr_arr` is the one generated array that DOES reach a",
-        "  tile: the two 256 x 16 threshold memories each take a single RAMB18E2",
-        "  (4,096 bits into an 18 Kb tile), because their read address is",
-        "  registered where the synapse read is not.",
-        "- The generated `vmem_arr` is not in any RAM at all: yosys converts it to",
-        "  registers, which is why the 256-neuron variants both carry 4,096",
-        "  membrane flip-flops (256 neurons x 16 bits) on top of their control",
-        "  state, and the 128-neuron variant 1,024 (128 x 8).",
+        *memory_cross_check_lines(record),
         "",
         "## How the geometry moves the numbers",
         "",
@@ -131,13 +109,16 @@ def render_study(record: Mapping[str, Any]) -> str:
         "",
         *ratio_lines(record),
         "",
-        "Read against the geometries: the synapse array (and therefore the LUTRAM",
-        "and the LUT-equivalent column that carries its read multiplexing) tracks",
-        "axons x neurons x weight_bits, while the flip-flop column tracks",
+        "Read against the geometries: the synapse array tracks",
+        "axons x neurons x weight_bits and is now paid for in TILES, so it has",
+        "left the LUT column -- " + widest_ratio_sentence(record) + " What the",
+        "LUT column still carries is the soma datapath (whose width follows",
+        "membrane_bits + weight_bits) and the threshold array's distributed RAM,",
+        "neither of which grows with the crossbar. The flip-flop column tracks",
         "neurons x membrane_bits plus a fixed control block. The sync-fire variant",
         "is the control: same neuron count and same register width as the wide",
         "per-event variant, half the synapse array, and its flip-flop count is",
-        "identical while its LUTRAM halves.",
+        "identical while its tiles halve and its LUT sites barely move.",
         "",
         "## What the kernel wrapper costs around a core",
         "",
@@ -151,34 +132,42 @@ def render_study(record: Mapping[str, Any]) -> str:
         f"| `lut_sites` (the bound's LUT class) "
         f"| {overhead['delta_costs']['lut_sites']:,.0f} |",
         "",
-        "The wrapper's `prog_ram` DOES infer block RAM -- the +4 RAMB36E2 above",
-        "is its 131,072 bits at the synthesized depth -- because every one of its",
-        "reads lands in a register on the same clock, which is what a tile's",
-        "synchronous read port can be. The capture RAM does not, and that is the",
-        "next paragraph.",
+        "Both of the wrapper's own RAMs infer block RAM, and the "
+        f"{overhead['delta']['bram36']:,.0f} RAMB36E2 of overhead above is exactly "
+        "their declared depth:",
+        "",
+        *wrapper_tile_lines(record, overhead),
+        "",
+        "Each has ONE synchronous write port and ONE registered read port, which",
+        "is what a tile can be. `cap_ram` reaches that shape through a write",
+        "arbiter: its two header words (the events the fabric saw, and the cycle",
+        "the program ended on) used to be written at fixed addresses from the",
+        "sequencer, a third write port that no tile has, and they now go out",
+        "through the SAME port as the streaming record, at drain time, when the",
+        "streaming writes have stopped.",
         "",
         f"The two wrapper points differ ONLY in `CAP_WORDS` "
         f"({slope['extra_capture_words']:,} extra words), which makes the capture",
         "RAM's cost a measurement:",
         "",
-        *[f"- `{column}`: {slope['per_capture_word'][column]:+.2f} per capture word"
+        *[f"- `{column}`: {slope['per_capture_word'][column]:+.6f} per capture word"
           for column in ("flip_flops", "lut_equivalent", "bram36")],
         "",
-        "**This is the study's sharpest finding.** The capture RAM does not infer",
-        "block RAM -- it has two write ports at fixed addresses plus the streaming",
-        f"write -- so it costs {ff_per_word:.0f} flip-flops per 32-bit word. The",
-        f"wrapper SHIPS with `CAP_WORDS = {shipped['shipped_cap_words']:,}`, which",
-        f"is {shipped_cap_ffs:,} flip-flops: "
-        f"{shipped_cap_ffs / record['device']['totals']['registers']['value']:.0%} of",
-        "the entire device's registers, for the capture buffer alone -- and its",
-        f"read multiplexing is another {shipped_cap_luts:,} LUT sites, "
-        f"{shipped_cap_luts / record['device']['totals']['luts']['value']:.0%} of",
-        "the LUTs. The kernel as written therefore cannot be built at its",
-        "shipped capture depth, and",
-        "the numbers below are for the SHRUNK depths named in the table. Giving",
-        "`cap_ram` a single registered read port and a single write port -- the",
-        "same treatment `hw/fpga/mem/` gave the stock memories -- is the fix, and",
-        "it is work the BOARD half of P8 owes.",
+        f"A capture word costs {ff_per_word:.0f} flip-flops: it is bought in "
+        f"TILES, one RAMB36E2 per "
+        f"{1 / slope['per_capture_word']['bram36']:,.0f} words. That is a",
+        "REVERSAL of what the previous revision of this study measured -- with",
+        "three write ports (the streaming record plus two fixed-address header",
+        "writes) the capture RAM could not infer a tile and cost 32 flip-flops",
+        "per word, which at any shippable depth exceeded the device's entire",
+        "register budget and made the kernel unbuildable as written. The",
+        f"wrapper now SHIPS with `CAP_WORDS = {shipped['shipped_cap_words']:,}` "
+        f"-- {(shipped['shipped_cap_words'] - 2) // 4:,} event records held in "
+        f"{shipped['shipped_cap_words'] // BRAM36_WORDS} tiles and "
+        f"{shipped_cap_ffs:,} flip-flops -- and THAT depth is the one measured "
+        "above, not a shrunk stand-in for it. The program RAM is still shrunk",
+        "(4,096 words against the shipped `NC * 262144`), and every row that",
+        "carries it says so.",
         "",
         "## The device, with provenance",
         "",
@@ -223,7 +212,7 @@ def render_study(record: Mapping[str, Any]) -> str:
         *variant_bound_sections(record),
         "## The verdict",
         "",
-        *_verdict_lines(record),
+        *verdict_lines(record),
         "",
         "## What the BOARD half of P8 still owes",
         "",
@@ -238,10 +227,12 @@ def render_study(record: Mapping[str, Any]) -> str:
         "- **The measured campaign.** Programming and execution walls from the real",
         "  card, which the deployment record's timing fragment already has a place",
         "  for.",
-        "- **The two RTL defects this study found**, both of which change the",
-        "  numbers above: the capture RAM that costs flip-flops per word, and the",
-        "  generated core's asynchronous synapse read that keeps every variant out",
-        "  of block RAM.",
+        "- **A Vivado read of the two memory fixes.** The two RTL defects the",
+        "  previous revision of this study found -- the capture RAM's three write",
+        "  ports and the generated core's asynchronous synapse read -- are FIXED",
+        "  in the tree these numbers were measured on, and every number above",
+        "  moved because of it. yosys says both memories now infer tiles; only",
+        "  Vivado can say the same about the build that goes on the card.",
         "",
         "## The caveat this study must carry",
         "",
@@ -256,30 +247,3 @@ def render_study(record: Mapping[str, Any]) -> str:
         "",
     ]
     return "\n".join(lines)
-
-
-def _verdict_lines(record: Mapping[str, Any]) -> List[str]:
-    binding: Dict[str, List[str]] = {}
-    all_keys = [entry["configuration"] for entry in record["bounds"]]
-    for entry in record["bounds"]:
-        binding.setdefault(entry["binding_resource"] or "nothing", []).append(
-            entry["configuration"])
-    stock = row_of(record, STOCK_KEY)
-    lines = [
-        "- For the STOCK core the binding resource is **block RAM**: "
-        f"{stock['census']['bram36']} RAMB36E2 tiles per core against the "
-        "device's 2,016.",
-        "- For every GENERATED variant the binding resource is **LUT sites**,",
-        "  because the synapse memory never reaches a block-RAM tile and pays for",
-        "  itself in SLICEM LUTs instead. That is a property of the emitted RTL,",
-        "  not of the geometry, and it is fixable.",
-        "- Which classes bind, across every configuration and scenario in the",
-        "  record: "
-        + ", ".join(
-            f"`{resource}` for {len(set(keys))} of {len(set(all_keys))} core "
-            f"configurations"
-            for resource, keys in sorted(binding.items())) + ".",
-        "- No bound in this document is a claim about a card until the P7b",
-        "  utilization report exists.",
-    ]
-    return lines

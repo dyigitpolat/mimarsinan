@@ -43,6 +43,8 @@ from integration.odin_rtl_harness import (
 )
 
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
+    SHIPPED_CAPTURE_EVENTS,
+    SHIPPED_CAPTURE_WORDS,
     STATUS_ERR_BIT,
     OdinFpgaCaptureTruncated,
     OdinFpgaKernelError,
@@ -193,8 +195,12 @@ class TestTheWrapperMovesItsOwnBytes:
         assert status.events_seen < status.capture_capacity
 
     def test_the_capacity_registers_report_the_fabric_geometry(self, over_axi):
+        """The SHIPPED capture depth, read off 0x54 and agreeing with the
+        host-side copy of it — a fabric built at a depth the host does not
+        believe would report a capacity nobody declared."""
         _capture, status = over_axi
-        assert status.capture_capacity == (65536 - 2) // 4
+        assert status.capture_capacity == SHIPPED_CAPTURE_EVENTS
+        assert status.capture_capacity == (SHIPPED_CAPTURE_WORDS - 2) // 4
         assert status.program_capacity == status.ram_words
 
 

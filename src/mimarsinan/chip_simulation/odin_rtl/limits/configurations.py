@@ -31,12 +31,14 @@ STOCK_KEY = "stock_a256n256_vendored"
 WRAPPER_TOP = "odin_fpga_kernel_top"
 WRAPPER_RTL = HW_ROOT / "fpga" / "kernel" / "odin_fpga_kernel_top.v"
 
-#: The wrapper is synthesized with SHRUNK program/capture RAMs, and the study
-#: says so on every row: at the SHIPPED depths yosys turns the capture RAM into
-#: 32 flip-flops per word, which alone exceeds the device. Two capture depths are
-#: measured so that slope is a MEASUREMENT rather than an inference.
+#: The wrapper is synthesized with a SHRUNK program RAM -- 4,096 words against
+#: the shipped `NC * 262144` -- and the study says so on every row it appears
+#: on. The CAPTURE RAM is not shrunk: the first depth here IS the wrapper's
+#: shipped `CAP_WORDS`, so the wrapper overhead the bounds reserve is measured
+#: at the depth the kernel actually builds with. The second depth is twice it,
+#: which makes the per-capture-word cost a MEASUREMENT rather than an inference.
 WRAPPER_PROG_WORDS = 4096
-WRAPPER_CAP_WORDS: Tuple[int, ...] = (1024, 2048)
+WRAPPER_CAP_WORDS: Tuple[int, ...] = (16384, 32768)
 
 _PARAM_DEFAULT = "parameter {name}\\s*=\\s*(?:NC\\s*\\*\\s*)?(\\d+)"
 

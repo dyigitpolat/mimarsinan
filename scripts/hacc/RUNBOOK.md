@@ -96,11 +96,13 @@ Take 2.18.179 as the expected runtime and **confirm it on the node** with
 against what the xclbin was linked with is triage step 1, not a footnote.
 
 **Kernel geometry is compile-time, and it is load-bearing.** The wrapper's
-`PROG_WORDS` defaults to `NC * 262144` words and `CAP_WORDS` to `65536`;
+`PROG_WORDS` defaults to `NC * 262144` words and `CAP_WORDS` to `16384`;
 the v1 packaging flow builds **NC = 1 only** (`build_xclbn.sh` refuses more:
 the RTL parameter exists, the `package_xo` plumbing for it is a P7b follow-up)
 (≈147.6k program words are needed to SPI-program ONE stock core, and a
-65536-word capture RAM holds 16383 event records). The host does not assume
+16384-word capture RAM holds 4095 event records — it is a BLOCK RAM, 16
+RAMB36E2 tiles, which is what makes that depth shippable at all; see
+`docs/odin_fpga_compile_limits_study.md`). The host does not assume
 these: it reads them back from the read-only registers at `0x5C` and `0x54` and
 REFUSES a run that would overrun either. If a run refuses with
 `OdinFpgaProgramTooLarge` or `OdinFpgaCaptureTruncated`, raise the parameter in
@@ -112,9 +114,10 @@ ODIN cores; the local yosys census (`hw/fpga/synth_resources.json`) puts one
 stock core at 5,659 LUT-equivalents, 4,362 FFs and 10 RAMB36E2, so a 1-core
 kernel is small — budget **2–6 hours** and
 run it inside a `screen`/`tmux` on the compile node. On top of the cores, the
-program and capture RAMs are ≈8.4 Mbit (per core) and 2.1 Mbit of on-chip
-memory; nothing local has placed them, so read the build's `utilization`
-report for where they actually landed and at what cost.
+program and capture RAMs are ≈8.4 Mbit (per core) and 0.5 Mbit of on-chip
+memory, and both INFER BLOCK RAM in the local census (one RAMB36E2 per 1,024
+32-bit words); nothing local has placed them, so read the build's
+`utilization` report for where they actually landed and at what cost.
 
 Outputs land in `build/hacc/<target>_nc<N>/`:
 `odin_fpga_<target>.xclbin`, plus `reports/` (timing, utilization) and `logs/`.
