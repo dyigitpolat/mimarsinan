@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# v++ --link, standing in for Vitis: writes the xclbin and an empty report dir.
+set -euo pipefail
+out=""
+reports=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o) out="${2:-}"; shift ;;
+        --report_dir) reports="${2:-}"; shift ;;
+    esac
+    shift
+done
+[ -n "${out}" ] || { echo "stub v++: no -o" >&2; exit 2; }
+mkdir -p "$(dirname "${out}")"
+[ -n "${reports}" ] && mkdir -p "${reports}"
+printf 'stub xclbin\n' > "${out}"
+echo "[stub v++] wrote ${out}"

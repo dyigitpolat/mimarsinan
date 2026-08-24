@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Build the ODIN RTL kernel into a U55C xclbin on HACC@NUS.
 #
-# WHERE: hacchead or the `cpu_only` partition (hacc-node2, 7-day limit) — NEVER
-# on a board reservation: the bare U55C shell partitions are capped at ONE HOUR
-# and a placed-and-routed build is hours. Vitis 2022.2 lives in /tools/xilinx.
+# WHERE: hacchead or a compile partition — NEVER on a board reservation: the
+# bare U55C shell partitions are capped at ONE HOUR and a placed-and-routed
+# build is hours. FIELD-OBSERVED 2026-08-25: `vck5000_compile` (hacc-node0,
+# AllowGroups=ALL, 7 days) is the live build venue; `cpu_only` maps to
+# hacc-gpu0, which is DOWN. Vitis is 2024.2 under /tools/Xilinx, discovered by
+# toolchain.sh rather than assumed.
 #
 # WHAT: package_xo turns the Verilog kernel + its kernel.xml into an .xo, then
 # v++ --link places it into the U55C XDMA shell. The emulation targets
@@ -25,39 +28,42 @@ if [[ "${NC}" != "1" ]]; then
 fi
 
 PLATFORM="${ODIN_PLATFORM:-xilinx_u55c_gen3x16_xdma_3_202210_1}"
-XILINX_ROOT="${XILINX_ROOT:-/tools/xilinx}"
-VITIS_VERSION="${VITIS_VERSION:-2022.2}"
 KERNEL="odin_fpga_kernel_top"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/hacc/toolchain.sh
+source "$(dirname "${BASH_SOURCE[0]}")/toolchain.sh"
 cd "${here}"
 
 # --- REFUSE LOUD off-cluster -------------------------------------------------
-if [[ ! -d "${XILINX_ROOT}/Vitis/${VITIS_VERSION}" ]]; then
-    echo "REFUSING: no Vitis ${VITIS_VERSION} at ${XILINX_ROOT}/Vitis/${VITIS_VERSION}." >&2
-    echo "  This script builds ONLY on HACC@NUS (hacchead or the cpu_only" >&2
+# The version is DISCOVERED (field-observed 2026-08-25: Vitis 2024.2 under
+# /tools/Xilinx, not the 2022.2 under /tools/xilinx the vendor docs list);
+# XILINX_ROOT / VITIS_VERSION still pin it if you need a specific one.
+if ! vitis="$(odin_vitis_settings)"; then
+    echo "REFUSING: no Vitis under ${XILINX_ROOT:-/tools/Xilinx or /tools/xilinx}." >&2
+    echo "  This script builds ONLY on HACC@NUS (hacchead or a compile" >&2
     echo "  partition). Log in per scripts/hacc/RUNBOOK.md and run it there;" >&2
     echo "  off-cluster there is no toolchain and no shell to link against." >&2
+    echo "  Pin one with XILINX_ROOT=/tools/Xilinx VITIS_VERSION=2024.2." >&2
     exit 2
 fi
+XILINX_ROOT="${vitis%%|*}"
+VITIS_VERSION="${vitis#*|}"; VITIS_VERSION="${VITIS_VERSION%%|*}"
+VITIS_SETTINGS="${vitis##*|}"
 if [[ "${TARGET}" != "sw_emu" && "${TARGET}" != "hw_emu" && "${TARGET}" != "hw" ]]; then
     echo "REFUSING: unknown target '${TARGET}' (sw_emu | hw_emu | hw)." >&2
     exit 2
 fi
 
-# The vendor setup scripts expand variables that may be unset in a fresh
-# slurm shell (Vitis 2024.x's .settings64-Vitis.sh reads $PYTHONPATH), which
-# nounset treats as fatal — relax it for exactly these two sources.
-set +u
-# shellcheck disable=SC1091  # cluster-side script, absent in this repo
-source "${XILINX_ROOT}/Vitis/${VITIS_VERSION}/settings64.sh"
-# shellcheck disable=SC1091
-source /opt/xilinx/xrt/setup.sh
-set -u
+# The vendor setup scripts expand variables that may be unset in a fresh slurm
+# shell (Vitis 2024.x's .settings64-Vitis.sh reads $PYTHONPATH), which nounset
+# treats as fatal — odin_source_toolchain relaxes it for exactly these two.
+odin_source_toolchain "${VITIS_SETTINGS}"
 
 BUILD="build/hacc/${TARGET}_nc${NC}"
 mkdir -p "${BUILD}"
 
+echo "[hacc-build] vitis    : ${XILINX_ROOT}/Vitis/${VITIS_VERSION}"
 echo "[hacc-build] platform : ${PLATFORM}"
 echo "[hacc-build] target   : ${TARGET}"
 echo "[hacc-build] cores    : ${NC}"

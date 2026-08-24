@@ -16,9 +16,16 @@ WHAT GOES IN, AND WHY ONLY THAT
     the committed golden gates. Packaging FAILS if any of them disagrees;
   * the thin host driver and its fake ``pyxrt``, so the whole driver runs green
     with no hardware before it is ever pointed at a card;
-  * ``run_all.sh``, ``collect_results.sh``, ``README_HACC.md``.
+  * ``bootstrap_hacc.sh``, ``run_all.sh``, ``scripts/status.sh``,
+    ``collect_results.sh``, ``README_HACC.md``.
 
 Nothing else from the repository tree.
+
+TWO ARTIFACTS, IN THIS ORDER. ``dist/odin_hacc_package.zip`` is written first,
+then hashed, then ``dist/bootstrap_hacc.sh`` is written outside it with that
+hash embedded — so the standalone bootstrap the owner uploads alongside the zip
+verifies the FINAL bytes. The copy of the bootstrap inside the zip necessarily
+keeps its placeholder and says so rather than pretending to verify.
 
 DETERMINISM. Every zip entry is stored with a fixed timestamp and mode, in
 sorted order, and every fixture's JSON is canonical (sorted keys, no spaces), so
@@ -686,12 +693,17 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
 
     for source, relative in hw_payload():
         copy(source, relative)
-    for name in ("build_xclbn.sh", "odin_u55c.cfg"):
+    for name in ("build_xclbn.sh", "odin_u55c.cfg", "toolchain.sh"):
         copy(REPO / "scripts" / "hacc" / name, f"scripts/hacc/{name}")
     write_text("scripts/hacc/kernel.xml", kernel_xml_text())
     for source in sorted((PACKAGE_SRC / "sbatch").glob("*.sbatch")):
         copy(source, f"scripts/hacc/{source.name}")
     copy(PACKAGE_SRC / "gen_kernel_xml.py", "scripts/hacc/gen_kernel_xml.py")
+    copy(PACKAGE_SRC / "scripts" / "status.sh", "scripts/status.sh")
+    # The in-zip bootstrap keeps its placeholder hash: no file can carry the
+    # digest of an archive that contains that same file. The STANDALONE copy
+    # written beside the zip afterwards is the one that verifies.
+    copy(PACKAGE_SRC / "bootstrap_hacc.sh", "bootstrap_hacc.sh")
     for name in ("run_all.sh", "collect_results.sh", "README_HACC.md"):
         copy(PACKAGE_SRC / name, name)
     copy(PACKAGE_SRC / "host" / "odin_board_driver.py",
@@ -730,6 +742,11 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
 
 EXECUTABLE = (".sh", ".py")
 
+#: The line the standalone bootstrap's digest is injected into. Exactly one, and
+#: packaging refuses if the file ever grows a second.
+BOOTSTRAP_TOKEN = 'ZIP_SHA256="__ODIN_ZIP_SHA256__"'
+BOOTSTRAP_STANDALONE = DIST / "bootstrap_hacc.sh"
+
 
 def write_zip() -> None:
     DIST.mkdir(parents=True, exist_ok=True)
@@ -746,6 +763,32 @@ def write_zip() -> None:
             mode = 0o755 if name.endswith(EXECUTABLE) else 0o644
             info.external_attr = (mode << 16) | 0o600
             archive.writestr(info, (STAGE / name).read_bytes())
+
+
+def write_standalone_bootstrap(zip_sha256: str) -> Path:
+    """The bootstrap that travels BESIDE the zip, carrying the zip's digest.
+
+    Order is the whole trick: the archive is written first, hashed second, and
+    this file third and OUTSIDE it, so the embedded value always describes the
+    final bytes of the shipped zip.
+    """
+    source = PACKAGE_SRC / "bootstrap_hacc.sh"
+    text = source.read_text(encoding="utf-8")
+    if text.count(BOOTSTRAP_TOKEN) != 1:
+        raise PackagingRefusal(
+            f"{source} carries {text.count(BOOTSTRAP_TOKEN)} copies of "
+            f"{BOOTSTRAP_TOKEN!r}; the injection needs exactly one, or the "
+            f"shipped bootstrap would verify against the wrong value")
+    injected = text.replace(BOOTSTRAP_TOKEN, f'ZIP_SHA256="{zip_sha256}"')
+    BOOTSTRAP_STANDALONE.write_text(injected, encoding="utf-8")
+    BOOTSTRAP_STANDALONE.chmod(0o755)
+    if zip_sha256 not in BOOTSTRAP_STANDALONE.read_text(encoding="utf-8"):
+        raise PackagingRefusal("the standalone bootstrap lost its digest")
+    if sha256_file(ZIP_PATH) != zip_sha256:
+        raise PackagingRefusal(
+            "the zip changed after it was hashed; the embedded digest would "
+            "refuse the very package it ships with")
+    return BOOTSTRAP_STANDALONE
 
 
 def main() -> int:
@@ -785,8 +828,13 @@ def main() -> int:
         return 0
     write_zip()
     size = ZIP_PATH.stat().st_size
+    zip_sha256 = sha256_file(ZIP_PATH)
     print(f"[package] wrote {ZIP_PATH} ({size / 1e6:.2f} MB, "
-          f"sha256 {sha256_file(ZIP_PATH)})")
+          f"sha256 {zip_sha256})")
+    (DIST / "odin_hacc_package.zip.sha256").write_text(
+        f"{zip_sha256}  {ZIP_PATH.name}\n", encoding="utf-8")
+    print(f"[package] wrote {write_standalone_bootstrap(zip_sha256)} "
+          f"(verifies that digest before it unpacks anything)")
     if size > 20 * 1000 * 1000:
         raise PackagingRefusal(
             f"the package is {size / 1e6:.1f} MB, over the 20 MB the owner was "

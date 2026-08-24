@@ -7,9 +7,11 @@
 #
 # Run the ODIN driver against an allocated U55C. Submit with
 #   -p xilinx_u55c_gen3x16_xdma_3_202210_1   (hacc-gpu1/2/3, ONE HOUR cap)
-# or
-#   -p mi210_vck_u55c                        (hacc-gpu2/3, 7-day cap)
-# per Xtra-Computing/hacc_demo/doc/1-FPGA-allocation.md lines 32-33 and 44-46.
+# or, for anything longer,
+#   -p mi210_u280_u55c                       (hacc-gpu1, 12 h)
+# FIELD-OBSERVED 2026-08-25: the board partition's AllowGroups is
+# lab,hgpu,fpga_u55c — reachable through `hgpu` without fpga_u55c membership —
+# and mi210_vck_u55c, which the vendor doc names, refuses this account outright.
 #
 # The first two #SBATCH lines are the cluster's required preamble (that doc's
 # example.sh lines 143-145). --output/--error stay under --chdir (/tmp) because

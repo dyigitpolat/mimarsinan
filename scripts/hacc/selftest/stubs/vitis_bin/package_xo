@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# package_xo, standing in for Vitis: it writes the .xo it was asked for and
+# checks nothing. Its only job here is to let odin_build.sbatch run to the end
+# off-cluster so the SMOKE branch can be gated.
+set -euo pipefail
+out=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -xo_path) out="${2:-}"; shift ;;
+    esac
+    shift
+done
+[ -n "${out}" ] || { echo "stub package_xo: no -xo_path" >&2; exit 2; }
+mkdir -p "$(dirname "${out}")"
+printf 'stub xo\n' > "${out}"
+echo "[stub package_xo] wrote ${out}"

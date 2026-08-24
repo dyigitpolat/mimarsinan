@@ -1,0 +1,1 @@
+sbatch: error: Batch job submission failed: User's group not permitted to use this partition

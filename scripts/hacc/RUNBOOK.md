@@ -10,19 +10,33 @@ What comes back from it is one number nothing local can produce — the same
 counts, produced by an Alveo card, with measured programming and execution
 walls.
 
-**There is now a shorter path: one zip and one `sh`.**
-`scripts/hacc/make_package.py` builds `dist/odin_hacc_package.zip`, which
-carries the RTL the build compiles, the fixtures with their expected per-neuron
-counts already frozen from the committed cosimulation, a host driver that needs
-nothing but Python 3 and XRT, and a `run_all.sh` that walks phases 0–7 (env
-probe, no-hardware selftest, `hw_emu` build + emulation smoke, `hw` build,
-staging, B0, B1, and a two-component board-plus-reference job). Upload it,
-unzip it **under `/data/${USER}`**, run `./run_all.sh`; its `README_HACC.md` is
-the condensed form of this document. Everything below stays true and remains
-the reference for what the phases are doing and why — read it if a phase
-refuses. The two paths differ in one thing worth knowing up front: the package
-does **not** clone this repository onto the cluster, so it runs the frozen
-fixtures rather than a full `run.py` deployment config.
+**There is now a shorter path: one zip and one `sh` (v2).**
+`scripts/hacc/make_package.py` builds `dist/odin_hacc_package.zip` **and**
+`dist/bootstrap_hacc.sh` beside it, with the zip's own sha256 baked into that
+bootstrap. The zip carries the RTL the build compiles, the fixtures with their
+expected per-neuron counts already frozen from the committed cosimulation, a
+host driver that needs nothing but Python 3 and XRT, and a `run_all.sh` that
+walks phases 0–7 (env probe, no-hardware selftest, `hw_emu` build + a bounded
+emulation smoke, `hw` build, staging, B0, B1, and a two-component
+board-plus-reference job).
+
+Upload **both files into the same directory** on `hacchead` and run
+`./bootstrap_hacc.sh`: it verifies the upload, archives any previous install
+to `odin_prev_<utc>.tar.gz`, unpacks under `/data/${USER}`, and launches
+`run_all.sh` **detached** (`setsid nohup`, log at `results/run_all.log`). It
+prints the tail command, the status command, and that you may log out.
+`scripts/status.sh` inside the package answers "how far has it got" at any time.
+Its `README_HACC.md` is the condensed form of this document. Everything below
+stays true and remains the reference for what the phases are doing and why —
+read it if a phase refuses. The two paths differ in one thing worth knowing up
+front: the package does **not** clone this repository onto the cluster, so it
+runs the frozen fixtures rather than a full `run.py` deployment config.
+
+**Why v2 exists.** The 2026-08-25 live session found three things that made v1
+need a human at the keyboard: the documented build venue is down, the
+documented joint venue refuses this account, and the documented Vitis is not
+the installed one. v2 stops trusting any of the three and asks the cluster
+instead — see §1 and §2, where every field-observed fact is tagged as such.
 
 ---
 
@@ -70,19 +84,32 @@ sinfo      # partitions, time limits, states
 squeue     # who is holding what
 ```
 
-The rows that matter:
+### The venues, as the cluster actually answered (field-observed 2026-08-25)
 
-| Partition | Nodes | Time limit | Use it for |
-|---|---|---|---|
-| `cpu_only` | `hacc-node2` | 7 days | **building the xclbin** |
-| `xilinx_u55c_gen3x16_xdma_3_202210_1` | `hacc-gpu1/2/3` | **1 hour** | B0, or a small campaign |
-| `mi210_vck_u55c` | `hacc-gpu2`, `hacc-gpu3` | 7 days | U55C **and** MI210 in one job |
-| `mi210_u250_u55c` | `hacc-gpu1` | 7 days | U55C, but its GPU pair is U250/U280 |
+Read this table, not the vendor doc's. Every row on the left was checked in the
+live session; the right column is what `Xtra-Computing/hacc_demo` still says.
 
-Only **hacc-gpu2** and **hacc-gpu3** are true U55C + MI210 nodes. Both were
-busy in the sampled `sinfo`: expect to queue for the 7-day pools.
+| Partition | Field-observed 2026-08-25 | Stale doc claim |
+|---|---|---|
+| `cpu_only` | node is **hacc-gpu0**, state `down*`, reason `NO NETWORK ADDRESS FOUND`. Unusable. | `hacc-node2`, 7 days, the build venue |
+| `vck5000_compile` | `AllowGroups=ALL`, `MaxTime=7-00:00:00`, **hacc-node0 idle** — **the build venue** | not mentioned |
+| `xilinx_u55c_gen3x16_xdma_3_202210_1` | `AllowGroups=lab,hgpu,fpga_u55c`, 1 h cap — this account gets in through **`hgpu`**, without `fpga_u55c` | hacc-gpu1/2/3, one hour |
+| `mi210_vck_u55c` | **absent** from `scontrol show partition`; `sbatch` answers `User's group not permitted to use this partition` | hacc-gpu2/3, 7 days, U55C + MI210 |
+| `mi210_u280_u55c` | `AllowGroups=lab,hgpu,fpga_u280`, 12 h, node **hacc-gpu1** which hosts MI210 **and** U280 **and** U55C — **the joint venue** | doc names `mi210_u250_u55c` and warns its pair is U250/U280 |
+| `mi210_u280_u55c_long_reservation` | same groups, **5 days** | not mentioned |
 
-## 2. Build the kernel (on `cpu_only` or `hacchead`, NEVER on a board)
+The account's groups, verbatim: `yigit video render hgpu gpgpu fpga_u280
+fpga_u250 fpga_vck5000`. Note what is NOT there — `fpga_u55c` and `lab` — and
+that `hgpu` is nevertheless enough for both U55C partitions.
+
+`run_all.sh` no longer takes any of this on faith: it re-derives the pick at
+phase time from `scontrol show partition` (groups) and `sinfo` (a node that is
+up), prints why each rejected candidate lost, and yields to
+`ODIN_BUILD_PARTITION` / `ODIN_BOARD_PARTITION` / `ODIN_JOINT_PARTITION`. When
+the cluster changes again, the script follows it and this table is the record of
+what it looked like on 2026-08-25.
+
+## 2. Build the kernel (on a compile partition or `hacchead`, NEVER on a board)
 
 The board partitions are capped at one hour; a place-and-route is hours. The
 build needs no board at all.
@@ -91,15 +118,25 @@ build needs no board at all.
 git clone <this repo> /data/${USER}/odin/mimarsinan
 cd /data/${USER}/odin/mimarsinan
 
-srun -p cpu_only -n 1 --pty bash -i          # or just run on hacchead
+srun -p vck5000_compile -n 1 --pty bash -i   # field-observed 2026-08-25:
+                                             # cpu_only's node is DOWN
 
 scripts/hacc/build_xclbn.sh hw_emu           # FIRST: ~15 min, functional
 scripts/hacc/build_xclbn.sh hw               # THEN: the real bitstream
 ```
 
-Toolchain: Vitis **2022.2** under `/tools/xilinx`, shell
-`xilinx_u55c_gen3x16_xdma_3_202210_1`. The script refuses loudly if it cannot
-find them, which is what happens if you run it on your laptop.
+Toolchain (field-observed 2026-08-25): Vitis **2024.2** under **`/tools/Xilinx`**
+— capital X — with the shell `xilinx_u55c_gen3x16_xdma_3_202210_1`. The vendor
+docs' "2022.2 under `/tools/xilinx`" is stale and cost the first live session a
+refusal at the door. `scripts/hacc/toolchain.sh` is now the single place that
+resolves this: it probes `/tools/Xilinx`, `/tools/xilinx`, `/opt/Xilinx`,
+`/opt/xilinx`, takes the newest Vitis it finds, and honours `XILINX_ROOT` /
+`VITIS_VERSION` when you want a specific one. It refuses loudly if there is no
+Vitis anywhere, which is what happens if you run it on your laptop.
+
+That file also owns the `set +u` around the vendor setup scripts: Vitis 2024.x's
+`.settings64-Vitis.sh` reads `$PYTHONPATH`, and under `set -u` an unset
+`PYTHONPATH` in a fresh slurm shell kills the build before it starts.
 
 **XRT version — the two cluster docs disagree, and the newer one wins.**
 `Xtra-Computing/hacc_demo/README.md`'s current cluster table lists the U55C
@@ -237,7 +274,7 @@ worth board hours.
 Batched, for the campaign (the 7-day pool if you need more than an hour):
 
 ```bash
-sbatch -p mi210_vck_u55c scripts/hacc/odin_u55c.sbatch
+sbatch -p mi210_u280_u55c scripts/hacc/odin_u55c.sbatch   # field-observed 2026-08-25
 squeue                              # watch it
 ls -t /data/${USER}/log/odin_*/     # the newest run's artifact directory
 tail -f /data/${USER}/log/odin_*/run_board.log
@@ -315,7 +352,15 @@ and most likely first:
   to `--chdir` (`/tmp`) for exactly that reason; if you point them at `/data`,
   create the directory first or the submission never launches.
 * Staging outside `/data` — the VM cannot see it.
-* `hacc-gpu1` when you wanted an MI210 next to the U55C — it has U250/U280.
+* Trusting the vendor doc's partition table: **field-observed 2026-08-25**,
+  `cpu_only`'s node is down, `mi210_vck_u55c` refuses this account outright, and
+  `hacc-gpu1` — which that doc warns off as "U250/U280" — is in fact the node
+  carrying MI210 + U280 + **U55C**, i.e. the one joint venue that works. Ask
+  `scontrol show partition` and `sinfo -a -N` before believing any of it; that
+  is exactly what `run_all.sh` now does at phase time.
+* Running the bring-up in the foreground: v1's `sbatch --wait` chain meant every
+  hiccup needed you at the keyboard. Use `bootstrap_hacc.sh`, which detaches it,
+  and `scripts/status.sh` to look in.
 * Assuming `.slurmech.toml` applies: it targets a different cluster entirely
   (xlog1/H100). HACC submission is hand-written `sbatch`, which is what this
   directory is.

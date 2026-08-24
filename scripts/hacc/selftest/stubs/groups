@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# groups, replaying the field account's membership verbatim.
+set -euo pipefail
+FIELD="${ODIN_STUB_FIELD:?ODIN_STUB_FIELD must point at the transcript dir}"
+cat "${FIELD}/groups.txt"

@@ -23,7 +23,9 @@
 #       the bare U55C shell partition — ONE HOUR cap. Enough for a bring-up
 #       run or a small campaign, on hacc-gpu1/2/3.
 #
-#   sbatch -p mi210_vck_u55c scripts/hacc/odin_u55c.sbatch
+#   sbatch -p mi210_u280_u55c scripts/hacc/odin_u55c.sbatch
+# (field-observed 2026-08-25: mi210_vck_u55c refuses this account and is
+#  absent from scontrol; mi210_u280_u55c on hacc-gpu1 is the live venue)
 #       the true U55C + MI210 nodes (hacc-gpu2, hacc-gpu3) — 7-day cap, and the
 #       only way to run host segments on the MI210 in the same job. Both were
 #       busy in the sampled sinfo, so expect to queue.
@@ -32,7 +34,7 @@
 # board-only run, wrong for the heterogeneous one.
 #
 # NEVER submit a BUILD here: the shell partitions are hour-capped and a
-# place-and-route is hours. Build on cpu_only/hacchead (build_xclbn.sh).
+# place-and-route is hours. Build on vck5000_compile/hacchead (build_xclbn.sh).
 
 set -euo pipefail
 

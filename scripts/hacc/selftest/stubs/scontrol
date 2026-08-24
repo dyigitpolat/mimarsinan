@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# scontrol, replaying the 2026-08-25 partition dumps.
+#
+#   scontrol show partition            -> every dump the account can see
+#   scontrol show partition <name>     -> that dump, or slurm's own not-found
+#                                         error on stderr with exit 1
+# A partition with no transcript file is one this account cannot see — which is
+# exactly what mi210_vck_u55c was in the field.
+set -euo pipefail
+FIELD="${ODIN_STUB_FIELD:?ODIN_STUB_FIELD must point at the transcript dir}"
+
+if [ "${1:-}" != "show" ] || [ "${2:-}" != "partition" ]; then
+    echo "stub scontrol: only 'show partition [name]' is replayed" >&2
+    exit 64
+fi
+
+name="${3:-}"
+if [ -z "${name}" ]; then
+    cat "${FIELD}"/scontrol_*.txt 2>/dev/null | grep -v '^scontrol: error' || true
+    exit 0
+fi
+
+dump="${FIELD}/scontrol_${name}.txt"
+if [ ! -f "${dump}" ]; then
+    sed "s/PARTITION/${name}/" "${FIELD}/scontrol_missing.txt" >&2
+    exit 1
+fi
+cat "${dump}"

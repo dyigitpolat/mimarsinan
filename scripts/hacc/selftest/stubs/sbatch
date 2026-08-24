@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# sbatch, standing in for slurm.
+#
+# WHAT IT IS FAITHFUL ABOUT: the submission contract run_all.sh depends on — a
+# partition this account may not use is REFUSED verbatim as the field refused
+# it, `--wait` blocks until the work is over, and a job that succeeds leaves
+# behind exactly the artifact the real one would (the xclbin, probe.json,
+# summary_board.json, summary_join.json).
+#
+# WHAT IT IS NOT: a compiler or a card. It never runs the job script's body, so
+# nothing here says anything about v++ or about silicon. The gate it serves is
+# run_all.sh's CONTROL FLOW: which partition, which phase, what resumes.
+#
+#   ODIN_STUB_SBATCH_SLEEP=<seconds>  hold the "job" open (kill -9 rehearsals)
+#   ODIN_STUB_SBATCH_SLEEP_TARGET=hw  hold only that target/mode open
+#   ODIN_STUB_SBATCH_FAIL=<target>    make that build exit 1 like a failed job
+set -euo pipefail
+FIELD="${ODIN_STUB_FIELD:?ODIN_STUB_FIELD must point at the transcript dir}"
+TRACE="${ODIN_STUB_TRACE:-/dev/null}"
+
+partition=""
+script=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --wait) : ;;
+        -p|--partition) partition="${2:-}"; shift ;;
+        -p*) partition="${1#-p}" ;;
+        -*) : ;;
+        *) script="$1" ;;
+    esac
+    shift
+done
+
+printf 'sbatch -p %s %s target=%s mode=%s\n' \
+    "${partition}" "${script}" "${ODIN_TARGET:-}" "${ODIN_MODE:-}" >> "${TRACE}"
+
+# The field's own refusal, byte for byte.
+case "${partition}" in
+    mi210_vck_u55c)
+        cat "${FIELD}/sbatch_not_permitted.txt" >&2
+        exit 1
+        ;;
+esac
+
+echo "Submitted batch job 990001 on partition ${partition}"
+if [ -n "${ODIN_STUB_SBATCH_SLEEP:-}" ]; then
+    what="${ODIN_TARGET:-${ODIN_MODE:-joint}}"
+    if [ -z "${ODIN_STUB_SBATCH_SLEEP_TARGET:-}" ] \
+       || [ "${ODIN_STUB_SBATCH_SLEEP_TARGET}" = "${what}" ]; then
+        sleep "${ODIN_STUB_SBATCH_SLEEP}"
+    fi
+fi
+
+PKG="${ODIN_PKG:-}"
+if [ -n "${ODIN_LOG:-}" ]; then
+    mkdir -p "$(dirname "${ODIN_LOG}")"
+    printf '[stub-slurm] job on %s, script %s\n' "${partition}" "${script}" >> "${ODIN_LOG}"
+fi
+
+if [ -n "${ODIN_TARGET:-}" ]; then
+    if [ "${ODIN_STUB_SBATCH_FAIL:-}" = "${ODIN_TARGET}" ]; then
+        echo "[stub-slurm] the ${ODIN_TARGET} build failed" >&2
+        exit 1
+    fi
+    out="${PKG}/build/hacc/${ODIN_TARGET}_nc1"
+    mkdir -p "${out}/reports" "${out}/logs"
+    printf 'stub xclbin for %s\n' "${ODIN_TARGET}" \
+        > "${out}/odin_fpga_${ODIN_TARGET}.xclbin"
+    exit 0
+fi
+
+case "${ODIN_MODE:-}" in
+    probe)
+        mkdir -p "${ODIN_RESULTS}"
+        printf '{"stub": true, "capture_capacity": 16383}\n' > "${ODIN_RESULTS}/probe.json"
+        exit 0
+        ;;
+    run)
+        mkdir -p "${ODIN_RESULTS}"
+        printf '{"kind": "board", "stub": true, "passed": true}\n' \
+            > "${ODIN_RESULTS}/summary_board.json"
+        exit 0
+        ;;
+esac
+
+if [ -n "${ODIN_JOIN:-}" ]; then
+    mkdir -p "${ODIN_JOIN}"
+    printf '{"kind": "join", "stub": true, "passed": true}\n' \
+        > "${ODIN_JOIN}/summary_join.json"
+    exit 0
+fi
+
+echo "[stub-slurm] nothing to simulate for this submission" >&2
+exit 1

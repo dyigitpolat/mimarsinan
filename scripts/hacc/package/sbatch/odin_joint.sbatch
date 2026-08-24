@@ -22,8 +22,15 @@
 # hour-capped partitions. Same guarantee — one submission, two components, a
 # filesystem join — with syntax the cluster is documented to accept.
 #
+# FIELD-OBSERVED 2026-08-25: `mi210_vck_u55c` is not usable from this account —
+# it does not appear in `scontrol show partition` and a submission answers
+# "User's group not permitted to use this partition". The live joint venue is
+# `mi210_u280_u55c` (AllowGroups=lab,hgpu,fpga_u280; 12 h, or 5 days on
+# mi210_u280_u55c_long_reservation) on hacc-gpu1, which carries the MI210, the
+# U280 AND a U55C in one chassis. run_all.sh picks it by asking the cluster.
+#
 #   ODIN_PKG=... ODIN_XCLBIN=... \
-#       sbatch --wait -p mi210_vck_u55c scripts/hacc/odin_joint.sbatch
+#       sbatch --wait -p mi210_u280_u55c scripts/hacc/odin_joint.sbatch
 
 set -euo pipefail
 
@@ -37,7 +44,7 @@ fi
 
 PKG="${ODIN_PKG:?ODIN_PKG (the unpacked package root) must be exported}"
 XCLBIN="${ODIN_XCLBIN:?ODIN_XCLBIN (the staged bitstream) must be exported}"
-JOIN="${ODIN_JOIN:-/data/${USER}/odin/join}"
+JOIN="${ODIN_JOIN:-${ODIN_DATA_ROOT:-/data}/${USER}/odin/join}"
 XRT_SETUP="${XRT_SETUP:-/opt/xilinx/xrt/setup.sh}"
 
 A_DIR="${JOIN}/component_a_board"
@@ -45,7 +52,7 @@ B_DIR="${JOIN}/component_b_reference"
 mkdir -p "${A_DIR}" "${B_DIR}"
 
 echo "[joint] job ${SLURM_JOB_ID:-?} on $(hostname) partition ${SLURM_JOB_PARTITION:-?}"
-echo "[joint] join directory ${JOIN}  (/data is the only path the head node and"
+echo "[joint] join directory ${JOIN}  (the shared filesystem is the only path the head node and"
 echo "        the board VMs share — hacc_demo/doc/1-FPGA-allocation.md line 155)"
 
 # --- component B: the reference. No device, no XRT, no card. -----------------

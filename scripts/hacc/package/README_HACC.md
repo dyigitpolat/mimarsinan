@@ -1,52 +1,104 @@
-# ODIN on HACC@NUS — the whole bring-up in one zip
+# ODIN on HACC@NUS — the whole bring-up in one zip (v2)
 
 You are logged in to HACC. The machine this package was built on cannot reach
 the cluster, so everything the bring-up needs travels here: the RTL the build
 compiles, the fixtures with their expected counts already frozen, and one host
 driver that needs nothing but Python 3 and XRT.
 
+**One command. Upload `odin_hacc_package.zip` and `bootstrap_hacc.sh` into the
+same directory, then:**
+
 ```bash
-mkdir -p /data/${USER}
-unzip odin_hacc_package.zip -d /data/${USER}
-cd /data/${USER}/odin_hacc_package
-./run_all.sh
+./bootstrap_hacc.sh
 ```
 
-Unpack it **under `/data`**. `/data` is the only path shared between the head
-node and the board VMs, so a package anywhere else is invisible to the jobs that
-have to read it. `run_all.sh` refuses at phase 0 if you unpacked it elsewhere.
+It checks the zip against the sha256 it was cut for, archives any previous
+install to `odin_prev_<utc>.tar.gz` (it never deletes one silently), unpacks a
+fresh one under `/data/${USER}/odin_hacc_package`, and launches `run_all.sh`
+**detached** — `setsid nohup`, output to `results/run_all.log`. It prints the
+three lines you need: how to watch it, how to ask for status, and that it is
+safe to log out. Nothing about this bring-up needs your shell to stay open.
 
-Try `./run_all.sh --dry-run` first: it prints every command it would run and
-executes nothing.
+Everything unpacks **under `/data`**: that is the only path shared between the
+head node and the board VMs, so a package anywhere else is invisible to the jobs
+that have to read it. (`ODIN_DATA_ROOT` moves it, for rehearsals off-cluster.)
+
+While it runs:
+
+```bash
+tail -f /data/${USER}/odin_hacc_package/results/run_all.log
+/data/${USER}/odin_hacc_package/scripts/status.sh    # phases, squeue, last lines
+```
+
+Re-running `./run_all.sh` by hand is always safe: a live run holds a lock and a
+second one refuses by pid, and anything already finished is kept, not redone.
+`./run_all.sh --dry-run` prints every command and executes nothing.
 
 ---
 
 ## What the phases do, and what each one costs
 
-Each phase stamps `.state/phaseN.ok` when it finishes, so an interrupted run
-resumes and a finished one is a no-op. `--only N` runs one phase, `--from N`
-starts at one, `--force` re-runs a stamped phase.
-
 | # | Phase | Where | Wall |
 |---|---|---|---|
 | 0 | env probe → `results/env.txt` | hacchead | seconds |
 | 1 | driver selftest vs a fake `pyxrt` | anywhere, no hardware | seconds |
-| 2 | build `hw_emu` + emulation smoke | `cpu_only` | ~15 min |
-| 3 | build `hw` (the real bitstream) | `cpu_only` | **2–6 h** |
+| 2 | build `hw_emu` + a bounded emulation smoke | a compile partition | ~15 min + smoke |
+| 3 | build `hw` (the real bitstream) | a compile partition | **2–6 h** |
 | 4 | stage the xclbin under `/data/${USER}/odin` | hacchead | seconds |
 | 5 | **B0**: load, resolve, read the CSRs | U55C partition | < 1 board hour |
 | 6 | **B1**: every fixture, certified | U55C partition | < 1 board hour |
-| 7 | board + independent reference in one job | `mi210_vck_u55c` | queue-bound |
+| 7 | board + independent reference in one job | a joint partition | queue-bound |
 
-Phase 3 dominates. Run `run_all.sh` inside `screen`/`tmux`: every slurm job is
-submitted with `--wait`, so the script blocks until the build lands.
+Phase 3 dominates. `--only N` runs one phase, `--from N` starts at one,
+`--force` redoes one whose artifact is already there.
 
-Partitions and their caps, from the cluster's own `sinfo` table
-(`Xtra-Computing/hacc_demo/doc/1-FPGA-allocation.md`): `cpu_only` (hacc-node2)
-7 days; `xilinx_u55c_gen3x16_xdma_3_202210_1` (hacc-gpu1/2/3) **one hour**;
-`mi210_vck_u55c` (hacc-gpu2, hacc-gpu3) 7 days, and those two are the only
-nodes with a real MI210 next to the U55C. **Never submit a build to a board
-partition** — it is killed at one hour, every time.
+### Resume is artifact-based — there are no stamps
+
+A phase is done when the thing it was supposed to produce EXISTS: the xclbin
+plus a `.built_with` sidecar naming the sha256 of the `build_xclbn.sh` that
+produced it, the staged bitstream, the driver's own result JSONs. So:
+
+* kill the run, log out, come back, run `./run_all.sh` — it picks up exactly
+  where the artifacts stop and never re-pays for a finished build;
+* edit `scripts/hacc/build_xclbn.sh` and the xclbin is stale by definition; the
+  build runs again and says which sha256 it was expecting;
+* nothing has to be stamped, un-stamped or `--force`d by hand to make that
+  work. Every failure path ends with the same line —
+  `fix, then re-run ./run_all.sh — completed work is kept`.
+
+### Partitions are chosen from the cluster, not from a document
+
+`run_all.sh` picks the partition **at phase time** out of a candidate list, and
+keeps a candidate only if BOTH gates hold: `scontrol show partition` shows it
+and admits one of your groups, and `sinfo` shows it a node that is not down or
+drained. It prints the winner and why each earlier candidate lost.
+`ODIN_BUILD_PARTITION` / `ODIN_BOARD_PARTITION` / `ODIN_JOINT_PARTITION` still
+win outright if you know better.
+
+| Partition | Field-observed 2026-08-25 | The stale doc claim |
+|---|---|---|
+| `cpu_only` | maps to **hacc-gpu0**, `down*` — `NO NETWORK ADDRESS FOUND` | `hacc-node2`, 7 days, the build venue |
+| `vck5000_compile` | `AllowGroups=ALL`, `MaxTime=7-00:00:00`, **hacc-node0 idle** — the living build venue | not mentioned |
+| `xilinx_u55c_gen3x16_xdma_3_202210_1` | `AllowGroups=lab,hgpu,fpga_u55c`, 1 h — reachable **through `hgpu`**, without `fpga_u55c` | hacc-gpu1/2/3, one hour |
+| `mi210_vck_u55c` | **absent** from `scontrol show partition`; a submission answers `User's group not permitted to use this partition` | hacc-gpu2/3, 7 days, the joint venue |
+| `mi210_u280_u55c` | `AllowGroups=lab,hgpu,fpga_u280`, 12 h, on **hacc-gpu1** which carries MI210 + U280 + U55C — the living joint venue | listed as `mi210_u250_u55c`, "its GPU pair is U250/U280" |
+| `mi210_u280_u55c_long_reservation` | same groups, **5 days** | not mentioned |
+
+The account this was observed from is in `yigit video render hgpu gpgpu
+fpga_u280 fpga_u250 fpga_vck5000` — **not** `fpga_u55c`, **not** `lab`. `hgpu`
+is what opens both board partitions.
+
+**Never submit a build to a board partition** — it is killed at one hour, every
+time. The candidate lists encode that: builds only ever consider compile-class
+partitions.
+
+### The toolchain is discovered, not assumed
+
+FIELD-OBSERVED 2026-08-25: Vitis is **2024.2** under **`/tools/Xilinx`** (capital
+X). The vendor docs' 2022.2 under `/tools/xilinx` is stale, and v1 refused at
+phase 0 because of it. `scripts/hacc/toolchain.sh` now probes `/tools/Xilinx`,
+`/tools/xilinx`, `/opt/Xilinx`, `/opt/xilinx` and takes the newest Vitis it
+finds; `XILINX_ROOT` and `VITIS_VERSION` pin it if you need a specific one.
 
 ---
 
@@ -55,6 +107,13 @@ partition** — it is killed at one hour, every time.
 `XCL_EMULATION_MODE=hw_emu` binds XRT to the emulation model `v++` packaged
 into the xclbin, so phase 2's smoke needs **no board** and runs on the build
 node.
+
+**It is BOUNDED.** An xsim-backed emulation has no published wall, so the
+default smoke runs the SMALLEST shipped fixture (`nc1_single_core_ceiling`)
+under `ODIN_EMU_SMOKE_TIMEOUT` (5400 s). If it runs out of time the build still
+stands and `results/hw_emu/EMU_SMOKE_SKIPPED.txt` says so honestly: the wall is
+unknown, not slow-but-fine, and B0/B1 on silicon supersede it either way.
+`ODIN_EMU_SMOKE=all` runs all five fixtures; `ODIN_EMU_SMOKE=off` skips it.
 
 **hw_emu proves:** the packaged kernel opens by its name
 (`odin_fpga_kernel_top`); the `s_axilite` register map answers — the two
@@ -170,7 +229,9 @@ report home, not something to hand-edit here.
 ./collect_results.sh          # -> odin_hacc_results_$(hostname).tar.gz
 ```
 
-It gathers `results/`, the phase stamps, the package `MANIFEST.json`, and the
+It gathers `results/` (including `phase_journal.tsv` and
+`partition_picks.txt`, so the evidence names the partition that produced it),
+the `.built_with` sidecars, the package `MANIFEST.json`, and the
 build's `reports/` and `logs/` — the timing and utilization reports are the
 real-shell half of the implementation-closure evidence and nothing off-cluster
 can produce them. The xclbin itself is deliberately left behind.

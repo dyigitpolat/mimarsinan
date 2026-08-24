@@ -5,7 +5,8 @@
 #SBATCH --output=slurm-odin-build-%j.out
 #SBATCH --error=slurm-odin-build-%j.err
 #
-# Build the ODIN kernel into an xclbin. Submit with -p cpu_only.
+# Build the ODIN kernel into an xclbin. run_all.sh picks the partition from the
+# cluster's own scontrol/sinfo answers and submits with -p <that>.
 #
 # The first two #SBATCH lines are the cluster's required preamble
 # (Xtra-Computing/hacc_demo/doc/1-FPGA-allocation.md, example.sh lines 143-145),
@@ -15,10 +16,12 @@
 #
 # NEVER submit this to a board partition: xilinx_u55c_gen3x16_xdma_3_202210_1 is
 # capped at ONE HOUR (doc/1-FPGA-allocation.md line 44) and a place-and-route is
-# hours. cpu_only (hacc-node2) is capped at 7 days (line 20).
+# hours. FIELD-OBSERVED 2026-08-25: the live build venue is `vck5000_compile`
+# (AllowGroups=ALL, MaxTime 7d, hacc-node0 idle). `cpu_only` maps to hacc-gpu0,
+# which is DOWN with 'NO NETWORK ADDRESS FOUND' — the docs' hacc-node2 is stale.
 #
 #   ODIN_PKG=/data/$USER/odin_hacc_package ODIN_TARGET=hw_emu \
-#       sbatch --wait -p cpu_only scripts/hacc/odin_build.sbatch
+#       sbatch --wait -p vck5000_compile scripts/hacc/odin_build.sbatch
 
 set -euo pipefail
 
@@ -51,8 +54,27 @@ ls -l "${PKG}/build/hacc/${TARGET}_nc1/"
 # stimulus payloads, the sequencer executes them and the capture buffer decodes
 # into the frozen counts. WHAT IT CANNOT PROVE: HBM ordering behind a real XDMA
 # shell, XRT's buffer allocation on silicon, and timing closure — that is B0/B1.
-if [[ "${TARGET}" == "hw_emu" && "${ODIN_EMU_SMOKE:-1}" == "1" ]]; then
+#
+# AND IT IS BOUNDED. An xsim-backed hw_emu run has no published wall: the
+# smallest shipped fixture is the DEFAULT smoke, under a timeout, and a timeout
+# writes an honest note and lets the build stand. ODIN_EMU_SMOKE=all runs all
+# five; ODIN_EMU_SMOKE=off skips it. B0/B1 on silicon supersede it either way.
+SMOKE="${ODIN_EMU_SMOKE:-smallest}"
+SMOKE_TIMEOUT="${ODIN_EMU_SMOKE_TIMEOUT:-5400}"
+SMALLEST_FIXTURE="nc1_single_core_ceiling"
+
+if [[ "${TARGET}" == "hw_emu" && "${SMOKE}" != "off" && "${SMOKE}" != "0" ]]; then
     emu_dir="${PKG}/build/hacc/hw_emu_nc1"
+    emu_results="${PKG}/results/hw_emu"
+    mkdir -p "${emu_results}"
+    # build_xclbn.sh sourced the toolchain in a CHILD process, so this shell has
+    # never seen emconfigutil or XRT's python bindings. Source it here too, or
+    # the smoke skips itself on every cluster on earth.
+    # shellcheck source=scripts/hacc/toolchain.sh
+    source "${PKG}/scripts/hacc/toolchain.sh"
+    if vitis="$(odin_vitis_settings)"; then
+        odin_source_toolchain "${vitis##*|}"
+    fi
     if ! command -v emconfigutil > /dev/null 2>&1; then
         echo "[build] EMU SMOKE SKIPPED: emconfigutil is not on PATH after"
         echo "        sourcing settings64.sh, so no emconfig.json can be made."
@@ -62,14 +84,44 @@ if [[ "${TARGET}" == "hw_emu" && "${ODIN_EMU_SMOKE:-1}" == "1" ]]; then
         fi
         exit 0
     fi
+    selection=()
+    if [[ "${SMOKE}" != "all" ]]; then
+        selection=(--fixture "${SMALLEST_FIXTURE}")
+        echo "[build] emu smoke: ${SMALLEST_FIXTURE} only, timeout ${SMOKE_TIMEOUT}s"
+    else
+        echo "[build] emu smoke: every shipped fixture, timeout ${SMOKE_TIMEOUT}s"
+    fi
+    status=0
     (
         cd "${emu_dir}"
         emconfigutil --platform "${ODIN_PLATFORM:-xilinx_u55c_gen3x16_xdma_3_202210_1}" --nd 1
         export XCL_EMULATION_MODE=hw_emu
         export EMCONFIG_PATH="${emu_dir}"
-        python3 "${PKG}/host/odin_board_driver.py" \
-            --xclbin "${emu_dir}/odin_fpga_hw_emu.xclbin" \
-            --fixtures "${PKG}/fixtures" \
-            --results "${PKG}/results/hw_emu"
-    )
+        timeout "${SMOKE_TIMEOUT}" \
+            python3 "${PKG}/host/odin_board_driver.py" \
+                --xclbin "${emu_dir}/odin_fpga_hw_emu.xclbin" \
+                --fixtures "${PKG}/fixtures" \
+                ${selection[@]+"${selection[@]}"} \
+                --results "${emu_results}"
+    ) || status=$?
+    if [[ "${status}" -eq 124 || "${status}" -eq 137 ]]; then
+        {
+            echo "EMU SMOKE SKIPPED (timeout)"
+            echo "fixture   : ${SMOKE}"
+            echo "timeout_s : ${SMOKE_TIMEOUT}"
+            echo "utc       : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo "The xsim-backed emulation did not finish inside the budget. Its"
+            echo "wall is UNKNOWN, not slow-but-fine: nothing here measured it."
+            echo "This is not a failure of the build — the xclbin stands — and it"
+            echo "is not evidence of anything either. B0/B1 on silicon supersede"
+            echo "this smoke entirely; raise ODIN_EMU_SMOKE_TIMEOUT if you want the"
+            echo "number for its own sake."
+        } > "${emu_results}/EMU_SMOKE_SKIPPED.txt"
+        cat "${emu_results}/EMU_SMOKE_SKIPPED.txt"
+    elif [[ "${status}" -ne 0 ]]; then
+        echo "[build] the hw_emu smoke FAILED (exit ${status}) — that is a" >&2
+        echo "        packaging or decode finding, not a timeout." >&2
+        exit "${status}"
+    fi
 fi

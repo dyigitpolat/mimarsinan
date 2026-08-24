@@ -5,8 +5,10 @@
 #   ./collect_results.sh /some/dir  -> writes it there instead
 #
 # What goes in: the env probe, every phase log, every result JSON the driver
-# wrote, the stamps that say which phases actually ran, the package MANIFEST
-# (so the evidence names the bytes it came from), and the BUILD REPORTS —
+# wrote, the phase journal and partition picks (results/ already holds both, so
+# the evidence says WHICH partition produced it), the .built_with sidecars that
+# name the build script each xclbin came from, the package MANIFEST (so the
+# evidence names the bytes it came from), and the BUILD REPORTS —
 # timing and utilization — because those are the real-shell half of the
 # implementation-closure evidence and nothing local can produce them.
 #
@@ -38,10 +40,11 @@ copy_if_present() {
 
 printf 'Collecting from %s\n' "${HERE}"
 copy_if_present "${HERE}/results" "results"
-copy_if_present "${HERE}/.state" "state"
 copy_if_present "${HERE}/MANIFEST.json" "MANIFEST.json"
 copy_if_present "${HERE}/fixtures/INDEX.json" "fixtures_INDEX.json"
 for target in hw_emu hw; do
+    copy_if_present "${HERE}/build/hacc/${target}_nc1/odin_fpga_${target}.xclbin.built_with" \
+        "built_with/${target}_nc1.txt"
     copy_if_present "${HERE}/build/hacc/${target}_nc1/reports" \
         "build_reports/${target}_nc1"
     copy_if_present "${HERE}/build/hacc/${target}_nc1/logs" \

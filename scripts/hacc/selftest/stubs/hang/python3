@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# A python3 that never returns FOR THE BOARD DRIVER, and is the real one for
+# everything else. It exists to rehearse one thing: an xsim-backed hw_emu run
+# whose wall nobody knows, so the bounded-smoke timeout in odin_build.sbatch is
+# gated for real instead of by inspection.
+set -euo pipefail
+for arg in "$@"; do
+    case "${arg}" in
+        *odin_board_driver.py) sleep 600; exit 0 ;;
+    esac
+done
+exec "${ODIN_REAL_PYTHON3:?ODIN_REAL_PYTHON3 must name the real interpreter}" "$@"

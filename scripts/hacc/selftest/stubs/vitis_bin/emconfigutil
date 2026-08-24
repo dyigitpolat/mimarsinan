@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# emconfigutil, standing in for Vitis: writes the emconfig.json hw_emu wants.
+set -euo pipefail
+printf '{"stub": true}\n' > emconfig.json
+echo "[stub emconfigutil] wrote emconfig.json"
