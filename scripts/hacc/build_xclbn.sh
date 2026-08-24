@@ -45,10 +45,15 @@ if [[ "${TARGET}" != "sw_emu" && "${TARGET}" != "hw_emu" && "${TARGET}" != "hw" 
     exit 2
 fi
 
+# The vendor setup scripts expand variables that may be unset in a fresh
+# slurm shell (Vitis 2024.x's .settings64-Vitis.sh reads $PYTHONPATH), which
+# nounset treats as fatal — relax it for exactly these two sources.
+set +u
 # shellcheck disable=SC1091  # cluster-side script, absent in this repo
 source "${XILINX_ROOT}/Vitis/${VITIS_VERSION}/settings64.sh"
 # shellcheck disable=SC1091
 source /opt/xilinx/xrt/setup.sh
+set -u
 
 BUILD="build/hacc/${TARGET}_nc${NC}"
 mkdir -p "${BUILD}"
