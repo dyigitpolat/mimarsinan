@@ -10,6 +10,20 @@ What comes back from it is one number nothing local can produce — the same
 counts, produced by an Alveo card, with measured programming and execution
 walls.
 
+**There is now a shorter path: one zip and one `sh`.**
+`scripts/hacc/make_package.py` builds `dist/odin_hacc_package.zip`, which
+carries the RTL the build compiles, the fixtures with their expected per-neuron
+counts already frozen from the committed cosimulation, a host driver that needs
+nothing but Python 3 and XRT, and a `run_all.sh` that walks phases 0–7 (env
+probe, no-hardware selftest, `hw_emu` build + emulation smoke, `hw` build,
+staging, B0, B1, and a two-component board-plus-reference job). Upload it,
+unzip it **under `/data/${USER}`**, run `./run_all.sh`; its `README_HACC.md` is
+the condensed form of this document. Everything below stays true and remains
+the reference for what the phases are doing and why — read it if a phase
+refuses. The two paths differ in one thing worth knowing up front: the package
+does **not** clone this repository onto the cluster, so it runs the frozen
+fixtures rather than a full `run.py` deployment config.
+
 ---
 
 ## 0. What you are doing, and what is already proven
