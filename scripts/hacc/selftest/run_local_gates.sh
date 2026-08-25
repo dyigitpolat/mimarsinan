@@ -53,7 +53,7 @@ export XRT_ROOT="${WORK}/xrt"
 export PATH="${STUBS}:${PATH}"
 
 mkdir -p "${VITIS}/bin" "${XRT_ROOT}"
-for tool in package_xo v++ emconfigutil; do
+for tool in vivado v++ emconfigutil; do
     cp "${STUBS}/vitis_bin/${tool}" "${VITIS}/bin/${tool}"
 done
 # The nounset trap the 34216ceb fix exists for: Vitis 2024.x's settings read

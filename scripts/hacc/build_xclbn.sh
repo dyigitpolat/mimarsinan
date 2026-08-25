@@ -86,15 +86,54 @@ SOURCES=(
 while IFS= read -r -d '' src; do SOURCES+=("${src}"); done \
     < <(find hw/vendor/odin/src -name '*.v' -print0 | sort -z)
 
+# package_xo is a Vivado Tcl command, NOT a Vitis binary (field-observed
+# 2026-08-25 on hacc-node0: ${XILINX_VITIS}/bin has no package_xo). The
+# documented batch flow (UG1393 ch. RTL Kernels; AMD Vitis-Tutorials
+# 05-bottom_up_rtl_kernel pack_kernel.tcl) packages the sources as a Vivado
+# IP with ipx::package_project, marks it sdx_kernel/rtl, and calls package_xo
+# inside `vivado -mode batch`. Our audited kernel.xml stays authoritative.
+if ! command -v vivado > /dev/null 2>&1; then
+    echo "REFUSING: no vivado on PATH after sourcing the Vitis settings." >&2
+    echo "  package_xo runs inside Vivado; settings64.sh normally adds" >&2
+    echo "  \${XILINX_ROOT}/Vivado/<version>/bin to PATH. Check the toolchain." >&2
+    exit 2
+fi
 rm -f "${BUILD}/${KERNEL}.xo"
-"${XILINX_VITIS}/bin/package_xo" \
-    -xo_path "${BUILD}/${KERNEL}.xo" \
-    -kernel_name "${KERNEL}" \
-    -kernel_xml "${BUILD}/kernel.xml" \
-    -ip_directory "${BUILD}/ip" \
-    -force \
-    -design_xml "" \
-    -kernel_files "${SOURCES[@]}"
+abs_build="$(cd "${BUILD}" && pwd)"
+{
+    printf 'set xo_path "%s"\n' "${abs_build}/${KERNEL}.xo"
+    printf 'set kernel_name "%s"\n' "${KERNEL}"
+    printf 'set kernel_xml "%s"\n' "${abs_build}/kernel.xml"
+    printf 'set ip_dir "%s"\n' "${abs_build}/ip"
+    printf 'create_project -force odin_pack "%s/pack_prj" -part %s\n' \
+        "${abs_build}" "${ODIN_FPGA_PART:-xcu55c-fsvh2892-2L-e}"
+    for src in "${SOURCES[@]}"; do
+        printf 'add_files -norecurse "%s/%s"\n' "${here}" "${src}"
+    done
+    cat <<'TCL'
+set_property top $kernel_name [current_fileset]
+update_compile_order -fileset sources_1
+ipx::package_project -root_dir $ip_dir -vendor nus.edu -library user \
+    -taxonomy /UserIP -import_files -set_current true
+set_property sdx_kernel true [ipx::current_core]
+set_property sdx_kernel_type rtl [ipx::current_core]
+ipx::update_source_project_archive -component [ipx::current_core]
+ipx::save_core [ipx::current_core]
+package_xo -force -xo_path $xo_path -kernel_name $kernel_name \
+    -kernel_xml $kernel_xml -ip_directory $ip_dir
+TCL
+} > "${BUILD}/pack_kernel.tcl"
+if ! vivado -mode batch -nojournal -log "${BUILD}/pack_kernel.log" \
+        -source "${BUILD}/pack_kernel.tcl"; then
+    echo "[hacc-build] packaging FAILED — last 40 lines of ${BUILD}/pack_kernel.log:" >&2
+    tail -n 40 "${BUILD}/pack_kernel.log" >&2 || true
+    exit 2
+fi
+if [[ ! -f "${BUILD}/${KERNEL}.xo" ]]; then
+    echo "REFUSING: vivado exited 0 but ${BUILD}/${KERNEL}.xo was not written;" >&2
+    echo "  read ${BUILD}/pack_kernel.log." >&2
+    exit 2
+fi
 
 # --- 3. v++ --link: .xo -> .xclbin against the U55C shell --------------------
 "${XILINX_VITIS}/bin/v++" --link \
