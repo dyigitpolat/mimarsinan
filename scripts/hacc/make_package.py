@@ -720,10 +720,17 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
     for name in ("build_xclbn.sh", "cards.sh", "odin_u55c.cfg", "odin_u250.cfg",
                  "toolchain.sh"):
         copy(REPO / "scripts" / "hacc" / name, f"scripts/hacc/{name}")
-    write_text("scripts/hacc/kernel.xml", kernel_xml_text())
+    frozen_xml = kernel_xml_text()
+    write_text("scripts/hacc/kernel.xml", frozen_xml)
     for source in sorted((PACKAGE_SRC / "sbatch").glob("*.sbatch")):
         copy(source, f"scripts/hacc/{source.name}")
-    copy(PACKAGE_SRC / "gen_kernel_xml.py", "scripts/hacc/gen_kernel_xml.py")
+    # The stand-in verifies the frozen kernel.xml before handing it to a build;
+    # its expected digest is injected here, at the only moment both exist.
+    stand_in = (PACKAGE_SRC / "gen_kernel_xml.py").read_text()
+    xml_digest = hashlib.sha256(frozen_xml.encode()).hexdigest()
+    assert stand_in.count("__ODIN_KERNEL_XML_SHA256__") == 1
+    write_text("scripts/hacc/gen_kernel_xml.py",
+               stand_in.replace("__ODIN_KERNEL_XML_SHA256__", xml_digest))
     copy(PACKAGE_SRC / "scripts" / "status.sh", "scripts/status.sh")
     # The in-zip bootstrap keeps its placeholder hash: no file can carry the
     # digest of an archive that contains that same file. The STANDALONE copy

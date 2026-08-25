@@ -22,6 +22,10 @@ from pathlib import Path
 
 FROZEN = Path(__file__).resolve().parent / "kernel.xml"
 KERNEL_NAME = "odin_fpga_kernel_top"
+# Injected by make_package.py at packaging time — the digest of the frozen
+# kernel.xml written beside this file. A stand-in still carrying the
+# placeholder was never packaged and must not bless anything.
+EXPECTED_SHA256 = "__ODIN_KERNEL_XML_SHA256__"
 
 
 def main() -> int:
@@ -44,10 +48,25 @@ def main() -> int:
             f"re-download the package rather than hand-writing one.",
             file=sys.stderr)
         return 2
-    shutil.copyfile(FROZEN, options.output)
     digest = hashlib.sha256(FROZEN.read_bytes()).hexdigest()
+    if EXPECTED_SHA256.startswith("__"):
+        print(
+            "REFUSING: this stand-in still carries its placeholder digest — "
+            "it was never packaged by scripts/hacc/make_package.py. Re-cut "
+            "the package rather than running a repo copy against a build.",
+            file=sys.stderr)
+        return 2
+    if digest != EXPECTED_SHA256:
+        print(
+            f"REFUSING: {FROZEN} hashes to sha256:{digest[:16]}… but this "
+            f"package froze sha256:{EXPECTED_SHA256[:16]}…. The register map "
+            f"is frozen evidence the driver and the bitstream both depend "
+            f"on, not a config to tune; re-extract the package.",
+            file=sys.stderr)
+        return 2
+    shutil.copyfile(FROZEN, options.output)
     print(f"[hacc-build] wrote {options.output} from the frozen kernel.xml "
-          f"(sha256 {digest[:16]})")
+          f"(sha256 {digest[:16]}, verified)")
     return 0
 
 
