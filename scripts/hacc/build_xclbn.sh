@@ -121,7 +121,11 @@ while IFS= read -r -d '' src; do SOURCES+=("${src}"); done \
 # 2020.x-era one: create_project -force -part, add_files -norecurse,
 # set_property top, update_compile_order -fileset, ipx::package_project with
 # -root_dir/-vendor/-library/-taxonomy/-import_files/-set_current, the
-# sdx_kernel / sdx_kernel_type properties, ipx::update_source_project_archive
+# sdx_kernel / sdx_kernel_type properties, ipx::associate_bus_interfaces
+# with -busif/-clock (the krnl_aes step that tells the system linker ap_clk
+# drives both AXI interfaces — its absence is the field-observed
+# 'Could not identify a clock source pin of /odin_0/m_axi_gmem'),
+# ipx::update_source_project_archive
 # -component, ipx::save_core, and package_xo with
 # -xo_path/-kernel_name/-kernel_xml/-ip_directory. package_xo's `-force` is the
 # one option whose 2020.2 availability we could not confirm off-cluster, so it
@@ -150,6 +154,8 @@ set_property top $kernel_name [current_fileset]
 update_compile_order -fileset sources_1
 ipx::package_project -root_dir $ip_dir -vendor nus.edu -library user \
     -taxonomy /UserIP -import_files -set_current true
+ipx::associate_bus_interfaces -busif m_axi_gmem -clock ap_clk [ipx::current_core]
+ipx::associate_bus_interfaces -busif s_axi_control -clock ap_clk [ipx::current_core]
 set_property sdx_kernel true [ipx::current_core]
 set_property sdx_kernel_type rtl [ipx::current_core]
 ipx::update_source_project_archive -component [ipx::current_core]
