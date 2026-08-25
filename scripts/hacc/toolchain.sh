@@ -22,7 +22,11 @@ odin_vitis_roots() {
     if [ -n "${XILINX_ROOT:-}" ]; then
         printf '%s\n' "${XILINX_ROOT}"
     else
-        printf '%s\n' /tools/Xilinx /tools/xilinx /opt/Xilinx /opt/xilinx
+        # /tools/Xilinx/new: admin-disclosed 2026-08-25 — Vitis 2022.2 lives
+        # there, in the standard ROOT/Vitis/VERSION shape, invisible from the
+        # conventional roots. Probed first: a version an admin placed
+        # deliberately outranks the stock trees when both carry one.
+        printf '%s\n' /tools/Xilinx/new /tools/Xilinx /tools/xilinx /opt/Xilinx /opt/xilinx
     fi
 }
 

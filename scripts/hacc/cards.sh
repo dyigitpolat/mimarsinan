@@ -47,7 +47,7 @@ part=xcu55c-fsvh2892-2L-e
 cfg=scripts/hacc/odin_u55c.cfg
 memory=HBM[0]
 vitis_prefer=2022.2
-board_candidates=xilinx_u55c_gen3x16_xdma_3_202210_1
+board_candidates=xilinx_u55c_gen3x16_xdma_3_202210_1 amd_gpu_rocm_6_0_0
 joint_candidates=mi210_vck_u55c mi210_u280_u55c mi210_u280_u55c_long_reservation
 joint_model=board_and_gpu_in_one_chassis
 PROFILE

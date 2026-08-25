@@ -12,7 +12,24 @@ walls.
 
 ---
 
-## READ FIRST (v3, field-observed 2026-08-25): the U55C is admin-blocked
+## READ FIRST — UPDATE (admin-disclosed 2026-08-25): the U55C block is LIFTED
+
+The admins answered the deadlock report the same day:
+
+* **Vitis 2022.2 exists** — at `/tools/Xilinx/new/Vitis/2022.2`, a root the
+  conventional trees do not reveal. `toolchain.sh` now probes it first, so the
+  u55c profile self-selects 2022.2 and the deadlock guard stands down on its
+  own evidence. Nothing needs pinning.
+* **U55C cards on `hacc-gpu3` are reachable via `amd_gpu_rocm_6_0_0`**
+  (12 h cap, allowed via `gpgpu`) — admin-granted; the earlier probe that saw
+  "0 devices" predates the grant. It is now a u55c board candidate after the
+  1-hour platform partition. Verify with `xbutil examine` inside an
+  allocation before trusting it.
+
+The section below records the deadlock as it stood, because its evidence
+pattern (locked platform IP vs installed toolchains) is the reusable lesson.
+
+## Superseded (v3, field-observed 2026-08-25): the U55C was admin-blocked
 
 The U55C path does not build on this cluster, and no amount of scripting fixes
 it. The facts, each checked in the live session:
