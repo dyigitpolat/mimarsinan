@@ -21,6 +21,11 @@
 #  10  a failed sbatch ends with the one line that says work is kept
 #  11  the hw_emu smoke is bounded: it times out, notes it honestly, continues
 #  12  the driver selftest passes from the fresh extract
+#  13  ODIN_CARD=u250 picks the 202020_1 shell, Vitis 2020.2, the U250 part and
+#      the DDR connectivity config — asserted on the v++ stub's own argv
+#  14  ODIN_CARD=u55c on the CURRENT field evidence REFUSES EARLY, names the
+#      admin fix, submits nothing — and SELF-HEALS the moment 2022.2 appears
+#  15  bootstrap --card u250 threads the card into the detached run
 #
 # Exit 0 all green, 1 a gate failed, 77 nothing to test (no dist package: run
 # scripts/hacc/make_package.py first).
@@ -47,23 +52,46 @@ FAILED=0
 export ODIN_STUB_FIELD="${FIELD}"
 ODIN_REAL_PYTHON3="$(command -v python3)"
 export ODIN_REAL_PYTHON3
-VITIS="${WORK}/tools/Xilinx/Vitis/2024.2"
 export XILINX_ROOT="${WORK}/tools/Xilinx"
 export XRT_ROOT="${WORK}/xrt"
 export PATH="${STUBS}:${PATH}"
-
-mkdir -p "${VITIS}/bin" "${XRT_ROOT}"
-for tool in vivado v++ emconfigutil; do
-    cp "${STUBS}/vitis_bin/${tool}" "${VITIS}/bin/${tool}"
-done
-# The nounset trap the 34216ceb fix exists for: Vitis 2024.x's settings read
-# $PYTHONPATH, which `set -u` treats as fatal unless it is relaxed first.
-cat > "${VITIS}/settings64.sh" <<EOF
-export XILINX_VITIS="${VITIS}"
-export PYTHONPATH="\${PYTHONPATH}:${VITIS}/python"
-export PATH="${VITIS}/bin:\${PATH}"
-EOF
+mkdir -p "${XRT_ROOT}"
 : > "${XRT_ROOT}/setup.sh"
+
+# The installed Vitis set, straight out of the field transcript — 2020.1 2020.2
+# 2021.2 2022.1 2023.2 2024.2, and NO 2022.2. Each one gets the stub binaries
+# and a settings64.sh that exports XILINX_VITIS to ITSELF, so a gate can prove
+# which version the card profile actually chose.
+install_vitis() {                  # install_vitis <root> <version...>
+    local root="$1" version dir
+    shift
+    for version in "$@"; do
+        dir="${root}/Vitis/${version}"
+        mkdir -p "${dir}/bin"
+        for tool in vivado v++ emconfigutil; do
+            cp "${STUBS}/vitis_bin/${tool}" "${dir}/bin/${tool}"
+        done
+        # The nounset trap the 34216ceb fix exists for: Vitis 2024.x's settings
+        # read $PYTHONPATH, which `set -u` treats as fatal unless relaxed first.
+        cat > "${dir}/settings64.sh" <<EOF
+export XILINX_VITIS="${dir}"
+export PYTHONPATH="\${PYTHONPATH}:${dir}/python"
+export PATH="${dir}/bin:\${PATH}"
+EOF
+    done
+}
+# shellcheck disable=SC2046  # the transcript is one version per line, by design
+install_vitis "${XILINX_ROOT}" $(cat "${FIELD}/vitis_installed.txt")
+
+# /opt/xilinx/platforms as the field found it: one 2022.2-locked U55C shell and
+# the two U250 shells. NOT exported globally — the card gate must stay silent
+# where there is no evidence to read, which is every gate below that does not
+# opt in with ODIN_PLATFORM_ROOT.
+PLATFORM_ROOT="${WORK}/platforms"
+while IFS= read -r platform; do
+    [ -n "${platform}" ] || continue
+    mkdir -p "${PLATFORM_ROOT}/${platform}"
+done < "${FIELD}/platforms_installed.txt"
 
 say() { printf '%s\n' "$*"; }
 gate() { printf '\n--- gate %s: %s\n' "$1" "$2"; }
@@ -303,6 +331,129 @@ status=$?
 if [ "${status}" -eq 0 ]; then pass 12a "green from the extracted package"
 else fail 12a "exit ${status}; see ${LOG}"; fi
 expect 12b "${LOG}" "refusals: 5/5 typed correctly"
+
+# ===========================================================================
+# THE CARD IS A PARAMETER (v3). Everything above ran on the default card with
+# no platform evidence to read, which is exactly the off-cluster case. The
+# three gates below hand the package the FIELD's evidence — the installed
+# platform list and the installed Vitis list — and check both answers it must
+# give: build the U250, refuse the U55C.
+# ===========================================================================
+gate 13 "ODIN_CARD=u250: the 202020_1 shell, Vitis 2020.2, the U250 part, DDR"
+U250_ROOT="${WORK}/u250"
+PKG="$(fresh_package "${U250_ROOT}")"
+LOG="${WORK}/u250_pick.log"
+(
+    cd "${PKG}" && ODIN_DATA_ROOT="${U250_ROOT}" ODIN_CARD=u250 \
+        ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" ./run_all.sh --dry-run --only 5
+) > "${LOG}" 2>&1
+say "--- transcript ---"; sed -n '1,14p' "${LOG}"
+expect 13a "${LOG}" "card     : u250   (platform xilinx_u250_gen3x16_xdma_3_1_202020_1, config scripts/hacc/odin_u250.cfg)"
+expect 13b "${LOG}" "CHOSE xilinx_u250_gen3x16_xdma_3_1_202020_1: AllowGroups=lab,fpga_u250 (via fpga_u250)"
+expect 13c "${LOG}" "MaxTime=01:00:00"
+
+LOG="${WORK}/u250_joint_pick.log"
+(
+    cd "${PKG}" && ODIN_DATA_ROOT="${U250_ROOT}" ODIN_CARD=u250 \
+        ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" ./run_all.sh --dry-run --only 7
+) > "${LOG}" 2>&1
+expect 13d "${LOG}" "CHOSE u250_standard_reservation_pool"
+expect 13e "${LOG}" "These nodes carry no GPU, and the join never needed one"
+
+# The build itself, off-cluster, through the SHIPPED sbatch and build script.
+VXX_TRACE="${WORK}/u250_vxx_trace.txt"
+LOG="${WORK}/u250_build.log"
+(
+    cd "${PKG}" && ODIN_PKG="${PKG}" ODIN_TARGET=hw ODIN_CARD=u250 \
+        ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" ODIN_STUB_VXX_TRACE="${VXX_TRACE}" \
+        bash scripts/hacc/odin_build.sbatch
+) > "${LOG}" 2>&1
+status=$?
+say "--- transcript ---"; sed -n '1,20p' "${LOG}"
+if [ "${status}" -eq 0 ]; then pass 13f "the u250 build ran to the end (exit 0)"
+else fail 13f "exit ${status}; see ${LOG}"; fi
+expect 13g "${LOG}" "[hacc-build] card     : u250"
+expect 13h "${LOG}" "[hacc-build] platform : xilinx_u250_gen3x16_xdma_3_1_202020_1"
+expect 13i "${LOG}" "/Vitis/2020.2 (prefer 2020.2)"
+expect 13j "${PKG}/build/hacc/hw_nc1/pack_kernel.tcl" "-part xcu250-figd2104-2L-e"
+if [ -f "${VXX_TRACE}" ]; then
+    say "--- v++ argv ---"; cat "${VXX_TRACE}"
+    expect 13k "${VXX_TRACE}" "--config scripts/hacc/odin_u250.cfg"
+    expect 13l "${VXX_TRACE}" "--platform xilinx_u250_gen3x16_xdma_3_1_202020_1"
+else
+    fail 13k "the stub v++ was never invoked; no argv to assert"
+fi
+expect 13m "${PKG}/scripts/hacc/odin_u250.cfg" "sp=odin_0.m_axi_gmem:DDR[0]"
+
+gate 14 "ODIN_CARD=u55c refuses EARLY on the field's own evidence"
+DEAD_ROOT="${WORK}/deadlock"
+PKG="$(fresh_package "${DEAD_ROOT}")"
+LOG="${WORK}/u55c_refusal.log"
+TRACE="${WORK}/u55c_sbatch_trace.txt"
+: > "${TRACE}"
+(
+    cd "${PKG}" && ODIN_DATA_ROOT="${DEAD_ROOT}" ODIN_CARD=u55c \
+        ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" ODIN_STUB_TRACE="${TRACE}" ./run_all.sh
+) > "${LOG}" 2>&1
+status=$?
+say "--- transcript ---"; cat "${LOG}"
+if [ "${status}" -eq 2 ]; then pass 14a "refused with exit 2"; else fail 14a "exit ${status}, wanted 2"; fi
+expect 14b "${LOG}" "REFUSING: ODIN_CARD=u55c is DEADLOCKED on this cluster (field-observed 2026-08-25)."
+expect 14c "${LOG}" "THE ADMIN FIX, and it is the only one: install Vitis/Vivado 2022.2 alongside"
+expect 14d "${LOG}" "ODIN_CARD=u250 ./run_all.sh"
+if [ -s "${TRACE}" ]; then
+    fail 14e "it submitted something before refusing: $(cat "${TRACE}")"
+else
+    pass 14e "no sbatch was issued — the refusal costs no queue slot"
+fi
+if [ -d "${PKG}/.run_all.lock" ]; then
+    fail 14f "it took the run lock before refusing"
+else
+    pass 14f "the run lock was never taken"
+fi
+# SELF-HEAL: the moment 2022.2 exists, the same package stops refusing.
+install_vitis "${WORK}/tools_healed" 2020.2 2022.2 2024.2
+LOG="${WORK}/u55c_selfheal.log"
+(
+    cd "${PKG}" && ODIN_DATA_ROOT="${DEAD_ROOT}" ODIN_CARD=u55c \
+        XILINX_ROOT="${WORK}/tools_healed" ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" \
+        ./run_all.sh --dry-run --only 5
+) > "${LOG}" 2>&1
+if grep -qF 'DEADLOCKED' "${LOG}"; then
+    fail 14g "it still refuses with 2022.2 installed — the guard is a hard-coded verdict"
+else
+    pass 14g "with 2022.2 installed the refusal is gone by itself"
+fi
+expect 14h "${LOG}" "CHOSE xilinx_u55c_gen3x16_xdma_3_202210_1"
+
+gate 15 "bootstrap --card u250 threads the card into the detached run"
+CARD_BOOT="${WORK}/cardboot"
+mkdir -p "${CARD_BOOT}/${USER}"
+LOG="${WORK}/bootstrap_card.log"
+(
+    cd "${WORK}" && ODIN_DATA_ROOT="${CARD_BOOT}" ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" \
+        "${BOOTSTRAP}" --card u250 "${ZIP}"
+) > "${LOG}" 2>&1
+TARGET="${CARD_BOOT}/${USER}/odin_hacc_package"
+RUN_LOG="${TARGET}/results/run_all.log"
+say "--- transcript ---"; cat "${LOG}"
+expect 15a "${LOG}" "card u250 — platform xilinx_u250_gen3x16_xdma_3_1_202020_1"
+expect 15b "${LOG}" "run_all.sh is detached"
+if wait_for 180 "${RUN_LOG}" "Evidence is under"; then
+    pass 15c "the detached u250 run finished on its own"
+else
+    fail 15c "the detached u250 run did not finish in 180s"
+fi
+expect 15d "${RUN_LOG}" "card     : u250"
+expect 15e "${TARGET}/results/partition_picks.txt" "xilinx_u250_gen3x16_xdma_3_1_202020_1"
+expect 15f "${TARGET}/build/hacc/hw_nc1/odin_fpga_hw.xclbin.built_with" "card=u250"
+LOG="${WORK}/bootstrap_bad_card.log"
+(
+    cd "${WORK}" && ODIN_DATA_ROOT="${WORK}/nevercard" "${BOOTSTRAP}" --card u9000 "${ZIP}"
+) > "${LOG}" 2>&1
+status=$?
+expect 15g "${LOG}" "unknown --card 'u9000'"
+if [ "${status}" -eq 2 ]; then pass 15h "refused with exit 2"; else fail 15h "exit ${status}, wanted 2"; fi
 
 # ===========================================================================
 say ""

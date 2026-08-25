@@ -14,9 +14,15 @@
 #   2  build hw_emu         a compile partition + a bounded hw_emu smoke there
 #   3  build hw             a compile partition, the real bitstream (2-6 h)
 #   4  stage                the xclbin onto the shared filesystem
-#   5  B0 smoke             load the xclbin on a U55C, read the CSRs
+#   5  B0 smoke             load the xclbin on the card, read the CSRs
 #   6  B1 campaign          every shipped fixture, certified
 #   7  joint run            board + independent reference in one job, joined
+#
+# THE CARD IS A PARAMETER (v3). ODIN_CARD=u250 ./run_all.sh selects the U250
+# profile in scripts/hacc/cards.sh — platform, part, v++ config, preferred
+# Vitis and the board/joint partitions — and is the route this cluster can
+# actually build. The u55c default refuses at startup while the evidence still
+# shows the 2022.2 shell deadlock; see README_HACC.md.
 #
 # RESUME IS ARTIFACT-BASED — there are no stamps to keep in sync. A phase is
 # done when the thing it was supposed to produce EXISTS: the xclbin plus a
@@ -43,21 +49,32 @@ LOCK="${HERE}/.run_all.lock"
 
 # shellcheck source=scripts/hacc/toolchain.sh
 source "${HERE}/scripts/hacc/toolchain.sh"
+# shellcheck source=scripts/hacc/cards.sh
+source "${HERE}/scripts/hacc/cards.sh"
 
 # /data is the only path the head node and the board VMs share
 # (hacc_demo/doc/1-FPGA-allocation.md line 155). ODIN_DATA_ROOT moves it so the
 # whole flow can be exercised off-cluster.
 DATA_ROOT="${ODIN_DATA_ROOT:-/data}"
-PLATFORM="${ODIN_PLATFORM:-xilinx_u55c_gen3x16_xdma_3_202210_1}"
 EXPECTED_XRT="${ODIN_EXPECTED_XRT:-2.18.179}"                 # hacc_demo/README.md line 32
 XRT_ROOT="${XRT_ROOT:-/opt/xilinx/xrt}"                       # doc/0-login line 55
 
+# THE CARD IS A PARAMETER (v3). scripts/hacc/cards.sh is the only place that
+# knows what one implies — platform, part, v++ config, preferred Vitis, and the
+# partitions the board and joint phases may use. ODIN_CARD=u250 is the route
+# this cluster can actually build; the u55c default refuses with the deadlock
+# reason when the evidence still shows it.
+CARD="$(odin_card)"
+PLATFORM="$(odin_effective_platform "${CARD}" 2>/dev/null || true)"
+read -r -a BOARD_CANDIDATES <<< "$(odin_card_field board_candidates "${CARD}" 2>/dev/null || true)"
+read -r -a JOINT_CANDIDATES <<< "$(odin_card_field joint_candidates "${CARD}" 2>/dev/null || true)"
+
 # Candidate partitions, best first. NOTHING here is trusted: each is kept only
 # if scontrol says your groups may use it and sinfo says it has a node that is
-# up. See pick_partition() — and the field notes in README_HACC.md.
+# up. See pick_partition() — and the field notes in README_HACC.md. The BUILD
+# candidates are card-independent: a place-and-route needs a compile venue, not
+# a card, and the same three serve every card this package knows.
 BUILD_CANDIDATES=(cpu_only vck5000_compile mi210_u280_u55c_long_reservation)
-JOINT_CANDIDATES=(mi210_vck_u55c mi210_u280_u55c)
-BOARD_CANDIDATES=("${PLATFORM}")
 
 STAGE_DIR="${ODIN_STAGE:-${DATA_ROOT}/${USER}/odin}"
 BUILD_DIR="${HERE}/build/hacc"
@@ -216,6 +233,13 @@ my_groups() {
 }
 
 # Prints the group that lets you in, or returns 1.
+#
+# The trailing newline is load-bearing: `read` returns 1 on a final line with no
+# terminator, which ends the loop BEFORE the body runs, so the LAST group in an
+# AllowGroups list was never tested. It went unnoticed while every partition we
+# used was reachable through a non-final group (`hgpu` in lab,hgpu,fpga_u55c);
+# the U250's `lab,fpga_u250` — where the admitting group IS the last one — is
+# what surfaced it.
 group_admits() {
     local allow="$1" mine group
     if [ "${allow}" = "ALL" ] || [ -z "${allow}" ]; then
@@ -228,7 +252,7 @@ group_admits() {
         case "${mine}" in
             *" ${group} "*) printf '%s' "${group}"; return 0 ;;
         esac
-    done < <(printf '%s' "${allow}" | tr ',' '\n')
+    done < <(printf '%s\n' "${allow}" | tr ',' '\n')
     return 1
 }
 
@@ -349,10 +373,18 @@ phase_0() {
         say "python3   : $(command -v python3 || echo MISSING) $(python3 -V 2>&1 || true)"
         say "sbatch    : $(command -v sbatch || echo MISSING)"
         say "sinfo     : $(command -v sinfo || echo MISSING)"
+        say "card      : ${CARD}"
         say "vitis     : ${vitis_root:-NOT FOUND}${vitis_version:+/Vitis/${vitis_version}}"
+        say "vitis want: ${ODIN_VITIS_PREFER:-none} (the card profile's release)"
+        say "vitis all : $(odin_vitis_versions 2>/dev/null | cut -d'|' -f2 | tr '\n' ' ')"
         say "xrt       : ${XRT_ROOT}"
         say "platform  : ${PLATFORM}"
+        say "part      : ${PART}"
+        say "v++ config: ${CFG}"
         say "expect XRT: ${EXPECTED_XRT}"
+        say ""
+        say "--- platforms installed under $(odin_platform_root) ---"
+        odin_platforms_available || say "no platform root here (normal off-cluster)"
         say ""
         say "--- module avail (if any) ---"
         if command -v module > /dev/null 2>&1; then
@@ -462,7 +494,9 @@ write_sidecar() {
     {
         printf 'build_script_sha256=%s\n' "$(build_script_sha)"
         printf 'target=%s\n' "${target}"
+        printf 'card=%s\n' "${CARD}"
         printf 'platform=%s\n' "${PLATFORM}"
+        printf 'vxx_config=%s\n' "${CFG}"
         printf 'partition=%s\n' "${PICKED}"
         printf 'built_utc=%s\n' "$(utc)"
     } > "${sidecar}"
@@ -475,6 +509,7 @@ submit_build() {
     local status=0
     do_cmd env \
         ODIN_PKG="${HERE}" ODIN_TARGET="${target}" ODIN_PLATFORM="${PLATFORM}" \
+        ODIN_CARD="${CARD}" \
         ODIN_LOG="${log}" ODIN_EMU_SMOKE="${ODIN_EMU_SMOKE:-smallest}" \
         ODIN_EMU_SMOKE_TIMEOUT="${ODIN_EMU_SMOKE_TIMEOUT:-5400}" \
         sbatch --wait -p "${PICKED}" \
@@ -544,6 +579,7 @@ submit_board() {
     local status=0
     do_cmd env \
         ODIN_PKG="${HERE}" ODIN_XCLBIN="${XCLBIN_STAGED}" ODIN_MODE="${mode}" \
+        ODIN_CARD="${CARD}" \
         ODIN_RESULTS="${RESULTS}/board_${mode}" ODIN_LOG="${log}" \
         sbatch --wait -p "${PICKED}" \
         "${HERE}/scripts/hacc/odin_board.sbatch" || status=$?
@@ -583,13 +619,24 @@ phase_6() {
 phase_7() {
     pick_partition joint "${ODIN_JOINT_PARTITION:-}" "${JOINT_CANDIDATES[@]}" || return 2
     head_line "phase 7: board + independent reference in ONE job on ${PICKED}"
-    say "The node behind this partition carries the U55C and the MI210 in the"
-    say "same chassis, so one allocation already holds both components; see the"
-    say "'WHY NOT --het-group' note in scripts/hacc/odin_joint.sbatch."
+    case "$(odin_card_field joint_model "${CARD}")" in
+        board_and_gpu_in_one_chassis)
+            say "The node behind this partition carries the ${CARD} and the MI210 in"
+            say "the same chassis, so one allocation already holds both components;"
+            say "see the 'WHY NOT --het-group' note in scripts/hacc/odin_joint.sbatch."
+            ;;
+        *)
+            say "These nodes carry no GPU, and the join never needed one: component B"
+            say "is a CPU recomputation of the frozen evidence, not a second"
+            say "simulation. Both components therefore run on this ONE board"
+            say "allocation — the board process and the CPU reference side by side."
+            ;;
+    esac
     local log="${RESULTS}/phase_joint.log"
     local status=0
     do_cmd env \
         ODIN_PKG="${HERE}" ODIN_XCLBIN="${XCLBIN_STAGED}" \
+        ODIN_CARD="${CARD}" \
         ODIN_JOIN="${RESULTS}/joint" ODIN_LOG="${log}" \
         sbatch --wait -p "${PICKED}" \
         "${HERE}/scripts/hacc/odin_joint.sbatch" || status=$?
@@ -698,9 +745,18 @@ if [ "${STATUS_ONLY}" = "1" ]; then
     exit 0
 fi
 
+# THE CARD GATE, BEFORE ANY QUEUE SLOT IS SPENT. An unknown card, or one whose
+# shell this cluster provably cannot link (the U55C 2022.2 deadlock), stops
+# here — not six hours into a build and not after burning a board hour. It is
+# evidence-gated: with no platform root to read it says nothing, and it clears
+# itself the moment the admins install 2022.2 or a shell built for a release
+# that is here.
+odin_card_resolve
+
 acquire_lock
 
 say "ODIN bring-up starting $(utc) — package ${HERE}"
+say "card     : ${CARD}   (platform ${PLATFORM}, config ${CFG})"
 say "pid $$; watch with tail -f ${RESULTS}/run_all.log"
 
 for phase in 0 1 2 3 4 5 6 7; do

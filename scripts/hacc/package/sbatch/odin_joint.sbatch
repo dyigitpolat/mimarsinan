@@ -29,8 +29,20 @@
 # mi210_u280_u55c_long_reservation) on hacc-gpu1, which carries the MI210, the
 # U280 AND a U55C in one chassis. run_all.sh picks it by asking the cluster.
 #
-#   ODIN_PKG=... ODIN_XCLBIN=... \
-#       sbatch --wait -p mi210_u280_u55c scripts/hacc/odin_joint.sbatch
+# AND ON THE U250 (v3, the card the cluster can actually build), the two-device
+# chassis argument does not apply at all — hacc-u250-* nodes carry no GPU. It
+# never had to. Component B has always been a CPU recomputation of the frozen
+# evidence, not a second simulation: it imports no device library, opens no
+# card and asks for no accelerator. So on a U250 allocation the SAME two
+# components run side by side on the SAME job — the board process on the card,
+# the reference process on that node's CPUs — and the join is the same
+# filesystem join. What the card profile changes is the claim we print, not the
+# structure of the run: `joint_model` in scripts/hacc/cards.sh says which of
+# the two situations this partition is, and this script says so out loud rather
+# than asserting a GPU that is not there.
+#
+#   ODIN_PKG=... ODIN_XCLBIN=... ODIN_CARD=u250 \
+#       sbatch --wait -p u250_standard_reservation_pool scripts/hacc/odin_joint.sbatch
 
 set -euo pipefail
 
@@ -51,7 +63,23 @@ A_DIR="${JOIN}/component_a_board"
 B_DIR="${JOIN}/component_b_reference"
 mkdir -p "${A_DIR}" "${B_DIR}"
 
+# shellcheck source=scripts/hacc/cards.sh
+source "${PKG}/scripts/hacc/cards.sh"
+CARD="$(odin_card)"
+
 echo "[joint] job ${SLURM_JOB_ID:-?} on $(hostname) partition ${SLURM_JOB_PARTITION:-?}"
+echo "[joint] card ${CARD}"
+case "$(odin_card_field joint_model "${CARD}")" in
+    board_and_gpu_in_one_chassis)
+        echo "[joint] this partition's node carries the board AND an MI210 in one"
+        echo "        chassis, so one allocation holds both components."
+        ;;
+    *)
+        echo "[joint] this partition's nodes carry NO GPU, and the join never needed"
+        echo "        one: component B is a CPU recomputation of the frozen evidence,"
+        echo "        so both components run CPU+board on this one allocation."
+        ;;
+esac
 echo "[joint] join directory ${JOIN}  (the shared filesystem is the only path the head node and"
 echo "        the board VMs share — hacc_demo/doc/1-FPGA-allocation.md line 155)"
 

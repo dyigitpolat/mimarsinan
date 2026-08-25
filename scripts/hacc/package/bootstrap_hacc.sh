@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # The ONE command you run on hacchead after uploading odin_hacc_package.zip.
 #
-#   ./bootstrap_hacc.sh [/path/to/odin_hacc_package.zip]
+#   ./bootstrap_hacc.sh [--card u55c|u250] [/path/to/odin_hacc_package.zip]
+#
+# THE CARD IS A PARAMETER (v3). --card picks the profile in
+# scripts/hacc/cards.sh and travels into the detached run as ODIN_CARD. On
+# HACC@NUS today that means `--card u250`: the only U55C shell installed is
+# locked to Vitis 2022.2, which this cluster does not have, and the u55c
+# default refuses at startup with that reason rather than queueing a job to
+# rediscover it.
 #
 # It verifies the upload against the sha256 that was baked in when the zip was
 # built, ARCHIVES whatever install is already there (it never deletes silently),
@@ -37,6 +44,19 @@ refuse() {
     exit 2
 }
 
+CARD="${ODIN_CARD:-}"
+ZIP_ARG=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --card) CARD="${2:-}"; shift ;;
+        --card=*) CARD="${1#--card=}" ;;
+        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        -*) refuse "unknown option '$1'." "Usage: ./bootstrap_hacc.sh [--card u55c|u250] [zip]" ;;
+        *) ZIP_ARG="$1" ;;
+    esac
+    shift
+done
+
 for tool in unzip tar sha256sum setsid nohup; do
     command -v "${tool}" > /dev/null 2>&1 \
         || refuse "no '${tool}' on PATH." \
@@ -45,7 +65,7 @@ for tool in unzip tar sha256sum setsid nohup; do
 done
 
 # --- 1. find the zip ---------------------------------------------------------
-ZIP="${1:-${ODIN_ZIP:-${HERE}/odin_hacc_package.zip}}"
+ZIP="${ZIP_ARG:-${ODIN_ZIP:-${HERE}/odin_hacc_package.zip}}"
 if [ ! -f "${ZIP}" ]; then
     refuse "no zip at ${ZIP}." \
         "Upload odin_hacc_package.zip next to this script, or pass its path:" \
@@ -105,15 +125,33 @@ chmod +x "${TARGET}/collect_results.sh" "${TARGET}/scripts/status.sh" \
 mkdir -p "${TARGET}/results"
 say "[bootstrap] extracted $(find "${TARGET}" -type f | wc -l) files into ${TARGET}"
 
+# The card name is validated against the SSOT that just came out of the zip —
+# scripts/hacc/cards.sh — so a typo stops here instead of detaching a run that
+# will refuse into a log nobody is watching.
+if [ -n "${CARD}" ]; then
+    # shellcheck disable=SC1090  # it is inside the package we just unpacked
+    . "${TARGET}/scripts/hacc/cards.sh"
+    odin_card_profile "${CARD}" > /dev/null 2>&1 \
+        || refuse "unknown --card '${CARD}'." \
+            "Known cards: $(odin_card_names)." \
+            "The per-card facts live in scripts/hacc/cards.sh inside the package."
+    say "[bootstrap] card ${CARD} — platform $(odin_card_field platform "${CARD}")"
+fi
+
 cd "${TARGET}"
 LOG="${TARGET}/results/run_all.log"
 {
     printf '\n===== bootstrap %s =====\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'zip     : %s (sha256 %s)\n' "${ZIP}" "${measured}"
     printf 'package : %s\n' "${TARGET}"
+    printf 'card    : %s\n' "${CARD:-u55c (default)}"
 } >> "${LOG}"
 
-setsid nohup ./run_all.sh >> "${LOG}" 2>&1 < /dev/null &
+if [ -n "${CARD}" ]; then
+    setsid env ODIN_CARD="${CARD}" nohup ./run_all.sh >> "${LOG}" 2>&1 < /dev/null &
+else
+    setsid nohup ./run_all.sh >> "${LOG}" 2>&1 < /dev/null &
+fi
 disown 2>/dev/null || true
 
 # Wait only for PROOF that it started: the lock it takes first, or its own

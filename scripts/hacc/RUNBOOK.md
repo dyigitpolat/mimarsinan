@@ -10,7 +10,79 @@ What comes back from it is one number nothing local can produce — the same
 counts, produced by an Alveo card, with measured programming and execution
 walls.
 
-**There is now a shorter path: one zip and one `sh` (v2).**
+---
+
+## READ FIRST (v3, field-observed 2026-08-25): the U55C is admin-blocked
+
+The U55C path does not build on this cluster, and no amount of scripting fixes
+it. The facts, each checked in the live session:
+
+* The **only** U55C platform installed anywhere — `/opt/xilinx/platforms` on
+  `hacc-node0` **and** on `hacc-gpu3` — is
+  `xilinx_u55c_gen3x16_xdma_3_202210_1`.
+* Its SmartConnect IP is **customized with the 2022.2 release**. `vpl` refuses
+  to link it under anything else: three separate logs, under Vitis **2022.1,
+  2023.2 and 2024.2**, all ending in `VPL 60-704` / `60-732` — *"IP ... is
+  customized with software release 2022.1 and is being used with a different
+  revision."*
+* Vitis installed: `2020.1 2020.2 2021.2 2022.1 2023.2 2024.2`. **There is no
+  2022.2.**
+
+So U55C is **deadlocked pending admins**, and there are exactly two fixes, both
+theirs: install Vitis/Vivado 2022.2, or install a U55C shell built for a
+release that is already here.
+
+**The field-viable route is the U250.** The build node also carries
+`xilinx_u250_gen3x16_xdma_3_1_202020_1` — a 2020.2-era shell — and **Vitis
+2020.2 IS installed**. This account is in `fpga_u250`, and all three U250
+partitions admit it:
+
+| Partition | AllowGroups | MaxTime | Nodes |
+|---|---|---|---|
+| `xilinx_u250_gen3x16_xdma_3_1_202020_1` | `lab,fpga_u250` | **1 h** | 6 idle |
+| `u250_standard_reservation_pool` | `lab,fpga_u250` | 12 h | `hacc-u250-[1-4]`, `hacc-u250-frp` |
+| `u250_long_reservation_pool` | `lab,fpga_u250` | 2 d | `hacc-u250-[1-4]` |
+
+The build node ALSO carries `xilinx_u250_gen3x16_xdma_4_1_202210_1`. **Do not
+use it** — it is a 2022.2-era shell and hits the identical lock. The package
+refuses it by name and says so.
+
+**A card is allocated, not ambient.** `xbutil` on `hacc-gpu3` answered
+`0 devices found` from a non-FPGA partition on 2026-08-25. The cards are passed
+into the job's VM at allocation time — `doc/1-FPGA-allocation.md`'s board-VM
+model, now field-confirmed — so only a board-partition job sees a card. An
+empty `xbutil examine` is the wrong partition, not a dead board.
+
+### Therefore: the target card is a parameter (v3)
+
+`scripts/hacc/cards.sh` is the ONE place that knows what a card implies, and
+everything downstream reads it:
+
+| | `u55c` (default) | `u250` (use this today) |
+|---|---|---|
+| platform | `xilinx_u55c_gen3x16_xdma_3_202210_1` | `xilinx_u250_gen3x16_xdma_3_1_202020_1` |
+| Vivado part | `xcu55c-fsvh2892-2L-e` | `xcu250-figd2104-2L-e` |
+| v++ config | `scripts/hacc/odin_u55c.cfg` | `scripts/hacc/odin_u250.cfg` |
+| AXI master bank | `HBM[0]` | `DDR[0]` (no HBM on a U250) |
+| preferred Vitis | 2022.2 — **absent** | **2020.2** |
+| board partitions | the U55C shell partition | the three above, 1 h first |
+| joint partitions | `mi210_vck_u55c`, `mi210_u280_u55c`, `…_long_reservation` | the 12 h pool, then 2 d, then 1 h |
+
+```bash
+./bootstrap_hacc.sh --card u250            # the packaged path
+ODIN_CARD=u250 scripts/hacc/build_xclbn.sh hw     # the by-hand path
+```
+
+The `u55c` default refuses **at startup**, before it queues anything, printing
+the deadlock and naming the admin fix. It is evidence-gated, not a hard-coded
+verdict: it re-reads `/opt/xilinx/platforms` and the installed Vitis list on
+every run and clears itself the moment either admin fix lands. Off-cluster,
+where there is no platform root to read, it says nothing at all — no evidence
+is never treated as evidence of a problem.
+
+---
+
+**There is now a shorter path: one zip and one `sh` (v2, carded in v3).**
 `scripts/hacc/make_package.py` builds `dist/odin_hacc_package.zip` **and**
 `dist/bootstrap_hacc.sh` beside it, with the zip's own sha256 baked into that
 bootstrap. The zip carries the RTL the build compiles, the fixtures with their
@@ -97,10 +169,14 @@ live session; the right column is what `Xtra-Computing/hacc_demo` still says.
 | `mi210_vck_u55c` | **absent** from `scontrol show partition`; `sbatch` answers `User's group not permitted to use this partition` | hacc-gpu2/3, 7 days, U55C + MI210 |
 | `mi210_u280_u55c` | `AllowGroups=lab,hgpu,fpga_u280`, 12 h, node **hacc-gpu1** which hosts MI210 **and** U280 **and** U55C — **the joint venue** | doc names `mi210_u250_u55c` and warns its pair is U250/U280 |
 | `mi210_u280_u55c_long_reservation` | same groups, **5 days** | not mentioned |
+| `xilinx_u250_gen3x16_xdma_3_1_202020_1` | `AllowGroups=lab,fpga_u250`, 1 h, **6 nodes idle** — the board venue that actually builds | 1 h, `hacc-u250-[1-4]` |
+| `u250_standard_reservation_pool` | `AllowGroups=lab,fpga_u250`, **12 h** | 12 h, `hacc-u250-[1-4],hacc-u250-frp` |
+| `u250_long_reservation_pool` | `AllowGroups=lab,fpga_u250`, **2 days** | 2 d, `hacc-u250-[1-4]` |
 
 The account's groups, verbatim: `yigit video render hgpu gpgpu fpga_u280
 fpga_u250 fpga_vck5000`. Note what is NOT there — `fpga_u55c` and `lab` — and
-that `hgpu` is nevertheless enough for both U55C partitions.
+that `hgpu` is nevertheless enough for both U55C partitions, while `fpga_u250`
+opens all three U250 ones outright.
 
 `run_all.sh` no longer takes any of this on faith: it re-derives the pick at
 phase time from `scontrol show partition` (groups) and `sinfo` (a node that is
@@ -121,18 +197,31 @@ cd /data/${USER}/odin/mimarsinan
 srun -p vck5000_compile -n 1 --pty bash -i   # field-observed 2026-08-25:
                                              # cpu_only's node is DOWN
 
+export ODIN_CARD=u250                        # see READ FIRST: u55c is blocked
 scripts/hacc/build_xclbn.sh hw_emu           # FIRST: ~15 min, functional
 scripts/hacc/build_xclbn.sh hw               # THEN: the real bitstream
 ```
 
-Toolchain (field-observed 2026-08-25): Vitis **2024.2** under **`/tools/Xilinx`**
-— capital X — with the shell `xilinx_u55c_gen3x16_xdma_3_202210_1`. The vendor
-docs' "2022.2 under `/tools/xilinx`" is stale and cost the first live session a
-refusal at the door. `scripts/hacc/toolchain.sh` is now the single place that
-resolves this: it probes `/tools/Xilinx`, `/tools/xilinx`, `/opt/Xilinx`,
-`/opt/xilinx`, takes the newest Vitis it finds, and honours `XILINX_ROOT` /
-`VITIS_VERSION` when you want a specific one. It refuses loudly if there is no
-Vitis anywhere, which is what happens if you run it on your laptop.
+Build venues are **card-independent** — a place-and-route needs a compile
+partition, not a card — so `vck5000_compile` is right for either card.
+
+Toolchain (field-observed 2026-08-25): Vitis lives under **`/tools/Xilinx`** —
+capital X; the vendor docs' `/tools/xilinx` is stale and cost the first live
+session a refusal at the door — and the installed set is
+`2020.1 2020.2 2021.2 2022.1 2023.2 2024.2`.
+`scripts/hacc/toolchain.sh` is the single place that resolves this: it probes
+`/tools/Xilinx`, `/tools/xilinx`, `/opt/Xilinx`, `/opt/xilinx` and picks, in
+order, `VITIS_VERSION` if you set it, then **the card profile's preferred
+release** if installed, then the newest. Newest alone is wrong: a platform's IP
+is locked to the release it was built with, which is the whole U55C story, so
+`ODIN_CARD=u250` builds under **2020.2** on purpose. It refuses loudly if there
+is no Vitis anywhere, which is what happens if you run it on your laptop.
+
+`hacc_demo/README.md` pairs the U250 202020 shell with Vitis **2021.2** rather
+than 2020.2. Both are plausible for a 202020 shell; the profile pins 2020.2
+because it is the release the shell was built against and it is installed. If a
+2020.2 link ever fails on this shell, `VITIS_VERSION=2021.2` is the first thing
+to try, and it is one environment variable, not a code change.
 
 That file also owns the `set +u` around the vendor setup scripts: Vitis 2024.x's
 `.settings64-Vitis.sh` reads `$PYTHONPATH`, and under `set -u` an unset
@@ -183,9 +272,14 @@ the real-shell half of gate row 19.
 * **Elaboration errors** — reproduce them locally in seconds:
   `scripts/hw_tests/run_hw_tests.sh -k kernel_elaborates`. That gate exists so
   a syntax error never costs you a cluster hour.
-* **Timing not met** — lower the kernel clock in `scripts/hacc/odin_u55c.cfg`
-  (`kernel_frequency`) before touching the design. The ODIN core is a slow,
-  event-serial machine; it does not need a fast clock.
+* **`VPL 60-704` / `60-732`, "customized with software release ... different
+  revision"** — you are linking a shell against a Vitis it was not built with.
+  That is the U55C deadlock (READ FIRST); on any other card it means the
+  version pin is wrong, and `VITIS_VERSION=<release>` is the lever.
+* **Timing not met** — lower the kernel clock (`kernel_frequency`) in **your
+  card's** config, `scripts/hacc/odin_u250.cfg` or `odin_u55c.cfg`, before
+  touching the design. The ODIN core is a slow, event-serial machine; it does
+  not need a fast clock.
 
 ## 4. Stage the run
 
@@ -358,6 +452,14 @@ and most likely first:
   carrying MI210 + U280 + **U55C**, i.e. the one joint venue that works. Ask
   `scontrol show partition` and `sinfo -a -N` before believing any of it; that
   is exactly what `run_all.sh` now does at phase time.
+* Assuming a card is present because the cluster owns one. `xbutil` answered
+  `0 devices found` on `hacc-gpu3` from a non-FPGA partition: cards are
+  VM-passed at allocation time. Allocate a board partition first.
+* Reaching for `xilinx_u250_gen3x16_xdma_4_1_202210_1` because it is newer than
+  the 202020 one. It is 2022.2-era and hits the same lock as the U55C shell;
+  `cards.sh` refuses it by name.
+* Spending a queue slot to rediscover the U55C deadlock. `run_all.sh` refuses
+  before submitting, from `/opt/xilinx/platforms` and the installed Vitis list.
 * Running the bring-up in the foreground: v1's `sbatch --wait` chain meant every
   hiccup needed you at the keyboard. Use `bootstrap_hacc.sh`, which detaches it,
   and `scripts/status.sh` to look in.

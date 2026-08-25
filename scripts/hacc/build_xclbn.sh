@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
-# Build the ODIN RTL kernel into a U55C xclbin on HACC@NUS.
+# Build the ODIN RTL kernel into an xclbin on HACC@NUS, for the card you name.
+#
+# THE CARD IS A PARAMETER (v3). ODIN_CARD selects a profile in
+# scripts/hacc/cards.sh — platform, Vivado part, v++ connectivity config,
+# preferred Vitis — and nothing card-shaped is written down anywhere else:
+#   ODIN_CARD=u250 scripts/hacc/build_xclbn.sh hw
+# Default is u55c, which on this cluster REFUSES with the deadlock reason
+# (only a 2022.2-locked U55C shell installed, and no 2022.2 Vitis).
 #
 # WHERE: hacchead or a compile partition — NEVER on a board reservation: the
-# bare U55C shell partitions are capped at ONE HOUR and a placed-and-routed
-# build is hours. FIELD-OBSERVED 2026-08-25: `vck5000_compile` (hacc-node0,
+# bare board partitions are capped at ONE HOUR and a placed-and-routed build is
+# hours. FIELD-OBSERVED 2026-08-25: `vck5000_compile` (hacc-node0,
 # AllowGroups=ALL, 7 days) is the live build venue; `cpu_only` maps to
-# hacc-gpu0, which is DOWN. Vitis is 2024.2 under /tools/Xilinx, discovered by
-# toolchain.sh rather than assumed.
+# hacc-gpu0, which is DOWN. Vitis is discovered by toolchain.sh, and the card
+# profile's preferred version wins when it is installed.
 #
 # WHAT: package_xo turns the Verilog kernel + its kernel.xml into an .xo, then
-# v++ --link places it into the U55C XDMA shell. The emulation targets
+# v++ --link places it into the card's XDMA shell. The emulation targets
 # (sw_emu/hw_emu) build in minutes and are the right first step; `hw` is the
 # real bitstream.
 #
 # Run it from the repository root (it reads hw/ from there):
-#   scripts/hacc/build_xclbn.sh hw_emu      # ~15 min, functional
-#   scripts/hacc/build_xclbn.sh hw          # hours, the real bitstream
+#   ODIN_CARD=u250 scripts/hacc/build_xclbn.sh hw_emu   # ~15 min, functional
+#   ODIN_CARD=u250 scripts/hacc/build_xclbn.sh hw       # hours, the bitstream
 set -euo pipefail
 
 TARGET="${1:-hw_emu}"
@@ -27,24 +34,30 @@ if [[ "${NC}" != "1" ]]; then
     exit 2
 fi
 
-PLATFORM="${ODIN_PLATFORM:-xilinx_u55c_gen3x16_xdma_3_202210_1}"
 KERNEL="odin_fpga_kernel_top"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=scripts/hacc/toolchain.sh
 source "$(dirname "${BASH_SOURCE[0]}")/toolchain.sh"
+# shellcheck source=scripts/hacc/cards.sh
+source "$(dirname "${BASH_SOURCE[0]}")/cards.sh"
 cd "${here}"
 
+# CARD / PLATFORM / PART / CFG, and ODIN_VITIS_PREFER for the probe below.
+# A card this cluster cannot build refuses HERE, before a compile slot is spent.
+odin_card_resolve
+
 # --- REFUSE LOUD off-cluster -------------------------------------------------
-# The version is DISCOVERED (field-observed 2026-08-25: Vitis 2024.2 under
-# /tools/Xilinx, not the 2022.2 under /tools/xilinx the vendor docs list);
-# XILINX_ROOT / VITIS_VERSION still pin it if you need a specific one.
+# The version is DISCOVERED (field-observed 2026-08-25: 2020.1 2020.2 2021.2
+# 2022.1 2023.2 2024.2 under /tools/Xilinx, and NO 2022.2); the card profile
+# prefers the release its shell was built with, and XILINX_ROOT / VITIS_VERSION
+# still pin it if you need a specific one.
 if ! vitis="$(odin_vitis_settings)"; then
     echo "REFUSING: no Vitis under ${XILINX_ROOT:-/tools/Xilinx or /tools/xilinx}." >&2
     echo "  This script builds ONLY on HACC@NUS (hacchead or a compile" >&2
     echo "  partition). Log in per scripts/hacc/RUNBOOK.md and run it there;" >&2
     echo "  off-cluster there is no toolchain and no shell to link against." >&2
-    echo "  Pin one with XILINX_ROOT=/tools/Xilinx VITIS_VERSION=2024.2." >&2
+    echo "  Pin one with XILINX_ROOT=/tools/Xilinx VITIS_VERSION=2020.2." >&2
     exit 2
 fi
 XILINX_ROOT="${vitis%%|*}"
@@ -63,12 +76,22 @@ odin_source_toolchain "${VITIS_SETTINGS}"
 BUILD="build/hacc/${TARGET}_nc${NC}"
 mkdir -p "${BUILD}"
 
-echo "[hacc-build] vitis    : ${XILINX_ROOT}/Vitis/${VITIS_VERSION}"
+echo "[hacc-build] card     : ${CARD}"
+echo "[hacc-build] vitis    : ${XILINX_ROOT}/Vitis/${VITIS_VERSION} (prefer ${ODIN_VITIS_PREFER:-none})"
 echo "[hacc-build] platform : ${PLATFORM}"
+echo "[hacc-build] part     : ${PART}"
+echo "[hacc-build] config   : ${CFG}"
 echo "[hacc-build] target   : ${TARGET}"
 echo "[hacc-build] cores    : ${NC}"
 echo "[hacc-build] build dir: ${BUILD}"
 echo "[hacc-build] host     : $(hostname)"
+
+if [[ ! -f "${CFG}" ]]; then
+    echo "REFUSING: the card profile names ${CFG}, which is not in this tree." >&2
+    echo "  Each card ships its own v++ connectivity config; add one beside" >&2
+    echo "  scripts/hacc/odin_u55c.cfg and name it in scripts/hacc/cards.sh." >&2
+    exit 2
+fi
 
 # --- 1. the kernel description v++ packages ---------------------------------
 python3 scripts/hacc/gen_kernel_xml.py \
@@ -92,6 +115,18 @@ while IFS= read -r -d '' src; do SOURCES+=("${src}"); done \
 # 05-bottom_up_rtl_kernel pack_kernel.tcl) packages the sources as a Vivado
 # IP with ipx::package_project, marks it sdx_kernel/rtl, and calls package_xo
 # inside `vivado -mode batch`. Our audited kernel.xml stays authoritative.
+#
+# EVERY COMMAND BELOW IS 2020.2 SYNTAX, checked one by one, because the U250
+# profile pins Vivado 2020.2 and the tutorial this flow follows is itself a
+# 2020.x-era one: create_project -force -part, add_files -norecurse,
+# set_property top, update_compile_order -fileset, ipx::package_project with
+# -root_dir/-vendor/-library/-taxonomy/-import_files/-set_current, the
+# sdx_kernel / sdx_kernel_type properties, ipx::update_source_project_archive
+# -component, ipx::save_core, and package_xo with
+# -xo_path/-kernel_name/-kernel_xml/-ip_directory. package_xo's `-force` is the
+# one option whose 2020.2 availability we could not confirm off-cluster, so it
+# is gone: `file delete -force` on the target does the same job in every
+# release, and the bash `rm -f` below already did it once.
 if ! command -v vivado > /dev/null 2>&1; then
     echo "REFUSING: no vivado on PATH after sourcing the Vitis settings." >&2
     echo "  package_xo runs inside Vivado; settings64.sh normally adds" >&2
@@ -106,7 +141,7 @@ abs_build="$(cd "${BUILD}" && pwd)"
     printf 'set kernel_xml "%s"\n' "${abs_build}/kernel.xml"
     printf 'set ip_dir "%s"\n' "${abs_build}/ip"
     printf 'create_project -force odin_pack "%s/pack_prj" -part %s\n' \
-        "${abs_build}" "${ODIN_FPGA_PART:-xcu55c-fsvh2892-2L-e}"
+        "${abs_build}" "${PART}"
     for src in "${SOURCES[@]}"; do
         printf 'add_files -norecurse "%s/%s"\n' "${here}" "${src}"
     done
@@ -119,7 +154,8 @@ set_property sdx_kernel true [ipx::current_core]
 set_property sdx_kernel_type rtl [ipx::current_core]
 ipx::update_source_project_archive -component [ipx::current_core]
 ipx::save_core [ipx::current_core]
-package_xo -force -xo_path $xo_path -kernel_name $kernel_name \
+file delete -force $xo_path
+package_xo -xo_path $xo_path -kernel_name $kernel_name \
     -kernel_xml $kernel_xml -ip_directory $ip_dir
 TCL
 } > "${BUILD}/pack_kernel.tcl"
@@ -135,12 +171,12 @@ if [[ ! -f "${BUILD}/${KERNEL}.xo" ]]; then
     exit 2
 fi
 
-# --- 3. v++ --link: .xo -> .xclbin against the U55C shell --------------------
+# --- 3. v++ --link: .xo -> .xclbin against the card's shell -------------------
 "${XILINX_VITIS}/bin/v++" --link \
     --target "${TARGET}" \
     --platform "${PLATFORM}" \
     --kernel "${KERNEL}" \
-    --config scripts/hacc/odin_u55c.cfg \
+    --config "${CFG}" \
     --temp_dir "${BUILD}/tmp" \
     --report_dir "${BUILD}/reports" \
     --log_dir "${BUILD}/logs" \

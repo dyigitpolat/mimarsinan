@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # v++ --link, standing in for Vitis: writes the xclbin and an empty report dir.
+#
+# ODIN_STUB_VXX_TRACE, when set, gets one line per invocation carrying the WHOLE
+# argument vector. That is what lets a gate assert which platform and which
+# connectivity config the card profile actually handed the linker, rather than
+# asserting what the build script printed about itself.
 set -euo pipefail
+if [ -n "${ODIN_STUB_VXX_TRACE:-}" ]; then
+    mkdir -p "$(dirname "${ODIN_STUB_VXX_TRACE}")"
+    { printf 'v++'; printf ' %s' "$@"; printf '\n'; } >> "${ODIN_STUB_VXX_TRACE}"
+fi
 out=""
 reports=""
 while [ $# -gt 0 ]; do

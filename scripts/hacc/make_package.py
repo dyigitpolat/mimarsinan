@@ -7,9 +7,11 @@ board bring-up needs has to travel as a single artifact. That artifact is
 
 WHAT GOES IN, AND WHY ONLY THAT
   * the RTL the ``v++`` build compiles — the kernel wrapper, the vendored ODIN
-    tree, the BRAM overlays — plus ``build_xclbn.sh``/``odin_u55c.cfg``
-    verbatim from ``scripts/hacc/``, and the ``kernel.xml`` this script emits
-    from the host-side register SSOT so the build node needs no ``src/`` tree;
+    tree, the BRAM overlays — plus ``build_xclbn.sh``, ``cards.sh`` (the
+    per-card SSOT: platform, part, v++ config, preferred Vitis, partitions) and
+    EVERY card's ``odin_<card>.cfg`` verbatim from ``scripts/hacc/``, and the
+    ``kernel.xml`` this script emits from the host-side register SSOT so the
+    build node needs no ``src/`` tree;
   * PRE-EXPORTED FIXTURES: the program word-stream, the stimulus word-stream,
     the run parameters and the EXPECTED per-neuron counts of each fixture,
     frozen HERE by running the committed cosimulation and asserting it against
@@ -693,7 +695,8 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
 
     for source, relative in hw_payload():
         copy(source, relative)
-    for name in ("build_xclbn.sh", "odin_u55c.cfg", "toolchain.sh"):
+    for name in ("build_xclbn.sh", "cards.sh", "odin_u55c.cfg", "odin_u250.cfg",
+                 "toolchain.sh"):
         copy(REPO / "scripts" / "hacc" / name, f"scripts/hacc/{name}")
     write_text("scripts/hacc/kernel.xml", kernel_xml_text())
     for source in sorted((PACKAGE_SRC / "sbatch").glob("*.sbatch")):

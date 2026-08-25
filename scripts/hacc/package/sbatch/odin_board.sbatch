@@ -5,13 +5,21 @@
 #SBATCH --output=slurm-odin-board-%j.out
 #SBATCH --error=slurm-odin-board-%j.err
 #
-# Run the ODIN driver against an allocated U55C. Submit with
-#   -p xilinx_u55c_gen3x16_xdma_3_202210_1   (hacc-gpu1/2/3, ONE HOUR cap)
-# or, for anything longer,
-#   -p mi210_u280_u55c                       (hacc-gpu1, 12 h)
-# FIELD-OBSERVED 2026-08-25: the board partition's AllowGroups is
+# Run the ODIN driver against an allocated card. run_all.sh picks the partition
+# from the CARD PROFILE (scripts/hacc/cards.sh) and the cluster's own answers.
+#   U55C: -p xilinx_u55c_gen3x16_xdma_3_202210_1  (hacc-gpu1/2/3, ONE HOUR cap)
+#         -p mi210_u280_u55c                      (hacc-gpu1, 12 h)
+#   U250: -p xilinx_u250_gen3x16_xdma_3_1_202020_1 (1 h) or the 12 h / 2 d pools
+# FIELD-OBSERVED 2026-08-25: the U55C board partition's AllowGroups is
 # lab,hgpu,fpga_u55c — reachable through `hgpu` without fpga_u55c membership —
 # and mi210_vck_u55c, which the vendor doc names, refuses this account outright.
+# The u250 partitions are lab,fpga_u250, and this account IS in fpga_u250.
+#
+# THE CARD IS ALLOCATED, NOT AMBIENT. hacc-gpu3 answered '0 devices found' under
+# xbutil from a non-FPGA partition on 2026-08-25: the cards are passed into the
+# job's VM at allocation time (doc/1's board-VM model, now field-confirmed), so
+# `xbutil examine` finding nothing here means the wrong partition, not a dead
+# card.
 #
 # The first two #SBATCH lines are the cluster's required preamble (that doc's
 # example.sh lines 143-145). --output/--error stay under --chdir (/tmp) because

@@ -14,13 +14,16 @@
 # opens them BEFORE the job body runs: a path under a directory that does not
 # exist yet makes the submission fail to launch with nothing to read.
 #
-# NEVER submit this to a board partition: xilinx_u55c_gen3x16_xdma_3_202210_1 is
-# capped at ONE HOUR (doc/1-FPGA-allocation.md line 44) and a place-and-route is
-# hours. FIELD-OBSERVED 2026-08-25: the live build venue is `vck5000_compile`
-# (AllowGroups=ALL, MaxTime 7d, hacc-node0 idle). `cpu_only` maps to hacc-gpu0,
-# which is DOWN with 'NO NETWORK ADDRESS FOUND' — the docs' hacc-node2 is stale.
+# NEVER submit this to a board partition: the bare shell partitions
+# (xilinx_u55c_gen3x16_xdma_3_202210_1, xilinx_u250_gen3x16_xdma_3_1_202020_1)
+# are capped at ONE HOUR (doc/1-FPGA-allocation.md lines 42-44) and a
+# place-and-route is hours. FIELD-OBSERVED 2026-08-25: the live build venue is
+# `vck5000_compile` (AllowGroups=ALL, MaxTime 7d, hacc-node0 idle). `cpu_only`
+# maps to hacc-gpu0, which is DOWN with 'NO NETWORK ADDRESS FOUND' — the docs'
+# hacc-node2 is stale. Build venues are card-independent; ODIN_CARD only
+# decides what gets linked, not where.
 #
-#   ODIN_PKG=/data/$USER/odin_hacc_package ODIN_TARGET=hw_emu \
+#   ODIN_PKG=/data/$USER/odin_hacc_package ODIN_TARGET=hw_emu ODIN_CARD=u250 \
 #       sbatch --wait -p vck5000_compile scripts/hacc/odin_build.sbatch
 
 set -euo pipefail
@@ -36,8 +39,14 @@ fi
 PKG="${ODIN_PKG:?ODIN_PKG (the unpacked package root) must be exported}"
 TARGET="${ODIN_TARGET:-hw_emu}"
 
+# shellcheck source=scripts/hacc/cards.sh
+source "${PKG}/scripts/hacc/cards.sh"
+CARD="$(odin_card)"
+PLATFORM="$(odin_effective_platform "${CARD}")"
+
 echo "[build] job ${SLURM_JOB_ID:-?} on $(hostname) partition ${SLURM_JOB_PARTITION:-?}"
 echo "[build] package ${PKG}"
+echo "[build] card    ${CARD}"
 echo "[build] target  ${TARGET}"
 
 cd "${PKG}"
@@ -94,7 +103,7 @@ if [[ "${TARGET}" == "hw_emu" && "${SMOKE}" != "off" && "${SMOKE}" != "0" ]]; th
     status=0
     (
         cd "${emu_dir}"
-        emconfigutil --platform "${ODIN_PLATFORM:-xilinx_u55c_gen3x16_xdma_3_202210_1}" --nd 1
+        emconfigutil --platform "${PLATFORM}" --nd 1
         export XCL_EMULATION_MODE=hw_emu
         export EMCONFIG_PATH="${emu_dir}"
         timeout "${SMOKE_TIMEOUT}" \

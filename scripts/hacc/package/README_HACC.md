@@ -1,16 +1,48 @@
-# ODIN on HACC@NUS — the whole bring-up in one zip (v2)
+# ODIN on HACC@NUS — the whole bring-up in one zip (v3)
 
 You are logged in to HACC. The machine this package was built on cannot reach
 the cluster, so everything the bring-up needs travels here: the RTL the build
 compiles, the fixtures with their expected counts already frozen, and one host
 driver that needs nothing but Python 3 and XRT.
 
+## Read this before you run anything: the U55C is blocked, use the U250
+
+**Field-observed 2026-08-25.** The only U55C platform installed anywhere on
+this cluster — checked on `hacc-node0` **and** `hacc-gpu3` under
+`/opt/xilinx/platforms` — is `xilinx_u55c_gen3x16_xdma_3_202210_1`. Its
+SmartConnect IP is customized with the **2022.2** release, and 2022.2 is the
+one Vitis this cluster does **not** carry:
+
+```
+/tools/Xilinx/Vitis:  2020.1  2020.2  2021.2  2022.1  2023.2  2024.2
+```
+
+Three `v++ --link` attempts — under **2022.1, 2023.2 and 2024.2** — died the
+same way, in `vpl`, with `VPL 60-704` / `60-732`: *"IP ... is customized with
+software release 2022.1 and is being used with a different revision."* There is
+no flag, no config and no version of this package that gets past a locked IP
+revision. **The U55C is deadlocked pending an admin action**, and there are
+exactly two of those: install Vitis/Vivado 2022.2 beside the others, or install
+a U55C shell built for a release that is already here.
+
+**So the card became a parameter.** The route that builds on HACC@NUS today is
+the **U250**: `xilinx_u250_gen3x16_xdma_3_1_202020_1` (a 2020.2-era shell) with
+**Vitis 2020.2**, which is installed. This account is in `fpga_u250`, and all
+three U250 partitions admit it.
+
 **One command. Upload `odin_hacc_package.zip` and `bootstrap_hacc.sh` into the
 same directory, then:**
 
 ```bash
-./bootstrap_hacc.sh
+./bootstrap_hacc.sh --card u250
 ```
+
+`--card u55c` is still the default and still works the moment the admins act —
+until then it refuses at startup, before submitting anything, and prints the
+paragraph above with the installed lists it actually read. That refusal is
+**evidence-gated, not a hard-coded verdict**: it re-reads
+`/opt/xilinx/platforms` and the installed Vitis versions every run, and
+disappears on its own when either of the two fixes lands.
 
 It checks the zip against the sha256 it was cut for, archives any previous
 install to `odin_prev_<utc>.tar.gz` (it never deletes one silently), unpacks a
@@ -45,8 +77,8 @@ second one refuses by pid, and anything already finished is kept, not redone.
 | 2 | build `hw_emu` + a bounded emulation smoke | a compile partition | ~15 min + smoke |
 | 3 | build `hw` (the real bitstream) | a compile partition | **2–6 h** |
 | 4 | stage the xclbin under `/data/${USER}/odin` | hacchead | seconds |
-| 5 | **B0**: load, resolve, read the CSRs | U55C partition | < 1 board hour |
-| 6 | **B1**: every fixture, certified | U55C partition | < 1 board hour |
+| 5 | **B0**: load, resolve, read the CSRs | a board partition for your card | < 1 board hour |
+| 6 | **B1**: every fixture, certified | a board partition for your card | < 1 board hour |
 | 7 | board + independent reference in one job | a joint partition | queue-bound |
 
 Phase 3 dominates. `--only N` runs one phase, `--from N` starts at one,
@@ -84,21 +116,64 @@ win outright if you know better.
 | `mi210_u280_u55c` | `AllowGroups=lab,hgpu,fpga_u280`, 12 h, on **hacc-gpu1** which carries MI210 + U280 + U55C — the living joint venue | listed as `mi210_u250_u55c`, "its GPU pair is U250/U280" |
 | `mi210_u280_u55c_long_reservation` | same groups, **5 days** | not mentioned |
 
+The **U250** venues, from the same session — these are the ones `--card u250`
+uses, and this account is in `fpga_u250`:
+
+| Partition | AllowGroups | MaxTime | Role |
+|---|---|---|---|
+| `xilinx_u250_gen3x16_xdma_3_1_202020_1` | `lab,fpga_u250` | **1 h** | the bare shell partition; first choice for B0/B1, which fit inside an hour |
+| `u250_standard_reservation_pool` | `lab,fpga_u250` | 12 h | for anything longer, and the first choice for the joint phase |
+| `u250_long_reservation_pool` | `lab,fpga_u250` | 2 d | the fallback when the pool is busy |
+
 The account this was observed from is in `yigit video render hgpu gpgpu
 fpga_u280 fpga_u250 fpga_vck5000` — **not** `fpga_u55c`, **not** `lab`. `hgpu`
-is what opens both board partitions.
+is what opens both U55C partitions; `fpga_u250` opens all three U250 ones.
+
+**A card is allocated, not ambient.** On 2026-08-25 `xbutil` on `hacc-gpu3`
+answered `0 devices found` — from a non-FPGA partition. The cards are passed
+into the job's VM at allocation time, so only a board-partition job sees one.
+An empty `xbutil examine` means the wrong partition, not a dead card.
 
 **Never submit a build to a board partition** — it is killed at one hour, every
 time. The candidate lists encode that: builds only ever consider compile-class
-partitions.
+partitions, and those are card-independent (a place-and-route needs a compile
+venue, not a card).
+
+### The card is a parameter, and `cards.sh` is the only place it lives
+
+`scripts/hacc/cards.sh` holds one profile per card, and nothing card-shaped is
+written down anywhere else:
+
+| | `u55c` (default) | `u250` (the field-viable route) |
+|---|---|---|
+| platform | `xilinx_u55c_gen3x16_xdma_3_202210_1` | `xilinx_u250_gen3x16_xdma_3_1_202020_1` |
+| Vivado part | `xcu55c-fsvh2892-2L-e` | `xcu250-figd2104-2L-e` |
+| v++ config | `scripts/hacc/odin_u55c.cfg` | `scripts/hacc/odin_u250.cfg` |
+| AXI master lands on | `HBM[0]` | `DDR[0]` — the U250 has no HBM |
+| preferred Vitis | 2022.2 (**absent**: the deadlock) | **2020.2** |
+| board partitions | the U55C shell partition | the three above, 1 h first |
+| joint partitions | `mi210_vck_u55c`, `mi210_u280_u55c`, `…_long_reservation` | the 12 h pool, then 2 d, then 1 h |
+
+`xilinx_u250_gen3x16_xdma_4_1_202210_1` is also on the build node and is
+**refused by name**: it is a 2022.2-era shell and would hit exactly the same
+lock the U55C does.
+
+Overrides still win where you need them: `ODIN_PLATFORM`, `ODIN_FPGA_PART`,
+`ODIN_VXX_CONFIG`, `VITIS_VERSION`, and the three
+`ODIN_{BUILD,BOARD,JOINT}_PARTITION`.
 
 ### The toolchain is discovered, not assumed
 
-FIELD-OBSERVED 2026-08-25: Vitis is **2024.2** under **`/tools/Xilinx`** (capital
-X). The vendor docs' 2022.2 under `/tools/xilinx` is stale, and v1 refused at
-phase 0 because of it. `scripts/hacc/toolchain.sh` now probes `/tools/Xilinx`,
-`/tools/xilinx`, `/opt/Xilinx`, `/opt/xilinx` and takes the newest Vitis it
-finds; `XILINX_ROOT` and `VITIS_VERSION` pin it if you need a specific one.
+FIELD-OBSERVED 2026-08-25: Vitis lives under **`/tools/Xilinx`** (capital X) —
+the vendor docs' `/tools/xilinx` is stale, and v1 refused at phase 0 because of
+it — and the installed set is `2020.1 2020.2 2021.2 2022.1 2023.2 2024.2`.
+
+`scripts/hacc/toolchain.sh` probes `/tools/Xilinx`, `/tools/xilinx`,
+`/opt/Xilinx`, `/opt/xilinx` and picks, in this order: `VITIS_VERSION` if you
+set it, else **the card profile's preferred release** if it is installed, else
+the newest. "Newest" alone is not right: a platform's IP is locked to the
+release it was built with, which is the entire U55C story, so `--card u250`
+deliberately builds under **2020.2** and not under 2024.2.
 
 ---
 
@@ -124,10 +199,11 @@ decodes into the per-neuron counts this package froze from the RTL
 cosimulation. A packaging error — a port mismatch, a wrong offset, a kernel that
 does not resolve — dies here instead of costing a board hour.
 
-**Only silicon proves:** real HBM ordering behind a real XDMA shell, the
-shell's address translation, XRT's buffer allocation on a device, and timing
-closure at the kernel clock. That is exactly why **B0 comes before B1** rather
-than after it.
+**Only silicon proves:** real memory ordering behind a real XDMA shell — HBM on
+the U55C, **DDR on the U250**, and the connectivity config is the only line
+that differs — the shell's address translation, XRT's buffer allocation on a
+device, and timing closure at the kernel clock. That is exactly why **B0 comes
+before B1** rather than after it.
 
 Three simulation-coverage shadows are known and are the first place to look at
 a board-side AXI anomaly: the datapath is 32-bit-beat only; the 4 KiB
@@ -212,9 +288,10 @@ first.
    of `xbutil examine`.
 8. **Then, and only then, silicon.** Read the build's `reports/` for timing
    violations at the kernel clock before concluding anything about the design.
-   If timing is the problem, lower `kernel_frequency` in
-   `scripts/hacc/odin_u55c.cfg` before touching the design: the ODIN core is a
-   slow, event-serial machine and does not need a fast clock.
+   If timing is the problem, add a `kernel_frequency` to **your card's** config
+   (`scripts/hacc/odin_u250.cfg` or `odin_u55c.cfg` — the `.built_with` sidecar
+   next to the xclbin names which one built it) before touching the design: the
+   ODIN core is a slow, event-serial machine and does not need a fast clock.
 
 If a build fails instead, `package_xo` port errors mean the kernel.xml and the
 Verilog port list disagree — but this package's `kernel.xml` was frozen from the

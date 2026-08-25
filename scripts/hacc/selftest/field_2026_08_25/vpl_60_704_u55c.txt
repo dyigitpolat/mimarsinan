@@ -1,0 +1,7 @@
+ERROR: [VPL 60-704] Integration error, problem packaging or building the design
+ERROR: [VPL 60-732] Link warning: One or more IPs have been customized with a
+       software release that differs from the one being used. IP
+       'level0_i/ulp/axi_ic_ulp_ctrl_1/inst' is customized with software release
+       2022.1 and is being used with a different revision.
+ERROR: [VPL 60-773] In '.../vitis_link/vivado.log', caught Tcl error: ERROR:
+       [Common 17-39] 'link_design' failed due to earlier errors.
