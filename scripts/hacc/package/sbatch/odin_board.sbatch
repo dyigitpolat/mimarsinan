@@ -10,6 +10,12 @@
 #   U55C: -p xilinx_u55c_gen3x16_xdma_3_202210_1  (hacc-gpu1/2/3, ONE HOUR cap)
 #         -p mi210_u280_u55c                      (hacc-gpu1, 12 h)
 #   U250: -p xilinx_u250_gen3x16_xdma_3_1_202020_1 (1 h) or the 12 h / 2 d pools
+#
+# ODIN_MODE=probe is B0: introspect the xclbin, load it, open the CU EXCLUSIVE,
+# execute a one-token NULL PROGRAM and read back the capture header the fabric
+# DMA'd home. It reads NO control register -- pyxrt binds none, which is what
+# field-falsified the previous driver on this cluster on 2026-08-25.
+#
 # FIELD-OBSERVED 2026-08-25: the U55C board partition's AllowGroups is
 # lab,hgpu,fpga_u55c — reachable through `hgpu` without fpga_u55c membership —
 # and mi210_vck_u55c, which the vendor doc names, refuses this account outright.

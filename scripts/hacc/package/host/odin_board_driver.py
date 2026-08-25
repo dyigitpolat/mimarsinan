@@ -7,14 +7,24 @@ with the Xilinx Runtime, never with pip), and it never reads the mimarsinan
 repository. That is what makes it uploadable: the board node needs the zip and
 an XRT, nothing else.
 
-WHAT IT MIRRORS. The XRT call sequence here is the audited one from
-``src/mimarsinan/chip_simulation/odin_fpga/xrt_transport.py`` — open the device,
-load the xclbin, resolve the kernel with EXCLUSIVE access, read the two
-read-only capacity registers the bitstream was compiled with, allocate one
-buffer object per kernel argument in that argument's memory bank, DMA the
-program, DMA the stimulus, start, wait, read the status register BEFORE
-touching the capture, sync the capture back, decode. Every refusal it raises is
-that module's refusal, by name.
+NO REGISTER ACCESS EXISTS, AND THAT SHAPES EVERYTHING BELOW. The XRT Python
+binding (github.com/Xilinx/XRT branch 2024.2,
+src/python/pybind11/src/pyxrt.cpp) binds NO ``read_register`` and NO
+``write_register`` on ``xrt::kernel``, and exposes no standalone ``ip`` object.
+The kernel's AXI-Lite status and capacity registers at 0x4C/0x54/0x5C are real
+— the RTL implements them and the RTL testbench reads them — but they are
+unreachable from Python. On 2026-08-25 a U250 loaded this package's xclbin, the
+CU came up, and the previous driver died at its first CSR touch. So every truth
+here arrives one of exactly two ways:
+
+  * through kernel ARGUMENTS — what the host declares (the three buffers and
+    their three word counts, the frozen kernel.xml layout);
+  * through MEMORY — what the fabric DMAs back: the capture header the kernel
+    writes at drain time, and the fact that it wrote one AT ALL.
+
+The capacities the fabric was compiled with cannot be asked of the card, so they
+are DECLARED from the sources the xclbin was built from, and every refusal that
+spends a capacity says so in its own text.
 
 WHAT IT DOES NOT DO. It does not export, it does not simulate, it does not
 re-derive a single expected count. The counts it certifies against were frozen
@@ -33,13 +43,14 @@ import json
 import os
 import platform
 import socket
+import struct
 import sys
 import time
 import zlib
 from typing import Any, Dict, List, Sequence, Tuple
 
 # --------------------------------------------------------------------------
-# The register map, frozen from the host-side SSOT
+# THE DEVICE PROTOCOL, frozen from the host-side SSOT
 # (src/mimarsinan/chip_simulation/odin_fpga/kernel_registers.py). Every fixture
 # also CARRIES this table under "kernel", and the driver refuses a fixture whose
 # copy disagrees with this one: two tables that drifted would drive a kernel
@@ -47,27 +58,63 @@ from typing import Any, Dict, List, Sequence, Tuple
 # --------------------------------------------------------------------------
 
 KERNEL_NAME = "odin_fpga_kernel_top"
+
+#: The frozen kernel.xml argument order (scripts/hacc/gen_kernel_xml.py).
 ARG_PROGRAM, ARG_STIMULUS, ARG_CAPTURE = 0, 1, 2
-CTRL_OFFSET = 0x00
-ADDR_STATUS = 0x4C
-ADDR_CAPTURE_CAPACITY = 0x54
-ADDR_PROGRAM_CAPACITY = 0x5C
-STATUS_ERR_BIT = 1 << 31
-STATUS_EVENTS_MASK = STATUS_ERR_BIT - 1
-CAPTURE_HEADER_WORDS = 2
-CAPTURE_RECORD_WORDS = 4
+ARG_PROGRAM_WORDS, ARG_STIMULUS_WORDS, ARG_CAPTURE_WORDS = 3, 4, 5
+KERNEL_ARGS = 6
+
 WORD_BYTES = 4
+
+#: The capture buffer as hw/fpga/kernel/odin_fpga_kernel.v writes it at drain
+#: time (lines 171-189): header word 0 is `events_seen`, header word 1 is the
+#: free-running `cycle` at run end, then one {tag, cycle, core, neuron} record
+#: per AER-out event. `events_seen` is counted even when the RAM is full, which
+#: is what makes the truncation refusal below possible.
+CAPTURE_HEADER_WORDS = 2
+HEADER_EVENTS_SEEN = 0
+HEADER_DEVICE_CYCLES = 1
+CAPTURE_RECORD_WORDS = 4
+RECORD_TAG, RECORD_CYCLE, RECORD_CORE, RECORD_NEURON = 0, 1, 2, 3
+
+#: The word the host DMAs into BOTH header slots before it starts the kernel.
+#: The fabric overwrites them when it drains, so a header that comes back still
+#: carrying this is the kernel having REFUSED the run — the only way `err`
+#: reaches a host that cannot read 0x4C.
+CAPTURE_NO_VERDICT = 0xFFFFFFFF
+
+#: The sequencer's terminator (odin_fpga_kernel.v line 62). A one-word program
+#: of nothing but this is the smallest thing the fabric can be asked to run, and
+#: it is what B0's null run executes.
+OP_END = 0
+
+#: 0 is pyxrt's "block until the run completes" (pyxrt.cpp binds wait() to
+#: xrt::run::wait(0)); a positive value bounds the wait in milliseconds.
+BLOCK_UNTIL_DONE_MS = 0
+
+#: What the SHIPPED fabric holds: the PROG_WORDS and CAP_WORDS defaults of
+#: hw/fpga/kernel/odin_fpga_kernel_top.v at NC = 1, the only geometry
+#: scripts/hacc/build_xclbn.sh builds. PROG_WORDS = NC * 262144, so a program
+#: capacity also NAMES how many ODIN cores the bitstream instantiates.
+PROG_WORDS_PER_CORE = 262144
+SHIPPED_KERNEL_CORES = 1
+SHIPPED_PROGRAM_WORDS = SHIPPED_KERNEL_CORES * PROG_WORDS_PER_CORE
+SHIPPED_CAPTURE_WORDS = 16384
+SHIPPED_CAPTURE_EVENTS = (SHIPPED_CAPTURE_WORDS - CAPTURE_HEADER_WORDS) // (
+    CAPTURE_RECORD_WORDS)
 DEFAULT_CAPTURE_EVENTS = 1 << 20
 
-#: PROG_WORDS = NC * 262144 (hw/fpga/kernel/odin_fpga_kernel_top.v line 47), so
-#: the program capacity the bitstream reports names how many ODIN cores it
-#: instantiates. The v1 packaging flow builds NC = 1 only (build_xclbn.sh
-#: refuses more), which is why a multi-core fixture is SKIPPED rather than run.
-PROG_WORDS_PER_CORE = 262144
+SHIPPED_CAPACITY_PROVENANCE = (
+    "declared from hw/fpga/kernel/odin_fpga_kernel_top.v (PROG_WORDS = NC * "
+    f"{PROG_WORDS_PER_CORE}, CAP_WORDS = {SHIPPED_CAPTURE_WORDS}) at "
+    f"NC = {SHIPPED_KERNEL_CORES}, the only geometry "
+    "scripts/hacc/build_xclbn.sh builds — NOT read back from the card, because "
+    "the XRT Python binding exposes no register read"
+)
 
 BACKEND = "odin_fpga"
 BACKEND_CLASS = "exact"
-SCHEMA = "odin_hacc_fixture/1"
+SCHEMA = "odin_hacc_fixture/2"
 
 
 class OdinDriverError(RuntimeError):
@@ -79,7 +126,7 @@ class OdinFpgaDependencyError(OdinDriverError):
 
 
 class OdinFpgaKernelError(OdinDriverError):
-    """The kernel raised `err`: it refused the program it was given."""
+    """The kernel wrote no verdict: it refused the program it was given."""
 
 
 class OdinFpgaCaptureTruncated(OdinDriverError):
@@ -96,6 +143,25 @@ class OdinFixtureNeedsMoreCores(OdinDriverError):
 
 class OdinFixtureCorrupt(OdinDriverError):
     """A fixture's self-hash or payload hash does not match its bytes."""
+
+
+#: The device-protocol table every fixture carries and this driver checks.
+KERNEL_TABLE: Dict[str, int | str] = {
+    "name": KERNEL_NAME,
+    "arg_program": ARG_PROGRAM,
+    "arg_stimulus": ARG_STIMULUS,
+    "arg_capture": ARG_CAPTURE,
+    "arg_program_words": ARG_PROGRAM_WORDS,
+    "arg_stimulus_words": ARG_STIMULUS_WORDS,
+    "arg_capture_words": ARG_CAPTURE_WORDS,
+    "kernel_args": KERNEL_ARGS,
+    "capture_header_words": CAPTURE_HEADER_WORDS,
+    "header_events_seen": HEADER_EVENTS_SEEN,
+    "header_device_cycles": HEADER_DEVICE_CYCLES,
+    "capture_record_words": CAPTURE_RECORD_WORDS,
+    "capture_no_verdict": CAPTURE_NO_VERDICT,
+    "word_bytes": WORD_BYTES,
+}
 
 
 # --------------------------------------------------------------------------
@@ -167,21 +233,10 @@ def load_fixture(path: str) -> Dict[str, Any]:
             f"edited by hand; a fixture is frozen evidence and is not a "
             f"config to tune")
     table = document["kernel"]
-    expected = {
-        "name": KERNEL_NAME, "arg_program": ARG_PROGRAM,
-        "arg_stimulus": ARG_STIMULUS, "arg_capture": ARG_CAPTURE,
-        "ctrl_offset": CTRL_OFFSET, "addr_status": ADDR_STATUS,
-        "addr_capture_capacity": ADDR_CAPTURE_CAPACITY,
-        "addr_program_capacity": ADDR_PROGRAM_CAPACITY,
-        "status_err_bit": STATUS_ERR_BIT,
-        "capture_header_words": CAPTURE_HEADER_WORDS,
-        "capture_record_words": CAPTURE_RECORD_WORDS,
-        "word_bytes": WORD_BYTES,
-    }
-    if table != expected:
+    if table != KERNEL_TABLE:
         raise OdinFixtureCorrupt(
-            f"{path}: the fixture's register table disagrees with this "
-            f"driver's. Fixture={table}, driver={expected}. The package was "
+            f"{path}: the fixture's device-protocol table disagrees with this "
+            f"driver's. Fixture={table}, driver={KERNEL_TABLE}. The package was "
             f"assembled against a different kernel — rebuild it with "
             f"scripts/hacc/make_package.py rather than mixing halves")
     return document
@@ -207,8 +262,49 @@ def fixture_paths(directory: str, names: Sequence[str]) -> List[str]:
 
 
 # --------------------------------------------------------------------------
-# The register/capture arithmetic, mirrored from kernel_registers.py
+# The capacity nobody can read back, and the capture arithmetic
 # --------------------------------------------------------------------------
+
+
+class KernelCapacity:
+    """What the loaded xclbin holds, DECLARED from what it was BUILT from."""
+
+    def __init__(self, *, program_words: int = SHIPPED_PROGRAM_WORDS,
+                 capture_events: int = SHIPPED_CAPTURE_EVENTS,
+                 provenance: str = SHIPPED_CAPACITY_PROVENANCE) -> None:
+        self.program_words = int(program_words)
+        self.capture_events = int(capture_events)
+        self.provenance = str(provenance)
+
+    @property
+    def cores(self) -> int:
+        """How many ODIN cores this program RAM holds, rounded UP.
+
+        Under-reporting would refuse a legitimate bitstream, while a payload
+        that does not fit is caught by ``require_program_fits``.
+        """
+        return -(-self.program_words // PROG_WORDS_PER_CORE)
+
+    def ceiling(self, host_events: int) -> int:
+        return min(int(host_events), self.capture_events)
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "program_words": self.program_words,
+            "capture_events": self.capture_events,
+            "cores": self.cores,
+            "provenance": self.provenance,
+        }
+
+
+def require_declared_storage(capacity: KernelCapacity, *, transport: str) -> None:
+    if capacity.capture_events <= 0 or capacity.program_words <= 0:
+        raise OdinDriverError(
+            f"{transport}: this package declares a capture capacity of "
+            f"{capacity.capture_events} events and a program capacity of "
+            f"{capacity.program_words} words ({capacity.provenance}) — a kernel "
+            f"built with no storage cannot run anything, and treating it as zero "
+            f"would turn every run into a silent empty one")
 
 
 def capture_buffer_bytes(capacity_events: int) -> int:
@@ -216,20 +312,11 @@ def capture_buffer_bytes(capacity_events: int) -> int:
         CAPTURE_HEADER_WORDS + CAPTURE_RECORD_WORDS * int(capacity_events))
 
 
-def decode_status(word: int) -> Tuple[bool, int]:
-    value = int(word)
-    return bool(value & STATUS_ERR_BIT), value & STATUS_EVENTS_MASK
-
-
-def require_no_kernel_error(status: int, *, transport: str) -> None:
-    failed, events_seen = decode_status(status)
-    if failed:
-        raise OdinFpgaKernelError(
-            f"{transport}: the kernel raised err after seeing {events_seen} "
-            f"event(s) — the fabric sequencer REFUSED an opcode it does not "
-            f"implement (SHADOW/PROG have no fabric path), an AER handshake "
-            f"timed out, or the DMA could not fit the payload. The counts of "
-            f"this run are not a network's answer and are not being decoded")
+def no_verdict_header() -> bytes:
+    """The sentinel image the host DMAs into the capture header before a run."""
+    return struct.pack(
+        f"<{CAPTURE_HEADER_WORDS}I",
+        *([CAPTURE_NO_VERDICT] * CAPTURE_HEADER_WORDS))
 
 
 def stimulus_base_word(program_words: int) -> int:
@@ -238,53 +325,79 @@ def stimulus_base_word(program_words: int) -> int:
 
 
 def require_program_fits(
-    program_words: int, stimulus_words: int, capacity_words: int,
+    program_words: int, stimulus_words: int, capacity: KernelCapacity,
     *, transport: str,
 ) -> None:
     needed = stimulus_base_word(program_words) + int(stimulus_words)
-    if needed > int(capacity_words):
+    if needed > capacity.program_words:
         raise OdinFpgaProgramTooLarge(
             f"{transport}: the run needs {needed} program words "
             f"({program_words} programming + {stimulus_words} stimulus, the "
             f"stimulus overwriting the programming payload's END) but the "
-            f"loaded xclbin's program RAM holds {capacity_words}. Rebuild the "
-            f"kernel with a larger PROG_WORDS or split the run into fewer "
-            f"samples per pass; a device that wrapped the address would "
-            f"execute a program nobody assembled")
+            f"loaded xclbin's program RAM holds {capacity.program_words} "
+            f"({capacity.provenance}). Rebuild the kernel with a larger "
+            f"PROG_WORDS or split the run into fewer samples per pass; a device "
+            f"that wrapped the address would execute a program nobody assembled")
+
+
+def require_kernel_verdict(words: Sequence[int], *, transport: str) -> None:
+    """The capture header after the run: an untouched sentinel means `err`."""
+    if len(words) < CAPTURE_HEADER_WORDS:
+        raise OdinDriverError(
+            f"{transport}: the capture buffer came back shorter than its own "
+            f"two-word header; the kernel never wrote a verdict and the run has "
+            f"no counts")
+    if all(int(word) == CAPTURE_NO_VERDICT
+           for word in words[:CAPTURE_HEADER_WORDS]):
+        raise OdinFpgaKernelError(
+            f"{transport}: the capture header came back still carrying the "
+            f"host's NO-VERDICT sentinel (0x{CAPTURE_NO_VERDICT:08X} in both "
+            f"words), so the fabric DMA'd nothing back. That is the kernel "
+            f"raising err at ap_start and going straight to done without "
+            f"draining (hw/fpga/kernel/odin_fpga_kernel_top.v lines 327-332, the "
+            f"prog_over_w path), or a capture buffer that never reached the "
+            f"card. The likeliest cause is a loaded xclbin built with a SMALLER "
+            f"PROG_WORDS or CAP_WORDS than this package declares — the kernel "
+            f"says which on its own 0x4C/0x54/0x5C registers, and NO Python host "
+            f"can read them (pyxrt binds no read_register). The counts of this "
+            f"run are not a network's answer and are not being decoded")
 
 
 def capture_words(raw: Any) -> List[int]:
-    if isinstance(raw, (bytes, bytearray, memoryview)):
-        buffer = bytes(raw)
-        count = len(buffer) // WORD_BYTES
-        return list(int.from_bytes(
-            buffer[index * WORD_BYTES:(index + 1) * WORD_BYTES], "little")
-            for index in range(count))
-    return [int(value) for value in raw]
+    """The capture buffer as little-endian words.
+
+    ``pyxrt.bo.read`` answers with a numpy ``array_t<char>``, which arrives here
+    through the buffer protocol rather than as ``bytes``.
+    """
+    if isinstance(raw, (list, tuple)):
+        return [int(value) for value in raw]
+    buffer = bytes(memoryview(raw))
+    return list(struct.unpack(f"<{len(buffer) // WORD_BYTES}I", buffer))
 
 
-def decode_capture(words: Sequence[int], capacity: int) -> Tuple[List[Tuple[int, int, int, int]], int]:
+def decode_capture(
+    words: Sequence[int], capacity: int, *, transport: str = BACKEND,
+) -> Tuple[List[Tuple[int, int, int, int]], int]:
     """``(events, device_cycles)`` from the capture buffer's word image."""
-    if len(words) < CAPTURE_HEADER_WORDS:
-        raise OdinDriverError(
-            "the capture buffer came back shorter than its own two-word "
-            "header; the kernel never wrote a verdict and the run has no counts")
-    written = int(words[0])
-    device_cycles = int(words[1])
+    require_kernel_verdict(words, transport=transport)
+    written = int(words[HEADER_EVENTS_SEEN])
+    device_cycles = int(words[HEADER_DEVICE_CYCLES])
     if written >= int(capacity):
         raise OdinFpgaCaptureTruncated(
             f"the kernel SAW {written} events against a capacity of {capacity} "
-            f"(min of this session's declaration and the fabric's own capture "
-            f"RAM, read from 0x54): the capture is at or over its limit and the "
-            f"events past it would read as silent neurons. Rebuild the kernel "
-            f"with a larger CAP_WORDS (hw/fpga/kernel/odin_fpga_kernel_top.v) "
-            f"or run fewer samples per pass; the counts of a truncated run are "
-            f"not a result.")
+            f"(min of this session's declaration and the capture RAM this "
+            f"package declares the fabric was built with): the capture is at or "
+            f"over its limit and the events past it would read as silent "
+            f"neurons. Rebuild the kernel with a larger CAP_WORDS "
+            f"(hw/fpga/kernel/odin_fpga_kernel_top.v) or run fewer samples per "
+            f"pass; the counts of a truncated run are not a result.")
     events: List[Tuple[int, int, int, int]] = []
     for index in range(written):
         base = CAPTURE_HEADER_WORDS + index * CAPTURE_RECORD_WORDS
-        tag, cycle, core, neuron = words[base:base + CAPTURE_RECORD_WORDS]
-        events.append((int(tag), int(cycle), int(core), int(neuron)))
+        record = words[base:base + CAPTURE_RECORD_WORDS]
+        events.append((
+            int(record[RECORD_TAG]), int(record[RECORD_CYCLE]),
+            int(record[RECORD_CORE]), int(record[RECORD_NEURON])))
     return events, device_cycles
 
 
@@ -452,12 +565,14 @@ def load_pyxrt(fake_path: str | None = None) -> Any:
 
 
 class BoardSession:
-    """One XRT session against an ODIN kernel on a U55C XDMA shell."""
+    """One XRT session against an ODIN kernel on an XDMA shell."""
 
     name = "xrt"
 
     def __init__(self, *, xclbin_path: str, device_index: int = 0,
                  capture_events: int = DEFAULT_CAPTURE_EVENTS,
+                 capacity: KernelCapacity | None = None,
+                 run_timeout_ms: int = BLOCK_UNTIL_DONE_MS,
                  fake_pyxrt: str | None = None) -> None:
         if not xclbin_path:
             raise OdinDriverError(
@@ -466,40 +581,66 @@ class BoardSession:
         self.xclbin_path = str(xclbin_path)
         self.device_index = int(device_index)
         self.capture_events = int(capture_events)
+        self.run_timeout_ms = int(run_timeout_ms)
+        self.capacity = capacity if capacity is not None else KernelCapacity()
         self.fake_pyxrt = fake_pyxrt
         self._xrt: Any = None
         self._device: Any = None
         self._kernel: Any = None
         self._capture_capacity = 0
-        self._program_capacity = 0
+        self._xclbin_kernels: Dict[str, int] = {}
+        self._memory_banks: List[Dict[str, Any]] = []
 
     def open(self) -> None:
+        require_declared_storage(self.capacity, transport=self.name)
         self._xrt = load_pyxrt(self.fake_pyxrt)
+        # The xclbin's OWN metadata, before it is pushed to a card: a bitstream
+        # that does not declare this kernel is not the one this package drives.
+        image = self._xrt.xclbin(self.xclbin_path)
+        self._xclbin_kernels = {
+            str(entry.get_name()): int(entry.get_num_args())
+            for entry in image.get_kernels()
+        }
+        self._require_our_kernel()
+        self._memory_banks = [
+            {"index": int(mem.get_index()), "tag": str(mem.get_tag()),
+             "size_kb": int(mem.get_size_kb()), "used": bool(mem.get_used())}
+            for mem in image.get_mems()
+        ]
         self._device = self._xrt.device(self.device_index)
-        uuid = self._device.load_xclbin(self._xrt.xclbin(self.xclbin_path))
+        uuid = self._device.load_xclbin(image)
         self._kernel = self._xrt.kernel(
             self._device, uuid, KERNEL_NAME,
-            # Exclusive access: register reads (0x4C/0x54/0x5C) require it and
-            # the deployment owns the board for the whole reservation.
-            self._xrt.kernel.exclusive,
+            # Exclusive access: the deployment owns the board for the whole
+            # reservation, and a shared CU would let another job's run
+            # interleave with this one's capture buffer.
+            self._xrt.kernel.cu_access_mode.exclusive,
         )
-        fabric_events = int(self._kernel.read_register(ADDR_CAPTURE_CAPACITY))
-        self._program_capacity = int(
-            self._kernel.read_register(ADDR_PROGRAM_CAPACITY))
-        self._capture_capacity = min(self.capture_events, fabric_events)
-        if self._capture_capacity <= 0 or self._program_capacity <= 0:
+        self._capture_capacity = self.capacity.ceiling(self.capture_events)
+
+    def _require_our_kernel(self) -> None:
+        if KERNEL_NAME not in self._xclbin_kernels:
             raise OdinDriverError(
-                f"{self.name}: the kernel reports a capture capacity of "
-                f"{fabric_events} events and a program capacity of "
-                f"{self._program_capacity} words — an xclbin built with no "
-                f"storage cannot run anything, and reading it as zero would "
-                f"turn every run into a silent empty one")
+                f"{self.name}: {self.xclbin_path} declares kernels "
+                f"{sorted(self._xclbin_kernels) or '[]'}, none of them "
+                f"{KERNEL_NAME!r}. This bitstream is not the one this package "
+                f"drives, and loading it would resolve a compute unit nobody "
+                f"built for these arguments")
+        args = self._xclbin_kernels[KERNEL_NAME]
+        if args and args < KERNEL_ARGS:
+            raise OdinDriverError(
+                f"{self.name}: {self.xclbin_path} declares {KERNEL_NAME} with "
+                f"{args} argument(s), but the frozen kernel.xml has "
+                f"{KERNEL_ARGS} (program, stimulus, capture, and their three "
+                f"word counts). The bitstream was built from a different "
+                f"argument layout and the scalars would land on wrong offsets")
 
     def close(self) -> None:
         self._kernel = None
         self._device = None
         self._capture_capacity = 0
-        self._program_capacity = 0
+        self._xclbin_kernels = {}
+        self._memory_banks = []
 
     @property
     def capture_capacity(self) -> int:
@@ -507,18 +648,12 @@ class BoardSession:
 
     @property
     def program_capacity(self) -> int:
-        return self._program_capacity
+        return self.capacity.program_words
 
     @property
     def cores_implied(self) -> int:
-        """How many ODIN cores this bitstream holds, per PROG_WORDS = NC*262144.
-
-        Rounded UP, so a kernel deliberately built with a smaller PROG_WORDS is
-        read as the cores it has rather than as none: under-reporting here would
-        refuse a legitimate bitstream, while the payload that does not fit is
-        caught by ``require_program_fits`` with the capacity the kernel named.
-        """
-        return -(-self._program_capacity // PROG_WORDS_PER_CORE)
+        """How many ODIN cores this bitstream holds, per PROG_WORDS = NC*262144."""
+        return self.capacity.cores
 
     def _require_session(self, what: str) -> Any:
         if self._kernel is None or self._xrt is None:
@@ -530,7 +665,7 @@ class BoardSession:
 
     def _buffer(self, nbytes: int, arg: int) -> Any:
         xrt = self._require_session("buffer allocation")
-        return xrt.bo(self._device, int(nbytes), xrt.bo.normal,
+        return xrt.bo(self._device, int(nbytes), xrt.bo.flags.normal,
                       self._kernel.group_id(int(arg)))
 
     def _to_device(self, handle: Any, payload: bytes) -> None:
@@ -539,22 +674,99 @@ class BoardSession:
         handle.sync(
             xrt.xclBOSyncDirection.XCL_BO_SYNC_BO_TO_DEVICE, len(payload), 0)
 
-    def status_snapshot(self) -> Dict[str, Any]:
-        """The CSR read B0 is: what this bitstream says about itself."""
-        self._require_session("register read")
+    def _capture_buffer(self, nbytes: int) -> Any:
+        """A capture buffer whose header carries the host's no-verdict sentinel."""
+        capture_bo = self._buffer(nbytes, ARG_CAPTURE)
+        self._to_device(capture_bo, no_verdict_header())
+        return capture_bo
+
+    def _execute(self, program: bytes, stimulus: bytes,
+                 capture_events: int) -> Tuple[List[int], Dict[str, float]]:
+        """Program in, stimulus in, kernel run, capture out — the whole protocol.
+
+        Nothing here reads a register: the run's verdict is the capture header,
+        and whether the fabric wrote one at all.
+        """
+        xrt = self._require_session("a device run")
+        program_words = len(program) // WORD_BYTES
+        stimulus_words = len(stimulus) // WORD_BYTES
+        require_program_fits(
+            program_words, stimulus_words, self.capacity, transport=self.name)
+
+        started = time.monotonic()
+        program_bo = self._buffer(len(program), ARG_PROGRAM)
+        self._to_device(program_bo, program)
+        programming_s = time.monotonic() - started
+
+        started = time.monotonic()
+        stimulus_bo = self._buffer(len(stimulus), ARG_STIMULUS)
+        self._to_device(stimulus_bo, stimulus)
+        capture_bytes = capture_buffer_bytes(capture_events)
+        capture_bo = self._capture_buffer(capture_bytes)
+        handle = self._kernel(
+            program_bo, stimulus_bo, capture_bo,
+            program_words, stimulus_words, int(capture_events),
+        )
+        state = handle.wait(self.run_timeout_ms)
+        completed = xrt.ert_cmd_state.ERT_CMD_STATE_COMPLETED
+        if state != completed:
+            raise OdinFpgaKernelError(
+                f"{self.name}: the kernel run ended in state {state!r}, not "
+                f"{completed!r}. XRT never saw ap_done, so nothing was captured "
+                f"and there is no verdict in memory to decode")
+        capture_bo.sync(
+            xrt.xclBOSyncDirection.XCL_BO_SYNC_BO_FROM_DEVICE, capture_bytes, 0)
+        words = capture_words(capture_bo.read(capture_bytes, 0))
+        execution_s = time.monotonic() - started
+        return words, {"programming_s": programming_s,
+                       "execution_s": execution_s}
+
+    def device_stamp(self) -> Dict[str, Any]:
+        """Everything this session knows about what it is talking to."""
         return {
             "xclbin": self.xclbin_path,
             "kernel": KERNEL_NAME,
             "device_index": self.device_index,
+            "cu_access_mode": "exclusive",
             "capture_capacity": self._capture_capacity,
-            "program_capacity": self._program_capacity,
+            "program_capacity": self.capacity.program_words,
             "cores_implied": self.cores_implied,
-            "status": int(self._kernel.read_register(ADDR_STATUS)),
-            "ctrl": int(self._kernel.read_register(CTRL_OFFSET)),
+            "capacity": self.capacity.as_dict(),
+            "xclbin_kernels": dict(self._xclbin_kernels),
+            "memory_banks": list(self._memory_banks),
+            "group_ids": {
+                str(arg): int(self._kernel.group_id(arg))
+                for arg in (ARG_PROGRAM, ARG_STIMULUS, ARG_CAPTURE)
+            } if self._kernel is not None else {},
+        }
+
+    def null_run(self) -> Dict[str, Any]:
+        """B0's smallest possible run: one END token in, one header back.
+
+        It proves the whole path — arguments reach the CU, the AXI master reads
+        host memory, the sequencer executes, the capture engine writes its
+        header and the master writes it back — without programming a network.
+        """
+        self._require_session("null_run()")
+        terminator = struct.pack("<I", OP_END)
+        words, walls = self._execute(terminator, terminator, 1)
+        require_kernel_verdict(words, transport=self.name)
+        events_seen = int(words[HEADER_EVENTS_SEEN])
+        if events_seen != 0:
+            raise OdinDriverError(
+                f"{self.name}: the null program (one END token, no network "
+                f"programmed) came back reporting {events_seen} AER event(s). "
+                f"A fabric that spikes with no weights loaded is not this "
+                f"design, and no count it produces afterwards is a result")
+        return {
+            "header_words": words[:CAPTURE_HEADER_WORDS],
+            "events_seen": events_seen,
+            "device_cycles": int(words[HEADER_DEVICE_CYCLES]),
+            "walls": walls,
         }
 
     def run_fixture(self, fixture: Dict[str, Any]) -> Dict[str, Any]:
-        """Program, stimulate, wait, read the status, decode — in that order."""
+        """Program, stimulate, wait, read the header, decode — in that order."""
         self._require_session("run_fixture()")
         # A FAKE is handed the fixture so it can answer with the capture image
         # the frozen evidence says the fabric produced; real pyxrt has no arm().
@@ -566,45 +778,21 @@ class BoardSession:
         if needed_cores > self.cores_implied:
             raise OdinFixtureNeedsMoreCores(
                 f"{fixture['name']}: the fixture programs {needed_cores} ODIN "
-                f"core(s) but this xclbin reports a program capacity of "
-                f"{self._program_capacity} words = NC {self.cores_implied} "
-                f"(PROG_WORDS = NC * {PROG_WORDS_PER_CORE}). The v1 packaging "
-                f"flow builds NC=1 only (scripts/hacc/build_xclbn.sh refuses "
-                f"more); run the single-core fixtures on this bitstream, and "
-                f"widen NC before asking for this one")
+                f"core(s) but this package declares a program capacity of "
+                f"{self.capacity.program_words} words = NC {self.cores_implied} "
+                f"(PROG_WORDS = NC * {PROG_WORDS_PER_CORE}; "
+                f"{self.capacity.provenance}). The v1 packaging flow builds "
+                f"NC=1 only (scripts/hacc/build_xclbn.sh refuses more); run the "
+                f"single-core fixtures on this bitstream, and widen NC before "
+                f"asking for this one")
 
         program = decode_payload(fixture["program"], what=f"{fixture['name']}/program")
         stimulus = decode_payload(fixture["stimulus"], what=f"{fixture['name']}/stimulus")
-        program_words = len(program) // WORD_BYTES
-        stimulus_words = len(stimulus) // WORD_BYTES
-        require_program_fits(
-            program_words, stimulus_words, self._program_capacity,
-            transport=self.name)
+        words, walls = self._execute(
+            program, stimulus, self._capture_capacity)
 
-        started = time.monotonic()
-        program_bo = self._buffer(len(program), ARG_PROGRAM)
-        self._to_device(program_bo, program)
-        programming_s = time.monotonic() - started
-
-        started = time.monotonic()
-        stimulus_bo = self._buffer(len(stimulus), ARG_STIMULUS)
-        self._to_device(stimulus_bo, stimulus)
-        capture_bytes = capture_buffer_bytes(self._capture_capacity)
-        capture_bo = self._buffer(capture_bytes, ARG_CAPTURE)
-        handle = self._kernel(
-            program_bo, stimulus_bo, capture_bo,
-            program_words, stimulus_words, self._capture_capacity,
-        )
-        handle.wait()
-        status = self._kernel.read_register(ADDR_STATUS)
-        require_no_kernel_error(status, transport=self.name)
-        capture_bo.sync(
-            self._xrt.xclBOSyncDirection.XCL_BO_SYNC_BO_FROM_DEVICE,
-            capture_bytes, 0)
-        words = capture_words(capture_bo.read(capture_bytes, 0))
-        execution_s = time.monotonic() - started
-
-        events, device_cycles = decode_capture(words, self._capture_capacity)
+        events, device_cycles = decode_capture(
+            words, self._capture_capacity, transport=self.name)
         counts = fold_events(events, run)
         measured = window_counts(counts, run)
         expected = fixture["expected"]["window"]
@@ -614,25 +802,14 @@ class BoardSession:
             "fixture": fixture["name"],
             "self_hash": fixture["self_hash"],
             "transport": self.name,
-            "device": {
-                "xclbin": self.xclbin_path,
-                "kernel": KERNEL_NAME,
-                "device_index": self.device_index,
-                "capture_capacity": self._capture_capacity,
-                "program_capacity": self._program_capacity,
-                "cores_implied": self.cores_implied,
-                "status": int(status),
-                "ctrl": int(self._kernel.read_register(CTRL_OFFSET)),
-            },
+            "device": self.device_stamp(),
             "program_bytes": len(program),
-            "program_words": program_words,
-            "stimulus_words": stimulus_words,
+            "program_words": len(program) // WORD_BYTES,
+            "stimulus_words": len(stimulus) // WORD_BYTES,
             "capture_events": len(events),
+            "events_seen": int(words[HEADER_EVENTS_SEEN]),
             "device_cycles": device_cycles,
-            "walls": {
-                "programming_s": programming_s,
-                "execution_s": execution_s,
-            },
+            "walls": walls,
             "window_counts": measured,
             "certificate": certificate.as_dict(),
             "certificate_line": certificate.line(),
@@ -663,41 +840,90 @@ def write_result(results_dir: str, name: str, payload: Dict[str, Any]) -> str:
     return path
 
 
-def mode_probe(options) -> int:
-    """B0: load the xclbin, resolve the kernel, read the capacity/status CSRs."""
+def capacity_from_options(options) -> KernelCapacity:
+    """The capacity this session declares, and where that number came from."""
+    program_words = int(options.program_words or SHIPPED_PROGRAM_WORDS)
+    capture_ram = int(options.capture_ram_events or SHIPPED_CAPTURE_EVENTS)
+    provenance = SHIPPED_CAPACITY_PROVENANCE
+    overrides = []
+    if options.program_words:
+        overrides.append(f"--program-words {program_words}")
+    if options.capture_ram_events:
+        overrides.append(f"--capture-ram-events {capture_ram}")
+    if overrides:
+        provenance = (
+            f"OVERRIDDEN on the command line ({', '.join(overrides)}); the "
+            f"package's own declaration is: {SHIPPED_CAPACITY_PROVENANCE}")
+    return KernelCapacity(
+        program_words=program_words, capture_events=capture_ram,
+        provenance=provenance)
+
+
+def open_session(options, capacity: KernelCapacity | None = None) -> BoardSession:
     session = BoardSession(
         xclbin_path=options.xclbin, device_index=options.device_index,
-        capture_events=options.capture_events, fake_pyxrt=options.fake_pyxrt)
+        capture_events=options.capture_events,
+        capacity=capacity if capacity is not None else capacity_from_options(options),
+        run_timeout_ms=options.run_timeout_ms, fake_pyxrt=options.fake_pyxrt)
     session.open()
+    return session
+
+
+def mode_probe(options) -> int:
+    """B0: the xclbin declares this kernel, the card takes it, and it RUNS.
+
+    There is no CSR read to do — pyxrt binds none — so B0 is the round trip
+    instead: introspect the bitstream's own metadata, load it, open the CU
+    EXCLUSIVE, execute a one-token null program, and read the header the fabric
+    DMA'd back. Everything on that path is proven except the network itself.
+    """
+    session = open_session(options)
     try:
-        snapshot = session.status_snapshot()
+        report = session.device_stamp()
+        null = session.null_run()
     finally:
         session.close()
-    err, seen = decode_status(snapshot["status"])
-    snapshot.update({"err": err, "events_seen": seen, "host": host_stamp(),
-                     "fake_pyxrt": options.fake_pyxrt})
-    print(f"[probe] xclbin           : {snapshot['xclbin']}")
-    print(f"[probe] kernel           : {snapshot['kernel']} (exclusive)")
-    print(f"[probe] capture_capacity : {snapshot['capture_capacity']} events")
-    print(f"[probe] program_capacity : {snapshot['program_capacity']} words "
-          f"(=> NC {snapshot['cores_implied']})")
-    print(f"[probe] status 0x4C      : {snapshot['status']} (err={err}, "
-          f"events_seen={seen})")
-    path = write_result(options.results, "probe.json", snapshot)
+    report.update({"null_run": null, "host": host_stamp(),
+                   "fake_pyxrt": options.fake_pyxrt})
+    report["proves"] = [
+        "the xclbin's metadata declares "
+        f"{KERNEL_NAME} with {report['xclbin_kernels'].get(KERNEL_NAME)} args",
+        f"the card accepted the bitstream and gave a CU on device "
+        f"{report['device_index']} with EXCLUSIVE access",
+        "the six kernel arguments reached the CU and its AXI master read the "
+        "program and stimulus buffers out of host memory",
+        "the sequencer ran to its END token and the capture engine wrote its "
+        "two-word header",
+        "the AXI master wrote that header back into host memory, where this "
+        "driver read it",
+    ]
+    report["does_not_prove"] = (
+        "any spike count: no network is programmed by a null run, and the "
+        "fabric's `err` bit at 0x4C stays unreadable from Python — a sequencer "
+        "that refuses an opcode MID-run still drains a header, so B1's "
+        "certificate, not a typed refusal, is what catches it")
+    print(f"[probe] xclbin           : {report['xclbin']}")
+    print(f"[probe] xclbin kernels   : {report['xclbin_kernels']}")
+    print(f"[probe] memory banks     : "
+          f"{[bank['tag'] for bank in report['memory_banks']]}")
+    print(f"[probe] kernel           : {report['kernel']} (exclusive), "
+          f"group_ids {report['group_ids']}")
+    print(f"[probe] capture_capacity : {report['capture_capacity']} events")
+    print(f"[probe] program_capacity : {report['program_capacity']} words "
+          f"(=> NC {report['cores_implied']})")
+    print(f"[probe] capacity source  : {report['capacity']['provenance']}")
+    print(f"[probe] null run         : header {null['header_words']} "
+          f"(events_seen={null['events_seen']}, "
+          f"device_cycles={null['device_cycles']})")
+    path = write_result(options.results, "probe.json", report)
     print(f"[probe] wrote {path}")
-    if err:
-        print("[probe] REFUSING: the kernel's err bit is set before any run.")
-        return 1
     return 0
 
 
-def mode_run(options) -> int:
+def mode_run(options, capacity: KernelCapacity | None = None) -> int:
     """B1: every shipped fixture, one certificate line each, one summary."""
     paths = fixture_paths(options.fixtures, options.fixture)
-    session = BoardSession(
-        xclbin_path=options.xclbin, device_index=options.device_index,
-        capture_events=options.capture_events, fake_pyxrt=options.fake_pyxrt)
-    session.open()
+    session = open_session(options, capacity)
     rows: List[Dict[str, Any]] = []
     try:
         for path in paths:
@@ -787,6 +1013,18 @@ def mode_compare(options) -> int:
     return _summarize(options, rows, "join")
 
 
+def selftest_capacity(fixtures: Sequence[Dict[str, Any]]) -> KernelCapacity:
+    """A DECLARED geometry wide enough to exercise every shipped fixture."""
+    cores = max([int(item["run"]["cores"]) for item in fixtures] + [1])
+    return KernelCapacity(
+        program_words=cores * PROG_WORDS_PER_CORE,
+        provenance=(
+            f"selftest: a DECLARED NC={cores} geometry, wide enough for every "
+            f"shipped fixture, against no bitstream at all. The package builds "
+            f"NC={SHIPPED_KERNEL_CORES}, so a BOARD run SKIPS the multi-core "
+            f"fixtures — that skip is exercised by the 'nc1' refusal below"))
+
+
 def mode_selftest(options) -> int:
     """The whole driver, green, with no hardware anywhere near it.
 
@@ -800,43 +1038,58 @@ def mode_selftest(options) -> int:
             "--selftest needs --fake-pyxrt host/fake_pyxrt_for_selftest.py: "
             "the point of the selftest is that no device is involved")
     print("[selftest] STRUCTURE, NOT SILICON — the fake pyxrt answers with the "
-          "frozen fixture's own capture image.")
-    exit_code = mode_run(options)
-    if exit_code:
-        return exit_code
-    return _selftest_refusals(options)
-
-
-def _selftest_refusals(options) -> int:
-    """Every typed refusal, driven through the fake, on the first fixture."""
+          "frozen fixture's own capture image, over the REAL pyxrt surface "
+          "(github.com/Xilinx/XRT@2024.2 src/python/pybind11/src/pyxrt.cpp): "
+          "no register read exists anywhere in it.")
     loaded = [load_fixture(path)
               for path in fixture_paths(options.fixtures, options.fixture)]
+    capacity = selftest_capacity(loaded)
+    print(f"[selftest] capacity      : {capacity.provenance}")
+    exit_code = mode_run(options, capacity)
+    if exit_code:
+        return exit_code
+    return _selftest_refusals(options, loaded)
+
+
+#: Every typed refusal, and how a device can actually produce it. A capacity
+#: fault is injected as a DECLARATION (nothing can be read back off a card); a
+#: capture fault is injected into the fake's answer.
+_REFUSAL_CASES = (
+    ("no_storage", OdinDriverError, "silent empty one",
+     KernelCapacity(program_words=0, capture_events=0,
+                    provenance="selftest: a package declaring no storage")),
+    ("tiny_program_ram", OdinFpgaProgramTooLarge, "program RAM holds 64",
+     KernelCapacity(program_words=64,
+                    provenance="selftest: a 64-word program RAM")),
+    ("kernel_err", OdinFpgaKernelError, "NO-VERDICT sentinel", None),
+    ("truncated_capture", OdinFpgaCaptureTruncated, "silent neurons", None),
+)
+
+
+def _selftest_refusals(options, loaded: Sequence[Dict[str, Any]]) -> int:
+    """Every typed refusal, driven through the fake, on the first fixture."""
     # The refusal cases run on the SMALLEST fixture: a shrunken program RAM must
     # be refused for not fitting the payload, not for holding too few cores.
     fixture = min(loaded, key=lambda item: int(item["run"]["cores"]))
     multi_core = next(
         (item for item in loaded if int(item["run"]["cores"]) > 1), None)
-    cases = [
-        (fixture, "no_storage", OdinDriverError, "silent empty one"),
-        (fixture, "kernel_err", OdinFpgaKernelError, "raised err"),
-        (fixture, "truncated_capture", OdinFpgaCaptureTruncated,
-         "silent neurons"),
-        (fixture, "tiny_program_ram", OdinFpgaProgramTooLarge,
-         "program RAM holds"),
-    ]
+    cases = [(fixture, fault, error, needle, capacity)
+             for fault, error, needle, capacity in _REFUSAL_CASES]
     if multi_core is not None:
-        cases.append(
-            (multi_core, "nc1", OdinFixtureNeedsMoreCores, "NC 1"))
+        cases.append((
+            multi_core, "nc1", OdinFixtureNeedsMoreCores, "NC 1",
+            KernelCapacity(
+                program_words=PROG_WORDS_PER_CORE,
+                provenance="selftest: the NC=1 geometry build_xclbn.sh builds")))
     rows = []
     module = load_pyxrt(options.fake_pyxrt)
-    for case_fixture, fault, expected, needle in cases:
-        session = BoardSession(
-            xclbin_path=options.xclbin, device_index=options.device_index,
-            capture_events=options.capture_events,
-            fake_pyxrt=options.fake_pyxrt)
+    for case_fixture, fault, expected, needle, capacity in cases:
+        session = None
         module.arm(case_fixture, fault=fault)
         try:
-            session.open()
+            session = open_session(
+                options,
+                capacity if capacity is not None else selftest_capacity(loaded))
             session.run_fixture(case_fixture)
         except expected as exc:
             ok = needle in str(exc)
@@ -852,7 +1105,8 @@ def _selftest_refusals(options) -> int:
             continue
         finally:
             module.arm(fault=None)
-            session.close()
+            if session is not None:
+                session.close()
         print(f"[selftest] refusal {fault}: NO REFUSAL — the driver ran a "
               f"broken device to completion")
         rows.append({"fault": fault, "raised": None, "message_ok": False,
@@ -909,11 +1163,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--capture-events", type=int,
                         default=DEFAULT_CAPTURE_EVENTS,
                         help="the HOST's capture ceiling; the session takes the "
-                             "min of it and the fabric's own")
+                             "min of it and the fabric's declared one")
+    parser.add_argument("--program-words", type=int, default=0,
+                        help=f"declare a program RAM other than the packaged "
+                             f"{SHIPPED_PROGRAM_WORDS} words (no host can read "
+                             f"it back; the override is recorded in every "
+                             f"refusal it causes)")
+    parser.add_argument("--capture-ram-events", type=int, default=0,
+                        help=f"declare a capture RAM other than the packaged "
+                             f"{SHIPPED_CAPTURE_EVENTS} records")
+    parser.add_argument("--run-timeout-ms", type=int,
+                        default=BLOCK_UNTIL_DONE_MS,
+                        help="bound run.wait(); 0 blocks until the kernel is done")
     parser.add_argument("--fake-pyxrt", default=None,
                         help="import this module instead of pyxrt (no hardware)")
     parser.add_argument("--probe", action="store_true",
-                        help="B0: load, resolve, read the CSRs, run nothing")
+                        help="B0: introspect, load, open exclusive, run a null "
+                             "program, read the header back")
     parser.add_argument("--selftest", action="store_true",
                         help="run every fixture and every refusal against a fake")
     parser.add_argument("--reference", action="store_true",

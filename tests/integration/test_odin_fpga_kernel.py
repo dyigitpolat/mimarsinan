@@ -43,13 +43,12 @@ from integration.odin_rtl_harness import (
 )
 
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
+    CAPTURE_HEADER_WORDS,
     SHIPPED_CAPTURE_EVENTS,
     SHIPPED_CAPTURE_WORDS,
-    STATUS_ERR_BIT,
     OdinFpgaCaptureTruncated,
-    OdinFpgaKernelError,
     decode_capture,
-    require_no_kernel_error,
+    require_kernel_verdict,
 )
 from mimarsinan.chip_simulation.odin_fpga.kernel_sim import (
     KERNEL_TOP,
@@ -230,19 +229,30 @@ class TestTheKernelIsHonestWhenItCannotComply:
                 (status.events_seen, capture.cycles),
                 capacity=status.capture_capacity)
 
-    def test_an_unimplemented_opcode_raises_err_on_the_status_register(self):
-        # SHADOW has no fabric implementation (config registers have no
-        # readback path on silicon), so the sequencer must REFUSE it.
+    def test_an_unimplemented_opcode_raises_err_where_only_the_fabric_can_see_it(
+        self,
+    ):
+        """SHADOW has no fabric implementation, so the sequencer must REFUSE it.
+
+        AND THE HOST CANNOT SEE THAT REFUSAL. `err` lands on the AXI-Lite status
+        register at 0x4C, which this testbench reads over the bus and which NO
+        Python host can read: pyxrt binds no read_register (P7b field failure,
+        2026-08-25). The sequencer still reaches its terminal state, so it still
+        drains the two-word header, so the host's only channel comes back
+        carrying a VERDICT. This test pins that gap open rather than papering
+        over it: on a card, what catches a refused opcode is B1's certificate
+        (the counts are wrong), not a typed refusal.
+        """
         with timed("P7a wrapper bad opcode"):
-            _capture, status, _build, _run = run_kernel_program_over_axi(
+            capture, status, _build, _run = run_kernel_program_over_axi(
                 [Op(OP_SHADOW, (0, 0, 0))], n_cores=1)
         assert status.err
         assert status.events_seen == 0
-        # The host reads that same status word and REFUSES by name rather than
-        # decoding a capture the fabric never filled.
-        with pytest.raises(OdinFpgaKernelError, match="REFUSED"):
-            require_no_kernel_error(
-                STATUS_ERR_BIT | status.events_seen, transport="xrt")
+        # The header the host WOULD read back is a real one, not the sentinel.
+        header = (status.events_seen, capture.cycles)
+        assert len(header) == CAPTURE_HEADER_WORDS
+        require_kernel_verdict(header, transport="xrt")
+        assert decode_capture(header, capacity=SHIPPED_CAPTURE_EVENTS) == ((), header[1])
 
     def test_the_same_program_without_the_bad_opcode_does_not_raise_err(self):
         with timed("P7a wrapper clean control program"):

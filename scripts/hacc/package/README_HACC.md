@@ -77,7 +77,7 @@ second one refuses by pid, and anything already finished is kept, not redone.
 | 2 | build `hw_emu` + a bounded emulation smoke | a compile partition | ~15 min + smoke |
 | 3 | build `hw` (the real bitstream) | a compile partition | **2–6 h** |
 | 4 | stage the xclbin under `/data/${USER}/odin` | hacchead | seconds |
-| 5 | **B0**: load, resolve, read the CSRs | a board partition for your card | < 1 board hour |
+| 5 | **B0**: introspect, load, open EXCLUSIVE, run a null program, read its header back | a board partition for your card | < 1 board hour |
 | 6 | **B1**: every fixture, certified | a board partition for your card | < 1 board hour |
 | 7 | board + independent reference in one job | a joint partition | queue-bound |
 
@@ -191,12 +191,13 @@ unknown, not slow-but-fine, and B0/B1 on silicon supersede it either way.
 `ODIN_EMU_SMOKE=all` runs all five fixtures; `ODIN_EMU_SMOKE=off` skips it.
 
 **hw_emu proves:** the packaged kernel opens by its name
-(`odin_fpga_kernel_top`); the `s_axilite` register map answers — the two
-read-only capacity registers report the geometry the bitstream was compiled
-with, and the status register reports `err`; the AXI master moves the program
-and stimulus payloads and the sequencer executes them; the capture buffer
-decodes into the per-neuron counts this package froze from the RTL
-cosimulation. A packaging error — a port mismatch, a wrong offset, a kernel that
+(`odin_fpga_kernel_top`) with the six arguments the frozen `kernel.xml`
+declares; the AXI master moves the program and stimulus payloads and the
+sequencer executes them; the capture buffer comes home carrying a header the
+fabric wrote, and decodes into the per-neuron counts this package froze from the
+RTL cosimulation. (It cannot prove anything about the `s_axilite` status or
+capacity registers: pyxrt binds no register access, so no host reads them —
+see `host/odin_board_driver.py`.) A packaging error — a port mismatch, a wrong offset, a kernel that
 does not resolve — dies here instead of costing a board hour.
 
 **Only silicon proves:** real memory ordering behind a real XDMA shell — HBM on
@@ -247,7 +248,8 @@ Each fixture prints one line in the house format:
 different chip, not a looser tolerance — anything other than
 `exact=1.000000 max|dcount|=0` is a finding.
 
-Results land as JSON under `results/`: `probe.json` (B0's CSR read),
+Results land as JSON under `results/`: `probe.json` (B0's round trip, with its
+own `proves` / `does_not_prove` lists),
 `fixture_<name>.json` per fixture, `summary_board.json`, and for phase 7
 `summary_join.json`. The measured walls are in each fixture's `walls`:
 programming (the payload DMA) is reported separately from execution and is
@@ -265,13 +267,17 @@ first.
    with Vitis 2022.2; `hacc_demo/doc/0-login.md` still shows 2.14.384 for the
    same shell and is stale. A mismatch against what the xclbin was linked with
    is triage step 1, not a footnote.
-2. **The capacity registers (phase 5).** Do `capture_capacity` and
-   `program_capacity` read back the geometry you built? A wrong pair means the
-   loaded xclbin is not the one you think it is.
-3. **`err` on the status register.** `err = 1` is the fabric REFUSING, not
-   disagreeing: an opcode it does not implement, an AER handshake that timed
-   out, or a payload that did not fit. The driver names it
-   `OdinFpgaKernelError` and decodes nothing.
+2. **The B0 round trip (phase 5).** Did the null program come home with a
+   header the fabric wrote? `probe.json` also records the capacity this package
+   DECLARES — nothing can read it back off a card — so compare it against the
+   `.built_with` sidecar of the xclbin you staged. A mismatch means the loaded
+   xclbin is not the one you think it is.
+3. **`OdinFpgaKernelError`.** The capture header came back still carrying the
+   host's no-verdict sentinel: the fabric refused at `ap_start` and never
+   drained, almost always because the built geometry is smaller than the
+   declared one. A sequencer that refuses an opcode MID-run is invisible to the
+   host (its `err` bit lives on `0x4C`, which pyxrt cannot read) and shows up as
+   a FAILING certificate with missing counts instead.
 4. **`OdinFpgaCaptureTruncated`.** The capture RAM filled. Raise `CAP_WORDS` in
    `hw/fpga/kernel/odin_fpga_kernel_top.v` and rebuild; the counts of a
    truncated run are not a result. Lowering the sample count until it fits is a

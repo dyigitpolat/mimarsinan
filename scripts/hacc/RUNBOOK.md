@@ -154,7 +154,7 @@ Two phases, in this order:
 
 | Phase | What it is | What it costs | Gate to leave it |
 |---|---|---|---|
-| **B0** | build → load → CSR/status smoke on one board | one build (2–6 h) + <1 board hour | the card enumerates, the kernel's capacity registers read back the geometry you built, and one tiny run returns `err=0` |
+| **B0** | build → introspect → load → **null-program round trip** on one board | one build (2–6 h) + <1 board hour | the xclbin's metadata declares `odin_fpga_kernel_top` with its six arguments, the card takes the bitstream, the CU opens EXCLUSIVE, and a one-token null program comes back with a capture header the fabric wrote |
 | **B1** | the parity campaign + measured walls | board hours | `PASS exact=1.000000 max\|dcount\|=0`, plus the two measured walls |
 
 ---
@@ -259,9 +259,18 @@ the RTL parameter exists, the `package_xo` plumbing for it is a P7b follow-up)
 (≈147.6k program words are needed to SPI-program ONE stock core, and a
 16384-word capture RAM holds 4095 event records — it is a BLOCK RAM, 16
 RAMB36E2 tiles, which is what makes that depth shippable at all; see
-`docs/odin_fpga_compile_limits_study.md`). The host does not assume
-these: it reads them back from the read-only registers at `0x5C` and `0x54` and
-REFUSES a run that would overrun either. If a run refuses with
+`docs/odin_fpga_compile_limits_study.md`). **The host cannot read these back.**
+The kernel does implement read-only registers at `0x5C` and `0x54`, and the RTL
+testbench reads them over AXI-Lite — but the XRT Python binding binds no
+register access at all (`github.com/Xilinx/XRT@2024.2`,
+`src/python/pybind11/src/pyxrt.cpp`; a driver that tried died on a U250 on
+2026-08-25). So the host DECLARES them from the sources the xclbin was compiled
+from — `kernel_registers.SHIPPED_*`, mirrored in the shipped driver — and every
+refusal that spends a capacity prints that provenance in its own text. A
+bitstream built with a SMALLER geometry than the package declares is caught the
+one way memory allows: the fabric refuses at `ap_start`, never drains, and the
+host's no-verdict sentinel comes home untouched (`OdinFpgaKernelError`).
+If a run refuses with
 `OdinFpgaProgramTooLarge` or `OdinFpgaCaptureTruncated`, raise the parameter in
 `hw/fpga/kernel/odin_fpga_kernel_top.v` and rebuild. Lowering the sample count
 until it fits is a way to get a number, not a way to get a result.
@@ -333,11 +342,15 @@ environment override, and `run_board.sh` copies the stage directory to
 Everything else stays exactly as the local run: same mapping, same soma law,
 same exporter. That is the point of the transport seam.
 
-## 5. Phase B0 — build, load, CSR/status smoke
+## 5. Phase B0 — build, introspect, load, and run a null program
 
-This is the first thing you do with a board, and it is short. It answers
-"does this bitstream load and does the kernel answer its own register map",
+This is the first thing you do with a board, and it is short. It answers "does
+this bitstream reach a card and does the whole host↔fabric round trip close",
 which is everything the local gates cannot answer.
+
+B0 used to be a CSR read. It cannot be: **pyxrt binds no `read_register`**, and
+the driver that assumed otherwise crashed on a U250 at its first CSR touch on
+2026-08-25. So B0 is now the round trip instead, which proves strictly more.
 
 ```bash
 srun -p xilinx_u55c_gen3x16_xdma_3_202210_1 -n 1 --pty bash -i
@@ -353,20 +366,31 @@ order:
 
 1. `xbutil examine` lists the card, the shell is
    `xilinx_u55c_gen3x16_xdma_3_202210_1`, and the XRT version matches §2.
-2. The xclbin loads and the kernel resolves by name
-   (`odin_fpga_kernel_top`) — a failure here is packaging, not physics.
-3. The session's opening register reads succeed: `capture_capacity` and
-   `program_capacity` in the run's `detail` must equal the geometry you built
-   (16383 and `NC * 262144` by default). A zero there refuses at `open()` by
-   design — it means the host is talking to something that is not this kernel.
-4. The run finishes with `err = 0` on the status register at `0x4C`. An `err`
-   raises `OdinFpgaKernelError` naming how many events the fabric saw.
+2. **Introspection.** `pyxrt.xclbin(path).get_kernels()` declares
+   `odin_fpga_kernel_top` with its six arguments, and `get_mems()` names the
+   bank `gmem` is mapped onto. This happens BEFORE the card is touched, so a
+   wrong bitstream costs no load — a failure here is packaging, not physics.
+3. **Load and open.** The device takes the xclbin and the CU resolves by name
+   with **EXCLUSIVE** access.
+4. **The null-program round trip.** The driver sends a one-word program (a
+   single `END` token), a one-word stimulus, and a capture buffer whose two
+   header words carry the no-verdict sentinel `0xFFFFFFFF`. It waits on the
+   run's `ert_cmd_state`, syncs the capture back, and reads the header. Passing
+   means: the six arguments reached the CU, its AXI master read host memory,
+   the sequencer executed, the capture engine wrote its header, and the master
+   wrote that header back into host memory. `events_seen` must be `0` — a
+   fabric that spikes with no network loaded is not this design.
 
-**CU access mode.** The transport opens the kernel with **exclusive** access —
-register reads (`0x4C`/`0x54`/`0x5C`) require it, and the deployment owns the
-board for the whole reservation. If a future setup must share the CU, set
-`rw_shared=true` under `[Runtime]` in `xrt.ini` and change the open mode
-deliberately; do not weaken it by default.
+`results/board_probe/probe.json` carries the whole report plus two explicit
+lists, `proves` and `does_not_prove`. Read the second one: B0 does not prove any
+spike count, and it cannot see the fabric's `err` bit, because a sequencer that
+refuses an opcode MID-run still drains a header. What catches that is B1's
+certificate.
+
+**CU access mode.** The driver opens the kernel with **exclusive** access: the
+deployment owns the board for the whole reservation, and a shared CU would let
+another job's run interleave with this one's capture buffer. (It is no longer
+about register reads — there are none.)
 
 **Known simulation-coverage limits** (the AXI model proves the payload path,
 not these): the datapath is 32-bit-beat only (any other `C_M_AXI_DATA_WIDTH`
@@ -376,9 +400,9 @@ by inspection only); RRESP/BRESP error paths are untested (the tb slave always
 answers OKAY). A board-side AXI anomaly can therefore live in exactly these
 three shadows — check them before blaming the ODIN core, which R11a proved.
 
-If all four hold, B0 is passed: the bitstream loads, the register map answers,
-and the DMA has moved real bytes across a real shell. Only then is a campaign
-worth board hours.
+If all four hold, B0 is passed: the bitstream loads, the arguments land, and
+the DMA has moved real bytes across a real shell in BOTH directions. Only then
+is a campaign worth board hours.
 
 ## 6. Phase B1 — the parity campaign
 
@@ -432,14 +456,18 @@ and most likely first:
 1. **Shell / XRT version.** `xbutil examine` on the node against §2's table and
    against what the xclbin was linked with. This is the single most common
    cause and it costs nothing to check.
-2. **The CSR smoke (B0 step 3).** Do the capacity registers read back the
-   geometry you built? A wrong `capture_capacity`/`program_capacity` means the
-   loaded xclbin is not the one you think it is.
-3. **The capture status (B0 step 4).** `err = 1` is the fabric REFUSING, not
-   disagreeing: an opcode it does not implement, an AER timeout, or a payload
-   that did not fit. `OdinFpgaCaptureTruncated` means the capture RAM filled —
-   raise `CAP_WORDS` and rebuild; the counts of a truncated run are not a
-   result.
+2. **The B0 round trip (B0 step 4).** Did the null program come back with a
+   header the fabric wrote? `OdinFpgaKernelError: ... NO-VERDICT sentinel` means
+   the kernel refused at `ap_start` and never drained — almost always an xclbin
+   built with a smaller `PROG_WORDS`/`CAP_WORDS` than the package declares, i.e.
+   the loaded bitstream is not the one you think it is. Nothing can read the
+   geometry back off the card, so compare `probe.json`'s declared capacity
+   against the `.built_with` sidecar of the xclbin you staged.
+3. **The capture header (B1).** `OdinFpgaCaptureTruncated` means the capture RAM
+   filled — raise `CAP_WORDS` and rebuild; the counts of a truncated run are not
+   a result. A sequencer that REFUSED an opcode (`err = 1` on `0x4C`) is
+   invisible to the host and shows up as a FAILING certificate with missing
+   counts, not as a typed refusal.
 4. **Re-run the SAME config with `odin_fpga_transport: "rtl_cosim"`** on the
    node. Same program bytes, no board. If that passes and the board does not,
    the divergence is in the shell, the silicon, or timing closure — not in the

@@ -58,10 +58,11 @@ ls -l "${PKG}/build/hacc/${TARGET}_nc1/"
 # --- the hw_emu smoke, ON THIS BUILD NODE, with NO card ----------------------
 # XCL_EMULATION_MODE=hw_emu makes XRT bind to the QEMU/RTL emulation model that
 # v++ packaged into the xclbin instead of to a device, so this runs on cpu_only.
-# WHAT IT PROVES: the packaged kernel opens by name, the s_axilite register map
-# answers (capacity registers, status), the AXI master moves the program and
-# stimulus payloads, the sequencer executes them and the capture buffer decodes
-# into the frozen counts. WHAT IT CANNOT PROVE: HBM ordering behind a real XDMA
+# WHAT IT PROVES: the packaged kernel opens by name with its six frozen
+# arguments, the AXI master moves the program and stimulus payloads, the
+# sequencer executes them, and the capture buffer comes home carrying a header
+# the fabric wrote, decoding into the frozen counts. (No register is read
+# anywhere: pyxrt binds no read_register -- field-falsified 2026-08-25.) WHAT IT CANNOT PROVE: HBM ordering behind a real XDMA
 # shell, XRT's buffer allocation on silicon, and timing closure — that is B0/B1.
 #
 # AND IT IS BOUNDED. An xsim-backed hw_emu run has no published wall: the

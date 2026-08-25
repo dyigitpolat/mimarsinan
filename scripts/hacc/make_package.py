@@ -89,19 +89,10 @@ from integration.odin_rtl_harness import (  # noqa: E402
     traces_for,
 )
 
+from mimarsinan.chip_simulation.odin_fpga import kernel_registers  # noqa: E402
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (  # noqa: E402
-    ADDR_CAPTURE_CAPACITY,
-    ADDR_PROGRAM_CAPACITY,
-    ADDR_STATUS,
-    ARG_CAPTURE,
-    ARG_PROGRAM,
-    ARG_STIMULUS,
-    CAPTURE_HEADER_WORDS,
-    CAPTURE_RECORD_WORDS,
-    CTRL_OFFSET,
     KERNEL_NAME,
     SHIPPED_CAPTURE_EVENTS,
-    STATUS_ERR_BIT,
     WORD_BYTES,
 )
 from mimarsinan.chip_simulation.odin_fpga.payload import split_payloads  # noqa: E402
@@ -444,20 +435,51 @@ def rtl_digest() -> str:
     return digest.hexdigest()
 
 
-KERNEL_TABLE = {
-    "name": KERNEL_NAME,
-    "arg_program": ARG_PROGRAM,
-    "arg_stimulus": ARG_STIMULUS,
-    "arg_capture": ARG_CAPTURE,
-    "ctrl_offset": CTRL_OFFSET,
-    "addr_status": ADDR_STATUS,
-    "addr_capture_capacity": ADDR_CAPTURE_CAPACITY,
-    "addr_program_capacity": ADDR_PROGRAM_CAPACITY,
-    "status_err_bit": STATUS_ERR_BIT,
-    "capture_header_words": CAPTURE_HEADER_WORDS,
-    "capture_record_words": CAPTURE_RECORD_WORDS,
-    "word_bytes": WORD_BYTES,
-}
+#: ONE device-protocol table. The driver is the file the board node runs, so the
+#: driver's copy is the one that ships; packaging REFUSES if the repository-side
+#: SSOT (`kernel_registers`) has drifted from it, because two tables that
+#: disagree would drive a kernel nobody built.
+KERNEL_TABLE = dict(driver.KERNEL_TABLE)
+
+#: (driver name, kernel_registers name) for every constant both halves declare.
+_PROTOCOL_MIRRORS = (
+    ("KERNEL_NAME", "KERNEL_NAME"),
+    ("ARG_PROGRAM", "ARG_PROGRAM"),
+    ("ARG_STIMULUS", "ARG_STIMULUS"),
+    ("ARG_CAPTURE", "ARG_CAPTURE"),
+    ("ARG_PROGRAM_WORDS", "ARG_PROGRAM_WORDS"),
+    ("ARG_STIMULUS_WORDS", "ARG_STIMULUS_WORDS"),
+    ("ARG_CAPTURE_WORDS", "ARG_CAPTURE_WORDS"),
+    ("KERNEL_ARGS", "KERNEL_ARGS"),
+    ("WORD_BYTES", "WORD_BYTES"),
+    ("CAPTURE_HEADER_WORDS", "CAPTURE_HEADER_WORDS"),
+    ("HEADER_EVENTS_SEEN", "HEADER_EVENTS_SEEN"),
+    ("HEADER_DEVICE_CYCLES", "HEADER_DEVICE_CYCLES"),
+    ("CAPTURE_RECORD_WORDS", "CAPTURE_RECORD_WORDS"),
+    ("RECORD_TAG", "RECORD_TAG"),
+    ("RECORD_CYCLE", "RECORD_CYCLE"),
+    ("RECORD_CORE", "RECORD_CORE"),
+    ("RECORD_NEURON", "RECORD_NEURON"),
+    ("CAPTURE_NO_VERDICT", "CAPTURE_NO_VERDICT"),
+    ("SHIPPED_PROGRAM_WORDS", "SHIPPED_PROGRAM_WORDS"),
+    ("SHIPPED_CAPTURE_WORDS", "SHIPPED_CAPTURE_WORDS"),
+    ("SHIPPED_CAPTURE_EVENTS", "SHIPPED_CAPTURE_EVENTS"),
+)
+
+
+def require_protocol_agrees() -> None:
+    """The shipped driver and the repository SSOT declare the SAME protocol."""
+    drifted = [
+        (theirs, getattr(driver, mine), getattr(kernel_registers, theirs))
+        for mine, theirs in _PROTOCOL_MIRRORS
+        if getattr(driver, mine) != getattr(kernel_registers, theirs)
+    ]
+    if drifted:
+        raise PackagingRefusal(
+            f"the shipped driver and kernel_registers disagree about the device "
+            f"protocol: {drifted} (name, driver, repo). One of the two was "
+            f"edited alone; a package built from halves would drive a kernel "
+            f"nobody built")
 
 
 # ---------------------------------------------------------------------------
@@ -802,6 +824,7 @@ def main() -> int:
                         help="freeze only this fixture (repeatable, for triage)")
     options = parser.parse_args()
 
+    require_protocol_agrees()
     engine = available_engine()
     head, dirty = git_head()
     rtl = rtl_digest()

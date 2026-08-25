@@ -1,0 +1,145 @@
+{
+  "provenance": {
+    "source": "https://github.com/Xilinx/XRT/blob/2024.2/src/python/pybind11/src/pyxrt.cpp",
+    "repository": "github.com/Xilinx/XRT",
+    "branch": "2024.2",
+    "runtime": "XRT 2.18.x, the runtime HACC@NUS ships",
+    "fetched_utc": "2026-08-25",
+    "why": "Transcribed from the pybind11 module definition itself, class by class and .def() by .def(). It is the ONLY authority for what a host driver may call: the previous fake carried a kernel.read_register that does not exist here, and the shipped driver died on a U250 at its first CSR touch on 2026-08-25.",
+    "absent_on_purpose": [
+      "kernel.read_register",
+      "kernel.write_register",
+      "ip",
+      "kernel.offset"
+    ]
+  },
+  "module": [
+    "XCL_BO_FLAGS_NONE",
+    "xclBOSyncDirection",
+    "ert_cmd_state",
+    "xrt_info_device",
+    "xrt_msg_level",
+    "emergency",
+    "alert",
+    "critical",
+    "error",
+    "warning",
+    "notice",
+    "info",
+    "debug",
+    "enumerate_devices",
+    "log_message",
+    "uuid",
+    "hw_context",
+    "device",
+    "run",
+    "kernel",
+    "bo",
+    "xclbin",
+    "xclbinip_vector",
+    "xclbinkernel_vector",
+    "xclbinmem_vector"
+  ],
+  "classes": {
+    "uuid": ["to_string"],
+    "hw_context": [],
+    "device": [
+      "load_xclbin",
+      "register_xclbin",
+      "get_xclbin_uuid",
+      "get_info"
+    ],
+    "run": ["start", "set_arg", "wait", "state", "add_callback"],
+    "kernel": ["cu_access_mode", "exclusive", "shared", "none", "group_id"],
+    "kernel.cu_access_mode": ["exclusive", "shared", "none"],
+    "bo": [
+      "flags",
+      "normal",
+      "cacheable",
+      "device_only",
+      "host_only",
+      "p2p",
+      "svm",
+      "write",
+      "read",
+      "sync",
+      "map",
+      "size",
+      "address"
+    ],
+    "bo.flags": [
+      "normal",
+      "cacheable",
+      "device_only",
+      "host_only",
+      "p2p",
+      "svm"
+    ],
+    "xclbin": [
+      "xclbinip",
+      "xclbinkernel",
+      "xclbinmem",
+      "get_kernels",
+      "get_xsa_name",
+      "get_uuid",
+      "get_mems",
+      "get_axlf"
+    ],
+    "xclbin.xclbinip": ["get_name"],
+    "xclbin.xclbinkernel": ["get_name", "get_num_args"],
+    "xclbin.xclbinmem": [
+      "get_tag",
+      "get_base_address",
+      "get_size_kb",
+      "get_used",
+      "get_index"
+    ],
+    "xclBOSyncDirection": [
+      "XCL_BO_SYNC_BO_TO_DEVICE",
+      "XCL_BO_SYNC_BO_FROM_DEVICE",
+      "XCL_BO_SYNC_BO_GMIO_TO_AIE",
+      "XCL_BO_SYNC_BO_AIE_TO_GMIO"
+    ],
+    "ert_cmd_state": [
+      "ERT_CMD_STATE_NEW",
+      "ERT_CMD_STATE_QUEUED",
+      "ERT_CMD_STATE_COMPLETED",
+      "ERT_CMD_STATE_ERROR",
+      "ERT_CMD_STATE_ABORT",
+      "ERT_CMD_STATE_SUBMITTED",
+      "ERT_CMD_STATE_TIMEOUT",
+      "ERT_CMD_STATE_NORESPONSE",
+      "ERT_CMD_STATE_SKERROR",
+      "ERT_CMD_STATE_SKCRASHED"
+    ],
+    "xrt_info_device": [
+      "bdf",
+      "interface_uuid",
+      "kdma",
+      "max_clock_frequency_mhz",
+      "m2m",
+      "name",
+      "nodma",
+      "offline",
+      "electrical",
+      "thermal",
+      "mechanical",
+      "memory",
+      "platform",
+      "pcie_info",
+      "host",
+      "dynamic_regions",
+      "vmr"
+    ],
+    "xrt_msg_level": [
+      "emergency",
+      "alert",
+      "critical",
+      "error",
+      "warning",
+      "notice",
+      "info",
+      "debug"
+    ]
+  }
+}

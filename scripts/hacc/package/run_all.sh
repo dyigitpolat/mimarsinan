@@ -14,7 +14,9 @@
 #   2  build hw_emu         a compile partition + a bounded hw_emu smoke there
 #   3  build hw             a compile partition, the real bitstream (2-6 h)
 #   4  stage                the xclbin onto the shared filesystem
-#   5  B0 smoke             load the xclbin on the card, read the CSRs
+#   5  B0 smoke             introspect + load the xclbin, then a null-program
+#                          round trip: nothing reads a register, because pyxrt
+#                          binds none (field-falsified 2026-08-25)
 #   6  B1 campaign          every shipped fixture, certified
 #   7  joint run            board + independent reference in one job, joined
 #
@@ -598,10 +600,15 @@ submit_board() {
 phase_5() {
     pick_partition board "${ODIN_BOARD_PARTITION:-}" "${BOARD_CANDIDATES[@]}" || return 2
     head_line "phase 5: B0 smoke on ${PICKED}"
-    say "Load the xclbin, resolve odin_fpga_kernel_top with EXCLUSIVE access,"
-    say "read capture_capacity (0x54), program_capacity (0x5C) and status"
-    say "(0x4C). A zero capacity refuses at open by design: it means the host is"
-    say "talking to something that is not this kernel."
+    say "There is no CSR read to do: the XRT Python binding binds no"
+    say "read_register at all (github.com/Xilinx/XRT@2024.2), and the driver"
+    say "that assumed one died on a U250 on 2026-08-25. B0 is the ROUND TRIP"
+    say "instead, which proves strictly more: the xclbin's own metadata must"
+    say "declare odin_fpga_kernel_top with its six arguments, the card must take"
+    say "the bitstream, the CU must open EXCLUSIVE, and a one-token NULL PROGRAM"
+    say "must come back with a capture header the fabric wrote — arguments in,"
+    say "DMA out, sequencer run, header DMA'd home. probe.json carries what that"
+    say "proves and what it does not."
     submit_board probe
 }
 
@@ -696,7 +703,8 @@ phase_done() {
             ;;
         5)
             if [ -f "${RESULTS}/board_probe/probe.json" ]; then
-                DONE_WHY="${RESULTS}/board_probe/probe.json — the CSRs were read"
+                DONE_WHY="${RESULTS}/board_probe/probe.json — the null-program"
+                DONE_WHY="${DONE_WHY} round trip closed"
                 return 0
             fi
             return 1

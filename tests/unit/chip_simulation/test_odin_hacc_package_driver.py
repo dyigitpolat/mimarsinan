@@ -10,6 +10,12 @@ What these tests drive is the file that gets zipped, loaded by path, against the
 fake ``pyxrt`` that gets zipped next to it: the seal, the refusals a corrupted
 upload must earn, the window rule, and the certificate the owner will read off
 a board log. Silicon is still the board's job; the CALL CONTRACT is ours.
+
+THE CONTRACT CHANGED ON 2026-08-25. pyxrt binds no register access at all
+(``test_odin_pyxrt_surface.py`` holds the evidence), so the call order asserted
+below has no CSR read in it: capacities are DECLARED, and the kernel's verdict
+arrives as the capture header it DMAs back — or, when it refuses, as the
+host's no-verdict sentinel coming home untouched.
 """
 
 from __future__ import annotations
@@ -71,20 +77,7 @@ def _fixture(driver, *, cores=1, samples=2):
         "provenance": {"generating_commit": "0" * 40, "worktree_dirty": True,
                        "rtl_sha256": "0" * 64, "cosim_engine": "none",
                        "generator": "unit test"},
-        "kernel": {
-            "name": driver.KERNEL_NAME,
-            "arg_program": driver.ARG_PROGRAM,
-            "arg_stimulus": driver.ARG_STIMULUS,
-            "arg_capture": driver.ARG_CAPTURE,
-            "ctrl_offset": driver.CTRL_OFFSET,
-            "addr_status": driver.ADDR_STATUS,
-            "addr_capture_capacity": driver.ADDR_CAPTURE_CAPACITY,
-            "addr_program_capacity": driver.ADDR_PROGRAM_CAPACITY,
-            "status_err_bit": driver.STATUS_ERR_BIT,
-            "capture_header_words": driver.CAPTURE_HEADER_WORDS,
-            "capture_record_words": driver.CAPTURE_RECORD_WORDS,
-            "word_bytes": driver.WORD_BYTES,
-        },
+        "kernel": dict(driver.KERNEL_TABLE),
         "program": driver.encode_payload(program),
         "stimulus": driver.encode_payload(stimulus),
         "run": {
@@ -101,11 +94,22 @@ def _fixture(driver, *, cores=1, samples=2):
     return driver.seal(document)
 
 
-def _session(driver, fixture, tmp_path, **overrides):
+def _capacity(driver, *, cores=1, **overrides):
+    """A DECLARED geometry: no host can read one back off a card."""
+    fields = {
+        "program_words": cores * driver.PROG_WORDS_PER_CORE,
+        "provenance": f"unit test: a declared NC={cores} geometry",
+    }
+    fields.update(overrides)
+    return driver.KernelCapacity(**fields)
+
+
+def _session(driver, *, cores=1, capacity=None, **overrides):
     session = driver.BoardSession(
         xclbin_path="/unit/none.xclbin", fake_pyxrt=str(FAKE_PATH),
+        capacity=capacity if capacity is not None else _capacity(
+            driver, cores=cores),
         **overrides)
-    del tmp_path
     session.open()
     return session
 
@@ -135,12 +139,22 @@ class TestTheSealIsOneImplementation:
         with pytest.raises(driver.OdinFixtureCorrupt, match="damaged"):
             driver.decode_payload(loaded["program"], what="program")
 
-    def test_a_drifted_register_table_refuses_by_name(self, driver, tmp_path):
+    def test_a_drifted_protocol_table_refuses_by_name(self, driver, tmp_path):
         document = _fixture(driver)
-        document["kernel"]["addr_status"] = 0x40
+        document["kernel"]["capture_header_words"] = 3
         path = tmp_path / "unit_fixture.json"
         path.write_text(json.dumps(driver.seal(document)), encoding="utf-8")
-        with pytest.raises(driver.OdinFixtureCorrupt, match="register table"):
+        with pytest.raises(driver.OdinFixtureCorrupt, match="device-protocol"):
+            driver.load_fixture(str(path))
+
+    def test_a_fixture_from_the_register_era_refuses_on_its_schema(
+        self, driver, tmp_path,
+    ):
+        document = _fixture(driver)
+        document["schema"] = "odin_hacc_fixture/1"
+        path = tmp_path / "unit_fixture.json"
+        path.write_text(json.dumps(driver.seal(document)), encoding="utf-8")
+        with pytest.raises(driver.OdinFixtureCorrupt, match="schema"):
             driver.load_fixture(str(path))
 
 
@@ -149,8 +163,8 @@ class TestTheCertifyPathAgainstTheFake:
         self, driver, fake, tmp_path,
     ):
         fixture = _fixture(driver)
-        fake.arm(fixture, fault=None, cores=1)
-        session = _session(driver, fixture, tmp_path)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
         result = session.run_fixture(fixture)
         assert result["passed"]
         assert result["window_counts"] == fixture["expected"]["window"]
@@ -161,36 +175,83 @@ class TestTheCertifyPathAgainstTheFake:
         assert "exact=1.000000" in line and "max|dcount|=0 " in line
         assert "over 4 neuron-windows, 2 sample(s)" in line
 
-    def test_the_call_order_is_the_audited_one(self, driver, fake, tmp_path):
+    def test_the_call_order_is_arguments_and_memory_and_no_register(
+        self, driver, fake, tmp_path,
+    ):
         fixture = _fixture(driver)
-        fake.arm(fixture, fault=None, cores=1)
-        session = _session(driver, fixture, tmp_path)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
         session.run_fixture(fixture)
         log = fake.call_log()
-        assert log[0] == ("device", 0)
-        assert log[1] == ("load_xclbin", "/unit/none.xclbin")
-        assert log[2] == ("kernel", driver.KERNEL_NAME, "exclusive")
-        assert log[3] == ("read_register", driver.ADDR_CAPTURE_CAPACITY)
-        assert log[4] == ("read_register", driver.ADDR_PROGRAM_CAPACITY)
+        # The xclbin's own metadata is read BEFORE anything is pushed to a card.
+        assert log[0] == ("xclbin", "/unit/none.xclbin")
+        assert log[1] == ("get_kernels",)
+        assert log[2] == ("get_mems",)
+        assert log[3] == ("device", 0)
+        assert log[4] == ("load_xclbin", "/unit/none.xclbin")
+        assert log[5] == ("kernel", driver.KERNEL_NAME, "exclusive")
         kinds = [entry[0] for entry in log]
         assert kinds.index("write") < kinds.index("start") < kinds.index("wait")
-        # The status register is read BEFORE the capture is synced back, so a
-        # refused run never decodes a buffer the kernel did not fill.
-        started_at = kinds.index("start")
-        status_at = next(
+        # No register is touched anywhere: the fake could not answer one.
+        assert not any(kind.endswith("_register") for kind in kinds)
+
+    def test_the_capture_header_is_poisoned_before_the_kernel_starts(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
+        session.run_fixture(fixture)
+        log = fake.call_log()
+        started_at = [entry[0] for entry in log].index("start")
+        sentinel_bytes = len(driver.no_verdict_header())
+        poison = [
             index for index, entry in enumerate(log)
-            if index > started_at and entry[0] == "read_register"
-            and entry[1] == driver.ADDR_STATUS)
+            if entry[0] == "write" and entry[1] == driver.ARG_CAPTURE
+            and entry[2] == sentinel_bytes
+        ]
+        assert poison and max(poison) < started_at, (
+            "the capture header must carry the no-verdict sentinel before the "
+            "kernel runs, or a refusing kernel would be indistinguishable from "
+            "a silent one")
+
+    def test_the_capture_is_synced_back_only_after_the_wait(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
+        session.run_fixture(fixture)
+        log = fake.call_log()
+        waited_at = [entry[0] for entry in log].index("wait")
+        back = next(
+            index for index, entry in enumerate(log)
+            if entry[0] == "sync" and entry[1] == driver.ARG_CAPTURE
+            and entry[2] == "XCL_BO_SYNC_BO_FROM_DEVICE")
         read_at = next(index for index, entry in enumerate(log)
-                       if index > started_at and entry[0] == "read")
-        assert status_at < read_at
+                       if entry[0] == "read")
+        assert waited_at < back < read_at
+
+    def test_the_six_arguments_go_in_the_frozen_order(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
+        result = session.run_fixture(fixture)
+        start = next(entry for entry in fake.call_log() if entry[0] == "start")
+        assert start[1][:3] == (
+            driver.ARG_PROGRAM, driver.ARG_STIMULUS, driver.ARG_CAPTURE)
+        assert start[1][3] == result["program_words"]
+        assert start[1][4] == result["stimulus_words"]
+        assert start[1][5] == session.capture_capacity
 
     def test_one_extra_spike_from_the_device_fails_the_certificate(
         self, driver, fake, tmp_path,
     ):
         fixture = _fixture(driver)
-        fake.arm(fixture, fault="extra_spike", cores=1)
-        session = _session(driver, fixture, tmp_path)
+        fake.arm(fixture, fault="extra_spike")
+        session = _session(driver)
         result = session.run_fixture(fixture)
         assert not result["passed"]
         assert "FAIL" in result["certificate_line"]
@@ -198,29 +259,184 @@ class TestTheCertifyPathAgainstTheFake:
         # (sample, core, neuron, expected, got) for the one window that moved.
         assert result["certificate"]["divergent"] == [(0, 0, 0, 3, 4)]
 
-    @pytest.mark.parametrize("fault,error,needle", [
-        ("no_storage", "OdinDriverError", "silent empty one"),
-        ("kernel_err", "OdinFpgaKernelError", "raised err"),
-        ("truncated_capture", "OdinFpgaCaptureTruncated", "silent neurons"),
-        ("tiny_program_ram", "OdinFpgaProgramTooLarge", "program RAM holds 64"),
-    ])
-    def test_every_typed_refusal_fires_before_a_count_is_reported(
-        self, driver, fake, tmp_path, fault, error, needle,
+
+class TestEveryTypedRefusalHasADeviceWayToHappen:
+    """Each refusal below names the ONE thing a card can do to earn it."""
+
+    def test_a_package_that_declares_no_storage_refuses_at_open(
+        self, driver, fake, tmp_path,
+    ):
+        capacity = _capacity(
+            driver, program_words=0, capture_events=0,
+            provenance="unit test: a package declaring no storage")
+        with pytest.raises(driver.OdinDriverError, match="silent empty one"):
+            _session(driver, capacity=capacity)
+
+    def test_a_program_that_outgrows_the_declared_ram_refuses_before_starting(
+        self, driver, fake, tmp_path,
     ):
         fixture = _fixture(driver)
-        fake.arm(fixture, fault=fault, cores=1)
-        with pytest.raises(getattr(driver, error), match=needle):
-            session = _session(driver, fixture, tmp_path)
+        fake.arm(fixture, fault=None)
+        session = _session(driver, capacity=_capacity(
+            driver, program_words=64, provenance="unit test: a 64-word RAM"))
+        with pytest.raises(
+            driver.OdinFpgaProgramTooLarge, match="program RAM holds 64",
+        ):
             session.run_fixture(fixture)
+        assert not any(entry[0] == "start" for entry in fake.call_log())
+
+    def test_the_refusal_says_where_the_capacity_number_came_from(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault=None)
+        session = _session(driver, capacity=_capacity(
+            driver, program_words=64,
+            provenance="unit test: a 64-word RAM, declared by hand"))
+        with pytest.raises(driver.OdinFpgaProgramTooLarge) as exc:
+            session.run_fixture(fixture)
+        assert "declared by hand" in str(exc.value)
+
+    def test_a_kernel_that_wrote_no_verdict_refuses_as_a_kernel_error(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault="kernel_err")
+        session = _session(driver)
+        with pytest.raises(
+            driver.OdinFpgaKernelError, match="NO-VERDICT sentinel",
+        ):
+            session.run_fixture(fixture)
+
+    def test_a_run_that_never_reached_ap_done_refuses_by_its_ert_state(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault="not_completed")
+        session = _session(driver)
+        with pytest.raises(driver.OdinFpgaKernelError, match="never saw ap_done"):
+            session.run_fixture(fixture)
+
+    def test_a_truncated_capture_refuses_instead_of_reporting_silent_neurons(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault="truncated_capture")
+        session = _session(driver)
+        with pytest.raises(
+            driver.OdinFpgaCaptureTruncated, match="silent neurons",
+        ):
+            session.run_fixture(fixture)
+
+    def test_an_xclbin_without_our_kernel_refuses_before_the_card_sees_it(
+        self, driver, fake, tmp_path,
+    ):
+        fake.arm(fault="wrong_kernel")
+        with pytest.raises(driver.OdinDriverError, match="none of them"):
+            _session(driver)
+        assert not any(
+            entry[0] == "load_xclbin" for entry in fake.call_log())
 
     def test_a_bitstream_with_fewer_cores_skips_instead_of_running(
         self, driver, fake, tmp_path,
     ):
         fixture = _fixture(driver, cores=2)
-        fake.arm(fixture, fault=None, cores=1)
-        session = _session(driver, fixture, tmp_path)
+        fake.arm(fixture, fault=None)
+        session = _session(driver, cores=1)
         with pytest.raises(driver.OdinFixtureNeedsMoreCores, match="NC 1"):
             session.run_fixture(fixture)
+
+
+class TestTheHeaderLayoutIsTheRtlsOwn:
+    def test_the_header_is_two_words_and_the_record_is_four(self, driver):
+        assert driver.CAPTURE_HEADER_WORDS == 2
+        assert driver.CAPTURE_RECORD_WORDS == 4
+        assert (driver.HEADER_EVENTS_SEEN, driver.HEADER_DEVICE_CYCLES) == (0, 1)
+        assert (driver.RECORD_TAG, driver.RECORD_CYCLE,
+                driver.RECORD_CORE, driver.RECORD_NEURON) == (0, 1, 2, 3)
+
+    def test_the_sentinel_fills_exactly_the_header(self, driver):
+        assert len(driver.no_verdict_header()) == (
+            driver.CAPTURE_HEADER_WORDS * driver.WORD_BYTES)
+        assert driver.capture_words(driver.no_verdict_header()) == [
+            driver.CAPTURE_NO_VERDICT] * driver.CAPTURE_HEADER_WORDS
+
+    def test_a_capture_shorter_than_its_header_refuses(self, driver):
+        with pytest.raises(driver.OdinDriverError, match="two-word header"):
+            driver.decode_capture((0,), 4)
+
+    def test_a_capture_exactly_at_capacity_refuses_too(self, driver):
+        with pytest.raises(driver.OdinFpgaCaptureTruncated, match="capacity of 4"):
+            driver.decode_capture((4, 100), 4)
+
+    def test_a_half_written_header_is_not_read_as_a_refusal(self, driver):
+        """Only BOTH words being the sentinel means no verdict; one does not."""
+        events, cycles = driver.decode_capture(
+            (0, driver.CAPTURE_NO_VERDICT), 4)
+        assert events == [] and cycles == driver.CAPTURE_NO_VERDICT
+
+
+class TestTheDeclaredCapacityNamesItsSource:
+    def test_the_shipped_declaration_is_the_rtl_default_at_nc1(self, driver):
+        capacity = driver.KernelCapacity()
+        assert capacity.program_words == driver.PROG_WORDS_PER_CORE
+        assert capacity.capture_events == (
+            driver.SHIPPED_CAPTURE_WORDS - 2) // 4
+        assert capacity.cores == 1
+
+    def test_the_provenance_says_it_was_not_read_off_the_card(self, driver):
+        provenance = driver.KernelCapacity().provenance
+        assert "odin_fpga_kernel_top.v" in provenance
+        assert "NOT read back from the card" in provenance
+
+    def test_a_command_line_override_is_recorded_in_the_provenance(self, driver):
+        options = driver.build_parser().parse_args(
+            ["--xclbin", "/x", "--program-words", "4096"])
+        capacity = driver.capacity_from_options(options)
+        assert capacity.program_words == 4096
+        assert "OVERRIDDEN on the command line" in capacity.provenance
+
+    def test_the_host_ceiling_can_only_lower_the_declared_one(self, driver):
+        capacity = driver.KernelCapacity()
+        assert capacity.ceiling(16) == 16
+        assert capacity.ceiling(1 << 30) == capacity.capture_events
+
+
+class TestB0IsARoundTripNotACsrRead:
+    def test_the_probe_runs_a_null_program_and_reads_its_header_back(
+        self, driver, fake, tmp_path,
+    ):
+        code = driver.main([
+            "--probe", "--xclbin", "/unit/none.xclbin",
+            "--fake-pyxrt", str(FAKE_PATH), "--results", str(tmp_path)])
+        assert code == 0
+        report = json.loads((tmp_path / "probe.json").read_text(encoding="utf-8"))
+        assert report["null_run"]["events_seen"] == 0
+        assert report["kernel"] == driver.KERNEL_NAME
+        assert report["cu_access_mode"] == "exclusive"
+        assert report["xclbin_kernels"][driver.KERNEL_NAME] == driver.KERNEL_ARGS
+        assert report["memory_banks"][0]["tag"] == "DDR[0]"
+        assert any("EXCLUSIVE" in claim for claim in report["proves"])
+        assert "any spike count" in report["does_not_prove"]
+        assert "0x4C stays unreadable" in report["does_not_prove"]
+
+    def test_the_probe_refuses_an_xclbin_that_is_not_ours(
+        self, driver, fake, tmp_path,
+    ):
+        fake.arm(fault="wrong_kernel")
+        code = driver.main([
+            "--probe", "--xclbin", "/unit/none.xclbin",
+            "--fake-pyxrt", str(FAKE_PATH), "--results", str(tmp_path)])
+        assert code == 2
+        assert not (tmp_path / "probe.json").exists()
+
+    def test_a_fabric_that_spikes_with_no_network_loaded_refuses(
+        self, driver, fake, tmp_path,
+    ):
+        fake.arm(capture_words=(3, 99))
+        session = _session(driver)
+        with pytest.raises(driver.OdinDriverError, match="no network"):
+            session.null_run()
 
 
 class TestTheWindowRuleIsNevresimsAndNotAnAverage:
@@ -257,3 +473,12 @@ class TestTheDriverStaysUploadable:
         assert "    import pyxrt" in source, "pyxrt must not be a module import"
         with pytest.raises(driver.OdinFpgaDependencyError, match="Xilinx Runtime"):
             driver.load_pyxrt(None)
+
+    def test_it_reads_a_numpy_style_buffer_the_way_pyxrt_answers(self, driver):
+        """``pyxrt.bo.read`` returns a numpy array, not bytes."""
+        pytest.importorskip("numpy")
+        import numpy as np
+
+        raw = np.frombuffer(driver.no_verdict_header(), dtype=np.int8)
+        assert driver.capture_words(raw) == [
+            driver.CAPTURE_NO_VERDICT] * driver.CAPTURE_HEADER_WORDS
