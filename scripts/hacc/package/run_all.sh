@@ -66,6 +66,20 @@ XRT_ROOT="${XRT_ROOT:-/opt/xilinx/xrt}"                       # doc/0-login line
 # partitions the board and joint phases may use. ODIN_CARD=u250 is the route
 # this cluster can actually build; the u55c default refuses with the deadlock
 # reason when the evidence still shows it.
+# The card is PINNED per install (.odin_card, written by bootstrap --card or by
+# hand). The pin beats a stray ODIN_CARD in the environment: an exported card
+# from one install's shell has twice leaked into another install's run, and an
+# install is bootstrapped FOR a card — the environment merely remembers shells.
+if [ -f "${HERE}/.odin_card" ]; then
+    PINNED_CARD="$(tr -d '[:space:]' < "${HERE}/.odin_card")"
+    if [ -n "${ODIN_CARD:-}" ] && [ "${ODIN_CARD}" != "${PINNED_CARD}" ]; then
+        printf '[card] WARNING: the environment says ODIN_CARD=%s, but this\n' "${ODIN_CARD}"
+        printf '[card] install is pinned to %s (.odin_card). The PIN wins:\n' "${PINNED_CARD}"
+        printf '[card] re-bootstrap with --card %s if you truly want to switch.\n' "${ODIN_CARD}"
+    fi
+    ODIN_CARD="${PINNED_CARD}"
+    export ODIN_CARD
+fi
 CARD="$(odin_card)"
 PLATFORM="$(odin_effective_platform "${CARD}" 2>/dev/null || true)"
 read -r -a BOARD_CANDIDATES <<< "$(odin_card_field board_candidates "${CARD}" 2>/dev/null || true)"

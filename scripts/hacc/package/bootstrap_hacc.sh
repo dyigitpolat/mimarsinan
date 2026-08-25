@@ -148,6 +148,7 @@ LOG="${TARGET}/results/run_all.log"
 } >> "${LOG}"
 
 if [ -n "${CARD}" ]; then
+    printf '%s\n' "${CARD}" > .odin_card
     setsid env ODIN_CARD="${CARD}" nohup ./run_all.sh >> "${LOG}" 2>&1 < /dev/null &
 else
     setsid nohup ./run_all.sh >> "${LOG}" 2>&1 < /dev/null &
