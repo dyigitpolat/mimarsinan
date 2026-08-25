@@ -232,13 +232,9 @@ def decode_capture(
             f"neurons. Rebuild the kernel with a larger CAP_WORDS "
             f"(hw/fpga/kernel/odin_fpga_kernel_top.v) or run fewer samples per "
             f"pass; the counts of a truncated run are not a result.")
-    needed = CAPTURE_HEADER_WORDS + written * CAPTURE_RECORD_WORDS
-    if len(words) < needed:
-        raise OdinFpgaKernelError(
-            f"the capture header claims {written} events but the buffer "
-            f"holds {len(words)} words where {needed} are needed: the "
-            f"readback is shorter than the header's claim — a partial read "
-            f"or a corrupted header, not a result.")
+    if len(words) < CAPTURE_HEADER_WORDS + written * CAPTURE_RECORD_WORDS:
+        raise OdinFpgaKernelError(f"capture header claims {written} events but only "
+                                  f"{len(words)} words came back: a partial read, not a result.")
     events: List[CaptureEvent] = []
     for index in range(written):
         base = CAPTURE_HEADER_WORDS + index * CAPTURE_RECORD_WORDS
