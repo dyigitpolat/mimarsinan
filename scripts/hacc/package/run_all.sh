@@ -519,9 +519,20 @@ write_sidecar() {
     say "[phase] recorded ${sidecar}"
 }
 
+# A phase log is one attempt's story: the sbatch scripts tee -a into it, and
+# submit_* tails it after the job — an APPENDED old failure once masqueraded
+# as a fresh one and misdirected a whole triage. Rotate before every attempt.
+rotate_log() {
+    [ "${DRY_RUN}" = "1" ] && return 0
+    if [ -f "$1" ]; then
+        mv -f "$1" "$1.prev"
+    fi
+}
+
 submit_build() {
     local target="$1"
     local log="${RESULTS}/phase_build_${target}.log"
+    rotate_log "${log}"
     local status=0
     do_cmd env \
         ODIN_PKG="${HERE}" ODIN_TARGET="${target}" ODIN_PLATFORM="${PLATFORM}" \
@@ -592,6 +603,7 @@ phase_4() {
 submit_board() {
     local mode="$1"
     local log="${RESULTS}/phase_board_${mode}.log"
+    rotate_log "${log}"
     local status=0
     do_cmd env \
         ODIN_PKG="${HERE}" ODIN_XCLBIN="${XCLBIN_STAGED}" ODIN_MODE="${mode}" \
@@ -654,6 +666,7 @@ phase_7() {
             ;;
     esac
     local log="${RESULTS}/phase_joint.log"
+    rotate_log "${log}"
     local status=0
     do_cmd env \
         ODIN_PKG="${HERE}" ODIN_XCLBIN="${XCLBIN_STAGED}" \
