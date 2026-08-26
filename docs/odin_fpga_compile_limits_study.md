@@ -42,8 +42,8 @@ Alveo shell takes its share* is NOT measured here and is not guessed at.
 | `gen_a128n128_mb8_per_event` | 1,934 | 1,057 | 8 | 4 | 2 | 0 | 0 | 1,966 |
 | `gen_a512n256_mb16_per_event` | 6,522 | 4,133 | 13 | 12 | 16 | 0 | 0 | 6,618 |
 | `gen_a256n256_mb16s_sync_fire` | 6,474 | 4,133 | 16 | 12 | 8 | 0 | 0 | 6,570 |
-| `wrapper_nc1_prog4096_cap16384` | 6,735 | 5,447 | 508 | 0 | 30 | 0 | 0 | 6,735 |
-| `wrapper_nc1_prog4096_cap32768` | 6,734 | 5,447 | 508 | 0 | 46 | 0 | 0 | 6,734 |
+| `wrapper_nc1_prog4096_cap16384` | 6,662 | 5,415 | 508 | 0 | 30 | 0 | 0 | 6,662 |
+| `wrapper_nc1_prog4096_cap32768` | 6,665 | 5,415 | 508 | 0 | 46 | 0 | 0 | 6,665 |
 
 `bram_tiles` counts a RAMB18E2 as half a tile; the LUT-equivalent column
 adds unpacked `INV` cells to `LUT1..LUT6`, exactly as the P5.5a report
@@ -152,14 +152,14 @@ overhead below is the wrapper census less the stock core's, i.e. the AXI4-Lite c
 
 | Column | Wrapper overhead (delta vs the stock core) |
 | --- | ---: |
-| `lut_equivalent` | 1,076 |
-| `flip_flops` | 1,085 |
+| `lut_equivalent` | 1,003 |
+| `flip_flops` | 1,053 |
 | `carry` | 127 |
 | `lutram` | 0 |
 | `bram36` | 20 |
 | `bram18` | 0 |
 | `uram` | 0 |
-| `lut_sites` (the bound's LUT class) | 1,076 |
+| `lut_sites` (the bound's LUT class) | 1,003 |
 
 Both of the wrapper's own RAMs infer block RAM, and the 20 RAMB36E2 of overhead above is exactly their declared depth:
 
@@ -174,11 +174,26 @@ sequencer, a third write port that no tile has, and they now go out
 through the SAME port as the streaming record, at drain time, when the
 streaming writes have stopped.
 
+`prog_ram` reaches it on the READ side, and it took a routed build to
+find out that it had not. The sequencer used to index the array in five
+places -- the opcode fetch, the three argument fetches and the TAG alias
+-- all at `pc`, under two FSM states. yosys merges those into the ONE
+read port the census below reports, so every number in this study said
+the program RAM was tiles. Vivado 2022.2 read the same source as
+multi-ported and put the whole 262,144x32 array into distributed RAM:
+163,840 LUTs as RAM and 24 BRAM tiles total on the routed U55C kernel,
+none of them the program. The sequencer now funnels every fetch through
+ONE clocked read register at ONE address source, at the cost of a cycle
+of fetch latency per program word. THIS TABLE CANNOT CONFIRM THAT FIX:
+yosys inferred a tile before the change and infers one after, so the
+census barely moves, and only the next cluster build's `kernel_util`
+report can say whether Vivado now agrees.
+
 The two wrapper points differ ONLY in `CAP_WORDS` (16,384 extra words), which makes the capture
 RAM's cost a measurement:
 
 - `flip_flops`: +0.000000 per capture word
-- `lut_equivalent`: -0.000061 per capture word
+- `lut_equivalent`: +0.000183 per capture word
 - `bram36`: +0.000977 per capture word
 
 A capture word costs 0 flip-flops: it is bought in TILES, one RAMB36E2 per 1,024 words. That is a

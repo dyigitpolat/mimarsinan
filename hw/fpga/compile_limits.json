@@ -428,12 +428,12 @@
         "stat -top odin_fpga_kernel_top -json"
       ],
       "census": {
-        "luts": 6156,
+        "luts": 6083,
         "inverters": 579,
-        "lut_equivalent": 6735,
-        "flip_flops": 5447,
+        "lut_equivalent": 6662,
+        "flip_flops": 5415,
         "carry": 508,
-        "muxf": 10,
+        "muxf": 11,
         "bram36": 30,
         "bram18": 0,
         "bram_tiles": 30.0,
@@ -442,7 +442,7 @@
         "lutram_cells": {},
         "io_buffers": 349,
         "unclassified": {},
-        "total_cells": 13079
+        "total_cells": 12975
       },
       "cells_by_type": {
         "BUFG": 2,
@@ -450,17 +450,18 @@
         "FDCE": 919,
         "FDCE_1": 70,
         "FDPE": 59,
-        "FDRE": 4395,
+        "FDRE": 4363,
         "FDRE_1": 1,
         "FDSE": 3,
         "IBUF": 109,
         "INV": 579,
-        "LUT2": 1161,
-        "LUT3": 873,
-        "LUT4": 1183,
-        "LUT5": 1395,
-        "LUT6": 1544,
-        "MUXF7": 9,
+        "LUT1": 1,
+        "LUT2": 1146,
+        "LUT3": 838,
+        "LUT4": 1172,
+        "LUT5": 1391,
+        "LUT6": 1535,
+        "MUXF7": 10,
         "MUXF8": 1,
         "OBUF": 238,
         "RAMB36E2": 30
@@ -531,12 +532,12 @@
         "stat -top odin_fpga_kernel_top -json"
       ],
       "census": {
-        "luts": 6154,
+        "luts": 6085,
         "inverters": 580,
-        "lut_equivalent": 6734,
-        "flip_flops": 5447,
+        "lut_equivalent": 6665,
+        "flip_flops": 5415,
         "carry": 508,
-        "muxf": 10,
+        "muxf": 11,
         "bram36": 46,
         "bram18": 0,
         "bram_tiles": 46.0,
@@ -545,7 +546,7 @@
         "lutram_cells": {},
         "io_buffers": 349,
         "unclassified": {},
-        "total_cells": 13094
+        "total_cells": 12994
       },
       "cells_by_type": {
         "BUFG": 2,
@@ -553,17 +554,18 @@
         "FDCE": 919,
         "FDCE_1": 70,
         "FDPE": 59,
-        "FDRE": 4395,
+        "FDRE": 4363,
         "FDRE_1": 1,
         "FDSE": 3,
         "IBUF": 109,
         "INV": 580,
-        "LUT2": 1161,
-        "LUT3": 874,
-        "LUT4": 1179,
-        "LUT5": 1397,
-        "LUT6": 1543,
-        "MUXF7": 9,
+        "LUT1": 1,
+        "LUT2": 1149,
+        "LUT3": 835,
+        "LUT4": 1176,
+        "LUT5": 1391,
+        "LUT6": 1533,
+        "MUXF7": 10,
         "MUXF8": 1,
         "OBUF": 238,
         "RAMB36E2": 46
@@ -578,10 +580,10 @@
       "PROG_WORDS": 4096
     },
     "delta": {
-      "lut_equivalent": 1076.0,
-      "flip_flops": 1085.0,
+      "lut_equivalent": 1003.0,
+      "flip_flops": 1053.0,
       "carry": 127.0,
-      "muxf": -2.0,
+      "muxf": -1.0,
       "lutram": 0.0,
       "bram36": 20.0,
       "bram18": 0.0,
@@ -589,8 +591,8 @@
       "uram": 0.0
     },
     "delta_costs": {
-      "lut_sites": 1076.0,
-      "flip_flops": 1085.0,
+      "lut_sites": 1003.0,
+      "flip_flops": 1053.0,
       "bram36": 20.0,
       "uram": 0.0
     },
@@ -603,7 +605,7 @@
     ],
     "extra_capture_words": 16384,
     "delta": {
-      "lut_equivalent": -1.0,
+      "lut_equivalent": 3.0,
       "flip_flops": 0.0,
       "carry": 0.0,
       "muxf": 0.0,
@@ -614,7 +616,7 @@
       "uram": 0.0
     },
     "per_capture_word": {
-      "lut_equivalent": -6.103515625e-05,
+      "lut_equivalent": 0.00018310546875,
       "flip_flops": 0.0,
       "carry": 0.0,
       "muxf": 0.0,
@@ -743,14 +745,14 @@
         {
           "resource": "lut_sites",
           "per_core": 5659.0,
-          "fixed_overhead": 1076.0,
+          "fixed_overhead": 1003.0,
           "available": 1304000,
           "n_max": 230
         },
         {
           "resource": "flip_flops",
           "per_core": 4362.0,
-          "fixed_overhead": 1085.0,
+          "fixed_overhead": 1053.0,
           "available": 2607000,
           "n_max": 597
         },
@@ -829,14 +831,14 @@
         {
           "resource": "lut_sites",
           "per_core": 5659.0,
-          "fixed_overhead": 1076.0,
+          "fixed_overhead": 1003.0,
           "available": 912800,
           "n_max": 161
         },
         {
           "resource": "flip_flops",
           "per_core": 4362.0,
-          "fixed_overhead": 1085.0,
+          "fixed_overhead": 1053.0,
           "available": 1824900,
           "n_max": 418
         },
@@ -915,14 +917,14 @@
         {
           "resource": "lut_sites",
           "per_core": 1966.0,
-          "fixed_overhead": 1076.0,
+          "fixed_overhead": 1003.0,
           "available": 1304000,
           "n_max": 662
         },
         {
           "resource": "flip_flops",
           "per_core": 1057.0,
-          "fixed_overhead": 1085.0,
+          "fixed_overhead": 1053.0,
           "available": 2607000,
           "n_max": 2465
         },
@@ -1001,14 +1003,14 @@
         {
           "resource": "lut_sites",
           "per_core": 1966.0,
-          "fixed_overhead": 1076.0,
+          "fixed_overhead": 1003.0,
           "available": 912800,
           "n_max": 463
         },
         {
           "resource": "flip_flops",
           "per_core": 1057.0,
-          "fixed_overhead": 1085.0,
+          "fixed_overhead": 1053.0,
           "available": 1824900,
           "n_max": 1725
         },
@@ -1087,14 +1089,14 @@
         {
           "resource": "lut_sites",
           "per_core": 6618.0,
-          "fixed_overhead": 1076.0,
+          "fixed_overhead": 1003.0,
           "available": 1304000,
           "n_max": 196
         },
         {
           "resource": "flip_flops",
           "per_core": 4133.0,
-          "fixed_overhead": 1085.0,
+          "fixed_overhead": 1053.0,
           "available": 2607000,
           "n_max": 630
         },
@@ -1173,14 +1175,14 @@
         {
           "resource": "lut_sites",
           "per_core": 6618.0,
-          "fixed_overhead": 1076.0,
+          "fixed_overhead": 1003.0,
           "available": 912800,
           "n_max": 137
         },
         {
           "resource": "flip_flops",
           "per_core": 4133.0,
-          "fixed_overhead": 1085.0,
+          "fixed_overhead": 1053.0,
           "available": 1824900,
           "n_max": 441
         },
@@ -1259,14 +1261,14 @@
         {
           "resource": "lut_sites",
           "per_core": 6570.0,
-          "fixed_overhead": 1076.0,
+          "fixed_overhead": 1003.0,
           "available": 1304000,
           "n_max": 198
         },
         {
           "resource": "flip_flops",
           "per_core": 4133.0,
-          "fixed_overhead": 1085.0,
+          "fixed_overhead": 1053.0,
           "available": 2607000,
           "n_max": 630
         },
@@ -1345,14 +1347,14 @@
         {
           "resource": "lut_sites",
           "per_core": 6570.0,
-          "fixed_overhead": 1076.0,
+          "fixed_overhead": 1003.0,
           "available": 912800,
           "n_max": 138
         },
         {
           "resource": "flip_flops",
           "per_core": 4133.0,
-          "fixed_overhead": 1085.0,
+          "fixed_overhead": 1053.0,
           "available": 1824900,
           "n_max": 441
         },

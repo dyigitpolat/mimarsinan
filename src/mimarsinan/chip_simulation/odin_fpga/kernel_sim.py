@@ -10,11 +10,12 @@ itself: program in, stimulus in, capture out. All are [slow] gates under
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
     SHIPPED_CAPTURE_WORDS,
@@ -55,6 +56,48 @@ def kernel_sources() -> List[Path]:
 def kernel_design_sources(*, overlay: bool = False) -> List[Path]:
     """The kernel plus the design it instantiates (the vendored ODIN tree)."""
     return kernel_sources() + design_sources(overlay=overlay)
+
+
+_BLOCK_RAM_ATTR = 'ram_style = "block"'
+_BLOCK_RAM_DECL = re.compile(
+    r'\(\*\s*ram_style\s*=\s*"block"\s*\*\)\s*reg\b(?:\s*\[[^\]]*\])?\s*(\w+)\s*\[')
+
+
+def _indexed_references(body: str, name: str) -> Tuple[int, int]:
+    """``(reads, writes)`` of ``name[...]`` in ``body``; a write is one before ``<=``."""
+    reads = writes = 0
+    for match in re.finditer(rf"\b{re.escape(name)}\s*\[", body):
+        index, depth = match.end() - 1, 0
+        while index < len(body):
+            depth += (body[index] == "[") - (body[index] == "]")
+            if depth == 0:
+                break
+            index += 1
+        if body[index + 1:].lstrip().startswith("<="):
+            writes += 1
+        else:
+            reads += 1
+    return reads, writes
+
+
+def block_ram_ports(source: Path) -> Dict[str, Tuple[int, int]]:
+    """``{array: (read points, write points)}`` for each ``ram_style="block"`` array.
+
+    A tile is one registered read port and one write port. An array indexed in
+    more than one place is one a synthesizer may read as multi-ported and drop
+    into distributed RAM instead -- which is exactly what Vivado 2022.2 did to
+    `prog_ram` on the routed U55C build.
+    """
+    # Comments go first: an array named in prose is not a port. Verilog
+    # attributes open with `(*`, so the block-comment strip leaves them alone.
+    text = re.sub(r"/\*.*?\*/", " ", source.read_text(), flags=re.S)
+    text = re.sub(r"//[^\n]*", "", text)
+    body = "\n".join(
+        line for line in text.splitlines() if _BLOCK_RAM_ATTR not in line)
+    return {
+        decl.group(1): _indexed_references(body, decl.group(1))
+        for decl in _BLOCK_RAM_DECL.finditer(text)
+    }
 
 
 def elaborate_kernel_top(*, n_cores: int = 1) -> str:

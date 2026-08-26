@@ -71,15 +71,18 @@ module odin_fpga_kernel #(
     localparam CAP_AW   = $clog2(CAP_WORDS);
     localparam AER_BITS = 2 * M + 1;
 
-    // Both RAMs are BLOCK RAMs: a registered read port and exactly ONE write
-    // port each. `cap_ram`'s two header words are written through that same
-    // port by the drain arbiter below rather than by fixed-address writes of
-    // their own -- three write ports do not fit a tile, and the capture buffer
-    // paid 32 flip-flops per word for it (P8, compile-limits study).
+    // Both RAMs are BLOCK RAMs: exactly ONE registered read port and exactly
+    // ONE write port each -- the shape a tile can be, and the shape a
+    // synthesizer must be able to SEE. `cap_ram`'s two header words are written
+    // through that same write port by the drain arbiter below rather than by
+    // fixed-address writes of their own -- three write ports do not fit a tile,
+    // and the capture buffer paid 32 flip-flops per word for it (P8,
+    // compile-limits study). `prog_ram`'s single read point is `prog_rdata`
+    // below, for the same reason on the read side.
     (* ram_style = "block" *) reg [31:0] prog_ram [0:PROG_WORDS-1];
     (* ram_style = "block" *) reg [31:0] cap_ram  [0:CAP_WORDS-1];
 
-    reg [31:0] pc, op, arg0, arg1, arg2;
+    reg [31:0] pc, op, arg0, arg1, arg2, prog_rdata;
     reg [31:0] tag, cycle, events_seen, cap_ptr, wait_left;
 
     reg        spi_start, aer_start, issued, saw_busy, is_read;
@@ -101,6 +104,18 @@ module odin_fpga_kernel #(
 
     always @(posedge clk)
         if (prog_we) prog_ram[prog_waddr[PROG_AW-1:0]] <= prog_wdata;
+
+    // The program RAM's ONE read point, with `pc` as its ONE address source.
+    // The sequencer below reads `prog_rdata` and never the array: it used to
+    // read `prog_ram[pc]` in five places under two FSM states (the opcode and
+    // the three arguments, plus the TAG alias), which yosys merged into a
+    // single port but Vivado 2022.2 inferred as several -- so the whole
+    // 262,144x32 array fell out of the tiles and into distributed RAM, 163,840
+    // LUTs of it, on the routed U55C build. One read point is what a tile can
+    // be; the cost is one cycle of fetch latency per program word, paid in the
+    // S_FETCH/S_ARG_ADDR states.
+    always @(posedge clk)
+        prog_rdata <= prog_ram[pc[PROG_AW-1:0]];
 
     always @(posedge clk)
         if (rst) cycle <= 32'd0;
@@ -229,16 +244,22 @@ module odin_fpga_kernel #(
     //  The sequencer: the same token program, executed on the fabric
     //----------------------------------------------------------------------
 
-    localparam S_IDLE  = 3'd0;
-    localparam S_FETCH = 3'd1;
-    localparam S_DEC   = 3'd2;
-    localparam S_ARGS  = 3'd3;
-    localparam S_SPI   = 3'd4;
-    localparam S_AER   = 3'd5;
-    localparam S_WAIT  = 3'd6;
-    localparam S_DONE  = 3'd7;
+    // Every program word is fetched by the SAME two-state pair: an ADDRESS
+    // state, which does nothing but leave `pc` on the RAM's address pins for a
+    // cycle, and a LATCH state, in which `prog_rdata` carries that word.
+    // S_FETCH/S_DEC is that pair for the opcode; S_ARG_ADDR/S_ARG_LATCH is it
+    // for each argument.
+    localparam S_IDLE      = 4'd0;
+    localparam S_FETCH     = 4'd1;
+    localparam S_DEC       = 4'd2;
+    localparam S_ARG_ADDR  = 4'd3;
+    localparam S_ARG_LATCH = 4'd4;
+    localparam S_SPI       = 4'd5;
+    localparam S_AER       = 4'd6;
+    localparam S_WAIT      = 4'd7;
+    localparam S_DONE      = 4'd8;
 
-    reg [2:0] state;
+    reg [3:0] state;
     reg [1:0] argc, argi;
 
     assign cap_rearm = (state == S_IDLE) && ap_start;
@@ -262,21 +283,21 @@ module odin_fpga_kernel #(
                         err <= 1'b0; run_ended <= 1'b0; state <= S_FETCH;
                     end
                 end
-                S_FETCH: begin
-                    op    <= prog_ram[pc[PROG_AW-1:0]];
-                    pc    <= pc + 32'd1;
-                    state <= S_DEC;
-                end
+                // `pc` addresses the opcode for this whole cycle; the word it
+                // names reaches prog_rdata at the next edge.
+                S_FETCH: state <= S_DEC;
                 S_DEC: begin
+                    op     <= prog_rdata;
+                    pc     <= pc + 32'd1;
                     argi   <= 2'd0;
                     issued <= 1'b0;
-                    case (op)
+                    case (prog_rdata)
                         OP_END:   state <= S_DONE;
-                        OP_SPI_W: begin argc <= 2'd3; is_read <= 1'b0; state <= S_ARGS; end
-                        OP_SPI_R: begin argc <= 2'd3; is_read <= 1'b1; state <= S_ARGS; end
-                        OP_AER:   begin argc <= 2'd2; state <= S_ARGS; end
-                        OP_WAIT:  begin argc <= 2'd1; state <= S_ARGS; end
-                        OP_TAG:   begin argc <= 2'd1; state <= S_ARGS; end
+                        OP_SPI_W: begin argc <= 2'd3; is_read <= 1'b0; state <= S_ARG_ADDR; end
+                        OP_SPI_R: begin argc <= 2'd3; is_read <= 1'b1; state <= S_ARG_ADDR; end
+                        OP_AER:   begin argc <= 2'd2; state <= S_ARG_ADDR; end
+                        OP_WAIT:  begin argc <= 2'd1; state <= S_ARG_ADDR; end
+                        OP_TAG:   begin argc <= 2'd1; state <= S_ARG_ADDR; end
                         default: begin
                             // SHADOW / PROG / anything unknown: the fabric has
                             // no implementation, so it REFUSES rather than
@@ -286,14 +307,15 @@ module odin_fpga_kernel #(
                         end
                     endcase
                 end
-                S_ARGS: begin
+                S_ARG_ADDR: state <= S_ARG_LATCH;
+                S_ARG_LATCH: begin
                     case (argi)
                         2'd0: begin
-                            arg0 <= prog_ram[pc[PROG_AW-1:0]];
-                            if (op == OP_TAG) tag <= prog_ram[pc[PROG_AW-1:0]];
+                            arg0 <= prog_rdata;
+                            if (op == OP_TAG) tag <= prog_rdata;
                         end
-                        2'd1:    arg1 <= prog_ram[pc[PROG_AW-1:0]];
-                        default: arg2 <= prog_ram[pc[PROG_AW-1:0]];
+                        2'd1:    arg1 <= prog_rdata;
+                        default: arg2 <= prog_rdata;
                     endcase
                     pc <= pc + 32'd1;
                     if (argi + 2'd1 == argc) begin
@@ -304,7 +326,8 @@ module odin_fpga_kernel #(
                             default:            state <= S_FETCH;
                         endcase
                     end else begin
-                        argi <= argi + 2'd1;
+                        argi  <= argi + 2'd1;
+                        state <= S_ARG_ADDR;
                     end
                 end
                 S_SPI: begin
