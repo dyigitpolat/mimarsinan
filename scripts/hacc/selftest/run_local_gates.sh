@@ -26,6 +26,12 @@
 #  14  ODIN_CARD=u55c on the CURRENT field evidence REFUSES EARLY, names the
 #      admin fix, submits nothing — and SELF-HEALS the moment 2022.2 appears
 #  15  bootstrap --card u250 threads the card into the detached run
+#  16  the DEPLOYMENT executor runs the two-core bundle as host-mediated passes
+#      against the fake pyxrt, certifies every pass, and reports ACCURACY
+#  17  the deployment mutations: tampered expected counts go RED, a tampered
+#      self-hash refuses as OdinBundleCorrupt, and a wrong stimulus gets no
+#      verdict instead of another pass's counts
+#  18  the die-map renderer draws on both paths and refuses without a checkpoint
 #
 # Exit 0 all green, 1 a gate failed, 77 nothing to test (no dist package: run
 # scripts/hacc/make_package.py first).
@@ -454,6 +460,156 @@ LOG="${WORK}/bootstrap_bad_card.log"
 status=$?
 expect 15g "${LOG}" "unknown --card 'u9000'"
 if [ "${status}" -eq 2 ]; then pass 15h "refused with exit 2"; else fail 15h "exit ${status}, wanted 2"; fi
+
+
+# ===========================================================================
+# THE DEPLOYMENT (P8). Everything above proves the package can build and drive
+# a bitstream; the gates below prove it can DEPLOY a multi-core network on the
+# NC=1 one it builds, by running each core as its own pass and transcoding
+# between them on the host.
+# ===========================================================================
+gate 16 "the deployment executor: two host-mediated passes, certified and timed"
+DEPLOY_ROOT="${WORK}/deploy"
+PKG="$(fresh_package "${DEPLOY_ROOT}")"
+LOG="${WORK}/deployment.log"
+(
+    cd "${PKG}" && python3 host/odin_deployment_executor.py \
+        --xclbin /selftest/no-such.xclbin \
+        --fake-pyxrt host/fake_pyxrt_for_selftest.py \
+        --replay deployment/nc1_two_core_passes_capture.json \
+        --results "${PKG}/results/deployment"
+) > "${LOG}" 2>&1
+status=$?
+say "--- transcript ---"; cat "${LOG}"
+if [ "${status}" -eq 0 ]; then pass 16a "the campaign closed green (exit 0)"
+else fail 16a "exit ${status}; see ${LOG}"; fi
+expect 16b "${LOG}" "[SpikeCountCertificate] spike-count certificate [odin_fpga/exact]: PASS exact=1.000000 max|dcount|=0"
+expect 16c "${LOG}" "core 0: programmed once"
+expect 16d "${LOG}" "core 1: programmed once"
+expect 16e "${LOG}" "[deploy] ACCURACY : 0.750000"
+expect 16f "${LOG}" "transcode_s"
+expect_file 16g "${PKG}/results/deployment/deployment_report.json"
+expect_file 16h "${PKG}/results/deployment/deployment_samples.tsv"
+REPORT="${PKG}/results/deployment/deployment_report.json"
+if python3 - "${REPORT}" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+stages = ("bo_write_s", "sync_s", "run_s", "readback_s", "decode_s",
+          "transcode_s", "pass_total_s")
+missing = [s for s in stages if s not in report["walls"]["per_stage"]]
+assert not missing, missing
+assert report["walls"]["passes"] == 8, report["walls"]["passes"]
+assert report["passed"] and report["accuracy"] == 0.75
+assert all(row["passed"] for row in report["certificates"])
+assert len(report["per_core"]) == 2
+PY
+then pass 16i "the report carries every stage's percentiles, 8 passes, 2 cores"
+else fail 16i "the report is missing a wall or a pass"; fi
+
+gate 17 "the deployment mutations"
+python3 - "${PKG}" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+sys.path.insert(0, os.path.join(root, "host"))
+import odin_deployment_bundle as b
+deploy = os.path.join(root, "deployment")
+def load(name): return json.load(open(os.path.join(deploy, name)))
+def dump(name, doc):
+    with open(os.path.join(deploy, name), "w") as handle:
+        json.dump(b.seal(doc), handle, sort_keys=True, separators=(",", ":"))
+# (1) a legitimately SEALED bundle whose frozen counts are wrong by one
+bad = load("nc1_two_core_passes.json")
+bad["certification"]["windows"]["0"]["1"][0][0] += 1
+dump("mutant_counts.json", bad)
+rep = load("nc1_two_core_passes_capture.json")
+rep["bundle_self_hash"] = json.load(open(
+    os.path.join(deploy, "mutant_counts.json")))["self_hash"]
+dump("mutant_counts_capture.json", rep)
+# (2) a bundle whose bytes were edited and NOT resealed
+raw = open(os.path.join(deploy, "nc1_two_core_passes.json")).read()
+open(os.path.join(deploy, "mutant_seal.json"), "w").write(
+    raw.replace('"NC=1', '"nc=1', 1))
+# (3) a replay whose stimulus keys are for another program: no verdict
+rep = load("nc1_two_core_passes_capture.json")
+for run in rep["runs"]:
+    run["stimulus_sha256"] = "0" * 64
+dump("mutant_replay.json", rep)
+PY
+LOG="${WORK}/deploy_mutant_counts.log"
+(
+    cd "${PKG}" && python3 host/odin_deployment_executor.py --xclbin x \
+        --fake-pyxrt host/fake_pyxrt_for_selftest.py \
+        --bundle deployment/mutant_counts.json \
+        --replay deployment/mutant_counts_capture.json \
+        --results "${PKG}/results/mutant_counts"
+) > "${LOG}" 2>&1
+status=$?
+if [ "${status}" -eq 1 ]; then pass 17a "a tampered expectation exits 1, not 0"
+else fail 17a "exit ${status}, wanted 1"; fi
+expect 17b "${LOG}" "FAIL exact="
+
+LOG="${WORK}/deploy_mutant_seal.log"
+(
+    cd "${PKG}" && python3 host/odin_deployment_executor.py --xclbin x \
+        --fake-pyxrt host/fake_pyxrt_for_selftest.py \
+        --bundle deployment/mutant_seal.json \
+        --replay deployment/nc1_two_core_passes_capture.json \
+        --results "${PKG}/results/mutant_seal"
+) > "${LOG}" 2>&1
+status=$?
+if [ "${status}" -eq 2 ]; then pass 17c "a tampered self-hash refuses with exit 2"
+else fail 17c "exit ${status}, wanted 2"; fi
+expect 17d "${LOG}" "OdinBundleCorrupt"
+expect 17e "${LOG}" "frozen evidence"
+
+LOG="${WORK}/deploy_mutant_replay.log"
+(
+    cd "${PKG}" && python3 host/odin_deployment_executor.py --xclbin x \
+        --fake-pyxrt host/fake_pyxrt_for_selftest.py \
+        --replay deployment/mutant_replay.json \
+        --results "${PKG}/results/mutant_replay"
+) > "${LOG}" 2>&1
+status=$?
+if [ "${status}" -eq 2 ]; then pass 17f "a stimulus the fabric never saw gets NO VERDICT"
+else fail 17f "exit ${status}, wanted 2"; fi
+expect 17g "${LOG}" "NO-VERDICT sentinel"
+
+gate 18 "the die-map renderer, on both paths"
+CSV="${WORK}/placement.csv"
+python3 - "${CSV}" <<'PY'
+import sys
+rows = ["name,class,site,x,y"]
+for index in range(600):
+    kind = ("odin_core" if index % 3 == 0
+            else "sequencer" if index % 3 == 1 else "shell")
+    rows.append(f"cell_{index},{kind},SLICE_X{index}Y{index},"
+                f"{index % 48},{index % 41}")
+open(sys.argv[1], "w").write("\n".join(rows) + "\n")
+PY
+LOG="${WORK}/die_map.log"
+( cd "${PKG}" && python3 host/render_die_map.py --csv "${CSV}" \
+    --out "${WORK}/die.svg" --format svg ) > "${LOG}" 2>&1
+status=$?
+if [ "${status}" -eq 0 ]; then pass 18a "the stdlib SVG path drew the map"
+else fail 18a "exit ${status}; see ${LOG}"; fi
+expect 18b "${LOG}" "svg(stdlib)"
+expect 18c "${WORK}/die.svg" "<rect"
+expect 18d "${WORK}/die.svg" "#9aa0a6"
+LOG="${WORK}/die_map_auto.log"
+( cd "${PKG}" && python3 host/render_die_map.py --csv "${CSV}" \
+    --out "${WORK}/die_auto.png" ) > "${LOG}" 2>&1
+if [ -f "${WORK}/die_auto.png" ] || [ -f "${WORK}/die_auto.svg" ]; then
+    pass 18e "the auto path produced a map, and named which one: $(cat "${LOG}")"
+else
+    fail 18e "the auto path drew nothing; see ${LOG}"
+fi
+LOG="${WORK}/die_map_absent.log"
+( cd "${PKG}" && python3 host/render_die_map.py --csv "${WORK}/nope.csv" \
+    --out "${WORK}/x.svg" ) > "${LOG}" 2>&1
+status=$?
+if [ "${status}" -eq 2 ]; then pass 18f "no checkpoint CSV refuses with exit 2"
+else fail 18f "exit ${status}, wanted 2"; fi
+expect 18g "${LOG}" "mine_checkpoint.sh"
 
 # ===========================================================================
 say ""

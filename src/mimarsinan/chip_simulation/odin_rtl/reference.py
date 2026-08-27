@@ -21,17 +21,32 @@ from typing import Any, Dict, List, Sequence, Tuple
 import numpy as np
 import torch
 
+from mimarsinan.chip_simulation.odin_deployment_bundle import (
+    SOURCE_ALWAYS_ON,
+    SOURCE_INPUT,
+    SOURCE_OFF,
+    OdinRoutingRefusal,
+    core_routes,
+    gather_axon_slots,
+)
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 
-#: ``SpikeSource.core_`` sentinels, mirroring nevresim's ``constants.hpp``.
-SOURCE_OFF = -1
-SOURCE_INPUT = -2
-SOURCE_ALWAYS_ON = -3
+__all__ = [
+    "SOURCE_ALWAYS_ON",
+    "SOURCE_INPUT",
+    "SOURCE_OFF",
+    "CycleTrace",
+    "ReferenceTraceError",
+    "gather_axon_counts",
+    "per_slot_counts_by_cycle",
+    "simulate_cycles",
+]
 
-
-class ReferenceTraceError(ValueError):
-    """The mapping or the raster is not something the cycle model can execute."""
+#: The gather rule and its refusal live in the deployment-bundle SSOT, so the
+#: board executor's host-mediated routing and this twin cannot drift; the
+#: historical name stays bound to the same class.
+ReferenceTraceError = OdinRoutingRefusal
 
 
 @dataclass(frozen=True)
@@ -66,54 +81,17 @@ class CycleTrace:
         return tuple(tuple(row) for row in totals)
 
 
-def _read(values: Sequence[Any], index: int, what: str) -> Any:
-    """Index a gather source loudly: an out-of-range read is a mapping defect."""
-    if index < 0 or index >= len(values):
-        raise ReferenceTraceError(
-            f"{what} {index}, which does not exist ({len(values)} available). "
-            f"The axon-source table and the geometry it is gathered from "
-            f"disagree, and silently delivering zero would report a DIFFERENT "
-            f"network's counts as the deployed ones.")
-    return values[index]
-
-
-def _source_kind(source: Any) -> int:
-    if getattr(source, "is_off_", False):
-        return SOURCE_OFF
-    if getattr(source, "is_input_", False):
-        return SOURCE_INPUT
-    if getattr(source, "is_always_on_", False):
-        return SOURCE_ALWAYS_ON
-    return int(source.core_)
-
-
 def gather_axon_counts(
     mapping: Any, previous_outputs: Sequence[Sequence[int]],
     input_counts: Sequence[int],
 ) -> Tuple[Tuple[int, ...], ...]:
     """One cycle's per-slot counts for every core, in canonical slot order."""
-    gathered: List[Tuple[int, ...]] = []
-    for index, core in enumerate(mapping.cores):
-        slots: List[int] = []
-        for slot, source in enumerate(core.axon_sources):
-            kind = _source_kind(source)
-            if kind == SOURCE_OFF:
-                slots.append(0)
-            elif kind == SOURCE_INPUT:
-                slots.append(int(_read(
-                    input_counts, int(source.neuron_),
-                    f"core {index} slot {slot} reads input line")))
-            elif kind == SOURCE_ALWAYS_ON:
-                slots.append(1)
-            else:
-                producer = _read(
-                    previous_outputs, kind,
-                    f"core {index} slot {slot} reads core")
-                slots.append(int(_read(
-                    producer, int(source.neuron_),
-                    f"core {index} slot {slot} reads core {kind} neuron")))
-        gathered.append(tuple(slots))
-    return tuple(gathered)
+    return tuple(
+        gather_axon_slots(
+            core_routes(core), previous_outputs, input_counts,
+            where=f"core {index}")
+        for index, core in enumerate(mapping.cores)
+    )
 
 
 def simulate_cycles(

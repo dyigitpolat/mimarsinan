@@ -60,6 +60,12 @@ STAGE = DIST / "odin_hacc_package"
 ZIP_PATH = DIST / "odin_hacc_package.zip"
 CACHE = REPO / "build" / "hacc_fixture_cache"
 
+#: The bundle-schema SSOT ships VERBATIM: the board executor runs THESE bytes,
+#: so there is no second copy to drift, only a copy to hash-verify.
+BUNDLE_MODULE = (
+    REPO / "src" / "mimarsinan" / "chip_simulation" / "odin_deployment_bundle.py")
+DEPLOYMENT_SRC = PACKAGE_SRC / "deployment"
+
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 
@@ -89,6 +95,7 @@ from integration.odin_rtl_harness import (  # noqa: E402
     traces_for,
 )
 
+from mimarsinan.chip_simulation import odin_deployment_bundle  # noqa: E402
 from mimarsinan.chip_simulation.odin_fpga import kernel_registers  # noqa: E402
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (  # noqa: E402
     KERNEL_NAME,
@@ -467,6 +474,50 @@ _PROTOCOL_MIRRORS = (
 )
 
 
+#: The seal is the fixtures' discipline and the bundles': two implementations
+#: that disagreed would let a board node verify a document nobody sealed.
+_SEAL_PROBE = {"schema": "probe", "a": [1, 2, {"b": "c"}], "d": True}
+
+
+def require_seal_agrees() -> None:
+    """The driver's fixture seal and the bundle module's are the SAME function."""
+    if driver.self_hash(_SEAL_PROBE) != odin_deployment_bundle.self_hash(_SEAL_PROBE):
+        raise PackagingRefusal(
+            "the shipped driver and the bundle-schema module compute different "
+            "self-hashes over the same document; one of the two was edited "
+            "alone, and a board node would verify evidence nobody sealed")
+    payload = bytes(range(256)) * 3
+    if (driver.encode_payload(payload)
+            != odin_deployment_bundle.encode_payload(payload)):
+        raise PackagingRefusal(
+            "the shipped driver and the bundle-schema module encode a payload "
+            "differently; the two halves of the package would not read each "
+            "other's bytes")
+
+
+def require_bundles_load() -> List[Path]:
+    """Every shipped deployment bundle must seal, and must carry OUR kernel table."""
+    bundles = sorted(DEPLOYMENT_SRC.glob("*.json")) if DEPLOYMENT_SRC.is_dir() else []
+    if not bundles:
+        raise PackagingRefusal(
+            f"no deployment bundle under {DEPLOYMENT_SRC}; regenerate it with "
+            f"scripts/hacc/make_deployment_bundle.py (it needs an RTL simulator, "
+            f"which is why the bundle is committed rather than built here)")
+    for path in bundles:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        stamped = {k: v for k, v in document.items() if k != "self_hash"}
+        if odin_deployment_bundle.self_hash(stamped) != document.get("self_hash"):
+            raise PackagingRefusal(
+                f"{path.name}: its self-hash does not match its content; "
+                f"regenerate it rather than editing it")
+        if document.get("schema") == odin_deployment_bundle.SCHEMA \
+                and document.get("kernel") != KERNEL_TABLE:
+            raise PackagingRefusal(
+                f"{path.name}: the bundle's device-protocol table is not this "
+                f"package's; regenerate it against this kernel")
+    return bundles
+
+
 def require_protocol_agrees() -> None:
     """The shipped driver and the repository SSOT declare the SAME protocol."""
     drifted = [
@@ -742,6 +793,18 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
          "host/odin_board_driver.py")
     copy(PACKAGE_SRC / "host" / "fake_pyxrt_for_selftest.py",
          "host/fake_pyxrt_for_selftest.py")
+    copy(PACKAGE_SRC / "host" / "odin_deployment_executor.py",
+         "host/odin_deployment_executor.py")
+    copy(PACKAGE_SRC / "host" / "render_die_map.py", "host/render_die_map.py")
+    # VERBATIM, and hash-verified below: the board executor imports the very
+    # module the repository's cycle-accurate twin executes.
+    copy(BUNDLE_MODULE, "host/odin_deployment_bundle.py")
+    if sha256_file(STAGE / "host/odin_deployment_bundle.py") != sha256_file(BUNDLE_MODULE):
+        raise PackagingRefusal(
+            "the staged bundle-schema module is not byte-identical to "
+            f"{BUNDLE_MODULE.relative_to(REPO)}")
+    for path in require_bundles_load():
+        copy(path, f"deployment/{path.name}")
 
     for document in documents:
         write_text(
@@ -832,6 +895,8 @@ def main() -> int:
     options = parser.parse_args()
 
     require_protocol_agrees()
+    require_seal_agrees()
+    require_bundles_load()
     engine = available_engine()
     head, dirty = git_head()
     rtl = rtl_digest()

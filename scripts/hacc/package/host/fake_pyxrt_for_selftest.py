@@ -27,6 +27,7 @@ header. Nothing here proves anything about an Alveo.
 
 from __future__ import annotations
 
+import hashlib
 import struct
 from typing import Any, Dict, List, Optional
 
@@ -51,16 +52,23 @@ _UNSET = object()
 #: honest model: one process talks to one board.
 _STATE: Dict[str, Any] = {
     "fixture": None, "fault": None, "capture_words": None, "log": [],
+    "deployment": None,
 }
 
 
 def arm(
     fixture: Any = None, fault: Any = _UNSET, capture_words: Any = _UNSET,
+    deployment: Any = _UNSET,
 ) -> None:
     """Point the fake at a frozen fixture, a raw capture image, or a fault.
 
     ``arm(fixture)`` leaves any armed fault alone — the driver calls it once per
-    run, and only a test sets faults.
+    run, and only a test sets faults. ``deployment=`` arms the MULTI-RUN replay
+    a host-mediated deployment needs: the executor programs one core and then
+    sends a different stimulus per sample, so one frozen answer cannot serve
+    them. The replay is keyed by the sha256 of the stimulus, which means a host
+    that builds the wrong stimulus is answered with NO VERDICT rather than with
+    some other pass's counts.
     """
     if fixture is not None:
         _STATE["fixture"] = fixture
@@ -68,6 +76,12 @@ def arm(
         _STATE["fault"] = fault
     if capture_words is not _UNSET:
         _STATE["capture_words"] = capture_words
+    if deployment is not _UNSET:
+        _STATE["deployment"] = (
+            None if deployment is None else {
+                str(run["stimulus_sha256"]): run
+                for run in deployment["runs"]
+            })
 
 
 def call_log() -> List[tuple]:
@@ -79,7 +93,27 @@ def _log(*entry: Any) -> None:
     _STATE["log"].append(tuple(entry))
 
 
-def _capture_image(capacity: int) -> Optional[List[int]]:
+def _deployment_image(stimulus: bytes, capacity: int) -> Optional[List[int]]:
+    """The answer this pass's stimulus earns, or None when nothing matches it."""
+    replay = _STATE["deployment"]
+    run = replay.get(hashlib.sha256(stimulus).hexdigest()) if replay else None
+    if run is None:
+        # No frozen answer for these bytes: the fabric never saw this program,
+        # so the honest fake leaves the host's sentinel in the header.
+        return None
+    events = [list(record) for record in run["events"]]
+    if _STATE["fault"] == "extra_spike" and events:
+        events.append(list(events[0]))
+    if _STATE["fault"] == "truncated_capture":
+        return [int(capacity), int(run["device_cycles"])] + [
+            int(word) for record in events for word in record]
+    words = [len(events), int(run["device_cycles"])]
+    for record in events:
+        words.extend(int(word) for word in record)
+    return words
+
+
+def _capture_image(capacity: int, stimulus: bytes = b"") -> Optional[List[int]]:
     """The word image the fabric would have DMA'd back, or None for no verdict.
 
     One record per spike the frozen per-cycle expectation carries, tagged the
@@ -91,6 +125,8 @@ def _capture_image(capacity: int) -> Optional[List[int]]:
         # sentinel survives in the capture header. That is the ONLY way `err`
         # reaches a host with no register access.
         return None
+    if _STATE["deployment"] is not None:
+        return _deployment_image(stimulus, capacity)
     armed = _STATE["capture_words"]
     if armed is not None:
         return [int(word) for word in armed]
@@ -184,7 +220,10 @@ class kernel:
             item._group if isinstance(item, bo) else item for item in args))
         capture = args[2]
         capacity = int(args[5])
-        words = _capture_image(capacity)
+        # Exactly the words the host DECLARED, not the whole buffer object: a
+        # deployment reuses one oversized stimulus buffer across samples.
+        stimulus = bytes(args[1]._data[:int(args[4]) * 4])
+        words = _capture_image(capacity, stimulus)
         if words is not None:
             capture._store(struct.pack(f"<{len(words)}I", *words), 0)
         return run(self)

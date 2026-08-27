@@ -662,6 +662,18 @@ class BoardSession:
         """How many ODIN cores this bitstream holds, per PROG_WORDS = NC*262144."""
         return self.capacity.cores
 
+    def arm_fake(self, **state: Any) -> bool:
+        """Hand a FAKE pyxrt the frozen answers it should replay.
+
+        The real binding has no ``arm``, so this is a no-op against a card —
+        which is what keeps the arming hook out of the device path.
+        """
+        arm = getattr(self._xrt, "arm", None)
+        if arm is None:
+            return False
+        arm(**state)
+        return True
+
     def _require_session(self, what: str) -> Any:
         if self._kernel is None or self._xrt is None:
             raise OdinDriverError(
@@ -670,22 +682,81 @@ class BoardSession:
                 f"to a device that was never opened")
         return self._xrt
 
-    def _buffer(self, nbytes: int, arg: int) -> Any:
+    def allocate(self, nbytes: int, arg: int) -> Any:
+        """One buffer object in the memory bank this kernel argument lives in."""
         xrt = self._require_session("buffer allocation")
         return xrt.bo(self._device, int(nbytes), xrt.bo.flags.normal,
                       self._kernel.group_id(int(arg)))
 
-    def _to_device(self, handle: Any, payload: bytes) -> None:
+    def _buffer(self, nbytes: int, arg: int) -> Any:
+        return self.allocate(nbytes, arg)
+
+    def dma_in(self, handle: Any, payload: bytes) -> Dict[str, float]:
+        """One host->device transfer, timed as the two distinct stages it is.
+
+        ``bo.write`` is a host memcpy into the buffer object and ``bo.sync`` is
+        the DMA that moves it across PCIe; a deployment that reports one number
+        for both cannot say which of the two a slow pass spent its time in.
+        """
         xrt = self._require_session("host-to-device DMA")
+        started = time.perf_counter()
         handle.write(payload, 0)
+        written = time.perf_counter()
         handle.sync(
             xrt.xclBOSyncDirection.XCL_BO_SYNC_BO_TO_DEVICE, len(payload), 0)
+        return {"bo_write_s": written - started,
+                "sync_s": time.perf_counter() - written}
+
+    def _to_device(self, handle: Any, payload: bytes) -> None:
+        self.dma_in(handle, payload)
+
+    def poison_capture(self, capture_bo: Any) -> Dict[str, float]:
+        """Write the no-verdict sentinel into a capture buffer's header.
+
+        The fabric overwrites both header words at drain time, so a header that
+        comes back untouched is the kernel refusing — the only `err` signal a
+        host with no register access can see. Every run needs a FRESH sentinel,
+        which is why this is separate from allocating the buffer.
+        """
+        return self.dma_in(capture_bo, no_verdict_header())
 
     def _capture_buffer(self, nbytes: int) -> Any:
         """A capture buffer whose header carries the host's no-verdict sentinel."""
-        capture_bo = self._buffer(nbytes, ARG_CAPTURE)
-        self._to_device(capture_bo, no_verdict_header())
+        capture_bo = self.allocate(nbytes, ARG_CAPTURE)
+        self.poison_capture(capture_bo)
         return capture_bo
+
+    def start_and_wait(self, program_bo: Any, stimulus_bo: Any, capture_bo: Any,
+                       *, program_words: int, stimulus_words: int,
+                       capture_events: int) -> float:
+        """The six arguments in, ap_done out — the measured DEVICE wall."""
+        xrt = self._require_session("a device run")
+        started = time.perf_counter()
+        handle = self._kernel(
+            program_bo, stimulus_bo, capture_bo,
+            int(program_words), int(stimulus_words), int(capture_events),
+        )
+        state = handle.wait(self.run_timeout_ms)
+        wall = time.perf_counter() - started
+        completed = xrt.ert_cmd_state.ERT_CMD_STATE_COMPLETED
+        if state != completed:
+            raise OdinFpgaKernelError(
+                f"{self.name}: the kernel run ended in state {state!r}, not "
+                f"{completed!r}. XRT never saw ap_done, so nothing was captured "
+                f"and there is no verdict in memory to decode")
+        return wall
+
+    def read_capture(self, capture_bo: Any, nbytes: int
+                     ) -> Tuple[List[int], Dict[str, float]]:
+        """The capture buffer back on the host, timed as sync then read."""
+        xrt = self._require_session("a capture readback")
+        started = time.perf_counter()
+        capture_bo.sync(
+            xrt.xclBOSyncDirection.XCL_BO_SYNC_BO_FROM_DEVICE, int(nbytes), 0)
+        synced = time.perf_counter()
+        words = capture_words(capture_bo.read(int(nbytes), 0))
+        return words, {"sync_s": synced - started,
+                       "readback_s": time.perf_counter() - synced}
 
     def _execute(self, program: bytes, stimulus: bytes,
                  capture_events: int) -> Tuple[List[int], Dict[str, float]]:
@@ -694,36 +765,26 @@ class BoardSession:
         Nothing here reads a register: the run's verdict is the capture header,
         and whether the fabric wrote one at all.
         """
-        xrt = self._require_session("a device run")
+        self._require_session("a device run")
         program_words = len(program) // WORD_BYTES
         stimulus_words = len(stimulus) // WORD_BYTES
         require_program_fits(
             program_words, stimulus_words, self.capacity, transport=self.name)
 
         started = time.monotonic()
-        program_bo = self._buffer(len(program), ARG_PROGRAM)
-        self._to_device(program_bo, program)
+        program_bo = self.allocate(len(program), ARG_PROGRAM)
+        self.dma_in(program_bo, program)
         programming_s = time.monotonic() - started
 
         started = time.monotonic()
-        stimulus_bo = self._buffer(len(stimulus), ARG_STIMULUS)
-        self._to_device(stimulus_bo, stimulus)
+        stimulus_bo = self.allocate(len(stimulus), ARG_STIMULUS)
+        self.dma_in(stimulus_bo, stimulus)
         capture_bytes = capture_buffer_bytes(capture_events)
         capture_bo = self._capture_buffer(capture_bytes)
-        handle = self._kernel(
-            program_bo, stimulus_bo, capture_bo,
-            program_words, stimulus_words, int(capture_events),
-        )
-        state = handle.wait(self.run_timeout_ms)
-        completed = xrt.ert_cmd_state.ERT_CMD_STATE_COMPLETED
-        if state != completed:
-            raise OdinFpgaKernelError(
-                f"{self.name}: the kernel run ended in state {state!r}, not "
-                f"{completed!r}. XRT never saw ap_done, so nothing was captured "
-                f"and there is no verdict in memory to decode")
-        capture_bo.sync(
-            xrt.xclBOSyncDirection.XCL_BO_SYNC_BO_FROM_DEVICE, capture_bytes, 0)
-        words = capture_words(capture_bo.read(capture_bytes, 0))
+        self.start_and_wait(
+            program_bo, stimulus_bo, capture_bo, program_words=program_words,
+            stimulus_words=stimulus_words, capture_events=capture_events)
+        words, _walls = self.read_capture(capture_bo, capture_bytes)
         execution_s = time.monotonic() - started
         return words, {"programming_s": programming_s,
                        "execution_s": execution_s}
@@ -777,9 +838,7 @@ class BoardSession:
         self._require_session("run_fixture()")
         # A FAKE is handed the fixture so it can answer with the capture image
         # the frozen evidence says the fabric produced; real pyxrt has no arm().
-        arm = getattr(self._xrt, "arm", None)
-        if arm is not None:
-            arm(fixture)
+        self.arm_fake(fixture=fixture)
         run = fixture["run"]
         needed_cores = int(run["cores"])
         if needed_cores > self.cores_implied:
