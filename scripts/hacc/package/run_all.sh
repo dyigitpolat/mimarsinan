@@ -46,6 +46,9 @@ FAKE="${HERE}/host/fake_pyxrt_for_selftest.py"
 FIXTURES="${HERE}/fixtures"
 BUILD_SCRIPT="${HERE}/scripts/hacc/build_xclbn.sh"
 JOURNAL="${RESULTS}/phase_journal.tsv"
+CHIP_CACHE="${HERE}/scripts/chip_cache.sh"
+BUNDLE_DIR="${HERE}/deployment"
+EXECUTOR="${HERE}/host/odin_deployment_executor.py"
 PICK_LOG="${RESULTS}/partition_picks.txt"
 LOCK="${HERE}/.run_all.lock"
 
@@ -102,7 +105,7 @@ STATUS_ONLY=0
 ONLY=""
 FROM=0
 
-usage() { sed -n '2,40p' "$0"; }
+usage() { sed -n '2,50p' "$0"; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -529,9 +532,52 @@ rotate_log() {
     fi
 }
 
+# The chip cache, consulted before a compile slot is spent and fed after one.
+# Both directions are BEST EFFORT on the cache's own terms: a cache that cannot
+# be read or written must never stop a build, only fail to save one.
+cache_key_of() {
+    "${CHIP_CACHE}" key "$1" 2>/dev/null | sed -n 's/^key=//p' | head -1
+}
+
+try_cache_restore() {
+    local target="$1" key
+    [ -x "${CHIP_CACHE}" ] || return 1
+    [ "${ODIN_CHIP_CACHE_DISABLE:-0}" = "1" ] && return 1
+    "${CHIP_CACHE}" lookup "${target}" 2>/dev/null || return 1
+    key="$(cache_key_of "${target}")"
+    if [ "${DRY_RUN}" = "1" ]; then
+        say "[cache/${target}] would restore ${key} instead of building."
+        return 0
+    fi
+    if ! "${CHIP_CACHE}" restore "${target}"; then
+        say "[cache/${target}] the entry would not restore; building instead."
+        return 1
+    fi
+    say "[cache/${target}] cache hit ${key} — no compile slot spent."
+    journal "phase${2}" CACHE_HIT "cache hit ${key}"
+    return 0
+}
+
+try_cache_publish() {
+    local target="$1" key
+    [ -x "${CHIP_CACHE}" ] || return 0
+    [ "${ODIN_CHIP_CACHE_DISABLE:-0}" = "1" ] && return 0
+    [ "${DRY_RUN}" = "1" ] && return 0
+    key="$(cache_key_of "${target}")"
+    if "${CHIP_CACHE}" publish "${target}"; then
+        journal "phase${2}" CACHE_PUBLISH "${key}"
+    else
+        say "[cache/${target}] publishing failed; the build itself stands."
+    fi
+    return 0
+}
+
 submit_build() {
-    local target="$1"
+    local target="$1" phase="$2"
     local log="${RESULTS}/phase_build_${target}.log"
+    if try_cache_restore "${target}" "${phase}"; then
+        return 0
+    fi
     rotate_log "${log}"
     local status=0
     do_cmd env \
@@ -557,6 +603,7 @@ submit_build() {
             "the job returned 0 but produced no xclbin; read ${log}" || return 2
         write_sidecar "${target}"
     fi
+    try_cache_publish "${target}" "${phase}"
 }
 
 phase_2() {
@@ -570,7 +617,7 @@ phase_2() {
     say "shell, XRT's allocation on silicon, or timing closure — that is B0/B1."
     say "The smoke is BOUNDED: the smallest fixture only, under"
     say "${ODIN_EMU_SMOKE_TIMEOUT:-5400}s. ODIN_EMU_SMOKE=all runs all five."
-    submit_build hw_emu
+    submit_build hw_emu 2
 }
 
 phase_3() {
@@ -579,7 +626,7 @@ phase_3() {
     say "Budget 2-6 h: place-and-route of one ODIN core plus the program and"
     say "capture RAMs. NEVER submit this to a board partition — those are capped"
     say "at one hour."
-    submit_build hw
+    submit_build hw 3
 }
 
 # ---------------------------------------------------------------------------
@@ -685,6 +732,59 @@ phase_7() {
 }
 
 # ---------------------------------------------------------------------------
+# 8. HACC NUS - ODIN Deployment
+# ---------------------------------------------------------------------------
+phase_8() {
+    pick_partition board "${ODIN_BOARD_PARTITION:-}" "${BOARD_CANDIDATES[@]}" || return 2
+    head_line "phase 8: HACC NUS - ODIN Deployment on ${PICKED}"
+    say "The bitstream holds ONE ODIN core and the chip routes nothing between"
+    say "cores, so the shipped network runs as one host-mediated PASS per core:"
+    say "program the core, run a sample, read its per-cycle counts back,"
+    say "transcode them into the next core's axon slots, build that core's"
+    say "stimulus on the host, run again. Per-pass counts are certified against"
+    say "the frozen cosimulation on a subset of samples, the final readout on"
+    say "ALL of them, and every stage is timed separately."
+    if [ "${DRY_RUN}" = "0" ]; then
+        require_file "${EXECUTOR}" \
+            "re-unzip the package; host/odin_deployment_executor.py is missing" \
+            || return 2
+        require_file "${BUNDLE_DIR}" \
+            "re-unzip the package; deployment/ carries the sealed bundle" \
+            || return 2
+        say "[phase8] staging $(ls "${BUNDLE_DIR}"/*.json 2>/dev/null | wc -l) bundle file(s):"
+        for bundle in "${BUNDLE_DIR}"/*.json; do
+            [ -f "${bundle}" ] || continue
+            say "         $(basename "${bundle}")  $(sha256sum "${bundle}" | cut -c1-16)…"
+        done
+    fi
+    local log="${RESULTS}/phase_deployment.log"
+    rotate_log "${log}"
+    local status=0
+    do_cmd env \
+        ODIN_PKG="${HERE}" ODIN_XCLBIN="${XCLBIN_STAGED}" ODIN_MODE=deploy \
+        ODIN_CARD="${CARD}" ODIN_BUNDLE="${ODIN_BUNDLE:-}" \
+        ODIN_DEPLOY_SAMPLES="${ODIN_DEPLOY_SAMPLES:-}" \
+        ODIN_RESULTS="${RESULTS}/board_deploy" ODIN_LOG="${log}" \
+        sbatch --wait -p "${PICKED}" \
+        "${HERE}/scripts/hacc/odin_board.sbatch" || status=$?
+    if [ "${DRY_RUN}" = "0" ] && [ -f "${log}" ]; then
+        tail -n 40 "${log}"
+    fi
+    if [ "${status}" -ne 0 ]; then
+        say "[deploy] sbatch on '${PICKED}' exited ${status}. Read ${log};"
+        say "  a red certificate is a finding, not a tolerance, and the report"
+        say "  under ${RESULTS}/board_deploy names which pass diverged."
+        say "${RERUN_LINE}"
+        return "${status}"
+    fi
+    if [ "${DRY_RUN}" = "0" ]; then
+        require_file "${RESULTS}/board_deploy/deployment_report.json" \
+            "the job returned 0 but wrote no deployment_report.json; read ${log}" \
+            || return 2
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # What counts as done: the artifact, and nothing else.
 # ---------------------------------------------------------------------------
 DONE_WHY=""
@@ -750,6 +850,14 @@ phase_done() {
             fi
             return 1
             ;;
+        8)
+            if [ -f "${RESULTS}/board_deploy/deployment_report.json" ]; then
+                DONE_WHY="${RESULTS}/board_deploy/deployment_report.json — the"
+                DONE_WHY="${DONE_WHY} deployment ran and reported its accuracy"
+                return 0
+            fi
+            return 1
+            ;;
         *) return 1 ;;
     esac
 }
@@ -757,7 +865,7 @@ phase_done() {
 print_status() {
     local phase
     say "phase   state      evidence"
-    for phase in 0 1 2 3 4 5 6 7; do
+    for phase in 0 1 2 3 4 5 6 7 8; do
         if phase_done "${phase}"; then
             printf '%-7s %-10s %s\n' "${phase}" "done" "${DONE_WHY}"
         elif [ "${phase}" -le 1 ]; then
@@ -794,7 +902,7 @@ say "ODIN bring-up starting $(utc) — package ${HERE}"
 say "card     : ${CARD}   (platform ${PLATFORM}, config ${CFG})"
 say "pid $$; watch with tail -f ${RESULTS}/run_all.log"
 
-for phase in 0 1 2 3 4 5 6 7; do
+for phase in 0 1 2 3 4 5 6 7 8; do
     if ! want "${phase}"; then
         continue
     fi

@@ -16,6 +16,12 @@
 # DMA'd home. It reads NO control register -- pyxrt binds none, which is what
 # field-falsified the previous driver on this cluster on 2026-08-25.
 #
+# ODIN_MODE=deploy is "HACC NUS - ODIN Deployment": the sealed bundle under
+# deployment/ executed as one host-mediated PASS per core -- program the core
+# once, run each sample, transcode the counts into the next core's axon slots.
+# ODIN_BUNDLE names a bundle other than the packaged default; ODIN_DEPLOY_SAMPLES
+# bounds the campaign.
+#
 # FIELD-OBSERVED 2026-08-25: the U55C board partition's AllowGroups is
 # lab,hgpu,fpga_u55c — reachable through `hgpu` without fpga_u55c membership —
 # and mi210_vck_u55c, which the vendor doc names, refuses this account outright.
@@ -77,8 +83,15 @@ case "${MODE}" in
             --xclbin "${XCLBIN}" --fixtures "${PKG}/fixtures" \
             --results "${RESULTS}"
         ;;
+    deploy)
+        DEPLOY_ARGS=(--xclbin "${XCLBIN}" --results "${RESULTS}")
+        if [[ -n "${ODIN_BUNDLE:-}" ]]; then
+            DEPLOY_ARGS+=(--bundle "${ODIN_BUNDLE}")
+        fi
+        python3 "${PKG}/host/odin_deployment_executor.py" "${DEPLOY_ARGS[@]}"
+        ;;
     *)
-        echo "REFUSING: unknown ODIN_MODE '${MODE}' (probe | run)." >&2
+        echo "REFUSING: unknown ODIN_MODE '${MODE}' (probe | run | deploy)." >&2
         exit 2
         ;;
 esac

@@ -80,9 +80,11 @@ second one refuses by pid, and anything already finished is kept, not redone.
 | 5 | **B0**: introspect, load, open EXCLUSIVE, run a null program, read its header back | a board partition for your card | < 1 board hour |
 | 6 | **B1**: every fixture, certified | a board partition for your card | < 1 board hour |
 | 7 | board + independent reference in one job | a joint partition | queue-bound |
+| 8 | **HACC NUS - ODIN Deployment**: the sealed bundle run as one host-mediated pass per core | a board partition for your card | minutes |
 
-Phase 3 dominates. `--only N` runs one phase, `--from N` starts at one,
-`--force` redoes one whose artifact is already there.
+Phase 3 dominates — and the **chip cache** below is what stops you paying for
+it twice. `--only N` runs one phase, `--from N` starts at one, `--force` redoes
+one whose artifact is already there.
 
 ### Resume is artifact-based — there are no stamps
 
@@ -306,6 +308,107 @@ report home, not something to hand-edit here.
 
 ---
 
+## HACC NUS - ODIN Deployment
+
+Phase 6 certifies FIXTURES: frozen programs whose counts the RTL cosimulation
+recorded. Phase 8 deploys a NETWORK, and the difference is the whole point.
+
+The shipped bitstream instantiates ONE ODIN core (`PROG_WORDS = NC * 262144` at
+NC = 1), and the chip routes nothing between cores in any case — `SPI_OPEN_LOOP`
+is asserted, so v1 routing is host-mediated by design. A multi-core network
+therefore runs as one **pass per core**:
+
+1. program the core — ONCE; fabric memories persist across sequencer runs, so
+   every later sample costs a stimulus, not a reprogram;
+2. run one sample: the stimulus opens with the membrane CLEAR (an op, not a
+   reprogram), then one TAG / AER burst / TREF / BARRIER per cycle;
+3. read the capture back and fold it into per-cycle, per-neuron counts;
+4. **transcode**: walk the next core's axon-source table and turn the producer's
+   counts into that core's per-slot counts — the producer's counts from the
+   cycle BEFORE, the entry raster from this one;
+5. build that core's stimulus on the host from those slot counts, and run again.
+
+```bash
+./run_all.sh --only 8                        # after phases 3-4 have staged an xclbin
+ODIN_DEPLOY_SAMPLES=8 ./run_all.sh --only 8  # bound the campaign
+```
+
+**What it certifies.** Per-pass spike counts against the frozen cosimulation on
+a *certification subset* of samples, and the final readout — the class scores
+and the predicted label — on **every** shipped sample. Both in the house
+format; anything other than `PASS exact=1.000000 max|dcount|=0` is a finding,
+not a tolerance. It also accumulates ACCURACY against the bundle's labels.
+
+**Where the numbers come from.** `deployment/*.json` is a sealed bundle: a
+manifest with the generating commit and the chip-config inputs, per-core PROGRAM
+streams, per-sample core-0 STIMULUS streams, the routing plan, and the frozen
+expectations. Every count in it was MEASURED by the RTL cosimulation, one pass
+at a time, and gated cycle by cycle against the cycle-accurate twin. The file
+carries its own hash: a damaged upload refuses instead of certifying.
+
+**The one self-check worth knowing about.** The host builds every consumer
+pass's stimulus itself. Before it trusts that builder, it rebuilds the FIRST
+pass's stimulus and requires it to be byte-identical to the frozen one the
+repository's own encoder produced. If those two ever disagree, the run refuses
+rather than stimulating a network nobody assembled.
+
+**What comes out**, under `results/board_deploy/`:
+
+* `deployment_report.json` — the certificates, the readout of every sample, the
+  accuracy, and wall aggregates with percentiles for **every distinct stage**:
+  `bo_write_s`, `sync_s`, `run_s`, `readback_s`, `decode_s`, `transcode_s`,
+  `pass_total_s`, plus per-sample totals and per-core programming;
+* `deployment_samples.tsv` — one row per pass, capped so it stays readable.
+
+---
+
+## The chip cache — never pay for the same bitstream twice
+
+A place-and-routed xclbin is 2–6 hours. `scripts/chip_cache.sh` keeps it under
+`${ODIN_CHIP_CACHE:-/data/${USER}/odin_chip_cache}/<key>/`, and phases 2 and 3
+consult it before they spend a compile slot:
+
+```bash
+./scripts/chip_cache.sh key hw       # the key, and every input that made it
+./scripts/chip_cache.sh list         # what is already paid for
+./scripts/chip_cache.sh adopt /data/${USER}/odin_hacc_package --alias v4
+```
+
+The key is a sha256 over everything that could change the bitstream: the RTL
+digest the MANIFEST carries, the card, the platform, the part, NC, `PROG_WORDS`,
+`CAP_WORDS`, the kernel clock from the card's v++ config, the Vitis release, the
+target, and the sha256 of `build_xclbn.sh` itself — because the build script IS
+the recipe, and without it a cache hit could resurrect a bitstream that
+run_all.sh's own artifact-resume rule had just called stale.
+
+`adopt` takes an install that ALREADY paid — the v4 install is the first entry —
+and derives its key from that install's own sidecars and manifest through the
+same function the build path uses, so the entry lands exactly where a rebuild
+will look for it. `--alias NAME` leaves a readable symlink beside it.
+
+Publishing claims a key with `mkdir` (the one portable atomic test-and-set on a
+shared filesystem), stages beside the entry and renames in, and **never**
+clobbers an entry that is already there: two jobs that computed the same key
+built the same bitstream, and the one on disk may already have been read.
+`ODIN_CHIP_CACHE_DISABLE=1` turns the whole thing off.
+
+### Mining a routed checkpoint
+
+`scripts/hacc/mine_checkpoint.sh` opens the routed checkpoint v++ left under
+`--temp_dir` and files what only the real shell can say — `report_utilization`
+(flat and hierarchical), `report_design_analysis -congestion`,
+`report_timing_summary`, `report_route_status`, and a per-primitive placement
+CSV — into the chip-cache entry for that build, then draws a die map from the
+CSV with `host/render_die_map.py` (matplotlib if the node has it, otherwise an
+SVG written straight out of the standard library). The kernel's sub-blocks get
+ink; the shell stays grey.
+
+```bash
+scripts/hacc/mine_checkpoint.sh hw            # after phase 3
+```
+
+---
+
 ## Bringing the evidence home
 
 ```bash
@@ -317,4 +420,8 @@ It gathers `results/` (including `phase_journal.tsv` and
 the `.built_with` sidecars, the package `MANIFEST.json`, and the
 build's `reports/` and `logs/` — the timing and utilization reports are the
 real-shell half of the implementation-closure evidence and nothing off-cluster
-can produce them. The xclbin itself is deliberately left behind.
+can produce them. It also brings the deployment report and its per-pass TSV, and
+— for every target whose bitstream is in the chip cache — that entry's key
+inputs, mined reports and die maps. The xclbin itself is deliberately left
+behind: the pictures and the tables are kilobytes, the bitstream is hundreds of
+megabytes and stays where it is.

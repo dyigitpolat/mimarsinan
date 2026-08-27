@@ -18,8 +18,12 @@ WHAT GOES IN, AND WHY ONLY THAT
     the committed golden gates. Packaging FAILS if any of them disagrees;
   * the thin host driver and its fake ``pyxrt``, so the whole driver runs green
     with no hardware before it is ever pointed at a card;
+  * the DEPLOYMENT BUNDLE and its replay evidence under ``deployment/``, plus
+    the bundle-schema module copied VERBATIM out of ``src/`` and hash-verified
+    here, the executor that runs it as host-mediated passes, and the die-map
+    renderer the post-build mining calls;
   * ``bootstrap_hacc.sh``, ``run_all.sh``, ``scripts/status.sh``,
-    ``collect_results.sh``, ``README_HACC.md``.
+    ``scripts/chip_cache.sh``, ``collect_results.sh``, ``README_HACC.md``.
 
 Nothing else from the repository tree.
 
@@ -769,7 +773,7 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
     for source, relative in hw_payload():
         copy(source, relative)
     for name in ("build_xclbn.sh", "cards.sh", "odin_u55c.cfg", "odin_u250.cfg",
-                 "toolchain.sh"):
+                 "toolchain.sh", "mine_checkpoint.sh"):
         copy(REPO / "scripts" / "hacc" / name, f"scripts/hacc/{name}")
     frozen_xml = kernel_xml_text()
     write_text("scripts/hacc/kernel.xml", frozen_xml)
@@ -783,6 +787,7 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
     write_text("scripts/hacc/gen_kernel_xml.py",
                stand_in.replace("__ODIN_KERNEL_XML_SHA256__", xml_digest))
     copy(PACKAGE_SRC / "scripts" / "status.sh", "scripts/status.sh")
+    copy(PACKAGE_SRC / "scripts" / "chip_cache.sh", "scripts/chip_cache.sh")
     # The in-zip bootstrap keeps its placeholder hash: no file can carry the
     # digest of an archive that contains that same file. The STANDALONE copy
     # written beside the zip afterwards is the one that verifies.

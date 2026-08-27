@@ -150,12 +150,13 @@ exercise real memory ordering, the shell's address translation, XRT's buffer
 allocation, or clock closure. That is what phase **B0** below is for, and it is
 the reason B0 comes before the campaign rather than after it.
 
-Two phases, in this order:
+Three phases, in this order:
 
 | Phase | What it is | What it costs | Gate to leave it |
 |---|---|---|---|
 | **B0** | build → introspect → load → **null-program round trip** on one board | one build (2–6 h) + <1 board hour | the xclbin's metadata declares `odin_fpga_kernel_top` with its six arguments, the card takes the bitstream, the CU opens EXCLUSIVE, and a one-token null program comes back with a capture header the fabric wrote |
 | **B1** | the parity campaign + measured walls | board hours | `PASS exact=1.000000 max\|dcount\|=0`, plus the two measured walls |
+| **HACC NUS - ODIN Deployment** (§6b) | a whole multi-core NETWORK, run as one host-mediated pass per core, certified per pass and end to end | minutes on a board, after B1 | every per-pass certificate green, every sample's readout equal to its frozen one, and an ACCURACY that came from counting |
 
 ---
 
@@ -442,6 +443,91 @@ Under `/data/${USER}/log/odin_<timestamp>/`:
 
 Copy the whole log directory back and attach the build `reports/` to it. That
 bundle is the R11b evidence.
+
+## 6b. HACC NUS - ODIN Deployment
+
+B1 certifies FIXTURES — frozen programs whose counts the cosimulation recorded.
+This phase deploys a NETWORK, and everything below is about the one thing that
+makes it different: the shipped bitstream holds ONE ODIN core, and the chip
+routes nothing between cores (`SPI_OPEN_LOOP` — v1 routing is host-mediated by
+design), so a multi-core network runs as one PASS PER CORE with the host doing
+the wiring in between.
+
+```bash
+./run_all.sh --only 8                        # after 3-4 staged an xclbin
+ODIN_DEPLOY_SAMPLES=8 ./run_all.sh --only 8  # bound the campaign
+```
+
+What one pass costs, and what is deliberately NOT paid per sample:
+
+* the core is programmed ONCE. Fabric memories persist across sequencer runs,
+  so the ~236 ms/core SPI shift is paid once per core per campaign, not once
+  per sample. The per-sample membrane CLEAR is an OP inside the stimulus.
+* each sample is: rewrite the stimulus buffer, re-poison the capture header,
+  start, wait, sync back, decode, fold, transcode. All seven are timed
+  separately with `time.perf_counter`, because a deployment that reports one
+  number cannot say which stage a slow campaign spent its time in.
+* the buffers are allocated once per core and rewritten — a fresh `xrt::bo` per
+  sample would put an allocator in the middle of the measurement.
+
+Read, under `results/board_deploy/`:
+
+* `deployment_report.json` — per-pass certificates on the certification subset
+  (same house line as B1: `[odin_fpga/exact] PASS exact=1.000000
+  max|dcount|=0`), the final readout of EVERY shipped sample against its frozen
+  scores and label, the accumulated ACCURACY, and wall aggregates with
+  percentiles for `bo_write_s`, `sync_s`, `run_s`, `readback_s`, `decode_s`,
+  `transcode_s`, `pass_total_s`, plus per-sample totals and per-core
+  programming;
+* `deployment_samples.tsv` — one row per pass.
+
+**A red certificate here is not a tolerance question.** Read which PASS
+diverged first: a divergence on the first pass is the card or the bitstream and
+belongs in §7; a divergence that starts on a LATER pass with the first one
+green is the transcode or the counts it was fed, and the first pass's stimulus
+self-check (below) will already have ruled out the stimulus builder.
+
+**The self-check that runs before any of it is trusted.** The host builds every
+consumer pass's stimulus itself. Before it does, it rebuilds the FIRST pass's
+stimulus and requires byte-identity with the one the repository's own encoder
+froze into the bundle. If those disagree the run REFUSES
+(`OdinTranscodeDiverged`) rather than stimulating a network nobody assembled —
+so a stimulus-arithmetic drift can never be mistaken for a hardware finding.
+
+**Do not hand-edit a bundle.** It carries its own sha256; an edited or damaged
+one refuses as `OdinBundleCorrupt` before the card is touched. Regenerate it
+with `scripts/hacc/make_deployment_bundle.py`, which needs an RTL simulator and
+re-measures every count.
+
+## 6c. The chip cache, and mining a routed checkpoint
+
+Phase 3 is 2-6 hours. Do not pay for it twice:
+
+```bash
+./scripts/chip_cache.sh key hw     # the key and every input that made it
+./scripts/chip_cache.sh list       # what is already paid for
+./scripts/chip_cache.sh adopt /data/${USER}/odin_hacc_package --alias v4
+```
+
+Phases 2 and 3 consult the cache before submitting and publish on success. The
+key covers the RTL digest, card, platform, part, NC, `PROG_WORDS`, `CAP_WORDS`,
+the kernel clock from the card's v++ config, the Vitis release, the target and
+the sha256 of `build_xclbn.sh` — one function computes it for both the build
+path and `adopt`, so an adopted install lands exactly where a rebuild looks.
+Publishing claims a key with `mkdir`, stages beside it and renames in, and never
+clobbers an existing entry. `ODIN_CHIP_CACHE_DISABLE=1` turns it off.
+
+After a `hw` build closes, mine the checkpoint while the temp dir still exists:
+
+```bash
+scripts/hacc/mine_checkpoint.sh hw
+```
+
+It files `report_utilization` (flat and hierarchical), congestion, post-route
+timing, route status and a per-primitive placement CSV into that build's cache
+entry, and draws a die map from the CSV — matplotlib to PNG if the node has it,
+otherwise an SVG written out of the standard library alone. `collect_results.sh`
+brings the reports and the maps home and leaves the bitstream where it is.
 
 ## 7. If the board disagrees with the cosimulation
 

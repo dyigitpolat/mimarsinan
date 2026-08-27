@@ -51,6 +51,23 @@ for target in hw_emu hw; do
         "build_logs/${target}_nc1"
 done
 
+CHIP_CACHE="${HERE}/scripts/chip_cache.sh"
+if [ -x "${CHIP_CACHE}" ]; then
+    for target in hw_emu hw; do
+        if entry="$("${CHIP_CACHE}" path "${target}" 2>/dev/null)" \
+           && [ -d "${entry}" ]; then
+            copy_if_present "${entry}/key_inputs.txt" \
+                "chip_cache/${target}/key_inputs.txt"
+            copy_if_present "${entry}/published.txt" \
+                "chip_cache/${target}/published.txt"
+            copy_if_present "${entry}/reports" "chip_cache/${target}/reports"
+            copy_if_present "${entry}/maps" "chip_cache/${target}/maps"
+        else
+            printf '  - chip_cache/%s (no entry for this key)\n' "${target}"
+        fi
+    done
+fi
+
 {
     printf 'collected_utc : %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'host          : %s\n' "$(hostname)"

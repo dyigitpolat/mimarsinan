@@ -11,6 +11,12 @@
 # nothing here says anything about v++ or about silicon. The gate it serves is
 # run_all.sh's CONTROL FLOW: which partition, which phase, what resumes.
 #
+# ONE EXCEPTION, and it is deliberate: ODIN_MODE=deploy runs the package's OWN
+# executor against the fake pyxrt, because the deployment's whole value is the
+# host-mediated transcode and that runs on the host, not on the card. What comes
+# out is a real deployment_report.json produced by real code — with the card's
+# answers replayed from the frozen cosimulation instead of measured.
+#
 #   ODIN_STUB_SBATCH_SLEEP=<seconds>  hold the "job" open (kill -9 rehearsals)
 #   ODIN_STUB_SBATCH_SLEEP_TARGET=hw  hold only that target/mode open
 #   ODIN_STUB_SBATCH_FAIL=<target>    make that build exit 1 like a failed job
@@ -80,6 +86,20 @@ case "${ODIN_MODE:-}" in
         printf '{"kind": "board", "stub": true, "passed": true}\n' \
             > "${ODIN_RESULTS}/summary_board.json"
         exit 0
+        ;;
+    deploy)
+        mkdir -p "${ODIN_RESULTS}"
+        bundle="${ODIN_BUNDLE:-${PKG}/deployment/nc1_two_core_passes.json}"
+        replay="${bundle%.json}_capture.json"
+        # The real odin_board.sbatch tees its whole body into ODIN_LOG; this
+        # mirrors that, so run_all.sh's `tail` shows the campaign either way.
+        "${ODIN_REAL_PYTHON3:-python3}" \
+            "${PKG}/host/odin_deployment_executor.py" \
+            --xclbin "${ODIN_XCLBIN:-/stub/no-such.xclbin}" \
+            --fake-pyxrt "${PKG}/host/fake_pyxrt_for_selftest.py" \
+            --bundle "${bundle}" --replay "${replay}" \
+            --results "${ODIN_RESULTS}" 2>&1 | tee -a "${ODIN_LOG:-/dev/null}"
+        exit "${PIPESTATUS[0]}"
         ;;
 esac
 

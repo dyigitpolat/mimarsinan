@@ -32,6 +32,11 @@
 #      self-hash refuses as OdinBundleCorrupt, and a wrong stimulus gets no
 #      verdict instead of another pass's counts
 #  18  the die-map renderer draws on both paths and refuses without a checkpoint
+#  19  run_all.sh PHASE 8 stages the bundle, runs it, collects the report, and
+#      is artifact-resume aware; collect_results.sh brings it home
+#  20  the CHIP CACHE: a build publishes, a second install hits it and spends no
+#      compile slot, adoption files an existing install under the key a build
+#      looks up, a held lock never clobbers, and a changed recipe misses
 #
 # Exit 0 all green, 1 a gate failed, 77 nothing to test (no dist package: run
 # scripts/hacc/make_package.py first).
@@ -610,6 +615,151 @@ status=$?
 if [ "${status}" -eq 2 ]; then pass 18f "no checkpoint CSV refuses with exit 2"
 else fail 18f "exit ${status}, wanted 2"; fi
 expect 18g "${LOG}" "mine_checkpoint.sh"
+
+
+gate 19 "phase 8 — HACC NUS - ODIN Deployment, end to end under stub slurm"
+P8_ROOT="${WORK}/phase8"
+PKG="$(fresh_package "${P8_ROOT}")"
+LOG="${WORK}/phase8.log"
+( cd "${PKG}" && ODIN_DATA_ROOT="${P8_ROOT}" ODIN_CHIP_CACHE="${WORK}/cache_p8" \
+    ./run_all.sh ) > "${LOG}" 2>&1
+status=$?
+say "--- transcript (phase 8) ---"; sed -n '/phase 8:/,$p' "${LOG}" | head -30
+if [ "${status}" -eq 0 ]; then pass 19a "the whole flow reached the end (exit 0)"
+else fail 19a "exit ${status}; see ${LOG}"; fi
+expect 19b "${LOG}" "phase 8: HACC NUS - ODIN Deployment"
+expect 19c "${LOG}" "one host-mediated PASS per core"
+expect 19d "${LOG}" "nc1_two_core_passes.json"
+expect_file 19e "${PKG}/results/board_deploy/deployment_report.json"
+expect_file 19f "${PKG}/results/board_deploy/deployment_samples.tsv"
+expect 19g "${PKG}/results/phase_deployment.log" "ACCURACY : 0.750000"
+LOG="${WORK}/phase8_resume.log"
+( cd "${PKG}" && ODIN_DATA_ROOT="${P8_ROOT}" ODIN_CHIP_CACHE="${WORK}/cache_p8" \
+    ./run_all.sh ) > "${LOG}" 2>&1
+expect 19h "${LOG}" "[phase8] already done"
+expect 19i "${LOG}" "deployment ran and reported its accuracy"
+LOG="${WORK}/phase8_status.log"
+( cd "${PKG}" && ODIN_DATA_ROOT="${P8_ROOT}" ./run_all.sh --status ) > "${LOG}" 2>&1
+expect 19j "${LOG}" "deployment_report.json"
+LOG="${WORK}/collect.log"
+( cd "${PKG}" && ODIN_DATA_ROOT="${P8_ROOT}" ODIN_CHIP_CACHE="${WORK}/cache_p8" \
+    ./collect_results.sh "${WORK}/collected" ) > "${LOG}" 2>&1
+say "--- collect_results.sh ---"; cat "${LOG}"
+TARBALL="$(find "${WORK}/collected" -name 'odin_hacc_results_*.tar.gz' -print -quit)"
+# The listing is written out first: `tar | grep -q` closes the pipe on the first
+# match and SIGPIPEs tar, which `pipefail` then reports as a failure.
+COLLECTED_LIST="${WORK}/collected_listing.txt"
+: > "${COLLECTED_LIST}"
+[ -n "${TARBALL}" ] && tar -tzf "${TARBALL}" > "${COLLECTED_LIST}"
+expect 19k "${COLLECTED_LIST}" "results/board_deploy/deployment_report.json"
+expect 19l "${COLLECTED_LIST}" "chip_cache/hw/key_inputs.txt"
+expect 19m "${COLLECTED_LIST}" "results/board_deploy/deployment_samples.tsv"
+
+gate 20 "the chip cache: publish, hit, adopt, lock, and a changed recipe"
+CACHE_ROOT="${WORK}/chipcache"
+C1_ROOT="${WORK}/cache_one"
+PKG="$(fresh_package "${C1_ROOT}")"
+LOG="${WORK}/cache_build.log"
+( cd "${PKG}" && ODIN_DATA_ROOT="${C1_ROOT}" ODIN_CHIP_CACHE="${CACHE_ROOT}" \
+    ./run_all.sh ) > "${LOG}" 2>&1
+KEY="$( cd "${PKG}" && ODIN_DATA_ROOT="${C1_ROOT}" ODIN_CHIP_CACHE="${CACHE_ROOT}" \
+    ./scripts/chip_cache.sh key hw | sed -n 's/^key=//p' )"
+expect_file 20a "${CACHE_ROOT}/${KEY}/odin_fpga.xclbin"
+expect_file 20b "${CACHE_ROOT}/${KEY}/key_inputs.txt"
+expect 20c "${CACHE_ROOT}/${KEY}/key_inputs.txt" "prog_words=262144"
+expect 20d "${PKG}/results/phase_journal.tsv" "CACHE_PUBLISH"
+
+C2_ROOT="${WORK}/cache_two"
+PKG2="$(fresh_package "${C2_ROOT}")"
+LOG="${WORK}/cache_hit.log"
+TRACE="${WORK}/cache_hit_trace.txt"
+: > "${TRACE}"
+( cd "${PKG2}" && ODIN_DATA_ROOT="${C2_ROOT}" ODIN_CHIP_CACHE="${CACHE_ROOT}" \
+    ODIN_STUB_TRACE="${TRACE}" ./run_all.sh ) > "${LOG}" 2>&1
+say "--- transcript (cache) ---"; grep -E 'cache|phase 2|phase 3' "${LOG}" | head -12
+expect 20e "${LOG}" "cache hit ${KEY}"
+expect 20f "${LOG}" "no compile slot spent"
+expect 20g "${PKG2}/results/phase_journal.tsv" "cache hit ${KEY}"
+if grep -q 'target=hw ' "${TRACE}"; then
+    fail 20h "it submitted a build anyway: $(grep 'target=hw ' "${TRACE}")"
+else
+    pass 20h "no build was submitted — the cache paid for both targets"
+fi
+expect_file 20i "${PKG2}/build/hacc/hw_nc1/odin_fpga_hw.xclbin"
+
+ADOPT_ROOT="${WORK}/adopt"
+ADOPT_CACHE="${WORK}/adopt_cache"
+PKG3="$(fresh_package "${ADOPT_ROOT}")"
+( cd "${PKG3}" && ODIN_DATA_ROOT="${ADOPT_ROOT}" ODIN_CHIP_CACHE_DISABLE=1 \
+    ./run_all.sh --only 3 ) > "${WORK}/adopt_build.log" 2>&1
+LOG="${WORK}/adopt.log"
+( cd "${PKG3}" && ODIN_DATA_ROOT="${ADOPT_ROOT}" ODIN_CHIP_CACHE="${ADOPT_CACHE}" \
+    ./scripts/chip_cache.sh adopt "${PKG3}" --alias v4 ) > "${LOG}" 2>&1
+status=$?
+say "--- adoption ---"; cat "${LOG}"
+if [ "${status}" -eq 0 ]; then pass 20j "adoption closed (exit 0)"
+else fail 20j "exit ${status}; see ${LOG}"; fi
+ADOPT_KEY="$( cd "${PKG3}" && ODIN_DATA_ROOT="${ADOPT_ROOT}" \
+    ODIN_CHIP_CACHE="${ADOPT_CACHE}" ./scripts/chip_cache.sh key hw \
+    | sed -n 's/^key=//p' )"
+if [ -f "${ADOPT_CACHE}/${ADOPT_KEY}/odin_fpga.xclbin" ]; then
+    pass 20k "the adopted entry sits under the key a BUILD would look up"
+else
+    fail 20k "adoption filed under a key no build resolves (${ADOPT_KEY})"
+fi
+if [ -L "${ADOPT_CACHE}/v4_hw" ]; then
+    pass 20l "the alias symlink v4_hw points at $(basename "$(readlink "${ADOPT_CACHE}/v4_hw")")"
+else
+    fail 20l "no v4_hw alias symlink"
+fi
+LOG="${WORK}/adopt_nosidecar.log"
+rm -f "${PKG3}/build/hacc/hw_nc1/odin_fpga_hw.xclbin.built_with"
+( cd "${PKG3}" && ODIN_CHIP_CACHE="${WORK}/adopt_cache2" \
+    ./scripts/chip_cache.sh adopt "${PKG3}" ) > "${LOG}" 2>&1
+status=$?
+if [ "${status}" -eq 2 ]; then pass 20m "an install with no sidecar refuses to be adopted"
+else fail 20m "exit ${status}, wanted 2"; fi
+expect 20n "${LOG}" "keyed on a guess is worse"
+
+mkdir -p "${CACHE_ROOT}/${KEY}.lock"
+COLLIDE_ROOT="${WORK}/collide"
+PKG4="$(fresh_package "${COLLIDE_ROOT}")"
+mkdir -p "${PKG4}/build/hacc/hw_nc1"
+printf 'A DIFFERENT BITSTREAM\n' > "${PKG4}/build/hacc/hw_nc1/odin_fpga_hw.xclbin"
+cp "${CACHE_ROOT}/${KEY}/built_with.txt" \
+   "${PKG4}/build/hacc/hw_nc1/odin_fpga_hw.xclbin.built_with"
+BEFORE="$(sha256sum "${CACHE_ROOT}/${KEY}/odin_fpga.xclbin" | cut -d' ' -f1)"
+LOG="${WORK}/cache_lock.log"
+( cd "${PKG4}" && ODIN_DATA_ROOT="${COLLIDE_ROOT}" ODIN_CHIP_CACHE="${CACHE_ROOT}" \
+    ./scripts/chip_cache.sh publish hw ) > "${LOG}" 2>&1
+expect 20o "${LOG}" "already published; leaving it alone"
+AFTER="$(sha256sum "${CACHE_ROOT}/${KEY}/odin_fpga.xclbin" | cut -d' ' -f1)"
+if [ "${BEFORE}" = "${AFTER}" ]; then
+    pass 20p "the published entry was not clobbered"
+else
+    fail 20p "the entry changed under a second publisher"
+fi
+rm -rf "${CACHE_ROOT}/${KEY}" "${CACHE_ROOT}/${KEY}.lock"
+mkdir -p "${CACHE_ROOT}/${KEY}.lock"
+LOG="${WORK}/cache_lock2.log"
+( cd "${PKG4}" && ODIN_DATA_ROOT="${COLLIDE_ROOT}" ODIN_CHIP_CACHE="${CACHE_ROOT}" \
+    ./scripts/chip_cache.sh publish hw ) > "${LOG}" 2>&1
+expect 20q "${LOG}" "another job holds the lock"
+if [ -d "${CACHE_ROOT}/${KEY}" ]; then
+    fail 20r "it published into a key another job had claimed"
+else
+    pass 20r "a claimed key is left to its claimant"
+fi
+rm -rf "${CACHE_ROOT}/${KEY}.lock"
+
+printf '\n# owner edit, %s\n' "$(date -u +%s)" >> "${PKG2}/scripts/hacc/build_xclbn.sh"
+NEWKEY="$( cd "${PKG2}" && ODIN_DATA_ROOT="${C2_ROOT}" ODIN_CHIP_CACHE="${CACHE_ROOT}" \
+    ./scripts/chip_cache.sh key hw | sed -n 's/^key=//p' )"
+if [ "${NEWKEY}" != "${KEY}" ]; then
+    pass 20s "a changed build_xclbn.sh moves the key — no stale hit"
+else
+    fail 20s "the key ignored the recipe that produces the bitstream"
+fi
 
 # ===========================================================================
 say ""
