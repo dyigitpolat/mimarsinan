@@ -61,6 +61,11 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "odin_fpga_sample_count": 1,
     "odin_fpga_xclbin_path": None,
     "odin_fpga_device_index": 0,
+    # [ODIN P8] the HACC deployment export; the enable key itself carries
+    # NO default (derivation owns it, opt-in).
+    "odin_hacc_bundle_samples": 300,
+    "odin_hacc_certification_samples": 50,
+    "odin_hacc_bundle_name": None,
     "sanafe_sample_count": 1,
     "sanafe_arch_preset": "loihi",
     "sanafe_custom_arch_path": None,
@@ -130,6 +135,10 @@ CONFIG_KEYS_SET: Set[str] = {
     # selection its transports read.
     "enable_odin_fpga_simulation", "odin_fpga_transport", "odin_fpga_sample_count",
     "odin_fpga_xclbin_path", "odin_fpga_device_index",
+    # [ODIN P8] the HACC deployment export: the opt-in enable plus the
+    # campaign the frozen bundle ships.
+    "enable_odin_hacc_export", "odin_hacc_bundle_samples",
+    "odin_hacc_certification_samples", "odin_hacc_bundle_name",
     "sanafe_log_potential_trace", "simulation_batch_count", "simulation_batch_size", "simulation_step_timeout_s",
     # Endpoint floor: RUN-total STEP budget (never wall) + [C3'] min-cover.
     "endpoint_floor_steps", "endpoint_floor_min_cover_steps",

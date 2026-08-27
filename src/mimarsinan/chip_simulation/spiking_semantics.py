@@ -246,6 +246,10 @@ _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
     # crossbar, so every timing-domain mode refuses by name.
     "odin_fpga": BackendSpikingCapabilities(
         True, False, False, False, True, True, True),
+    # [ODIN P8] the HACC export target freezes a bundle FOR that device, so it
+    # can never admit a law the device itself refuses: same row, by construction.
+    "odin_hacc": BackendSpikingCapabilities(
+        True, False, False, False, True, True, True),
     "sanafe": BackendSpikingCapabilities(True, True, True, True),
     "lava": BackendSpikingCapabilities(True, False, False, False),
     "loihi": BackendSpikingCapabilities(True, False, False, False),

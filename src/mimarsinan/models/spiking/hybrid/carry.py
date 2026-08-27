@@ -184,6 +184,10 @@ _BACKEND_ENABLE_KEYS = {
     # boundary, so enabling it costs the run its verbatim boundaries — the
     # documented price, never a refusal.
     "odin_fpga": "enable_odin_fpga_simulation",
+    # [ODIN P8] the EXPORT freezes what that same device will execute, so it
+    # carries the same boundary discipline: a bundle frozen from a verbatim
+    # carry would describe a computation the device cannot reproduce.
+    "odin_hacc": "enable_odin_hacc_export",
     "sanafe": "enable_sanafe_simulation",
     "nevresim": "enable_nevresim_simulation",
     "lava": "enable_loihi_simulation",

@@ -216,7 +216,10 @@ class TestVehiclesAlwaysServed:
     # [ODIN P7a] the physical backend renders as a vehicle row too, but it is
     # OPT-IN: supported (the crossbar executes the streamed LIF law) and OFF
     # until the document asks, because a device is not a config fact.
-    _OPT_IN_ENABLES = ("enable_odin_fpga_simulation",)
+    # [ODIN P8] the HACC deployment EXPORT is opt-in for the same reason: it
+    # freezes a bundle for that device and costs a full pass over the shipped
+    # sample set, so a document asks for it or it stays off.
+    _OPT_IN_ENABLES = ("enable_odin_fpga_simulation", "enable_odin_hacc_export")
 
     def test_starter_serves_all_vehicle_rows(self, client):
         # [N5] the starter streams by default and ALL simulators are

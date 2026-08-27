@@ -62,6 +62,7 @@ DERIVED_NON_DEFAULT_KEYS = {
     # siblings, but OPT-IN (a device is not a config fact), so it derives OFF
     # and an explicit declaration turns it on.
     "enable_odin_fpga_simulation",
+    "enable_odin_hacc_export",
     "max_axons",
     "max_neurons",
     "weight_source",

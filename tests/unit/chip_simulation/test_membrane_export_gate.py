@@ -23,12 +23,13 @@ from mimarsinan.chip_simulation.membrane_export import (
 
 
 def _plan(*, nevresim=True, loihi=False, sanafe=False, odin_fpga=False,
-          spiking_mode="lif"):
+          odin_hacc=False, spiking_mode="lif"):
     return SimpleNamespace(
         enable_nevresim_simulation=nevresim,
         enable_loihi_simulation=loihi,
         enable_sanafe_simulation=sanafe,
         enable_odin_fpga_simulation=odin_fpga,
+        enable_odin_hacc_export=odin_hacc,
         spiking_mode=spiking_mode,
     )
 

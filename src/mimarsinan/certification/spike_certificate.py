@@ -33,6 +33,11 @@ BACKEND_CLASSES: dict[str, str] = {
     # the demand on a board is bit equality too. A hardware read that needed a
     # tolerance would be a DIFFERENT chip, not a looser class.
     "odin_fpga": "exact",
+    # The HACC deployment EXPORT freezes what that same crossbar will be asked
+    # to reproduce, so its own gate — the cycle-accurate twin against the HCM
+    # reference — is held to the same bit equality; a tolerance here would ship
+    # expectations no board could ever fail against.
+    "odin_hacc": "exact",
     "loihi": "counts-export",
 }
 

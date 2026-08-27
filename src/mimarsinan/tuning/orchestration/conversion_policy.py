@@ -176,9 +176,9 @@ __all__ = [
 ]
 
 
-#: Enable keys whose backend needs a physical device: admitted by capability,
-#: turned on only by an explicit declaration.
-DEVICE_OPT_IN_ENABLES: FrozenSet[str] = frozenset({"enable_odin_fpga_simulation"})
+#: Enable keys admitted by capability, turned on only by a declaration.
+DEVICE_OPT_IN_ENABLES: FrozenSet[str] = frozenset(
+    {"enable_odin_fpga_simulation", "enable_odin_hacc_export"})
 
 
 @dataclass(frozen=True)
@@ -273,9 +273,8 @@ class ConversionPolicy:
             rationale = rationale or _BIT_PARITY_LOSSLESS_RATIONALE
 
         sim_enables = {
-            "enable_nevresim_simulation": (
-                policy.supports_backend("nevresim") and not synchronized
-            ),
+            "enable_nevresim_simulation":
+                policy.supports_backend("nevresim") and not synchronized,
             "enable_sanafe_simulation": policy.supports_backend("sanafe"),
             # [N5 2026-08-09] streamed Loihi ENABLED: the wave runner's
             # per-core replay is free-running-equivalent on gap-1 graphs
@@ -284,10 +283,11 @@ class ConversionPolicy:
             # comparator/reset), and the integer-theta lattice makes vth
             # exactly representable. The step's spike-parity gate is FATAL.
             "enable_loihi_simulation": policy.supports_backend("loihi"),
-            # [ODIN P7a] the point-keyed capability decides whether the
-            # crossbar executes this law; the opt-in set decides that a run
-            # reaches for hardware only when the document asks.
+            # [ODIN P7a/P8] the point-keyed capability decides whether the
+            # crossbar executes this law; the opt-in set decides a run reaches
+            # for the hardware — or freezes a bundle for it — only when asked.
             "enable_odin_fpga_simulation": policy.supports_backend("odin_fpga"),
+            "enable_odin_hacc_export": policy.supports_backend("odin_hacc"),
         }
 
         return ConversionRecipe(

@@ -149,30 +149,35 @@ _EXPECTED_SIM_ENABLES = {
         "enable_sanafe_simulation": True,
         "enable_loihi_simulation": True,
         "enable_odin_fpga_simulation": True,
+        "enable_odin_hacc_export": True,
     },
     ("ttfs", None): {
         "enable_nevresim_simulation": True,
         "enable_sanafe_simulation": True,
         "enable_loihi_simulation": False,
         "enable_odin_fpga_simulation": False,
+        "enable_odin_hacc_export": False,
     },
     ("ttfs_quantized", None): {
         "enable_nevresim_simulation": True,
         "enable_sanafe_simulation": True,
         "enable_loihi_simulation": False,
         "enable_odin_fpga_simulation": False,
+        "enable_odin_hacc_export": False,
     },
     ("ttfs_cycle_based", "cascaded"): {
         "enable_nevresim_simulation": True,
         "enable_sanafe_simulation": True,
         "enable_loihi_simulation": False,
         "enable_odin_fpga_simulation": False,
+        "enable_odin_hacc_export": False,
     },
     ("ttfs_cycle_based", "synchronized"): {
         "enable_nevresim_simulation": False,
         "enable_sanafe_simulation": True,
         "enable_loihi_simulation": False,
         "enable_odin_fpga_simulation": False,
+        "enable_odin_hacc_export": False,
     },
 }
 

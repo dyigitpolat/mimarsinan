@@ -206,6 +206,7 @@ def _build_default_registry() -> BackendRegistry:
     from mimarsinan.pipelining.pipeline_steps import (
         LoihiSimulationStep,
         OdinFpgaDeploymentStep,
+        OdinHaccDeploymentStep,
         SanafeSimulationStep,
         SimulationStep,
     )
@@ -252,6 +253,19 @@ def _build_default_registry() -> BackendRegistry:
             # The crossbar exports spikes only; there is no membrane read port
             # on the stock core (doc Sec.2.1 — the config registers are
             # write-only and the memories are read back over SPI, not live).
+            exports_final_membrane=False,
+        ),
+        SimulationBackend(
+            "odin_hacc",
+            step_name="HACC NUS - ODIN Deployment",
+            step_class=OdinHaccDeploymentStep,
+            # OPT-IN like the device backend it exports FOR: freezing a bundle
+            # costs a full pass over the shipped sample set, and no config can
+            # assume a run wants a board artifact.
+            enabled_for=lambda plan: plan.enable_odin_hacc_export,
+            # It FREEZES what the device will be asked to reproduce; it reads
+            # no membrane and measures no accuracy of its own (the accuracy in
+            # the bundle is the frozen expectation, not a device read).
             exports_final_membrane=False,
         ),
     ])

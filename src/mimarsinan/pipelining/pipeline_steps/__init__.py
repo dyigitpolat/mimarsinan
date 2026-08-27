@@ -27,4 +27,5 @@ from .verification.simulation_step import SimulationStep as SimulationStep
 from .verification.loihi_simulation_step import LoihiSimulationStep as LoihiSimulationStep
 from .verification.sanafe_simulation_step import SanafeSimulationStep as SanafeSimulationStep
 from .verification.odin_fpga_simulation_step import OdinFpgaDeploymentStep as OdinFpgaDeploymentStep
+from .verification.odin_hacc_deployment_step import OdinHaccDeploymentStep as OdinHaccDeploymentStep
 from .verification.deployment_record_step import DeploymentRecordStep as DeploymentRecordStep

@@ -28,6 +28,7 @@
 #   scripts/hw_tests/run_hw_tests.sh -k synth        # the yosys synthesis gate
 #   scripts/hw_tests/run_hw_tests.sh -k limits       # the P8 compile-limits sweep
 #   scripts/hw_tests/run_hw_tests.sh -k fpga         # the P7a backend gates
+#   scripts/hw_tests/run_hw_tests.sh -k hacc         # the P8 deployment bundle
 #
 # The simulator (iverilog/vvp/verilator) AND the synthesizer (yosys) are looked
 # up in MIMARSINAN_HW_SIM_BIN (default build/tools/oss-cad-suite/bin); when one
@@ -36,6 +37,12 @@
 # scripts/hw_tests/regen_synth_report.py, and the committed compile-limits study
 # (hw/fpga/compile_limits.json + docs/odin_fpga_compile_limits_study.md) with
 # scripts/hw_tests/regen_compile_limits.py.
+#
+# [ODIN8] `test_odin_hacc_cosim.py` freezes the unit loop-closer's tiny
+# classifier with the RTL COSIMULATION as the bundle's witness instead of the
+# cycle-accurate twin, then runs the SHIPPED board executor against those
+# measured answers: the same four golden gates, the same seal, the same
+# executor, with every expectation earned on the vendored core.
 #
 # [ODIN8] `test_odin_compile_limits.py` is the P8 compile-limits sweep: every
 # studied configuration re-synthesized and matched against the committed record,
@@ -67,6 +74,7 @@ exec "${PYTHON}" -m pytest \
     tests/integration/test_odin_gen_sync_fire.py \
     tests/integration/test_odin_fpga_e2e.py \
     tests/integration/test_odin_fpga_kernel.py \
+    tests/integration/test_odin_hacc_cosim.py \
     -m "slow and integration" \
     -p no:randomly -n0 -v -s --timeout=5400 --durations=0 \
     "$@"

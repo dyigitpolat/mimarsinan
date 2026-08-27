@@ -72,6 +72,7 @@ class TestDomainDispatch:
             "enable_sanafe_simulation": False,
             "enable_loihi_simulation": False,
             "enable_odin_fpga_simulation": False,
+            "enable_odin_hacc_export": False,
         }
         assert "lif_exact_qat" not in recipe.knobs
         assert recipe.knobs["wq_fast_rates"] == [0.5, 1.0]
