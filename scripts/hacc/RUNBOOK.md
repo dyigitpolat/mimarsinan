@@ -499,6 +499,38 @@ one refuses as `OdinBundleCorrupt` before the card is touched. Regenerate it
 with `scripts/hacc/make_deployment_bundle.py`, which needs an RTL simulator and
 re-measures every count.
 
+### Which bundle, and where a REAL network's bundle comes from
+
+The bring-up package (`odin_hacc_package.zip`) carries the committed two-core
+witness bundle and phase 8 runs that. A DEPLOYMENT package
+(`odin_hacc_deployment.zip`) carries a bundle exported from a TRAINED network,
+plus `deployment/DEPLOYMENT.json` naming it; phase 8 reads that index. Same
+bootstrap, same `run_all.sh`, and `ODIN_BUNDLE=<path>` overrides either.
+
+That bundle is produced by the pipeline itself, not by hand. The step is
+`"HACC NUS - ODIN Deployment"`; a tier cell (or any deployment document) turns
+it on with `enable_odin_hacc_export` and sizes the campaign with
+`odin_hacc_bundle_samples` (how many test-set samples the bundle can execute at
+all) and `odin_hacc_certification_samples` (how many carry frozen PER-PASS
+counts rather than just a readout). The step writes
+`<run>/odin_hacc/deployment_bundle.json` and its `_capture.json`; package them:
+
+```bash
+env/bin/python scripts/hacc/make_package.py \
+    --deployment generated/<run>/odin_hacc/deployment_bundle.json
+```
+
+Its expectations are the cycle-accurate twin's, gated EXACT against the HCM
+torch reference sample by sample at export time (a mismatch refuses and writes
+nothing) — not an RTL measurement, because cosimulating hundreds of samples is
+not affordable. `provenance.derivation` says exactly that, in the file.
+
+**A bundle can only execute the samples it ships**, because each one carries the
+entry raster this program's HOST compute stages produced for it. Raising
+`ODIN_DEPLOY_SAMPLES` past that count runs every shipped sample and no more;
+running the full test set means exporting with a larger
+`odin_hacc_bundle_samples` and paying for the larger upload.
+
 ## 6c. The chip cache, and mining a routed checkpoint
 
 Phase 3 is 2-6 hours. Do not pay for it twice:
