@@ -55,6 +55,12 @@ PLATFORMS = {
     # sit INSIDE the streamed window — the raster-carry coverage grid.
     "I": {"cores": [{"max_axons": 784, "max_neurons": 64, "count": 3, "has_bias": True}],
           "max_axons": 784, "max_neurons": 64},
+    # [ODIN P8] the STOCK ODIN crossbar, as the exporter actually bounds it:
+    # 256 physical rows signed one PRE-synaptic row at a time, so a logical
+    # slot costs a row PAIR and a core holds at most 128 slots (127 usable once
+    # the always-on bias row is placed); 256 columns are 256 neurons.
+    "J": {"cores": [{"max_axons": 128, "max_neurons": 256, "count": 512, "has_bias": True}],
+          "max_axons": 128, "max_neurons": 256},
 }
 
 VEHICLES = {
@@ -353,6 +359,30 @@ T0 = [
     # coverage (tests/unit/spiking/test_wire_gauge_establishment.py and
     # tests/unit/pipelining/test_streamed_mixed_seam_exactness.py, both
     # mutation-verified end to end against the deployed executor).
+    # [ODIN P8] t0_54's DEPLOYABLE sibling: the same per-event / saturating
+    # 8-bit soma point on the same vehicle, re-declared against the STOCK ODIN
+    # crossbar so the deployment EXPORT can actually freeze it. Three
+    # declarations move, each forced by the silicon and each MEASURED on
+    # t0_54's own committed mapping (2026-08-27): platform J, because a 512-
+    # slot core expands to 1024 physical rows over a 256-row crossbar; wb=4,
+    # because the stock synapse cell is a 3-bit UNSIGNED magnitude signed once
+    # per pre-synaptic row and t0_54's wb=5 grid reaches |w|=15; and
+    # per_axon sign granularity, which is the only expansion that layout
+    # represents. The widths follow from the 127-slot usable fan-in: the
+    # encoding perceptron is host-offloaded either way (subsume), so the ON-CHIP
+    # layers read 120, 96 and 120 lines plus the always-on bias row.
+    dict(n=55, mode="lifse", quant="wq", wb=4, s=4, vehicle="simplemlp", seed=1,
+         platform="J", has_bias=False, coalescing=False, splitting=False,
+         firing_granularity="per_event", membrane_bits=8,
+         weight_sign_granularity="per_axon",
+         enable_odin_hacc_export=True,
+         odin_hacc_bundle_samples=300, odin_hacc_certification_samples=50,
+         extra_dp={"model_config": {"mlp_width_1": 120, "mlp_width_2": 96}},
+         tags=["nobias"], wall_min=30,
+         note="the ODIN-DEPLOYABLE per-event cell: the one tier row whose "
+              "mapped network the HACC export can freeze into a sealed, "
+              "board-executable bundle (300 shipped samples, 50 of them "
+              "per-pass certified)."),
     # [W5.3] the ONE searched-hardware cell. Every other row in every tier
     # pins hw_config_mode "fixed", so the co-search path — ArchitectureSearchStep,
     # the objectives registry's per-mode availability, the live search_event

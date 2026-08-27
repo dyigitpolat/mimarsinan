@@ -62,6 +62,12 @@ PACKAGE_SRC = REPO / "scripts" / "hacc" / "package"
 DIST = REPO / "dist"
 STAGE = DIST / "odin_hacc_package"
 ZIP_PATH = DIST / "odin_hacc_package.zip"
+#: The DEPLOYMENT artifact: the same bring-up package plus one exported bundle,
+#: so a board node gets the bitstream flow and the network in a single upload.
+DEPLOYMENT_ZIP_PATH = DIST / "odin_hacc_deployment.zip"
+DEPLOYMENT_BOOTSTRAP = DIST / "bootstrap_hacc_deployment.sh"
+#: The index phase 8 reads to learn WHICH bundle a deployment package deploys.
+DEPLOYMENT_INDEX = "deployment/DEPLOYMENT.json"
 CACHE = REPO / "build" / "hacc_fixture_cache"
 
 #: The bundle-schema SSOT ships VERBATIM: the board executor runs THESE bytes,
@@ -508,18 +514,41 @@ def require_bundles_load() -> List[Path]:
             f"scripts/hacc/make_deployment_bundle.py (it needs an RTL simulator, "
             f"which is why the bundle is committed rather than built here)")
     for path in bundles:
-        document = json.loads(path.read_text(encoding="utf-8"))
-        stamped = {k: v for k, v in document.items() if k != "self_hash"}
-        if odin_deployment_bundle.self_hash(stamped) != document.get("self_hash"):
-            raise PackagingRefusal(
-                f"{path.name}: its self-hash does not match its content; "
-                f"regenerate it rather than editing it")
+        document = require_sealed(path)
         if document.get("schema") == odin_deployment_bundle.SCHEMA \
                 and document.get("kernel") != KERNEL_TABLE:
             raise PackagingRefusal(
                 f"{path.name}: the bundle's device-protocol table is not this "
                 f"package's; regenerate it against this kernel")
     return bundles
+
+
+def require_sealed(path: Path) -> Dict[str, Any]:
+    """One committed document, refusing unless it hashes to its own bytes."""
+    if not path.is_file():
+        raise PackagingRefusal(f"{path}: no such file")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    stamped = {k: v for k, v in document.items() if k != "self_hash"}
+    if odin_deployment_bundle.self_hash(stamped) != document.get("self_hash"):
+        raise PackagingRefusal(
+            f"{path.name}: its self-hash does not match its content; "
+            f"regenerate it rather than editing it")
+    return document
+
+
+def require_bundle_document(path: Path) -> Dict[str, Any]:
+    """One BUNDLE, refusing unless it seals AND speaks this package's protocol."""
+    document = require_sealed(path)
+    if document.get("schema") != odin_deployment_bundle.SCHEMA:
+        raise PackagingRefusal(
+            f"{path.name}: schema {document.get('schema')!r} is not "
+            f"{odin_deployment_bundle.SCHEMA!r}; --deployment takes a sealed "
+            f"deployment bundle, not its replay or some other document")
+    if document.get("kernel") != KERNEL_TABLE:
+        raise PackagingRefusal(
+            f"{path.name}: the bundle's device-protocol table is not this "
+            f"package's; regenerate it against this kernel")
+    return document
 
 
 def require_protocol_agrees() -> None:
@@ -750,8 +779,52 @@ def kernel_xml_text() -> str:
     return text
 
 
+def stage_deployment(bundles: Sequence[Path], copy, write_text) -> None:
+    """Stage exported bundles + the index that names the DEFAULT one.
+
+    The executor's own default stays the committed witness bundle, so a
+    bring-up package is unchanged; a DEPLOYMENT package additionally declares
+    which network phase 8 should run, and run_all.sh reads exactly this file.
+    """
+    staged: List[Dict[str, Any]] = []
+    for path in bundles:
+        document = require_bundle_document(path)
+        copy(path, f"deployment/{path.name}")
+        capture = path.with_name(f"{path.stem}_capture.json")
+        if not capture.is_file():
+            raise PackagingRefusal(
+                f"{path.name}: no {capture.name} beside it. The replay is what "
+                f"lets the node's own selftest run the bundle with no card; a "
+                f"deployment package without it can only be verified on silicon")
+        copy(capture, f"deployment/{capture.name}")
+        staged.append({
+            "bundle": f"deployment/{path.name}",
+            "replay": f"deployment/{capture.name}",
+            "name": document["name"],
+            "self_hash": document["self_hash"],
+            "samples": len(document["samples"]),
+            "cores": len(document["cores"]),
+            "pass_order": list(document["pass_order"]),
+            "cycles_per_sample": int(document["cycles_per_sample"]),
+            "certification_samples": len(document["certification"]["samples"]),
+            "provenance": document["provenance"],
+            "model": document["model"],
+        })
+    write_text(DEPLOYMENT_INDEX, json.dumps({
+        "schema": "odin_hacc_deployment_index/1",
+        "default": staged[0]["bundle"],
+        "default_replay": staged[0]["replay"],
+        "bundles": staged,
+        "note": (
+            "run_all.sh phase 8 runs 'default' unless ODIN_BUNDLE names another "
+            "file. ODIN_DEPLOY_SAMPLES bounds the campaign on the node; the "
+            "bundle can only execute the samples it ships, so raising it past "
+            "'samples' runs every shipped sample and no more."),
+    }, indent=2, sort_keys=True) + "\n")
+
+
 def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
-               rtl: str) -> Dict[str, Any]:
+               rtl: str, deployments: Sequence[Path] = ()) -> Dict[str, Any]:
     if STAGE.exists():
         shutil.rmtree(STAGE)
     STAGE.mkdir(parents=True)
@@ -810,6 +883,8 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
             f"{BUNDLE_MODULE.relative_to(REPO)}")
     for path in require_bundles_load():
         copy(path, f"deployment/{path.name}")
+    if deployments:
+        stage_deployment(deployments, copy, write_text)
 
     for document in documents:
         write_text(
@@ -848,14 +923,14 @@ BOOTSTRAP_TOKEN = 'ZIP_SHA256="__ODIN_ZIP_SHA256__"'
 BOOTSTRAP_STANDALONE = DIST / "bootstrap_hacc.sh"
 
 
-def write_zip() -> None:
+def write_zip(zip_path: Path = ZIP_PATH) -> None:
     DIST.mkdir(parents=True, exist_ok=True)
-    if ZIP_PATH.exists():
-        ZIP_PATH.unlink()
+    if zip_path.exists():
+        zip_path.unlink()
     names = sorted(
         str(path.relative_to(STAGE))
         for path in STAGE.rglob("*") if path.is_file())
-    with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name in names:
             info = zipfile.ZipInfo(f"odin_hacc_package/{name}", date_time=ZIP_EPOCH)
             info.compress_type = zipfile.ZIP_DEFLATED
@@ -865,7 +940,8 @@ def write_zip() -> None:
             archive.writestr(info, (STAGE / name).read_bytes())
 
 
-def write_standalone_bootstrap(zip_sha256: str) -> Path:
+def write_standalone_bootstrap(zip_sha256: str, *, zip_path: Path = ZIP_PATH,
+                              target: Path = BOOTSTRAP_STANDALONE) -> Path:
     """The bootstrap that travels BESIDE the zip, carrying the zip's digest.
 
     Order is the whole trick: the archive is written first, hashed second, and
@@ -880,15 +956,15 @@ def write_standalone_bootstrap(zip_sha256: str) -> Path:
             f"{BOOTSTRAP_TOKEN!r}; the injection needs exactly one, or the "
             f"shipped bootstrap would verify against the wrong value")
     injected = text.replace(BOOTSTRAP_TOKEN, f'ZIP_SHA256="{zip_sha256}"')
-    BOOTSTRAP_STANDALONE.write_text(injected, encoding="utf-8")
-    BOOTSTRAP_STANDALONE.chmod(0o755)
-    if zip_sha256 not in BOOTSTRAP_STANDALONE.read_text(encoding="utf-8"):
+    target.write_text(injected, encoding="utf-8")
+    target.chmod(0o755)
+    if zip_sha256 not in target.read_text(encoding="utf-8"):
         raise PackagingRefusal("the standalone bootstrap lost its digest")
-    if sha256_file(ZIP_PATH) != zip_sha256:
+    if sha256_file(zip_path) != zip_sha256:
         raise PackagingRefusal(
             "the zip changed after it was hashed; the embedded digest would "
             "refuse the very package it ships with")
-    return BOOTSTRAP_STANDALONE
+    return target
 
 
 def main() -> int:
@@ -897,7 +973,13 @@ def main() -> int:
                         help="build the tree and the fixtures, skip the archive")
     parser.add_argument("--only", action="append", default=[],
                         help="freeze only this fixture (repeatable, for triage)")
+    parser.add_argument(
+        "--deployment", action="append", default=[], metavar="BUNDLE",
+        help="DEPLOYMENT MODE: also ship this exported bundle (and its "
+             "_capture.json sibling) and write dist/odin_hacc_deployment.zip. "
+             "Repeatable; the FIRST is what phase 8 runs by default.")
     options = parser.parse_args()
+    deployments = [Path(p).resolve() for p in options.deployment]
 
     require_protocol_agrees()
     require_seal_agrees()
@@ -925,23 +1007,36 @@ def main() -> int:
               f"events={run['capture_events_needed']} "
               f"witnesses={sorted(document['witnesses'])}")
 
-    manifest = build_tree(documents, head=head, dirty=dirty, rtl=rtl)
+    manifest = build_tree(
+        documents, head=head, dirty=dirty, rtl=rtl, deployments=deployments)
     print(f"[package] staged {len(manifest['files'])} files under {STAGE}")
+    for path in deployments:
+        print(f"[package] deploying {path.name} "
+              f"({sha256_file(path)[:16]}\u2026)")
     if options.no_zip:
         return 0
-    write_zip()
-    size = ZIP_PATH.stat().st_size
-    zip_sha256 = sha256_file(ZIP_PATH)
-    print(f"[package] wrote {ZIP_PATH} ({size / 1e6:.2f} MB, "
+    zip_path = DEPLOYMENT_ZIP_PATH if deployments else ZIP_PATH
+    bootstrap = DEPLOYMENT_BOOTSTRAP if deployments else BOOTSTRAP_STANDALONE
+    write_zip(zip_path)
+    size = zip_path.stat().st_size
+    zip_sha256 = sha256_file(zip_path)
+    print(f"[package] wrote {zip_path} ({size / 1e6:.2f} MB, "
           f"sha256 {zip_sha256})")
-    (DIST / "odin_hacc_package.zip.sha256").write_text(
-        f"{zip_sha256}  {ZIP_PATH.name}\n", encoding="utf-8")
-    print(f"[package] wrote {write_standalone_bootstrap(zip_sha256)} "
+    (DIST / f"{zip_path.name}.sha256").write_text(
+        f"{zip_sha256}  {zip_path.name}\n", encoding="utf-8")
+    written = write_standalone_bootstrap(
+        zip_sha256, zip_path=zip_path, target=bootstrap)
+    print(f"[package] wrote {written} "
           f"(verifies that digest before it unpacks anything)")
-    if size > 20 * 1000 * 1000:
+    # The DEPLOYMENT package carries a whole network's per-core programs, so it
+    # is allowed to be larger than the bring-up upload the owner was promised;
+    # the ceiling still exists, because an upload nobody can complete is not a
+    # deliverable either.
+    ceiling = 200 if deployments else 20
+    if size > ceiling * 1000 * 1000:
         raise PackagingRefusal(
-            f"the package is {size / 1e6:.1f} MB, over the 20 MB the owner was "
-            f"promised for a single upload")
+            f"the package is {size / 1e6:.1f} MB, over the {ceiling} MB a "
+            f"single upload was promised")
     return 0
 
 

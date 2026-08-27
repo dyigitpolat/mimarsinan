@@ -342,9 +342,33 @@ not a tolerance. It also accumulates ACCURACY against the bundle's labels.
 **Where the numbers come from.** `deployment/*.json` is a sealed bundle: a
 manifest with the generating commit and the chip-config inputs, per-core PROGRAM
 streams, per-sample core-0 STIMULUS streams, the routing plan, and the frozen
-expectations. Every count in it was MEASURED by the RTL cosimulation, one pass
-at a time, and gated cycle by cycle against the cycle-accurate twin. The file
-carries its own hash: a damaged upload refuses instead of certifying.
+expectations. The file carries its own hash: a damaged upload refuses instead of
+certifying, and its `provenance.derivation` says in words WHAT produced its
+expectations — either the RTL cosimulation on the vendored core (the committed
+witness bundle) or the cycle-accurate twin gated sample by sample against the
+HCM torch reference (a bundle exported from a trained network, where a
+cosimulation of hundreds of samples is not affordable). Neither is a silicon
+measurement; the run you are about to start is.
+
+**Which bundle phase 8 runs.** A **bring-up** package carries the committed
+two-core witness bundle and runs that. A **deployment** package
+(`odin_hacc_deployment.zip`, built by
+`scripts/hacc/make_package.py --deployment BUNDLE`) additionally carries an
+exported network and `deployment/DEPLOYMENT.json`, the index naming the default.
+The bootstrap flow is the same one either way — `./bootstrap_hacc.sh --card
+u55c` — and phase 8 reads the index when it is there. `ODIN_BUNDLE=<path>`
+always wins, so one install can run either network:
+
+```bash
+ODIN_BUNDLE=deployment/<other>.json ./run_all.sh --only 8
+```
+
+**How many samples.** A bundle can only execute the samples it SHIPS: each one
+carries the entry raster this program's host stages produced for it. The
+campaign default runs the first 64; `ODIN_DEPLOY_SAMPLES=N` widens or narrows
+it, and `ODIN_DEPLOY_SAMPLES=100000` simply runs every shipped sample. Shipping
+the whole test set is a matter of raising `odin_hacc_bundle_samples` at export
+time and paying for the larger upload.
 
 **The one self-check worth knowing about.** The host builds every consumer
 pass's stimulus itself. Before it trusts that builder, it rebuilds the FIRST

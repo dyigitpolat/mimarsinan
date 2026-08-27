@@ -34,6 +34,9 @@
 #  18  the die-map renderer draws on both paths and refuses without a checkpoint
 #  19  run_all.sh PHASE 8 stages the bundle, runs it, collects the report, and
 #      is artifact-resume aware; collect_results.sh brings it home
+#  21  the DEPLOYMENT package (when dist/odin_hacc_deployment.zip exists):
+#      its deployment/DEPLOYMENT.json names the exported network, and phase 8
+#      runs THAT bundle rather than the committed witness one
 #  20  the CHIP CACHE: a build publishes, a second install hits it and spends no
 #      compile slot, adoption files an existing install under the key a build
 #      looks up, a held lock never clobbers, and a changed recipe misses
@@ -48,6 +51,7 @@ REPO="$(cd "${SELFTEST}/../../.." && pwd)"
 STUBS="${SELFTEST}/stubs"
 FIELD="${SELFTEST}/field_2026_08_25"
 ZIP="${REPO}/dist/odin_hacc_package.zip"
+DEPLOY_ZIP="${REPO}/dist/odin_hacc_deployment.zip"
 BOOTSTRAP="${REPO}/dist/bootstrap_hacc.sh"
 
 if [ ! -f "${ZIP}" ] || [ ! -f "${BOOTSTRAP}" ]; then
@@ -107,6 +111,7 @@ done < "${FIELD}/platforms_installed.txt"
 say() { printf '%s\n' "$*"; }
 gate() { printf '\n--- gate %s: %s\n' "$1" "$2"; }
 pass() { printf 'GATE %-4s PASS  %s\n' "$1" "$2"; }
+skip() { printf 'GATE %-4s SKIP  %s\n' "$1" "$2"; }
 fail() { printf 'GATE %-4s FAIL  %s\n' "$1" "$2"; FAILED=1; }
 
 # Assert a pattern is (or is not) in a file, and say which.
@@ -127,10 +132,10 @@ expect_file() {
 # A fresh extract under its own data root, so scenarios cannot leak into
 # each other's artifacts.
 fresh_package() {
-    local root="$1"
+    local root="$1" archive="${2:-${ZIP}}"
     rm -rf "${root}"
     mkdir -p "${root}/${USER}"
-    unzip -q "${ZIP}" -d "${root}/${USER}"
+    unzip -q "${archive}" -d "${root}/${USER}"
     printf '%s/%s/odin_hacc_package\n' "${root}" "${USER}"
 }
 
@@ -654,6 +659,33 @@ COLLECTED_LIST="${WORK}/collected_listing.txt"
 expect 19k "${COLLECTED_LIST}" "results/board_deploy/deployment_report.json"
 expect 19l "${COLLECTED_LIST}" "chip_cache/hw/key_inputs.txt"
 expect 19m "${COLLECTED_LIST}" "results/board_deploy/deployment_samples.tsv"
+
+gate 21 "the DEPLOYMENT package: its index is the network phase 8 runs"
+# scripts/hacc/make_package.py --deployment <bundle> writes this second
+# artifact: the same bring-up package plus an EXPORTED network and the index
+# that names it. There is one bootstrap flow either way; what changes is which
+# bundle phase 8 picks up.
+if [ ! -f "${DEPLOY_ZIP}" ]; then
+    skip 21a "no ${DEPLOY_ZIP}; build it with make_package.py --deployment BUNDLE"
+else
+    D_ROOT="${WORK}/deploypkg"
+    PKG="$(fresh_package "${D_ROOT}" "${DEPLOY_ZIP}")"
+    expect_file 21a "${PKG}/deployment/DEPLOYMENT.json"
+    DEFAULT_BUNDLE="$(sed -n 's/.*"default"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "${PKG}/deployment/DEPLOYMENT.json" | head -n 1)"
+    expect_file 21b "${PKG}/${DEFAULT_BUNDLE}"
+    LOG="${WORK}/deploypkg.log"
+    ( cd "${PKG}" && ODIN_DATA_ROOT="${D_ROOT}" ODIN_CHIP_CACHE="${WORK}/cache_d" \
+        ./run_all.sh ) > "${LOG}" 2>&1
+    status=$?
+    say "--- transcript (deployment phase 8) ---"
+    sed -n '/phase 8:/,$p' "${LOG}" | head -20
+    if [ "${status}" -eq 0 ]; then pass 21c "the deployment flow reached the end"
+    else fail 21c "exit ${status}; see ${LOG}"; fi
+    expect 21d "${LOG}" "deployment index names $(basename "${DEFAULT_BUNDLE}")"
+    expect_file 21e "${PKG}/results/board_deploy/deployment_report.json"
+    expect 21f "${PKG}/results/phase_deployment.log" "ACCURACY"
+fi
 
 gate 20 "the chip cache: publish, hit, adopt, lock, and a changed recipe"
 CACHE_ROOT="${WORK}/chipcache"

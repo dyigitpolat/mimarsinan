@@ -48,6 +48,7 @@ BUILD_SCRIPT="${HERE}/scripts/hacc/build_xclbn.sh"
 JOURNAL="${RESULTS}/phase_journal.tsv"
 CHIP_CACHE="${HERE}/scripts/chip_cache.sh"
 BUNDLE_DIR="${HERE}/deployment"
+DEPLOYMENT_INDEX="${BUNDLE_DIR}/DEPLOYMENT.json"
 EXECUTOR="${HERE}/host/odin_deployment_executor.py"
 PICK_LOG="${RESULTS}/partition_picks.txt"
 LOCK="${HERE}/.run_all.lock"
@@ -734,6 +735,12 @@ phase_7() {
 # ---------------------------------------------------------------------------
 # 8. HACC NUS - ODIN Deployment
 # ---------------------------------------------------------------------------
+deployment_default() {
+    # The one field phase 8 needs, read without a JSON parser the node may lack.
+    sed -n 's/.*"default"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "${DEPLOYMENT_INDEX}" | head -n 1
+}
+
 phase_8() {
     pick_partition board "${ODIN_BOARD_PARTITION:-}" "${BOARD_CANDIDATES[@]}" || return 2
     head_line "phase 8: HACC NUS - ODIN Deployment on ${PICKED}"
@@ -756,6 +763,18 @@ phase_8() {
             [ -f "${bundle}" ] || continue
             say "         $(basename "${bundle}")  $(sha256sum "${bundle}" | cut -c1-16)…"
         done
+    fi
+    # A DEPLOYMENT package declares WHICH network it deploys; the bring-up
+    # package has no index and keeps the executor's own committed default. An
+    # explicit ODIN_BUNDLE always wins, so a node can run either.
+    if [ -z "${ODIN_BUNDLE:-}" ] && [ -f "${DEPLOYMENT_INDEX}" ]; then
+        ODIN_BUNDLE="${HERE}/$(deployment_default)"
+        say "[phase8] deployment index names $(basename "${ODIN_BUNDLE}")"
+        if [ "${DRY_RUN}" = "0" ]; then
+            require_file "${ODIN_BUNDLE}" \
+                "deployment/DEPLOYMENT.json names a bundle the package does not carry" \
+                || return 2
+        fi
     fi
     local log="${RESULTS}/phase_deployment.log"
     rotate_log "${log}"
