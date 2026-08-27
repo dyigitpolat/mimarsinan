@@ -42,6 +42,118 @@ class SegmentOutcome:
     cycles: int
 
 
+@dataclass(frozen=True)
+class SegmentPlan:
+    """One segment resolved up to the device seam: entry raster, twin, export.
+
+    Everything here is derived from the MAPPING alone, so a device run and a
+    frozen deployment bundle start from the same object rather than from two
+    copies of the same twelve lines.
+    """
+
+    hcm: Any
+    chip_latency: int
+    entry_rates: np.ndarray
+    encoded: np.ndarray
+    raster: List[List[int]]
+    trace: Any
+    export: Any
+    timesteps: int
+
+    @property
+    def neurons(self) -> List[int]:
+        return [int(core.neurons_per_core) for core in self.hcm.cores]
+
+    @property
+    def used_neurons(self) -> List[int]:
+        return [
+            max(int(core.neurons_per_core) - int(core.available_neurons or 0), 1)
+            for core in self.hcm.cores
+        ]
+
+    def injection_plan(self) -> List[List[Dict[int, Tuple[int, ...]]]]:
+        """The one-sample per-cycle injection plan a transport is handed."""
+        return [list(per_slot_counts_by_cycle(self.trace))]
+
+    def twin_counts(self) -> Dict[Tuple[int, int, int, int], int]:
+        """The cycle-accurate twin's own answers, in the transport's key shape."""
+        return {
+            (0, cycle, core, neuron): int(value)
+            for cycle, per_core in enumerate(self.trace.outputs)
+            for core, counts in enumerate(per_core)
+            for neuron, value in enumerate(counts) if value
+        }
+
+
+def plan_odin_segment(
+    *,
+    stage: Any,
+    state_buffer,
+    soma_law,
+    behavior,
+    timesteps: int,
+    weight_bits: int,
+    effective_max_axons: int,
+    membrane_init: int,
+    weight_sign_granularity: str,
+    wire_divisors,
+    node_shifts,
+) -> SegmentPlan:
+    """Encode the entry raster, run the cycle twin, and export the segment."""
+    hcm = stage.hard_core_mapping
+    if hcm is None:
+        raise ValueError(
+            f"stage {stage.name!r} is neural but carries no hard-core mapping; "
+            f"there is nothing to program onto the device")
+    chip_latency = int(ChipLatency(hcm).calculate())
+    entry_rates = assemble_entry_rates(stage, state_buffer, wire_divisors, node_shifts)
+    encoded = behavior.encode_segment_input(entry_rates, int(timesteps))
+    raster = [
+        [int(value) for value in encoded[0, :, cycle]]
+        for cycle in range(int(timesteps))
+    ]
+    trace = simulate_cycles(
+        hcm, soma_law=soma_law, input_counts=raster,
+        simulation_length=int(timesteps), membrane_init=int(membrane_init),
+        chip_latency=chip_latency)
+    export = export_odin(
+        hcm, soma_law=soma_law, weight_bits=int(weight_bits),
+        weight_sign_granularity=str(weight_sign_granularity),
+        effective_max_axons=int(effective_max_axons),
+        membrane_init=int(membrane_init))
+    return SegmentPlan(
+        hcm=hcm, chip_latency=chip_latency, entry_rates=entry_rates,
+        encoded=encoded, raster=raster, trace=trace, export=export,
+        timesteps=int(timesteps))
+
+
+def segment_record(
+    plan: SegmentPlan, *, stage: Any, stage_index: int,
+    windows: Sequence[Sequence[int]], counts: Dict[Tuple[int, int, int, int], int],
+) -> Tuple[SegmentSpikeRecord, Tuple[Tuple[int, ...], ...], np.ndarray]:
+    """The HCM-comparable record of one segment, from whatever answered it."""
+    used = plan.used_neurons
+    per_core = tuple(
+        tuple(int(v) for v in row[:used[index]])
+        for index, row in enumerate(windows))
+    seg_output = gather_output_counts(
+        getattr(plan.hcm, "output_sources", None), stage.output_map, per_core,
+        timesteps=int(plan.timesteps))
+    record = SegmentSpikeRecord(
+        stage_index=int(stage_index),
+        stage_name=str(stage.name),
+        schedule_segment_index=stage.schedule_segment_index,
+        schedule_pass_index=stage.schedule_pass_index,
+        seg_input_rates=np.asarray(
+            plan.entry_rates, dtype=np.float32).reshape(1, -1),
+        seg_input_spike_count=np.asarray(
+            plan.encoded[0].sum(axis=1), dtype=np.int64),
+        seg_output_spike_count=seg_output,
+        cores=_core_records(plan.hcm, plan.trace, per_core, counts),
+    )
+    return record, per_core, seg_output
+
+
 def gather_output_counts(
     output_sources: Any,
     output_map: Sequence[Any],
@@ -105,61 +217,27 @@ def run_odin_segment(
     node_shifts,
 ) -> SegmentOutcome:
     """Program one segment onto the device, run it, and record what it emitted."""
-    hcm = stage.hard_core_mapping
-    if hcm is None:
-        raise ValueError(
-            f"stage {stage_index} ({stage.name!r}) is neural but carries no "
-            f"hard-core mapping; there is nothing to program onto the device")
-    chip_latency = int(ChipLatency(hcm).calculate())
-    entry_rates = assemble_entry_rates(stage, state_buffer, wire_divisors, node_shifts)
-    encoded = behavior.encode_segment_input(entry_rates, int(timesteps))
-    raster = [
-        [int(value) for value in encoded[0, :, cycle]]
-        for cycle in range(int(timesteps))
-    ]
+    plan = plan_odin_segment(
+        stage=stage, state_buffer=state_buffer, soma_law=soma_law,
+        behavior=behavior, timesteps=timesteps, weight_bits=weight_bits,
+        effective_max_axons=effective_max_axons, membrane_init=membrane_init,
+        weight_sign_granularity=weight_sign_granularity,
+        wire_divisors=wire_divisors, node_shifts=node_shifts)
+    trace = plan.trace
 
-    trace = simulate_cycles(
-        hcm, soma_law=soma_law, input_counts=raster,
-        simulation_length=int(timesteps), membrane_init=int(membrane_init),
-        chip_latency=chip_latency)
-    export = export_odin(
-        hcm, soma_law=soma_law, weight_bits=int(weight_bits),
-        weight_sign_granularity=str(weight_sign_granularity),
-        effective_max_axons=int(effective_max_axons),
-        membrane_init=int(membrane_init))
+    receipt = transport.program(plan.export)
+    run = transport.run_samples(plan.injection_plan(), latencies=trace.latencies)
 
-    receipt = transport.program(export)
-    run = transport.run_samples(
-        [list(per_slot_counts_by_cycle(trace))], latencies=trace.latencies)
-
-    neurons = [int(core.neurons_per_core) for core in hcm.cores]
     # Each core contributes only inside its OWN window [latency, latency + T):
     # nevresim's SpikeCountRecorder convention, which is also the set of cycles
     # the HCM reference steps a core over, so the two records are comparable
     # term by term. Cycles outside it are drain, not deployment.
     windows = run.window_counts(
         latencies=trace.latencies, simulation_length=int(timesteps),
-        neurons=neurons)[0]
-    used = [
-        max(int(core.neurons_per_core) - int(core.available_neurons or 0), 1)
-        for core in hcm.cores
-    ]
-    per_core = [tuple(row[:used[index]]) for index, row in enumerate(windows)]
-    seg_output = gather_output_counts(
-        getattr(hcm, "output_sources", None), stage.output_map, per_core,
-        timesteps=int(timesteps))
-
-    record = SegmentSpikeRecord(
-        stage_index=int(stage_index),
-        stage_name=str(stage.name),
-        schedule_segment_index=stage.schedule_segment_index,
-        schedule_pass_index=stage.schedule_pass_index,
-        seg_input_rates=np.asarray(entry_rates, dtype=np.float32).reshape(1, -1),
-        seg_input_spike_count=np.asarray(
-            encoded[0].sum(axis=1), dtype=np.int64),
-        seg_output_spike_count=seg_output,
-        cores=_core_records(hcm, trace, per_core, run.counts),
-    )
+        neurons=plan.neurons)[0]
+    record, per_core, seg_output = segment_record(
+        plan, stage=stage, stage_index=stage_index, windows=windows,
+        counts=run.counts)
     timing = OdinSegmentTiming(
         stage_index=int(stage_index), stage_name=str(stage.name),
         cores=int(receipt.cores), program_ops=int(receipt.ops),

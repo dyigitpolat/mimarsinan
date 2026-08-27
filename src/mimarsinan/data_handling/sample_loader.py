@@ -24,22 +24,23 @@ from mimarsinan.data_handling.data_loader_factory import (
 
 def _collect_wanted(
     loader: Iterable, wanted: set[int], source: str,
-) -> Tuple[dict[int, torch.Tensor], set[int], int]:
+) -> Tuple[dict[int, Tuple[torch.Tensor, torch.Tensor]], set[int], int]:
     """One verified pass, stopping as soon as every wanted index is owned.
 
     A positional read cannot repair by skipping (index ``k`` means sample ``k``),
     so this is a ``verified_pass``: restarted whole, or raised.
     """
     remaining = set(wanted)
-    out: dict[int, torch.Tensor] = {}
+    out: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
     seen = 0
     for xs, ys in loader:
-        xs, _ys = batch_integrity.own_verified_batch(xs, ys, source=source)
+        xs, ys = batch_integrity.own_verified_batch(xs, ys, source=source)
         for local in range(int(xs.shape[0])):
             if seen in remaining:
                 # Cloned off the owned batch so a single retained sample does not
                 # pin the whole batch buffer alive behind it.
-                out[seen] = xs[local : local + 1].clone()
+                out[seen] = (
+                    xs[local : local + 1].clone(), ys[local : local + 1].clone())
                 remaining.discard(seen)
             seen += 1
             if not remaining:
@@ -56,6 +57,23 @@ def load_test_samples_by_index(
     num_workers: int = 4,
 ) -> List[torch.Tensor]:
     """Return one batch tensor per index in ``indices`` (order preserved)."""
+    return [
+        sample for sample, _label in load_test_pairs_by_index(
+            data_provider_factory, indices, num_workers=num_workers)
+    ]
+
+
+def load_test_pairs_by_index(
+    data_provider_factory,
+    indices: Sequence[int],
+    *,
+    num_workers: int = 4,
+) -> List[Tuple[torch.Tensor, torch.Tensor]]:
+    """Return one ``(sample, label)`` batch pair per index, order preserved.
+
+    The LABEL half is what turns a parity read into a deployed-accuracy claim;
+    it rides the same verified pass rather than a second, unguarded read.
+    """
     wanted = set(int(i) for i in indices)
     if not wanted:
         return []

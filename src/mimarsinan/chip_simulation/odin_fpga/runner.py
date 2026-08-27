@@ -35,6 +35,29 @@ from mimarsinan.spiking.segment_boundary import (
 RAW_INPUT_NODE_ID = -2
 
 
+def execute_compute_stage(
+    mapping: Any, stage: Any, sample_input: np.ndarray, buffer: Dict[int, Any],
+    *, node_shifts: Any, host_device: Any,
+) -> np.ndarray:
+    """One HOST compute stage of a hybrid program, in the deployment's dtype.
+
+    Shared by every runner that drives ODIN cores: the chip executes neural
+    segments only, and what feeds them is this value-domain evaluation.
+    """
+    op = stage.compute_op
+    assert op is not None
+    in_scale, out_scale = resolve_stage_compute_scales(
+        mapping, op.id, apply_ttfs=False, op=op)
+    result = execute_compute_op_numpy(
+        op, sample_input,
+        compute_input_state_with_shifts(op, buffer, node_shifts),
+        in_scale=in_scale, out_scale=out_scale, dtype=COMPUTE_DTYPE,
+        device=host_device)
+    out = np.asarray(result, dtype=COMPUTE_DTYPE)
+    buffer[op.id] = out
+    return out
+
+
 class OdinFpgaRunner:
     """Execute a hybrid program with every neural segment on an ODIN device."""
 
@@ -114,19 +137,10 @@ class OdinFpgaRunner:
             )
 
         def _on_compute(_stage_index, stage, buffer):
-            op = stage.compute_op
-            assert op is not None
-            in_scale, out_scale = resolve_stage_compute_scales(
-                self.mapping, op.id, apply_ttfs=False, op=op)
-            result = execute_compute_op_numpy(
-                op, sample_input,
-                compute_input_state_with_shifts(op, buffer, node_shifts),
-                in_scale=in_scale, out_scale=out_scale, dtype=COMPUTE_DTYPE,
-                device=getattr(self.contract, "host_compute_device", None),
-            )
-            out = np.asarray(result, dtype=COMPUTE_DTYPE)
-            buffer[op.id] = out
-            record.compute_outputs[op.id] = out
+            record.compute_outputs[stage.compute_op.id] = execute_compute_stage(
+                self.mapping, stage, sample_input, buffer,
+                node_shifts=node_shifts,
+                host_device=getattr(self.contract, "host_compute_device", None))
 
         with DeviceSession(self.transport):
             run_hybrid_stages(
