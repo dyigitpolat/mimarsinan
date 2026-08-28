@@ -373,6 +373,13 @@ T0 = [
     # layers read 120, 96 and 120 lines plus the always-on bias row.
     dict(n=55, mode="lifse", quant="wq", wb=4, s=4, vehicle="simplemlp", seed=1,
          platform="J", has_bias=False, coalescing=False, splitting=False,
+         # MEASURED 2026-08-28: at the family default lr=0.003 the WQ endpoint
+         # recovery warms up to a PEAK LR of 0.03 and destroys the quantized
+         # model on this grid — it enters recovery at 0.913 and slides to 0.26
+         # over 6k steps, while t0_54's wb=5 grid survives the same peak at
+         # 0.92. The 3-bit magnitude cell is what pays for it, so this cell
+         # pays a 10x gentler ladder rather than a weight the chip lacks.
+         lr=0.0003,
          firing_granularity="per_event", membrane_bits=8,
          weight_sign_granularity="per_axon",
          enable_odin_hacc_export=True,

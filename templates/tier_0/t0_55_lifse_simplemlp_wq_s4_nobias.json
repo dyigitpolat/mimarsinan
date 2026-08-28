@@ -25,7 +25,7 @@
     "weight_sign_granularity": "per_axon"
   },
   "deployment_parameters": {
-    "lr": 0.003,
+    "lr": 0.0003,
     "tuning_budget_scale": 0.25,
     "degradation_tolerance": 0.15,
     "model_config_mode": "user",
