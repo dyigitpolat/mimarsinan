@@ -277,15 +277,52 @@ If a run refuses with `OdinFpgaCaptureTruncated`, raise `CAP_WORDS` in
 `hw/fpga/kernel/odin_fpga_kernel_top.v` and rebuild. Lowering the sample count
 until it fits is a way to get a number, not a way to get a result.
 
+**The FPGA is the chip, and the chip is FED.** The programming words arrive
+LIVE from the host at every segment/pass boundary: the AXI read engine streams
+the program buffer and then the stimulus buffer through the shallow FIFO, and
+the sequencer consumes the head of it. Nothing about that is best-effort —
+when the FIFO starves, the core's clock enable drops and the whole core domain
+stands still, so core time is ENABLED cycles and the run is bit-exact under any
+arrival pattern (the `+stallseed` gate in `hw/tb/tb_odin_fpga_kernel_axi.v`).
+Three consequences the host side cares about:
+
+* **There is no program capacity to refuse.** The 32-bit `program_words` and
+  `stimulus_words` arguments are the only bound on a run's length. What *is*
+  still refusable is a words argument that names more words than its buffer
+  object holds (`OdinFpgaWordsExceedBuffer`) — the fabric would read past the
+  end of the buffer and execute host memory nobody wrote.
+* **Programming is a MEASURED host-link bandwidth**, not a fabric budget. Every
+  run and every segment boundary reports `program_stream_bytes`,
+  `program_stream_seconds` and the derived `programming_bytes_per_second`
+  beside `segment_boundary_init_s` (that boundary's stream *plus* its buffer
+  setup). Read them, do not estimate them.
+* **SPI is still the wall.** The fabric sequencer shifts ~40 SCK per SPI
+  transaction, so the FIFO keeps ahead of it trivially and the token encoding's
+  four-words-per-transaction density now costs PCIe BYTES rather than fabric
+  tiles. That is a host-link number to report, not a reason to change the
+  encoding.
+
 **How long:** `hw_emu` ~15 minutes. `hw` is dominated by place-and-route of the
 ODIN cores; the local yosys census (`hw/fpga/synth_resources.json`) puts one
 stock core at 5,659 LUT-equivalents, 4,362 FFs and 10 RAMB36E2, so a 1-core
 kernel is small — budget **2–6 hours** and
-run it inside a `screen`/`tmux` on the compile node. On top of the cores, the
-program and capture RAMs are ≈8.4 Mbit (per core) and 0.5 Mbit of on-chip
-memory, and both INFER BLOCK RAM in the local census (one RAMB36E2 per 1,024
-32-bit words); nothing local has placed them, so read the build's
-`utilization` report for where they actually landed and at what cost.
+run it inside a `screen`/`tmux` on the compile node.
+
+**The wrapper's block-RAM budget, after the streaming redesign:**
+
+| memory | words × bits | Mbit | RAMB36E2 |
+| --- | --- | --- | --- |
+| op-stream FIFO (`FIFO_WORDS`) | 1,024 × 32 | 0.03 | 1 |
+| capture RAM (`CAP_WORDS`) | 16,384 × 32 | 0.5 | 16 |
+| **wrapper total** | | **0.53** | **17** |
+| one stock ODIN core | | | 10 |
+
+The 262,144-word program RAM that used to sit beside these — 8.4 Mbit, 256
+tiles, more than the whole rest of the kernel — **is gone**: the op stream is
+never stored on the fabric, it is consumed live out of host memory. Both
+remaining memories INFER BLOCK RAM in the local census (one RAMB36E2 per 1,024
+32-bit words) and the routed U55C build confirmed it (LUTRAM 0); read the
+build's `utilization` report for where they actually landed.
 
 Outputs land in `build/hacc/<target>_nc<N>/`:
 `odin_fpga_<target>.xclbin`, plus `reports/` (timing, utilization) and `logs/`.
@@ -438,6 +475,11 @@ Under `/data/${USER}/log/odin_<timestamp>/`:
     — the two MEASURED walls. `programming` is the per-pass reprogramming
     physics (~236 ms/core over SPI is the derived figure to check against); it
     is never folded into `execution`.
+  * `ODIN FPGA programming stream: B bytes in X s = R MB/s (the fabric stores
+    none of it)` — the host-link cost of feeding the chip. The timing fragment
+    carries the same three fields per segment (`program_stream_bytes`,
+    `program_stream_seconds`, `programming_bytes_per_second`) beside
+    `segment_boundary_init_s`.
 * `generated/` — the deployment record, whose timing fragment carries those
   same walls per segment, and whose accuracy read is `kind="measured"`,
   `backend="odin_fpga"`.
@@ -464,6 +506,12 @@ What one pass costs, and what is deliberately NOT paid per sample:
 * the core is programmed ONCE. Fabric memories persist across sequencer runs,
   so the ~236 ms/core SPI shift is paid once per core per campaign, not once
   per sample. The per-sample membrane CLEAR is an OP inside the stimulus.
+  That one-time cost per core IS the segment boundary, and it is reported as
+  `segment_boundary_init_s` — its stream plus that core's buffer setup — with
+  the stream's own `program_stream_bytes` / `program_stream_seconds` /
+  `programming_bytes_per_second` beside it. The fabric keeps no copy of those
+  bytes, so a wider network costs host-link time at each boundary and no fabric
+  memory at all.
 * each sample is: rewrite the stimulus buffer, re-poison the capture header,
   start, wait, sync back, decode, fold, transcode. All seven are timed
   separately with `time.perf_counter`, because a deployment that reports one
@@ -478,8 +526,11 @@ Read, under `results/board_deploy/`:
   max|dcount|=0`), the final readout of EVERY shipped sample against its frozen
   scores and label, the accumulated ACCURACY, and wall aggregates with
   percentiles for `bo_write_s`, `sync_s`, `run_s`, `readback_s`, `decode_s`,
-  `transcode_s`, `pass_total_s`, plus per-sample totals and per-core
-  programming;
+  `transcode_s`, `pass_total_s`, plus per-sample totals, per-core programming
+  and `segment_boundary_init_s`;
+* the report's `programming` block — the campaign's whole programming stream:
+  `program_stream_bytes` over `program_stream_seconds` across
+  `segment_boundaries`, and the `programming_bytes_per_second` they imply;
 * `deployment_samples.tsv` — one row per pass.
 
 **A red certificate here is not a tolerance question.** Read which PASS

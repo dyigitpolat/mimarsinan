@@ -256,6 +256,32 @@ own `proves` / `does_not_prove` lists),
 programming (the payload DMA) is reported separately from execution and is
 never folded into it.
 
+### The chip is FED, and what that costs is measured
+
+The fabric holds **no copy of the op stream**. The AXI read engine streams the
+program buffer and then the stimulus buffer through a 1,024-word elastic FIFO
+while the sequencer consumes the head of it, and when the FIFO starves the
+core's clock enable drops — core time is ENABLED cycles, so the run is
+bit-exact under any arrival pattern. Two things follow for anyone reading a
+result:
+
+* **There is no program capacity.** A run's length is bounded only by the
+  32-bit `program_words` / `stimulus_words` arguments. The one length fault
+  that remains is a words argument naming more words than its own buffer
+  object holds — that refuses as `OdinFpgaWordsExceedBuffer`, because the
+  fabric would otherwise read past the end of the buffer.
+* **Programming is a host-link bandwidth, and it is in every `walls` block:**
+  `program_stream_bytes`, `program_stream_seconds`, the derived
+  `programming_bytes_per_second`, and `segment_boundary_init_s` — that
+  boundary's stream plus the buffer setup it needed. A driver line says it in
+  words: `programming stream N bytes in T ms = R MB/s (the fabric stores none
+  of it)`.
+
+The programming WALL itself is still SPI: the fabric sequencer shifts ~40 SCK
+per transaction, so the FIFO keeps ahead of it easily and the encoding's
+four-words-per-transaction density now costs PCIe bytes rather than fabric
+tiles. Report that number; do not tune the encoding to chase it.
+
 ---
 
 ## If the board disagrees with the frozen counts
@@ -378,7 +404,14 @@ rather than stimulating a network nobody assembled.
 * `deployment_report.json` — the certificates, the readout of every sample, the
   accuracy, and wall aggregates with percentiles for **every distinct stage**:
   `bo_write_s`, `sync_s`, `run_s`, `readback_s`, `decode_s`, `transcode_s`,
-  `pass_total_s`, plus per-sample totals and per-core programming;
+  `pass_total_s`, plus per-sample totals, per-core programming and
+  `segment_boundary_init_s`;
+* that report's `programming` block — the whole campaign's programming stream:
+  `program_stream_bytes` over `program_stream_seconds` across
+  `segment_boundaries`, and the `programming_bytes_per_second` they imply. Each
+  `per_core` row carries its own three. Programming a core is a HOST-LINK cost
+  now, paid once per core per campaign at its segment boundary, and the fabric
+  keeps none of the bytes afterwards;
 * `deployment_samples.tsv` — one row per pass, capped so it stays readable.
 
 ---
