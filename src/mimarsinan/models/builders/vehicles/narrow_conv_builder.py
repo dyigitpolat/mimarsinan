@@ -1,6 +1,10 @@
 """Builder for NarrowConvNet; registered as narrow_conv (the fan-in bounded conv vehicle)."""
 
-from mimarsinan.models.vehicles.narrow_conv import NarrowConvNet
+from mimarsinan.models.vehicles.narrow_conv import (
+    ACTIVATED_READOUT,
+    BARE_READOUT,
+    NarrowConvNet,
+)
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
@@ -25,7 +29,9 @@ class NarrowConvBuilder:
             stem_stride=int(cfg["stem_stride"]),
             body_blocks=int(cfg["body_blocks"]),
             body_channels=int(cfg["body_channels"]),
-            head_width=int(cfg["head_width"]),
+            trunk_width=int(cfg["trunk_width"]),
+            trunk_blocks=int(cfg["trunk_blocks"]),
+            readout=str(cfg["readout"]),
             base_activation=cfg.get("base_activation", "ReLU"),
         )
 
@@ -44,8 +50,12 @@ class NarrowConvBuilder:
              "default": 2, "min": 0, "max": 5},
             {"key": "body_channels", "type": "number", "label": "Body Channels",
              "default": 16, "min": 1},
-            {"key": "head_width", "type": "number", "label": "Head Width",
+            {"key": "trunk_width", "type": "number", "label": "Trunk Width",
              "default": 128, "min": 1},
+            {"key": "trunk_blocks", "type": "number", "label": "Trunk Stages",
+             "default": 1, "min": 1, "max": 4},
+            {"key": "readout", "type": "select", "label": "Readout",
+             "options": [BARE_READOUT, ACTIVATED_READOUT], "default": BARE_READOUT},
         ]
 
     @classmethod
@@ -53,7 +63,8 @@ class NarrowConvBuilder:
         return {
             "stem_channels": [8, 14, 16, 24],
             "stem_stride": [2, 4],
-            "body_blocks": [1, 2, 3],
+            "body_blocks": [0, 1, 2],
             "body_channels": [7, 14, 16],
-            "head_width": [64, 120, 128],
+            "trunk_width": [64, 120, 128],
+            "trunk_blocks": [1, 2],
         }

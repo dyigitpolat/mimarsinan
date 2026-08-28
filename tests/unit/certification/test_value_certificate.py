@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -76,7 +77,9 @@ class TestCertificate:
             torch.zeros(2, 1),
         )
         assert not cert.passed
-        assert cert.max_abs_delta >= 1e-3
+        # `base + 1e-3` rounds to within one ULP of the exact sum, either way,
+        # so the MEASURED delta is 1e-3 to float64 resolution, not >= it.
+        assert cert.max_abs_delta == pytest.approx(1e-3, rel=1e-9)
         assert cert.within_atol_fraction < 1.0
 
     def test_node_set_mismatch_fails(self):
