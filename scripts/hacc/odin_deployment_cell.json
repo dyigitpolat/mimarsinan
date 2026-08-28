@@ -1,0 +1,88 @@
+{
+  "seed": 1,
+  "pipeline_mode": "phased",
+  "experiment_name": "t0_55_lifse_simplemlp_wq_s4_nobias",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 128,
+        "max_neurons": 256,
+        "count": 512,
+        "has_bias": false
+      }
+    ],
+    "max_axons": 128,
+    "max_neurons": 256,
+    "has_bias": false,
+    "target_tq": 4,
+    "simulation_steps": 4,
+    "weight_bits": 4,
+    "allow_coalescing": false,
+    "allow_neuron_splitting": false,
+    "membrane_bits": 8,
+    "weight_sign_granularity": "per_axon"
+  },
+  "deployment_parameters": {
+    "lr": 0.0003,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.4,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "simple_mlp",
+    "model_config": {
+      "mlp_width_1": 120,
+      "mlp_width_2": 96
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 25,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": false,
+    "spiking_family": "lif",
+    "spiking_variant": "streamed",
+    "firing_mode": "Novena",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<=",
+    "encoding_layer_placement": "subsume",
+    "weight_quantization": true,
+    "scale_migration": true,
+    "endpoint_floor_steps": 17200,
+    "training_epochs": 2,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "firing_granularity": "per_event",
+    "enable_odin_hacc_export": true,
+    "odin_hacc_bundle_samples": 300,
+    "odin_hacc_certification_samples": 50
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null,
+  "_note": "THE ODIN DEPLOYMENT CELL \u2014 the recipe for a bundle cut from a REAL trained network, and currently BLOCKED TWICE. It is the withdrawn tier row t0_55 (templates/generate.py, n=55) with degradation_tolerance widened 0.15 -> 0.40, because the stock core's 3-bit magnitude synapse cell costs this vehicle 0.9314 -> 0.6117 at Weight Quantization and that is a measured hardware price rather than a tuning miss; the wider tolerance hides nothing, since the deployed accuracy is exactly what the bundle would freeze and what a board would report. MEASURED 2026-08-28, run to Soft Core Mapping: WQ lands 0.6117 (-0.3197), Quantization Verification and Normalization Fusion hold it at 0.6156, and SOFT CORE MAPPING THEN REFUSES on the NF<->SCM parity gate \u2014 torch vs deployed-sim agreement 0.7969 against min_agreement 0.9 over 256 samples. That second failure is a deployment-fidelity finding on this point (wb=4 / per_axon / per_event / S=4), and the house rule is that NF<->SCM parity is FIXED, never budgeted, so nothing here widens it. Until both are closed this config produces no bundle, and dist/odin_hacc_deployment.zip is cut from the export step's own verified two-core witness instead."
+}
