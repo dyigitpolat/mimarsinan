@@ -23,7 +23,7 @@ BRAM36_BITS = 36 * 1024
 BRAM36_WORDS = 1024
 
 #: A tile's DATA word, parity bits excluded. Every array in this study that
-#: reaches a tile is declared at exactly this width -- `syn_mem`, `prog_ram`,
+#: reaches a tile is declared at exactly this width -- `syn_mem`, `fifo_ram`,
 #: `cap_ram` and the stock synapse memory all are -- and the narrower neuron
 #: arrays land in distributed RAM or in flip-flops instead, which is what the
 #: two paragraphs after the tile arithmetic measure.

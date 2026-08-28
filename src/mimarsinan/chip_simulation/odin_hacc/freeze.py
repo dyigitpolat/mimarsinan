@@ -21,9 +21,6 @@ from typing import Any, Dict, List, Sequence
 from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
     SHIPPED_CAPTURE_EVENTS,
-    SHIPPED_PROGRAM_WORDS_PER_CORE,
-    WORD_BYTES,
-    stimulus_base_word,
 )
 from mimarsinan.chip_simulation.odin_hacc.pass_build import PassBuild, used_neurons
 from mimarsinan.chip_simulation.odin_hacc.witness import PassWitness
@@ -67,17 +64,17 @@ def _require_reader_agrees(name, build, traces, plan, cycles) -> None:
                 f"board would stimulate a network nobody assembled")
 
 
-def _require_capacities(name, build, tokens: int, events: int) -> None:
+def _require_capture_fits(name, build, events: int) -> None:
+    """The ONE fabric depth a pass can exhaust: the capture RAM.
+
+    The op stream has no fabric depth to exhaust -- it is streamed, never
+    stored -- so its length is checked for nothing here on purpose.
+    """
     if events >= SHIPPED_CAPTURE_EVENTS:
         raise BundleRefusal(
             f"{name}: pass {build.index} produced {events} capture events "
             f"against the shipped fabric's {SHIPPED_CAPTURE_EVENTS}-record RAM; "
             f"a board run would refuse as truncated")
-    needed = stimulus_base_word(len(build.program_bytes) // WORD_BYTES) + tokens
-    if needed > SHIPPED_PROGRAM_WORDS_PER_CORE:
-        raise BundleRefusal(
-            f"{name}: pass {build.index} needs {needed} program words but an "
-            f"NC=1 kernel's program RAM holds {SHIPPED_PROGRAM_WORDS_PER_CORE}")
 
 
 def cycle_traces(mapping, *, rasters, soma_law, simulation_length, membrane_init,
@@ -155,9 +152,8 @@ def build_bundle(
                 if sample == index)
             for index in range(len(traces))
         ]
-        _require_capacities(
-            name, build, len(build.reference_stimulus(traces[0])),
-            max(per_sample_events, default=0))
+        _require_capture_fits(
+            name, build, max(per_sample_events, default=0))
         plan["cosim_events_per_sample"] = [int(v) for v in per_sample_events]
         cores.append(plan)
         replay.extend(_replay_runs(build, traces, measured, cycles))

@@ -3,8 +3,9 @@
 // "odin_fpga_kernel_top.v" - the Vitis RTL-kernel wrapper around
 // `odin_fpga_kernel`: an AXI4-Lite control slave carrying ap_ctrl and the
 // six kernel arguments, and an AXI4 master that MOVES THE BYTES -- it
-// burst-reads the program and the stimulus out of host memory into the
-// fabric's program RAM, runs the sequencer, and burst-writes the capture back.
+// burst-reads the program and the stimulus out of host memory and STREAMS them
+// into the fabric's elastic FIFO while the sequencer is already running, then
+// burst-writes the capture back.
 //
 // The register map is the Vitis RTL-kernel convention and is the SECOND copy
 // of one table whose host-side home is
@@ -21,17 +22,23 @@
 //   0x54 capture capacity, in EVENTS, of the fabric's capture RAM  (read-only)
 //        -- (CAP_WORDS - 2) / 4; at the shipped CAP_WORDS = 16,384 that is
 //        4,095 records. See the CAP_WORDS parameter for why that depth.
-//   0x5C program capacity, in WORDS, of the fabric's program RAM   (read-only)
+//
+// THERE IS NO PROGRAM CAPACITY. The fabric holds no copy of the host's program
+// -- the read engine streams it through a shallow FIFO the sequencer drains as
+// it executes -- so the only bound on a run's length is the 32-bit word count
+// the host declares. The read-only 0x5C register that used to publish a program
+// RAM depth is gone with the RAM.
 //
 // CROSS-LANGUAGE CONTRACT (the payload split). The host hands two END-terminated
-// token streams. The DMA loads the program at word 0 and the stimulus AT THE
-// PROGRAM'S LAST WORD, overwriting its END terminator, so the fabric executes
-// one continuous stream -- exactly the stream `payload_bytes(program.ops +
-// stimulus.ops)` would have produced. `kernel_registers.stimulus_base_word` is the
-// host-side copy of that rule.
+// token streams. The engine streams the program buffer WITHOUT its last word --
+// its END terminator -- and the stimulus buffer straight after it, so the
+// sequencer sees one continuous stream: exactly the stream
+// `payload_bytes(program.ops + stimulus.ops)` would have produced.
+// `kernel_registers.stimulus_base_word` is the host-side copy of that rule.
 //
 // SCOPE: this engine is proven against a behavioural AXI4 memory model in
-// simulation (`hw/tb/tb_odin_fpga_kernel_axi.v`); silicon is P7b/B0.
+// simulation (`hw/tb/tb_odin_fpga_kernel_axi.v`), including seeded adversarial
+// starvation of the read data channel; silicon is P7b/B0.
 
 `timescale 1ns/1ps
 
@@ -39,12 +46,11 @@ module odin_fpga_kernel_top #(
     parameter NC          = 1,
     parameter N           = 256,
     parameter M           = 8,
-    // Programming ONE stock core over SPI is ~147.6k tokens (8192 synapse
-    // words plus the neuron memory and the config registers, four words per
-    // transaction), so the program RAM is sized per core with headroom; the
-    // host reads the real depth back at 0x5C and REFUSES a run that overruns
-    // it rather than wrapping the address.
-    parameter PROG_WORDS  = NC * 262144,
+    // The elastic op-stream FIFO, in 32-bit words. It buys latency tolerance,
+    // not storage: the sequencer's slowest op is an SPI transaction at ~40 SCK,
+    // so the read engine keeps ahead of it with three orders of magnitude to
+    // spare and this depth only has to cover burst granularity and link jitter.
+    parameter FIFO_WORDS  = 1024,
     // The SHIPPED capture depth, and why it is this number: `cap_ram` is a
     // block RAM (one write port, one registered read), so a capture word costs
     // a slice of a tile -- one RAMB36E2 per 1,024 words -- and no longer 32
@@ -125,9 +131,8 @@ module odin_fpga_kernel_top #(
     localparam ADDR_CAP_N    = 8'h44;
     localparam ADDR_STATUS   = 8'h4C;
     localparam ADDR_CAP_CAP  = 8'h54;
-    localparam ADDR_PROG_CAP = 8'h5C;
 
-    // The datapath is 32-bit-beat only (to_bound/wdata/prog_wdata all assume
+    // The datapath is 32-bit-beat only (to_bound/wdata/str_data all assume
     // 4-byte beats); any other width must fail at elaboration, in simulation
     // and in synthesis alike, not silently narrow.
     generate
@@ -141,7 +146,7 @@ module odin_fpga_kernel_top #(
     localparam [31:0] CAP_HEADER  = 32'd2;
     localparam [31:0] CAP_STRIDE  = 32'd4;
     localparam [31:0] CAP_EVENTS  = (CAP_WORDS - 2) / 4;
-    localparam [31:0] PROG_LIMIT  = PROG_WORDS;
+    localparam [31:0] OP_END      = 32'd0;
 
     // One outstanding burst, INCR, one bus word per beat. 16 beats keeps every
     // burst inside a 4 KiB page once the boundary clamp below is applied.
@@ -152,16 +157,18 @@ module odin_fpga_kernel_top #(
     localparam [1:0]  AXRESP_OKAY = 2'b00;
 
     localparam D_IDLE    = 4'd0;
-    localparam D_RD_AR   = 4'd1;
-    localparam D_RD_R    = 4'd2;
-    localparam D_RUN     = 4'd3;
-    localparam D_PEEK    = 4'd4;
-    localparam D_CAP_SET = 4'd5;
-    localparam D_CAP_AW  = 4'd6;
-    localparam D_CAP_FE  = 4'd7;
-    localparam D_CAP_W   = 4'd8;
-    localparam D_CAP_B   = 4'd9;
-    localparam D_DONE    = 4'd10;
+    localparam D_START   = 4'd1;
+    localparam D_RD_AR   = 4'd2;
+    localparam D_RD_R    = 4'd3;
+    localparam D_RD_TAIL = 4'd4;
+    localparam D_RUN     = 4'd5;
+    localparam D_PEEK    = 4'd6;
+    localparam D_CAP_SET = 4'd7;
+    localparam D_CAP_AW  = 4'd8;
+    localparam D_CAP_FE  = 4'd9;
+    localparam D_CAP_W   = 4'd10;
+    localparam D_CAP_B   = 4'd11;
+    localparam D_DONE    = 4'd12;
 
     wire rst = ~ap_rst_n;
 
@@ -179,25 +186,26 @@ module odin_fpga_kernel_top #(
     reg  [63:0] axi_addr_r;
     reg  [31:0] words_left_r, ram_idx_r, events_seen_r;
     reg  [8:0]  beats_left_r;
+    reg  [7:0]  axlen_r;
     reg         arvalid_r, awvalid_r;
-    reg         krn_start_r, run_started_r;
+    reg         krn_start_r;
     reg         dma_err_r, ap_done_r, ap_idle_r;
     reg  [1:0]  peek_wait_r;
 
     wire        ap_done_k, ap_idle_k, ap_ready_k, err_k;
-    wire [31:0] cap_rdata_w;
+    wire [31:0] cap_rdata_w, str_space_w;
 
     //----------------------------------------------------------------------
-    //  Sizing: where the stimulus lands, whether it fits, how long a burst is
+    //  Sizing: where the two payloads join, how long a burst may be
     //----------------------------------------------------------------------
 
-    // The stimulus overwrites the program's END terminator (see the contract
-    // note at the top): one stream, not two.
-    wire [31:0] stim_base_w  = (prog_words_r == 32'd0)
-                             ? 32'd0 : (prog_words_r - 32'd1);
-    wire [31:0] total_words_w = stim_base_w + stim_words_r;
-    wire        prog_over_w  = (prog_words_r > PROG_LIMIT)
-                             || (total_words_w > PROG_LIMIT);
+    // The stimulus replaces the program's END terminator (see the contract note
+    // at the top), so the program half contributes all but its last word --
+    // unless there is no stimulus at all, in which case that END is the end.
+    wire [31:0] stim_base_w   = (prog_words_r == 32'd0)
+                              ? 32'd0 : (prog_words_r - 32'd1);
+    wire [31:0] prog_stream_w = (stim_words_r == 32'd0)
+                              ? prog_words_r : stim_base_w;
 
     wire [31:0] eff_events_w = (cap_events_r < CAP_EVENTS)
                              ? cap_events_r : CAP_EVENTS;
@@ -207,11 +215,23 @@ module odin_fpga_kernel_top #(
 
     wire [31:0] chunk_w    = (words_left_r > MAX_BEATS) ? MAX_BEATS : words_left_r;
     wire [31:0] to_bound_w = 32'd1024 - {22'd0, axi_addr_r[11:2]};
-    wire [31:0] beats_w    = (chunk_w > to_bound_w) ? to_bound_w : chunk_w;
-    wire [7:0]  axlen_w    = beats_w[7:0] - 8'd1;
+    wire [31:0] page_w     = (chunk_w > to_bound_w) ? to_bound_w : chunk_w;
+    // The FIFO's free space is the read engine's CREDIT: a burst is issued only
+    // once every one of its beats already has a slot, so a push never meets a
+    // full FIFO and no word of the host's program can be dropped.
+    wire [31:0] beats_w    = (page_w > str_space_w) ? str_space_w : page_w;
 
     wire        rd_beat_w  = m_axi_gmem_rvalid & m_axi_gmem_rready;
     wire        wr_beat_w  = m_axi_gmem_wvalid & m_axi_gmem_wready;
+
+    // The old design left the untouched tail of the program RAM at zero, so a
+    // payload that arrived without its END terminator still stopped. The
+    // streaming engine reproduces exactly that: once both buffers are spent it
+    // emits END words until the sequencer takes one.
+    wire        tail_push_w = (dma_state == D_RD_TAIL) & ~ap_done_k
+                            & (str_space_w != 32'd0);
+    wire        str_valid_w = (rd_beat_w & (dma_state == D_RD_R)) | tail_push_w;
+    wire [31:0] str_data_w  = tail_push_w ? OP_END : m_axi_gmem_rdata[31:0];
 
     //----------------------------------------------------------------------
     //  AXI4-Lite control: one 32-bit register file, ap_start self-clearing
@@ -272,7 +292,6 @@ module odin_fpga_kernel_top #(
                                               ap_done_r, ap_start_r};
                     ADDR_STATUS:  rdata_r <= {status_err_w, events_seen_r[30:0]};
                     ADDR_CAP_CAP: rdata_r <= CAP_EVENTS;
-                    ADDR_PROG_CAP:rdata_r <= PROG_LIMIT;
                     default:      rdata_r <= 32'd0;
                 endcase
                 rvalid_r <= 1'b1;
@@ -284,20 +303,21 @@ module odin_fpga_kernel_top #(
 
     //----------------------------------------------------------------------
     //  The DMA engine: one AXI4 master, one outstanding INCR burst at a time.
-    //  Reads fill the program RAM through the kernel's write port; the drain
-    //  streams the capture RAM back out through the same master.
+    //  Reads STREAM the two payloads into the fabric's FIFO while the
+    //  sequencer is already executing them; the drain streams the capture RAM
+    //  back out through the same master.
     //----------------------------------------------------------------------
 
     assign m_axi_gmem_arvalid = arvalid_r;
     assign m_axi_gmem_araddr  = axi_addr_r;
-    assign m_axi_gmem_arlen   = axlen_w;
+    assign m_axi_gmem_arlen   = axlen_r;
     assign m_axi_gmem_arsize  = AXSIZE;
     assign m_axi_gmem_arburst = AXBURST_INCR;
     assign m_axi_gmem_rready  = (dma_state == D_RD_R);
 
     assign m_axi_gmem_awvalid = awvalid_r;
     assign m_axi_gmem_awaddr  = axi_addr_r;
-    assign m_axi_gmem_awlen   = axlen_w;
+    assign m_axi_gmem_awlen   = axlen_r;
     assign m_axi_gmem_awsize  = AXSIZE;
     assign m_axi_gmem_awburst = AXBURST_INCR;
     assign m_axi_gmem_wvalid  = (dma_state == D_CAP_W);
@@ -310,9 +330,9 @@ module odin_fpga_kernel_top #(
         if (rst) begin
             dma_state <= D_IDLE; phase_r <= 1'b0;
             axi_addr_r <= 64'd0; words_left_r <= 32'd0; ram_idx_r <= 32'd0;
-            beats_left_r <= 9'd0; events_seen_r <= 32'd0; peek_wait_r <= 2'd0;
-            arvalid_r <= 1'b0; awvalid_r <= 1'b0;
-            krn_start_r <= 1'b0; run_started_r <= 1'b0;
+            beats_left_r <= 9'd0; axlen_r <= 8'd0;
+            events_seen_r <= 32'd0; peek_wait_r <= 2'd0;
+            arvalid_r <= 1'b0; awvalid_r <= 1'b0; krn_start_r <= 1'b0;
             dma_err_r <= 1'b0; ap_done_r <= 1'b0; ap_idle_r <= 1'b1;
         end else begin
             if (ap_done_ack_w) ap_done_r <= 1'b0;
@@ -324,34 +344,42 @@ module odin_fpga_kernel_top #(
                         dma_err_r     <= 1'b0;
                         ap_done_r     <= 1'b0;
                         events_seen_r <= 32'd0;
-                        if (prog_over_w) begin
-                            // The declared payload does not fit the fabric's
-                            // program RAM: REFUSE rather than wrap the address
-                            // and execute a program nobody assembled.
-                            dma_err_r <= 1'b1;
-                            dma_state <= D_DONE;
-                        end else begin
-                            phase_r      <= 1'b0;
-                            axi_addr_r   <= prog_addr_r;
-                            words_left_r <= prog_words_r;
-                            ram_idx_r    <= 32'd0;
-                            dma_state    <= D_RD_AR;
-                        end
+                        dma_state     <= D_START;
+                    end
+                end
+                D_START: begin
+                    // The sequencer starts FIRST and then waits on its FIFO:
+                    // the run's enabled-cycle clock begins at the same word of
+                    // the stream no matter how the stream arrives.
+                    if (!krn_start_r) begin
+                        krn_start_r <= 1'b1;
+                    end else if (!ap_idle_k) begin
+                        krn_start_r  <= 1'b0;
+                        phase_r      <= 1'b0;
+                        axi_addr_r   <= prog_addr_r;
+                        words_left_r <= prog_stream_w;
+                        dma_state    <= D_RD_AR;
                     end
                 end
                 D_RD_AR: begin
-                    if (words_left_r == 32'd0) begin
+                    if (ap_done_k) begin
+                        // The sequencer already terminated -- an END inside the
+                        // payload, or a refusal. There is nobody left to feed.
+                        dma_state <= D_RUN;
+                    end else if (words_left_r == 32'd0) begin
                         if (phase_r == 1'b0) begin
                             phase_r      <= 1'b1;
                             axi_addr_r   <= stim_addr_r;
                             words_left_r <= stim_words_r;
-                            ram_idx_r    <= stim_base_w;
                         end else begin
-                            dma_state <= D_RUN;
+                            dma_state <= D_RD_TAIL;
                         end
                     end else if (!arvalid_r) begin
-                        arvalid_r    <= 1'b1;
-                        beats_left_r <= beats_w[8:0];
+                        if (beats_w != 32'd0) begin
+                            arvalid_r    <= 1'b1;
+                            beats_left_r <= beats_w[8:0];
+                            axlen_r      <= beats_w[7:0] - 8'd1;
+                        end
                     end else if (m_axi_gmem_arready) begin
                         arvalid_r <= 1'b0;
                         dma_state <= D_RD_R;
@@ -359,7 +387,6 @@ module odin_fpga_kernel_top #(
                 end
                 D_RD_R: begin
                     if (rd_beat_w) begin
-                        ram_idx_r    <= ram_idx_r + 32'd1;
                         axi_addr_r   <= axi_addr_r + BYTES_PER_BEAT;
                         words_left_r <= words_left_r - 32'd1;
                         beats_left_r <= beats_left_r - 9'd1;
@@ -370,17 +397,12 @@ module odin_fpga_kernel_top #(
                         end
                     end
                 end
+                D_RD_TAIL: if (ap_done_k) dma_state <= D_RUN;
                 D_RUN: begin
-                    if (!krn_start_r && !run_started_r) begin
-                        krn_start_r <= 1'b1;
-                    end else if (krn_start_r && !ap_idle_k) begin
-                        krn_start_r   <= 1'b0;
-                        run_started_r <= 1'b1;
-                    end else if (run_started_r && ap_done_k) begin
-                        run_started_r <= 1'b0;
-                        ram_idx_r     <= 32'd0;
-                        peek_wait_r   <= 2'd3;
-                        dma_state     <= D_PEEK;
+                    if (ap_done_k) begin
+                        ram_idx_r   <= 32'd0;
+                        peek_wait_r <= 2'd3;
+                        dma_state   <= D_PEEK;
                     end
                 end
                 D_PEEK: begin
@@ -404,7 +426,8 @@ module odin_fpga_kernel_top #(
                         dma_state <= D_DONE;
                     end else if (!awvalid_r) begin
                         awvalid_r    <= 1'b1;
-                        beats_left_r <= beats_w[8:0];
+                        beats_left_r <= page_w[8:0];
+                        axlen_r      <= page_w[7:0] - 8'd1;
                     end else if (m_axi_gmem_awready) begin
                         awvalid_r <= 1'b0;
                         dma_state <= D_CAP_FE;
@@ -437,7 +460,7 @@ module odin_fpga_kernel_top #(
 
     odin_fpga_kernel #(
         .NC(NC), .N(N), .M(M),
-        .PROG_WORDS(PROG_WORDS), .CAP_WORDS(CAP_WORDS)
+        .FIFO_WORDS(FIFO_WORDS), .CAP_WORDS(CAP_WORDS)
     ) kernel_i (
         .clk        (ap_clk),
         .rst        (rst),
@@ -446,15 +469,15 @@ module odin_fpga_kernel_top #(
         .ap_idle    (ap_idle_k),
         .ap_ready   (ap_ready_k),
         .err        (err_k),
-        .prog_we    (rd_beat_w & (dma_state == D_RD_R)),
-        .prog_waddr (ram_idx_r),
-        .prog_wdata (m_axi_gmem_rdata[31:0]),
+        .str_valid  (str_valid_w),
+        .str_data   (str_data_w),
+        .str_space  (str_space_w),
         .cap_raddr  (ram_idx_r),
         .cap_rdata  (cap_rdata_w)
     );
 
     // ap_ready is a wrapper-level pulse (dma_accept_w); the kernel's own is
-    // consumed by the D_RUN handshake and named here so a sweep does not hide
+    // consumed by the D_START handshake and named here so a sweep does not hide
     // that it is part of the contract.
     wire _unused_kernel_ready = ap_ready_k;
 

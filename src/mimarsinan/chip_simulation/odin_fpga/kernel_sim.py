@@ -58,6 +58,12 @@ def kernel_design_sources(*, overlay: bool = False) -> List[Path]:
     return kernel_sources() + design_sources(overlay=overlay)
 
 
+#: The elastic op-stream FIFO's shipped depth, in 32-bit words — the second copy
+#: of the ``FIFO_WORDS`` default in ``hw/fpga/kernel/odin_fpga_kernel_top.v``.
+#: It is NOT a capacity the host must respect: the stream is bounded only by the
+#: word counts the host declares, and this depth only buys latency tolerance.
+SHIPPED_FIFO_WORDS = 1024
+
 _BLOCK_RAM_ATTR = 'ram_style = "block"'
 _BLOCK_RAM_DECL = re.compile(
     r'\(\*\s*ram_style\s*=\s*"block"\s*\*\)\s*reg\b(?:\s*\[[^\]]*\])?\s*(\w+)\s*\[')
@@ -86,7 +92,7 @@ def block_ram_ports(source: Path) -> Dict[str, Tuple[int, int]]:
     A tile is one registered read port and one write port. An array indexed in
     more than one place is one a synthesizer may read as multi-ported and drop
     into distributed RAM instead -- which is exactly what Vivado 2022.2 did to
-    `prog_ram` on the routed U55C build.
+    the program RAM this kernel no longer has, on the routed U55C build.
     """
     # Comments go first: an array named in prose is not a port. Verilog
     # attributes open with `(*`, so the block-comment strip leaves them alone.
@@ -123,12 +129,13 @@ def elaborate_kernel_top(*, n_cores: int = 1) -> str:
 def build_kernel_testbench(
     *, n_cores: int, token_count: int, engine: str | None = None,
     cap_words: int = SHIPPED_CAPTURE_WORDS,
+    fifo_words: int = SHIPPED_FIFO_WORDS,
 ) -> TestbenchBuild:
     """Elaborate the kernel smoke testbench around ``n_cores`` vendored cores."""
     return build_testbench(
         n_cores=n_cores, token_count=token_count, engine=engine,
         tb_name=KERNEL_TB, rtl_sources=kernel_design_sources(),
-        extra_params={"CAPWORDS": cap_words},
+        extra_params={"CAPWORDS": cap_words, "FIFOWORDS": fifo_words},
     )
 
 
@@ -138,6 +145,7 @@ def run_kernel_program(
     n_cores: int = 1,
     engine: str | None = None,
     cap_words: int = SHIPPED_CAPTURE_WORDS,
+    fifo_words: int = SHIPPED_FIFO_WORDS,
     timeout_s: float = 3600.0,
     workdir: Path | None = None,
 ) -> Tuple[CaptureResult, TestbenchBuild, SimulationRun]:
@@ -149,7 +157,7 @@ def run_kernel_program(
         tokens = write_stimulus(stimulus, list(ops))
         build = build_kernel_testbench(
             n_cores=n_cores, token_count=tokens, engine=engine,
-            cap_words=cap_words)
+            cap_words=cap_words, fifo_words=fifo_words)
         run = run_testbench(build, stimulus, timeout_s=timeout_s)
     return parse_capture(run.stdout), build, run
 
@@ -160,17 +168,20 @@ class KernelStatus:
 
     ``events_seen`` is the fabric's own count of AER-out events — it may exceed
     ``capture_capacity``, which is exactly the truncation the host refuses.
+    There is no program capacity: the op stream is not stored on the fabric.
     """
 
     err: bool
     events_seen: int
     capture_capacity: int
-    program_capacity: int
     host_capacity: int
     records_written: int
     program_words: int
     stimulus_words: int
-    ram_words: int
+    stream_words: int
+    stall_seed: int
+    stall_gaps: int
+    stall_cycles: int
 
     @property
     def truncated(self) -> bool:
@@ -179,29 +190,34 @@ class KernelStatus:
 
 
 def parse_kernel_status(stdout: str) -> KernelStatus:
-    """The KSTAT/KSPLIT lines of the wrapper testbench; loud when absent."""
+    """The KSTAT/KSPLIT/KSTALL lines of the wrapper testbench; loud when absent."""
     kstat: List[int] = []
     ksplit: List[int] = []
+    kstall: List[int] = []
     for line in stdout.splitlines():
         fields = line.split()
-        if fields[:1] == ["KSTAT"] and len(fields) == 7:
+        if fields[:1] == ["KSTAT"] and len(fields) == 6:
             kstat = [int(value) for value in fields[1:]]
         elif fields[:1] == ["KSPLIT"] and len(fields) == 4:
             ksplit = [int(value) for value in fields[1:]]
-    if not kstat or not ksplit:
+        elif fields[:1] == ["KSTALL"] and len(fields) == 4:
+            kstall = [int(value) for value in fields[1:]]
+    if not kstat or not ksplit or not kstall:
         raise TestbenchFailure(
-            "the wrapper testbench printed no KSTAT/KSPLIT line: its control "
-            "reads never completed, so the run has no status to report")
+            "the wrapper testbench printed no KSTAT/KSPLIT/KSTALL line: its "
+            "control reads never completed, so the run has no status to report")
     return KernelStatus(
         err=bool(kstat[0]), events_seen=kstat[1], capture_capacity=kstat[2],
-        program_capacity=kstat[3], host_capacity=kstat[4],
-        records_written=kstat[5],
-        program_words=ksplit[0], stimulus_words=ksplit[1], ram_words=ksplit[2])
+        host_capacity=kstat[3], records_written=kstat[4],
+        program_words=ksplit[0], stimulus_words=ksplit[1],
+        stream_words=ksplit[2], stall_seed=kstall[0],
+        stall_gaps=kstall[1], stall_cycles=kstall[2])
 
 
 def build_kernel_axi_testbench(
     *, n_cores: int, token_count: int, engine: str | None = None,
-    cap_words: int = SHIPPED_CAPTURE_WORDS, split: int, host_capacity: int,
+    cap_words: int = SHIPPED_CAPTURE_WORDS,
+    fifo_words: int = SHIPPED_FIFO_WORDS, split: int, host_capacity: int,
 ) -> TestbenchBuild:
     """Elaborate the WRAPPER testbench: the DUT is `odin_fpga_kernel_top`."""
     return build_testbench(
@@ -209,6 +225,7 @@ def build_kernel_axi_testbench(
         tb_name=KERNEL_AXI_TB, rtl_sources=kernel_design_sources(),
         extra_params={
             "CAPWORDS": cap_words,
+            "FIFOWORDS": fifo_words,
             "SPLIT": int(split),
             "HOSTCAP": int(host_capacity),
         },
@@ -221,7 +238,9 @@ def run_kernel_program_over_axi(
     n_cores: int = 1,
     engine: str | None = None,
     cap_words: int = SHIPPED_CAPTURE_WORDS,
+    fifo_words: int = SHIPPED_FIFO_WORDS,
     host_capacity: int = 0x000FFFFF,
+    stall_seed: int = 0,
     timeout_s: float = 3600.0,
     workdir: Path | None = None,
 ) -> Tuple[CaptureResult, KernelStatus, TestbenchBuild, SimulationRun]:
@@ -229,7 +248,9 @@ def run_kernel_program_over_axi(
 
     The program is placed in an AXI4 memory model split into the two buffers a
     host hands the kernel, and the capture is read back out of that same model —
-    nothing is preloaded into the fabric.
+    nothing is preloaded into the fabric. ``stall_seed`` is a RUN-time plusarg,
+    not an elaboration parameter, so every seed of the stall-invariance gate
+    reuses one cached build; 0 is the no-stall baseline.
     """
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(workdir) if workdir is not None else Path(scratch)
@@ -238,8 +259,10 @@ def run_kernel_program_over_axi(
         tokens = write_stimulus(stimulus, list(ops))
         build = build_kernel_axi_testbench(
             n_cores=n_cores, token_count=tokens, engine=engine,
-            cap_words=cap_words, split=max(1, tokens // 2),
-            host_capacity=host_capacity)
-        run = run_testbench(build, stimulus, timeout_s=timeout_s)
+            cap_words=cap_words, fifo_words=fifo_words,
+            split=max(1, tokens // 2), host_capacity=host_capacity)
+        run = run_testbench(
+            build, stimulus, timeout_s=timeout_s,
+            plusargs={"stallseed": int(stall_seed)})
     return (
         parse_capture(run.stdout), parse_kernel_status(run.stdout), build, run)

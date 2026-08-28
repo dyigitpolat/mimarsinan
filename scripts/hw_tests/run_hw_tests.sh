@@ -18,10 +18,20 @@
 # counts certified against the HCM reference and nevresim at zero difference)
 # and the Vitis KERNEL gates (the packaged wrapper elaborates under iverilog;
 # the on-fabric sequencer reproduces the host testbench's counts on the same
-# program; and the WRAPPER's own AXI4 DMA engine delivers that program through
-# a behavioural AXI4 memory model and drains the capture back into it, with the
+# program; and the WRAPPER's own AXI4 DMA engine STREAMS that program through
+# a behavioural AXI4 memory model into the fabric's elastic FIFO while the
+# sequencer executes it, and drains the capture back into it, with the
 # capacity/status registers refusing an overflow and a bad opcode). Their walls
 # print on `[odin-fpga] ...` / `[odin-kernel] ...` / `[odin-wrapper] ...` lines.
+#
+# [ODIN9] the STALL-INVARIANCE gate lives in `test_odin_fpga_kernel.py`: the
+# same fixture is delivered under the no-stall baseline and five seeded
+# starvations of the AXI read data channel, and every run must produce
+# byte-identical events at byte-identical ENABLED-cycle timestamps. The op
+# stream arrives live now, so WHEN a word arrives is a degree of freedom the
+# atol=0 certificates cannot afford; core-enable gating is what closes it, and
+# this is the gate that would go red if the gating were removed. Its per-seed
+# lines print on `[odin-stall] ...`.
 #
 #   scripts/hw_tests/run_hw_tests.sh                 # every RTL gate
 #   scripts/hw_tests/run_hw_tests.sh -k r11a         # one of them

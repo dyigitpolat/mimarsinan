@@ -40,7 +40,6 @@ from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
     no_verdict_header,
     require_declared_storage,
     require_kernel_in_xclbin,
-    require_program_fits,
 )
 from mimarsinan.chip_simulation.odin_fpga.payload import (
     program_plan,
@@ -159,11 +158,6 @@ class XrtTransport:
         """Events this session can decode: min(host declaration, declared RAM)."""
         return self._capture_capacity
 
-    @property
-    def program_capacity(self) -> int:
-        """Words the fabric's program RAM holds, as this package declares it."""
-        return self.capacity.program_words
-
     def close(self) -> None:
         self._program_bo = None
         self._kernel = None
@@ -243,8 +237,6 @@ class XrtTransport:
         stimulus = payload_bytes(stimulus_ops(program, full))
         program_words = len(self._receipt.payload) // WORD_BYTES
         stimulus_words = len(stimulus) // WORD_BYTES
-        require_program_fits(
-            program_words, stimulus_words, self.capacity, transport=self.name)
         capture_bytes = capture_buffer_bytes(self._capture_capacity)
 
         started = time.monotonic()

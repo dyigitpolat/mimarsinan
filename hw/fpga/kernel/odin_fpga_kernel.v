@@ -5,6 +5,25 @@
 // the cosimulation testbench executes. Original work: it instantiates the
 // vendored core and derives no text from it. Verilog-2005 only.
 //
+// THE FPGA IS THE CHIP; IT DOES NOT PROGRAM ITSELF. There is no program RAM.
+// The op stream arrives LIVE from the runtime host at segment/pass boundaries
+// and passes through the shallow elastic FIFO below; the sequencer consumes the
+// head of that FIFO and has no program counter and no addressing. Programming
+// bandwidth is therefore a DEPLOYMENT METRIC of the host link, not a fabric
+// storage budget, and the stream is bounded only by the host's 32-bit word
+// counts.
+//
+// DETERMINISM IS THE CONTRACT (the atol=0 certificates). The vendored core
+// free-runs and WAIT timing is semantics, so a starved FIFO must not become a
+// different program. CORE-ENABLE GATING is how that holds: when the sequencer
+// wants a word the FIFO cannot yet give it, `core_en` drops and the WHOLE core
+// domain -- the vendored cores through a glitch-free clock gate, the SPI
+// masters, the AER bridges, the sequencer, the capture engine and the cycle
+// counter -- stands still for that cycle. Core time is ENABLED cycles, so
+// execution is bit-exact under ANY stream arrival pattern.
+// `hw/tb/tb_odin_fpga_kernel_axi.v` injects seeded starvation and the
+// stall-invariance gate compares the results at atol=0.
+//
 // CROSS-LANGUAGE CONTRACT - the opcode table below is the third copy of ONE
 // encoding whose home is `mimarsinan.chip_simulation.odin_rtl.stimulus`; the
 // other copies are `hw/tb/tb_odin_core.v` (the host-driven testbench) and the
@@ -25,7 +44,7 @@
 //                       that capacity out of the wrapper's read-only 0x54
 //                       register and refuses at or over it rather than reading
 //                       the missing events as silent neurons.
-//   word 1            : the free-running cycle count when the program ended
+//   word 1            : the ENABLED-cycle count when the program ended
 //   words 2 + 4*i ... : {tag, cycle, core, neuron} per captured event
 
 `timescale 1ns/1ps
@@ -34,8 +53,13 @@ module odin_fpga_kernel #(
     parameter NC         = 1,      // vendored cores instantiated
     parameter N          = 256,    // neurons per core (stock geometry)
     parameter M          = 8,      // neuron-address width (stock geometry)
-    parameter PROG_WORDS = NC * 262144,  // program RAM depth, in 32-bit words
-    parameter CAP_WORDS  = 16384         // capture RAM depth, in 32-bit words
+    // The elastic buffer between the host link and the sequencer, in 32-bit
+    // words, a power of two. It only has to cover the read engine's burst
+    // granularity and the link's jitter: the SPI programming wall is ~40 SCK
+    // per transaction, so a stream that keeps ahead at all keeps ahead by
+    // orders of magnitude. 1,024 words is one RAMB36E2.
+    parameter FIFO_WORDS = 1024,
+    parameter CAP_WORDS  = 16384   // capture RAM depth, in 32-bit words
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -46,13 +70,14 @@ module odin_fpga_kernel #(
     output reg         ap_done,
     output reg         ap_idle,
     output reg         ap_ready,
-    output reg         err,
+    output wire        err,
 
-    // Program RAM write port: the AXI loader fills it from the host's program
-    // buffer before ap_start; the smoke testbench preloads it directly.
-    input  wire        prog_we,
-    input  wire [31:0] prog_waddr,
-    input  wire [31:0] prog_wdata,
+    // The op stream, pushed by the wrapper's AXI read engine. `str_space` is
+    // the producer's CREDIT in words: the engine reserves a burst's worth
+    // before it issues the address, so a push never meets a full FIFO.
+    input  wire        str_valid,
+    input  wire [31:0] str_data,
+    output wire [31:0] str_space,
 
     // Capture RAM read port: drained to the host's capture buffer after ap_done.
     input  wire [31:0] cap_raddr,
@@ -67,22 +92,31 @@ module odin_fpga_kernel #(
     localparam [31:0] OP_TAG    = 32'd5;
 
     localparam [31:0] CAP_HEADER = 32'd2;
-    localparam PROG_AW  = $clog2(PROG_WORDS);
+    localparam FIFO_AW  = $clog2(FIFO_WORDS);
     localparam CAP_AW   = $clog2(CAP_WORDS);
     localparam AER_BITS = 2 * M + 1;
+    localparam [FIFO_AW:0] FIFO_DEPTH = FIFO_WORDS;
 
-    // Both RAMs are BLOCK RAMs: exactly ONE registered read port and exactly
-    // ONE write port each -- the shape a tile can be, and the shape a
-    // synthesizer must be able to SEE. `cap_ram`'s two header words are written
-    // through that same write port by the drain arbiter below rather than by
-    // fixed-address writes of their own -- three write ports do not fit a tile,
-    // and the capture buffer paid 32 flip-flops per word for it (P8,
-    // compile-limits study). `prog_ram`'s single read point is `prog_rdata`
-    // below, for the same reason on the read side.
-    (* ram_style = "block" *) reg [31:0] prog_ram [0:PROG_WORDS-1];
-    (* ram_style = "block" *) reg [31:0] cap_ram  [0:CAP_WORDS-1];
+    // The FIFO's pointers wrap on their own width, so a depth that is not a
+    // power of two would silently address a hole; fail at elaboration instead.
+    generate
+        if ((1 << FIFO_AW) != FIFO_WORDS) begin : g_fifo_depth
+            unsupported_FIFO_WORDS_use_a_power_of_two guard_inst();
+        end
+    endgenerate
 
-    reg [31:0] pc, op, arg0, arg1, arg2, prog_rdata;
+    localparam S_IDLE  = 3'd0;
+    localparam S_FETCH = 3'd1;
+    localparam S_ARG   = 3'd2;
+    localparam S_SPI   = 3'd3;
+    localparam S_AER   = 3'd4;
+    localparam S_WAIT  = 3'd5;
+    localparam S_DONE  = 3'd6;
+
+    reg [2:0]  state;
+    reg [1:0]  argc, argi;
+    reg        err_r;
+    reg [31:0] op, arg0, arg1, arg2;
     reg [31:0] tag, cycle, events_seen, cap_ptr, wait_left;
 
     reg        spi_start, aer_start, issued, saw_busy, is_read;
@@ -98,28 +132,95 @@ module odin_fpga_kernel #(
     integer i;
     genvar c;
 
+    // Each ap_start re-arms the capture, flushes the FIFO and rezeroes the
+    // cycle counter: a session that runs many passes through one loaded kernel
+    // must report THIS run's events and THIS run's enabled-cycle time, not the
+    // sum since the xclbin was loaded.
+    wire run_start = (state == S_IDLE) && ap_start;
+
     //----------------------------------------------------------------------
-    //  Program RAM, capture read port, free-running cycle counter
+    //  The elastic op-stream FIFO: a plain hand-rolled synchronous FIFO whose
+    //  storage is ONE block RAM (one read point at `rd_ptr`, one write point at
+    //  `wr_ptr`) and whose head sits in `ram_q`, so the consumer is handed the
+    //  WORD and never an address. No vendor macro.
+    //
+    //  The PRODUCER side is free-running -- it is host/DMA time. The CONSUMER
+    //  side is core time. `lift` is deliberately NOT gated: refilling the head
+    //  register while the core domain is frozen is exactly how a stall ends.
     //----------------------------------------------------------------------
 
-    always @(posedge clk)
-        if (prog_we) prog_ram[prog_waddr[PROG_AW-1:0]] <= prog_wdata;
+    (* ram_style = "block" *) reg [31:0] fifo_ram [0:FIFO_WORDS-1];
+    (* ram_style = "block" *) reg [31:0] cap_ram  [0:CAP_WORDS-1];
 
-    // The program RAM's ONE read point, with `pc` as its ONE address source.
-    // The sequencer below reads `prog_rdata` and never the array: it used to
-    // read `prog_ram[pc]` in five places under two FSM states (the opcode and
-    // the three arguments, plus the TAG alias), which yosys merged into a
-    // single port but Vivado 2022.2 inferred as several -- so the whole
-    // 262,144x32 array fell out of the tiles and into distributed RAM, 163,840
-    // LUTs of it, on the routed U55C build. One read point is what a tile can
-    // be; the cost is one cycle of fetch latency per program word, paid in the
-    // S_FETCH/S_ARG_ADDR states.
-    always @(posedge clk)
-        prog_rdata <= prog_ram[pc[PROG_AW-1:0]];
+    reg [FIFO_AW-1:0] wr_ptr, rd_ptr;
+    reg [FIFO_AW:0]   fifo_fill;
+    reg [31:0]        ram_q;
+    reg               ram_q_v;
+    reg               fifo_ovf;
+
+    wire        pop_valid  = ram_q_v;
+    wire [31:0] str_head   = ram_q;
+    wire        fifo_ne    = (fifo_fill != {(FIFO_AW+1){1'b0}});
+    wire        fifo_room  = (fifo_fill != FIFO_DEPTH);
+    wire        push       = str_valid;
+    wire        pop_fire;                    // the sequencer's fetch states
+    wire        lift       = fifo_ne && (!ram_q_v || pop_fire);
+
+    assign str_space = FIFO_DEPTH - fifo_fill;
+
+    // A push and a lift never name the same address: `lift` needs a resident
+    // word, and the word a push is placing is not resident until the next edge.
+    always @(posedge clk) begin
+        if (push) fifo_ram[wr_ptr] <= str_data;
+        if (lift) ram_q <= fifo_ram[rd_ptr];
+    end
+
+    always @(posedge clk) begin
+        if (rst || run_start) begin
+            wr_ptr    <= {FIFO_AW{1'b0}};
+            rd_ptr    <= {FIFO_AW{1'b0}};
+            fifo_fill <= {(FIFO_AW+1){1'b0}};
+            ram_q_v   <= 1'b0;
+            fifo_ovf  <= 1'b0;
+        end else begin
+            if (push) wr_ptr <= wr_ptr + 1'b1;
+            if (lift) rd_ptr <= rd_ptr + 1'b1;
+            case ({push, lift})
+                2'b10:   fifo_fill <= fifo_fill + 1'b1;
+                2'b01:   fifo_fill <= fifo_fill - 1'b1;
+                default: ;
+            endcase
+            if (lift)          ram_q_v <= 1'b1;
+            else if (pop_fire) ram_q_v <= 1'b0;
+            // The producer's credit is the contract. A push into a full FIFO
+            // would drop a word of the host's program, which would run a
+            // program nobody assembled, so it REFUSES the run instead.
+            if (push && !fifo_room) fifo_ovf <= 1'b1;
+        end
+    end
+
+    //----------------------------------------------------------------------
+    //  Core-enable gating: core time is ENABLED cycles
+    //----------------------------------------------------------------------
+
+    wire seq_fetching = (state == S_FETCH) || (state == S_ARG);
+    // Held high through reset so the cores are clocked into their reset state
+    // while `state` is still X.
+    wire core_en      = rst || !(seq_fetching && !pop_valid);
+
+    assign pop_fire = seq_fetching && pop_valid;
+
+    // The glitch-free clock gate: the enable is captured on the FALLING edge,
+    // so it is stable across the whole high phase it gates. This is the shape
+    // Vivado maps onto a BUFGCE, and it is the only way to freeze a vendored
+    // core whose RTL stays byte-untouched -- ODIN declares no clock enable.
+    reg core_en_q;
+    always @(negedge clk) core_en_q <= core_en;
+    wire core_clk = clk & (core_en_q | rst);
 
     always @(posedge clk)
-        if (rst) cycle <= 32'd0;
-        else     cycle <= cycle + 32'd1;
+        if (rst || run_start) cycle <= 32'd0;
+        else if (core_en)     cycle <= cycle + 32'd1;
 
     //----------------------------------------------------------------------
     //  The cores, their SPI masters and their AER-in bridges
@@ -132,21 +233,21 @@ module odin_fpga_kernel #(
             wire [AER_BITS-1:0] aerin_addr_w;
 
             odin_spi_master spi_i (
-                .clk (clk), .rst (rst), .start (spi_start && sel),
+                .clk (core_clk), .rst (rst), .start (spi_start && sel),
                 .addr (spi_addr), .data (spi_data), .miso (miso_w[c]),
                 .sck (sck_w), .mosi (mosi_w), .busy (spi_busy_w[c]),
                 .rdata (spi_rdata_w[20*c+19:20*c])
             );
 
             odin_aer_bridge #(.ADDR_BITS(AER_BITS)) aer_i (
-                .clk (clk), .rst (rst), .start (aer_start && sel),
+                .clk (core_clk), .rst (rst), .start (aer_start && sel),
                 .addr (aer_word), .aer_ack (aerin_ack_w),
                 .aer_req (aerin_req_w), .aer_addr (aerin_addr_w),
                 .busy (aer_busy_w[c]), .timeout (aer_timeout_w[c])
             );
 
             ODIN #(.N(N), .M(M)) dut (
-                .CLK         (clk),
+                .CLK         (core_clk),
                 .RST         (rst),
                 .SCK         (sck_w),
                 .MOSI        (mosi_w),
@@ -173,11 +274,6 @@ module odin_fpga_kernel #(
     reg        cap_active, cap_space;
     reg [1:0]  hdr_written;
 
-    // Each ap_start re-arms the capture: a session that runs many samples
-    // through one loaded kernel must report THIS run's events, not the sum of
-    // every run since reset.
-    wire cap_rearm;
-
     // Raised for good when the sequencer reaches its terminal state; the two
     // header words are written once each, at DRAIN time, when the streaming
     // writes have stopped and the port is free.
@@ -195,17 +291,18 @@ module odin_fpga_kernel #(
     wire [31:0] cap_wdata = cap_active ? cap_word
                           : (hdr_written[0] ? cycle : events_seen);
 
-    // The capture RAM's ONLY port pair: one registered read, one write whose
-    // address and data the arbiter above muxes between the streaming record
-    // and the two header words.
-    always @(posedge clk) begin
+    // The capture RAM's ONLY port pair, split by the domain each side lives in:
+    // the record/header WRITE is core time and stands still with the core; the
+    // drain READ is the wrapper's DMA time and must answer whenever asked.
+    always @(posedge clk)
         cap_rdata <= cap_ram[cap_raddr[CAP_AW-1:0]];
-        if (cap_we) cap_ram[cap_waddr[CAP_AW-1:0]] <= cap_wdata;
-    end
+
+    always @(posedge clk)
+        if (core_en && cap_we) cap_ram[cap_waddr[CAP_AW-1:0]] <= cap_wdata;
 
     always @(posedge clk) begin : capture
         reg found;
-        if (rst || cap_rearm) begin
+        if (rst || run_start) begin
             cap_state    <= 2'd0;
             cap_core     <= 32'd0;
             cap_active   <= 1'b0;
@@ -214,28 +311,30 @@ module odin_fpga_kernel #(
             events_seen  <= 32'd0;
             hdr_written  <= 2'd0;
             aerout_ack_r <= {NC{1'b0}};
-        end else if (!cap_active) begin
-            found = 1'b0;
-            for (i = 0; i < NC; i = i + 1) begin
-                if (!found && aerout_req_w[i] && !aerout_ack_r[i]) begin
-                    found      = 1'b1;
-                    cap_core   <= i[31:0];
-                    cap_active <= 1'b1;
-                    cap_state  <= 2'd0;
-                    cap_space  <= (cap_ptr + 32'd4) <= CAP_WORDS;
+        end else if (core_en) begin
+            if (!cap_active) begin
+                found = 1'b0;
+                for (i = 0; i < NC; i = i + 1) begin
+                    if (!found && aerout_req_w[i] && !aerout_ack_r[i]) begin
+                        found      = 1'b1;
+                        cap_core   <= i[31:0];
+                        cap_active <= 1'b1;
+                        cap_state  <= 2'd0;
+                        cap_space  <= (cap_ptr + 32'd4) <= CAP_WORDS;
+                    end
+                    if (aerout_ack_r[i] && !aerout_req_w[i]) aerout_ack_r[i] <= 1'b0;
                 end
-                if (aerout_ack_r[i] && !aerout_req_w[i]) aerout_ack_r[i] <= 1'b0;
-            end
-            if (hdr_we) hdr_written <= hdr_written + 2'd1;
-        end else begin
-            if (cap_space) cap_ptr <= cap_ptr + 32'd1;
-            cap_state <= cap_state + 2'd1;
-            if (cap_state == 2'd3) begin
-                // Counted even when the RAM is full: the host reads
-                // `written > capacity` and REFUSES the run.
-                events_seen                 <= events_seen + 32'd1;
-                aerout_ack_r[cap_core[7:0]] <= 1'b1;
-                cap_active                  <= 1'b0;
+                if (hdr_we) hdr_written <= hdr_written + 2'd1;
+            end else begin
+                if (cap_space) cap_ptr <= cap_ptr + 32'd1;
+                cap_state <= cap_state + 2'd1;
+                if (cap_state == 2'd3) begin
+                    // Counted even when the RAM is full: the host reads
+                    // `written > capacity` and REFUSES the run.
+                    events_seen                 <= events_seen + 32'd1;
+                    aerout_ack_r[cap_core[7:0]] <= 1'b1;
+                    cap_active                  <= 1'b0;
+                end
             end
         end
     end
@@ -244,34 +343,20 @@ module odin_fpga_kernel #(
     //  The sequencer: the same token program, executed on the fabric
     //----------------------------------------------------------------------
 
-    // Every program word is fetched by the SAME two-state pair: an ADDRESS
-    // state, which does nothing but leave `pc` on the RAM's address pins for a
-    // cycle, and a LATCH state, in which `prog_rdata` carries that word.
-    // S_FETCH/S_DEC is that pair for the opcode; S_ARG_ADDR/S_ARG_LATCH is it
-    // for each argument.
-    localparam S_IDLE      = 4'd0;
-    localparam S_FETCH     = 4'd1;
-    localparam S_DEC       = 4'd2;
-    localparam S_ARG_ADDR  = 4'd3;
-    localparam S_ARG_LATCH = 4'd4;
-    localparam S_SPI       = 4'd5;
-    localparam S_AER       = 4'd6;
-    localparam S_WAIT      = 4'd7;
-    localparam S_DONE      = 4'd8;
-
-    reg [3:0] state;
-    reg [1:0] argc, argi;
-
-    assign cap_rearm = (state == S_IDLE) && ap_start;
+    // ONE word per fetch state, taken from the head of the FIFO. Inside the
+    // `core_en` guard a fetch state ALWAYS has its word -- that is what
+    // `core_en` MEANS -- so the sequencer carries no starvation case at all,
+    // and its enabled-cycle schedule cannot depend on when the words arrived.
+    assign err = err_r | fifo_ovf;
 
     always @(posedge clk) begin
         if (rst) begin
-            state <= S_IDLE; pc <= 32'd0; tag <= 32'd0; wait_left <= 32'd0;
-            ap_done <= 1'b0; ap_idle <= 1'b1; ap_ready <= 1'b0; err <= 1'b0;
+            state <= S_IDLE; tag <= 32'd0; wait_left <= 32'd0;
+            ap_done <= 1'b0; ap_idle <= 1'b1; ap_ready <= 1'b0; err_r <= 1'b0;
             spi_start <= 1'b0; aer_start <= 1'b0; active_core <= 32'd0;
             argc <= 2'd0; argi <= 2'd0; is_read <= 1'b0;
             issued <= 1'b0; saw_busy <= 1'b0; run_ended <= 1'b0;
-        end else begin
+        end else if (core_en) begin
             spi_start <= 1'b0;
             aer_start <= 1'b0;
             ap_ready  <= 1'b0;
@@ -279,45 +364,39 @@ module odin_fpga_kernel #(
                 S_IDLE: begin
                     ap_idle <= 1'b1;
                     if (ap_start) begin
-                        pc <= 32'd0; ap_done <= 1'b0; ap_idle <= 1'b0;
-                        err <= 1'b0; run_ended <= 1'b0; state <= S_FETCH;
+                        ap_done <= 1'b0; ap_idle <= 1'b0;
+                        err_r <= 1'b0; run_ended <= 1'b0; state <= S_FETCH;
                     end
                 end
-                // `pc` addresses the opcode for this whole cycle; the word it
-                // names reaches prog_rdata at the next edge.
-                S_FETCH: state <= S_DEC;
-                S_DEC: begin
-                    op     <= prog_rdata;
-                    pc     <= pc + 32'd1;
+                S_FETCH: begin
+                    op     <= str_head;
                     argi   <= 2'd0;
                     issued <= 1'b0;
-                    case (prog_rdata)
+                    case (str_head)
                         OP_END:   state <= S_DONE;
-                        OP_SPI_W: begin argc <= 2'd3; is_read <= 1'b0; state <= S_ARG_ADDR; end
-                        OP_SPI_R: begin argc <= 2'd3; is_read <= 1'b1; state <= S_ARG_ADDR; end
-                        OP_AER:   begin argc <= 2'd2; state <= S_ARG_ADDR; end
-                        OP_WAIT:  begin argc <= 2'd1; state <= S_ARG_ADDR; end
-                        OP_TAG:   begin argc <= 2'd1; state <= S_ARG_ADDR; end
+                        OP_SPI_W: begin argc <= 2'd3; is_read <= 1'b0; state <= S_ARG; end
+                        OP_SPI_R: begin argc <= 2'd3; is_read <= 1'b1; state <= S_ARG; end
+                        OP_AER:   begin argc <= 2'd2; state <= S_ARG; end
+                        OP_WAIT:  begin argc <= 2'd1; state <= S_ARG; end
+                        OP_TAG:   begin argc <= 2'd1; state <= S_ARG; end
                         default: begin
                             // SHADOW / PROG / anything unknown: the fabric has
                             // no implementation, so it REFUSES rather than
                             // running a different program than the host built.
-                            err   <= 1'b1;
+                            err_r <= 1'b1;
                             state <= S_DONE;
                         end
                     endcase
                 end
-                S_ARG_ADDR: state <= S_ARG_LATCH;
-                S_ARG_LATCH: begin
+                S_ARG: begin
                     case (argi)
                         2'd0: begin
-                            arg0 <= prog_rdata;
-                            if (op == OP_TAG) tag <= prog_rdata;
+                            arg0 <= str_head;
+                            if (op == OP_TAG) tag <= str_head;
                         end
-                        2'd1:    arg1 <= prog_rdata;
-                        default: arg2 <= prog_rdata;
+                        2'd1:    arg1 <= str_head;
+                        default: arg2 <= str_head;
                     endcase
-                    pc <= pc + 32'd1;
                     if (argi + 2'd1 == argc) begin
                         case (op)
                             OP_SPI_W, OP_SPI_R: state <= S_SPI;
@@ -326,8 +405,7 @@ module odin_fpga_kernel #(
                             default:            state <= S_FETCH;
                         endcase
                     end else begin
-                        argi  <= argi + 2'd1;
-                        state <= S_ARG_ADDR;
+                        argi <= argi + 2'd1;
                     end
                 end
                 S_SPI: begin
@@ -374,7 +452,7 @@ module odin_fpga_kernel #(
                     // write port: `run_ended` hands the two words to the
                     // arbiter above, which writes them while the port is idle.
                     run_ended <= 1'b1;
-                    if (|aer_timeout_w) err <= 1'b1;
+                    if (|aer_timeout_w) err_r <= 1'b1;
                     ap_done  <= 1'b1;
                     ap_ready <= 1'b1;
                     ap_idle  <= 1'b1;

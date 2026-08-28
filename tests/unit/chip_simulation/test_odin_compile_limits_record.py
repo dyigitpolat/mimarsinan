@@ -22,7 +22,7 @@ from mimarsinan.chip_simulation.odin_rtl.limits.artifacts import (
 from mimarsinan.chip_simulation.odin_rtl.limits.configurations import (
     STOCK_KEY,
     WRAPPER_CAP_WORDS,
-    WRAPPER_PROG_WORDS,
+    WRAPPER_FIFO_WORDS,
     configuration_named,
     configurations,
     wrapper_shipped_depths,
@@ -118,16 +118,17 @@ class TestTheStudiedConfigurationsAreTheProvenOnes:
         wrappers = [c for c in configurations() if c.kind == "wrapper"]
         assert len(wrappers) == len(WRAPPER_CAP_WORDS) >= 2
         assert {c.geometry["cap_words"] for c in wrappers} == set(WRAPPER_CAP_WORDS)
-        assert {c.geometry["prog_words"] for c in wrappers} == {WRAPPER_PROG_WORDS}
+        assert {c.geometry["fifo_words"] for c in wrappers} == {WRAPPER_FIFO_WORDS}
 
-    def test_the_shipped_capture_depth_is_read_from_the_rtl_not_assumed(self):
-        """And it is MEASURED, not extrapolated to: the shipped `CAP_WORDS` is
-        itself one of the two synthesized points, so the wrapper overhead the
-        bounds reserve is the overhead of the kernel that actually ships. The
-        program RAM is still shrunk, and every row that carries it says so."""
+    def test_both_wrapper_depths_are_read_from_the_rtl_not_assumed(self):
+        """And BOTH are MEASURED, not extrapolated to: nothing is shrunk any
+        more. The shipped `CAP_WORDS` is itself one of the two synthesized
+        points and the shipped `FIFO_WORDS` is the depth both carry, so the
+        wrapper overhead the bounds reserve is the overhead of the kernel that
+        actually ships."""
         depths = wrapper_shipped_depths()
         assert depths["CAP_WORDS"] == min(WRAPPER_CAP_WORDS)
-        assert depths["PROG_WORDS"] > WRAPPER_PROG_WORDS
+        assert depths["FIFO_WORDS"] == WRAPPER_FIFO_WORDS
 
     def test_a_configuration_the_study_does_not_carry_is_refused(self):
         with pytest.raises(KeyError, match="not a studied configuration"):

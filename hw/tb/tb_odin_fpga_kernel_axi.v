@@ -10,14 +10,26 @@
 //   * the token program is placed in that memory SPLIT IN TWO -- the first
 //     `SPLIT` tokens plus an END terminator as the PROGRAM buffer, the rest plus
 //     an END as the STIMULUS buffer -- which is the split the host makes;
-//   * the AXI4-Lite master writes the six kernel arguments, reads the two
-//     read-only capacity registers, pulses ap_start, polls ap_done, and reads
+//   * the AXI4-Lite master writes the six kernel arguments, reads the read-only
+//     capture-capacity register, pulses ap_start, polls ap_done, and reads
 //     the status register;
 //   * the capture is read back OUT OF THE AXI MEMORY, never out of the fabric.
 //
+// ADVERSARIAL STALL INJECTION (`+stallseed=<n>`). The op stream now arrives
+// LIVE while the sequencer executes it, so the shape of its arrival is a real
+// degree of freedom and determinism has to be proven against it rather than
+// assumed. Seed 0 is the NO-STALL baseline: every handshake is accepted the
+// cycle it is offered and the read data channel never gaps. Any other seed
+// seeds the model's LFSR and arms a STARVATION GENERATOR that holds RVALID low
+// for a pseudo-random 1-64 cycles starting at a pseudo-random position inside
+// any burst -- arbitrary position, arbitrary duration. The kernel's core-enable
+// gating must make every seed produce the same events at the same ENABLED-cycle
+// timestamps; `tests/integration/test_odin_fpga_kernel.py` is that gate.
+//
 // It prints the same line protocol as `hw/tb/tb_odin_core.v` ("EV core neuron
-// cycle tag", "DONE cycles events") plus one KSTAT line carrying the register
-// reads, so the host gate compares the counts and reads the refusals.
+// cycle tag", "DONE cycles events") plus KSTAT/KSPLIT/KSTALL lines carrying the
+// register reads, the payload split and the seed, so the host gate compares the
+// counts and reads the refusals.
 //
 // Verilog-2005 only, so one source runs under both simulators the suite drives.
 
@@ -28,6 +40,7 @@ module tb_odin_fpga_kernel_axi;
     parameter NC        = 1;
     parameter PROGWORDS = 4096;
     parameter CAPWORDS  = 4096;
+    parameter FIFOWORDS = 1024;
     parameter N         = 256;
     parameter M         = 8;
     // Where the token stream is cut into the program and stimulus buffers.
@@ -49,7 +62,6 @@ module tb_odin_fpga_kernel_axi;
     localparam ADDR_CAP_N    = 12'h044;
     localparam ADDR_STATUS   = 12'h04C;
     localparam ADDR_CAP_CAP  = 12'h054;
-    localparam ADDR_PROG_CAP = 12'h05C;
 
     localparam [31:0] AP_DONE_BIT = 32'd2;
 
@@ -92,7 +104,7 @@ module tb_odin_fpga_kernel_axi;
 
     odin_fpga_kernel_top #(
         .NC(NC), .N(N), .M(M),
-        .PROG_WORDS(PROGWORDS), .CAP_WORDS(CAPWORDS)
+        .FIFO_WORDS(FIFOWORDS), .CAP_WORDS(CAPWORDS)
     ) dut (
         .ap_clk (CLK), .ap_rst_n (rst_n),
         .s_axi_control_awvalid (c_awvalid), .s_axi_control_awready (c_awready),
@@ -122,7 +134,7 @@ module tb_odin_fpga_kernel_axi;
     );
 
     //----------------------------------------------------------------------
-    //  The AXI4 memory model: one array, INCR bursts, stalled handshakes
+    //  The AXI4 memory model: one array, INCR bursts, seeded starvation
     //----------------------------------------------------------------------
 
     reg [31:0] mem [0:MEMWORDS-1];
@@ -131,6 +143,13 @@ module tb_odin_fpga_kernel_axi;
     reg [8:0]  ar_left_q, aw_left_q;
     reg        ar_busy, aw_busy;
     reg [15:0] lfsr;
+    reg [31:0] stall_seed;
+    reg [7:0]  gap_q;
+    reg        starving_q;
+    reg [31:0] gap_count, gap_cycles;
+
+    wire no_stall = (stall_seed == 32'd0);
+    wire starving = (gap_q != 8'd0);
 
     function [31:0] widx;
         input [63:0] byte_addr;
@@ -163,19 +182,45 @@ module tb_odin_fpga_kernel_axi;
         end
     end
 
+    // The starvation generator: an arbitrary position (1-in-16 per in-burst
+    // cycle) and an arbitrary duration (1-64 cycles) of held-low RVALID.
+    always @(posedge CLK) begin
+        if (!rst_n || no_stall) begin
+            gap_q <= 8'd0;
+        end else if (gap_q != 8'd0) begin
+            gap_q <= gap_q - 8'd1;
+        end else if (ar_busy && (lfsr[3:0] == 4'd0)) begin
+            gap_q <= {2'd0, lfsr[13:8]} + 8'd1;
+        end
+    end
+
+    // What was actually injected, counted rather than inferred: a gate that
+    // compared six runs of an unstalled model would pass and prove nothing.
+    always @(posedge CLK) begin
+        if (!rst_n) begin
+            starving_q <= 1'b0;
+            gap_count  <= 32'd0;
+            gap_cycles <= 32'd0;
+        end else begin
+            starving_q <= starving;
+            if (starving && !starving_q) gap_count  <= gap_count + 32'd1;
+            if (starving)                gap_cycles <= gap_cycles + 32'd1;
+        end
+    end
+
     always @(posedge CLK) begin
         if (!rst_n) begin
             s_arready <= 1'b0; s_rvalid <= 1'b0; s_rlast <= 1'b0;
             s_awready <= 1'b0; s_wready <= 1'b0; s_bvalid <= 1'b0;
             ar_busy   <= 1'b0; aw_busy  <= 1'b0;
             ar_left_q <= 9'd0; aw_left_q <= 9'd0;
-            lfsr      <= 16'hACE1;
+            lfsr      <= (stall_seed == 32'd0) ? 16'hACE1 : stall_seed[15:0];
         end else begin
             lfsr <= {lfsr[14:0], lfsr[15] ^ lfsr[13] ^ lfsr[12] ^ lfsr[10]};
 
             // ---- read address ------------------------------------------
             if (!ar_busy && !s_arready) begin
-                s_arready <= lfsr[0];
+                s_arready <= no_stall | lfsr[0];
             end else if (s_arready && m_arvalid) begin
                 if (m_arburst != 2'b01 || m_arsize != 3'd2) begin
                     $display("FATAL axi_read_burst_not_incr32 %0d %0d",
@@ -190,7 +235,7 @@ module tb_odin_fpga_kernel_axi;
                 s_rlast   <= (m_arlen == 8'd0);
                 s_rvalid  <= 1'b1;
             end else if (s_arready && !m_arvalid) begin
-                s_arready <= lfsr[1];
+                s_arready <= no_stall | lfsr[1];
             end
 
             // ---- read data ---------------------------------------------
@@ -205,9 +250,9 @@ module tb_odin_fpga_kernel_axi;
                         ar_left_q <= ar_left_q - 9'd1;
                         s_rdata   <= mem[widx(ar_addr_q + 64'd4)];
                         s_rlast   <= (ar_left_q == 9'd2);
-                        s_rvalid  <= lfsr[2];
+                        s_rvalid  <= ~starving;
                     end
-                end else if (!s_rvalid) begin
+                end else if (!s_rvalid && !starving) begin
                     s_rdata  <= mem[widx(ar_addr_q)];
                     s_rlast  <= (ar_left_q == 9'd1);
                     s_rvalid <= 1'b1;
@@ -216,7 +261,7 @@ module tb_odin_fpga_kernel_axi;
 
             // ---- write address -----------------------------------------
             if (!aw_busy && !s_awready) begin
-                s_awready <= lfsr[3];
+                s_awready <= no_stall | lfsr[3];
             end else if (s_awready && m_awvalid) begin
                 if (m_awburst != 2'b01 || m_awsize != 3'd2) begin
                     $display("FATAL axi_write_burst_not_incr32 %0d %0d",
@@ -229,7 +274,7 @@ module tb_odin_fpga_kernel_axi;
                 s_awready <= 1'b0;
                 s_wready  <= 1'b1;
             end else if (s_awready && !m_awvalid) begin
-                s_awready <= lfsr[4];
+                s_awready <= no_stall | lfsr[4];
             end
 
             // ---- write data --------------------------------------------
@@ -251,10 +296,10 @@ module tb_odin_fpga_kernel_axi;
                     aw_busy  <= 1'b0;
                     s_bvalid <= 1'b1;
                 end else begin
-                    s_wready <= lfsr[5];
+                    s_wready <= no_stall | lfsr[5];
                 end
             end else if (aw_busy && !s_wready) begin
-                s_wready <= lfsr[6];
+                s_wready <= no_stall | lfsr[6];
             end
 
             if (s_bvalid && m_bready) s_bvalid <= 1'b0;
@@ -327,7 +372,7 @@ module tb_odin_fpga_kernel_axi;
     reg  [31:0] prog [0:PROGWORDS-1];
     reg  [1023:0] stim_path;
     integer     i, events, guard;
-    reg  [31:0] ctrl, status, cap_capacity, prog_capacity;
+    reg  [31:0] ctrl, status, cap_capacity;
     reg  [31:0] prog_words, stim_words, host_cap;
     reg  [31:0] header_events, header_cycles, shown;
     reg  [31:0] rec_tag, rec_cycle, rec_core, rec_neuron;
@@ -343,13 +388,16 @@ module tb_odin_fpga_kernel_axi;
             $display("FATAL missing_plusarg +stim=<path>");
             $finish;
         end
+        // Absent, the model runs its NO-STALL baseline.
+        if (!$value$plusargs("stallseed=%d", stall_seed)) stall_seed = 32'd0;
+
         for (i = 0; i < PROGWORDS; i = i + 1) prog[i] = OP_END;
         $readmemh(stim_path, prog);
         for (i = 0; i < MEMWORDS; i = i + 1) mem[i] = 32'd0;
 
         // The host's split: [0, SPLIT) + END is the program buffer, the rest
-        // + END is the stimulus buffer. The kernel lands the stimulus ON the
-        // program's terminator, so the fabric sees one continuous stream.
+        // + END is the stimulus buffer. The kernel streams the program without
+        // its terminator, so the fabric sees one continuous stream.
         for (i = 0; i < SPLIT; i = i + 1)
             mem[(PROG_BASE / 4) + i] = prog[i];
         mem[(PROG_BASE / 4) + SPLIT] = OP_END;
@@ -365,7 +413,6 @@ module tb_odin_fpga_kernel_axi;
         repeat (16) @(posedge CLK);
 
         axil_read(ADDR_CAP_CAP,  cap_capacity);
-        axil_read(ADDR_PROG_CAP, prog_capacity);
         host_cap = (HOSTCAP < cap_capacity) ? HOSTCAP : cap_capacity;
 
         axil_write(ADDR_PROG_LO, PROG_BASE[31:0]);
@@ -405,12 +452,17 @@ module tb_odin_fpga_kernel_axi;
             events = events + 1;
         end
 
-        // err, events the fabric SAW, fabric capacity, program capacity, the
-        // host's declared capacity, and how many records reached memory.
-        $display("KSTAT %0d %0d %0d %0d %0d %0d",
-                 status[31], status[30:0], cap_capacity, prog_capacity,
-                 host_cap, events);
-        $display("KSPLIT %0d %0d %0d", prog_words, stim_words, PROGWORDS);
+        // err, events the fabric SAW, fabric capture capacity, the host's
+        // declared capacity, and how many records reached memory.
+        $display("KSTAT %0d %0d %0d %0d %0d",
+                 status[31], status[30:0], cap_capacity, host_cap, events);
+        // The payload split and the ONE stream it becomes: the stimulus
+        // replaces the program's END terminator, so the streamed length is
+        // prog_words + stim_words - 1.
+        $display("KSPLIT %0d %0d %0d",
+                 prog_words, stim_words, prog_words + stim_words - 32'd1);
+        // The seed, and what it actually did to the read data channel.
+        $display("KSTALL %0d %0d %0d", stall_seed, gap_count, gap_cycles);
         $display("RBSTAT 0 0");
         $display("SHSTAT 0 0");
         $display("DONE %0d %0d", header_cycles, events);

@@ -27,7 +27,6 @@ from mimarsinan.chip_simulation.odin_fpga.runner import OdinFpgaRunner
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
     OdinFpgaCaptureTruncated,
     OdinFpgaKernelError,
-    OdinFpgaProgramTooLarge,
 )
 from mimarsinan.chip_simulation.odin_fpga.xrt_transport import (
     OdinFpgaDependencyError,
@@ -45,7 +44,6 @@ __all__ = [
     "OdinFpgaCaptureTruncated",
     "OdinFpgaDependencyError",
     "OdinFpgaKernelError",
-    "OdinFpgaProgramTooLarge",
     "ProgramReceipt",
     "RtlCosimTransport",
     "TRANSPORTS",

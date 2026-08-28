@@ -33,8 +33,8 @@ Alveo shell takes its share* is NOT measured here and is not guessed at.
 - `gen_a128n128_mb8_per_event` -- generated core, 128 axons x 128 neurons, 8-bit unsigned membrane, per-event law
 - `gen_a512n256_mb16_per_event` -- generated core, 512 axons x 256 neurons, 16-bit unsigned membrane, per-event law
 - `gen_a256n256_mb16s_sync_fire` -- generated core, 256 axons x 256 neurons, 16-bit signed membrane, sync-fire law
-- `wrapper_nc1_prog4096_cap16384` -- kernel wrapper `odin_fpga_kernel_top` at NC=1 (PROG_WORDS=4096, CAP_WORDS=16384) -- sequencer + AXI DMA + capture + one stock core
-- `wrapper_nc1_prog4096_cap32768` -- kernel wrapper `odin_fpga_kernel_top` at NC=1 (PROG_WORDS=4096, CAP_WORDS=32768) -- sequencer + AXI DMA + capture + one stock core
+- `wrapper_nc1_fifo1024_cap16384` -- kernel wrapper `odin_fpga_kernel_top` at NC=1 (FIFO_WORDS=1024, CAP_WORDS=16384) -- sequencer + AXI streaming DMA + capture + one stock core
+- `wrapper_nc1_fifo1024_cap32768` -- kernel wrapper `odin_fpga_kernel_top` at NC=1 (FIFO_WORDS=1024, CAP_WORDS=32768) -- sequencer + AXI streaming DMA + capture + one stock core
 
 | Configuration | LUT-equiv | FFs | CARRY4 | LUTRAM cells | RAMB36E2 | RAMB18E2 | URAM | LUT sites (incl. LUTRAM) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -42,8 +42,8 @@ Alveo shell takes its share* is NOT measured here and is not guessed at.
 | `gen_a128n128_mb8_per_event` | 1,934 | 1,057 | 8 | 4 | 2 | 0 | 0 | 1,966 |
 | `gen_a512n256_mb16_per_event` | 6,522 | 4,133 | 13 | 12 | 16 | 0 | 0 | 6,618 |
 | `gen_a256n256_mb16s_sync_fire` | 6,474 | 4,133 | 16 | 12 | 8 | 0 | 0 | 6,570 |
-| `wrapper_nc1_prog4096_cap16384` | 6,662 | 5,415 | 508 | 0 | 30 | 0 | 0 | 6,662 |
-| `wrapper_nc1_prog4096_cap32768` | 6,665 | 5,415 | 508 | 0 | 46 | 0 | 0 | 6,665 |
+| `wrapper_nc1_fifo1024_cap16384` | 6,716 | 5,444 | 508 | 0 | 27 | 0 | 0 | 6,716 |
+| `wrapper_nc1_fifo1024_cap32768` | 6,724 | 5,444 | 508 | 0 | 43 | 0 | 0 | 6,724 |
 
 `bram_tiles` counts a RAMB18E2 as half a tile; the LUT-equivalent column
 adds unpacked `INV` cells to `LUT1..LUT6`, exactly as the P5.5a report
@@ -74,10 +74,10 @@ follow do that arithmetic per array against what was measured.
 | `gen_a256n256_mb16s_sync_fire` | `syn_mem` | 8,192 x 32 | 262,144 | 8 |
 | `gen_a256n256_mb16s_sync_fire` | `thr_arr` | 256 x 16 | 4,096 | 1 |
 | `gen_a256n256_mb16s_sync_fire` | `vmem_arr` | 256 x 16 | 4,096 | 1 |
-| `wrapper_nc1_prog4096_cap16384` | `prog_ram` | 4,096 x 32 | 131,072 | 4 |
-| `wrapper_nc1_prog4096_cap16384` | `cap_ram` | 16,384 x 32 | 524,288 | 15 |
-| `wrapper_nc1_prog4096_cap32768` | `prog_ram` | 4,096 x 32 | 131,072 | 4 |
-| `wrapper_nc1_prog4096_cap32768` | `cap_ram` | 32,768 x 32 | 1,048,576 | 29 |
+| `wrapper_nc1_fifo1024_cap16384` | `fifo_ram` | 1,024 x 32 | 32,768 | 1 |
+| `wrapper_nc1_fifo1024_cap16384` | `cap_ram` | 16,384 x 32 | 524,288 | 15 |
+| `wrapper_nc1_fifo1024_cap32768` | `fifo_ram` | 1,024 x 32 | 32,768 | 1 |
+| `wrapper_nc1_fifo1024_cap32768` | `cap_ram` | 32,768 x 32 | 1,048,576 | 29 |
 
 Cross-checking that against the censuses above:
 
@@ -148,22 +148,22 @@ identical while its tiles halve and its LUT sites barely move.
 ## What the kernel wrapper costs around a core
 
 `odin_fpga_kernel_top` at NC=1 was synthesized at two capture depths. The
-overhead below is the wrapper census less the stock core's, i.e. the AXI4-Lite control block, the AXI4 DMA engine, the token sequencer, the SPI master, the AER bridge, the program RAM and the capture RAM, at the depths named in `at_parameters` -- the capture RAM at the depth the wrapper SHIPS with, the program RAM shrunk from its shipped `NC * 262144` words:
+overhead below is the wrapper census less the stock core's, i.e. the AXI4-Lite control block, the AXI4 streaming DMA engine, the token sequencer, the core-enable clock gate, the SPI master, the AER bridge, the op-stream FIFO and the capture RAM, at the depths named in `at_parameters` -- BOTH of them the depths the wrapper SHIPS with, because neither is shrunk any more:
 
 | Column | Wrapper overhead (delta vs the stock core) |
 | --- | ---: |
-| `lut_equivalent` | 1,003 |
-| `flip_flops` | 1,053 |
+| `lut_equivalent` | 1,057 |
+| `flip_flops` | 1,082 |
 | `carry` | 127 |
 | `lutram` | 0 |
-| `bram36` | 20 |
+| `bram36` | 17 |
 | `bram18` | 0 |
 | `uram` | 0 |
-| `lut_sites` (the bound's LUT class) | 1,003 |
+| `lut_sites` (the bound's LUT class) | 1,057 |
 
-Both of the wrapper's own RAMs infer block RAM, and the 20 RAMB36E2 of overhead above is exactly their declared depth:
+Both of the wrapper's own RAMs infer block RAM, and the 17 RAMB36E2 of overhead above is exactly their declared depth:
 
-- `prog_ram`: 4,096 x 32 = 131,072 bits, 4,096 / 1,024 = 4 RAMB36E2
+- `fifo_ram`: 1,024 x 32 = 32,768 bits, 1,024 / 1,024 = 1 RAMB36E2
 - `cap_ram`: 16,384 x 32 = 524,288 bits, 16,384 / 1,024 = 16 RAMB36E2
 
 Each has ONE synchronous write port and ONE registered read port, which
@@ -174,26 +174,23 @@ sequencer, a third write port that no tile has, and they now go out
 through the SAME port as the streaming record, at drain time, when the
 streaming writes have stopped.
 
-`prog_ram` reaches it on the READ side, and it took a routed build to
-find out that it had not. The sequencer used to index the array in five
-places -- the opcode fetch, the three argument fetches and the TAG alias
--- all at `pc`, under two FSM states. yosys merges those into the ONE
-read port the census below reports, so every number in this study said
-the program RAM was tiles. Vivado 2022.2 read the same source as
-multi-ported and put the whole 262,144x32 array into distributed RAM:
-163,840 LUTs as RAM and 24 BRAM tiles total on the routed U55C kernel,
-none of them the program. The sequencer now funnels every fetch through
-ONE clocked read register at ONE address source, at the cost of a cycle
-of fetch latency per program word. THIS TABLE CANNOT CONFIRM THAT FIX:
-yosys inferred a tile before the change and infers one after, so the
-census barely moves, and only the next cluster build's `kernel_util`
-report can say whether Vivado now agrees.
+`fifo_ram` reaches it the same way, and it is the ELASTIC op-stream
+buffer, not a program store. The wrapper used to carry a 262,144x32
+`prog_ram` -- a redundant fabric copy of host memory, 256 RAMB36E2
+tiles of the device's 2,016 at its shipped depth -- and the routed
+U55C build never got them: Vivado put the whole array into distributed
+RAM instead, 163,840 LUTs as RAM and 24 BRAM tiles total, none of them
+the program. That RAM IS GONE. The op
+stream arrives live from the runtime host and passes through this
+FIFO, so the wrapper's storage no longer scales with a program's
+length at all, and both wrapper points below are measured at the depth
+the kernel actually SHIPS with rather than a shrunk stand-in.
 
 The two wrapper points differ ONLY in `CAP_WORDS` (16,384 extra words), which makes the capture
 RAM's cost a measurement:
 
 - `flip_flops`: +0.000000 per capture word
-- `lut_equivalent`: +0.000183 per capture word
+- `lut_equivalent`: +0.000488 per capture word
 - `bram36`: +0.000977 per capture word
 
 A capture word costs 0 flip-flops: it is bought in TILES, one RAMB36E2 per 1,024 words. That is a
@@ -202,9 +199,10 @@ three write ports (the streaming record plus two fixed-address header
 writes) the capture RAM could not infer a tile and cost 32 flip-flops
 per word, which at any shippable depth exceeded the device's entire
 register budget and made the kernel unbuildable as written. The
-wrapper now SHIPS with `CAP_WORDS = 16,384` -- 4,095 event records held in 16 tiles and 0 flip-flops -- and THAT depth is the one measured above, not a shrunk stand-in for it. The program RAM is still shrunk
-(4,096 words against the shipped `NC * 262144`), and every row that
-carries it says so.
+wrapper now SHIPS with `CAP_WORDS = 16,384` -- 4,095 event records held in 16 tiles and 0 flip-flops -- and THAT depth is the one measured above, not a shrunk stand-in for it. NEITHER depth is a stand-in any
+more: the census above IS the wrapper this repository ships, so the
+wrapper overhead the bounds below reserve needs no extrapolation at
+all.
 
 ## The device, with provenance
 
@@ -274,8 +272,8 @@ With the measured wrapper overhead reserved once:
 
 | Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
 | --- | ---: | ---: | ---: | ---: | --- |
-| datasheet_total | 662 | 2,465 | 998 | n/a | **lut_sites** -> **662** |
-| assumed_shell_30pct | 463 | 1,725 | 695 | n/a | **lut_sites** -> **463** |
+| datasheet_total | 662 | 2,465 | 999 | n/a | **lut_sites** -> **662** |
+| assumed_shell_30pct | 463 | 1,725 | 697 | n/a | **lut_sites** -> **463** |
 
 ### The generated variant `gen_a512n256_mb16_per_event`
 
@@ -291,7 +289,7 @@ With the measured wrapper overhead reserved once:
 | Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
 | --- | ---: | ---: | ---: | ---: | --- |
 | datasheet_total | 196 | 630 | 124 | n/a | **bram36** -> **124** |
-| assumed_shell_30pct | 137 | 441 | 86 | n/a | **bram36** -> **86** |
+| assumed_shell_30pct | 137 | 441 | 87 | n/a | **bram36** -> **87** |
 
 ### The generated variant `gen_a256n256_mb16s_sync_fire`
 
@@ -307,7 +305,7 @@ With the measured wrapper overhead reserved once:
 | Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
 | --- | ---: | ---: | ---: | ---: | --- |
 | datasheet_total | 198 | 630 | 249 | n/a | **lut_sites** -> **198** |
-| assumed_shell_30pct | 138 | 441 | 173 | n/a | **lut_sites** -> **138** |
+| assumed_shell_30pct | 138 | 441 | 174 | n/a | **lut_sites** -> **138** |
 
 ## The verdict
 

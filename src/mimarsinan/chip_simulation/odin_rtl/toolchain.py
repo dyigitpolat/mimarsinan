@@ -160,10 +160,15 @@ class TestbenchBuild:
     build_seconds: float
     cached: bool
 
-    def run_command(self, stimulus: Path) -> List[str]:
+    def run_command(
+        self, stimulus: Path, plusargs: Mapping[str, int] | None = None,
+    ) -> List[str]:
+        extra = [f"+{name}={value}" for name, value in sorted((plusargs or {}).items())]
         if self.engine == ENGINE_COMPILED:
-            return [str(self.binary), f"+stim={stimulus}"]
-        return [str(require_tool("vvp")), str(self.binary), f"+stim={stimulus}"]
+            return [str(self.binary), f"+stim={stimulus}"] + extra
+        return [
+            str(require_tool("vvp")), str(self.binary), f"+stim={stimulus}",
+        ] + extra
 
 
 def _fingerprint(paths: Sequence[Path], *extra: str) -> str:
@@ -271,11 +276,17 @@ class SimulationRun:
 
 
 def run_testbench(build: TestbenchBuild, stimulus: Path,
-                  *, timeout_s: float = 3600.0) -> SimulationRun:
-    """Execute a built testbench against a stimulus file."""
+                  *, timeout_s: float = 3600.0,
+                  plusargs: Mapping[str, int] | None = None) -> SimulationRun:
+    """Execute a built testbench against a stimulus file.
+
+    ``plusargs`` are run-time ``+name=value`` overrides, which is what lets one
+    cached build serve many runs of the same geometry (the stall-invariance
+    seeds); anything that changes the ELABORATION belongs in ``extra_params``.
+    """
     started = time.monotonic()
     result = subprocess.run(
-        build.run_command(Path(stimulus).resolve()),
+        build.run_command(Path(stimulus).resolve(), plusargs),
         capture_output=True, text=True, timeout=timeout_s,
         cwd=str(Path(stimulus).resolve().parent),
     )

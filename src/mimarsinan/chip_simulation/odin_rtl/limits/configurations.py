@@ -31,13 +31,13 @@ STOCK_KEY = "stock_a256n256_vendored"
 WRAPPER_TOP = "odin_fpga_kernel_top"
 WRAPPER_RTL = HW_ROOT / "fpga" / "kernel" / "odin_fpga_kernel_top.v"
 
-#: The wrapper is synthesized with a SHRUNK program RAM -- 4,096 words against
-#: the shipped `NC * 262144` -- and the study says so on every row it appears
-#: on. The CAPTURE RAM is not shrunk: the first depth here IS the wrapper's
-#: shipped `CAP_WORDS`, so the wrapper overhead the bounds reserve is measured
-#: at the depth the kernel actually builds with. The second depth is twice it,
-#: which makes the per-capture-word cost a MEASUREMENT rather than an inference.
-WRAPPER_PROG_WORDS = 4096
+#: NOTHING IS SHRUNK ANY MORE. The wrapper holds no program RAM to shrink: the
+#: op stream is streamed through an elastic FIFO whose depth buys latency
+#: tolerance and not storage, so both wrapper memories below are synthesized at
+#: the depth the kernel actually SHIPS with. The first capture depth IS the
+#: wrapper's shipped `CAP_WORDS`; the second is twice it, which makes the
+#: per-capture-word cost a MEASUREMENT rather than an inference.
+WRAPPER_FIFO_WORDS = 1024
 WRAPPER_CAP_WORDS: Tuple[int, ...] = (16384, 32768)
 
 _PARAM_DEFAULT = "parameter {name}\\s*=\\s*(?:NC\\s*\\*\\s*)?(\\d+)"
@@ -70,10 +70,10 @@ class Configuration:
 
 
 def wrapper_shipped_depths() -> Dict[str, int]:
-    """The `PROG_WORDS`/`CAP_WORDS` the wrapper SHIPS with, read from its RTL."""
+    """The `FIFO_WORDS`/`CAP_WORDS` the wrapper SHIPS with, read from its RTL."""
     text = WRAPPER_RTL.read_text(encoding="utf-8")
     depths: Dict[str, int] = {}
-    for name in ("PROG_WORDS", "CAP_WORDS"):
+    for name in ("FIFO_WORDS", "CAP_WORDS"):
         match = re.search(_PARAM_DEFAULT.format(name=name), text)
         if match is None:
             raise ValueError(
@@ -131,24 +131,24 @@ def wrapper_configuration(cap_words: int) -> Configuration:
     """The Vitis wrapper around ONE stock core, at a stated capture depth."""
     shipped = wrapper_shipped_depths()
     return Configuration(
-        key=f"wrapper_nc1_prog{WRAPPER_PROG_WORDS}_cap{cap_words}",
+        key=f"wrapper_nc1_fifo{WRAPPER_FIFO_WORDS}_cap{cap_words}",
         label=(f"kernel wrapper `{WRAPPER_TOP}` at NC=1 "
-               f"(PROG_WORDS={WRAPPER_PROG_WORDS}, CAP_WORDS={cap_words}) "
-               f"-- sequencer + AXI DMA + capture + one stock core"),
+               f"(FIFO_WORDS={WRAPPER_FIFO_WORDS}, CAP_WORDS={cap_words}) "
+               f"-- sequencer + AXI streaming DMA + capture + one stock core"),
         kind="wrapper",
         target=SynthesisTarget(
             label=f"{WRAPPER_TOP} NC=1 cap={cap_words}", top=WRAPPER_TOP,
             sources=tuple(overlay_sources() + kernel_sources() + vendor_sources()),
-            parameters={"PROG_WORDS": WRAPPER_PROG_WORDS, "CAP_WORDS": cap_words},
+            parameters={"FIFO_WORDS": WRAPPER_FIFO_WORDS, "CAP_WORDS": cap_words},
         ),
         geometry={
-            "n_cores": 1, "prog_words": WRAPPER_PROG_WORDS, "cap_words": cap_words,
-            "shipped_prog_words_per_core": shipped["PROG_WORDS"],
+            "n_cores": 1, "fifo_words": WRAPPER_FIFO_WORDS, "cap_words": cap_words,
+            "shipped_fifo_words": shipped["FIFO_WORDS"],
             "shipped_cap_words": shipped["CAP_WORDS"],
         },
         memories=(
-            {"array": "prog_ram", "words": WRAPPER_PROG_WORDS, "width": 32,
-             "bits": WRAPPER_PROG_WORDS * 32},
+            {"array": "fifo_ram", "words": WRAPPER_FIFO_WORDS, "width": 32,
+             "bits": WRAPPER_FIFO_WORDS * 32},
             {"array": "cap_ram", "words": cap_words, "width": 32,
              "bits": cap_words * 32},
         ),

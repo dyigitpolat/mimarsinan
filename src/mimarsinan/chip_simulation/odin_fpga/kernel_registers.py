@@ -12,7 +12,7 @@ NO REGISTER ACCESS EXISTS. The XRT Python binding
 ``src/python/pybind11/src/pyxrt.cpp``) binds no ``read_register`` or
 ``write_register`` on ``xrt::kernel`` and exposes no standalone ``ip`` object,
 so the AXI-Lite status and capacity registers this kernel implements at
-0x4C/0x54/0x5C are unreachable from Python — a host that read them crashed on
+0x4C/0x54 are unreachable from Python — a host that read them crashed on
 the U250 at its first CSR touch on 2026-08-25. Every truth below therefore
 arrives either through kernel ARGUMENTS (what the host declares) or through
 MEMORY (what the fabric DMAs back), and the capacities are DECLARED from the
@@ -69,16 +69,16 @@ CAPTURE_NO_VERDICT = 0xFFFFFFFF
 #: capacity the package declares the bitstream was built with.
 DEFAULT_CAPTURE_EVENTS = 1 << 20
 
-#: What the SHIPPED fabric holds, and why — the second copy of the ``PROG_WORDS``
-#: and ``CAP_WORDS`` defaults in ``hw/fpga/kernel/odin_fpga_kernel_top.v`` at the
-#: NC ``scripts/hacc/build_xclbn.sh`` is the only flow that builds. The capture
+#: What the SHIPPED fabric holds, and why — the second copy of the ``NC`` and
+#: ``CAP_WORDS`` defaults in ``hw/fpga/kernel/odin_fpga_kernel_top.v`` at the NC
+#: ``scripts/hacc/build_xclbn.sh`` is the only flow that builds. The capture
 #: RAM is a block RAM (one write port, one registered read), so its depth is
 #: bought in tiles; 16,384 words is the depth the committed synthesis record
 #: (``hw/fpga/compile_limits.json``) costs, and 4,095 records is what it leaves
-#: after the two header words.
+#: after the two header words. THE OP STREAM HAS NO SUCH NUMBER: it is not
+#: stored on the fabric at all, so a run's length is bounded only by the 32-bit
+#: word counts the host declares.
 SHIPPED_KERNEL_CORES = 1
-SHIPPED_PROGRAM_WORDS_PER_CORE = 262144
-SHIPPED_PROGRAM_WORDS = SHIPPED_KERNEL_CORES * SHIPPED_PROGRAM_WORDS_PER_CORE
 SHIPPED_CAPTURE_WORDS = 16384
 SHIPPED_CAPTURE_EVENTS = (SHIPPED_CAPTURE_WORDS - CAPTURE_HEADER_WORDS) // (
     CAPTURE_RECORD_WORDS)
@@ -87,11 +87,10 @@ SHIPPED_CAPTURE_EVENTS = (SHIPPED_CAPTURE_WORDS - CAPTURE_HEADER_WORDS) // (
 #: spends one. A capacity nobody can read back is only honest if it names its
 #: source.
 CAPACITY_PROVENANCE = (
-    "declared from hw/fpga/kernel/odin_fpga_kernel_top.v (PROG_WORDS = NC * "
-    f"{SHIPPED_PROGRAM_WORDS_PER_CORE}, CAP_WORDS = {SHIPPED_CAPTURE_WORDS}) at "
-    f"NC = {SHIPPED_KERNEL_CORES}, the only geometry scripts/hacc/build_xclbn.sh "
-    "builds — NOT read back from the card, because the XRT Python binding "
-    "exposes no register read"
+    "declared from hw/fpga/kernel/odin_fpga_kernel_top.v (CAP_WORDS = "
+    f"{SHIPPED_CAPTURE_WORDS}) at NC = {SHIPPED_KERNEL_CORES}, the only "
+    "geometry scripts/hacc/build_xclbn.sh builds — NOT read back from the card, "
+    "because the XRT Python binding exposes no register read"
 )
 
 
@@ -103,32 +102,24 @@ class OdinFpgaKernelError(DeviceTransportError):
     """The kernel wrote no verdict: it refused the program it was given."""
 
 
-class OdinFpgaProgramTooLarge(DeviceTransportError):
-    """The token stream does not fit the fabric's program RAM."""
-
-
 class KernelCapacity:
-    """What the loaded xclbin holds, declared from what it was BUILT from."""
+    """What the loaded xclbin holds, declared from what it was BUILT from.
+
+    There is no program capacity. The fabric stores no copy of the host's op
+    stream — it consumes it live through a shallow FIFO — so ``cores`` is the
+    geometry the bitstream was built at rather than a depth divided by one.
+    """
 
     def __init__(
         self,
         *,
-        program_words: int = SHIPPED_PROGRAM_WORDS,
+        cores: int = SHIPPED_KERNEL_CORES,
         capture_events: int = SHIPPED_CAPTURE_EVENTS,
         provenance: str = CAPACITY_PROVENANCE,
     ) -> None:
-        self.program_words = int(program_words)
+        self.cores = int(cores)
         self.capture_events = int(capture_events)
         self.provenance = str(provenance)
-
-    @property
-    def cores(self) -> int:
-        """How many ODIN cores this program RAM holds, rounded UP.
-
-        Under-reporting would refuse a legitimate bitstream, while a payload
-        that does not fit is caught by ``require_program_fits``.
-        """
-        return -(-self.program_words // SHIPPED_PROGRAM_WORDS_PER_CORE)
 
     def ceiling(self, host_events: int) -> int:
         """The events a session may decode: min(host declaration, the fabric's)."""
@@ -136,7 +127,6 @@ class KernelCapacity:
 
     def as_dict(self) -> Dict[str, Any]:
         return {
-            "program_words": self.program_words,
             "capture_events": self.capture_events,
             "cores": self.cores,
             "provenance": self.provenance,
@@ -145,13 +135,13 @@ class KernelCapacity:
 
 def require_declared_storage(capacity: KernelCapacity, *, transport: str) -> None:
     """A package that declares no storage cannot run anything."""
-    if capacity.capture_events <= 0 or capacity.program_words <= 0:
+    if capacity.capture_events <= 0 or capacity.cores <= 0:
         raise DeviceTransportError(
             f"{transport}: this package declares a capture capacity of "
-            f"{capacity.capture_events} events and a program capacity of "
-            f"{capacity.program_words} words ({capacity.provenance}) — a kernel "
-            f"built with no storage cannot run anything, and treating it as zero "
-            f"would turn every run into a silent empty one")
+            f"{capacity.capture_events} events across {capacity.cores} core(s) "
+            f"({capacity.provenance}) — a kernel built with no storage cannot "
+            f"run anything, and treating it as zero would turn every run into a "
+            f"silent empty one")
 
 
 def stimulus_base_word(program_words: int) -> int:
@@ -188,32 +178,14 @@ def require_kernel_verdict(words: Sequence[int], *, transport: str) -> None:
         raise OdinFpgaKernelError(
             f"{transport}: the capture header came back still carrying the "
             f"host's NO-VERDICT sentinel (0x{CAPTURE_NO_VERDICT:08X} in both "
-            f"words), so the fabric DMA'd nothing back. That is the kernel "
-            f"raising err at ap_start and going straight to done without "
-            f"draining (hw/fpga/kernel/odin_fpga_kernel_top.v lines 327-332, the "
-            f"prog_over_w path), or a capture buffer that never reached the "
-            f"card. The likeliest cause is a loaded xclbin built with a SMALLER "
-            f"PROG_WORDS or CAP_WORDS than this package declares — the kernel "
-            f"says which on its own 0x4C/0x54/0x5C registers, and NO Python host "
-            f"can read them (pyxrt binds no read_register). The counts of this "
-            f"run are not a network's answer and are not being decoded")
-
-
-def require_program_fits(
-    program_words: int, stimulus_words: int, capacity: KernelCapacity,
-    *, transport: str,
-) -> None:
-    """The fabric's program RAM must hold the whole token stream."""
-    needed = stimulus_base_word(program_words) + int(stimulus_words)
-    if needed > capacity.program_words:
-        raise OdinFpgaProgramTooLarge(
-            f"{transport}: the run needs {needed} program words "
-            f"({program_words} programming + {stimulus_words} stimulus, the "
-            f"stimulus overwriting the programming payload's END) but the "
-            f"loaded xclbin's program RAM holds {capacity.program_words} "
-            f"({capacity.provenance}). Rebuild the kernel with a larger "
-            f"PROG_WORDS or split the run into fewer samples per pass; a device "
-            f"that wrapped the address would execute a program nobody assembled")
+            f"words), so the fabric DMA'd nothing back. That is a capture "
+            f"buffer that never reached the card, or a kernel that never "
+            f"reached its drain. The likeliest cause is a loaded xclbin built "
+            f"with a SMALLER CAP_WORDS than this package declares, or one built "
+            f"from a different kernel entirely — the kernel says which on its "
+            f"own 0x4C/0x54 registers, and NO Python host can read them (pyxrt "
+            f"binds no read_register). The counts of this run are not a "
+            f"network's answer and are not being decoded")
 
 
 def decode_capture(

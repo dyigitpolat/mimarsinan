@@ -22,6 +22,15 @@ Three gates, all local, all cheap compared with a HACC build hour:
     testbench's. Nothing is preloaded into the fabric, so this is the gate that
     a hardwired-inert AXI master cannot pass.
 
+  * STALL INVARIANCE — the op stream arrives LIVE while the sequencer executes
+    it, so WHEN each word arrives is a real degree of freedom. The same fixture
+    is run under the no-stall baseline and five seeded starvations of the AXI
+    read data channel, and every run must produce byte-identical events at
+    byte-identical ENABLED-cycle timestamps. That is the whole atol=0
+    certificate contract expressed against the delivery: core time is enabled
+    cycles, so a starved FIFO freezes the core domain rather than changing the
+    program.
+
 The witness is a per-EVENT one — a neuron that emits several spikes in a single
 cycle — so a sequencer that collapsed multiplicities would fail here.
 """
@@ -158,8 +167,38 @@ def over_axi(micro_program):
         f"cycles={capture.cycles} err={int(status.err)} "
         f"seen={status.events_seen} cap_events={status.capture_capacity} "
         f"prog_words={status.program_words} stim_words={status.stimulus_words} "
-        f"ram_words={status.ram_words} wall={clock.seconds:.1f}s")
+        f"stream_words={status.stream_words} wall={clock.seconds:.1f}s")
     return capture, status
+
+
+#: The no-stall baseline plus five distinct starvation seeds. They are RUN-time
+#: plusargs, so all six share one cached build and the gate costs six runs.
+STALL_SEEDS = (0, 1, 4919, 31337, 60013, 65521)
+
+
+def _timed_events(capture):
+    """The capture as a comparable image: every field, timestamps INCLUDED."""
+    return tuple(
+        (int(e.tag), int(e.core), int(e.neuron), int(e.cycle))
+        for e in capture.events)
+
+
+@pytest.fixture(scope="module")
+def under_starvation(micro_program):
+    """The same program delivered six ways: no stalls, then five seeds."""
+    _mapping, _export, _trace, _plan_inputs, ops = micro_program
+    runs = {}
+    for seed in STALL_SEEDS:
+        with timed(f"P7a wrapper stall seed {seed}") as clock:
+            capture, status, _build, run = run_kernel_program_over_axi(
+                ops, n_cores=1, stall_seed=seed)
+        runs[seed] = (capture, status, run.seconds)
+        print(
+            f"[odin-stall] seed={seed} events={len(capture.events)} "
+            f"enabled_cycles={capture.cycles} err={int(status.err)} "
+            f"gaps={status.stall_gaps} starved_cycles={status.stall_cycles} "
+            f"sim_wall={clock.seconds:.1f}s")
+    return runs
 
 
 class TestTheWrapperMovesItsOwnBytes:
@@ -184,7 +223,10 @@ class TestTheWrapperMovesItsOwnBytes:
         # real token stream, so a DMA that read only the program buffer would
         # execute a truncated program.
         assert status.program_words > 1 and status.stimulus_words > 1
-        assert status.program_words + status.stimulus_words - 1 <= status.ram_words
+        # The stimulus REPLACES the program payload's END terminator, so the
+        # one stream the sequencer sees is one word shorter than their sum.
+        assert status.stream_words == (
+            status.program_words + status.stimulus_words - 1)
 
     def test_the_run_was_clean_and_within_capacity(self, over_axi):
         capture, status = over_axi
@@ -200,7 +242,79 @@ class TestTheWrapperMovesItsOwnBytes:
         _capture, status = over_axi
         assert status.capture_capacity == SHIPPED_CAPTURE_EVENTS
         assert status.capture_capacity == (SHIPPED_CAPTURE_WORDS - 2) // 4
-        assert status.program_capacity == status.ram_words
+
+
+class TestTheStreamMayArriveHoweverItLikes:
+    """The stall-invariance gate: core time is ENABLED cycles, at atol=0.
+
+    The op stream is no longer a fabric RAM the DMA fills before the run — it is
+    consumed live, one word at a time, out of a shallow FIFO the AXI read engine
+    fills as bursts and credit allow. When that FIFO starves, the kernel drops
+    `core_en` and the whole core domain (the vendored cores through a clock
+    gate, the SPI masters, the AER bridges, the sequencer, the capture engine
+    and the cycle counter) stands still for that cycle. So a starved run is not
+    a slower run producing the same counts at different times: it is the SAME
+    run, cycle for cycle, in the only clock the semantics are written in.
+    """
+
+    def test_every_seed_saw_a_genuinely_different_arrival_pattern(
+        self, under_starvation,
+    ):
+        """A gate that injected nothing would pass trivially — this refuses to.
+
+        The AXI model COUNTS what it injected, so the witness is a number and
+        not an inference: the baseline starves the read data channel on exactly
+        zero cycles, and every seed starves it on thousands, in a different
+        number of gaps of different lengths at different burst positions.
+        """
+        baseline = under_starvation[STALL_SEEDS[0]][1]
+        assert (baseline.stall_gaps, baseline.stall_cycles) == (0, 0), (
+            "the no-stall baseline stalled the read data channel; it is not a "
+            "baseline")
+        injected = {
+            seed: (under_starvation[seed][1].stall_gaps,
+                   under_starvation[seed][1].stall_cycles)
+            for seed in STALL_SEEDS[1:]
+        }
+        assert all(gaps > 0 and cycles > 0 for gaps, cycles in injected.values()), (
+            f"a seed injected no starvation at all ({injected}): this gate "
+            f"would be vacuous")
+        assert len(set(injected.values())) == len(injected), (
+            f"two seeds produced the SAME starvation pattern ({injected}); "
+            f"five seeds that agree are one seed")
+
+    def test_the_events_are_identical_under_every_starvation(
+        self, under_starvation,
+    ):
+        images = {seed: _timed_events(run[0])
+                  for seed, run in under_starvation.items()}
+        baseline = images[STALL_SEEDS[0]]
+        assert baseline, "the stall-invariance witness produced no events"
+        for seed in STALL_SEEDS[1:]:
+            assert images[seed] == baseline, (
+                f"seed {seed} produced a different capture than the no-stall "
+                f"baseline: the arrival pattern of the op stream changed the "
+                f"program, which is exactly what core-enable gating exists to "
+                f"make impossible")
+
+    def test_the_enabled_cycle_clock_is_identical_too(self, under_starvation):
+        """Not just the counts: the TIMESTAMPS. atol=0 on device time."""
+        cycles = {seed: run[0].cycles for seed, run in under_starvation.items()}
+        assert len(set(cycles.values())) == 1, (
+            f"the enabled-cycle count moved with the arrival pattern: {cycles}")
+
+    def test_the_witness_still_carries_its_multiplicity(self, under_starvation):
+        for seed, (capture, _status, _wall) in under_starvation.items():
+            assert max(_fold(capture.events).values()) >= 3, (
+                f"seed {seed} lost the per-event multiplicity: an invariance "
+                f"gate on a degenerate witness proves nothing")
+
+    def test_no_seed_dropped_a_word_or_raised_err(self, under_starvation):
+        for seed, (capture, status, _wall) in under_starvation.items():
+            assert not status.err, (
+                f"seed {seed} raised err — a FIFO overflow or a refused op")
+            assert status.events_seen == len(capture.events)
+            assert status.stall_seed == seed
 
 
 class TestTheKernelIsHonestWhenItCannotComply:

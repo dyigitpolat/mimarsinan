@@ -54,11 +54,10 @@ from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
     KERNEL_NAME,
     SHIPPED_CAPTURE_EVENTS,
     SHIPPED_CAPTURE_WORDS,
-    SHIPPED_PROGRAM_WORDS_PER_CORE,
+    SHIPPED_KERNEL_CORES,
     KernelCapacity,
     OdinFpgaCaptureTruncated,
     OdinFpgaKernelError,
-    OdinFpgaProgramTooLarge,
     WORD_BYTES,
     capture_words,
     decode_capture,
@@ -66,6 +65,7 @@ from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
     require_kernel_verdict,
     stimulus_base_word,
 )
+from mimarsinan.chip_simulation.odin_fpga.kernel_sim import SHIPPED_FIFO_WORDS
 from mimarsinan.chip_simulation.odin_fpga.xrt_transport import (
     OdinFpgaDependencyError,
     XrtTransport,
@@ -85,7 +85,7 @@ FAKE_PATH = (
 
 #: The fixture export programs two ODIN cores, so a bitstream that could run it
 #: declares NC=2. Nothing can read that back off a card — it is declared here.
-TWO_CORE_WORDS = 2 * SHIPPED_PROGRAM_WORDS_PER_CORE
+TWO_CORES = 2
 
 
 @pytest.fixture(scope="module")
@@ -113,7 +113,7 @@ def _board(**overrides):
     fields = {
         "xclbin_path": "/tmp/odin.xclbin",
         "capacity": KernelCapacity(
-            program_words=TWO_CORE_WORDS,
+            cores=TWO_CORES,
             provenance="unit test: a declared NC=2 geometry"),
     }
     fields.update(overrides)
@@ -356,10 +356,12 @@ class TestTheCapacitiesAreDeclaredAndSayWhereTheyCameFrom:
 
     def test_the_default_declaration_is_the_rtl_shipped_geometry(self):
         capacity = KernelCapacity()
-        assert capacity.program_words == SHIPPED_PROGRAM_WORDS_PER_CORE
         assert capacity.capture_events == SHIPPED_CAPTURE_EVENTS
-        assert capacity.cores == 1
+        assert capacity.cores == SHIPPED_KERNEL_CORES
         assert "NOT read back from the card" in capacity.provenance
+        assert "PROG_WORDS" not in capacity.provenance, (
+            "the fabric stores no program, so nothing may declare a capacity "
+            "for one")
 
     def test_open_takes_the_min_of_the_host_ceiling_and_the_declaration(
         self, fake,
@@ -367,7 +369,7 @@ class TestTheCapacitiesAreDeclaredAndSayWhereTheyCameFrom:
         board = _board(capture_events=1 << 20)
         board.open()
         assert board.capture_capacity == SHIPPED_CAPTURE_EVENTS
-        assert board.program_capacity == TWO_CORE_WORDS
+        assert board.capacity.cores == TWO_CORES
 
     def test_a_smaller_host_declaration_wins(self, fake):
         board = _board(capture_events=16)
@@ -377,7 +379,7 @@ class TestTheCapacitiesAreDeclaredAndSayWhereTheyCameFrom:
     def test_a_package_declaring_no_storage_refuses_at_open(self, fake):
         with pytest.raises(DeviceTransportError, match="silent empty one"):
             _board(capacity=KernelCapacity(
-                program_words=0, capture_events=0,
+                cores=0, capture_events=0,
                 provenance="unit test: nothing at all")).open()
 
     def test_the_capture_buffer_is_sized_from_the_declared_capacity(
@@ -398,25 +400,21 @@ class TestTheCapacitiesAreDeclaredAndSayWhereTheyCameFrom:
         assert run.detail["capacity"]["provenance"] == (
             "unit test: a declared NC=2 geometry")
 
-    def test_a_run_that_outgrows_the_program_ram_refuses_before_starting(
+    def test_no_program_length_can_be_refused_for_not_fitting(
         self, export, fake,
     ):
-        board = _board(capacity=KernelCapacity(
-            program_words=64, provenance="unit test: a 64-word program RAM"))
-        board.open()
-        board.program(export)
-        with pytest.raises(OdinFpgaProgramTooLarge, match="program RAM holds 64"):
-            board.run_samples(_inputs(), latencies=(0, 1))
-        assert not any(entry[0] == "start" for entry in fake.call_log())
+        """The fabric stores no program, so there is nothing for one to outgrow.
 
-    def test_that_refusal_names_where_the_number_came_from(self, export, fake):
-        board = _board(capacity=KernelCapacity(
-            program_words=64, provenance="unit test: a 64-word program RAM"))
+        A run this long used to be refused before it started against a declared
+        program RAM; the stream is now bounded only by the word-count arguments,
+        and the ONLY thing left that can refuse a run for size is the capture.
+        """
+        board = _board(capture_events=1 << 20)
         board.open()
         board.program(export)
-        with pytest.raises(OdinFpgaProgramTooLarge) as exc:
-            board.run_samples(_inputs(), latencies=(0, 1))
-        assert "unit test: a 64-word program RAM" in str(exc.value)
+        fake.arm(capture_words=(0, 0))
+        board.run_samples(_inputs(), latencies=(0, 1))
+        assert any(entry[0] == "start" for entry in fake.call_log())
 
     def test_the_stimulus_lands_on_the_programming_payloads_terminator(self):
         assert stimulus_base_word(4) == 3
@@ -552,9 +550,8 @@ class TestTheShippedDepthsAreOneNumber:
     def test_the_capture_constant_is_the_rtl_default(self):
         assert wrapper_shipped_depths()["CAP_WORDS"] == SHIPPED_CAPTURE_WORDS
 
-    def test_the_program_constant_is_the_rtl_default_per_core(self):
-        assert wrapper_shipped_depths()["PROG_WORDS"] == (
-            SHIPPED_PROGRAM_WORDS_PER_CORE)
+    def test_the_stream_fifo_constant_is_the_rtl_default(self):
+        assert wrapper_shipped_depths()["FIFO_WORDS"] == SHIPPED_FIFO_WORDS
 
     def test_the_event_capacity_is_the_wrapper_s_own_arithmetic(self):
         assert SHIPPED_CAPTURE_EVENTS == (

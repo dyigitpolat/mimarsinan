@@ -478,7 +478,6 @@ _PROTOCOL_MIRRORS = (
     ("RECORD_CORE", "RECORD_CORE"),
     ("RECORD_NEURON", "RECORD_NEURON"),
     ("CAPTURE_NO_VERDICT", "CAPTURE_NO_VERDICT"),
-    ("SHIPPED_PROGRAM_WORDS", "SHIPPED_PROGRAM_WORDS"),
     ("SHIPPED_CAPTURE_WORDS", "SHIPPED_CAPTURE_WORDS"),
     ("SHIPPED_CAPTURE_EVENTS", "SHIPPED_CAPTURE_EVENTS"),
 )
@@ -708,16 +707,6 @@ def freeze(fixture: Fixture, *, head: str, dirty: bool, rtl: str,
             "device_cycles_cosim": int(device_cycles),
         },
     }
-    # --- GOLDEN GATE 4: the token stream fits the program RAM of a kernel
-    # built with this fixture's core count (PROG_WORDS = NC * 262144).
-    capacity = plan.n_cores * driver.PROG_WORDS_PER_CORE
-    if document["run"]["program_words_needed"] > capacity:
-        raise PackagingRefusal(
-            f"{fixture.name}: the run needs "
-            f"{document['run']['program_words_needed']} program words but an "
-            f"NC={plan.n_cores} kernel's program RAM holds {capacity}; the "
-            f"board would refuse it and the fixture could never certify")
-
     document["witnesses"] = fixture.witnesses(
         document, (mapping, rasters, length, chip_latency, reference))
 
