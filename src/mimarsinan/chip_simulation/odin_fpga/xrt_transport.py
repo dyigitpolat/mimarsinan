@@ -215,7 +215,7 @@ class XrtTransport:
             payload=payload, ops=len(plan.ops), cores=plan.n_cores,
             wall_s=time.monotonic() - started,
             basis=(
-                "xrt: DMA of the programming payload plus the fabric "
+                "xrt host-link: DMA of the programming payload plus the fabric "
                 "sequencer's SPI shifting of every memory and register word"
             ),
         )

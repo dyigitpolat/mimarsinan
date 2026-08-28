@@ -19,19 +19,34 @@ STREAM_SECONDS = "program_stream_seconds"
 STREAM_RATE = "programming_bytes_per_second"
 
 
-def stream_metrics(nbytes: int, seconds: float) -> Dict[str, Any]:
+#: A programming wall publishes a bandwidth ONLY when the transport measured
+#: the host link — its basis carries this mark. The cosim's wall times
+#: host-side payload assembly, and a rate computed from it would publish the
+#: speed of a Python builder as a link bandwidth.
+LINK_BASIS_MARK = "host-link"
+
+
+def basis_is_link(basis: str) -> bool:
+    return LINK_BASIS_MARK in str(basis)
+
+
+def stream_metrics(
+    nbytes: int, seconds: float, *, link: bool = True,
+) -> Dict[str, Any]:
     """One programming stream as a measurement: bytes, seconds, and the rate.
 
     The fabric stores no copy of the op stream — it consumes it live out of host
-    memory — so programming is a HOST-LINK bandwidth to be measured rather than
-    a fabric budget. The rate is ``None`` when the wall did not advance: a clock
-    too coarse to time the transfer must not be published as a zero bandwidth.
+    memory — so programming is a host-link bandwidth to be MEASURED. The rate is
+    ``None`` when the wall did not advance (a clock too coarse to time the
+    transfer must not be published as zero bandwidth) and ``None`` when the wall
+    did not measure the link at all (``link=False``, from ``basis_is_link``).
     """
     seconds = float(seconds)
     return {
         STREAM_BYTES: int(nbytes),
         STREAM_SECONDS: seconds,
-        STREAM_RATE: (float(nbytes) / seconds) if seconds > 0.0 else None,
+        STREAM_RATE: (
+            (float(nbytes) / seconds) if (link and seconds > 0.0) else None),
     }
 
 
@@ -107,5 +122,8 @@ def aggregate_walls(records: List[OdinFpgaRunRecord]) -> Dict[str, Any]:
         "device_cycles": float(sum(r.device_cycles for r in records)),
         "samples": float(len(records)),
     }
-    walls.update(stream_metrics(stream_bytes, programming))
+    bases = [t.program_basis for r in records for t in r.timings]
+    walls.update(stream_metrics(
+        stream_bytes, programming,
+        link=bool(bases) and all(basis_is_link(b) for b in bases)))
     return walls

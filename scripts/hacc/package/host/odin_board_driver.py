@@ -321,19 +321,25 @@ STREAM_SECONDS = "program_stream_seconds"
 STREAM_RATE = "programming_bytes_per_second"
 
 
-def stream_metrics(nbytes: int, seconds: float) -> Dict[str, Any]:
+def stream_metrics(
+    nbytes: int, seconds: float, *, link: bool = True,
+) -> Dict[str, Any]:
     """One programming stream as a measurement: bytes, seconds, and the rate.
 
     ONE implementation, because both the fixture path and the deployment's
-    per-core segment boundary report the same three numbers. The rate is
-    ``None`` when the wall did not advance at all — a clock too coarse to time
-    the transfer must not be published as a bandwidth of zero.
+    per-core segment boundary report the same three numbers. On this driver the
+    wall always measures the real host link (pyxrt bo write + sync), so callers
+    here pass the default; the mirrored repo copy gates ``link`` on the
+    transport's basis. The rate is ``None`` when the wall did not advance — a
+    clock too coarse to time the transfer must not be published as zero — and
+    ``None`` when the wall did not measure the link.
     """
     seconds = float(seconds)
     return {
         STREAM_BYTES: int(nbytes),
         STREAM_SECONDS: seconds,
-        STREAM_RATE: (float(nbytes) / seconds) if seconds > 0.0 else None,
+        STREAM_RATE: (
+            (float(nbytes) / seconds) if (link and seconds > 0.0) else None),
     }
 
 

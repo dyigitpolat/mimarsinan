@@ -10,6 +10,7 @@ from mimarsinan.chip_simulation.odin_fpga.records import (
     BACKEND_NAME,
     OdinFpgaRunRecord,
     aggregate_walls,
+    basis_is_link,
     stream_metrics,
 )
 from mimarsinan.chip_simulation.odin_fpga.runner import OdinFpgaRunner
@@ -181,7 +182,8 @@ def _timing_fragment(deployed: List[OdinFpgaRunRecord], walls: Dict[str, float]
                 "segment_boundary_init_s": timing.program_wall_s,
             }
             row.update(stream_metrics(
-                timing.program_bytes, timing.program_wall_s))
+                timing.program_bytes, timing.program_wall_s,
+                link=basis_is_link(timing.program_basis)))
             per_segment.append(row)
     fragment = {
         "per_segment": per_segment,
@@ -193,12 +195,15 @@ def _timing_fragment(deployed: List[OdinFpgaRunRecord], walls: Dict[str, float]
         "note": (
             "measured on the declared transport; programming_s is the per-pass "
             "reprogramming cost, never folded into execution_s. The fabric "
-            "stores no copy of the op stream, so programming is a HOST-LINK "
-            "bandwidth: program_stream_bytes over program_stream_seconds, and "
+            "stores no copy of the op stream; programming_bytes_per_second is "
+            "published only when the transport's wall measured the host link "
+            "(the timing's program_basis names what was measured), and "
             "segment_boundary_init_s is what one segment costs before it runs"
         ),
     }
+    all_bases = [row.get("programming_basis", "") for row in per_segment]
     fragment.update(stream_metrics(
         sum(int(row["program_bytes"]) for row in per_segment),
-        walls["programming_s"]))
+        walls["programming_s"],
+        link=bool(all_bases) and all(basis_is_link(b) for b in all_bases)))
     return fragment
