@@ -127,3 +127,18 @@ def split_bias_row_values(biases: np.ndarray, rows: int) -> np.ndarray:
         raise ValueError(f"bias rows must be >= 1, got {rows}")
     flat = np.asarray(biases, dtype=float).flatten()
     return np.tile(flat / float(rows), (int(rows), 1))
+
+
+def core_matrix_with_bias_rows(
+    weights_transposed: np.ndarray, biases: np.ndarray, rows: int
+) -> np.ndarray:
+    """An ``(in_features + rows, out_features)`` core matrix: the transposed
+    weights above the always-on block. THE param-encoded assembly, shared by
+    every emission site so a bank and an owned core cannot lay out differently.
+    """
+    w_t = np.asarray(weights_transposed, dtype=float)
+    bias_block = split_bias_row_values(biases, rows)
+    matrix = np.empty((w_t.shape[0] + bias_block.shape[0], w_t.shape[1]), dtype=float)
+    matrix[: w_t.shape[0], :] = w_t
+    matrix[w_t.shape[0] :, :] = bias_block
+    return matrix

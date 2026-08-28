@@ -17,33 +17,7 @@ from mimarsinan.mapping.ir import (
     spike_source_to_ir_source,
 )
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
-
-
-def _scale_ratio(bias_scale, parameter_scale) -> float:
-    def _as_float(value):
-        return float(value.item() if hasattr(value, "item") else value)
-
-    bs = _as_float(bias_scale)
-    if bs == 0.0:
-        return 1.0
-    return _as_float(parameter_scale) / bs
-
-
-def assert_bias_scale_param_encodable(bias_scale, parameter_scale, name) -> None:
-    """A platform without an on-chip bias register encodes the bias as an
-    always-on core-matrix ROW bound by the ±q_max weight-register contract on
-    the weight grid; a two-scale (coarser) bias grid is not representable there."""
-    if bias_scale is None:
-        return
-    if abs(_scale_ratio(bias_scale, parameter_scale) - 1.0) <= 1e-6:
-        return
-    raise ValueError(
-        f"IRMapping: {name or '<unnamed>'} carries a two-scale quantized bias "
-        f"(bias_scale != parameter_scale) but the platform has no hardware "
-        f"bias; a parameter-encoded bias row must live on the shared weight "
-        f"grid. Disable wq_two_scale_projection for this platform (the "
-        f"WeightQuantizationStep capability gate does this automatically)."
-    )
+from mimarsinan.mapping.support.bias_rows import core_matrix_with_bias_rows
 
 
 class IRMappingCore(LayoutIRMapping):
@@ -57,6 +31,7 @@ class IRMappingCore(LayoutIRMapping):
         max_neurons: int | None = None,
         allow_coalescing: bool = False,
         hardware_bias: bool = False,
+        bias_row_splitting: bool = False,
         onchip_residual_merge: bool = False,
     ):
         super().__init__(
@@ -64,6 +39,7 @@ class IRMappingCore(LayoutIRMapping):
             max_neurons=max_neurons,
             allow_coalescing=allow_coalescing,
             hardware_bias=hardware_bias,
+            bias_row_splitting=bias_row_splitting,
             onchip_residual_merge=onchip_residual_merge,
         )
 
@@ -182,12 +158,9 @@ class IRMappingCore(LayoutIRMapping):
             if self.hardware_bias:
                 bank_hw_bias = b
             else:
-                assert_bias_scale_param_encodable(
-                    bias_scale, parameter_scale, f"weight bank {bank_id}"
+                core_matrix = core_matrix_with_bias_rows(
+                    w.T, b, self._layout_bank_bias_rows[bank_id]
                 )
-                core_matrix = np.zeros((in_features + 1, out_features), dtype=float)
-                core_matrix[:in_features, :] = w.T
-                core_matrix[-1, :] = b
 
         self._weight_banks[bank_id] = WeightBank(
             id=bank_id,

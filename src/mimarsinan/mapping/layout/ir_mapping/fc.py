@@ -27,6 +27,8 @@ class _LayoutIRMappingFC:
         add_neural_core: Callable[..., Any]
         add_shared_neural_core: Callable[..., Any]
         register_weight_bank: Callable[..., int]
+        param_encoded_bias_rows: Callable[..., int]
+        _fc_bank_tiles: Callable[..., Any]
 
     def map_fc(
         self,
@@ -65,7 +67,11 @@ class _LayoutIRMappingFC:
                 )
             core_count = int(src_arr.shape[1])
             tiles = (
-                self._fc_bank_tiles(in_features, out_features, fc_biases is not None)
+                self._fc_bank_tiles(
+                    in_features, out_features, fc_biases is not None,
+                    self.param_encoded_bias_rows(
+                        bias_scale, parameter_scale, name=name),
+                )
                 if core_count > 1 else None
             )
             if tiles is not None:
@@ -120,7 +126,10 @@ class _LayoutIRMappingFC:
                 allow_coalescing=self.allow_coalescing,
             )
         )
-        mode = strategy.tiling_mode(in_features, out_features, has_bias)
+        mode = strategy.tiling_mode(
+            in_features, out_features, has_bias,
+            self.param_encoded_bias_rows(bias_scale, parameter_scale, name=name),
+        )
 
         if mode == "coalescing" and coalescing_group_id is None:
             coalescing_group_id = self._coalescing_group_counter
@@ -174,23 +183,6 @@ class _LayoutIRMappingFC:
             coalescing_group_id=coalescing_group_id,
             coalescing_role=coalescing_role,
         )
-
-    def _fc_bank_tiles(self, in_features, out_features, has_bias):
-        """Bank-shareable output tiling for a multi-instance FC; ``None`` = the
-        owned per-column path (wide-fan-in coalescing columns stay owned)."""
-        strategy = MappingStrategy.resolve(ChipCapabilities(
-            max_axons=self.max_axons, max_neurons=self.max_neurons,
-            hardware_bias=self.hardware_bias,
-            allow_coalescing=self.allow_coalescing))
-        mode = strategy.tiling_mode(in_features, out_features, has_bias)
-        if mode == "single":
-            return [(0, out_features)]
-        if mode == "output_tiled":
-            assert self.max_neurons is not None
-            chunk = int(self.max_neurons)
-            return [(s, min(s + chunk, out_features))
-                    for s in range(0, out_features, chunk)]
-        return None
 
     def _map_fc_banked(
         self, *, src_arr, output_shape, tiles, fc_weights, fc_biases,

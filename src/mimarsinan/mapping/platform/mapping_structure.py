@@ -14,10 +14,11 @@ def compute_core_input_count(
     n_sources: int,
     has_bias: bool,
     hardware_bias: bool,
+    bias_rows: int = 1,
 ) -> int:
-    """Return the effective axon count for a core; hardware_bias keeps the bias in a register (no axon), legacy mode adds one always-on axon row."""
+    """Return the effective axon count for a core; hardware_bias keeps the bias in a register (no axon), otherwise the bias spends ``bias_rows`` always-on axon rows (1 = the unsplit legacy row)."""
     if has_bias and not hardware_bias:
-        return n_sources + 1
+        return n_sources + int(bias_rows)
     return n_sources
 
 
@@ -36,9 +37,12 @@ def compute_fc_tiling_mode(
     has_bias: bool,
     hardware_bias: bool,
     allow_coalescing: bool,
+    bias_rows: int = 1,
 ) -> TilingMode:
     """Decide the FC mapping path (single/coalescing/output_tiled); wide fan-in maps via coalescing, or raises WideFanInUnsupportedError when allow_coalescing is False."""
-    effective_in = compute_core_input_count(in_features, has_bias, hardware_bias)
+    effective_in = compute_core_input_count(
+        in_features, has_bias, hardware_bias, bias_rows
+    )
     is_wide = max_axons is not None and effective_in > max_axons
     if is_wide:
         if not allow_coalescing:
@@ -208,6 +212,7 @@ class MappingStrategy:
         in_features: int,
         out_features: int,
         has_bias: bool,
+        bias_rows: int = 1,
     ) -> TilingMode:
         """Derive the FC tiling mode for one layer from shape × capabilities; raises WideFanInUnsupportedError when a wide fan-in cannot be mapped."""
         caps = self.capabilities
@@ -219,4 +224,5 @@ class MappingStrategy:
             has_bias,
             caps.hardware_bias,
             caps.allow_coalescing,
+            bias_rows,
         )

@@ -11,14 +11,17 @@ from mimarsinan.mapping.layout.layout_source_view_ops import (
     total_size,
 )
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
-from mimarsinan.mapping.layout.layout_ir_mapping_fc import _LayoutIRMappingFC
-from mimarsinan.mapping.layout.layout_ir_mapping_finalize import _LayoutIRMappingFinalize
+from mimarsinan.mapping.layout.ir_mapping import (
+    _LayoutIRMappingBanks,
+    _LayoutIRMappingFC,
+    _LayoutIRMappingFinalize,
+)
 from mimarsinan.mapping.noc.wire_census import record_emission_census
 from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
 
 
 @dataclass
-class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
+class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMappingBanks):
     """Shape-only mapping backend: the single source of truth for softcore
     emission decisions (tiling mode, psum decomposition, coalescing, bias-axon
     counting, shared-bank wiring). ``IRMapping`` subclasses it to attach weights."""
@@ -27,6 +30,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
     max_neurons: Optional[int]
     allow_coalescing: bool = False
     hardware_bias: bool = False
+    bias_row_splitting: bool = False
     onchip_residual_merge: bool = False
     # Wire-census collection MATERIALISES every deferred input view (the very
     # cost LayoutSourceView defers), so it is opt-in: only a walk whose caller
@@ -38,6 +42,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         self.max_neurons = int(self.max_neurons) if self.max_neurons is not None else None
         self.allow_coalescing = bool(self.allow_coalescing)
         self.hardware_bias = bool(self.hardware_bias)
+        self.bias_row_splitting = bool(self.bias_row_splitting)
         self.onchip_residual_merge = bool(self.onchip_residual_merge)
 
         self._next_node_id = 0
@@ -58,6 +63,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         self._sc_idx_to_perceptron_index: Dict[int, Optional[int]] = {}
 
         self._layout_weight_banks: Dict[int, Tuple[int, int]] = {}
+        self._layout_bank_bias_rows: Dict[int, int] = {}
         self._sc_idx_to_bank_id: Dict[int, int] = {}
 
     def _alloc_node_id(self) -> int:
@@ -173,35 +179,6 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             shape=view_shape,
         )
 
-    def register_weight_bank(
-        self,
-        weights: Any,
-        biases: Any = None,
-        activation_scale=None,
-        parameter_scale=None,
-        input_activation_scale=None,
-        perceptron_index: Optional[int] = None,
-        bias_scale: Any = None,
-    ) -> int:
-        """Register a shared weight bank (shape only) and return its ID."""
-        bank_id = self._next_bank_id
-        self._next_bank_id += 1
-
-        w_shape = getattr(weights, "shape", None)
-        if w_shape is not None:
-            out_features = int(w_shape[0])
-            in_features = int(w_shape[1]) if len(w_shape) > 1 else 1
-        else:
-            out_features = 1
-            in_features = 1
-
-        has_bias = biases is not None
-        in_features_with_bias = compute_core_input_count(
-            in_features, has_bias, self.hardware_bias
-        )
-        self._layout_weight_banks[bank_id] = (in_features_with_bias, out_features)
-        return bank_id
-
     def add_neural_core(
         self,
         *,
@@ -233,7 +210,8 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         out_features = int(getattr(weights, "shape", [0])[0])
         has_bias = biases is not None
         in_count = compute_core_input_count(
-            in_features, has_bias, self.hardware_bias
+            in_features, has_bias, self.hardware_bias,
+            self.param_encoded_bias_rows(bias_scale, parameter_scale, name=name),
         )
 
         node_id = self._alloc_node_id()
@@ -245,53 +223,3 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             input_sources=input_sources,
             perceptron_index=perceptron_index,
         )
-
-    def add_shared_neural_core(
-        self,
-        *,
-        input_sources,
-        weight_bank_id: int,
-        has_bias: bool = True,
-        weight_row_slice: Optional[Tuple[int, int]] = None,
-        name: Optional[str] = None,
-        normalization_type: Optional[str] = None,
-        activation_type: Optional[str] = None,
-        perceptron_index: Optional[int] = None,
-        perceptron_output_slice: Optional[Tuple[int, int]] = None,
-        perceptron_output_column: Optional[int] = None,
-        psum_group_id: Optional[int] = None,
-        psum_role: Optional[str] = None,
-        coalescing_group_id: Optional[int] = None,
-        coalescing_role: Optional[str] = None,
-    ) -> LayoutSourceView:
-        """Emit a bank-backed neural softcore (one conv position).
-
-        Base implementation records shape only.  ``IRMapping`` overrides to
-        also build the concrete ``NeuralCore`` referencing the bank.
-        """
-        bank_shape = self._layout_weight_banks.get(weight_bank_id)
-        if bank_shape is None:
-            raise ValueError(f"Unknown weight_bank_id={weight_bank_id}")
-        _in_features_with_bias, bank_out_features = bank_shape
-
-        in_count = compute_core_input_count(
-            total_size(input_sources), has_bias, self.hardware_bias
-        )
-
-        if weight_row_slice is not None:
-            out_features = weight_row_slice[1] - weight_row_slice[0]
-        else:
-            out_features = bank_out_features
-
-        node_id = self._alloc_node_id()
-        sc_idx = len(self.layout_softcores)
-        result = self._emit_softcore_record(
-            node_id=node_id,
-            input_count=in_count,
-            output_count=out_features,
-            name=name,
-            input_sources=input_sources,
-            perceptron_index=perceptron_index,
-        )
-        self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
-        return result
