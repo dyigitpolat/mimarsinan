@@ -2,6 +2,11 @@ from typing import Iterable, cast
 
 import torch
 
+from mimarsinan.advisories.rules_graph_scale import (
+    BIAS_DOMINANCE_LEVEL_FLOOR,
+    bias_dominance_ratio_limit,
+    worst_bias_grid_dominance,
+)
 from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
 from mimarsinan.mapping.support.bias_compensation import (
     LIF_HALF_STEP_FLAG,
@@ -29,6 +34,39 @@ from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner 
 import torch.nn as nn
 
 _CANONICALIZATION_BATCHES = 4
+
+
+class BiasGridDominanceError(ValueError):
+    """A shared weight-quantization grid the bias would set; raised at WQ entry."""
+
+
+def refuse_bias_dominated_grid(model_repr, bits: int, *, weight_only_grid: bool) -> None:
+    """Refuse a shared grid a dominant bias would starve, on the FINAL tensors.
+
+    ``rule_bias_grid_dominance`` predicts this at Torch Mapping, but the ratio
+    grows through conversion (theta normalization, DFQ bias corrections), so
+    the advisory's clean read does not certify the WQ entry — this is the same
+    predicate, at the point of no return.
+    """
+    if weight_only_grid:
+        return
+    worst = worst_bias_grid_dominance(model_repr, bits)
+    if worst is None:
+        return
+    ratio, name = worst
+    limit = bias_dominance_ratio_limit(bits)
+    raise BiasGridDominanceError(
+        f"WeightQuantizationStep: {name!r} enters weight quantization with "
+        f"max|effective bias| / max|effective weight| = {ratio:.1f} at "
+        f"{bits} bits (limit q_max/{BIAS_DOMINANCE_LEVEL_FLOOR:.0f} = "
+        f"{limit:.1f}). The shared per-perceptron grid is scaled by "
+        f"max(|w|,|b|), so the bias would set it and the largest weight would "
+        f"retain under {BIAS_DOMINANCE_LEVEL_FLOOR:.0f} levels (measured: 3 "
+        f"levels, 99.6% zeros, 0.9314 -> 0.6117). Remedy: set "
+        f"bias_row_splitting='auto' so the bias rides k always-on rows and the "
+        f"weight grid comes from max|w| alone; on a platform with an on-chip "
+        f"bias register, wq_two_scale_projection does the same."
+    )
 
 
 class WeightQuantizationStep(TunerPipelineStep):
@@ -86,6 +124,9 @@ class WeightQuantizationStep(TunerPipelineStep):
             )
             print(f"[WeightQuantizationStep] weight-only grid from max|w| alone; "
                   f"{delivery} (integer-ratio-snapped).")
+        refuse_bias_dominated_grid(
+            model.get_mapper_repr(), int(bits), weight_only_grid=weight_only,
+        )
         self.run_tuner(
             NormalizationAwarePerceptronQuantizationTuner,
             model,

@@ -1,5 +1,6 @@
 import torch
 
+from mimarsinan.advisories.rules_graph_scale import BIAS_DOMINANCE_LEVEL_FLOOR
 from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
@@ -18,6 +19,34 @@ def integer_grid_stats(ints: torch.Tensor, q_max: int) -> dict:
         "int_min": int(flat.min().item()),
         "int_max": int(flat.max().item()),
     }
+
+
+class RetainedLevelCollapseError(AssertionError):
+    """A deployed integer grid whose largest weight retains under two levels."""
+
+
+def assert_grid_retains_levels(name: str, stats: dict) -> None:
+    """The artifact-side twin of ``rule_bias_grid_dominance``, keyed to the same
+    ``BIAS_DOMINANCE_LEVEL_FLOOR``: the rule fires when the largest weight would
+    retain under two grid levels, and this reads whether it DID.
+
+    A layer with no weight mass at all is a pruning outcome, not a starved grid,
+    so it has no largest weight to judge and passes.
+    """
+    retained = max(abs(int(stats["int_min"])), abs(int(stats["int_max"])))
+    if retained == 0 or retained >= BIAS_DOMINANCE_LEVEL_FLOOR:
+        return
+    raise RetainedLevelCollapseError(
+        f"QuantizationVerificationStep: {name!r} deployed a degenerate integer "
+        f"grid — its largest weight retains {retained} level(s) of the "
+        f"±{stats['q_max']} register (floor "
+        f"{BIAS_DOMINANCE_LEVEL_FLOOR:.0f}), {stats['effective_levels']} "
+        f"distinct levels over {stats['n_weights']} weights, zero_frac "
+        f"{stats['zero_frac']:.4f}. A grid this starved carries no function; "
+        f"the usual cause is a bias-dominated shared grid. Remedy: "
+        f"bias_row_splitting='auto' (the bias rides k always-on rows and the "
+        f"weight grid comes from max|w| alone), or raise weight_bits."
+    )
 
 
 def _assert_integer_lattice(scaled: torch.Tensor, what: str) -> torch.Tensor:
@@ -102,8 +131,11 @@ class QuantizationVerificationStep(TrainerPipelineStep):
             assert_effective_parameters_on_chip_grid(perceptron, q_max)
 
         # The asserts above ARE the gate; surviving them is the verdict. The
-        # per-layer grid diagnostics ship as one low-rate structured event.
+        # per-layer grid diagnostics ship as one low-rate structured event, and
+        # the degeneracy they already measure is itself a refusal.
         layers = quantization_grid_report(model.get_perceptrons(), q_max)
+        for row in layers:
+            assert_grid_retains_levels(str(row["name"]), row)
         bits = int(self.pipeline.config["weight_bits"])
         emit_reporter_event(
             getattr(self.pipeline, "reporter", None),

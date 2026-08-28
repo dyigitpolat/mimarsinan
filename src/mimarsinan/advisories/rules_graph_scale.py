@@ -13,7 +13,7 @@ from mimarsinan.advisories.advisory import (
 )
 from mimarsinan.advisories.graph_common import exec_and_deps, name_of
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
-    resolve_wq_two_scale_projection,
+    resolve_wq_weight_only_grid,
 )
 from mimarsinan.spiking.segment_forward import perceptron_of
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
@@ -167,16 +167,24 @@ def rule_normfree_chain(model_repr, plan: Any, channel_stats) -> list[Advisory]:
     )]
 
 
-def rule_bias_grid_dominance(model_repr, plan: Any, channel_stats) -> list[Advisory]:
-    if not plan.weight_quantization:
-        return []
-    if resolve_wq_two_scale_projection(plan.config):
-        return []
-    bits = int(plan.config.get("weight_bits", 8))
-    q_max = float(2 ** (bits - 1) - 1)
-    ratio_limit = q_max / BIAS_DOMINANCE_LEVEL_FLOOR
+def bias_dominance_ratio_limit(bits: int) -> float:
+    """The ratio above which the shared grid leaves the largest weight under
+    ``BIAS_DOMINANCE_LEVEL_FLOOR`` levels: ``q_max / floor``."""
+    return float(2 ** (int(bits) - 1) - 1) / BIAS_DOMINANCE_LEVEL_FLOOR
+
+
+def worst_bias_grid_dominance(model_repr, bits: int) -> tuple[float, str] | None:
+    """THE bias-dominance predicate: the worst ``max|b| / max|w|`` over the
+    graph's effective parameters, or None when every hop is under the limit.
+
+    Read on the same ``PerceptronTransformer`` view the projection quantizes,
+    so the advisory (at Torch Mapping) and the WQ-entry refusal ask ONE
+    question of two different points in the ladder — the ratio GROWS through
+    conversion, so the early read cannot certify the late one.
+    """
+    ratio_limit = bias_dominance_ratio_limit(bits)
     transformer = PerceptronTransformer()
-    worst: tuple | None = None
+    worst: tuple[float, str] | None = None
     for perceptron in model_repr.get_perceptrons():
         weight = transformer.get_effective_weight(perceptron)
         bias = transformer.get_effective_bias(perceptron)
@@ -187,6 +195,17 @@ def rule_bias_grid_dominance(model_repr, plan: Any, channel_stats) -> list[Advis
         ratio = b_max / w_max
         if worst is None or ratio > worst[0]:
             worst = (ratio, name_of(perceptron))
+    return worst
+
+
+def rule_bias_grid_dominance(model_repr, plan: Any, channel_stats) -> list[Advisory]:
+    if not plan.weight_quantization:
+        return []
+    if resolve_wq_weight_only_grid(plan.config):
+        return []
+    bits = int(plan.config.get("weight_bits", 8))
+    ratio_limit = bias_dominance_ratio_limit(bits)
+    worst = worst_bias_grid_dominance(model_repr, bits)
     if worst is None:
         return []
     ratio, name = worst
@@ -213,6 +232,8 @@ def rule_bias_grid_dominance(model_repr, plan: Any, channel_stats) -> list[Advis
         tentative=True,
         mandate_violation=lossless_mandate_applies(plan),
         suggested_levers=(
+            "bias_row_splitting (the bias rides k always-on rows; the "
+            "weight grid then comes from max|w| alone)",
             "wq_two_scale_projection (bias on its own grid)",
             "platform has_bias (an on-chip bias register)",
         ),
