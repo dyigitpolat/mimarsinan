@@ -93,34 +93,21 @@ def bias_rows_from_scales(
     return int(rows)
 
 
-def resolve_param_encoded_bias_rows(
-    bias_scale: Any,
-    parameter_scale: Any,
-    name: Any,
-    *,
-    bias_row_splitting: bool,
+def param_encoded_bias_rows(
+    bias_scale: Any, parameter_scale: Any, *, hardware_bias: bool, name: Any = None
 ) -> int:
-    """Rows a parameter-encoded bias occupies, refusing a two-scale bias when
-    splitting is disabled.
+    """Always-on rows one perceptron's bias occupies on THIS platform.
 
-    Without splitting a platform with no on-chip bias register must keep the
-    bias on the shared weight grid (one always-on row bound by ±q_max); with
-    splitting the same bias rides ``k`` rows whose integer weights sum to it.
+    No capability flag: the installed grids ARE the authority. A bias grid
+    coarser than the weight grid can only come from a weight-only projection,
+    which a param-encoded platform reaches only through bias-row splitting —
+    so the scales answer the question, every mapper construction site agrees
+    without plumbing, and a shared grid answers 1 byte-identically. The
+    integer-ratio invariant is the backstop and it refuses loud.
     """
-    rows = bias_rows_from_scales(bias_scale, parameter_scale, name=name)
-    if rows == 1:
+    if hardware_bias:
         return 1
-    if not bias_row_splitting:
-        raise ValueError(
-            f"IRMapping: {name or '<unnamed>'} carries a two-scale quantized bias "
-            f"(bias_scale != parameter_scale) but the platform has no hardware "
-            f"bias; a parameter-encoded bias row must live on the shared weight "
-            f"grid. Enable bias_row_splitting (the bias then rides {rows} "
-            f"always-on rows), or disable wq_two_scale_projection for this "
-            f"platform (the WeightQuantizationStep capability gate does this "
-            f"automatically)."
-        )
-    return rows
+    return bias_rows_from_scales(bias_scale, parameter_scale, name=name)
 
 
 def split_bias_row_values(biases: np.ndarray, rows: int) -> np.ndarray:

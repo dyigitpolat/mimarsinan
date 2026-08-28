@@ -21,9 +21,12 @@ from mimarsinan.pipelining.pipeline_steps.quantization.quantization_verification
     assert_grid_retains_levels,
     integer_grid_stats,
 )
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.pipelining.pipeline_steps.quantization.weight_quantization_step import (
     BiasGridDominanceError,
+    BiasRowSplitEventSerialError,
     refuse_bias_dominated_grid,
+    refuse_split_under_event_serial_soma,
 )
 
 BITS = 4
@@ -124,3 +127,48 @@ class TestRetainedLevelRefusal:
         message = str(excinfo.value)
         assert "bias_row_splitting" in message
         assert "0.99" in message
+
+
+def _soma(granularity, membrane_bits):
+    return SomaLaw.resolve({
+        "firing_granularity": granularity,
+        "membrane_bits": membrane_bits,
+        "membrane_signed": False,
+        "firing_mode": "Novena",
+        "thresholding_mode": "<=",
+    })
+
+
+class TestEventSerialSplitRefusal:
+    """A k>1 split is refused BEFORE the training budget on the one soma point
+    where it is not a value-preserving re-encoding (measured; the evidence lives
+    in tests/unit/pipelining/test_streamed_bias_row_exactness.py)."""
+
+    def _needs_many_rows(self):
+        # max|b|/max|w| = 7.04 -> s_w = floor(q_max/max|w|) = 69 -> k = 7 rows.
+        return _Repr([_perceptron(0.1, 0.704)])
+
+    def test_the_event_serial_soma_with_a_register_refuses(self):
+        with pytest.raises(BiasRowSplitEventSerialError) as excinfo:
+            refuse_split_under_event_serial_soma(
+                self._needs_many_rows(), BITS, _soma("per_event", 8)
+            )
+        message = str(excinfo.value)
+        assert "fc0" in message and "7 always-on rows" in message
+        assert "per_cycle" in message
+
+    def test_an_unbounded_membrane_is_allowed(self):
+        refuse_split_under_event_serial_soma(
+            self._needs_many_rows(), BITS, _soma("per_event", 0)
+        )
+
+    def test_per_cycle_firing_is_allowed(self):
+        refuse_split_under_event_serial_soma(
+            self._needs_many_rows(), BITS, _soma("per_cycle", 8)
+        )
+
+    def test_a_vehicle_whose_bound_is_one_row_passes_everywhere(self):
+        # max|b| * s_w <= q_max (0.05 * 69 = 3.45 <= 7): one row carries it.
+        refuse_split_under_event_serial_soma(
+            _Repr([_perceptron(0.1, 0.05)]), BITS, _soma("per_event", 8)
+        )

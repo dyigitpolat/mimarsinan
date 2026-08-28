@@ -15,7 +15,7 @@ import torch
 from mimarsinan.mapping.support.bias_rows import (
     bias_row_bound,
     bias_rows_from_scales,
-    resolve_param_encoded_bias_rows,
+    param_encoded_bias_rows,
     split_bias_row_values,
 )
 
@@ -58,22 +58,24 @@ class TestRowsFromScales:
             bias_rows_from_scales(torch.tensor(13.0), torch.tensor(40.0), name="fc")
 
 
-class TestParamEncodedRefusal:
-    def test_splitting_off_refuses_a_two_scale_bias(self):
-        with pytest.raises(ValueError, match="bias_row_splitting"):
-            resolve_param_encoded_bias_rows(
-                torch.tensor(5.0), torch.tensor(40.0), "fc", bias_row_splitting=False
-            )
+class TestPlatformView:
+    """The installed grids ARE the authority — no capability flag reaches here,
+    so a mapper, a shape-only layout walk and a verifier cannot disagree."""
 
-    def test_splitting_off_still_admits_the_shared_grid(self):
-        assert resolve_param_encoded_bias_rows(
-            torch.tensor(40.0), torch.tensor(40.0), "fc", bias_row_splitting=False
+    def test_a_param_encoded_platform_reads_k_off_the_scales(self):
+        assert param_encoded_bias_rows(
+            torch.tensor(5.0), torch.tensor(40.0), hardware_bias=False, name="fc"
+        ) == 8
+
+    def test_a_shared_grid_reads_the_legacy_single_row(self):
+        assert param_encoded_bias_rows(
+            torch.tensor(40.0), torch.tensor(40.0), hardware_bias=False, name="fc"
         ) == 1
 
-    def test_splitting_on_admits_the_two_scale_bias_as_rows(self):
-        assert resolve_param_encoded_bias_rows(
-            torch.tensor(5.0), torch.tensor(40.0), "fc", bias_row_splitting=True
-        ) == 8
+    def test_an_on_chip_bias_lane_spends_no_row(self):
+        assert param_encoded_bias_rows(
+            torch.tensor(5.0), torch.tensor(40.0), hardware_bias=True, name="fc"
+        ) == 1
 
 
 class TestSplitExactness:

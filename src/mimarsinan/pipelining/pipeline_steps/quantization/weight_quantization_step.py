@@ -1,11 +1,18 @@
+import math
 from typing import Iterable, cast
 
 import torch
 
+from mimarsinan.advisories.graph_common import name_of
 from mimarsinan.advisories.rules_graph_scale import (
     BIAS_DOMINANCE_LEVEL_FLOOR,
     bias_dominance_ratio_limit,
     worst_bias_grid_dominance,
+)
+from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.mapping.support.bias_rows import bias_row_bound
+from mimarsinan.transformations.perceptron.perceptron_transformer import (
+    PerceptronTransformer,
 )
 from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
 from mimarsinan.mapping.support.bias_compensation import (
@@ -38,6 +45,57 @@ _CANONICALIZATION_BATCHES = 4
 
 class BiasGridDominanceError(ValueError):
     """A shared weight-quantization grid the bias would set; raised at WQ entry."""
+
+
+class BiasRowSplitEventSerialError(ValueError):
+    """Splitting a bias into k rows under an event-serial saturating soma."""
+
+
+def refuse_split_under_event_serial_soma(model_repr, bits: int, soma_law) -> None:
+    """Refuse a k>1 split on a soma that evaluates threshold per ARRIVING EVENT
+    with a fixed-width membrane register.
+
+    MEASURED, not conjectured: k=1 is bit-exact at every soma point, and k>1 is
+    bit-exact both with an unbounded membrane and under per_cycle firing — but
+    under per_event WITH a register the NF adds the bias as ONE number while the
+    deployed twin delivers it as k separately-thresholded event contributions,
+    and NF<->SCM raster exactness (atol=0) breaks. The mismatch count is
+    invariant to the register's width and signedness, so this is the event-serial
+    discipline itself, not a rail magnitude. Refused HERE, before a training
+    budget is spent, rather than at the parity gate an hour later.
+    """
+    if not (soma_law.is_per_event and soma_law.saturates):
+        return
+    q_max = float(2 ** (int(bits) - 1) - 1)
+    transformer = PerceptronTransformer()
+    worst_rows, worst_name = 1, None
+    for perceptron in model_repr.get_perceptrons():
+        weight = transformer.get_effective_weight(perceptron)
+        bias = transformer.get_effective_bias(perceptron)
+        w_max = float(weight.abs().max()) if weight.numel() else 0.0
+        b_max = float(bias.abs().max()) if bias.numel() else 0.0
+        if w_max <= 0.0:
+            continue
+        weight_scale = max(1.0, math.floor(q_max / w_max))
+        rows = bias_row_bound(b_max, weight_scale, q_max)
+        if rows > worst_rows:
+            worst_rows, worst_name = rows, name_of(perceptron)
+    if worst_rows <= 1:
+        return
+    raise BiasRowSplitEventSerialError(
+        f"WeightQuantizationStep: bias_row_splitting is active and {worst_name!r} "
+        f"needs {worst_rows} always-on rows, but this soma is "
+        f"{soma_law.point_tag()!r} — per-event thresholding with a fixed-width "
+        f"membrane register. There the split is NOT a value-preserving "
+        f"re-encoding: the training twin adds the bias as one number while the "
+        f"chip delivers it as {worst_rows} separately-thresholded event "
+        f"contributions, and NF<->SCM raster exactness (atol=0) breaks. "
+        f"Measured: k=1 exact at every soma point; k>1 exact under per_cycle and "
+        f"with an unbounded membrane; k>1 refused only here. Either deploy this "
+        f"vehicle at firing_granularity='per_cycle' / membrane_bits=0, or bring "
+        f"a vehicle whose computed bound is 1 row (max|b| <= max|w| * q_max / "
+        f"s_w). Modelling the split in the event-serial twin is the open work."
+    )
 
 
 def refuse_bias_dominated_grid(model_repr, bits: int, *, weight_only_grid: bool) -> None:
@@ -127,6 +185,11 @@ class WeightQuantizationStep(TunerPipelineStep):
         refuse_bias_dominated_grid(
             model.get_mapper_repr(), int(bits), weight_only_grid=weight_only,
         )
+        if splitting.active:
+            refuse_split_under_event_serial_soma(
+                model.get_mapper_repr(), int(bits),
+                SomaLaw.resolve(self.pipeline.config),
+            )
         self.run_tuner(
             NormalizationAwarePerceptronQuantizationTuner,
             model,

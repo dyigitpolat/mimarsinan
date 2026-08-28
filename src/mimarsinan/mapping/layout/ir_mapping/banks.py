@@ -11,7 +11,7 @@ from mimarsinan.mapping.platform.mapping_structure import (
     MappingStrategy,
     compute_core_input_count,
 )
-from mimarsinan.mapping.support.bias_rows import resolve_param_encoded_bias_rows
+from mimarsinan.mapping.support.bias_rows import param_encoded_bias_rows
 
 
 class _LayoutIRMappingBanks:
@@ -28,7 +28,6 @@ class _LayoutIRMappingBanks:
         _layout_bank_bias_rows: Dict[int, int]
         _sc_idx_to_bank_id: Dict[int, int]
         hardware_bias: bool
-        bias_row_splitting: bool
         max_axons: Optional[int]
         max_neurons: Optional[int]
         allow_coalescing: bool
@@ -78,11 +77,9 @@ class _LayoutIRMappingBanks:
         Read from the installed grids, never plumbed: the shape-only walk, the
         weight-attaching mapper and the packed chip all recover the same k.
         """
-        if self.hardware_bias:
-            return 1
-        return resolve_param_encoded_bias_rows(
-            bias_scale, parameter_scale, name,
-            bias_row_splitting=self.bias_row_splitting,
+        return param_encoded_bias_rows(
+            bias_scale, parameter_scale,
+            hardware_bias=self.hardware_bias, name=name,
         )
 
     def add_shared_neural_core(

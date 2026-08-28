@@ -31,7 +31,6 @@ class IRMappingCore(LayoutIRMapping):
         max_neurons: int | None = None,
         allow_coalescing: bool = False,
         hardware_bias: bool = False,
-        bias_row_splitting: bool = False,
         onchip_residual_merge: bool = False,
     ):
         super().__init__(
@@ -39,7 +38,6 @@ class IRMappingCore(LayoutIRMapping):
             max_neurons=max_neurons,
             allow_coalescing=allow_coalescing,
             hardware_bias=hardware_bias,
-            bias_row_splitting=bias_row_splitting,
             onchip_residual_merge=onchip_residual_merge,
         )
 

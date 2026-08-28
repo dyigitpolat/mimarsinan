@@ -30,7 +30,6 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
     max_neurons: Optional[int]
     allow_coalescing: bool = False
     hardware_bias: bool = False
-    bias_row_splitting: bool = False
     onchip_residual_merge: bool = False
     # Wire-census collection MATERIALISES every deferred input view (the very
     # cost LayoutSourceView defers), so it is opt-in: only a walk whose caller
@@ -42,7 +41,6 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
         self.max_neurons = int(self.max_neurons) if self.max_neurons is not None else None
         self.allow_coalescing = bool(self.allow_coalescing)
         self.hardware_bias = bool(self.hardware_bias)
-        self.bias_row_splitting = bool(self.bias_row_splitting)
         self.onchip_residual_merge = bool(self.onchip_residual_merge)
 
         self._next_node_id = 0

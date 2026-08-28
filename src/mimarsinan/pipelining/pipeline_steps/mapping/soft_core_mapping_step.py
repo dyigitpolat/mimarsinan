@@ -220,7 +220,6 @@ class SoftCoreMappingStep(PipelineStep):
             max_neurons=resolved_max_neurons,
             allow_coalescing=resolved_allow_coalescing,
             hardware_bias=resolved_hardware_bias,
-            bias_row_splitting=plan.bias_row_splitting.active,
         )
         
         mapper_repr = model.get_mapper_repr()

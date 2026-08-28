@@ -99,22 +99,21 @@ class TestCoreMatrixAssembly:
 
 
 class TestIRMappingEmission:
-    def test_splitting_off_still_refuses_a_two_scale_bias(self):
+    def test_a_non_integer_bias_grid_refuses_loud(self):
+        """The integer-ratio snap is the invariant the mapper protects: a bias
+        grid that is not a whole number of weight-grid steps has no row count."""
         mapper = IRMapping(hardware_bias=False, max_axons=256, max_neurons=256)
-        with pytest.raises(ValueError, match="bias_row_splitting"):
-            _map_fc(mapper, bias_scale=torch.tensor(SCALE_W / 8))
+        with pytest.raises(ValueError, match="integer row count"):
+            _map_fc(mapper, bias_scale=torch.tensor(SCALE_W / 7.5))
 
-    def test_splitting_off_maps_the_shared_grid_byte_identically(self):
+    def test_a_shared_grid_maps_byte_identically(self):
         mapper = IRMapping(hardware_bias=False, max_axons=256, max_neurons=256)
         core = _map_fc(mapper, bias_scale=torch.tensor(SCALE_W))
         assert core.core_matrix.shape[0] == 5
         assert sum(s.is_always_on() for s in core.input_sources.flatten()) == 1
 
     def test_splitting_on_emits_k_rows_and_k_always_on_sources(self):
-        mapper = IRMapping(
-            hardware_bias=False, max_axons=256, max_neurons=256,
-            bias_row_splitting=True,
-        )
+        mapper = IRMapping(hardware_bias=False, max_axons=256, max_neurons=256)
         core = _map_fc(mapper, bias_scale=torch.tensor(SCALE_W / 8))
         assert core.core_matrix.shape[0] == 4 + 8
         assert sum(s.is_always_on() for s in core.input_sources.flatten()) == 8
@@ -124,20 +123,14 @@ class TestIRMappingEmission:
 
     def test_the_emitted_rows_sum_to_the_mapped_bias(self):
         b = torch.tensor([0.5, -0.25, 0.125])
-        mapper = IRMapping(
-            hardware_bias=False, max_axons=256, max_neurons=256,
-            bias_row_splitting=True,
-        )
+        mapper = IRMapping(hardware_bias=False, max_axons=256, max_neurons=256)
         core = _map_fc(mapper, bias_scale=torch.tensor(SCALE_W / 5), biases=b)
         np.testing.assert_allclose(
             core.core_matrix[4:, :].sum(axis=0), b.numpy(), atol=1e-12
         )
 
     def test_a_shared_weight_bank_splits_the_same_way(self):
-        mapper = IRMapping(
-            hardware_bias=False, max_axons=256, max_neurons=256,
-            bias_row_splitting=True,
-        )
+        mapper = IRMapping(hardware_bias=False, max_axons=256, max_neurons=256)
         bank_id = mapper.register_weight_bank(
             weights=torch.randn(3, 4) * 0.01,
             biases=torch.tensor([0.5, -0.25, 0.125]),
@@ -154,10 +147,7 @@ class TestIRMappingEmission:
         assert sum(s.is_always_on() for s in core.input_sources.flatten()) == 6
 
     def test_a_hardware_bias_platform_never_spends_a_row(self):
-        mapper = IRMapping(
-            hardware_bias=True, max_axons=256, max_neurons=256,
-            bias_row_splitting=True,
-        )
+        mapper = IRMapping(hardware_bias=True, max_axons=256, max_neurons=256)
         core = _map_fc(mapper, bias_scale=torch.tensor(SCALE_W / 8))
         assert core.hardware_bias is not None
         assert core.core_matrix.shape[0] == 4
@@ -184,7 +174,7 @@ class TestDeployedIntegerExactness:
 
         mapper = IRMapping(
             q_max=float(q_max), hardware_bias=False, max_axons=256,
-            max_neurons=256, bias_row_splitting=True,
+            max_neurons=256,
         )
         sources = mapper.map_fc(
             input_tensor_sources=np.array([_inp(i) for i in range(4)]),
