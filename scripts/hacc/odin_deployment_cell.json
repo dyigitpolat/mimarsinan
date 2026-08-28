@@ -1,7 +1,7 @@
 {
   "seed": 1,
   "pipeline_mode": "phased",
-  "experiment_name": "t0_55_lifse_simplemlp_wq_s4_nobias",
+  "experiment_name": "odin_narrowconv_lifs_wq_s4_nobias",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -25,15 +25,22 @@
     "weight_sign_granularity": "per_axon"
   },
   "deployment_parameters": {
-    "lr": 0.0003,
+    "lr": 0.003,
     "tuning_budget_scale": 0.25,
-    "degradation_tolerance": 0.4,
+    "degradation_tolerance": 0.15,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    "model_type": "simple_mlp",
+    "model_type": "narrow_conv",
     "model_config": {
-      "mlp_width_1": 120,
-      "mlp_width_2": 96
+      "stem_channels": 14,
+      "stem_kernel": 13,
+      "stem_stride": 10,
+      "body_blocks": 0,
+      "body_channels": 14,
+      "trunk_width": 120,
+      "trunk_blocks": 1,
+      "readout": "activated",
+      "base_activation": "ReLU"
     },
     "batch_size": 128,
     "max_simulation_samples": 25,
@@ -49,7 +56,7 @@
     "weight_quantization": true,
     "scale_migration": true,
     "endpoint_floor_steps": 17200,
-    "training_epochs": 2,
+    "training_epochs": 4,
     "training_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",
@@ -79,10 +86,11 @@
     "firing_granularity": "per_event",
     "enable_odin_hacc_export": true,
     "odin_hacc_bundle_samples": 300,
-    "odin_hacc_certification_samples": 50
+    "odin_hacc_certification_samples": 50,
+    "odin_hacc_bundle_name": "odin_narrowconv_mnist_wb4_s4"
   },
   "target_metric_override": null,
   "start_step": null,
   "stop_step": null,
-  "_note": "THE ODIN DEPLOYMENT CELL \u2014 the recipe for a bundle cut from a REAL trained network, and currently BLOCKED TWICE. It is the withdrawn tier row t0_55 (templates/generate.py, n=55) with degradation_tolerance widened 0.15 -> 0.40, because the stock core's 3-bit magnitude synapse cell costs this vehicle 0.9314 -> 0.6117 at Weight Quantization and that is a measured hardware price rather than a tuning miss; the wider tolerance hides nothing, since the deployed accuracy is exactly what the bundle would freeze and what a board would report. MEASURED 2026-08-28, run to Soft Core Mapping: WQ lands 0.6117 (-0.3197), Quantization Verification and Normalization Fusion hold it at 0.6156, and SOFT CORE MAPPING THEN REFUSES on the NF<->SCM parity gate \u2014 torch vs deployed-sim agreement 0.7969 against min_agreement 0.9 over 256 samples. That second failure is a deployment-fidelity finding on this point (wb=4 / per_axon / per_event / S=4), and the house rule is that NF<->SCM parity is FIXED, never budgeted, so nothing here widens it. Until both are closed this config produces no bundle, and dist/odin_hacc_deployment.zip is cut from the export step's own verified two-core witness instead."
+  "_note": "THE ODIN DEPLOYMENT CELL \u2014 the recipe for the FIRST bundle cut from a real trained network, and it is CONV-FIRST. MEASURED 2026-08-28, end to end, exit 0. WHY NOT THE OLD OCCUPANT: this file used to hold the withdrawn MLP tier row t0_55, blocked twice at the stock core (wb=4 per_axon took it 0.9314 -> 0.6117 at Weight Quantization, then NF<->SCM parity refused at 0.7969 against 0.9). WHY NOT LENET5: the stock crossbar is 256 PHYSICAL rows and the per-axon sign expansion spends two per logical slot, so a core holds 128 logical axons and 127 effective without a bias lane; lenet5's flatten->FC junction is ONE 785-axon soft core (1570 physical rows, 6.1x the crossbar) and, with no inter-core membrane partial-sum transfer to coalesce into, the mapper refuses it outright \u2014 measured, on the committed shapes, before any training. Its two MaxPool stages also split the program into TWO neural segments and a bundle freezes one. WHAT THE PER-EVENT LAW ADDS: export_odin deploys only firing_granularity=per_event, and the event-serial training twin folds a hop only when its effective weight spans its WHOLE input and its upstream is another hop \u2014 so a 3x3 conv over a 7x7 map is refused by the TWIN (not by ODIN: that core fits at 127 axons), and so is a Flatten between two hops. narrow_conv states both: a conv stem the subsume placement hands to the host, a collapse conv over the whole residual extent, pointwise trunk stages, a pointwise ACTIVATED readout so the class scores stay on a spiking core for the bundle's argmax rule. GEOMETRY (measured before training): 2 cores in ONE neural segment \u2014 core 0 at 127 logical axons / 254 physical rows / 120 neurons, core 1 at 121 / 242 / 10. THE LADDER: pretrain 0.9820, AQ 0.9812, LIF 0.8972, WQ at wb=4 0.8814 (the MLP lost 0.32 here; this vehicle loses 0.016), QV 0.8814, NF 0.8807, NF<->SCM parity 0.9883 over 256 samples, HCM 0.8830, nevresim probe 0.92 (25 samples, windows exact vs HCM), frozen bundle accuracy 0.873333 over 300 samples. TRUNK DEPTH IS A MEASURED CHOICE: trunk_blocks=2 was tried first and MBH-A6 read total_first_fire_delay=6.69 against a window of 4, with the LIF ladder stalling at 0.5174; trunk_blocks=1 reads 4.81 and the ladder closes at 0.8972. degradation_tolerance stays at the tier default 0.15 \u2014 nothing here is widened to admit a number."
 }

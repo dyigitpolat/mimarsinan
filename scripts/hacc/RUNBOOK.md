@@ -505,16 +505,31 @@ The bring-up package (`odin_hacc_package.zip`) carries the committed two-core
 witness bundle and phase 8 runs that. A DEPLOYMENT package
 (`odin_hacc_deployment.zip`) carries whatever bundle the export step produced,
 named by `deployment/DEPLOYMENT.json`; phase 8 reads that index. TODAY that
-bundle is `odin_hacc_micro` — the export step's own SYNTHETIC two-core
-witness, a transport proof, not a model result (its 1.000000 accuracy is over
-3 one-hot stimuli and must never be quoted as deployed accuracy). A TRAINED
-network's bundle lands here once the two measured blockers close: t0_54 is
-not ODIN-deployable by geometry (512-slot tables over a 256-row crossbar,
-|w|=15 against the 3-bit magnitude cell), and the ODIN-shaped platform-J
-sibling holds 0.93 until weight quantization at wb=4 collapses it to ~0.61,
-then trips NF-SCM parity 0.797 < 0.9 — recorded with measurements in
-`scripts/hacc/odin_deployment_cell.json`. Same
-bootstrap, same `run_all.sh`, and `ODIN_BUNDLE=<path>` overrides either.
+bundle is **`odin_narrowconv_mnist_wb4_s4`** — a REAL TRAINED NETWORK, exported
+2026-08-28 from `scripts/hacc/odin_deployment_cell.json`: a `narrow_conv` MNIST
+vehicle as **2 host-mediated NC=1 passes**, 300 shipped samples, 50 of them
+carrying frozen per-pass counts, **frozen accuracy 0.873333 (262/300)**. It
+replaces the synthetic `odin_hacc_micro` witness (a transport proof whose
+1.000000 over 3 one-hot stimuli must never be quoted as deployed accuracy);
+that witness still ships inside the bring-up package and phase 8 runs it there.
+Same bootstrap, same `run_all.sh`, and `ODIN_BUNDLE=<path>` overrides either.
+
+What the network had to be, and why nothing off the shelf was: the stock
+crossbar is 256 PHYSICAL rows and the per-axon sign expansion spends two per
+logical slot, so a core holds 128 logical axons, 127 effective with no bias
+lane. `lenet5`'s flatten→FC junction is one **785-axon** soft core — 1570
+physical rows, 6.1x the crossbar — which the mapper refuses outright with no
+inter-core membrane partial-sum transfer to coalesce into, and its two MaxPool
+stages split the program into TWO neural segments where a bundle freezes one.
+On top of the geometry, `export_odin` deploys only `firing_granularity=per_event`,
+and the event-serial training twin folds a hop only when its effective weight
+spans its WHOLE input and its upstream is another hop: a 3x3 conv over a 7x7
+map is refused by the TWIN (that core fits the crossbar fine at 127 axons), and
+so is a `Flatten` sitting between two hops. `narrow_conv` states both
+conditions in the architecture. The measured ladder — pretrain 0.9820, LIF
+0.8972, wb=4 weight quantization **0.8814** (the platform-J MLP lost 0.32
+here; this vehicle loses 0.016), NF↔SCM parity **0.9883** over 256 samples,
+HCM 0.8830 — is recorded in the cell's own `_note`.
 
 That bundle is produced by the pipeline itself, not by hand. The step is
 `"HACC NUS - ODIN Deployment"`; a tier cell (or any deployment document) turns
