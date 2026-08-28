@@ -36,9 +36,26 @@
 // `payload_bytes(program.ops + stimulus.ops)` would have produced.
 // `kernel_registers.stimulus_base_word` is the host-side copy of that rule.
 //
+// SPI IS STILL THE PROGRAMMING WALL. One transaction is ~40 SCK, so the read
+// engine keeps ahead of the sequencer with orders of magnitude to spare and the
+// FIFO never has to be deep. What the four-word-per-transaction token encoding
+// costs is therefore no longer fabric storage but PCIe BYTES -- a host-link
+// number the deployment record already measures as programming_s over payload
+// bytes. Encoding density is a follow-up for that link, not for this file.
+//
 // SCOPE: this engine is proven against a behavioural AXI4 memory model in
 // simulation (`hw/tb/tb_odin_fpga_kernel_axi.v`), including seeded adversarial
 // starvation of the read data channel; silicon is P7b/B0.
+//
+// NAMED FOLLOW-UP -- STREAMING THE CAPTURE. Only the op stream is streamed. The
+// capture is still a fabric RAM the drain walks after ap_done, so CAP_WORDS is
+// still a compile-time ceiling and `decode_capture` still refuses a run that
+// reached it. Turning that path around -- AER-out records pushed onto an
+// outbound FIFO and burst-written while the run continues -- would retire the
+// last fabric-side capacity in this kernel, and it is deliberately not in this
+// change: the capture is on the CORE's clock and an outbound backpressure path
+// touches the ACK the capture engine holds off with, which is the one signal
+// this design must not get wrong.
 
 `timescale 1ns/1ps
 
