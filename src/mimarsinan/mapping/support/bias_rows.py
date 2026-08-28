@@ -41,12 +41,17 @@ class BiasRowSplitting:
         return None
 
 
-def bias_row_demand(b_max: Any, weight_scale: Any, q_max: float) -> Any:
-    """Registers of bias demand, less the lattice tolerance — THE k formula's
-    body, generic over python floats and torch tensors so the QAT projection
-    evaluates it without a host sync.
+def bias_row_demand(b_max: Any, weight_scale: Any, q_max: float, tol: float = 0.0) -> Any:
+    """Registers of bias demand — THE k formula's body, generic over python
+    floats and torch tensors so the QAT projection evaluates it without a host
+    sync.
+
+    ``tol`` is subtracted before the caller's ceiling. The PROJECTION passes 0:
+    it has installed this ratio since before bias-row splitting existed and its
+    grid must stay bit-identical. A planning read passes the lattice tolerance,
+    where a float hair over an integer must not buy a whole row.
     """
-    return b_max * weight_scale / float(q_max) - _RATIO_TOL
+    return b_max * weight_scale / float(q_max) - tol
 
 
 def bias_row_bound(b_max: float, weight_scale: float, q_max: float) -> int:
@@ -60,7 +65,8 @@ def bias_row_bound(b_max: float, weight_scale: float, q_max: float) -> int:
         raise ValueError(f"q_max must be positive, got {q_max}")
     if weight_scale <= 0.0:
         raise ValueError(f"weight_scale must be positive, got {weight_scale}")
-    return max(1, int(math.ceil(bias_row_demand(float(b_max), float(weight_scale), q_max))))
+    demand = bias_row_demand(float(b_max), float(weight_scale), q_max, _RATIO_TOL)
+    return max(1, int(math.ceil(demand)))
 
 
 def _as_float(value: Any) -> float:

@@ -94,6 +94,9 @@ class NormalizationAwarePerceptronQuantization:
         # a module-scope import a cycle).
         from mimarsinan.mapping.support.bias_rows import bias_row_demand
 
+        # tol=0: this ratio predates bias-row splitting and its grid stays
+        # bit-identical (a tolerance here moved a t0_29 lineage read 0.9919 ->
+        # 0.9912 before it was caught).
         ratio = torch.clamp(
             torch.ceil(bias_row_demand(b_max, weight_scale, self.q_max)), min=1.0,
         )
