@@ -41,6 +41,14 @@ class BiasRowSplitting:
         return None
 
 
+def bias_row_demand(b_max: Any, weight_scale: Any, q_max: float) -> Any:
+    """Registers of bias demand, less the lattice tolerance — THE k formula's
+    body, generic over python floats and torch tensors so the QAT projection
+    evaluates it without a host sync.
+    """
+    return b_max * weight_scale / float(q_max) - _RATIO_TOL
+
+
 def bias_row_bound(b_max: float, weight_scale: float, q_max: float) -> int:
     """THE definitive computed bound: ``k = ceil(max_j |b_j| * s_w / q_max)``.
 
@@ -52,8 +60,7 @@ def bias_row_bound(b_max: float, weight_scale: float, q_max: float) -> int:
         raise ValueError(f"q_max must be positive, got {q_max}")
     if weight_scale <= 0.0:
         raise ValueError(f"weight_scale must be positive, got {weight_scale}")
-    demand = float(b_max) * float(weight_scale) / float(q_max)
-    return max(1, int(math.ceil(demand - _RATIO_TOL)))
+    return max(1, int(math.ceil(bias_row_demand(float(b_max), float(weight_scale), q_max))))
 
 
 def _as_float(value: Any) -> float:

@@ -21,13 +21,17 @@ class NormalizationAwarePerceptronQuantization:
     the torch<->chip parity contract (``wq_cascade_crater_repair.md`` §4.3/§5).
     """
 
-    def __init__(self, bits, device, rate=1.0, two_scale=False):
+    def __init__(self, bits, device, rate=1.0, two_scale=False, bias_rows_floor=None):
         self.device = device
         self.bits = bits
         self.q_min = -( 2 ** (bits - 1) )
         self.q_max = ( 2 ** (bits - 1) ) - 1
         self.rate = rate
         self.two_scale = bool(two_scale)
+        # Bias-row splitting's declared k: a FLOOR under the computed bound,
+        # never a cap — a bias the declared k outgrows buys rows rather than
+        # saturating at the register edge.
+        self.bias_rows_floor = None if bias_rows_floor is None else int(bias_rows_floor)
 
     def transform(self, perceptron):
         transformer = PerceptronTransformer()
@@ -84,8 +88,17 @@ class NormalizationAwarePerceptronQuantization:
         )
         # Integer-ratio snap: a bias grid of r whole weight-grid steps keeps
         # `bias * weight_scale = r * bias_int` exactly integer, which is the
-        # lattice the chip export emits and the NF<->SCM parity consumes.
-        ratio = torch.clamp(torch.ceil(b_max * weight_scale / self.q_max), min=1.0)
+        # lattice the chip export emits and the NF<->SCM parity consumes. r IS
+        # the bias-row count a param-encoded platform maps, so the formula
+        # lives in the bias-row SSOT (mapping's import of transformations makes
+        # a module-scope import a cycle).
+        from mimarsinan.mapping.support.bias_rows import bias_row_demand
+
+        ratio = torch.clamp(
+            torch.ceil(bias_row_demand(b_max, weight_scale, self.q_max)), min=1.0,
+        )
+        if self.bias_rows_floor is not None:
+            ratio = torch.clamp(ratio, min=float(self.bias_rows_floor))
         bias_scale = weight_scale / ratio
 
         perceptron.set_parameter_scale(weight_scale)

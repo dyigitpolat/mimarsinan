@@ -13,6 +13,7 @@ from mimarsinan.tuning.orchestration.ttfs_exact_qat import model_trained_ttfsq_e
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     resolve_wq_two_scale_projection as resolve_wq_two_scale_projection,
+    resolve_wq_weight_only_grid,
 )
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
@@ -62,22 +63,36 @@ class WeightQuantizationStep(TunerPipelineStep):
                 )
         bits = self.pipeline.config["weight_bits"]
         print(f"Quantizing to {bits} bits")
-        two_scale = resolve_wq_two_scale_projection(self.pipeline.config)
-        if bool(self.pipeline.config.get("wq_two_scale_projection", False)) and not two_scale:
+        splitting = DeploymentPlan.of(self.pipeline).bias_row_splitting
+        weight_only = resolve_wq_weight_only_grid(self.pipeline.config)
+        if bool(self.pipeline.config.get("wq_two_scale_projection", False)) and not weight_only:
             print(
                 "[WeightQuantizationStep] wq_two_scale_projection requested but "
                 "the platform has no on-chip bias register (param-encoded bias "
-                "rows share the weight grid); using the shared-grid projection."
+                "rows share the weight grid); using the shared-grid projection. "
+                "bias_row_splitting buys the weight-only grid on this platform."
             )
-        if two_scale:
-            print("[WeightQuantizationStep] two-scale projection: weight grid "
-                  "from max|w| alone; bias on its own grid (integer-ratio-snapped).")
+        if splitting.mode != "off" and not splitting.active:
+            print(
+                f"[WeightQuantizationStep] bias_row_splitting={splitting.mode!r} "
+                "is inert: every declared core carries an on-chip bias register, "
+                "so no always-on row exists to split."
+            )
+        if weight_only:
+            delivery = (
+                f"bias split across always-on rows"
+                f"{'' if splitting.rows_override is None else f' (floor {splitting.rows_override})'}"
+                if splitting.active else "bias on its own on-chip grid"
+            )
+            print(f"[WeightQuantizationStep] weight-only grid from max|w| alone; "
+                  f"{delivery} (integer-ratio-snapped).")
         self.run_tuner(
             NormalizationAwarePerceptronQuantizationTuner,
             model,
             adaptation_manager,
             quantization_bits=bits,
-            two_scale_projection=two_scale,
+            two_scale_projection=weight_only,
+            bias_rows_floor=splitting.rows_override,
         )
 
     def _freeze_exact_qat_theta(self, model) -> None:
