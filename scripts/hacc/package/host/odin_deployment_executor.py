@@ -472,7 +472,8 @@ def write_tsv(path: str, campaign: Campaign) -> int:
 
 def report(campaign: Campaign, *, document: Dict[str, Any], options: Any,
            readout_rows: Sequence[Dict[str, Any]], accuracy: float,
-           wall_s: float, tsv_rows: int) -> Dict[str, Any]:
+           wall_s: float, tsv_rows: int,
+           device: Dict[str, Any]) -> Dict[str, Any]:
     failed = [row for row in campaign.certificates if not row["passed"]]
     drifted = [row for row in readout_rows if not row["matches_frozen"]]
     return {
@@ -485,7 +486,7 @@ def report(campaign: Campaign, *, document: Dict[str, Any], options: Any,
             "cycles_per_sample": document["cycles_per_sample"],
         },
         "host": driver.host_stamp(),
-        "device": campaign.session.device_stamp(),
+        "device": device,
         "campaign": {
             "samples_run": campaign.samples,
             "samples_shipped": len(document["samples"]),
@@ -531,6 +532,10 @@ def mode_deploy(options: Any) -> int:
         campaign = Campaign(document, session, samples=samples)
         campaign.run()
         readout_rows, accuracy = campaign.readout()
+        # Stamp the device while the session is still open: close() clears the
+        # kernel/bank/capacity views, and a report stamped afterwards would
+        # ship empty provenance for exactly the fields board triage reads.
+        device_stamp = session.device_stamp()
     finally:
         session.close()
     wall_s = time.perf_counter() - started
@@ -539,7 +544,7 @@ def mode_deploy(options: Any) -> int:
     payload = report(
         campaign, document=document, options=options,
         readout_rows=readout_rows, accuracy=accuracy, wall_s=wall_s,
-        tsv_rows=tsv_rows)
+        tsv_rows=tsv_rows, device=device_stamp)
     path = driver.write_result(options.results, REPORT_NAME, payload)
     walls = payload["walls"]["per_stage"]
     print(f"[deploy] ACCURACY : {accuracy:.6f} "

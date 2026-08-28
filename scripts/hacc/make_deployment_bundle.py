@@ -219,9 +219,19 @@ def main(argv=None) -> int:
             print(f"REFUSING: {target} does not exist", file=sys.stderr)
             return 2
         committed = target.read_text(encoding="utf-8")
+
         # The provenance carries the generating commit and the worktree's dirty
-        # flag, which move on every commit; the EVIDENCE is everything else.
-        if json.loads(committed).get("cores") != document["cores"]:
+        # flag, which move on every commit, and the self-hash moves with them;
+        # the EVIDENCE is everything else — programs, stimuli, routing, and
+        # above all the frozen expectations certificates are scored against.
+        def evidence(doc: dict) -> dict:
+            body = json.loads(json.dumps(doc))
+            body.pop("self_hash", None)
+            for volatile in ("generating_commit", "worktree_dirty"):
+                body.get("provenance", {}).pop(volatile, None)
+            return body
+
+        if evidence(json.loads(committed)) != evidence(document):
             print(f"REFUSING: {target} no longer matches a fresh build",
                   file=sys.stderr)
             return 1

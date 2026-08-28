@@ -503,8 +503,17 @@ re-measures every count.
 
 The bring-up package (`odin_hacc_package.zip`) carries the committed two-core
 witness bundle and phase 8 runs that. A DEPLOYMENT package
-(`odin_hacc_deployment.zip`) carries a bundle exported from a TRAINED network,
-plus `deployment/DEPLOYMENT.json` naming it; phase 8 reads that index. Same
+(`odin_hacc_deployment.zip`) carries whatever bundle the export step produced,
+named by `deployment/DEPLOYMENT.json`; phase 8 reads that index. TODAY that
+bundle is `odin_hacc_micro` — the export step's own SYNTHETIC two-core
+witness, a transport proof, not a model result (its 1.000000 accuracy is over
+3 one-hot stimuli and must never be quoted as deployed accuracy). A TRAINED
+network's bundle lands here once the two measured blockers close: t0_54 is
+not ODIN-deployable by geometry (512-slot tables over a 256-row crossbar,
+|w|=15 against the 3-bit magnitude cell), and the ODIN-shaped platform-J
+sibling holds 0.93 until weight quantization at wb=4 collapses it to ~0.61,
+then trips NF-SCM parity 0.797 < 0.9 — recorded with measurements in
+`scripts/hacc/odin_deployment_cell.json`. Same
 bootstrap, same `run_all.sh`, and `ODIN_BUNDLE=<path>` overrides either.
 
 That bundle is produced by the pipeline itself, not by hand. The step is

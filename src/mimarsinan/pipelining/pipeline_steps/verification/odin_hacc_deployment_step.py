@@ -217,7 +217,6 @@ class OdinHaccDeploymentStep(PipelineStep):
             "classes": int(config.get("num_classes", 0)),
             "timesteps": int(config["simulation_steps"]),
             "samples": int(samples),
-            "synthetic": False,
             "cores_declared": platform["cores"],
             "spiking_mode": str(plan.spiking_mode),
         }
