@@ -4,13 +4,17 @@ The shipped NC=1 bitstream holds ONE ODIN core, so a multi-core network runs as
 one host-mediated PASS per core: program the core, run the sample, read the
 counts back, transcode them into the next core's axon slots, run again.
 
-FOUR GOLDEN GATES, and no bundle is written unless all four hold:
+THREE GOLDEN GATES, and no bundle is written unless all three hold:
   1. the witness's counts reproduce the cycle-accurate twin's at EVERY cycle of
      every sample — the frozen expectations are MEASURED, not asserted;
   2. every stimulus the shipped bundle reader builds is byte-identical to the
      one the repository's own encoder builds, per core and per sample;
-  3. the capture of one pass fits the shipped fabric's capture RAM;
-  4. the program plus its stimulus fits an NC=1 kernel's program RAM.
+  3. the capture of one pass fits the shipped fabric's capture RAM.
+
+There was a fourth: the program plus its stimulus had to fit an NC=1 kernel's
+program RAM. That RAM is gone — the op stream is streamed live from the host and
+never stored on the fabric — so no bundle can be too long to deliver, and a gate
+for it would gate nothing.
 """
 
 from __future__ import annotations

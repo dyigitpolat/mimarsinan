@@ -296,6 +296,46 @@ class TestEveryTypedRefusalHasADeviceWayToHappen:
         session.run_fixture(fixture)
         assert any(entry[0] == "start" for entry in fake.call_log())
 
+    def test_a_words_argument_past_its_buffer_refuses_before_the_kernel_starts(
+        self, driver, fake, tmp_path,
+    ):
+        """What "too long" MEANS now: the words argument, not a fabric depth.
+
+        The fabric reads exactly the declared words out of the buffer object
+        while the sequencer runs, so a count past the end of that buffer would
+        stream host memory nobody wrote into the sequencer.
+        """
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault="short_buffer")
+        session = _session(driver)
+        with pytest.raises(
+            driver.OdinFpgaWordsExceedBuffer, match="past the end of the buffer",
+        ):
+            session.run_fixture(fixture)
+        assert not any(entry[0] == "start" for entry in fake.call_log()), (
+            "the refusal must land BEFORE the kernel is started, or the fabric "
+            "would already be reading past the buffer")
+
+    def test_the_guard_names_the_argument_and_both_lengths(self, driver):
+        class _Bo:
+            def size(self) -> int:
+                return 16
+
+        with pytest.raises(driver.OdinFpgaWordsExceedBuffer) as exc:
+            driver.require_words_fit_buffer(
+                _Bo(), 5, what="program_words", transport="unit")
+        assert "program_words" in str(exc.value)
+        assert "5 word(s) = 20 bytes" in str(exc.value)
+        assert "holds 16" in str(exc.value)
+
+    def test_a_words_argument_exactly_filling_its_buffer_is_allowed(self, driver):
+        class _Bo:
+            def size(self) -> int:
+                return 16
+
+        driver.require_words_fit_buffer(
+            _Bo(), 4, what="program_words", transport="unit")
+
     def test_a_kernel_that_wrote_no_verdict_refuses_as_a_kernel_error(
         self, driver, fake, tmp_path,
     ):
@@ -344,6 +384,57 @@ class TestEveryTypedRefusalHasADeviceWayToHappen:
         session = _session(driver, cores=1)
         with pytest.raises(driver.OdinFixtureNeedsMoreCores, match="NC 1"):
             session.run_fixture(fixture)
+
+
+class TestProgrammingIsMeasuredNotBudgeted:
+    """The fabric stores no op stream, so the host link's cost is the number."""
+
+    def test_a_run_reports_the_stream_it_pushed_and_what_it_cost(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
+        walls = session.run_fixture(fixture)["walls"]
+        program = driver.decode_payload(fixture["program"], what="program")
+        assert walls["program_stream_bytes"] == len(program)
+        assert walls["program_stream_seconds"] > 0.0
+        assert walls["programming_bytes_per_second"] == pytest.approx(
+            walls["program_stream_bytes"] / walls["program_stream_seconds"])
+
+    def test_the_segment_boundary_is_named_and_is_the_programming_wall(
+        self, driver, fake, tmp_path,
+    ):
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
+        walls = session.run_fixture(fixture)["walls"]
+        assert walls["segment_boundary_init_s"] == walls["programming_s"]
+        # The boundary pays for the allocation too, so it can only be the longer
+        # of the two: a bandwidth taken over it would understate the link.
+        assert walls["segment_boundary_init_s"] >= walls["program_stream_seconds"]
+        assert walls["programming_s"] not in (walls["execution_s"],)
+
+    def test_the_rate_is_none_rather_than_zero_when_no_time_passed(self, driver):
+        metrics = driver.stream_metrics(4096, 0.0)
+        assert metrics["program_stream_bytes"] == 4096
+        assert metrics["programming_bytes_per_second"] is None
+        assert "unmeasurably fast" in driver.stream_line(metrics)
+
+    def test_the_line_names_that_the_fabric_keeps_none_of_it(self, driver):
+        line = driver.stream_line(driver.stream_metrics(1_000_000, 0.5))
+        assert "1000000 bytes" in line and "2.0 MB/s" in line
+        assert "the fabric stores none of it" in line
+
+    def test_the_fake_link_is_slow_enough_to_be_a_plausible_bandwidth(
+        self, driver, fake, tmp_path,
+    ):
+        """A memcpy is not a PCIe DMA; the fake models one so the metric means something."""
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
+        walls = session.run_fixture(fixture)["walls"]
+        assert walls["programming_bytes_per_second"] < 5 * fake.LINK_BYTES_PER_SECOND
 
 
 class TestTheHeaderLayoutIsTheRtlsOwn:

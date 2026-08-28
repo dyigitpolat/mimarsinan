@@ -157,6 +157,52 @@ class TestEveryDistinctStageIsTimed:
                    and "program_sync_s" in row
                    for row in report["per_core"])
 
+
+class TestTheProgrammingStreamIsADeploymentMetric:
+    """The fabric holds no op stream, so feeding it is a MEASURED host cost."""
+
+    STREAM = ("program_stream_bytes", "program_stream_seconds",
+              "programming_bytes_per_second")
+
+    def test_every_segment_boundary_reports_its_stream_and_its_init_wall(
+            self, clean_run):
+        _completed, report = clean_run
+        for row in report["per_core"]:
+            for field in self.STREAM:
+                assert field in row, field
+            assert row["program_stream_bytes"] == row["program_bytes"]
+            assert row["program_stream_seconds"] > 0.0
+            assert row["programming_bytes_per_second"] == pytest.approx(
+                row["program_stream_bytes"] / row["program_stream_seconds"])
+            # The boundary is the stream PLUS the buffer setup for that core.
+            assert (row["segment_boundary_init_s"] == row["core_program_s"]
+                    >= row["program_stream_seconds"])
+
+    def test_the_campaign_sums_the_boundaries_into_one_bandwidth(self, clean_run):
+        _completed, report = clean_run
+        summary = report["programming"]
+        assert summary["segment_boundaries"] == len(report["per_core"])
+        assert summary["program_stream_bytes"] == sum(
+            row["program_stream_bytes"] for row in report["per_core"])
+        assert summary["program_stream_seconds"] == pytest.approx(sum(
+            row["program_stream_seconds"] for row in report["per_core"]))
+        assert summary["programming_bytes_per_second"] == pytest.approx(
+            summary["program_stream_bytes"] / summary["program_stream_seconds"])
+
+    def test_the_boundary_wall_carries_percentiles_like_every_other_stage(
+            self, clean_run):
+        _completed, report = clean_run
+        stage = report["walls"]["segment_boundary_init_s"]
+        assert set(stage) == {"p50", "p90", "p99", "min", "max", "mean", "total"}
+        assert stage["total"] == pytest.approx(sum(
+            row["segment_boundary_init_s"] for row in report["per_core"]))
+
+    def test_the_transcript_says_what_the_stream_cost(self, clean_run):
+        completed, _report = clean_run
+        assert "segment boundary init" in completed.stdout
+        assert "programming stream" in completed.stdout
+        assert "the fabric stores none of it" in completed.stdout
+
     def test_a_pass_total_is_at_least_the_stages_it_contains(self, clean_run,
                                                              staged):
         _completed, _report = clean_run

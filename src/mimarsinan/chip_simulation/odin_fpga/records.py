@@ -10,6 +10,30 @@ from mimarsinan.chip_simulation.recording.records import RunRecord
 #: The backend name every registry, capability table and certificate uses.
 BACKEND_NAME = "odin_fpga"
 
+#: The three names one programming stream is reported under, everywhere.
+#: CROSS-LANGUAGE CONTRACT with the shipped standalone driver
+#: (``scripts/hacc/package/host/odin_board_driver.py::stream_metrics``), which
+#: cannot import this module and mirrors it instead.
+STREAM_BYTES = "program_stream_bytes"
+STREAM_SECONDS = "program_stream_seconds"
+STREAM_RATE = "programming_bytes_per_second"
+
+
+def stream_metrics(nbytes: int, seconds: float) -> Dict[str, Any]:
+    """One programming stream as a measurement: bytes, seconds, and the rate.
+
+    The fabric stores no copy of the op stream — it consumes it live out of host
+    memory — so programming is a HOST-LINK bandwidth to be measured rather than
+    a fabric budget. The rate is ``None`` when the wall did not advance: a clock
+    too coarse to time the transfer must not be published as a zero bandwidth.
+    """
+    seconds = float(seconds)
+    return {
+        STREAM_BYTES: int(nbytes),
+        STREAM_SECONDS: seconds,
+        STREAM_RATE: (float(nbytes) / seconds) if seconds > 0.0 else None,
+    }
+
 
 @dataclass(frozen=True)
 class OdinSegmentTiming:
@@ -70,14 +94,18 @@ class OdinFpgaRunRecord:
         return self.record
 
 
-def aggregate_walls(records: List[OdinFpgaRunRecord]) -> Dict[str, float]:
-    """Run-level measured walls: programming, execution, and their sum."""
+def aggregate_walls(records: List[OdinFpgaRunRecord]) -> Dict[str, Any]:
+    """Run-level measured walls: programming, execution, their sum, the rate."""
     programming = sum(r.program_wall_s for r in records)
     execution = sum(r.run_wall_s for r in records)
-    return {
+    stream_bytes = sum(
+        int(t.program_bytes) for r in records for t in r.timings)
+    walls: Dict[str, Any] = {
         "programming_s": programming,
         "execution_s": execution,
         "total_s": programming + execution,
         "device_cycles": float(sum(r.device_cycles for r in records)),
         "samples": float(len(records)),
     }
+    walls.update(stream_metrics(stream_bytes, programming))
+    return walls

@@ -139,6 +139,10 @@ class OdinFixtureCorrupt(OdinDriverError):
     """A fixture's self-hash or payload hash does not match its bytes."""
 
 
+class OdinFpgaWordsExceedBuffer(OdinDriverError):
+    """A word-count argument declares more words than its buffer object holds."""
+
+
 #: The device-protocol table every fixture carries and this driver checks.
 KERNEL_TABLE: Dict[str, int | str] = {
     "name": KERNEL_NAME,
@@ -306,6 +310,63 @@ def no_verdict_header() -> bytes:
 def stimulus_base_word(program_words: int) -> int:
     """The stimulus OVERWRITES the programming payload's END terminator."""
     return max(0, int(program_words) - 1)
+
+
+#: The three metric names every programming stream is reported under. The fabric
+#: holds NO copy of the op stream — it consumes it live out of host memory
+#: through a shallow FIFO — so what used to be a fabric storage budget is now a
+#: HOST-LINK BANDWIDTH, and the bandwidth is the deployment number.
+STREAM_BYTES = "program_stream_bytes"
+STREAM_SECONDS = "program_stream_seconds"
+STREAM_RATE = "programming_bytes_per_second"
+
+
+def stream_metrics(nbytes: int, seconds: float) -> Dict[str, Any]:
+    """One programming stream as a measurement: bytes, seconds, and the rate.
+
+    ONE implementation, because both the fixture path and the deployment's
+    per-core segment boundary report the same three numbers. The rate is
+    ``None`` when the wall did not advance at all — a clock too coarse to time
+    the transfer must not be published as a bandwidth of zero.
+    """
+    seconds = float(seconds)
+    return {
+        STREAM_BYTES: int(nbytes),
+        STREAM_SECONDS: seconds,
+        STREAM_RATE: (float(nbytes) / seconds) if seconds > 0.0 else None,
+    }
+
+
+def stream_line(metrics: Dict[str, Any]) -> str:
+    """One human line for a programming stream — the same wording everywhere."""
+    rate = metrics.get(STREAM_RATE)
+    speed = "unmeasurably fast" if rate is None else f"{rate / 1e6:.1f} MB/s"
+    return (
+        f"programming stream {int(metrics[STREAM_BYTES])} bytes in "
+        f"{float(metrics[STREAM_SECONDS]) * 1e3:.3f} ms = {speed} "
+        f"(the fabric stores none of it)")
+
+
+def require_words_fit_buffer(handle: Any, words: int, *, what: str,
+                             transport: str) -> None:
+    """A word count the fabric will stream must be inside its buffer object.
+
+    The word-count arguments are now the ONLY bound on a run's length, so a
+    count past the end of the buffer object it names is the one length fault
+    that remains: the read engine would stream host memory this deployment
+    never wrote into the sequencer.
+    """
+    have = int(handle.size())
+    need = int(words) * WORD_BYTES
+    if need > have:
+        raise OdinFpgaWordsExceedBuffer(
+            f"{transport}: the {what} argument declares {int(words)} word(s) = "
+            f"{need} bytes, but the buffer object it names holds {have}. The "
+            f"fabric stores no copy of the op stream — it reads exactly the "
+            f"declared words out of this buffer while the sequencer runs — so "
+            f"the read engine would stream past the end of the buffer and "
+            f"execute whatever host memory follows it. The words argument is "
+            f"the only bound on a run's length and it must be the payload's own")
 
 
 def require_kernel_verdict(words: Sequence[int], *, transport: str) -> None:
@@ -694,6 +755,16 @@ class BoardSession:
                        capture_events: int) -> float:
         """The six arguments in, ap_done out — the measured DEVICE wall."""
         xrt = self._require_session("a device run")
+        require_words_fit_buffer(
+            program_bo, program_words, what="program_words",
+            transport=self.name)
+        require_words_fit_buffer(
+            stimulus_bo, stimulus_words, what="stimulus_words",
+            transport=self.name)
+        require_words_fit_buffer(
+            capture_bo,
+            CAPTURE_HEADER_WORDS + CAPTURE_RECORD_WORDS * int(capture_events),
+            what="capture_events", transport=self.name)
         started = time.perf_counter()
         handle = self._kernel(
             program_bo, stimulus_bo, capture_bo,
@@ -722,11 +793,13 @@ class BoardSession:
                        "readback_s": time.perf_counter() - synced}
 
     def _execute(self, program: bytes, stimulus: bytes,
-                 capture_events: int) -> Tuple[List[int], Dict[str, float]]:
+                 capture_events: int) -> Tuple[List[int], Dict[str, Any]]:
         """Program in, stimulus in, kernel run, capture out — the whole protocol.
 
         Nothing here reads a register: the run's verdict is the capture header,
-        and whether the fabric wrote one at all.
+        and whether the fabric wrote one at all. The programming phase is
+        MEASURED rather than budgeted — its wall, its bytes and the bandwidth
+        they imply are what a streamed chip costs at a segment boundary.
         """
         self._require_session("a device run")
         program_words = len(program) // WORD_BYTES
@@ -734,7 +807,7 @@ class BoardSession:
 
         started = time.monotonic()
         program_bo = self.allocate(len(program), ARG_PROGRAM)
-        self.dma_in(program_bo, program)
+        stream = self.dma_in(program_bo, program)
         programming_s = time.monotonic() - started
 
         started = time.monotonic()
@@ -747,8 +820,19 @@ class BoardSession:
             stimulus_words=stimulus_words, capture_events=capture_events)
         words, _walls = self.read_capture(capture_bo, capture_bytes)
         execution_s = time.monotonic() - started
-        return words, {"programming_s": programming_s,
-                       "execution_s": execution_s}
+        walls: Dict[str, Any] = {
+            "programming_s": programming_s,
+            "execution_s": execution_s,
+            # The same wall, named for what it IS at a segment boundary: the
+            # buffer setup plus the programming stream this core needs before
+            # any sample of it can run.
+            "segment_boundary_init_s": programming_s,
+        }
+        # The BANDWIDTH is taken over the stream's own wall — the buffer write
+        # and the DMA — and not over the allocation the boundary also pays for.
+        walls.update(stream_metrics(
+            len(program), stream["bo_write_s"] + stream["sync_s"]))
+        return words, walls
 
     def device_stamp(self) -> Dict[str, Any]:
         """Everything this session knows about what it is talking to."""
@@ -963,6 +1047,7 @@ def mode_run(options, capacity: KernelCapacity | None = None) -> int:
                   f"device_cycles={result['device_cycles']} "
                   f"programming={result['walls']['programming_s']:.3f}s "
                   f"execution={result['walls']['execution_s']:.3f}s")
+            print(f"[b1] {name}: {stream_line(result['walls'])}")
             write_result(options.results, f"fixture_{name}.json", result)
             rows.append(result)
     finally:
@@ -1082,6 +1167,10 @@ _REFUSAL_CASES = (
                     provenance="selftest: a package declaring no storage")),
     ("kernel_err", OdinFpgaKernelError, "NO-VERDICT sentinel", None),
     ("truncated_capture", OdinFpgaCaptureTruncated, "silent neurons", None),
+    # The streaming-era length fault: the word count IS the bound, so a count
+    # past the end of the buffer it names is what "too long" now means.
+    ("short_buffer", OdinFpgaWordsExceedBuffer, "past the end of the buffer",
+     None),
 )
 
 

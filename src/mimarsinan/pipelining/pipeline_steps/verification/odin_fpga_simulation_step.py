@@ -10,6 +10,7 @@ from mimarsinan.chip_simulation.odin_fpga.records import (
     BACKEND_NAME,
     OdinFpgaRunRecord,
     aggregate_walls,
+    stream_metrics,
 )
 from mimarsinan.chip_simulation.odin_fpga.runner import OdinFpgaRunner
 from mimarsinan.data_handling.sample_loader import load_test_samples_by_index
@@ -143,6 +144,12 @@ class OdinFpgaDeploymentStep(PipelineStep):
             f"{report['transport']!r}, programming {walls['programming_s']:.3f} s, "
             f"execution {walls['execution_s']:.3f} s, "
             f"{int(walls['device_cycles'])} device cycles")
+        rate = walls["programming_bytes_per_second"]
+        print(
+            f"ODIN FPGA programming stream: {walls['program_stream_bytes']} "
+            f"bytes in {walls['program_stream_seconds']:.3f} s = "
+            f"{'unmeasurably fast' if rate is None else f'{rate / 1e6:.1f} MB/s'}"
+            f" (the fabric stores none of it)")
 
     def _accuracy_fragment(self, samples: int) -> Dict[str, Any]:
         """The MEASURED accuracy read this backend contributes to the record."""
@@ -159,7 +166,7 @@ def _timing_fragment(deployed: List[OdinFpgaRunRecord], walls: Dict[str, float]
     per_segment: List[Dict[str, Any]] = []
     for run in deployed:
         for timing in run.timings:
-            per_segment.append({
+            row = {
                 "stage_index": timing.stage_index,
                 "sample_index": run.sample_index,
                 "cores": timing.cores,
@@ -168,8 +175,15 @@ def _timing_fragment(deployed: List[OdinFpgaRunRecord], walls: Dict[str, float]
                 "programming_basis": timing.program_basis,
                 "execution_s": timing.run_wall_s,
                 "device_cycles": timing.device_cycles,
-            })
-    return {
+                # A segment boundary IS a reprogram: the stream for this
+                # segment's cores has to cross the host link before any sample
+                # of it can run, and the fabric keeps none of it afterwards.
+                "segment_boundary_init_s": timing.program_wall_s,
+            }
+            row.update(stream_metrics(
+                timing.program_bytes, timing.program_wall_s))
+            per_segment.append(row)
+    fragment = {
         "per_segment": per_segment,
         "programming_s": walls["programming_s"],
         "execution_s": walls["execution_s"],
@@ -178,6 +192,13 @@ def _timing_fragment(deployed: List[OdinFpgaRunRecord], walls: Dict[str, float]
             for row in run.compute_stage_walls)),
         "note": (
             "measured on the declared transport; programming_s is the per-pass "
-            "reprogramming cost, never folded into execution_s"
+            "reprogramming cost, never folded into execution_s. The fabric "
+            "stores no copy of the op stream, so programming is a HOST-LINK "
+            "bandwidth: program_stream_bytes over program_stream_seconds, and "
+            "segment_boundary_init_s is what one segment costs before it runs"
         ),
     }
+    fragment.update(stream_metrics(
+        sum(int(row["program_bytes"]) for row in per_segment),
+        walls["programming_s"]))
+    return fragment

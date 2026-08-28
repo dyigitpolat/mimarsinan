@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
+import time
 from typing import Any, Dict, List, Optional
 
 #: The names in this module that the real pyxrt does not have: the harness's
@@ -38,7 +39,19 @@ from typing import Any, Dict, List, Optional
 FAKE_ONLY = (
     "FAKE_ONLY", "arm", "call_log",
     "CAPTURE_HEADER_WORDS", "CAPTURE_RECORD_WORDS", "CAPTURE_NO_VERDICT",
+    "LINK_BYTES_PER_SECOND", "ARG_PROGRAM",
 )
+
+#: The host link this fake pretends to be, so the programming-bandwidth metric
+#: a selftest reports is a PLAUSIBLE number rather than the speed of a memcpy.
+#: 8 GB/s is the order a PCIe Gen3 x16 XDMA shell delivers; the host-to-device
+#: sync sleeps for the payload's share of it, which is microseconds for
+#: everything shipped and is the only place this fake spends wall time.
+LINK_BYTES_PER_SECOND = 8.0e9
+
+#: The kernel argument the programming stream arrives on (odin_board_driver.py):
+#: the only buffer the ``short_buffer`` fault shortens.
+ARG_PROGRAM = 0
 
 #: The capture header layout and the no-verdict sentinel, mirrored from
 #: ``odin_board_driver.py`` (whose own source is ``odin_fpga_kernel.v``).
@@ -249,6 +262,11 @@ class bo:
         self._size = int(nbytes)
         self._group = int(group)
         self._data = bytearray(int(nbytes))
+        if _STATE["fault"] == "short_buffer" and self._group == ARG_PROGRAM:
+            # An allocator that gave back LESS than was asked for: the host
+            # would then declare more words than the buffer holds, and the
+            # fabric — which stores no copy of the stream — would read past it.
+            self._size = max(0, self._size - 4)
         _log("bo", self._size, self._group)
 
     def _store(self, payload: bytes, offset: int) -> None:
@@ -265,8 +283,13 @@ class bo:
 
     def sync(self, direction: str, size: Optional[int] = None,
              offset: int = 0) -> None:
-        _log("sync", self._group, direction,
-             self._size if size is None else int(size), int(offset))
+        moved = self._size if size is None else int(size)
+        _log("sync", self._group, direction, moved, int(offset))
+        if direction == xclBOSyncDirection.XCL_BO_SYNC_BO_TO_DEVICE:
+            # A DMA takes link time. Without it the driver's programming-
+            # bandwidth metric would report the speed of a memcpy, which is not
+            # a plausible stand-in for a number the owner reads off a board.
+            time.sleep(moved / LINK_BYTES_PER_SECOND)
 
     def size(self) -> int:
         return self._size

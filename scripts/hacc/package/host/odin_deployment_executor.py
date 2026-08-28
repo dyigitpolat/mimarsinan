@@ -178,8 +178,14 @@ class ResidentPass:
         self._stimulus_bo: Any = None
         self._capture_bo: Any = None
 
-    def program_once(self) -> Dict[str, float]:
-        """Allocate this core's three buffers and write its program in."""
+    def program_once(self) -> Dict[str, Any]:
+        """Allocate this core's three buffers and stream its program in.
+
+        This IS the segment boundary: everything between the previous core's
+        last sample and this core's first one. The fabric holds no copy of the
+        op stream, so the wall below is a HOST-LINK cost that recurs at every
+        boundary of a multi-pass deployment — measured, never budgeted.
+        """
         started = time.perf_counter()
         self._program_bo = self.session.allocate(
             len(self.program), driver.ARG_PROGRAM)
@@ -189,15 +195,22 @@ class ResidentPass:
             self.capture_bytes, driver.ARG_CAPTURE)
         allocated = time.perf_counter()
         walls = self.session.dma_in(self._program_bo, self.program)
-        return {
+        boundary_s = time.perf_counter() - started
+        row: Dict[str, Any] = {
             "core": self.core,
             "program_bytes": len(self.program),
             "program_words": self.program_words,
             "allocate_s": allocated - started,
             "program_bo_write_s": walls["bo_write_s"],
             "program_sync_s": walls["sync_s"],
-            "core_program_s": time.perf_counter() - started,
+            "core_program_s": boundary_s,
+            "segment_boundary_init_s": boundary_s,
         }
+        # The stream's own wall — the DMA alone, without the allocation the
+        # boundary also pays — is what a BANDWIDTH may honestly be taken over.
+        row.update(driver.stream_metrics(
+            len(self.program), walls["bo_write_s"] + walls["sync_s"]))
+        return row
 
     def run_stimulus(self, stimulus: bytes) -> Tuple[List[int], Dict[str, float]]:
         """One sample on the resident core: rewrite, poison, start, read back."""
@@ -324,6 +337,9 @@ class Campaign:
             print(f"[deploy] core {row['core']}: programmed once, "
                   f"{row['program_words']} words in "
                   f"{row['core_program_s'] * 1e3:.2f} ms")
+            print(f"[deploy] core {row['core']}: segment boundary init "
+                  f"{row['segment_boundary_init_s'] * 1e3:.2f} ms, "
+                  f"{driver.stream_line(row)}")
             self.core_rows.append(row)
             try:
                 for sample in self.samples:
@@ -434,6 +450,21 @@ TIMING_FIELDS = (
 )
 
 
+def programming(core_rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """The campaign's whole programming stream: bytes, seconds, bandwidth.
+
+    Every segment boundary of a multi-pass deployment pays one of these, so the
+    campaign total is what "what did it cost to feed the chip" means here.
+    """
+    total_bytes = sum(int(row[driver.STREAM_BYTES]) for row in core_rows)
+    total_seconds = sum(float(row[driver.STREAM_SECONDS]) for row in core_rows)
+    summary = dict(driver.stream_metrics(total_bytes, total_seconds))
+    summary["segment_boundaries"] = len(core_rows)
+    summary["segment_boundary_init_s"] = percentiles(
+        [row["segment_boundary_init_s"] for row in core_rows])
+    return summary
+
+
 def aggregates(campaign: Campaign) -> Dict[str, Any]:
     per_field = {
         field: percentiles([row[field] for row in campaign.pass_rows])
@@ -449,6 +480,8 @@ def aggregates(campaign: Campaign) -> Dict[str, Any]:
         "sample_total_s": percentiles(list(per_sample.values())),
         "core_program_s": percentiles(
             [row["core_program_s"] for row in campaign.core_rows]),
+        "segment_boundary_init_s": percentiles(
+            [row["segment_boundary_init_s"] for row in campaign.core_rows]),
         "passes": len(campaign.pass_rows),
         "samples": len(campaign.samples),
     }
@@ -496,6 +529,7 @@ def report(campaign: Campaign, *, document: Dict[str, Any], options: Any,
         "readout": list(readout_rows),
         "certificates": campaign.certificates,
         "per_core": campaign.core_rows,
+        "programming": programming(campaign.core_rows),
         "walls": aggregates(campaign),
         "wall_s": wall_s,
         "tsv_rows": tsv_rows,
@@ -551,6 +585,13 @@ def mode_deploy(options: Any) -> int:
         print(f"[deploy] {field:<14}: total {stage['total'] * 1e3:9.3f} ms  "
               f"p50 {stage['p50'] * 1e3:8.3f}  p90 {stage['p90'] * 1e3:8.3f}  "
               f"max {stage['max'] * 1e3:8.3f}")
+    boundary = payload["walls"]["segment_boundary_init_s"]
+    print(f"[deploy] {'segment_boundary_init_s':<14}: total "
+          f"{boundary['total'] * 1e3:9.3f} ms  p50 {boundary['p50'] * 1e3:8.3f}  "
+          f"p90 {boundary['p90'] * 1e3:8.3f}  max {boundary['max'] * 1e3:8.3f}")
+    print(f"[deploy] programming: {driver.stream_line(payload['programming'])} "
+          f"over {payload['programming']['segment_boundaries']} segment "
+          f"boundary/boundaries")
     print(f"[deploy] wall     : {wall_s:.3f}s over "
           f"{payload['walls']['passes']} pass(es)")
     print(f"[deploy] {'PASS' if payload['passed'] else 'FAIL'}: wrote {path}")

@@ -27,7 +27,9 @@
 #      admin fix, submits nothing — and SELF-HEALS the moment 2022.2 appears
 #  15  bootstrap --card u250 threads the card into the detached run
 #  16  the DEPLOYMENT executor runs the two-core bundle as host-mediated passes
-#      against the fake pyxrt, certifies every pass, and reports ACCURACY
+#      against the fake pyxrt, certifies every pass, reports ACCURACY, and
+#      MEASURES what feeding the chip cost: the programming stream's bytes,
+#      seconds and bandwidth at every segment boundary
 #  17  the deployment mutations: tampered expected counts go RED, a tampered
 #      self-hash refuses as OdinBundleCorrupt, and a wrong stimulus gets no
 #      verdict instead of another pass's counts
@@ -191,7 +193,7 @@ if wait_for 180 "${RUN_LOG}" "Evidence is under"; then
 else
     fail 4d "the detached run did not finish in 180s"
 fi
-expect 4e "${RUN_LOG}" "[selftest] refusals: 4/4 typed correctly"
+expect 4e "${RUN_LOG}" "[selftest] refusals: 5/5 typed correctly"
 expect_file 4f "${TARGET}/build/hacc/hw_nc1/odin_fpga_hw.xclbin.built_with"
 expect_file 4g "${TARGET}/results/board_run/summary_board.json"
 expect_file 4h "${TARGET}/results/joint/summary_join.json"
@@ -346,7 +348,7 @@ LOG="${WORK}/selftest.log"
 status=$?
 if [ "${status}" -eq 0 ]; then pass 12a "green from the extracted package"
 else fail 12a "exit ${status}; see ${LOG}"; fi
-expect 12b "${LOG}" "refusals: 4/4 typed correctly"
+expect 12b "${LOG}" "refusals: 5/5 typed correctly"
 
 # ===========================================================================
 # THE CARD IS A PARAMETER (v3). Everything above ran on the default card with
@@ -478,7 +480,7 @@ if [ "${status}" -eq 2 ]; then pass 15h "refused with exit 2"; else fail 15h "ex
 # NC=1 one it builds, by running each core as its own pass and transcoding
 # between them on the host.
 # ===========================================================================
-gate 16 "the deployment executor: two host-mediated passes, certified and timed"
+gate 16 "the deployment executor: host-mediated passes, certified, timed, and its programming stream measured"
 DEPLOY_ROOT="${WORK}/deploy"
 PKG="$(fresh_package "${DEPLOY_ROOT}")"
 LOG="${WORK}/deployment.log"
@@ -498,8 +500,10 @@ expect 16c "${LOG}" "core 0: programmed once"
 expect 16d "${LOG}" "core 1: programmed once"
 expect 16e "${LOG}" "[deploy] ACCURACY : 0.750000"
 expect 16f "${LOG}" "transcode_s"
-expect_file 16g "${PKG}/results/deployment/deployment_report.json"
-expect_file 16h "${PKG}/results/deployment/deployment_samples.tsv"
+expect 16g "${LOG}" "segment boundary init"
+expect 16h "${LOG}" "the fabric stores none of it"
+expect_file 16i "${PKG}/results/deployment/deployment_report.json"
+expect_file 16j "${PKG}/results/deployment/deployment_samples.tsv"
 REPORT="${PKG}/results/deployment/deployment_report.json"
 if python3 - "${REPORT}" <<'PY'
 import json, sys
@@ -513,8 +517,34 @@ assert report["passed"] and report["accuracy"] == 0.75
 assert all(row["passed"] for row in report["certificates"])
 assert len(report["per_core"]) == 2
 PY
-then pass 16i "the report carries every stage's percentiles, 8 passes, 2 cores"
-else fail 16i "the report is missing a wall or a pass"; fi
+then pass 16k "the report carries every stage's percentiles, 8 passes, 2 cores"
+else fail 16k "the report is missing a wall or a pass"; fi
+if python3 - "${REPORT}" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+stream = ("program_stream_bytes", "program_stream_seconds",
+          "programming_bytes_per_second")
+# The fabric holds no copy of the op stream, so PROGRAMMING BANDWIDTH is a
+# deployment measurement and every segment boundary must carry one.
+for row in report["per_core"]:
+    for field in stream:
+        assert field in row, (row["core"], field)
+    assert row["program_stream_bytes"] == row["program_bytes"]
+    assert row["programming_bytes_per_second"] > 0.0
+    assert row["segment_boundary_init_s"] >= row["program_stream_seconds"]
+summary = report["programming"]
+assert summary["segment_boundaries"] == len(report["per_core"])
+assert summary["program_stream_bytes"] == sum(
+    row["program_stream_bytes"] for row in report["per_core"])
+assert summary["programming_bytes_per_second"] > 0.0
+assert set(report["walls"]["segment_boundary_init_s"]) == {
+    "p50", "p90", "p99", "min", "max", "mean", "total"}
+print(f"    {summary['program_stream_bytes']} bytes over "
+      f"{summary['segment_boundaries']} boundaries at "
+      f"{summary['programming_bytes_per_second'] / 1e6:.1f} MB/s")
+PY
+then pass 16l "the programming stream is measured per boundary and in total"
+else fail 16l "the report carries no programming-bandwidth measurement"; fi
 
 gate 17 "the deployment mutations"
 python3 - "${PKG}" <<'PY'
