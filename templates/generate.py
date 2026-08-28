@@ -359,37 +359,30 @@ T0 = [
     # coverage (tests/unit/spiking/test_wire_gauge_establishment.py and
     # tests/unit/pipelining/test_streamed_mixed_seam_exactness.py, both
     # mutation-verified end to end against the deployed executor).
-    # [ODIN P8] t0_54's DEPLOYABLE sibling: the same per-event / saturating
-    # 8-bit soma point on the same vehicle, re-declared against the STOCK ODIN
-    # crossbar so the deployment EXPORT can actually freeze it. Three
-    # declarations move, each forced by the silicon and each MEASURED on
-    # t0_54's own committed mapping (2026-08-27): platform J, because a 512-
-    # slot core expands to 1024 physical rows over a 256-row crossbar; wb=4,
-    # because the stock synapse cell is a 3-bit UNSIGNED magnitude signed once
-    # per pre-synaptic row and t0_54's wb=5 grid reaches |w|=15; and
-    # per_axon sign granularity, which is the only expansion that layout
-    # represents. The widths follow from the 127-slot usable fan-in: the
-    # encoding perceptron is host-offloaded either way (subsume), so the ON-CHIP
-    # layers read 120, 96 and 120 lines plus the always-on bias row.
-    dict(n=55, mode="lifse", quant="wq", wb=4, s=4, vehicle="simplemlp", seed=1,
-         platform="J", has_bias=False, coalescing=False, splitting=False,
-         # MEASURED 2026-08-28: at the family default lr=0.003 the WQ endpoint
-         # recovery warms up to a PEAK LR of 0.03 and destroys the quantized
-         # model on this grid — it enters recovery at 0.913 and slides to 0.26
-         # over 6k steps, while t0_54's wb=5 grid survives the same peak at
-         # 0.92. The 3-bit magnitude cell is what pays for it, so this cell
-         # pays a 10x gentler ladder rather than a weight the chip lacks.
-         lr=0.0003,
-         firing_granularity="per_event", membrane_bits=8,
-         weight_sign_granularity="per_axon",
-         enable_odin_hacc_export=True,
-         odin_hacc_bundle_samples=300, odin_hacc_certification_samples=50,
-         extra_dp={"model_config": {"mlp_width_1": 120, "mlp_width_2": 96}},
-         tags=["nobias"], wall_min=30,
-         note="the ODIN-DEPLOYABLE per-event cell: the one tier row whose "
-              "mapped network the HACC export can freeze into a sealed, "
-              "board-executable bundle (300 shipped samples, 50 of them "
-              "per-pass certified)."),
+    # n=55 IS DELIBERATELY UNUSED. The ODIN-DEPLOYABLE sibling of t0_54 was
+    # authored here on 2026-08-28 and WITHDRAWN the same day, on its own
+    # measurement. It exists because t0_54's committed mapping cannot be
+    # deployed at all: measured against the exporter, every core's 512-slot
+    # table expands to 1024 physical rows over a 256-row crossbar, its wb=5
+    # grid reaches |w|=15 against a 3-bit UNSIGNED magnitude cell, and
+    # per_axon is the only sign expansion the stock layout represents. The
+    # sibling therefore declared platform J (the crossbar as the exporter
+    # bounds it), wb=4, per_axon, and widths 120/96 that fit the 127-slot
+    # usable fan-in with the encoding perceptron host-offloaded.
+    #
+    # It converts cleanly to the point — pretrain 0.9772, AQ 0.9746, LIF
+    # adaptation 0.9314 — and then Weight Quantization LANDS AT 0.61 and
+    # misses the 15% retention gate (0.6169 / 0.6139 / 0.62 over three
+    # ladders: the family lr=0.003, a 10x gentler lr=3e-4 with
+    # endpoint_floor_lr=2e-4, and the WQ endpoint recovery capped at 200
+    # steps instead of 16k). t0_54's wb=5 grid holds 0.92 through the same
+    # leg, so the 3-bit magnitude cell is what costs the 0.32, and no LR or
+    # budget knob buys it back. THE PRECONDITION FOR RE-ADDING THE ROW is a
+    # weight-quantization path that survives 15 levels on this vehicle — or a
+    # larger S, which raises the integer theta lattice and the output rate
+    # code together, at a wall this tier does not fund. Platform J stays
+    # declared above: it is the stock crossbar's real shape, and the next
+    # attempt starts from it.
     # [W5.3] the ONE searched-hardware cell. Every other row in every tier
     # pins hw_config_mode "fixed", so the co-search path — ArchitectureSearchStep,
     # the objectives registry's per-mode availability, the live search_event
