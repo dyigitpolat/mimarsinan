@@ -97,7 +97,7 @@ def _fixture(driver, *, cores=1, samples=2):
 def _capacity(driver, *, cores=1, **overrides):
     """A DECLARED geometry: no host can read one back off a card."""
     fields = {
-        "program_words": cores * driver.PROG_WORDS_PER_CORE,
+        "cores": cores,
         "provenance": f"unit test: a declared NC={cores} geometry",
     }
     fields.update(overrides)
@@ -267,35 +267,34 @@ class TestEveryTypedRefusalHasADeviceWayToHappen:
         self, driver, fake, tmp_path,
     ):
         capacity = _capacity(
-            driver, program_words=0, capture_events=0,
+            driver, cores=0, capture_events=0,
             provenance="unit test: a package declaring no storage")
         with pytest.raises(driver.OdinDriverError, match="silent empty one"):
             _session(driver, capacity=capacity)
 
-    def test_a_program_that_outgrows_the_declared_ram_refuses_before_starting(
-        self, driver, fake, tmp_path,
-    ):
-        fixture = _fixture(driver)
-        fake.arm(fixture, fault=None)
-        session = _session(driver, capacity=_capacity(
-            driver, program_words=64, provenance="unit test: a 64-word RAM"))
-        with pytest.raises(
-            driver.OdinFpgaProgramTooLarge, match="program RAM holds 64",
-        ):
-            session.run_fixture(fixture)
-        assert not any(entry[0] == "start" for entry in fake.call_log())
-
     def test_the_refusal_says_where_the_capacity_number_came_from(
         self, driver, fake, tmp_path,
     ):
-        fixture = _fixture(driver)
+        fixture = _fixture(driver, cores=2)
         fake.arm(fixture, fault=None)
         session = _session(driver, capacity=_capacity(
-            driver, program_words=64,
-            provenance="unit test: a 64-word RAM, declared by hand"))
-        with pytest.raises(driver.OdinFpgaProgramTooLarge) as exc:
+            driver, cores=1,
+            provenance="unit test: an NC=1 geometry, declared by hand"))
+        with pytest.raises(driver.OdinFixtureNeedsMoreCores) as exc:
             session.run_fixture(fixture)
         assert "declared by hand" in str(exc.value)
+
+    def test_no_program_length_can_be_refused_for_not_fitting(
+        self, driver, fake, tmp_path,
+    ):
+        """The fabric stores no program, so no run is too long to deliver."""
+        assert not hasattr(driver, "OdinFpgaProgramTooLarge")
+        assert not hasattr(driver, "require_program_fits")
+        fixture = _fixture(driver)
+        fake.arm(fixture, fault=None)
+        session = _session(driver)
+        session.run_fixture(fixture)
+        assert any(entry[0] == "start" for entry in fake.call_log())
 
     def test_a_kernel_that_wrote_no_verdict_refuses_as_a_kernel_error(
         self, driver, fake, tmp_path,
@@ -379,10 +378,9 @@ class TestTheHeaderLayoutIsTheRtlsOwn:
 class TestTheDeclaredCapacityNamesItsSource:
     def test_the_shipped_declaration_is_the_rtl_default_at_nc1(self, driver):
         capacity = driver.KernelCapacity()
-        assert capacity.program_words == driver.PROG_WORDS_PER_CORE
         assert capacity.capture_events == (
             driver.SHIPPED_CAPTURE_WORDS - 2) // 4
-        assert capacity.cores == 1
+        assert capacity.cores == driver.SHIPPED_KERNEL_CORES
 
     def test_the_provenance_says_it_was_not_read_off_the_card(self, driver):
         provenance = driver.KernelCapacity().provenance
@@ -391,9 +389,9 @@ class TestTheDeclaredCapacityNamesItsSource:
 
     def test_a_command_line_override_is_recorded_in_the_provenance(self, driver):
         options = driver.build_parser().parse_args(
-            ["--xclbin", "/x", "--program-words", "4096"])
+            ["--xclbin", "/x", "--declare-cores", "4"])
         capacity = driver.capacity_from_options(options)
-        assert capacity.program_words == 4096
+        assert capacity.cores == 4
         assert "OVERRIDDEN on the command line" in capacity.provenance
 
     def test_the_host_ceiling_can_only_lower_the_declared_one(self, driver):

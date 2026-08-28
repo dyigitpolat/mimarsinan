@@ -2,8 +2,8 @@
 """HACC NUS - ODIN Deployment: one sealed bundle, one card, one measured verdict.
 
 THE SHAPE OF THE PROBLEM. The shipped bitstream instantiates ONE ODIN core
-(PROG_WORDS = NC * 262144 at NC=1, the only geometry build_xclbn.sh builds), and
-the chip routes nothing between cores anyway (SPI_OPEN_LOOP). A multi-core
+(NC=1, the only geometry build_xclbn.sh builds), and the chip routes nothing
+between cores anyway (SPI_OPEN_LOOP). A multi-core
 network therefore runs as one host-mediated PASS per core: program the core,
 run a sample, read its per-cycle counts back, TRANSCODE them through the axon
 source table into the next core's slot counts, build that core's stimulus on the
@@ -214,9 +214,6 @@ class ResidentPass:
                 f"than the frozen evidence ever did, so this run is not the "
                 f"deployment the bundle describes")
         stimulus_words = len(stimulus) // driver.WORD_BYTES
-        driver.require_program_fits(
-            self.program_words, stimulus_words, self.session.capacity,
-            transport=self.session.name)
         write = self.session.dma_in(self._stimulus_bo, stimulus)
         poison = self.session.poison_capture(self._capture_bo)
         run_s = self.session.start_and_wait(
@@ -575,7 +572,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device-index", type=int, default=0)
     parser.add_argument("--capture-events", type=int,
                         default=driver.DEFAULT_CAPTURE_EVENTS)
-    parser.add_argument("--program-words", type=int, default=0)
+    parser.add_argument("--declare-cores", type=int, default=0)
     parser.add_argument("--capture-ram-events", type=int, default=0)
     parser.add_argument("--run-timeout-ms", type=int,
                         default=driver.BLOCK_UNTIL_DONE_MS)

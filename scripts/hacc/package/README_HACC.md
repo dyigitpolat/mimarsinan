@@ -231,9 +231,8 @@ before writing this zip.
 
 **NC = 1.** The v1 packaging flow builds one ODIN core only
 (`build_xclbn.sh` refuses more; the RTL parameter exists but the `package_xo`
-plumbing for it does not yet). The kernel reports `PROG_WORDS = NC * 262144`, so
-the driver can see how many cores the loaded bitstream holds and **skips**
-fixtures that program more, naming the reason. On an NC=1 bitstream the
+plumbing for it does not yet). The package DECLARES that geometry, so the
+driver **skips** fixtures that program more cores, naming the reason. On an NC=1 bitstream the
 `nc1_*` fixtures run and the rest are skipped; that is expected, not a failure.
 
 ---
@@ -284,9 +283,7 @@ first.
    `hw/fpga/kernel/odin_fpga_kernel_top.v` and rebuild; the counts of a
    truncated run are not a result. Lowering the sample count until it fits is a
    way to get a number, not a way to get a result.
-5. **`OdinFpgaProgramTooLarge`.** The token stream does not fit the fabric's
-   program RAM. Raise `PROG_WORDS` and rebuild — same rule.
-6. **Re-run phase 2's `hw_emu` smoke** on the same fixtures. Same program bytes,
+5. **Re-run phase 2's `hw_emu` smoke** on the same fixtures. Same program bytes,
    no board. If emulation passes and the card does not, the divergence is in the
    shell, the silicon or timing closure — not in the export and not in the
    delivery.
@@ -313,8 +310,8 @@ report home, not something to hand-edit here.
 Phase 6 certifies FIXTURES: frozen programs whose counts the RTL cosimulation
 recorded. Phase 8 deploys a NETWORK, and the difference is the whole point.
 
-The shipped bitstream instantiates ONE ODIN core (`PROG_WORDS = NC * 262144` at
-NC = 1), and the chip routes nothing between cores in any case — `SPI_OPEN_LOOP`
+The shipped bitstream instantiates ONE ODIN core (`NC = 1`), and the chip
+routes nothing between cores in any case — `SPI_OPEN_LOOP`
 is asserted, so v1 routing is host-mediated by design. A multi-core network
 therefore runs as one **pass per core**:
 
@@ -399,7 +396,7 @@ consult it before they spend a compile slot:
 ```
 
 The key is a sha256 over everything that could change the bitstream: the RTL
-digest the MANIFEST carries, the card, the platform, the part, NC, `PROG_WORDS`,
+digest the MANIFEST carries, the card, the platform, the part, NC, `FIFO_WORDS`,
 `CAP_WORDS`, the kernel clock from the card's v++ config, the Vitis release, the
 target, and the sha256 of `build_xclbn.sh` itself — because the build script IS
 the recipe, and without it a cache hit could resurrect a bitstream that

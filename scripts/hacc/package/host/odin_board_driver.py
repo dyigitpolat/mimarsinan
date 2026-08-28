@@ -11,7 +11,7 @@ NO REGISTER ACCESS EXISTS, AND THAT SHAPES EVERYTHING BELOW. The XRT Python
 binding (github.com/Xilinx/XRT branch 2024.2,
 src/python/pybind11/src/pyxrt.cpp) binds NO ``read_register`` and NO
 ``write_register`` on ``xrt::kernel``, and exposes no standalone ``ip`` object.
-The kernel's AXI-Lite status and capacity registers at 0x4C/0x54/0x5C are real
+The kernel's AXI-Lite status and capacity registers at 0x4C/0x54 are real
 — the RTL implements them and the RTL testbench reads them — but they are
 unreachable from Python. On 2026-08-25 a U250 loaded this package's xclbin, the
 CU came up, and the previous driver died at its first CSR touch. So every truth
@@ -92,22 +92,20 @@ OP_END = 0
 #: xrt::run::wait(0)); a positive value bounds the wait in milliseconds.
 BLOCK_UNTIL_DONE_MS = 0
 
-#: What the SHIPPED fabric holds: the PROG_WORDS and CAP_WORDS defaults of
+#: What the SHIPPED fabric holds: the NC and CAP_WORDS defaults of
 #: hw/fpga/kernel/odin_fpga_kernel_top.v at NC = 1, the only geometry
-#: scripts/hacc/build_xclbn.sh builds. PROG_WORDS = NC * 262144, so a program
-#: capacity also NAMES how many ODIN cores the bitstream instantiates.
-PROG_WORDS_PER_CORE = 262144
+#: scripts/hacc/build_xclbn.sh builds. THE OP STREAM IS NOT AMONG THEM: the
+#: fabric holds no copy of it, so there is no program capacity to declare and a
+#: run's length is bounded only by the word counts the host passes as arguments.
 SHIPPED_KERNEL_CORES = 1
-SHIPPED_PROGRAM_WORDS = SHIPPED_KERNEL_CORES * PROG_WORDS_PER_CORE
 SHIPPED_CAPTURE_WORDS = 16384
 SHIPPED_CAPTURE_EVENTS = (SHIPPED_CAPTURE_WORDS - CAPTURE_HEADER_WORDS) // (
     CAPTURE_RECORD_WORDS)
 DEFAULT_CAPTURE_EVENTS = 1 << 20
 
 SHIPPED_CAPACITY_PROVENANCE = (
-    "declared from hw/fpga/kernel/odin_fpga_kernel_top.v (PROG_WORDS = NC * "
-    f"{PROG_WORDS_PER_CORE}, CAP_WORDS = {SHIPPED_CAPTURE_WORDS}) at "
-    f"NC = {SHIPPED_KERNEL_CORES}, the only geometry "
+    "declared from hw/fpga/kernel/odin_fpga_kernel_top.v (CAP_WORDS = "
+    f"{SHIPPED_CAPTURE_WORDS}) at NC = {SHIPPED_KERNEL_CORES}, the only geometry "
     "scripts/hacc/build_xclbn.sh builds — NOT read back from the card, because "
     "the XRT Python binding exposes no register read"
 )
@@ -131,10 +129,6 @@ class OdinFpgaKernelError(OdinDriverError):
 
 class OdinFpgaCaptureTruncated(OdinDriverError):
     """The device saw at least as many events as the capture can hold."""
-
-
-class OdinFpgaProgramTooLarge(OdinDriverError):
-    """The token stream does not fit the fabric's program RAM."""
 
 
 class OdinFixtureNeedsMoreCores(OdinDriverError):
@@ -269,28 +263,18 @@ def fixture_paths(directory: str, names: Sequence[str]) -> List[str]:
 class KernelCapacity:
     """What the loaded xclbin holds, DECLARED from what it was BUILT from."""
 
-    def __init__(self, *, program_words: int = SHIPPED_PROGRAM_WORDS,
+    def __init__(self, *, cores: int = SHIPPED_KERNEL_CORES,
                  capture_events: int = SHIPPED_CAPTURE_EVENTS,
                  provenance: str = SHIPPED_CAPACITY_PROVENANCE) -> None:
-        self.program_words = int(program_words)
+        self.cores = int(cores)
         self.capture_events = int(capture_events)
         self.provenance = str(provenance)
-
-    @property
-    def cores(self) -> int:
-        """How many ODIN cores this program RAM holds, rounded UP.
-
-        Under-reporting would refuse a legitimate bitstream, while a payload
-        that does not fit is caught by ``require_program_fits``.
-        """
-        return -(-self.program_words // PROG_WORDS_PER_CORE)
 
     def ceiling(self, host_events: int) -> int:
         return min(int(host_events), self.capture_events)
 
     def as_dict(self) -> Dict[str, Any]:
         return {
-            "program_words": self.program_words,
             "capture_events": self.capture_events,
             "cores": self.cores,
             "provenance": self.provenance,
@@ -298,13 +282,13 @@ class KernelCapacity:
 
 
 def require_declared_storage(capacity: KernelCapacity, *, transport: str) -> None:
-    if capacity.capture_events <= 0 or capacity.program_words <= 0:
+    if capacity.capture_events <= 0 or capacity.cores <= 0:
         raise OdinDriverError(
             f"{transport}: this package declares a capture capacity of "
-            f"{capacity.capture_events} events and a program capacity of "
-            f"{capacity.program_words} words ({capacity.provenance}) — a kernel "
-            f"built with no storage cannot run anything, and treating it as zero "
-            f"would turn every run into a silent empty one")
+            f"{capacity.capture_events} events across {capacity.cores} core(s) "
+            f"({capacity.provenance}) — a kernel built with no storage cannot "
+            f"run anything, and treating it as zero would turn every run into a "
+            f"silent empty one")
 
 
 def capture_buffer_bytes(capacity_events: int) -> int:
@@ -324,22 +308,6 @@ def stimulus_base_word(program_words: int) -> int:
     return max(0, int(program_words) - 1)
 
 
-def require_program_fits(
-    program_words: int, stimulus_words: int, capacity: KernelCapacity,
-    *, transport: str,
-) -> None:
-    needed = stimulus_base_word(program_words) + int(stimulus_words)
-    if needed > capacity.program_words:
-        raise OdinFpgaProgramTooLarge(
-            f"{transport}: the run needs {needed} program words "
-            f"({program_words} programming + {stimulus_words} stimulus, the "
-            f"stimulus overwriting the programming payload's END) but the "
-            f"loaded xclbin's program RAM holds {capacity.program_words} "
-            f"({capacity.provenance}). Rebuild the kernel with a larger "
-            f"PROG_WORDS or split the run into fewer samples per pass; a device "
-            f"that wrapped the address would execute a program nobody assembled")
-
-
 def require_kernel_verdict(words: Sequence[int], *, transport: str) -> None:
     """The capture header after the run: an untouched sentinel means `err`."""
     if len(words) < CAPTURE_HEADER_WORDS:
@@ -352,15 +320,14 @@ def require_kernel_verdict(words: Sequence[int], *, transport: str) -> None:
         raise OdinFpgaKernelError(
             f"{transport}: the capture header came back still carrying the "
             f"host's NO-VERDICT sentinel (0x{CAPTURE_NO_VERDICT:08X} in both "
-            f"words), so the fabric DMA'd nothing back. That is the kernel "
-            f"raising err at ap_start and going straight to done without "
-            f"draining (hw/fpga/kernel/odin_fpga_kernel_top.v lines 327-332, the "
-            f"prog_over_w path), or a capture buffer that never reached the "
-            f"card. The likeliest cause is a loaded xclbin built with a SMALLER "
-            f"PROG_WORDS or CAP_WORDS than this package declares — the kernel "
-            f"says which on its own 0x4C/0x54/0x5C registers, and NO Python host "
-            f"can read them (pyxrt binds no read_register). The counts of this "
-            f"run are not a network's answer and are not being decoded")
+            f"words), so the fabric DMA'd nothing back. That is a capture "
+            f"buffer that never reached the card, or a kernel that never "
+            f"reached its drain. The likeliest cause is a loaded xclbin built "
+            f"with a SMALLER CAP_WORDS than this package declares, or one built "
+            f"from a different kernel entirely — the kernel says which on its "
+            f"own 0x4C/0x54 registers, and NO Python host can read them (pyxrt "
+            f"binds no read_register). The counts of this run are not a "
+            f"network's answer and are not being decoded")
 
 
 def capture_words(raw: Any) -> List[int]:
@@ -654,12 +621,8 @@ class BoardSession:
         return self._capture_capacity
 
     @property
-    def program_capacity(self) -> int:
-        return self.capacity.program_words
-
-    @property
     def cores_implied(self) -> int:
-        """How many ODIN cores this bitstream holds, per PROG_WORDS = NC*262144."""
+        """How many ODIN cores this bitstream declares it was built with."""
         return self.capacity.cores
 
     def arm_fake(self, **state: Any) -> bool:
@@ -768,8 +731,6 @@ class BoardSession:
         self._require_session("a device run")
         program_words = len(program) // WORD_BYTES
         stimulus_words = len(stimulus) // WORD_BYTES
-        require_program_fits(
-            program_words, stimulus_words, self.capacity, transport=self.name)
 
         started = time.monotonic()
         program_bo = self.allocate(len(program), ARG_PROGRAM)
@@ -797,7 +758,6 @@ class BoardSession:
             "device_index": self.device_index,
             "cu_access_mode": "exclusive",
             "capture_capacity": self._capture_capacity,
-            "program_capacity": self.capacity.program_words,
             "cores_implied": self.cores_implied,
             "capacity": self.capacity.as_dict(),
             "xclbin_kernels": dict(self._xclbin_kernels),
@@ -844,10 +804,8 @@ class BoardSession:
         if needed_cores > self.cores_implied:
             raise OdinFixtureNeedsMoreCores(
                 f"{fixture['name']}: the fixture programs {needed_cores} ODIN "
-                f"core(s) but this package declares a program capacity of "
-                f"{self.capacity.program_words} words = NC {self.cores_implied} "
-                f"(PROG_WORDS = NC * {PROG_WORDS_PER_CORE}; "
-                f"{self.capacity.provenance}). The v1 packaging flow builds "
+                f"core(s) but this package declares NC {self.cores_implied} "
+                f"({self.capacity.provenance}). The v1 packaging flow builds "
                 f"NC=1 only (scripts/hacc/build_xclbn.sh refuses more); run the "
                 f"single-core fixtures on this bitstream, and widen NC before "
                 f"asking for this one")
@@ -908,12 +866,12 @@ def write_result(results_dir: str, name: str, payload: Dict[str, Any]) -> str:
 
 def capacity_from_options(options) -> KernelCapacity:
     """The capacity this session declares, and where that number came from."""
-    program_words = int(options.program_words or SHIPPED_PROGRAM_WORDS)
+    cores = int(options.declare_cores or SHIPPED_KERNEL_CORES)
     capture_ram = int(options.capture_ram_events or SHIPPED_CAPTURE_EVENTS)
     provenance = SHIPPED_CAPACITY_PROVENANCE
     overrides = []
-    if options.program_words:
-        overrides.append(f"--program-words {program_words}")
+    if options.declare_cores:
+        overrides.append(f"--declare-cores {cores}")
     if options.capture_ram_events:
         overrides.append(f"--capture-ram-events {capture_ram}")
     if overrides:
@@ -921,8 +879,7 @@ def capacity_from_options(options) -> KernelCapacity:
             f"OVERRIDDEN on the command line ({', '.join(overrides)}); the "
             f"package's own declaration is: {SHIPPED_CAPACITY_PROVENANCE}")
     return KernelCapacity(
-        program_words=program_words, capture_events=capture_ram,
-        provenance=provenance)
+        cores=cores, capture_events=capture_ram, provenance=provenance)
 
 
 def open_session(options, capacity: KernelCapacity | None = None) -> BoardSession:
@@ -975,8 +932,7 @@ def mode_probe(options) -> int:
     print(f"[probe] kernel           : {report['kernel']} (exclusive), "
           f"group_ids {report['group_ids']}")
     print(f"[probe] capture_capacity : {report['capture_capacity']} events")
-    print(f"[probe] program_capacity : {report['program_capacity']} words "
-          f"(=> NC {report['cores_implied']})")
+    print(f"[probe] cores declared   : NC {report['cores_implied']}")
     print(f"[probe] capacity source  : {report['capacity']['provenance']}")
     print(f"[probe] null run         : header {null['header_words']} "
           f"(events_seen={null['events_seen']}, "
@@ -1083,7 +1039,7 @@ def selftest_capacity(fixtures: Sequence[Dict[str, Any]]) -> KernelCapacity:
     """A DECLARED geometry wide enough to exercise every shipped fixture."""
     cores = max([int(item["run"]["cores"]) for item in fixtures] + [1])
     return KernelCapacity(
-        program_words=cores * PROG_WORDS_PER_CORE,
+        cores=cores,
         provenance=(
             f"selftest: a DECLARED NC={cores} geometry, wide enough for every "
             f"shipped fixture, against no bitstream at all. The package builds "
@@ -1122,11 +1078,8 @@ def mode_selftest(options) -> int:
 #: capture fault is injected into the fake's answer.
 _REFUSAL_CASES = (
     ("no_storage", OdinDriverError, "silent empty one",
-     KernelCapacity(program_words=0, capture_events=0,
+     KernelCapacity(cores=0, capture_events=0,
                     provenance="selftest: a package declaring no storage")),
-    ("tiny_program_ram", OdinFpgaProgramTooLarge, "program RAM holds 64",
-     KernelCapacity(program_words=64,
-                    provenance="selftest: a 64-word program RAM")),
     ("kernel_err", OdinFpgaKernelError, "NO-VERDICT sentinel", None),
     ("truncated_capture", OdinFpgaCaptureTruncated, "silent neurons", None),
 )
@@ -1134,8 +1087,8 @@ _REFUSAL_CASES = (
 
 def _selftest_refusals(options, loaded: Sequence[Dict[str, Any]]) -> int:
     """Every typed refusal, driven through the fake, on the first fixture."""
-    # The refusal cases run on the SMALLEST fixture: a shrunken program RAM must
-    # be refused for not fitting the payload, not for holding too few cores.
+    # The refusal cases run on the SMALLEST fixture, so a capacity fault is
+    # refused for the storage it names and not for holding too few cores.
     fixture = min(loaded, key=lambda item: int(item["run"]["cores"]))
     multi_core = next(
         (item for item in loaded if int(item["run"]["cores"]) > 1), None)
@@ -1145,7 +1098,7 @@ def _selftest_refusals(options, loaded: Sequence[Dict[str, Any]]) -> int:
         cases.append((
             multi_core, "nc1", OdinFixtureNeedsMoreCores, "NC 1",
             KernelCapacity(
-                program_words=PROG_WORDS_PER_CORE,
+                cores=1,
                 provenance="selftest: the NC=1 geometry build_xclbn.sh builds")))
     rows = []
     module = load_pyxrt(options.fake_pyxrt)
@@ -1230,11 +1183,11 @@ def build_parser() -> argparse.ArgumentParser:
                         default=DEFAULT_CAPTURE_EVENTS,
                         help="the HOST's capture ceiling; the session takes the "
                              "min of it and the fabric's declared one")
-    parser.add_argument("--program-words", type=int, default=0,
-                        help=f"declare a program RAM other than the packaged "
-                             f"{SHIPPED_PROGRAM_WORDS} words (no host can read "
-                             f"it back; the override is recorded in every "
-                             f"refusal it causes)")
+    parser.add_argument("--declare-cores", type=int, default=0,
+                        help=f"declare a core count other than the packaged "
+                             f"NC={SHIPPED_KERNEL_CORES} (no host can read it "
+                             f"back; the override is recorded in every refusal "
+                             f"it causes)")
     parser.add_argument("--capture-ram-events", type=int, default=0,
                         help=f"declare a capture RAM other than the packaged "
                              f"{SHIPPED_CAPTURE_EVENTS} records")

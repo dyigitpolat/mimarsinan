@@ -191,7 +191,7 @@ if wait_for 180 "${RUN_LOG}" "Evidence is under"; then
 else
     fail 4d "the detached run did not finish in 180s"
 fi
-expect 4e "${RUN_LOG}" "[selftest] refusals: 5/5 typed correctly"
+expect 4e "${RUN_LOG}" "[selftest] refusals: 4/4 typed correctly"
 expect_file 4f "${TARGET}/build/hacc/hw_nc1/odin_fpga_hw.xclbin.built_with"
 expect_file 4g "${TARGET}/results/board_run/summary_board.json"
 expect_file 4h "${TARGET}/results/joint/summary_join.json"
@@ -346,7 +346,7 @@ LOG="${WORK}/selftest.log"
 status=$?
 if [ "${status}" -eq 0 ]; then pass 12a "green from the extracted package"
 else fail 12a "exit ${status}; see ${LOG}"; fi
-expect 12b "${LOG}" "refusals: 5/5 typed correctly"
+expect 12b "${LOG}" "refusals: 4/4 typed correctly"
 
 # ===========================================================================
 # THE CARD IS A PARAMETER (v3). Everything above ran on the default card with
@@ -698,7 +698,7 @@ KEY="$( cd "${PKG}" && ODIN_DATA_ROOT="${C1_ROOT}" ODIN_CHIP_CACHE="${CACHE_ROOT
     ./scripts/chip_cache.sh key hw | sed -n 's/^key=//p' )"
 expect_file 20a "${CACHE_ROOT}/${KEY}/odin_fpga.xclbin"
 expect_file 20b "${CACHE_ROOT}/${KEY}/key_inputs.txt"
-expect 20c "${CACHE_ROOT}/${KEY}/key_inputs.txt" "prog_words=262144"
+expect 20c "${CACHE_ROOT}/${KEY}/key_inputs.txt" "fifo_words=1024"
 expect 20d "${PKG}/results/phase_journal.tsv" "CACHE_PUBLISH"
 
 C2_ROOT="${WORK}/cache_two"

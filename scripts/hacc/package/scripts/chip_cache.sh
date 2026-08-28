@@ -20,7 +20,7 @@
 #   platform     the shell v++ links against
 #   part         the Vivado part
 #   NC           ODIN cores in the kernel (the packaging flow builds 1)
-#   PROG_WORDS   from hw/fpga/kernel/odin_fpga_kernel_top.v, as built
+#   FIFO_WORDS   from hw/fpga/kernel/odin_fpga_kernel_top.v, as built
 #   CAP_WORDS    likewise
 #   clock        defaultFreqHz from the card's v++ config
 #   vitis        the Vitis release that ran the link
@@ -61,9 +61,10 @@ die() { printf 'REFUSING: %s\n' "$*" >&2; exit 2; }
 # The inputs, read from the package itself — never from a shell's memory
 # --------------------------------------------------------------------------
 
-# A verilog `parameter NAME = <expr>` from the shipped kernel top. PROG_WORDS is
-# written NC * 262144, so NC is substituted and the product evaluated: the key
-# must name the geometry the fabric was BUILT at, not the expression for it.
+# A verilog `parameter NAME = <expr>` from the shipped kernel top. A depth may
+# be written as an expression in NC, so NC is substituted and the product
+# evaluated: the key must name the geometry the fabric was BUILT at, not the
+# expression for it.
 verilog_parameter() {
     local name="$1" raw
     [ -f "${KERNEL_TOP}" ] || die "${KERNEL_TOP} is missing; re-unzip the package"
@@ -121,7 +122,7 @@ cache_key_inputs() {
     printf 'platform=%s\n' "${platform}"
     printf 'part=%s\n' "${part}"
     printf 'nc=%s\n' "${nc}"
-    printf 'prog_words=%s\n' "$(verilog_parameter PROG_WORDS)"
+    printf 'fifo_words=%s\n' "$(verilog_parameter FIFO_WORDS)"
     printf 'cap_words=%s\n' "$(verilog_parameter CAP_WORDS)"
     printf 'clock_hz=%s\n' "$(clock_hz "${cfg}")"
     printf 'vitis=%s\n' "${8:-$(vitis_release)}"

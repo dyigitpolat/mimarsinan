@@ -254,25 +254,26 @@ Take 2.18.179 as the expected runtime and **confirm it on the node** with
 against what the xclbin was linked with is triage step 1, not a footnote.
 
 **Kernel geometry is compile-time, and it is load-bearing.** The wrapper's
-`PROG_WORDS` defaults to `NC * 262144` words and `CAP_WORDS` to `16384`;
+`FIFO_WORDS` defaults to `1024` words and `CAP_WORDS` to `16384`;
 the v1 packaging flow builds **NC = 1 only** (`build_xclbn.sh` refuses more:
 the RTL parameter exists, the `package_xo` plumbing for it is a P7b follow-up)
-(≈147.6k program words are needed to SPI-program ONE stock core, and a
-16384-word capture RAM holds 4095 event records — it is a BLOCK RAM, 16
-RAMB36E2 tiles, which is what makes that depth shippable at all; see
-`docs/odin_fpga_compile_limits_study.md`). **The host cannot read these back.**
-The kernel does implement read-only registers at `0x5C` and `0x54`, and the RTL
-testbench reads them over AXI-Lite — but the XRT Python binding binds no
+(≈147.6k program words are needed to SPI-program ONE stock core — and the
+fabric holds NONE of them: the op stream arrives live from the host through the
+FIFO, so a run's length is bounded only by the word-count arguments and there is
+no program capacity to declare. The 16384-word capture RAM holds 4095 event
+records — it is a BLOCK RAM, 16 RAMB36E2 tiles, which is what makes that depth
+shippable at all; see `docs/odin_fpga_compile_limits_study.md`).
+**The host cannot read these back.**
+The kernel does implement a read-only register at `0x54`, and the RTL
+testbench reads it over AXI-Lite — but the XRT Python binding binds no
 register access at all (`github.com/Xilinx/XRT@2024.2`,
 `src/python/pybind11/src/pyxrt.cpp`; a driver that tried died on a U250 on
 2026-08-25). So the host DECLARES them from the sources the xclbin was compiled
 from — `kernel_registers.SHIPPED_*`, mirrored in the shipped driver — and every
 refusal that spends a capacity prints that provenance in its own text. A
-bitstream built with a SMALLER geometry than the package declares is caught the
-one way memory allows: the fabric refuses at `ap_start`, never drains, and the
-host's no-verdict sentinel comes home untouched (`OdinFpgaKernelError`).
-If a run refuses with
-`OdinFpgaProgramTooLarge` or `OdinFpgaCaptureTruncated`, raise the parameter in
+bitstream that never drains is caught the one way memory allows: the host's
+no-verdict sentinel comes home untouched (`OdinFpgaKernelError`).
+If a run refuses with `OdinFpgaCaptureTruncated`, raise `CAP_WORDS` in
 `hw/fpga/kernel/odin_fpga_kernel_top.v` and rebuild. Lowering the sample count
 until it fits is a way to get a number, not a way to get a result.
 
@@ -566,7 +567,7 @@ Phase 3 is 2-6 hours. Do not pay for it twice:
 ```
 
 Phases 2 and 3 consult the cache before submitting and publish on success. The
-key covers the RTL digest, card, platform, part, NC, `PROG_WORDS`, `CAP_WORDS`,
+key covers the RTL digest, card, platform, part, NC, `FIFO_WORDS`, `CAP_WORDS`,
 the kernel clock from the card's v++ config, the Vitis release, the target and
 the sha256 of `build_xclbn.sh` — one function computes it for both the build
 path and `adopt`, so an adopted install lands exactly where a rebuild looks.
@@ -600,9 +601,9 @@ and most likely first:
    cause and it costs nothing to check.
 2. **The B0 round trip (B0 step 4).** Did the null program come back with a
    header the fabric wrote? `OdinFpgaKernelError: ... NO-VERDICT sentinel` means
-   the kernel refused at `ap_start` and never drained — almost always an xclbin
-   built with a smaller `PROG_WORDS`/`CAP_WORDS` than the package declares, i.e.
-   the loaded bitstream is not the one you think it is. Nothing can read the
+   the kernel never drained — almost always an xclbin built with a smaller
+   `CAP_WORDS` than the package declares, or built from a different kernel
+   entirely, i.e. the loaded bitstream is not the one you think it is. Nothing can read the
    geometry back off the card, so compare `probe.json`'s declared capacity
    against the `.built_with` sidecar of the xclbin you staged.
 3. **The capture header (B1).** `OdinFpgaCaptureTruncated` means the capture RAM
