@@ -12,6 +12,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -110,6 +115,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -281,6 +288,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -379,6 +391,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": true,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -551,6 +565,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -649,6 +668,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -821,6 +842,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -984,6 +1010,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": true,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -1219,6 +1247,11 @@
    },
    "plan": {
     "activation_quantization": false,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -1317,6 +1350,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -1489,6 +1524,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -1587,6 +1627,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -1764,6 +1806,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -1862,6 +1909,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -2034,6 +2083,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "mvm",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -2133,6 +2187,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "mvm",
     "cores": [
      {
@@ -2286,6 +2342,11 @@
    },
    "plan": {
     "activation_quantization": false,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "mvm",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -2384,6 +2445,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "mvm",
     "cores": [
      {
@@ -2543,6 +2606,11 @@
    },
    "plan": {
     "activation_quantization": false,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "mvm",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -2641,6 +2709,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "mvm",
     "cores": [
      {
@@ -2794,6 +2864,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -2892,6 +2967,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -3066,6 +3143,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -3164,6 +3246,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "conversion_draws": 2,
     "core_semantics": "spiking",
     "cores": [
@@ -3346,6 +3430,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -3444,6 +3533,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -3618,6 +3709,11 @@
    },
    "plan": {
     "activation_quantization": false,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -3716,6 +3812,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -3882,6 +3980,11 @@
    },
    "plan": {
     "activation_quantization": false,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -3980,6 +4083,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -4140,6 +4245,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -4238,6 +4348,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {
@@ -4406,6 +4518,11 @@
    },
    "plan": {
     "activation_quantization": true,
+    "bias_row_splitting": {
+     "active": false,
+     "fixed_rows": 0,
+     "mode": "off"
+    },
     "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
@@ -4504,6 +4621,8 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "core_semantics": "spiking",
     "cores": [
      {

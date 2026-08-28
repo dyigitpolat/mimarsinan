@@ -88,6 +88,10 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "membrane_bits": 0,
     "membrane_signed": False,
     "weight_sign_granularity": "per_synapse",
+    # A param-encoded bias rides always-on core-matrix rows; 'off' = one row on
+    # the shared weight grid (the legacy, byte-identical path).
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "allow_coalescing": False,
     "allow_neuron_splitting": False,
     "allow_per_layer_s": False,
@@ -118,6 +122,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "input_size", "num_classes", "model_config", "model_factory", "lr", "lr_range_min", "lr_range_max", "cores",
     "simulation_steps", "arch_search", "target_tq", "cores_per_tile", "tile_grid_rows", "tile_grid_cols", "allow_coalescing",
     "activity_factor", "pass_buffer_capacity_bytes",
+    # Bias-row splitting: how a param-encoded bias rides always-on core rows.
+    "bias_row_splitting", "bias_rows_per_perceptron",
     "allow_neuron_splitting", "allow_per_layer_s", "allow_scheduling", "max_schedule_passes",
     "scheduling_latency_weight", "weight_bits", "activation_bits", "tuning_budget_scale",
     "tuning_budget_scale_ramp_steps", "tuner_target_floor_ratio", "paired_confirm_batches", "s_allocation",

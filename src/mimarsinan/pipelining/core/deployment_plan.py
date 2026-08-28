@@ -32,6 +32,7 @@ from mimarsinan.common.pretrained import (
     selected_source,
 )
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+from mimarsinan.mapping.support.bias_rows import BiasRowSplitting
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.transformations.channel_scale_equalization import DEFAULT_CLIP_RATIO
@@ -79,6 +80,7 @@ class DeploymentPlan(PlanPredicates):
 
     activation_quantization: bool
     weight_quantization: bool
+    bias_row_splitting: BiasRowSplitting
     enable_training_noise: bool
     cycle_accurate_lif_forward: bool
 
@@ -117,6 +119,12 @@ class DeploymentPlan(PlanPredicates):
     @classmethod
     def resolve(cls, config: dict[str, Any]) -> "DeploymentPlan":
         get = config.get
+
+        # Cycle-break (the module's standing allowlist reason): the resolver
+        # reaches chip_simulation/deployment_record, which import back here.
+        from mimarsinan.pipelining.core.platform_constraints_resolver import (
+            resolve_bias_row_splitting,
+        )
 
         core_semantics = resolve_core_semantics(config)
         mvm = is_mvm_core_semantics(core_semantics)
@@ -158,6 +166,7 @@ class DeploymentPlan(PlanPredicates):
             is_ttfs_cycle_based=is_ttfs_cycle_based(spiking),
             activation_quantization=bool(get("activation_quantization", False)),
             weight_quantization=bool(get("weight_quantization", False)),
+            bias_row_splitting=resolve_bias_row_splitting(config),
             enable_training_noise=bool(get("enable_training_noise", False)),
             cycle_accurate_lif_forward=bool(get("cycle_accurate_lif_forward", False)),
             optimization_driver=resolve_optimization_driver(config),
