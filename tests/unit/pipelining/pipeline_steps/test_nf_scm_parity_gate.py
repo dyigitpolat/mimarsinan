@@ -114,10 +114,11 @@ class TestEnablement:
         assert nf_scm_parity_enabled(contract) is enabled
 
 
-class TestTorchSimParityEnablement:
-    """Decision-level torch↔deployed-sim gate arms for every mode with a
-    faithful identity executor — including LIF (the t0_03 blind spot: its
-    NF↔SCM divergence surfaced as a retention abort, never a parity error)."""
+class TestReadoutDecisionDriftEnablement:
+    """The readout-drift REPORT is measured for every mode with a faithful
+    identity executor — including windowed LIF (the t0_03 blind spot: its
+    NF↔SCM divergence surfaced as a retention abort) — and NOT for streamed
+    lif, where the count-exactness gate already holds the same hop at atol=0."""
 
     @pytest.mark.parametrize("mode,schedule,enabled", [
         ("ttfs", None, True),
@@ -126,17 +127,41 @@ class TestTorchSimParityEnablement:
         ("lif", None, True),
         ("ttfs_quantized", None, False),
     ])
-    def test_torch_sim_parity_enabled(self, mode, schedule, enabled):
+    def test_readout_decision_drift_enabled(self, mode, schedule, enabled):
         from mimarsinan.chip_simulation.deployment_contract import (
             SpikingDeploymentContract,
         )
         from mimarsinan.pipelining.core.nf_scm_parity import (
-            torch_sim_parity_enabled,
+            readout_decision_drift_enabled,
         )
 
         cfg = _pipeline(schedule, spiking_mode=mode).config
         contract = SpikingDeploymentContract.from_pipeline_config(cfg)
-        assert torch_sim_parity_enabled(contract) is enabled
+        assert readout_decision_drift_enabled(contract) is enabled
+
+    @pytest.mark.parametrize("variant,enabled", [
+        ("streamed", False), ("synchronized", True),
+    ])
+    def test_the_streamed_discipline_is_the_one_exclusion(self, variant, enabled):
+        """The exactness gate subsumes it there; a second, weaker read of the
+        same hop can only add noise to a question already answered."""
+        from mimarsinan.chip_simulation.deployment_contract import (
+            SpikingDeploymentContract,
+        )
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            nf_scm_parity_enabled,
+            readout_decision_drift_enabled,
+        )
+
+        cfg = _pipeline(spiking_mode="lif").config
+        cfg["spiking_family"] = "lif"
+        cfg["spiking_variant"] = variant
+        contract = SpikingDeploymentContract.from_pipeline_config(cfg)
+        assert readout_decision_drift_enabled(contract) is enabled
+        # Non-vacuity: the exclusion is a HANDOFF, not a hole — exactly the
+        # variant that loses the report is the one that gains the fatal
+        # per-neuron exactness gate.
+        assert nf_scm_parity_enabled(contract) is not enabled
 
 
 class TestCascadedDecisionAgreement:
@@ -432,21 +457,18 @@ class TestOneSampleCountKeyForBothBranches:
                     "max_simulation_samples"):
             assert REGISTRY[key].bounds[0] == 0, key
 
-    def test_lif_invokes_torch_sim_parity_gate(self, monkeypatch):
-        """LIF arms the decision-level torch↔deployed-sim gate (same threshold
-        discipline as casc/sync; the t0_03 defect must name itself as a parity
-        error, not a retention abort)."""
+    def _record_drift_calls(self, monkeypatch):
         import mimarsinan.pipelining.core.nf_scm_parity as parity_mod
         import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as step_mod
 
         calls = []
 
-        def _record(reference, flow, samples, *, min_agreement, labels=None):
-            calls.append((reference, flow, samples, min_agreement))
+        def _record(reference, flow, samples, **kwargs):
+            calls.append((reference, flow, samples, kwargs))
             return 1.0
 
         monkeypatch.setattr(
-            parity_mod, "assert_torch_vs_deployed_sim_parity_or_raise", _record,
+            parity_mod, "measure_readout_decision_drift", _record,
         )
         monkeypatch.setattr(parity_mod, "torch_parity_reference", lambda m: m)
         monkeypatch.setattr(
@@ -457,12 +479,29 @@ class TestOneSampleCountKeyForBothBranches:
             step_mod, "build_spiking_hybrid_flow",
             lambda pipeline, mapping, model=None: object(),
         )
+        return calls
+
+    def test_windowed_lif_reports_readout_decision_drift(self, monkeypatch):
+        """Windowed LIF keeps the report (the t0_03 blind spot), and it is
+        measured with NO threshold: the statistic never gates."""
+        calls = self._record_drift_calls(monkeypatch)
         step = self._make_step(spiking_mode="lif")
         step.pipeline.config["firing_mode"] = "Default"
         step.pipeline.config["thresholding_mode"] = "<"
-        step._run_torch_sim_parity_check(model=object(), ir_graph=object())
+        step._run_readout_decision_drift_diagnostic(model=object(), ir_graph=object())
         assert len(calls) == 1
-        assert calls[0][3] == pytest.approx(0.90)  # catastrophic floor [calculus 17]
+        assert "min_agreement" not in calls[0][3]
+
+    def test_streamed_lif_does_not_report_it_at_all(self, monkeypatch):
+        """The exactness gate owns the streamed hop; a weaker second read of the
+        same neurons is not measured (it FAILED the t0_55 run at 0.7969 while
+        the authoritative gate was green at atol=0)."""
+        calls = self._record_drift_calls(monkeypatch)
+        step = self._make_step(spiking_mode="lif")
+        step.pipeline.config["spiking_family"] = "lif"
+        step.pipeline.config["spiking_variant"] = "streamed"
+        step._run_readout_decision_drift_diagnostic(model=object(), ir_graph=object())
+        assert calls == []
 
 
 class TestParityGate:
@@ -679,7 +718,7 @@ class TestDeviceConsistency:
     )
     def test_gate_unifies_a_split_device_model(self):
         from mimarsinan.pipelining.core.nf_scm_parity import (
-            assert_torch_vs_deployed_sim_parity_or_raise,
+            measure_readout_decision_drift,
         )
 
         torch.manual_seed(0)
@@ -695,49 +734,97 @@ class TestDeviceConsistency:
         with pytest.raises(RuntimeError):
             model(x.to("cuda:0"))  # plain forward crosses devices → crash
 
-        agreement = assert_torch_vs_deployed_sim_parity_or_raise(model, flow, x)
+        agreement = measure_readout_decision_drift(model, flow, x)
         assert agreement == pytest.approx(1.0)
         assert {p.device.type for p in model.parameters()} == {"cuda"}, (
             "the gate must unify the whole model onto one device before forward"
         )
 
 
-class TestTorchVsDeployedSimParity:
-    """The added torch↔DEPLOYED-sim parity check: torch model argmax must agree
-    with the deployed sim's argmax (the exact executor run_scm_identity_metric runs)."""
+class TestReadoutDecisionDrift:
+    """The readout-drift REPORT: how much of the readout the torch twin and the
+    deployed sim place on the same integer count. It reports; it never raises."""
 
     class _Logits(nn.Module):
-        def __init__(self, roll=0):
+        def __init__(self, roll=0, gain=1.0):
             super().__init__()
             self.roll = roll
+            self.gain = float(gain)
             self.p = nn.Parameter(torch.zeros(1))
 
         def forward(self, x):
-            return torch.roll(x, self.roll, dims=1)
+            return torch.roll(x, self.roll, dims=1) * self.gain
 
-    def test_passes_when_argmax_agrees(self):
+    def _counts(self, n=48, width=5):
+        torch.manual_seed(4)
+        return torch.randint(0, 7, (n, width)).float()
+
+    def test_full_agreement_when_the_counts_match(self):
         from mimarsinan.pipelining.core.nf_scm_parity import (
-            assert_torch_vs_deployed_sim_parity_or_raise,
+            measure_readout_decision_drift,
         )
-        model = self._Logits(0)
-        flow = self._Logits(0)
-        x = torch.randn(48, 5)
-        agree = assert_torch_vs_deployed_sim_parity_or_raise(
-            model, flow, x, min_agreement=0.98
+        x = self._counts()
+        agree = measure_readout_decision_drift(self._Logits(0), self._Logits(0), x)
+        assert agree == pytest.approx(1.0)
+
+    def test_one_positive_readout_gauge_is_not_drift(self):
+        """The torch twin holds theta*counts and the deployed sim holds counts;
+        the gauge between them is the readout's unit, not a divergence."""
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            measure_readout_decision_drift,
+        )
+        x = self._counts()
+        agree = measure_readout_decision_drift(
+            self._Logits(0, gain=1.4558875), self._Logits(0), x,
         )
         assert agree == pytest.approx(1.0)
 
-    def test_raises_when_deployed_sim_diverges(self):
+    def test_a_diverging_deployed_sim_reports_below_one_without_raising(self):
         from mimarsinan.pipelining.core.nf_scm_parity import (
-            assert_torch_vs_deployed_sim_parity_or_raise,
+            measure_readout_decision_drift,
         )
-        model = self._Logits(0)
-        flow = self._Logits(1)  # the deployed sim shifts the argmax → diverges
-        x = torch.randn(64, 5)
-        with pytest.raises(NfScmParityError, match="deployed-sim parity"):
-            assert_torch_vs_deployed_sim_parity_or_raise(
-                model, flow, x, min_agreement=0.98
-            )
+        x = self._counts()
+        agree = measure_readout_decision_drift(
+            self._Logits(0), self._Logits(1), x,  # deployed sim rolls the readout
+        )
+        assert 0.0 <= agree < 1.0
+
+    def test_the_twin_is_armed_onto_the_chip_lattice_before_the_read(self, monkeypatch):
+        """The plane only snaps membranes that were ARMED from parameter_scale;
+        tuning stages recreate activations, so the arming must happen here."""
+        import mimarsinan.spiking.lif_utils as lif_utils
+        from mimarsinan.models.nn.lif_kernels import in_measurement_plane
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            measure_readout_decision_drift,
+        )
+
+        armed = []
+        monkeypatch.setattr(
+            lif_utils, "arm_integer_membrane_lattice",
+            lambda model: armed.append(bool(in_measurement_plane())) or 0,
+        )
+
+        class _Twin(self._Logits):
+            def get_perceptrons(self):
+                return []
+
+        measure_readout_decision_drift(_Twin(0), self._Logits(0), self._counts())
+        assert armed == [False], (
+            "the lattice is armed from the persisted parameter_scale BEFORE the "
+            "plane opens; arming inside it would snap tuning telemetry too"
+        )
+
+    def test_it_never_gates_even_at_total_divergence(self):
+        """Non-vacuity for the whole rename: the t0_55 run DIED on this
+        statistic while the authoritative exactness gate was green."""
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            measure_readout_decision_drift,
+        )
+        x = self._counts()
+        agree = measure_readout_decision_drift(
+            self._Logits(2), self._Logits(0), x, min_agreement=0.98,
+        )
+        assert agree < 0.98
 
 
 class TestPrunedDeploymentParity:

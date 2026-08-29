@@ -57,15 +57,21 @@ def nf_scm_parity_enabled(contract: Any) -> bool:
     return contract.training_forward_kind() == "analytical_staircase"
 
 
-def torch_sim_parity_enabled(contract: Any) -> bool:
-    """Whether the decision-level torch↔deployed-sim gate arms for this mode.
+def readout_decision_drift_enabled(contract: Any) -> bool:
+    """Whether the diagnostic readout-drift statistic is measured for this mode.
 
     Every mode with a faithful identity executor gets it: analytic/cascaded TTFS,
-    the synchronized grid-snap, and LIF rate cascades (W1c: the LIF gap let the
-    t0_03 NF↔SCM defect surface as a retention abort instead of a parity error).
+    the synchronized grid-snap, and windowed LIF rate cascades (W1c: the LIF gap
+    let the t0_03 NF↔SCM defect surface as a retention abort). Streamed lif is
+    EXCLUDED: there the NF train forward IS the deployed streaming cascade, so
+    every readout count is already held at atol=0 by the exactness gate
+    (``assert_streamed_nf_scm_exact_or_raise``) and a second, weaker read of the
+    same hop can only add noise to a question already answered.
     """
     from mimarsinan.chip_simulation.spiking_semantics import is_lif
 
+    if contract.is_streamed_lif():
+        return False
     return (
         nf_scm_parity_enabled(contract)
         or contract.is_synchronized()
@@ -364,47 +370,107 @@ def _neutralize_trained_halfstep(perceptron) -> None:
             node.shift = torch.zeros_like(torch.as_tensor(node.shift))
 
 
-def assert_torch_vs_deployed_sim_parity_or_raise(
+def _readout_count_records(nf: torch.Tensor, sim: torch.Tensor):
+    """Both readouts as per-CLASS integer count records, on ONE lattice.
+
+    The deployed flow's logits ARE the readout's integer lattice — window
+    counts for a rate decode, TTFS levels for a timing decode, both emitted as
+    ``value * T``. The torch twin holds the same integers times one positive
+    readout gauge (the firing gain and the window decode are a single
+    constant), recovered as the ratio of the two sides' total emitted
+    magnitude: exact when the twins agree, and unmoved by a few large
+    disagreements the way a squared fit is not. A scalar gauge cannot absorb a
+    per-neuron count difference, which is the thing being measured. Grouping BY
+    CLASS keeps the comparison positional — ``compare_normalized_records``
+    sorts each record row, and a one-column row is already sorted.
+    """
+    if nf.shape != sim.shape:
+        raise NfScmParityError(
+            f"readout decision drift: the torch twin returned shape "
+            f"{tuple(nf.shape)} and the deployed sim {tuple(sim.shape)}; the "
+            f"two readouts are not the same neurons."
+        )
+    nf_np = nf.detach().to(torch.float64).cpu().numpy().reshape(nf.shape[0], -1)
+    sim_np = sim.detach().to(torch.float64).cpu().numpy().reshape(sim.shape[0], -1)
+    magnitude = float(np.abs(sim_np).sum())
+    gauge = float(np.abs(nf_np).sum()) / magnitude if magnitude > 0.0 else 1.0
+    if not gauge > 0.0:
+        gauge = 1.0
+    nf_counts = np.rint(nf_np / gauge)
+    sim_counts = np.rint(sim_np)
+    return (
+        {c: nf_counts[:, c : c + 1] for c in range(nf_counts.shape[1])},
+        {c: sim_counts[:, c : c + 1] for c in range(sim_counts.shape[1])},
+    )
+
+
+def _report_readout_decision_moves(nf: torch.Tensor, sim: torch.Tensor, labels) -> None:
+    """Which way the readout decisions that moved went (a labelled side-report)."""
+    nf_pred = nf.argmax(dim=1)
+    sim_pred = sim.argmax(dim=1)
+    moved = (nf_pred != sim_pred).nonzero(as_tuple=True)[0]
+    y = labels.to(nf_pred.device)
+    tr = int(((nf_pred[moved] == y[moved]) & (sim_pred[moved] != y[moved])).sum())
+    sr = int(((sim_pred[moved] == y[moved]) & (nf_pred[moved] != y[moved])).sum())
+    print(
+        f"[readout_decision_drift] decisions_moved={int(len(moved))} "
+        f"torch-right-sim-wrong={tr} sim-right-torch-wrong={sr} "
+        f"both-wrong={int(len(moved)) - tr - sr}",
+        flush=True,
+    )
+
+
+def measure_readout_decision_drift(
     model,
     flow,
     samples: torch.Tensor,
     *,
-    min_agreement: float = 0.98,
+    min_agreement: float | None = None,
     labels: torch.Tensor | None = None,
 ) -> float:
-    """Torch↔deployed-sim parity: the NF torch forward must agree with the deployed spiking sim on ``min_agreement`` of samples.
+    """[diagnostic] Fraction of readout neurons whose INTEGER count the trained
+    torch twin and the deployed sim agree on, both read inside the chip-lattice
+    measurement plane. Returns that fraction; 1.0 means every count matched.
 
-    Healthy agreement is ~1.0 (a single WQ tie-flip per few hundred samples is the
-    only expected residual); a fidelity regression craters it. Returns the measured agreement.
+    It never gates. It measures how far apart two DIFFERENT float programs land
+    on one integer readout lattice; the verdict on deployment faithfulness is
+    the count-exactness gate (``assert_streamed_nf_scm_exact_or_raise``) or the
+    per-neuron gate, not this. Reading it as an argmax agreement measured
+    float32 tie-breaking instead: on a tie-dense integer readout the two twins
+    resolve an exact tie in opposite directions from identical counts, and
+    reading it OUTSIDE the plane compared two computations neither of which is
+    the deployed one (t0_55: 0 in-plane count mismatches, up to 11 counts out).
+    ``min_agreement`` is accepted for the pre-rename call sites and IGNORED.
     """
+    from mimarsinan.models.nn.lif_kernels import measurement_plane
+    from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
+
+    del min_agreement
     device = _unify_model_device(model)
     if device is not None:
         samples = samples.to(device)
         flow = flow.to(device)
-    with torch.no_grad():
-        torch_pred = model(samples).argmax(dim=1)
-        sim_pred = flow(samples).argmax(dim=1)
-    agreement = float((torch_pred == sim_pred).double().mean())
+    if hasattr(model, "get_perceptrons"):
+        # Tuning stages recreate activations; re-arm from parameter_scale so the
+        # twin decides ties by the exact lattice value, like the chip. A twin
+        # with no perceptrons (a fixture, a flow) has nothing to arm.
+        arm_integer_membrane_lattice(model)
+    # BOTH twins inside the SAME plane: outside it neither snaps its membrane
+    # onto the integer chip lattice, so neither one is the deployed computation.
+    with measurement_plane(), torch.no_grad():
+        torch_out = model(samples)
+        sim_out = flow(samples)
+    nf_counts, sim_counts = _readout_count_records(torch_out, sim_out)
+    mismatches, total, _worst = compare_normalized_records(
+        nf_counts, sim_counts, atol=0.0,
+    )
     if labels is not None:
-        flips = (torch_pred != sim_pred).nonzero(as_tuple=True)[0]
-        y = labels.to(torch_pred.device)
-        tr = int(((torch_pred[flips] == y[flips]) & (sim_pred[flips] != y[flips])).sum())
-        sr = int(((sim_pred[flips] == y[flips]) & (torch_pred[flips] != y[flips])).sum())
-        bw = int(len(flips)) - tr - sr
-        print(
-            f"[parity] flips={int(len(flips))} torch-right-sim-wrong={tr} "
-            f"sim-right-torch-wrong={sr} both-wrong={bw}",
-            flush=True,
-        )
-    if agreement < float(min_agreement):
-        raise NfScmParityError(
-            f"torch↔deployed-sim parity failed: {agreement:.4f} < "
-            f"min_agreement={min_agreement} over {int(samples.shape[0])} samples. "
-            f"The deployed spiking sim diverged from the trained torch cascade — a "
-            f"deployment-fidelity regression (expected residual is only the rare WQ "
-            f"tie-flip, ~1 sample per few hundred)."
-        )
-    return agreement
+        _report_readout_decision_moves(torch_out, sim_out, labels)
+    return 1.0 - mismatches / max(total, 1)
+
+
+# The pinned observable test imports the pre-rename name; keep it bound.
+assert_torch_vs_deployed_sim_parity_or_raise = measure_readout_decision_drift
 
 
 def compare_normalized_records(

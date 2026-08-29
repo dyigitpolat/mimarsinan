@@ -35,21 +35,28 @@ from mimarsinan.chip_simulation.deployment_faithfulness import (
 # --------------------------------------------------------------------------- #
 
 class TestStandingGatesRegistry:
-    def test_both_faithfulness_gates_are_standing(self):
+    def test_both_faithfulness_rows_are_standing(self):
         names = {g.name for g in standing_gates()}
-        assert "torch_vs_deployed_sim_parity" in names
+        assert "readout_decision_drift" in names
         assert "nf_scm_per_neuron_parity" in names
+
+    def test_only_the_per_neuron_row_can_fail_a_run(self):
+        """The drift row is a standing REPORT: it runs on every deployment run
+        and can never be the reason one dies (t0_55 died on it at 0.7969 while
+        the per-neuron gate was green at atol=0)."""
+        fatal = {g.name for g in DEPLOYMENT_FAITHFULNESS_GATES if g.fatal}
+        assert fatal == {"nf_scm_per_neuron_parity"}
 
     def test_every_declared_gate_names_a_config_flag(self):
         for gate in DEPLOYMENT_FAITHFULNESS_GATES:
             assert gate.config_flag, gate.name
 
 
-class TestTorchSimParityIsStanding:
-    """E5(a): the torch<->deployed-sim parity check runs on a deployment run
-    WITHOUT the config opting in — it is standing, not opt-in. We drive the real
-    SoftCoreMappingStep gate method with a config that does not mention the flag
-    and assert the executor build is reached (the gate did not early-return)."""
+class TestReadoutDriftReportIsStanding:
+    """E5(a): the readout-decision-drift report runs on a deployment run WITHOUT
+    the config opting in — it is standing, not opt-in. We drive the real
+    SoftCoreMappingStep method with a config that does not mention the flag and
+    assert the executor build is reached (it did not early-return)."""
 
     class _StubTrainer:
         def __init__(self, batch):
@@ -91,15 +98,15 @@ class TestTorchSimParityIsStanding:
             lambda *a, **k: object(),
         )
         monkeypatch.setattr(
-            nf_scm_parity, "assert_torch_vs_deployed_sim_parity_or_raise",
+            nf_scm_parity, "measure_readout_decision_drift",
             lambda *a, **k: 1.0,
         )
 
         step = self._make_step("ttfs_cycle_based")
         assert "scm_torch_sim_parity_check" not in step.pipeline.config
         model = SimpleNamespace(get_perceptrons=lambda: [])
-        step._run_torch_sim_parity_check(model=model, ir_graph=object())
-        assert built == [1], "torch<->sim parity gate must be standing (default-on)"
+        step._run_readout_decision_drift_diagnostic(model=model, ir_graph=object())
+        assert built == [1], "the readout-drift report must be standing (default-on)"
 
     def test_can_be_explicitly_disabled(self, monkeypatch):
         import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as scm_mod
@@ -111,8 +118,8 @@ class TestTorchSimParityIsStanding:
         )
         step = self._make_step("ttfs_cycle_based")
         step.pipeline.config["scm_torch_sim_parity_check"] = False
-        step._run_torch_sim_parity_check(model=object(), ir_graph=object())
-        assert built == [], "explicit opt-out must skip the gate"
+        step._run_readout_decision_drift_diagnostic(model=object(), ir_graph=object())
+        assert built == [], "explicit opt-out must skip the report"
 
 
 # --------------------------------------------------------------------------- #
@@ -207,19 +214,22 @@ class TestMetricProtocolDriftLock:
         )
         assert hasattr(nf_scm_parity, DEPLOYED_METRIC_PROTOCOL["parity_gate"])
         assert hasattr(
+            nf_scm_parity, DEPLOYED_METRIC_PROTOCOL["readout_drift_report"]
+        )
+        assert hasattr(
             soft_core_mapping_step, DEPLOYED_METRIC_PROTOCOL["metric_step"]
         )
 
-    def test_metric_step_runs_metric_after_parity_gates(self):
-        """The deployment step must call both parity gates BEFORE producing the
-        metric (the gate cannot run after the number is already trusted)."""
+    def test_metric_step_runs_metric_after_the_gate_and_the_report(self):
+        """The deployment step must run the gate and the report BEFORE producing
+        the metric (neither can run after the number is already trusted)."""
         import inspect
         from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import (
             SoftCoreMappingStep,
         )
 
         src = inspect.getsource(SoftCoreMappingStep.process)
-        gate_pos = src.index("_run_torch_sim_parity_check")
+        gate_pos = src.index("_run_readout_decision_drift_diagnostic")
         nf_gate_pos = src.index("_run_nf_scm_parity_gate")
         metric_pos = src.index("run_scm_identity_metric")
         assert nf_gate_pos < metric_pos

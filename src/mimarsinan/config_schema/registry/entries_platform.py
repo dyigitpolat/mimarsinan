@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional
 
+from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
@@ -22,16 +23,23 @@ from mimarsinan.config_schema.registry.entries_platform_bias import (
 
 _PC = "platform_constraints"
 
-# The NF<->SCM gate runs ONE question ("how many validation inputs?") on two
+# The NF<->SCM gate runs ONE question ("how many validation inputs?") on three
 # statistics: a serial per-neuron sweep whose mass comes from neurons (2 inputs
-# suffice) and a batched cascaded decision gate whose mass comes from samples
-# (64 Bernoulli trials tolerate exactly one WQ tie-flip at min_agreement 0.98).
+# suffice), a batched cascaded decision gate whose mass comes from samples
+# (64 Bernoulli trials tolerate exactly one WQ tie-flip at min_agreement 0.98),
+# and the streamed EXACTNESS sweep, which admits no tolerance at all: it is the
+# only fatal read of the deployed hop under the streamed discipline, so its
+# coverage is where samples belong (the narrowconv run held 128 samples exact
+# at atol=0 while the fatal default was 2).
 NF_SCM_PARITY_SAMPLES = 2
 NF_SCM_PARITY_SAMPLES_CASCADED = 64
+NF_SCM_PARITY_SAMPLES_STREAMED = 64
 
 
 def _nf_scm_parity_samples(cfg: Mapping[str, Any]) -> int:
     """Mode-aware sample count of the single NF<->SCM parity gate."""
+    if is_streamed_lif(cfg):
+        return NF_SCM_PARITY_SAMPLES_STREAMED
     if is_cascaded_ttfs(cfg.get("spiking_mode", "lif"), cfg.get("ttfs_cycle_schedule")):
         return NF_SCM_PARITY_SAMPLES_CASCADED
     return NF_SCM_PARITY_SAMPLES
@@ -225,10 +233,12 @@ ENTRIES = _BIAS_ENTRIES + (
        empty_means="the global degradation_tolerance"),
     _E("nf_scm_parity_samples", group="deployment_target", owner="nf_scm_parity",
        type=T.INT, category=Category.ADVANCED, label="NF-SCM Parity Samples",
-       doc="NF<->SCM gate inputs; 0 disables (mode-aware default: sweep 2, cascaded 64).",
+       doc="NF<->SCM gate inputs; 0 disables (mode-aware default: sweep 2, "
+           "cascaded 64, streamed 64 — the streamed sweep is the run's only "
+           "fatal read of the deployed hop, so coverage belongs there).",
        bounds=(0, None), provenance="derivation rule",
        derived_default=_nf_scm_parity_samples,
-       empty_means="2, or 64 on the cascaded schedule"),
+       empty_means="2, or 64 on the cascaded schedule and the streamed discipline"),
     _E("nf_scm_parity_atol", group="deployment_target", owner="nf_scm_parity",
        type=T.FLOAT, category=Category.ADVANCED, label="NF-SCM Parity Atol",
        doc="Absolute tolerance of the NF<->SCM output comparison.", bounds=(0.0, None),
@@ -246,18 +256,19 @@ ENTRIES = _BIAS_ENTRIES + (
        bounds=(0.0, 1.0),
        provenance="consumer frozen default", derived_default=_frozen(0.98)),
     _E("scm_torch_sim_parity_check", group="deployment_target", owner="soft_core_mapping",
-       type=T.BOOL, category=Category.ADVANCED, label="SCM-Torch Parity Check",
-       doc="Enable the torch-vs-deployed-sim agreement check at SCM (a standing "
-           "deployment-faithfulness gate: default on).",
+       type=T.BOOL, category=Category.ADVANCED, label="Readout Drift Report",
+       doc="Emit the readout-decision-drift report at SCM (a standing "
+           "deployment-faithfulness REPORT: default on, never fatal).",
        provenance="consumer frozen default", derived_default=_frozen(True)),
     _E("scm_torch_sim_parity_samples", group="deployment_target", owner="soft_core_mapping",
-       type=T.INT, category=Category.ADVANCED, label="SCM-Torch Parity Samples",
-       doc="Samples for the SCM torch-vs-sim agreement check; 0 disables the check.",
+       type=T.INT, category=Category.ADVANCED, label="Readout Drift Samples",
+       doc="Samples for the readout-decision-drift report; 0 disables it.",
        bounds=(0, None), provenance="consumer frozen default", derived_default=_frozen(256)),
     _E("scm_torch_sim_parity_min_agreement", group="deployment_target",
        owner="soft_core_mapping", type=T.FLOAT, category=Category.ADVANCED,
-       label="SCM-Torch Min Agreement",
-       doc="Minimum agreement of the SCM torch-vs-sim check.", bounds=(0.0, 1.0),
+       label="Readout Drift Expected Agreement",
+       doc="Agreement below which the readout-drift report prints DRIFT; it never "
+           "fails the step.", bounds=(0.0, 1.0),
        provenance="consumer frozen default", derived_default=_frozen(0.98)),
     _E("onchip_majority_gate", group="deployment_target", owner="certification",
        type=T.BOOL, category=Category.ADVANCED, label="On-chip Majority Gate",

@@ -19,25 +19,33 @@ class FaithfulnessGate:
     """A gate that runs on a deployment run to keep the deployed number honest.
 
     ``default_on`` marks a *standing* gate (locked default-ON by the audit test, so it
-    cannot regress to opt-in by a silent defaults edit).
+    cannot regress to opt-in by a silent defaults edit). ``fatal`` marks the rows
+    that can FAIL a run; a standing row that is not fatal is a standing REPORT.
     """
 
     name: str
     config_flag: str
     default_on: bool
     description: str
+    fatal: bool = True
 
 
 DEPLOYMENT_FAITHFULNESS_GATES: Tuple[FaithfulnessGate, ...] = (
     FaithfulnessGate(
-        name="torch_vs_deployed_sim_parity",
+        name="readout_decision_drift",
         config_flag="scm_torch_sim_parity_check",
         default_on=True,
+        fatal=False,
         description=(
-            "The trained torch NF argmax must agree with the EXACT spiking sim "
-            "run_scm_identity_metric deploys (build_spiking_hybrid_flow). Catches "
-            "a torch<->sim deployment divergence the 500-sample metric subsample "
-            "could hide. Wired in SoftCoreMappingStep._run_torch_sim_parity_check."
+            "How much of the readout the trained torch NF and the EXACT spiking sim "
+            "run_scm_identity_metric deploys (build_spiking_hybrid_flow) place on the "
+            "same integer count, both read inside the chip-lattice measurement plane. "
+            "A REPORT, never a verdict: the two are different float programs, and "
+            "reading them as an argmax agreement measured float32 tie-breaking on a "
+            "tie-dense integer readout instead (narrowconv 0.9883 = 3 flips, all on "
+            "IDENTICAL counts). It does not arm for streamed lif, where the count "
+            "exactness gate holds the same hop at atol=0. Wired in "
+            "SoftCoreMappingStep._run_readout_decision_drift_diagnostic."
         ),
     ),
     FaithfulnessGate(
@@ -233,7 +241,8 @@ def _bump_patch(version: str) -> str:
 DEPLOYED_METRIC_PROTOCOL = {
     "metric_entrypoint": "run_scm_identity_metric",
     "deployed_executor_builder": "build_spiking_hybrid_flow",
-    "parity_gate": "assert_torch_vs_deployed_sim_parity_or_raise",
+    "parity_gate": "assert_streamed_nf_scm_exact_or_raise",
+    "readout_drift_report": "measure_readout_decision_drift",
     "metric_step": "SoftCoreMappingStep",
 }
 

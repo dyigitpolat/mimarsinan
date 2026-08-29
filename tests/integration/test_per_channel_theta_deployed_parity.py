@@ -28,7 +28,7 @@ from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.torch_mlp_mixer_core import TorchMLPMixerCore
 from mimarsinan.pipelining.core.nf_scm_parity import (
-    assert_torch_vs_deployed_sim_parity_or_raise,
+    measure_readout_decision_drift,
 )
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.per_channel_theta import eligible_per_channel_perceptrons
@@ -131,9 +131,9 @@ def test_scalar_theta_twin_and_deployed_stay_bit_consistent():
     assert float((deployed - twin * T).abs().max()) == 0.0
 
 
-def test_promoted_unequal_theta_passes_the_deployed_parity_gate():
-    """The t0_01 regression pin: unequal promoted theta must hold the exact gate
-    that tripped in the field (assert_torch_vs_deployed_sim_parity_or_raise)."""
+def test_promoted_unequal_theta_holds_the_readout_count_lattice():
+    """The t0_01 regression pin: unequal promoted theta must keep the twin and
+    the deployed sim on the SAME readout counts (measure_readout_decision_drift)."""
     flow, flow_hcm, _, promoted = _build(promote=True)
     assert promoted, "fixture must promote at least one per-channel theta"
     thetas = {
@@ -144,8 +144,8 @@ def test_promoted_unequal_theta_passes_the_deployed_parity_gate():
         not torch.allclose(v, v[0].expand_as(v)) for v in thetas.values()
     ), "promoted thetas must be genuinely unequal"
 
-    agreement = assert_torch_vs_deployed_sim_parity_or_raise(
-        _TwinForward(flow, T), flow_hcm, _samples(), min_agreement=0.98,
+    agreement = measure_readout_decision_drift(
+        _TwinForward(flow, T), flow_hcm, _samples(),
     )
     assert agreement == 1.0
 

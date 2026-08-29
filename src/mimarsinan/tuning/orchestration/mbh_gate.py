@@ -213,6 +213,11 @@ def _accept(tuner, state, rate, post_acc, full_acc, t0) -> None:
     tuner._record_fast_cycle(rate, post_acc, t0)
     tuner._last_post_acc = post_acc
     tuner._fast_probe(float(rate))
+    # The proxy_gap ledger is a per-COMMIT diagnostic; the fast ladder replaces
+    # the controller's commit path wholesale, so without this call the
+    # tuning_full_transform_probe flag was inert for every fixed-ladder family.
+    with mbh_ledger._measurement_guard(tuner.trainer):
+        tuner._probe_full_transform(float(post_acc))
     _add_phase_seconds(tuner, t0)
     tuner._fast_retry_step_scale = 1
     state.prev_post_acc = float(post_acc)

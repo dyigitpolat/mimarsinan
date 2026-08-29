@@ -189,10 +189,13 @@ ENTRIES = (
        type=T.BOOL, category=Category.DERIVED, derivation="derived",
        exposure="derived", label="Cycle-accurate LIF Forward",
        effect="Spike-train forward during LIF adaptation training",
-       doc="LIF adaptation trains against the cycle-accurate spiking forward "
-           "(the deployed forward) — the correctness mechanism that keeps the "
-           "QAT train-forward bit-exact to the deployed eval-forward. The LIF "
-           "recipe always folds it ON; it is never a knob.",
+       doc="LIF adaptation builds the cycle-accurate spiking forward (the "
+           "deployed forward) — the correctness mechanism that keeps the QAT "
+           "train-forward bit-exact to the deployed eval-forward. It is what "
+           "the ramp strategy INSTALLS that decides whether the ladder trains "
+           "it: the streamed T-anneal installs it from the first rung, the "
+           "windowed value-domain ramp only at finalize. The LIF recipe always "
+           "folds this flag ON; it is never a knob.",
        derived_from=("spiking_family", "spiking_variant"),
        why=lambda cfg: (
            "on — LIF adaptation trains the deployed cycle-accurate forward "

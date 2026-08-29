@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import torch.nn.functional as F
 
 from mimarsinan.models.spiking.training.blended_genuine_forward import (
@@ -17,9 +19,25 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
 )
 
 
+@dataclass(frozen=True)
+class RampForwardSeam:
+    """The tuner method a ramp strategy takes its ramp forward from.
+
+    ``ramp_forward`` answers with this instead of a built forward when no tuner
+    is bound, so "does this strategy ramp through the deployed composition?" —
+    the ladder's most consequential property — is checkable from the strategy
+    alone, without constructing a tuner and a model.
+    """
+
+    name: str
+
+
 class RampStrategy:
     """How the model is driven 0→1. Each seam takes the tuner; the base returns
     the value-domain proxy ramp behavior (the golden non-destructive ramp)."""
+
+    #: Tuner seam supplying the ramp forward (``None`` = the value-domain ramp).
+    forward_seam: RampForwardSeam | None = None
 
     def is_bare_target(self, tuner) -> bool:
         """Whether ``base_activation`` IS the bare target node (no value blend)."""
@@ -35,9 +53,20 @@ class RampStrategy:
             old_type=tuner._old_activation_type,
         )
 
-    def ramp_forward(self, tuner, model) -> LazyExecutorForward | None:
-        """Cross-layer forward installed during the ramp (``None`` = value-domain)."""
-        return None
+    def ramp_forward(
+        self, tuner, model,
+    ) -> LazyExecutorForward | RampForwardSeam | None:
+        """Cross-layer forward installed during the ramp (``None`` = value-domain).
+
+        Built from ``forward_seam`` on the tuner; with no tuner bound the seam
+        itself is the answer (``_install_ramp_forward`` never takes that path).
+        """
+        seam = self.forward_seam
+        if seam is None:
+            return None
+        if tuner is None:
+            return seam
+        return getattr(tuner, seam.name)(model)
 
     def make_kd_loss(self, tuner):
         return tuner._kd_classification_loss(tuner._teacher)
@@ -69,6 +98,16 @@ class GenuineRampBase(RampStrategy):
 
     def after_install_blend_pre(self, tuner) -> None:
         tuner._finalize_rebuild()
+
+
+FINALIZE_FORWARD_SEAM = RampForwardSeam("_finalize_forward_for")
+
+
+class DeployedCompositionRamp(GenuineRampBase):
+    """Ramp THROUGH the deployed composition: the ramp forward IS the tuner's own
+    finalize forward, so probe ≡ train ≡ deploy through one builder."""
+
+    forward_seam = FINALIZE_FORWARD_SEAM
 
 
 class _BlendGenuineKDLoss(KDClassificationLoss):

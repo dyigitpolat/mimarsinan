@@ -200,22 +200,22 @@ class TestStepWiring:
             lambda pipeline, mapping, model: object(),
         )
 
-        def _capture(reference, flow, samples, *, min_agreement, labels=None):
+        def _capture(reference, flow, samples, **kwargs):
             captured["reference"] = reference
-            captured["min_agreement"] = min_agreement
+            captured["kwargs"] = kwargs
             return 1.0
 
         monkeypatch.setattr(
-            parity_mod, "assert_torch_vs_deployed_sim_parity_or_raise", _capture,
+            parity_mod, "measure_readout_decision_drift", _capture,
         )
 
         pipeline = MockPipeline(config=default_config())
         step = SoftCoreMappingStep(pipeline)
         step.trainer = self._StubTrainer()
-        step._run_torch_sim_parity_check(model, ir_graph=object())
+        step._run_readout_decision_drift_diagnostic(model, ir_graph=object())
 
         assert captured["reference"] is not model, (
             "a comp-baked model must be checked against the corrected reference"
         )
-        # never weaken the threshold
-        assert captured["min_agreement"] == 0.90  # catastrophic floor; configured value is the drift-report threshold [calculus 17]
+        # No threshold reaches the statistic at all: it reports, never gates.
+        assert "min_agreement" not in captured["kwargs"]

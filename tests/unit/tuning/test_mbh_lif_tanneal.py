@@ -32,10 +32,11 @@ _LEDGER_RE = re.compile(r"^\[MBH\] tuner=\S+ rung=\d+ rate=[0-9.]+ ")
 
 
 def _lif_tuner(tmp_path, *, tanneal, steps_per_rate=2, rates=(0.25, 0.5, 0.75, 1.0),
-               simulation_steps=4, target_metric=0.0):
+               simulation_steps=4, target_metric=0.0, **cfg_overrides):
     from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 
     cfg = default_config()
+    cfg.update(cfg_overrides)
     cfg["spiking_mode"] = "lif"
     cfg["firing_mode"] = "Default"
     cfg["thresholding_mode"] = "<"
@@ -310,6 +311,7 @@ class TestDhatUsesTargetT:
         tuner = _lif_tuner(tmp_path, tanneal=True)
         try:
             tuner._set_rate(0.25)
+            lif_active_before = tuner.adaptation_manager.lif_active
             clone = copy.deepcopy(tuner.model)
             tuner._mbh_full_transform_forward(clone)
             for lif in _lif_targets(clone):
@@ -321,7 +323,10 @@ class TestDhatUsesTargetT:
                 assert lif.T == 32
             for q in _input_quantizers(tuner.model):
                 assert q.T == 32
-            assert tuner.adaptation_manager.lif_active is False
+            # ... and the SHARED manager flag the clone rebuild sets is restored
+            # (the T-anneal ramp already runs the finalize rebuild up front, so
+            # the invariant is "unchanged", not "False").
+            assert tuner.adaptation_manager.lif_active is lif_active_before
         finally:
             tuner.close()
 
@@ -339,6 +344,58 @@ class TestTunerWiring:
         try:
             assert isinstance(tuner._ramp, TAnnealRealizableRamp)
             assert isinstance(tuner._axis, LIFTAnnealAxis)
+        finally:
+            tuner.close()
+
+    def test_the_ladder_ramps_through_the_deployed_forward(self, tmp_path):
+        """The rungs must train the forward the tuner FINALIZES with — one
+        builder, so probe == train == deploy. A value-domain proxy here trained
+        the rate-mode staircase (<= 1 spike/cycle) the chip never runs."""
+        tuner = _lif_tuner(tmp_path, tanneal=True, cycle_accurate_lif_forward=True)
+        try:
+            installed = tuner.model.__dict__.get("forward")
+            finalize = tuner._finalize_forward_for(tuner.model)
+            assert installed is not None, (
+                "the T-anneal ladder must install a cross-layer ramp forward"
+            )
+            assert type(installed) is type(finalize)
+            assert installed.model is tuner.model
+            assert installed.soma_law == finalize.soma_law
+        finally:
+            tuner.close()
+
+    def test_the_entry_state_is_rung_zero_not_an_unasked_state(self, tmp_path):
+        """The ramp forward is installed at construction, so the model must
+        already be on rung 0 when anything reads it — a value blend still at
+        rate 0.0 never calls the LIF node, and the installed walk then folds an
+        EMPTY event train."""
+        tuner = _lif_tuner(tmp_path, tanneal=True, cycle_accurate_lif_forward=True)
+        try:
+            assert {float(p.base_activation.rate)
+                    for p in tuner.model.get_perceptrons()} == {1.0}
+            assert {lif.T for lif in _lif_targets(tuner.model)} == {32}
+            assert tuner.model.__dict__["forward"].T == 32
+        finally:
+            tuner.close()
+
+    def test_the_rungs_T_is_the_installed_walks_T(self, tmp_path):
+        """A walk frozen at the target window would run the target window at
+        every rung and the anneal would be inert on the only forward trained."""
+        tuner = _lif_tuner(tmp_path, tanneal=True, cycle_accurate_lif_forward=True)
+        try:
+            for rate, expected in ((0.25, 32), (0.5, 16), (1.0, 4)):
+                tuner._set_rate(rate)
+                assert tuner.model.__dict__["forward"].T == expected
+                assert {lif.T for lif in _lif_targets(tuner.model)} == {expected}
+        finally:
+            tuner.close()
+
+    def test_the_value_domain_ramp_installs_nothing(self, tmp_path):
+        """Non-vacuity: the knob-off recipe stays the value-domain proxy ramp."""
+        tuner = _lif_tuner(tmp_path, tanneal=False, cycle_accurate_lif_forward=True)
+        try:
+            assert tuner._ramp.ramp_forward(tuner, tuner.model) is None
+            assert "forward" not in tuner.model.__dict__
         finally:
             tuner.close()
 

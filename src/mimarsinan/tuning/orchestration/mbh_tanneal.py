@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 from mimarsinan.models.nn.activations import ChipInputQuantizer, LIFActivation
 from mimarsinan.tuning.axes.blend_axis import BlendAxis
-from mimarsinan.tuning.orchestration.ramp_strategy import ValueDomainProxyRamp
+from mimarsinan.tuning.forward_install import LazyExecutorForward
+from mimarsinan.tuning.orchestration.ramp_strategy import DeployedCompositionRamp
 from mimarsinan.tuning.perceptron_rate import set_blend_rate
 
 DEFAULT_START_T = 32
@@ -86,10 +87,19 @@ class TAnnealSchedule:
 
 
 def apply_simulation_steps(model, T: int) -> None:
-    """Set the rung's T on every LIF node and chip input quantizer under ``model``."""
+    """Set the rung's T on every LIF node, chip input quantizer, and installed
+    cross-layer walk under ``model``.
+
+    The walk's cycle count is the rung's T too: a forward frozen at the target
+    window would run the target window at every rung and the anneal would be
+    inert on the only forward that trains.
+    """
     for module in model.modules():
         if isinstance(module, (LIFActivation, ChipInputQuantizer)):
             module.T = int(T)
+    forward = model.__dict__.get("forward")
+    if isinstance(forward, LazyExecutorForward):
+        forward.T = int(T)
 
 
 def _current_simulation_steps(model) -> int | None:
@@ -137,9 +147,15 @@ class LIFTAnnealAxis(BlendAxis):
         return f"{self.name}(target_T={self._schedule.target_T})"
 
 
-class TAnnealRealizableRamp(ValueDomainProxyRamp):
-    """Ramp strategy whose only deviation from the value-domain recipe is the
-    axis: same blend module, KD loss, and forwards (equal-budget T1 comparison)."""
+class TAnnealRealizableRamp(DeployedCompositionRamp):
+    """Anneal T over the DEPLOYED composition: every rung is a genuine deployable
+    LIF network at its own T, driven by the forward the tuner finalizes with.
+
+    A value-domain proxy here trained the per-perceptron rate-mode staircase
+    (<= 1 spike/cycle) while the deployment ran the event-serial fold — measured
+    on the narrowconv artifacts, the ladder's view and the deployed view were
+    +38.4 pp apart at entry and -41.9 pp at exit, in opposite directions.
+    """
 
     def __init__(self, schedule: TAnnealSchedule):
         self._schedule = schedule

@@ -253,10 +253,14 @@ _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
     "sanafe": BackendSpikingCapabilities(True, True, True, True),
     "lava": BackendSpikingCapabilities(True, False, False, False),
     "loihi": BackendSpikingCapabilities(True, False, False, False),
-    # The NF twin executes the SAME fold as a parity instrument under eval,
-    # but only for perceptrons whose pre-activation decomposes into an
-    # effective weight matrix, and no gradient is defined for a count fold —
-    # so training refuses the point rather than claim an executor it lacks.
+    # Conservative, and NOT because the fold is undifferentiable: the NF twin's
+    # serial slot carries a straight-through surrogate at the count boundary
+    # (models/nn/activations/lif_serial.py), so the streamed ladder and the
+    # endpoint stage do train THROUGH the per-event fold on the saturating
+    # register. What two independent booleans cannot say is that only the PAIR
+    # holds: per_event x saturating is executed, while the twin's per_cycle path
+    # is the plain IF node and applies no register interval at all. The row
+    # refuses both rather than over-claim either.
     "training": BackendSpikingCapabilities(True, False, False, False),
 }
 

@@ -193,6 +193,18 @@ class TestTheConcreteProspectiveValue:
         assert cascaded["nf_scm_parity_samples"] == 64
         assert analytic["nf_scm_parity_samples"] == 2
 
+    def test_the_streamed_exactness_sweep_gets_the_coverage(self):
+        """It is the streamed run's ONLY fatal read of the deployed hop, and it
+        admits no tolerance — 2 samples was the coverage of a verdict."""
+        streamed = derived_values_view(
+            _resolved("lif", spiking_family="lif", spiking_variant="streamed")
+        )
+        synchronized = derived_values_view(
+            _resolved("lif", spiking_family="lif", spiking_variant="synchronized")
+        )
+        assert streamed["nf_scm_parity_samples"] >= 64
+        assert synchronized["nf_scm_parity_samples"] == 2
+
     def test_the_scm_tolerance_names_the_tolerance_that_actually_governs(self):
         view = derived_values_view(_resolved(degradation_tolerance=0.15))
         assert view["scm_degradation_tolerance"] == 0.15
@@ -271,7 +283,7 @@ class TestDerivedDefaultsAgreeWithTheConsumers:
         resolution = resolve_draft(starter_draft())
         assert resolution.errors == []
         view = derived_values_view(resolution.resolved)
-        assert view["nf_scm_parity_samples"] == 2
+        assert view["nf_scm_parity_samples"] == 64  # the starter is streamed lif
         assert view["scm_degradation_tolerance"] == 0.15
         assert view["onchip_min_fraction"] == 0.2
 

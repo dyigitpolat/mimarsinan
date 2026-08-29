@@ -42,7 +42,15 @@ class TestStreamedRecipe:
         assert "streaming" in recipe.rationale
         windowed = ConversionPolicy.derive("lif")
         assert windowed.special_case == "bn_freeze"
-        assert recipe.knobs == {**windowed.knobs, "lif_exact_qat": False}
+        assert recipe.knobs == {
+            **windowed.knobs,
+            "lif_exact_qat": False,
+            # The streamed ladder is the one that ramps THROUGH the deployed
+            # composition, so proxy_gap is the measurement that keeps the
+            # claim honest rung by rung.
+            "tuning_full_transform_probe": True,
+        }
+        assert "tuning_full_transform_probe" not in windowed.knobs
 
     def test_streamed_locks_scheduling_off(self):
         cfg = _resolved("streamed")

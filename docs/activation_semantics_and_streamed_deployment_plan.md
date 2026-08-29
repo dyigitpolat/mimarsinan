@@ -261,7 +261,12 @@ execution for one segment (F3). Changes are confined to:
   4. a per-cycle **train-equality probe** (diagnostic, few samples): NF hop
      trains vs SCM buffers, cycle-exact — catches any residual alignment bug
      the count gate could mask.
-  5. `torch_vs_deployed_sim_parity` as today (argmax agreement).
+  5. `readout_decision_drift` — a NON-GATING report of how far the trained
+     torch readout and the deployed sim land apart on the readout's integer
+     count lattice, both read inside `measurement_plane()`. It does NOT arm
+     for streamed lif: gate 1 already holds the same hop at atol=0, and the
+     argmax reading it replaced measured float32 tie-breaking on a tie-dense
+     integer readout (three narrowconv flips, all on IDENTICAL counts).
 
 ### 2.5 Honest reporting
 

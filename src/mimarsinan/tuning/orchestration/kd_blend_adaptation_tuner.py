@@ -60,6 +60,12 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
 
         self._axis = self._make_axis()
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+        # The axis owns the rate -> model-state map, so the ENTRY state is
+        # established through it exactly once. Inert for the value-domain axes
+        # (the install already is their rate-0 state); for the T-anneal axis it
+        # is what puts the model on rung 0 before anything reads it, so an
+        # installed ramp forward never runs a state no rate ever asked for.
+        self._axis.set_rate(self._committed_rate)
 
     def _configure(self) -> None:
         """Read config, set names/params, and any adaptation_manager flags."""

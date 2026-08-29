@@ -236,13 +236,13 @@ class ConversionPolicy:
         streamed_lif = mode == "lif" and str(spiking_variant or "") == "streamed"
 
         if streamed_lif:
-            # The exact-QAT staircase refinement is inherently WINDOWED
-            # semantics; streamed trains the raw cascade through the plain
-            # cycle-accurate LIF adaptation instead (train == deploy forward).
+            # Exact-QAT staircase refinement is inherently WINDOWED semantics;
+            # streamed ramps the raw cascade THROUGH the deployed composition,
+            # and the probe keeps that claim honest rung by rung (rationale).
             knobs, special_case, rationale = (
-                {**_LIF_RECIPE_KNOBS, "lif_exact_qat": False},
-                "streamed_raw_cascade", _STREAMED_LIF_RATIONALE,
-            )
+                {**_LIF_RECIPE_KNOBS, "lif_exact_qat": False,
+                 "tuning_full_transform_probe": True},
+                "streamed_raw_cascade", _STREAMED_LIF_RATIONALE)
         elif mode == "lif":
             knobs, special_case, rationale = (
                 _LIF_RECIPE_KNOBS, "bn_freeze", _LIF_RATIONALE,
