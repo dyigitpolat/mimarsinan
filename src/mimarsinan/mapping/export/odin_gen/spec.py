@@ -20,8 +20,16 @@ CORE_TYPE_FIELDS: Tuple[str, ...] = ("max_axons", "max_neurons", "count", "has_b
 #: Geometry the v1 generator emits: powers of two, because the address widths,
 #: the synapse-word packing and the sweep bounds are all derived from clog2 and
 #: a ragged geometry buys nothing a padded power of two does not.
-GENERATED_AXON_CHOICES: Tuple[int, ...] = (2, 4, 8, 16, 32, 64, 128, 256, 512)
-GENERATED_NEURON_CHOICES: Tuple[int, ...] = GENERATED_AXON_CHOICES
+#:
+#: The two axes are NOT the same list. 1024 rows is the WIDE chip config's axon
+#: count -- it is the first width at which a 784-line MNIST raster maps whole
+#: onto one core -- and a cosimulation proves it. The neuron axis stops at 512
+#: because nothing has cosimulated a wider one, and this list is the emitted
+#: envelope, not a rounding: an unlisted value is a real gap.
+GENERATED_AXON_CHOICES: Tuple[int, ...] = (
+    2, 4, 8, 16, 32, 64, 128, 256, 512, 1024)
+GENERATED_NEURON_CHOICES: Tuple[int, ...] = (
+    2, 4, 8, 16, 32, 64, 128, 256, 512)
 
 #: Membrane register widths the v1 generator emits. Theta shares the width.
 GENERATED_MEMBRANE_BITS: Tuple[int, ...] = (8, 16)

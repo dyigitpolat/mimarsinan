@@ -45,12 +45,13 @@ def unbounded_law() -> SomaLaw:
     return SomaLaw.resolve(dict(_BASE))
 
 
-def spec_for(law: SomaLaw, *, axons: int, neurons: int, count: int = 1) -> CoreSpec:
+def spec_for(law: SomaLaw, *, axons: int, neurons: int, count: int = 1,
+             weight_bits: int = WEIGHT_BITS) -> CoreSpec:
     """One declared core type times the law -- the projection, never a literal."""
     return CoreSpec.project(
         {"max_axons": axons, "max_neurons": neurons, "count": count,
          "has_bias": False},
-        soma_law=law, weight_bits=WEIGHT_BITS,
+        soma_law=law, weight_bits=weight_bits,
         weight_sign_granularity=SIGN_GRANULARITY,
     )
 
@@ -82,7 +83,7 @@ class NamedVariant:
         )
 
 
-#: The three GENERATED variants plan §7 row 20 proves at zero difference.
+#: The GENERATED variants plan §7 row 20 proves at zero difference.
 PROVEN_VARIANTS: Tuple[NamedVariant, ...] = (
     NamedVariant(
         name="gen_a128n128_mb8_per_event",
@@ -99,7 +100,21 @@ PROVEN_VARIANTS: Tuple[NamedVariant, ...] = (
         spec=spec_for(sync_fire_law(16), axons=256, neurons=256),
         proven_by="tests/integration/test_odin_gen_sync_fire.py",
     ),
+    # The WIDE chip config's core. Both axes the stock geometry refuses move at
+    # once: 1024 axon rows (a 784-line raster maps whole, and per-synapse signs
+    # spend one row per slot rather than the stock pair) and an 8-bit synapse
+    # cell whose weight grid is [-128, 127] instead of the stock cell's
+    # magnitude-plus-row-sign [-7, 7].
+    NamedVariant(
+        name="gen_a1024n256_mb16w8_per_event",
+        spec=spec_for(per_event_law(16), axons=1024, neurons=256,
+                      weight_bits=8),
+        proven_by="tests/integration/test_odin_gen_geometry.py::wide_chip_variant",
+    ),
 )
+
+#: The variant the WIDE chip configuration builds its fabric around.
+WIDE_CHIP_VARIANT = "gen_a1024n256_mb16w8_per_event"
 
 
 def variant_named(name: str) -> NamedVariant:

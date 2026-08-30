@@ -1,9 +1,11 @@
-"""The five configurations the compile-limits study measures, and their memories.
+"""The configurations the compile-limits study measures, and their memories.
 
 One `SynthesisTarget` per configuration, all through the SAME P5.5a yosys driver
-and the SAME `stat`-census method: the stock core, the three cosim-proven
-GENERATED variants, and the Vitis kernel wrapper around one core. The stock row
-is not re-measured here -- it is READ from `hw/fpga/synth_resources.json`.
+and the SAME `stat`-census method: the stock core, every cosim-proven GENERATED
+variant, the Vitis kernel wrapper around one stock core at two capture depths,
+and the same wrapper around each non-stock CHIP CONFIGURATION -- so a fabric the
+build can select is a fabric the bounds can cost. The stock row is not
+re-measured here -- it is READ from `hw/fpga/synth_resources.json`.
 """
 
 from __future__ import annotations
@@ -23,9 +25,18 @@ from mimarsinan.chip_simulation.odin_rtl.toolchain import (
     overlay_sources,
     vendor_sources,
 )
+from mimarsinan.chip_simulation.odin_fpga.chip_configs import (
+    STOCK_CHIP,
+    ChipConfig,
+    chip_configs,
+)
 from mimarsinan.mapping.export.odin_gen.generate import generate_core
 from mimarsinan.mapping.export.odin_gen.render import CORE_MODULE
-from mimarsinan.mapping.export.odin_gen.variants import PROVEN_VARIANTS, NamedVariant
+from mimarsinan.mapping.export.odin_gen.variants import (
+    PROVEN_VARIANTS,
+    NamedVariant,
+    variant_named,
+)
 
 STOCK_KEY = "stock_a256n256_vendored"
 WRAPPER_TOP = "odin_fpga_kernel_top"
@@ -111,7 +122,8 @@ def variant_configuration(variant: NamedVariant) -> Configuration:
     return Configuration(
         key=variant.name,
         label=(f"generated core, {spec.max_axons} axons x {spec.max_neurons} "
-               f"neurons, {spec.membrane_bits}-bit "
+               f"neurons, {spec.weight_bits}-bit signed synapse cell, "
+               f"{spec.membrane_bits}-bit "
                f"{'signed' if spec.membrane_signed else 'unsigned'} membrane, "
                f"{'per-event' if spec.per_event else 'sync-fire'} law"),
         kind="generated",
@@ -124,6 +136,15 @@ def variant_configuration(variant: NamedVariant) -> Configuration:
             "spec_key": spec.spec_key(), "proven_by": variant.proven_by,
         },
         memories=variant.memory_shapes(),
+    )
+
+
+def _wrapper_memories(cap_words: int) -> Tuple[Dict[str, Any], ...]:
+    return (
+        {"array": "fifo_ram", "words": WRAPPER_FIFO_WORDS, "width": 32,
+         "bits": WRAPPER_FIFO_WORDS * 32},
+        {"array": "cap_ram", "words": cap_words, "width": 32,
+         "bits": cap_words * 32},
     )
 
 
@@ -145,13 +166,46 @@ def wrapper_configuration(cap_words: int) -> Configuration:
             "n_cores": 1, "fifo_words": WRAPPER_FIFO_WORDS, "cap_words": cap_words,
             "shipped_fifo_words": shipped["FIFO_WORDS"],
             "shipped_cap_words": shipped["CAP_WORDS"],
+            "chip_config": STOCK_CHIP,
+        },
+        memories=_wrapper_memories(cap_words),
+    )
+
+
+def chip_wrapper_configuration(config: ChipConfig) -> Configuration:
+    """The Vitis wrapper around ONE core of a GENERATED chip configuration.
+
+    The same top, the same shipped depths and the same measurement as the stock
+    wrapper row -- only the SOURCE SET differs, which is exactly how a chip
+    configuration selects its fabric.
+    """
+    shipped = wrapper_shipped_depths()
+    cap_words = shipped["CAP_WORDS"]
+    spec = config.core_spec
+    return Configuration(
+        key=f"wrapper_nc1_{config.name}",
+        label=(f"kernel wrapper `{WRAPPER_TOP}` at NC=1 on the {config.name} "
+               f"fabric (FIFO_WORDS={WRAPPER_FIFO_WORDS}, CAP_WORDS={cap_words}) "
+               f"-- sequencer + AXI streaming DMA + capture + one generated "
+               f"{spec.max_axons}x{spec.max_neurons} core"),
+        kind="wrapper",
+        target=SynthesisTarget(
+            label=f"{WRAPPER_TOP} NC=1 {config.name}", top=WRAPPER_TOP,
+            sources=tuple(config.rtl_sources()),
+            parameters={"FIFO_WORDS": WRAPPER_FIFO_WORDS, "CAP_WORDS": cap_words},
+        ),
+        geometry={
+            "n_cores": 1, "fifo_words": WRAPPER_FIFO_WORDS, "cap_words": cap_words,
+            "shipped_fifo_words": shipped["FIFO_WORDS"],
+            "shipped_cap_words": shipped["CAP_WORDS"],
+            "chip_config": config.name, "variant": config.variant,
+            "max_axons": config.max_axons, "max_neurons": config.max_neurons,
+            "weight_bits": int(spec.weight_bits),
+            "membrane_bits": int(spec.membrane_bits),
         },
         memories=(
-            {"array": "fifo_ram", "words": WRAPPER_FIFO_WORDS, "width": 32,
-             "bits": WRAPPER_FIFO_WORDS * 32},
-            {"array": "cap_ram", "words": cap_words, "width": 32,
-             "bits": cap_words * 32},
-        ),
+            _wrapper_memories(cap_words)
+            + variant_named(str(config.variant)).memory_shapes()),
     )
 
 
@@ -161,6 +215,8 @@ def configurations() -> Tuple[Configuration, ...]:
         (stock_configuration(),)
         + tuple(variant_configuration(v) for v in PROVEN_VARIANTS)
         + tuple(wrapper_configuration(cap) for cap in WRAPPER_CAP_WORDS)
+        + tuple(chip_wrapper_configuration(c)
+                for c in chip_configs() if not c.is_stock)
     )
 
 

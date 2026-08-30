@@ -37,6 +37,13 @@ ALLOWLIST_DIRS: frozenset[str] = frozenset({
     # 300-LOC per-file cap, so sibling count is the designed relief valve.
     "config_schema/registry",
     "chip_simulation",
+    # The ODIN device seam is partitioned by CONTRACT, one file per thing that
+    # can drift across a language boundary (the register table, the payload
+    # split, the record schema, each transport, the kernel simulation, the chip
+    # configurations). Merging two of them would put two cross-language
+    # contracts in one file under the 300-LOC cap, which is the failure the
+    # partition exists to prevent; sibling count is the designed relief valve.
+    "chip_simulation/odin_fpga",
     "mapping/mappers",
     "mapping/packing",
     "mapping/support",

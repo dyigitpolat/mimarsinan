@@ -114,7 +114,7 @@
     },
     {
       "key": "gen_a128n128_mb8_per_event",
-      "label": "generated core, 128 axons x 128 neurons, 8-bit unsigned membrane, per-event law",
+      "label": "generated core, 128 axons x 128 neurons, 4-bit signed synapse cell, 8-bit unsigned membrane, per-event law",
       "kind": "generated",
       "top": "odin_gen_core",
       "parameters": {},
@@ -159,9 +159,9 @@
         "stat -top odin_gen_core -json"
       ],
       "census": {
-        "luts": 1933,
+        "luts": 1937,
         "inverters": 1,
-        "lut_equivalent": 1934,
+        "lut_equivalent": 1938,
         "flip_flops": 1057,
         "carry": 8,
         "muxf": 1,
@@ -175,7 +175,7 @@
         },
         "io_buffers": 250,
         "unclassified": {},
-        "total_cells": 3256
+        "total_cells": 3260
       },
       "cells_by_type": {
         "BUFG": 1,
@@ -184,11 +184,11 @@
         "FDSE": 1,
         "IBUF": 79,
         "INV": 1,
-        "LUT2": 231,
-        "LUT3": 38,
-        "LUT4": 210,
-        "LUT5": 246,
-        "LUT6": 1208,
+        "LUT2": 237,
+        "LUT3": 36,
+        "LUT4": 191,
+        "LUT5": 271,
+        "LUT6": 1202,
         "MUXF7": 1,
         "OBUF": 170,
         "RAM64M8": 4,
@@ -197,7 +197,7 @@
     },
     {
       "key": "gen_a512n256_mb16_per_event",
-      "label": "generated core, 512 axons x 256 neurons, 16-bit unsigned membrane, per-event law",
+      "label": "generated core, 512 axons x 256 neurons, 4-bit signed synapse cell, 16-bit unsigned membrane, per-event law",
       "kind": "generated",
       "top": "odin_gen_core",
       "parameters": {},
@@ -242,12 +242,12 @@
         "stat -top odin_gen_core -json"
       ],
       "census": {
-        "luts": 6521,
+        "luts": 6531,
         "inverters": 1,
-        "lut_equivalent": 6522,
+        "lut_equivalent": 6532,
         "flip_flops": 4133,
         "carry": 13,
-        "muxf": 7,
+        "muxf": 5,
         "bram36": 16,
         "bram18": 0,
         "bram_tiles": 16.0,
@@ -258,7 +258,7 @@
         },
         "io_buffers": 253,
         "unclassified": {},
-        "total_cells": 10956
+        "total_cells": 10964
       },
       "cells_by_type": {
         "BUFG": 1,
@@ -267,13 +267,13 @@
         "FDSE": 1,
         "IBUF": 81,
         "INV": 1,
-        "LUT2": 405,
-        "LUT3": 506,
-        "LUT4": 463,
-        "LUT5": 708,
-        "LUT6": 4439,
-        "MUXF7": 5,
-        "MUXF8": 2,
+        "LUT2": 418,
+        "LUT3": 327,
+        "LUT4": 459,
+        "LUT5": 743,
+        "LUT6": 4584,
+        "MUXF7": 4,
+        "MUXF8": 1,
         "OBUF": 171,
         "RAM64M8": 12,
         "RAMB36E2": 16
@@ -281,7 +281,7 @@
     },
     {
       "key": "gen_a256n256_mb16s_sync_fire",
-      "label": "generated core, 256 axons x 256 neurons, 16-bit signed membrane, sync-fire law",
+      "label": "generated core, 256 axons x 256 neurons, 4-bit signed synapse cell, 16-bit signed membrane, sync-fire law",
       "kind": "generated",
       "top": "odin_gen_core",
       "parameters": {},
@@ -326,12 +326,12 @@
         "stat -top odin_gen_core -json"
       ],
       "census": {
-        "luts": 6473,
+        "luts": 6667,
         "inverters": 1,
-        "lut_equivalent": 6474,
+        "lut_equivalent": 6668,
         "flip_flops": 4133,
         "carry": 16,
-        "muxf": 15,
+        "muxf": 18,
         "bram36": 8,
         "bram18": 0,
         "bram_tiles": 8.0,
@@ -342,7 +342,7 @@
         },
         "io_buffers": 252,
         "unclassified": {},
-        "total_cells": 10910
+        "total_cells": 11107
       },
       "cells_by_type": {
         "BUFG": 1,
@@ -351,16 +351,98 @@
         "FDSE": 1,
         "IBUF": 80,
         "INV": 1,
-        "LUT2": 407,
-        "LUT3": 199,
-        "LUT4": 424,
-        "LUT5": 653,
-        "LUT6": 4790,
-        "MUXF7": 10,
-        "MUXF8": 5,
+        "LUT2": 405,
+        "LUT3": 681,
+        "LUT4": 578,
+        "LUT5": 876,
+        "LUT6": 4127,
+        "MUXF7": 12,
+        "MUXF8": 6,
         "OBUF": 171,
         "RAM64M8": 12,
         "RAMB36E2": 8
+      }
+    },
+    {
+      "key": "gen_a1024n256_mb16w8_per_event",
+      "label": "generated core, 1024 axons x 256 neurons, 8-bit signed synapse cell, 16-bit unsigned membrane, per-event law",
+      "kind": "generated",
+      "top": "odin_gen_core",
+      "parameters": {},
+      "geometry": {
+        "max_axons": 1024,
+        "max_neurons": 256,
+        "weight_bits": 8,
+        "membrane_bits": 16,
+        "membrane_signed": false,
+        "per_event": true,
+        "spec_key": "a1024n256w8m16u_pe",
+        "proven_by": "tests/integration/test_odin_gen_geometry.py::wide_chip_variant"
+      },
+      "memories": [
+        {
+          "array": "syn_mem",
+          "words": 65536,
+          "width": 32,
+          "bits": 2097152
+        },
+        {
+          "array": "thr_arr",
+          "words": 256,
+          "width": 16,
+          "bits": 4096
+        },
+        {
+          "array": "vmem_arr",
+          "words": 256,
+          "width": 16,
+          "bits": 4096
+        }
+      ],
+      "memory_bits": 2105344,
+      "measured_by": "this run",
+      "sources": [
+        "build/odin_rtl_gen/a1024n256w8m16u_pe/odin_gen_core.v"
+      ],
+      "script": [
+        "read_verilog -nooverwrite build/odin_rtl_gen/a1024n256w8m16u_pe/odin_gen_core.v",
+        "synth_xilinx -family xcup -top odin_gen_core",
+        "stat -top odin_gen_core -json"
+      ],
+      "census": {
+        "luts": 6282,
+        "inverters": 1,
+        "lut_equivalent": 6283,
+        "flip_flops": 4135,
+        "carry": 13,
+        "muxf": 0,
+        "bram36": 64,
+        "bram18": 0,
+        "bram_tiles": 64.0,
+        "uram": 0,
+        "lutram": 12,
+        "lutram_cells": {
+          "RAM64M8": 12
+        },
+        "io_buffers": 254,
+        "unclassified": {},
+        "total_cells": 10761
+      },
+      "cells_by_type": {
+        "BUFG": 1,
+        "CARRY4": 13,
+        "FDRE": 4134,
+        "FDSE": 1,
+        "IBUF": 82,
+        "INV": 1,
+        "LUT2": 467,
+        "LUT3": 1297,
+        "LUT4": 264,
+        "LUT5": 145,
+        "LUT6": 4109,
+        "OBUF": 171,
+        "RAM64M8": 12,
+        "RAMB36E2": 64
       }
     },
     {
@@ -377,7 +459,8 @@
         "fifo_words": 1024,
         "cap_words": 16384,
         "shipped_fifo_words": 1024,
-        "shipped_cap_words": 16384
+        "shipped_cap_words": 16384,
+        "chip_config": "odin_stock_256x256"
       },
       "memories": [
         {
@@ -480,7 +563,8 @@
         "fifo_words": 1024,
         "cap_words": 32768,
         "shipped_fifo_words": 1024,
-        "shipped_cap_words": 16384
+        "shipped_cap_words": 16384,
+        "chip_config": "odin_stock_256x256"
       },
       "memories": [
         {
@@ -567,6 +651,114 @@
         "MUXF8": 1,
         "OBUF": 238,
         "RAMB36E2": 43
+      }
+    },
+    {
+      "key": "wrapper_nc1_odin_wide_1024x256_mb16",
+      "label": "kernel wrapper `odin_fpga_kernel_top` at NC=1 on the odin_wide_1024x256_mb16 fabric (FIFO_WORDS=1024, CAP_WORDS=16384) -- sequencer + AXI streaming DMA + capture + one generated 1024x256 core",
+      "kind": "wrapper",
+      "top": "odin_fpga_kernel_top",
+      "parameters": {
+        "CAP_WORDS": 16384,
+        "FIFO_WORDS": 1024
+      },
+      "geometry": {
+        "n_cores": 1,
+        "fifo_words": 1024,
+        "cap_words": 16384,
+        "shipped_fifo_words": 1024,
+        "shipped_cap_words": 16384,
+        "chip_config": "odin_wide_1024x256_mb16",
+        "variant": "gen_a1024n256_mb16w8_per_event",
+        "max_axons": 1024,
+        "max_neurons": 256,
+        "weight_bits": 8,
+        "membrane_bits": 16
+      },
+      "memories": [
+        {
+          "array": "fifo_ram",
+          "words": 1024,
+          "width": 32,
+          "bits": 32768
+        },
+        {
+          "array": "cap_ram",
+          "words": 16384,
+          "width": 32,
+          "bits": 524288
+        },
+        {
+          "array": "syn_mem",
+          "words": 65536,
+          "width": 32,
+          "bits": 2097152
+        },
+        {
+          "array": "thr_arr",
+          "words": 256,
+          "width": 16,
+          "bits": 4096
+        },
+        {
+          "array": "vmem_arr",
+          "words": 256,
+          "width": 16,
+          "bits": 4096
+        }
+      ],
+      "memory_bits": 2662400,
+      "measured_by": "this run",
+      "sources": [
+        "hw/fpga/kernel/odin_aer_bridge.v",
+        "hw/fpga/kernel/odin_fpga_kernel_top.v",
+        "hw/gen/chips/odin_wide_1024x256_mb16/odin_gen_core.v",
+        "hw/gen/chips/odin_wide_1024x256_mb16/odin_fpga_kernel.v"
+      ],
+      "script": [
+        "read_verilog -nooverwrite hw/fpga/kernel/odin_aer_bridge.v hw/fpga/kernel/odin_fpga_kernel_top.v hw/gen/chips/odin_wide_1024x256_mb16/odin_gen_core.v hw/gen/chips/odin_wide_1024x256_mb16/odin_fpga_kernel.v",
+        "chparam -set CAP_WORDS 16384 -set FIFO_WORDS 1024 odin_fpga_kernel_top",
+        "synth_xilinx -family xcup -top odin_fpga_kernel_top",
+        "stat -top odin_fpga_kernel_top -json"
+      ],
+      "census": {
+        "luts": 7129,
+        "inverters": 136,
+        "lut_equivalent": 7265,
+        "flip_flops": 5188,
+        "carry": 138,
+        "muxf": 6,
+        "bram36": 81,
+        "bram18": 0,
+        "bram_tiles": 81.0,
+        "uram": 0,
+        "lutram": 12,
+        "lutram_cells": {
+          "RAM64M8": 12
+        },
+        "io_buffers": 349,
+        "unclassified": {},
+        "total_cells": 13039
+      },
+      "cells_by_type": {
+        "BUFG": 2,
+        "CARRY4": 138,
+        "FDRE": 5183,
+        "FDRE_1": 1,
+        "FDSE": 4,
+        "IBUF": 109,
+        "INV": 136,
+        "LUT1": 1,
+        "LUT2": 663,
+        "LUT3": 1138,
+        "LUT4": 461,
+        "LUT5": 431,
+        "LUT6": 4435,
+        "MUXF7": 5,
+        "MUXF8": 1,
+        "OBUF": 238,
+        "RAM64M8": 12,
+        "RAMB36E2": 81
       }
     }
   ],
@@ -863,7 +1055,7 @@
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 1966.0,
+        "lut_sites": 1970.0,
         "flip_flops": 1057.0,
         "bram36": 2.0,
         "uram": 0.0
@@ -871,10 +1063,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 1966.0,
+          "per_core": 1970.0,
           "fixed_overhead": 0.0,
           "available": 1304000,
-          "n_max": 663
+          "n_max": 661
         },
         {
           "resource": "flip_flops",
@@ -899,14 +1091,14 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 663
+      "n_max": 661
     },
     {
       "configuration": "gen_a128n128_mb8_per_event",
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 1966.0,
+        "lut_sites": 1970.0,
         "flip_flops": 1057.0,
         "bram36": 2.0,
         "uram": 0.0
@@ -914,10 +1106,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 1966.0,
+          "per_core": 1970.0,
           "fixed_overhead": 1057.0,
           "available": 1304000,
-          "n_max": 662
+          "n_max": 661
         },
         {
           "resource": "flip_flops",
@@ -942,14 +1134,14 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 662
+      "n_max": 661
     },
     {
       "configuration": "gen_a128n128_mb8_per_event",
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 1966.0,
+        "lut_sites": 1970.0,
         "flip_flops": 1057.0,
         "bram36": 2.0,
         "uram": 0.0
@@ -957,10 +1149,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 1966.0,
+          "per_core": 1970.0,
           "fixed_overhead": 0.0,
           "available": 912800,
-          "n_max": 464
+          "n_max": 463
         },
         {
           "resource": "flip_flops",
@@ -985,14 +1177,14 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 464
+      "n_max": 463
     },
     {
       "configuration": "gen_a128n128_mb8_per_event",
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 1966.0,
+        "lut_sites": 1970.0,
         "flip_flops": 1057.0,
         "bram36": 2.0,
         "uram": 0.0
@@ -1000,10 +1192,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 1966.0,
+          "per_core": 1970.0,
           "fixed_overhead": 1057.0,
           "available": 912800,
-          "n_max": 463
+          "n_max": 462
         },
         {
           "resource": "flip_flops",
@@ -1028,14 +1220,14 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 463
+      "n_max": 462
     },
     {
       "configuration": "gen_a512n256_mb16_per_event",
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 6618.0,
+        "lut_sites": 6628.0,
         "flip_flops": 4133.0,
         "bram36": 16.0,
         "uram": 0.0
@@ -1043,10 +1235,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 6618.0,
+          "per_core": 6628.0,
           "fixed_overhead": 0.0,
           "available": 1304000,
-          "n_max": 197
+          "n_max": 196
         },
         {
           "resource": "flip_flops",
@@ -1078,7 +1270,7 @@
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 6618.0,
+        "lut_sites": 6628.0,
         "flip_flops": 4133.0,
         "bram36": 16.0,
         "uram": 0.0
@@ -1086,7 +1278,7 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 6618.0,
+          "per_core": 6628.0,
           "fixed_overhead": 1057.0,
           "available": 1304000,
           "n_max": 196
@@ -1121,7 +1313,7 @@
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 6618.0,
+        "lut_sites": 6628.0,
         "flip_flops": 4133.0,
         "bram36": 16.0,
         "uram": 0.0
@@ -1129,7 +1321,7 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 6618.0,
+          "per_core": 6628.0,
           "fixed_overhead": 0.0,
           "available": 912800,
           "n_max": 137
@@ -1164,7 +1356,7 @@
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 6618.0,
+        "lut_sites": 6628.0,
         "flip_flops": 4133.0,
         "bram36": 16.0,
         "uram": 0.0
@@ -1172,7 +1364,7 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 6618.0,
+          "per_core": 6628.0,
           "fixed_overhead": 1057.0,
           "available": 912800,
           "n_max": 137
@@ -1207,7 +1399,7 @@
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 6570.0,
+        "lut_sites": 6764.0,
         "flip_flops": 4133.0,
         "bram36": 8.0,
         "uram": 0.0
@@ -1215,10 +1407,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 6570.0,
+          "per_core": 6764.0,
           "fixed_overhead": 0.0,
           "available": 1304000,
-          "n_max": 198
+          "n_max": 192
         },
         {
           "resource": "flip_flops",
@@ -1243,14 +1435,14 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 198
+      "n_max": 192
     },
     {
       "configuration": "gen_a256n256_mb16s_sync_fire",
       "scenario": "datasheet_total",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 6570.0,
+        "lut_sites": 6764.0,
         "flip_flops": 4133.0,
         "bram36": 8.0,
         "uram": 0.0
@@ -1258,10 +1450,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 6570.0,
+          "per_core": 6764.0,
           "fixed_overhead": 1057.0,
           "available": 1304000,
-          "n_max": 198
+          "n_max": 192
         },
         {
           "resource": "flip_flops",
@@ -1286,14 +1478,14 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 198
+      "n_max": 192
     },
     {
       "configuration": "gen_a256n256_mb16s_sync_fire",
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": false,
       "per_core": {
-        "lut_sites": 6570.0,
+        "lut_sites": 6764.0,
         "flip_flops": 4133.0,
         "bram36": 8.0,
         "uram": 0.0
@@ -1301,10 +1493,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 6570.0,
+          "per_core": 6764.0,
           "fixed_overhead": 0.0,
           "available": 912800,
-          "n_max": 138
+          "n_max": 134
         },
         {
           "resource": "flip_flops",
@@ -1329,14 +1521,14 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 138
+      "n_max": 134
     },
     {
       "configuration": "gen_a256n256_mb16s_sync_fire",
       "scenario": "assumed_shell_30pct",
       "wrapper_overhead_reserved": true,
       "per_core": {
-        "lut_sites": 6570.0,
+        "lut_sites": 6764.0,
         "flip_flops": 4133.0,
         "bram36": 8.0,
         "uram": 0.0
@@ -1344,10 +1536,10 @@
       "bounds": [
         {
           "resource": "lut_sites",
-          "per_core": 6570.0,
+          "per_core": 6764.0,
           "fixed_overhead": 1057.0,
           "available": 912800,
-          "n_max": 138
+          "n_max": 134
         },
         {
           "resource": "flip_flops",
@@ -1372,7 +1564,179 @@
         }
       ],
       "binding_resource": "lut_sites",
-      "n_max": 138
+      "n_max": 134
+    },
+    {
+      "configuration": "gen_a1024n256_mb16w8_per_event",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 6379.0,
+        "flip_flops": 4135.0,
+        "bram36": 64.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 6379.0,
+          "fixed_overhead": 0.0,
+          "available": 1304000,
+          "n_max": 204
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4135.0,
+          "fixed_overhead": 0.0,
+          "available": 2607000,
+          "n_max": 630
+        },
+        {
+          "resource": "bram36",
+          "per_core": 64.0,
+          "fixed_overhead": 0.0,
+          "available": 2016,
+          "n_max": 31
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 31
+    },
+    {
+      "configuration": "gen_a1024n256_mb16w8_per_event",
+      "scenario": "datasheet_total",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 6379.0,
+        "flip_flops": 4135.0,
+        "bram36": 64.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 6379.0,
+          "fixed_overhead": 1057.0,
+          "available": 1304000,
+          "n_max": 204
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4135.0,
+          "fixed_overhead": 1082.0,
+          "available": 2607000,
+          "n_max": 630
+        },
+        {
+          "resource": "bram36",
+          "per_core": 64.0,
+          "fixed_overhead": 17.0,
+          "available": 2016,
+          "n_max": 31
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 960,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 31
+    },
+    {
+      "configuration": "gen_a1024n256_mb16w8_per_event",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": false,
+      "per_core": {
+        "lut_sites": 6379.0,
+        "flip_flops": 4135.0,
+        "bram36": 64.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 6379.0,
+          "fixed_overhead": 0.0,
+          "available": 912800,
+          "n_max": 143
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4135.0,
+          "fixed_overhead": 0.0,
+          "available": 1824900,
+          "n_max": 441
+        },
+        {
+          "resource": "bram36",
+          "per_core": 64.0,
+          "fixed_overhead": 0.0,
+          "available": 1411,
+          "n_max": 22
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 22
+    },
+    {
+      "configuration": "gen_a1024n256_mb16w8_per_event",
+      "scenario": "assumed_shell_30pct",
+      "wrapper_overhead_reserved": true,
+      "per_core": {
+        "lut_sites": 6379.0,
+        "flip_flops": 4135.0,
+        "bram36": 64.0,
+        "uram": 0.0
+      },
+      "bounds": [
+        {
+          "resource": "lut_sites",
+          "per_core": 6379.0,
+          "fixed_overhead": 1057.0,
+          "available": 912800,
+          "n_max": 142
+        },
+        {
+          "resource": "flip_flops",
+          "per_core": 4135.0,
+          "fixed_overhead": 1082.0,
+          "available": 1824900,
+          "n_max": 441
+        },
+        {
+          "resource": "bram36",
+          "per_core": 64.0,
+          "fixed_overhead": 17.0,
+          "available": 1411,
+          "n_max": 21
+        },
+        {
+          "resource": "uram",
+          "per_core": 0.0,
+          "fixed_overhead": 0.0,
+          "available": 672,
+          "n_max": null
+        }
+      ],
+      "binding_resource": "bram36",
+      "n_max": 21
     }
   ]
 }

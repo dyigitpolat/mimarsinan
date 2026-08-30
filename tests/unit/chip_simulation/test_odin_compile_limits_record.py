@@ -42,6 +42,11 @@ from mimarsinan.chip_simulation.odin_rtl.synth_artifacts import (
     load_committed as load_synth_record,
 )
 from mimarsinan.chip_simulation.odin_rtl.synth_census import resource_table
+from mimarsinan.chip_simulation.odin_fpga.chip_configs import (
+    STOCK_CHIP,
+    WIDE_CHIP,
+    chip_configs,
+)
 from mimarsinan.mapping.export.odin_gen.variants import PROVEN_VARIANTS
 
 
@@ -114,11 +119,29 @@ class TestTheStudiedConfigurationsAreTheProvenOnes:
         keys = {configuration.key for configuration in configurations()}
         assert {variant.name for variant in PROVEN_VARIANTS} <= keys
 
-    def test_the_wrapper_is_measured_at_two_capture_depths_and_nothing_else(self):
+    def test_the_stock_wrapper_is_measured_at_two_capture_depths_and_nothing_else(
+            self):
+        """The capture-RAM slope needs two depths of ONE fabric; a second fabric
+        is a second wrapper row, not a third depth."""
         wrappers = [c for c in configurations() if c.kind == "wrapper"]
-        assert len(wrappers) == len(WRAPPER_CAP_WORDS) >= 2
-        assert {c.geometry["cap_words"] for c in wrappers} == set(WRAPPER_CAP_WORDS)
+        stock = [c for c in wrappers if c.geometry["chip_config"] == STOCK_CHIP]
+        assert len(stock) == len(WRAPPER_CAP_WORDS) >= 2
+        assert {c.geometry["cap_words"] for c in stock} == set(WRAPPER_CAP_WORDS)
         assert {c.geometry["fifo_words"] for c in wrappers} == {WRAPPER_FIFO_WORDS}
+
+    def test_every_non_stock_chip_configuration_is_costed_in_its_wrapper(self):
+        """A chip configuration nobody synthesized is a fabric nobody can bound."""
+        wrappers = {
+            c.geometry["chip_config"] for c in configurations()
+            if c.kind == "wrapper"
+        }
+        assert {c.name for c in chip_configs()} <= wrappers
+
+    def test_a_chip_wrapper_carries_the_core_memories_as_well_as_the_kernel_s(self):
+        wide = configuration_named(f"wrapper_nc1_{WIDE_CHIP}")
+        assert [memory["array"] for memory in wide.memories] == [
+            "fifo_ram", "cap_ram", "syn_mem", "thr_arr", "vmem_arr"]
+        assert wide.geometry["cap_words"] == wrapper_shipped_depths()["CAP_WORDS"]
 
     def test_both_wrapper_depths_are_read_from_the_rtl_not_assumed(self):
         """And BOTH are MEASURED, not extrapolated to: nothing is shrunk any

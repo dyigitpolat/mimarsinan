@@ -106,17 +106,20 @@ def block_ram_ports(source: Path) -> Dict[str, Tuple[int, int]]:
     }
 
 
-def elaborate_kernel_top(*, n_cores: int = 1) -> str:
+def elaborate_kernel_top(*, n_cores: int = 1,
+                         sources: Sequence[Path] | None = None) -> str:
     """Elaborate the Vitis WRAPPER under iverilog; raise with the tool's output.
 
     The wrapper is what `v++` packages, and its port list is the shell contract,
     so a syntax or width error there is a build failure on HACC hours later.
-    This is the local lint that catches it in seconds.
+    This is the local lint that catches it in seconds. ``sources`` is the CHIP
+    configuration's file set; the default is the stock fabric's.
     """
     command = [
         str(require_tool(ENGINE_INTERPRETED)), "-g2005", "-o", "/dev/null",
         "-s", KERNEL_TOP, "-P", f"{KERNEL_TOP}.NC={int(n_cores)}",
-    ] + [str(path) for path in kernel_design_sources()]
+    ] + [str(path) for path in (
+        kernel_design_sources() if sources is None else sources)]
     result = subprocess.run(
         command, capture_output=True, text=True, cwd=str(REPO_ROOT))
     if result.returncode != 0:
@@ -130,11 +133,13 @@ def build_kernel_testbench(
     *, n_cores: int, token_count: int, engine: str | None = None,
     cap_words: int = SHIPPED_CAPTURE_WORDS,
     fifo_words: int = SHIPPED_FIFO_WORDS,
+    sources: Sequence[Path] | None = None,
 ) -> TestbenchBuild:
-    """Elaborate the kernel smoke testbench around ``n_cores`` vendored cores."""
+    """Elaborate the kernel smoke testbench around ``n_cores`` cores."""
     return build_testbench(
         n_cores=n_cores, token_count=token_count, engine=engine,
-        tb_name=KERNEL_TB, rtl_sources=kernel_design_sources(),
+        tb_name=KERNEL_TB,
+        rtl_sources=kernel_design_sources() if sources is None else list(sources),
         extra_params={"CAPWORDS": cap_words, "FIFOWORDS": fifo_words},
     )
 
@@ -148,6 +153,7 @@ def run_kernel_program(
     fifo_words: int = SHIPPED_FIFO_WORDS,
     timeout_s: float = 3600.0,
     workdir: Path | None = None,
+    sources: Sequence[Path] | None = None,
 ) -> Tuple[CaptureResult, TestbenchBuild, SimulationRun]:
     """Execute one token program on the FABRIC sequencer and parse its capture."""
     with tempfile.TemporaryDirectory() as scratch:
@@ -157,7 +163,7 @@ def run_kernel_program(
         tokens = write_stimulus(stimulus, list(ops))
         build = build_kernel_testbench(
             n_cores=n_cores, token_count=tokens, engine=engine,
-            cap_words=cap_words, fifo_words=fifo_words)
+            cap_words=cap_words, fifo_words=fifo_words, sources=sources)
         run = run_testbench(build, stimulus, timeout_s=timeout_s)
     return parse_capture(run.stdout), build, run
 
@@ -218,11 +224,13 @@ def build_kernel_axi_testbench(
     *, n_cores: int, token_count: int, engine: str | None = None,
     cap_words: int = SHIPPED_CAPTURE_WORDS,
     fifo_words: int = SHIPPED_FIFO_WORDS, split: int, host_capacity: int,
+    sources: Sequence[Path] | None = None,
 ) -> TestbenchBuild:
     """Elaborate the WRAPPER testbench: the DUT is `odin_fpga_kernel_top`."""
     return build_testbench(
         n_cores=n_cores, token_count=token_count, engine=engine,
-        tb_name=KERNEL_AXI_TB, rtl_sources=kernel_design_sources(),
+        tb_name=KERNEL_AXI_TB,
+        rtl_sources=kernel_design_sources() if sources is None else list(sources),
         extra_params={
             "CAPWORDS": cap_words,
             "FIFOWORDS": fifo_words,
@@ -243,6 +251,7 @@ def run_kernel_program_over_axi(
     stall_seed: int = 0,
     timeout_s: float = 3600.0,
     workdir: Path | None = None,
+    sources: Sequence[Path] | None = None,
 ) -> Tuple[CaptureResult, KernelStatus, TestbenchBuild, SimulationRun]:
     """Execute one token program THROUGH THE WRAPPER's DMA engine.
 
@@ -260,7 +269,8 @@ def run_kernel_program_over_axi(
         build = build_kernel_axi_testbench(
             n_cores=n_cores, token_count=tokens, engine=engine,
             cap_words=cap_words, fifo_words=fifo_words,
-            split=max(1, tokens // 2), host_capacity=host_capacity)
+            split=max(1, tokens // 2), host_capacity=host_capacity,
+            sources=sources)
         run = run_testbench(
             build, stimulus, timeout_s=timeout_s,
             plusargs={"stallseed": int(stall_seed)})

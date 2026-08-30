@@ -39,6 +39,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="odin_limits_") as scratch:
             record = measure_all(workdir=Path(scratch), tool_version=version)
         write_record(record)
+    rendered_only = "--render-only" in sys.argv[1:]
     STUDY_MD.write_text(render_study(record), encoding="utf-8")
     for row in record["configurations"]:
         census = row["census"]
@@ -46,7 +47,9 @@ def main() -> int:
               f"FF={census['flip_flops']:,} CARRY={census['carry']:,} "
               f"LUTRAM={census['lutram']:,} BRAM36={census['bram36']:,} "
               f"URAM={census['uram']:,}")
-    print(f"[limits] wrote {LIMITS_JSON}\n[limits] wrote {STUDY_MD}")
+    if not rendered_only:
+        print(f"[limits] wrote {LIMITS_JSON}")
+    print(f"[limits] wrote {STUDY_MD}")
     return 0
 
 

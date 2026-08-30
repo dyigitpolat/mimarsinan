@@ -83,6 +83,16 @@ SHIPPED_CAPTURE_WORDS = 16384
 SHIPPED_CAPTURE_EVENTS = (SHIPPED_CAPTURE_WORDS - CAPTURE_HEADER_WORDS) // (
     CAPTURE_RECORD_WORDS)
 
+#: The FABRIC a bitstream was built from. The capture layout above is the same
+#: for every one of them -- it is the wrapper's, and the wrapper is shared -- but
+#: the CORE geometry is not, so a session says which fabric its declaration
+#: belongs to. The named table lives in
+#: ``chip_simulation.odin_fpga.chip_configs``; these are the defaults of the one
+#: fabric that has ever been placed and routed.
+SHIPPED_CHIP_CONFIG = "odin_stock_256x256"
+SHIPPED_NEURONS_PER_CORE = 256
+SHIPPED_AXON_SLOTS_PER_CORE = 128
+
 #: Where the declared capacities come from, verbatim in every refusal that
 #: spends one. A capacity nobody can read back is only honest if it names its
 #: source.
@@ -116,10 +126,16 @@ class KernelCapacity:
         cores: int = SHIPPED_KERNEL_CORES,
         capture_events: int = SHIPPED_CAPTURE_EVENTS,
         provenance: str = CAPACITY_PROVENANCE,
+        chip: str = SHIPPED_CHIP_CONFIG,
+        neurons_per_core: int = SHIPPED_NEURONS_PER_CORE,
+        axon_slots_per_core: int = SHIPPED_AXON_SLOTS_PER_CORE,
     ) -> None:
         self.cores = int(cores)
         self.capture_events = int(capture_events)
         self.provenance = str(provenance)
+        self.chip = str(chip)
+        self.neurons_per_core = int(neurons_per_core)
+        self.axon_slots_per_core = int(axon_slots_per_core)
 
     def ceiling(self, host_events: int) -> int:
         """The events a session may decode: min(host declaration, the fabric's)."""
@@ -130,6 +146,9 @@ class KernelCapacity:
             "capture_events": self.capture_events,
             "cores": self.cores,
             "provenance": self.provenance,
+            "chip": self.chip,
+            "neurons_per_core": self.neurons_per_core,
+            "axon_slots_per_core": self.axon_slots_per_core,
         }
 
 

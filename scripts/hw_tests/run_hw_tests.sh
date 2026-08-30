@@ -24,6 +24,14 @@
 # capacity/status registers refusing an overflow and a bad opcode). Their walls
 # print on `[odin-fpga] ...` / `[odin-kernel] ...` / `[odin-wrapper] ...` lines.
 #
+# [ODIN C2] `test_odin_fpga_wide_kernel.py` is the WIDE chip configuration in the
+# wrapper: the same `odin_fpga_kernel_top`, byte-untouched, driving the
+# GENERATED 1024x256 core through its direct configuration port instead of the
+# vendored core over SPI. What selects the fabric is the SOURCE SET
+# (`chip_configs.ChipConfig.rtl_sources`, mirrored in `scripts/hacc/chips.sh`),
+# so the stock kernel file the chip cache's RTL digest covers is never touched.
+# Its walls print on `[odin-wide] ...` / `[odin-wide-stall] ...` lines.
+#
 # [ODIN9] the STALL-INVARIANCE gate lives in `test_odin_fpga_kernel.py`: the
 # same fixture is delivered under the no-stall baseline and five seeded
 # starvations of the AXI read data channel, and every run must produce
@@ -84,6 +92,7 @@ exec "${PYTHON}" -m pytest \
     tests/integration/test_odin_gen_sync_fire.py \
     tests/integration/test_odin_fpga_e2e.py \
     tests/integration/test_odin_fpga_kernel.py \
+    tests/integration/test_odin_fpga_wide_kernel.py \
     tests/integration/test_odin_hacc_cosim.py \
     -m "slow and integration" \
     -p no:randomly -n0 -v -s --timeout=5400 --durations=0 \

@@ -23,9 +23,13 @@ generator expands (`src/mimarsinan/mapping/export/odin_gen/`): a LIF-only,
 open-loop core whose geometry, membrane register and soma law are parameters,
 with a direct synchronous configuration port in place of the SPI slave. Per
 SHL-2.0 section 4(b), each such file — the template and every file generated
-from it — carries the UCLouvain copyright notice, the Solderpad licence notice,
-and a prominent statement of the changes made relative to the upstream work it
-derives from.
+from it, including the per-chip-configuration RTL committed under
+`hw/gen/chips/` so a build node needs no generator — carries the UCLouvain
+copyright notice, the Solderpad licence notice, and a prominent statement of
+the changes made relative to the upstream work it derives from. The FABRIC
+template beside it (`hw/gen/odin_gen_kernel.v.tmpl`, the kernel that
+instantiates a generated core) is original mimarsinan work under the MIT
+licence and derives no text from the upstream RTL.
 
 `hw/tb/` contains original mimarsinan testbench sources (MIT, as above); they
 instantiate the vendored core but derive no text from it.

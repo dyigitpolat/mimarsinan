@@ -257,6 +257,138 @@ class TestTheWideGeometryVariantReproducesTheFold:
             np.asarray(mapping.cores[0].core_matrix)[WIDE_AXONS - 1][1]) == -7.0
 
 
+# ---------------------------------------------------------------------------
+# Variant 3 — the WIDE CHIP CONFIG: 1024 x 256, 16-bit unsigned membrane, an
+# 8-bit signed synapse cell. Both axes the stock geometry refuses move at once.
+# ---------------------------------------------------------------------------
+
+WIDE_CHIP_VARIANT = variant_named("gen_a1024n256_mb16w8_per_event")
+WIDE_CHIP_AXONS = WIDE_CHIP_VARIANT.spec.max_axons
+WIDE_CHIP_NEURONS = WIDE_CHIP_VARIANT.spec.max_neurons
+WIDE_CHIP_S = 2
+WIDE_CHIP_THETA = 300.0
+
+#: The stock crossbar stores an unsigned magnitude signed once per PHYSICAL ROW,
+#: so its representable weight set at 4 bits is the SYMMETRIC [-7, 7]. Every
+#: weight in the fixture below is outside it.
+STOCK_WEIGHT_CEILING = 7
+
+#: A 784-line MNIST raster is what 1024 rows exist for; the fixture drives the
+#: addresses that decide whether the widened row address is real.
+MNIST_INPUT_LINES = 784
+
+
+def _wide_chip_mapping():
+    matrix = np.zeros((WIDE_CHIP_AXONS, WIDE_CHIP_NEURONS), dtype=np.float64)
+    # Six rows x 100 = 600 against theta=300: TWO crossings in one cycle, on a
+    # weight the stock cell cannot hold at all.
+    for row in range(6):
+        matrix[row][0] = 100.0
+    # A neuron driven from ABOVE the 784th row -- the addresses that only exist
+    # because the row address widened -- and floored by the extreme NEGATIVE
+    # weight, which a per-axon-signed magnitude cell has no encoding for.
+    for row in (900, 901, 902):
+        matrix[row][1] = 100.0
+    matrix[WIDE_CHIP_AXONS - 1][1] = -128.0
+    # The LAST neuron address, driven from rows straddling the MNIST width.
+    for row in (MNIST_INPUT_LINES - 1, MNIST_INPUT_LINES, MNIST_INPUT_LINES + 1):
+        matrix[row][WIDE_CHIP_NEURONS - 1] = 100.0
+    # The top of the two's-complement cell, three times, one short of theta.
+    for row in (10, 11):
+        matrix[row][2] = 127.0
+    core = hard_core(
+        matrix, threshold=WIDE_CHIP_THETA,
+        sources=[SpikeSource(-2, i, is_input=True) for i in range(WIDE_CHIP_AXONS)],
+    )
+    return mapping_of([core], [SpikeSource(0, 0)])
+
+
+def _wide_chip_raster():
+    row = [0] * WIDE_CHIP_AXONS
+    driven = (list(range(6)) + [10, 11] + [900, 901, 902]
+              + [MNIST_INPUT_LINES - 1, MNIST_INPUT_LINES, MNIST_INPUT_LINES + 1]
+              + [WIDE_CHIP_AXONS - 1])
+    for index in driven:
+        row[index] = 1
+    return [list(row) for _ in range(WIDE_CHIP_S)]
+
+
+@pytest.fixture(scope="module")
+def wide_chip_variant():
+    require_simulator()
+    spec = WIDE_CHIP_VARIANT.spec
+    law = spec.soma_law
+    mapping = _wide_chip_mapping()
+    generated = generate_core(spec)
+    images = images_for(mapping, spec)
+    samples = traces_for(
+        mapping, [_wide_chip_raster(), _wide_chip_raster()], soma_law=law,
+        simulation_length=WIDE_CHIP_S)
+    with timed("1024x256 mb16 w8 per_event cosim"):
+        result = run_variant_cosim(
+            generated, images, [list(s.per_cycle) for s in samples],
+            latencies=samples[0].trace.latencies)
+    report("1024x256mb16w8", result)
+    return spec, mapping, generated, samples, result
+
+
+class TestTheWideChipConfigVariantReproducesTheFold:
+    """The WIDE chip configuration's core, proved the same way as the others."""
+
+    def test_no_cycle_of_any_sample_differs(self, wide_chip_variant):
+        _spec, _map, _gen, samples, result = wide_chip_variant
+        assert compare_cycle_counts(result, samples) == []
+
+    def test_the_generated_rtl_reports_the_spec_the_harness_believes(
+            self, wide_chip_variant):
+        _spec, _map, _gen, _samples, result = wide_chip_variant
+        assert result.capture.spec_failures == 0
+        assert result.capture.spec_checks == result.plan.n_cores
+
+    def test_a_whole_mnist_raster_maps_onto_one_core(self, wide_chip_variant):
+        """The reason 1024 rows exist: 784 input lines, one slot each, and the
+        always-on bias row still has somewhere to go."""
+        spec, _map, _gen, _samples, _result = wide_chip_variant
+        assert spec.max_axons >= MNIST_INPUT_LINES + 1
+        assert spec.max_axons == WIDE_CHIP_AXONS
+
+    def test_the_weights_are_outside_the_stock_cell_entirely(
+            self, wide_chip_variant):
+        """The other half of the relief: the stock cell holds an unsigned
+        magnitude signed per row, so [-7, 7] is all it represents."""
+        spec, mapping, _gen, _samples, _result = wide_chip_variant
+        matrix = np.asarray(mapping.cores[0].core_matrix)
+        assert float(matrix.max()) > STOCK_WEIGHT_CEILING
+        assert float(matrix.min()) < -STOCK_WEIGHT_CEILING
+        # The extreme negative cell of a two's-complement nibble-times-two has
+        # no per-axon-signed encoding at all.
+        assert float(matrix.min()) == -(1 << (spec.weight_bits - 1))
+        assert spec.weight_bits == 8
+
+    def test_the_threshold_is_over_the_stock_membrane_ceiling(
+            self, wide_chip_variant):
+        spec, _map, _gen, _samples, _result = wide_chip_variant
+        assert WIDE_CHIP_THETA > STOCK_MEMBRANE_CEILING
+        assert spec.membrane_high == 65535
+
+    def test_the_wide_chip_variant_carries_multiplicity(self, wide_chip_variant):
+        _spec, _map, _gen, samples, result = wide_chip_variant
+        assert result.cycle_counts(0, 0, 0, 3)[0] == 2
+        emitted = [
+            max(counts) for sample in samples
+            for per_core in sample.trace.outputs for counts in per_core
+        ]
+        assert max(emitted) >= 2
+
+    def test_the_highest_row_and_neuron_addresses_are_exercised(
+            self, wide_chip_variant):
+        _spec, mapping, _gen, _samples, result = wide_chip_variant
+        counts = result.cycle_counts(0, 0, 0, WIDE_CHIP_NEURONS)
+        assert counts[WIDE_CHIP_NEURONS - 1] == 1
+        assert float(np.asarray(mapping.cores[0].core_matrix)
+                     [WIDE_CHIP_AXONS - 1][1]) == -128.0
+
+
 class TestNevresimIsTheThirdArmOnTheSmallVariant:
     @pytest.mark.skipif(not have_cxx_compiler(), reason="C++ compiler unavailable")
     def test_nevresim_matches_the_torch_twin_and_therefore_the_rtl(

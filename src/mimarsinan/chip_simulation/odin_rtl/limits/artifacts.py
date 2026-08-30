@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
+from mimarsinan.chip_simulation.odin_fpga.chip_configs import STOCK_CHIP
 from mimarsinan.chip_simulation.odin_rtl.limits.configurations import (
     STOCK_KEY,
     Configuration,
@@ -103,9 +104,20 @@ def _row(rows: Sequence[Mapping[str, Any]], key: str) -> Mapping[str, Any]:
     raise KeyError(f"no configuration row {key!r} in {[r['key'] for r in rows]}")
 
 
+def _wrapper_rows(rows: Sequence[Mapping[str, Any]], chip: str
+                  ) -> List[Mapping[str, Any]]:
+    """The wrapper points of ONE fabric. A wrapper row names the chip
+    configuration it was synthesized for, and two fabrics differ in the core the
+    subtraction is meant to cancel, so mixing them would price nothing."""
+    return [
+        row for row in rows
+        if row["kind"] == "wrapper" and row["geometry"]["chip_config"] == chip
+    ]
+
+
 def wrapper_overhead_record(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     """What the sequencer + DMA + capture cost AROUND one stock core."""
-    wrappers = [row for row in rows if row["kind"] == "wrapper"]
+    wrappers = _wrapper_rows(rows, STOCK_CHIP)
     smallest = min(wrappers, key=lambda row: row["geometry"]["cap_words"])
     stock = _row(rows, STOCK_KEY)
     return {
@@ -130,10 +142,11 @@ def wrapper_overhead_record(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]
 def capture_slope_record(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     """The measured cost of one capture word: two depths, one subtraction."""
     wrappers = sorted(
-        (row for row in rows if row["kind"] == "wrapper"),
+        _wrapper_rows(rows, STOCK_CHIP),
         key=lambda row: row["geometry"]["cap_words"])
     if len(wrappers) < 2:
-        raise ValueError("the capture slope needs two capture depths")
+        raise ValueError(
+            "the capture slope needs two capture depths of ONE fabric")
     low, high = wrappers[0], wrappers[-1]
     words = high["geometry"]["cap_words"] - low["geometry"]["cap_words"]
     delta = _difference(high["census"], low["census"])

@@ -30,20 +30,24 @@ Alveo shell takes its share* is NOT measured here and is not guessed at.
 ## What was measured
 
 - `stock_a256n256_vendored` -- stock ODIN core, 256 axons x 256 neurons (vendored + BRAM overlay)
-- `gen_a128n128_mb8_per_event` -- generated core, 128 axons x 128 neurons, 8-bit unsigned membrane, per-event law
-- `gen_a512n256_mb16_per_event` -- generated core, 512 axons x 256 neurons, 16-bit unsigned membrane, per-event law
-- `gen_a256n256_mb16s_sync_fire` -- generated core, 256 axons x 256 neurons, 16-bit signed membrane, sync-fire law
+- `gen_a128n128_mb8_per_event` -- generated core, 128 axons x 128 neurons, 4-bit signed synapse cell, 8-bit unsigned membrane, per-event law
+- `gen_a512n256_mb16_per_event` -- generated core, 512 axons x 256 neurons, 4-bit signed synapse cell, 16-bit unsigned membrane, per-event law
+- `gen_a256n256_mb16s_sync_fire` -- generated core, 256 axons x 256 neurons, 4-bit signed synapse cell, 16-bit signed membrane, sync-fire law
+- `gen_a1024n256_mb16w8_per_event` -- generated core, 1024 axons x 256 neurons, 8-bit signed synapse cell, 16-bit unsigned membrane, per-event law
 - `wrapper_nc1_fifo1024_cap16384` -- kernel wrapper `odin_fpga_kernel_top` at NC=1 (FIFO_WORDS=1024, CAP_WORDS=16384) -- sequencer + AXI streaming DMA + capture + one stock core
 - `wrapper_nc1_fifo1024_cap32768` -- kernel wrapper `odin_fpga_kernel_top` at NC=1 (FIFO_WORDS=1024, CAP_WORDS=32768) -- sequencer + AXI streaming DMA + capture + one stock core
+- `wrapper_nc1_odin_wide_1024x256_mb16` -- kernel wrapper `odin_fpga_kernel_top` at NC=1 on the odin_wide_1024x256_mb16 fabric (FIFO_WORDS=1024, CAP_WORDS=16384) -- sequencer + AXI streaming DMA + capture + one generated 1024x256 core
 
 | Configuration | LUT-equiv | FFs | CARRY4 | LUTRAM cells | RAMB36E2 | RAMB18E2 | URAM | LUT sites (incl. LUTRAM) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `stock_a256n256_vendored` | 5,659 | 4,362 | 381 | 0 | 10 | 0 | 0 | 5,659 |
-| `gen_a128n128_mb8_per_event` | 1,934 | 1,057 | 8 | 4 | 2 | 0 | 0 | 1,966 |
-| `gen_a512n256_mb16_per_event` | 6,522 | 4,133 | 13 | 12 | 16 | 0 | 0 | 6,618 |
-| `gen_a256n256_mb16s_sync_fire` | 6,474 | 4,133 | 16 | 12 | 8 | 0 | 0 | 6,570 |
+| `gen_a128n128_mb8_per_event` | 1,938 | 1,057 | 8 | 4 | 2 | 0 | 0 | 1,970 |
+| `gen_a512n256_mb16_per_event` | 6,532 | 4,133 | 13 | 12 | 16 | 0 | 0 | 6,628 |
+| `gen_a256n256_mb16s_sync_fire` | 6,668 | 4,133 | 16 | 12 | 8 | 0 | 0 | 6,764 |
+| `gen_a1024n256_mb16w8_per_event` | 6,283 | 4,135 | 13 | 12 | 64 | 0 | 0 | 6,379 |
 | `wrapper_nc1_fifo1024_cap16384` | 6,716 | 5,444 | 508 | 0 | 27 | 0 | 0 | 6,716 |
 | `wrapper_nc1_fifo1024_cap32768` | 6,724 | 5,444 | 508 | 0 | 43 | 0 | 0 | 6,724 |
+| `wrapper_nc1_odin_wide_1024x256_mb16` | 7,265 | 5,188 | 138 | 12 | 81 | 0 | 0 | 7,361 |
 
 `bram_tiles` counts a RAMB18E2 as half a tile; the LUT-equivalent column
 adds unpacked `INV` cells to `LUT1..LUT6`, exactly as the P5.5a report
@@ -74,10 +78,18 @@ follow do that arithmetic per array against what was measured.
 | `gen_a256n256_mb16s_sync_fire` | `syn_mem` | 8,192 x 32 | 262,144 | 8 |
 | `gen_a256n256_mb16s_sync_fire` | `thr_arr` | 256 x 16 | 4,096 | 1 |
 | `gen_a256n256_mb16s_sync_fire` | `vmem_arr` | 256 x 16 | 4,096 | 1 |
+| `gen_a1024n256_mb16w8_per_event` | `syn_mem` | 65,536 x 32 | 2,097,152 | 57 |
+| `gen_a1024n256_mb16w8_per_event` | `thr_arr` | 256 x 16 | 4,096 | 1 |
+| `gen_a1024n256_mb16w8_per_event` | `vmem_arr` | 256 x 16 | 4,096 | 1 |
 | `wrapper_nc1_fifo1024_cap16384` | `fifo_ram` | 1,024 x 32 | 32,768 | 1 |
 | `wrapper_nc1_fifo1024_cap16384` | `cap_ram` | 16,384 x 32 | 524,288 | 15 |
 | `wrapper_nc1_fifo1024_cap32768` | `fifo_ram` | 1,024 x 32 | 32,768 | 1 |
 | `wrapper_nc1_fifo1024_cap32768` | `cap_ram` | 32,768 x 32 | 1,048,576 | 29 |
+| `wrapper_nc1_odin_wide_1024x256_mb16` | `fifo_ram` | 1,024 x 32 | 32,768 | 1 |
+| `wrapper_nc1_odin_wide_1024x256_mb16` | `cap_ram` | 16,384 x 32 | 524,288 | 15 |
+| `wrapper_nc1_odin_wide_1024x256_mb16` | `syn_mem` | 65,536 x 32 | 2,097,152 | 57 |
+| `wrapper_nc1_odin_wide_1024x256_mb16` | `thr_arr` | 256 x 16 | 4,096 | 1 |
+| `wrapper_nc1_odin_wide_1024x256_mb16` | `vmem_arr` | 256 x 16 | 4,096 | 1 |
 
 Cross-checking that against the censuses above:
 
@@ -105,6 +117,7 @@ Cross-checking that against the censuses above:
 - `gen_a128n128_mb8_per_event`: 2 RAMB36E2 measured, 2 needed by the declared depth (`syn_mem` 2,048 / 1,024 = 2).
 - `gen_a512n256_mb16_per_event`: 16 RAMB36E2 measured, 16 needed by the declared depth (`syn_mem` 16,384 / 1,024 = 16).
 - `gen_a256n256_mb16s_sync_fire`: 8 RAMB36E2 measured, 8 needed by the declared depth (`syn_mem` 8,192 / 1,024 = 8).
+- `gen_a1024n256_mb16w8_per_event`: 64 RAMB36E2 measured, 64 needed by the declared depth (`syn_mem` 65,536 / 1,024 = 64).
 
 - The generated `thr_arr` is now the array in DISTRIBUTED RAM: it is
   read combinationally by the soma, which is what a threshold compare in
@@ -113,6 +126,8 @@ Cross-checking that against the censuses above:
 - `gen_a128n128_mb8_per_event`: 4 x `RAM64M8` = 2,048 bits of distributed RAM in 32 LUT6 sites, against 1,024 bits declared by `thr_arr` (2.00x -- a LUT-RAM column is 64 words deep, so both the depth and the width round up). The read multiplexing over those columns is counted separately, in the LUT-equivalent column.
 - `gen_a512n256_mb16_per_event`: 12 x `RAM64M8` = 6,144 bits of distributed RAM in 96 LUT6 sites, against 4,096 bits declared by `thr_arr` (1.50x -- a LUT-RAM column is 64 words deep, so both the depth and the width round up). The read multiplexing over those columns is counted separately, in the LUT-equivalent column.
 - `gen_a256n256_mb16s_sync_fire`: 12 x `RAM64M8` = 6,144 bits of distributed RAM in 96 LUT6 sites, against 4,096 bits declared by `thr_arr` (1.50x -- a LUT-RAM column is 64 words deep, so both the depth and the width round up). The read multiplexing over those columns is counted separately, in the LUT-equivalent column.
+- `gen_a1024n256_mb16w8_per_event`: 12 x `RAM64M8` = 6,144 bits of distributed RAM in 96 LUT6 sites, against 4,096 bits declared by `thr_arr` (1.50x -- a LUT-RAM column is 64 words deep, so both the depth and the width round up). The read multiplexing over those columns is counted separately, in the LUT-equivalent column.
+- `wrapper_nc1_odin_wide_1024x256_mb16`: 12 x `RAM64M8` = 6,144 bits of distributed RAM in 96 LUT6 sites, against 4,096 bits declared by `thr_arr` (1.50x -- a LUT-RAM column is 64 words deep, so both the depth and the width round up). The read multiplexing over those columns is counted separately, in the LUT-equivalent column.
 
 - The generated `vmem_arr` is not in any RAM at all: yosys converts it to
   registers, which is why the 256-neuron variants both carry 4,096
@@ -123,32 +138,41 @@ Cross-checking that against the censuses above:
 
 ## How the geometry moves the numbers
 
-Four points do not support a fitted curve, so this section reports
-ratios and nothing else.
+A handful of points do not support a fitted curve, so this section
+reports ratios and nothing else.
 
 | Configuration | axons x neurons | synapse cells | synapse bits vs base | LUT sites vs base | FFs vs base |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `gen_a128n128_mb8_per_event` | 128 x 128 | 16,384 | 1.00x | 1.00x | 1.00x |
-| `gen_a512n256_mb16_per_event` | 512 x 256 | 131,072 | 8.00x | 3.37x | 3.91x |
-| `gen_a256n256_mb16s_sync_fire` | 256 x 256 | 65,536 | 4.00x | 3.34x | 3.91x |
+| `gen_a512n256_mb16_per_event` | 512 x 256 | 131,072 | 8.00x | 3.36x | 3.91x |
+| `gen_a256n256_mb16s_sync_fire` | 256 x 256 | 65,536 | 4.00x | 3.43x | 3.91x |
+| `gen_a1024n256_mb16w8_per_event` | 1024 x 256 | 262,144 | 32.00x | 3.24x | 3.91x |
 
 The base row is `gen_a128n128_mb8_per_event`.
 
 Read against the geometries: the synapse array tracks
 axons x neurons x weight_bits and is now paid for in TILES, so it has
-left the LUT column -- `gen_a512n256_mb16_per_event` carries 8.00x the base row's synapse bits on 3.37x its LUT sites. What the
+left the LUT column -- `gen_a1024n256_mb16w8_per_event` carries 32.00x the base row's synapse bits on 3.24x its LUT sites. What the
 LUT column still carries is the soma datapath (whose width follows
 membrane_bits + weight_bits) and the threshold array's distributed RAM,
 neither of which grows with the crossbar. The flip-flop column tracks
-neurons x membrane_bits plus a fixed control block. The sync-fire variant
-is the control: same neuron count and same register width as the wide
-per-event variant, half the synapse array, and its flip-flop count is
-identical while its tiles halve and its LUT sites barely move.
+neurons x membrane_bits plus a fixed control block, so every 256-neuron
+16-bit row above carries the same flip-flop count to within two
+registers whatever its crossbar does -- 256 axons on a 4-bit cell, 512
+on a 4-bit cell and 1,024 on an 8-bit cell span 8x in synapse bits and
+8x in tiles at that one flip-flop count and within a few per cent of
+one LUT-site count. That is the
+measured shape of the relief the WIDE chip configuration buys: the
+crossbar is bought in tiles, and tiles are the resource the device has
+the most of relative to what a core needs.
 
 ## What the kernel wrapper costs around a core
 
-`odin_fpga_kernel_top` at NC=1 was synthesized at two capture depths. The
-overhead below is the wrapper census less the stock core's, i.e. the AXI4-Lite control block, the AXI4 streaming DMA engine, the token sequencer, the core-enable clock gate, the SPI master, the AER bridge, the op-stream FIFO and the capture RAM, at the depths named in `at_parameters` -- BOTH of them the depths the wrapper SHIPS with, because neither is shrunk any more:
+`odin_fpga_kernel_top` at NC=1 was synthesized at two capture depths of the
+STOCK fabric, and once more around EACH generated chip configuration --
+the same top and the same shipped depths over a different source set,
+which is how a chip configuration selects its core. The overhead below
+is derived from the stock pair only, and is the wrapper census less the stock core's, i.e. the AXI4-Lite control block, the AXI4 streaming DMA engine, the token sequencer, the core-enable clock gate, the SPI master, the AER bridge, the op-stream FIFO and the capture RAM, at the depths named in `at_parameters` -- BOTH of them the depths the wrapper SHIPS with, because neither is shrunk any more:
 
 | Column | Wrapper overhead (delta vs the stock core) |
 | --- | ---: |
@@ -265,15 +289,15 @@ Without any wrapper reserved:
 
 | Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
 | --- | ---: | ---: | ---: | ---: | --- |
-| datasheet_total | 663 | 2,466 | 1,008 | n/a | **lut_sites** -> **663** |
-| assumed_shell_30pct | 464 | 1,726 | 705 | n/a | **lut_sites** -> **464** |
+| datasheet_total | 661 | 2,466 | 1,008 | n/a | **lut_sites** -> **661** |
+| assumed_shell_30pct | 463 | 1,726 | 705 | n/a | **lut_sites** -> **463** |
 
 With the measured wrapper overhead reserved once:
 
 | Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
 | --- | ---: | ---: | ---: | ---: | --- |
-| datasheet_total | 662 | 2,465 | 999 | n/a | **lut_sites** -> **662** |
-| assumed_shell_30pct | 463 | 1,725 | 697 | n/a | **lut_sites** -> **463** |
+| datasheet_total | 661 | 2,465 | 999 | n/a | **lut_sites** -> **661** |
+| assumed_shell_30pct | 462 | 1,725 | 697 | n/a | **lut_sites** -> **462** |
 
 ### The generated variant `gen_a512n256_mb16_per_event`
 
@@ -281,7 +305,7 @@ Without any wrapper reserved:
 
 | Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
 | --- | ---: | ---: | ---: | ---: | --- |
-| datasheet_total | 197 | 630 | 126 | n/a | **bram36** -> **126** |
+| datasheet_total | 196 | 630 | 126 | n/a | **bram36** -> **126** |
 | assumed_shell_30pct | 137 | 441 | 88 | n/a | **bram36** -> **88** |
 
 With the measured wrapper overhead reserved once:
@@ -297,15 +321,31 @@ Without any wrapper reserved:
 
 | Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
 | --- | ---: | ---: | ---: | ---: | --- |
-| datasheet_total | 198 | 630 | 252 | n/a | **lut_sites** -> **198** |
-| assumed_shell_30pct | 138 | 441 | 176 | n/a | **lut_sites** -> **138** |
+| datasheet_total | 192 | 630 | 252 | n/a | **lut_sites** -> **192** |
+| assumed_shell_30pct | 134 | 441 | 176 | n/a | **lut_sites** -> **134** |
 
 With the measured wrapper overhead reserved once:
 
 | Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
 | --- | ---: | ---: | ---: | ---: | --- |
-| datasheet_total | 198 | 630 | 249 | n/a | **lut_sites** -> **198** |
-| assumed_shell_30pct | 138 | 441 | 174 | n/a | **lut_sites** -> **138** |
+| datasheet_total | 192 | 630 | 249 | n/a | **lut_sites** -> **192** |
+| assumed_shell_30pct | 134 | 441 | 174 | n/a | **lut_sites** -> **134** |
+
+### The generated variant `gen_a1024n256_mb16w8_per_event`
+
+Without any wrapper reserved:
+
+| Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
+| --- | ---: | ---: | ---: | ---: | --- |
+| datasheet_total | 204 | 630 | 31 | n/a | **bram36** -> **31** |
+| assumed_shell_30pct | 143 | 441 | 22 | n/a | **bram36** -> **22** |
+
+With the measured wrapper overhead reserved once:
+
+| Scenario | N_max(lut_sites) | N_max(flip_flops) | N_max(bram36) | N_max(uram) | Binds |
+| --- | ---: | ---: | ---: | ---: | --- |
+| datasheet_total | 204 | 630 | 31 | n/a | **bram36** -> **31** |
+| assumed_shell_30pct | 142 | 441 | 21 | n/a | **bram36** -> **21** |
 
 ## The verdict
 
@@ -313,13 +353,13 @@ With the measured wrapper overhead reserved once:
 - The GENERATED variants no longer bind on one resource as a family.
   Their synapse memories are in block RAM now, so what binds is whichever
   resource the geometry runs out of first, and the record has both:
-  - **bram36**: `gen_a512n256_mb16_per_event`
+  - **bram36**: `gen_a512n256_mb16_per_event`, `gen_a1024n256_mb16w8_per_event`
   - **lut_sites**: `gen_a128n128_mb8_per_event`, `gen_a256n256_mb16s_sync_fire`
   A LUT-bound variant is one whose soma datapath and threshold array
   cost more than its synapse tiles do; it is no longer a variant paying
   for a distributed-RAM crossbar.
 - Which classes bind, across every configuration and scenario in the
-  record: `bram36` for 2 of 4 core configurations, `lut_sites` for 2 of 4 core configurations.
+  record: `bram36` for 3 of 5 core configurations, `lut_sites` for 2 of 5 core configurations.
 - No bound in this document is a claim about a card until the P7b
   utilization report exists.
 

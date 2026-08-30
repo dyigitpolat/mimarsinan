@@ -73,15 +73,15 @@
 `timescale 1ns/1ps
 
 module odin_gen_core #(
-    parameter AXONS         = @AXONS@,
-    parameter NEURONS       = @NEURONS@,
-    parameter MBITS         = @MBITS@,
-    parameter MSIGNED       = @MSIGNED@,
-    parameter WBITS         = @WBITS@,
-    parameter PER_EVENT     = @PER_EVENT@,
-    parameter RESET_ZERO    = @RESET_ZERO@,
-    parameter CMP_INCL      = @CMP_INCL@,
-    parameter ASSERT_NO_SAT = @ASSERT_NO_SAT@
+    parameter AXONS         = 1024,
+    parameter NEURONS       = 256,
+    parameter MBITS         = 16,
+    parameter MSIGNED       = 0,
+    parameter WBITS         = 8,
+    parameter PER_EVENT     = 1,
+    parameter RESET_ZERO    = 1,
+    parameter CMP_INCL      = 1,
+    parameter ASSERT_NO_SAT = 0
 )(
     input  wire                 CLK,
     input  wire                 RST,
@@ -93,12 +93,12 @@ module odin_gen_core #(
     input  wire [         31:0] PROG_DATA,
 
     // Input AER link (four-phase).
-    input  wire [    @AW@:0]    AERIN_ADDR,
+    input  wire [    10:0]    AERIN_ADDR,
     input  wire                 AERIN_REQ,
     output reg                  AERIN_ACK,
 
     // Output AER link (four-phase).
-    output reg  [  @NWM1@:0]    AEROUT_ADDR,
+    output reg  [  7:0]    AEROUT_ADDR,
     output reg                  AEROUT_REQ,
     input  wire                 AEROUT_ACK,
 
@@ -116,18 +116,18 @@ module odin_gen_core #(
     output reg                  RAIL_TOUCHED
 );
 
-    localparam AW     = @AW@;                  // clog2(AXONS)
-    localparam NW     = @NW@;                  // clog2(NEURONS)
-    localparam CPWW   = @CELLS_PER_WORD_LOG2@; // log2 synapse cells per word
-    localparam SWPR   = @SYN_WORDS_PER_ROW@;   // 32-bit words per axon row
-    localparam SDEPTH = @SYN_DEPTH@;
-    localparam SAW    = @SYN_ADDR_BITS@;
+    localparam AW     = 10;                  // clog2(AXONS)
+    localparam NW     = 8;                  // clog2(NEURONS)
+    localparam CPWW   = 2; // log2 synapse cells per word
+    localparam SWPR   = 64;   // 32-bit words per axon row
+    localparam SDEPTH = 65536;
+    localparam SAW    = 16;
 
     // One wide signed accumulator holds any (membrane + weight) before the
     // clamp, so the saturation is a decision and never a silent wrap.
     localparam ACCW = MBITS + WBITS + 2;
-    localparam signed [ACCW-1:0] V_LO = @V_LO@;
-    localparam signed [ACCW-1:0] V_HI = @V_HI@;
+    localparam signed [ACCW-1:0] V_LO = 0;
+    localparam signed [ACCW-1:0] V_HI = 65535;
 
     localparam S_IDLE   = 3'd0;
     localparam S_SWEEP  = 3'd1;

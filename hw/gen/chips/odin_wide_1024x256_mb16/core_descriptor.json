@@ -1,0 +1,63 @@
+{
+ "feasibility": {
+  "saturation_bounds": []
+ },
+ "files": [
+  "odin_gen_core.v"
+ ],
+ "geometry": {
+  "axon_address_bits": 10,
+  "cells_per_word": 4,
+  "core_type": {
+   "count": 1,
+   "has_bias": false,
+   "max_axons": 1024,
+   "max_neurons": 256
+  },
+  "neuron_address_bits": 8,
+  "physical_row_factor": 1,
+  "synapse_depth": 65536,
+  "synapse_words_per_row": 64,
+  "weight_bits": 8,
+  "weight_sign_granularity": "per_synapse"
+ },
+ "module": "odin_gen_core",
+ "programming": {
+  "aer_in": {
+   "axon_field": "AERIN_ADDR[AW-1:0]",
+   "time_reference_bit": "AW"
+  },
+  "aer_out": {
+   "address": "the neuron that fired"
+  },
+  "port": "direct_synchronous",
+  "registers": {
+   "gate_activity": 0
+  },
+  "selectors": {
+   "membrane": 2,
+   "register": 0,
+   "synapse": 3,
+   "threshold": 1
+  }
+ },
+ "schema_version": 1,
+ "soma_law": {
+  "asserts_no_saturation": false,
+  "bias_slot": "tail",
+  "firing_granularity": "per_event",
+  "firing_mode": "Novena",
+  "membrane_arithmetic": "saturating_unsigned",
+  "membrane_bits": 16,
+  "membrane_interval": [
+   0,
+   65535
+  ],
+  "membrane_signed": false,
+  "point_tag": "per_event-sat16",
+  "thresholding_mode": "<="
+ },
+ "spec_flags": 14,
+ "spec_key": "a1024n256w8m16u_pe",
+ "vendored": false
+}
