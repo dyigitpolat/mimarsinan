@@ -52,6 +52,17 @@ EXPECTED_STEP_LISTS = {
         "Torch Mapping", "Normalization Fusion", "Soft Core Mapping",
         "Hard Core Mapping",
     ],
+    # The WIDE-fabric ODIN row: the same LIF plan, with no Torch Mapping (the
+    # streamed per_event point maps straight) and the export step at the tail.
+    "odin_wide_simplemlp.json": [
+        "Model Configuration", "Model Building", "Pretraining",
+        "Scale Migration", "Activation Analysis", "Activation Adaptation",
+        "Clamp Adaptation", "Activation Shifting", "Activation Quantization",
+        "LIF Adaptation", "Weight Quantization", "Quantization Verification",
+        "Normalization Fusion", "Soft Core Mapping",
+        "Core Quantization Verification", "Hard Core Mapping", "Simulation",
+        "HACC NUS - ODIN Deployment",
+    ],
     "lif_cifar_deepcnn.json": _COMMON_LIF,
     "lif_deepcnn.json": _COMMON_LIF,
     "lif_deepmlp.json": _COMMON_LIF,

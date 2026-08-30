@@ -55,12 +55,21 @@ from mimarsinan.chip_simulation.odin_rtl.stimulus import (
     OP_PROG,
     decode_ops,
 )
+from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.config_schema.resolve import resolve_draft
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.export.odin.feasibility import (
     EMISSION_CEILING,
     OdinFeasibilityError,
 )
 from mimarsinan.mapping.export.odin_gen.feasibility import gate_variant_segment
+from mimarsinan.mapping.platform.platform_constraints import (
+    resolve_platform_mapping_params,
+)
+from mimarsinan.pipelining.core.platform_constraints_resolver import (
+    build_platform_constraints_resolved,
+)
+from mimarsinan.transformations.quantization_bounds import quantization_bounds
 from mimarsinan.pipelining.pipeline_steps.verification.odin_hacc_deployment_step import (
     OdinHaccDeploymentStep,
 )
@@ -292,6 +301,57 @@ class TestTheBundleSurvivesLosingItsProducer:
                      / "nc1_two_core_passes.json")
         with pytest.raises(auditor.AuditUndecodable, match="did not run"):
             auditor.audit(committed, samples=3)
+
+
+class TestACellReachesTheWideFabricThroughTheDeclaredEnvelope:
+    """The WIDE capability row costs the config surface NOTHING new.
+
+    `cores`, `weight_bits`, `membrane_bits` and `weight_sign_granularity` are
+    already registry keys, so the wide envelope is wizard-representable as it
+    stands (the representability gate covers this very fixture). What the cell
+    does NOT do is name a chip: the fabric is SELECTED by the envelope, through
+    the same claims predicate a sealed bundle is read with.
+    """
+
+    @staticmethod
+    @pytest.fixture(scope="class")
+    def resolved():
+        draft = json.loads(
+            (REPO / "tests" / "fixtures" / "deployment_configs"
+             / "odin_wide_simplemlp.json").read_text())
+        resolution = resolve_draft(draft)
+        assert resolution.errors == [] and resolution.unknown_keys == []
+        return build_platform_constraints_resolved(dict(resolution.resolved))
+
+    def test_the_declared_grid_resolves_to_the_wide_fan_in(self, resolved):
+        params = resolve_platform_mapping_params(resolved["cores"])
+        assert params.effective_max_axons == 1023
+        assert not params.hardware_bias
+        # ... which is what puts a whole 784-line raster on ONE core.
+        assert params.effective_max_axons >= 784 + 1
+
+    def test_that_envelope_names_the_wide_fabric_and_nothing_else(self, resolved):
+        params = resolve_platform_mapping_params(resolved["cores"])
+        chip = chip_config_for(
+            weight_bits=int(resolved["weight_bits"]),
+            weight_sign_granularity="per_synapse",
+            effective_max_axons=params.effective_max_axons,
+            membrane_bits=16)
+        assert chip.name == WIDE_CHIP
+
+    def test_the_weight_grid_wq_projects_onto_is_the_wide_cell(self, resolved):
+        wide = chip_config_named(WIDE_CHIP)
+        assert quantization_bounds(int(resolved["weight_bits"])) == wide.weight_range
+        assert wide.weight_range == (-128, 127)
+
+    def test_the_theta_ceiling_the_ladder_targets_is_the_wide_register(self):
+        law = SomaLaw.resolve({
+            "spiking_family": "lif", "spiking_variant": "streamed",
+            "firing_mode": "Novena", "thresholding_mode": "<=",
+            "firing_granularity": "per_event", "membrane_bits": 16,
+        })
+        assert (1 << law.membrane_bits) - 1 == chip_config_named(
+            WIDE_CHIP).theta_ceiling == 65535
 
 
 class TestTheFabricIsSelectedByTheDeclaredEnvelope:

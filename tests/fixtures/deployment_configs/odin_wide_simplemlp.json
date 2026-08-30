@@ -1,0 +1,88 @@
+{
+ "data_provider_name": "MNIST_DataProvider",
+ "deployment_parameters": {
+  "allow_scheduling": false,
+  "batch_size": 128,
+  "degradation_tolerance": 0.15,
+  "enable_odin_hacc_export": true,
+  "encoding_layer_placement": "subsume",
+  "endpoint_floor_steps": 17200,
+  "firing_granularity": "per_event",
+  "firing_mode": "Novena",
+  "hw_config_mode": "fixed",
+  "lr": 0.003,
+  "max_simulation_samples": 25,
+  "model_config": {
+   "mlp_width_1": 256,
+   "mlp_width_2": 128
+  },
+  "model_config_mode": "user",
+  "model_type": "simple_mlp",
+  "odin_hacc_bundle_name": "odin_wide_mlp_mnist_wb8_s4",
+  "odin_hacc_bundle_samples": 300,
+  "odin_hacc_certification_samples": 50,
+  "sanafe_arch_preset": "loihi",
+  "sanafe_sample_count": 1,
+  "scale_migration": true,
+  "spike_generation_mode": "Uniform",
+  "spiking_family": "lif",
+  "spiking_variant": "streamed",
+  "thresholding_mode": "<=",
+  "training_epochs": 2,
+  "training_recipe": {
+   "betas": [
+    0.9,
+    0.999
+   ],
+   "grad_clip_norm": 1,
+   "label_smoothing": 0,
+   "layer_wise_lr_decay": 1,
+   "optimizer": "adamw",
+   "scheduler": "cosine",
+   "warmup_ratio": 0.05,
+   "weight_decay": 0.0001
+  },
+  "tuning_budget_scale": 0.25,
+  "tuning_recipe": {
+   "betas": [
+    0.9,
+    0.999
+   ],
+   "grad_clip_norm": 1,
+   "label_smoothing": 0,
+   "layer_wise_lr_decay": 1,
+   "optimizer": "adamw",
+   "scheduler": "cosine",
+   "warmup_ratio": 0,
+   "weight_decay": 0.0001
+  },
+  "weight_quantization": true
+ },
+ "experiment_name": "odin_wide_simplemlp_wb8_s4",
+ "generated_files_path": "./generated",
+ "pipeline_mode": "phased",
+ "platform_constraints": {
+  "allow_coalescing": false,
+  "allow_neuron_splitting": false,
+  "cores": [
+   {
+    "count": 120,
+    "has_bias": false,
+    "max_axons": 1024,
+    "max_neurons": 256
+   }
+  ],
+  "has_bias": false,
+  "max_axons": 1024,
+  "max_neurons": 256,
+  "membrane_bits": 16,
+  "simulation_steps": 4,
+  "target_tq": 4,
+  "weight_bits": 8,
+  "weight_sign_granularity": "per_synapse"
+ },
+ "seed": 1,
+ "start_step": null,
+ "stop_step": null,
+ "target_metric_override": null
+}
