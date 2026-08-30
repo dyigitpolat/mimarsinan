@@ -616,6 +616,28 @@ of them was refused by name before that fix. `narrow_conv` states the remaining
 condition in the architecture. `simple_mlp` clears the geometry at widths
 120/96 but not the bias grid, as above.
 
+**Where a body-block vehicle now lands, measured.** The b3c14 screen winner
+(stem k5 s2, 3 body stages, `trunk_width=120`, `readout=activated`) run as a
+full cell at the ODIN point S=16 on the default geometry pretrains 0.9892,
+clears AQ at 0.9903, and REACHES the LIF ladder: entry D-hat 0.4969 (against a
+0.9903 pre-transform anchor), rung 0 accepted at rate 0.25 with D-hat 0.8496.
+It is then refused — not by the twin and not by the crossbar, but by the COUNT
+CURRENCY: a neuron emits 128 spikes in one cycle against the 127 ceiling.
+Per-hop decoded per-cycle maxima on that run, against 127:
+
+| hop | cores x slots x neurons | max |
+|---|---|---|
+| body 1 (3x3 s2 over 7x7) | 49 x 126 x 14 | 6 |
+| body 2 (over 4x4) | 16 x 126 x 14 | 16 |
+| body 3 (over 2x2) | 4 x 126 x 14 | 33 |
+| collapse (2x2 -> 1x1, 14 -> 120) | 1 x 56 x 120 | 109 |
+| readout head (1x1, 120 -> 10, activated) | 1 x 120 x 10 | 128 (REFUSED) |
+
+The body stages this fix admitted are 5-26% of the ceiling; the emission bound
+grows down the cascade and it is the TAIL — the collapse conv and the activated
+readout — that spends it. The levers are therefore `trunk_width`, the readout
+(`bare` puts the scores on the host), and theta, not the body geometry.
+
 The default bundle's measured ladder at HEAD — pretrain 0.9820, AQ 0.9820, LIF
 **0.9487**, wb=4 weight quantization **0.9329** (this vehicle loses 0.016 here;
 the MLP loses 0.32), NF↔SCM streamed EXACT at atol=0, HCM **0.9340**, nevresim
