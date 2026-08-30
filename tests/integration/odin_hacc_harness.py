@@ -111,21 +111,55 @@ def pipeline_config(**overrides: Any) -> Dict[str, Any]:
         "odin_hacc_bundle_samples": 6,
         "odin_hacc_certification_samples": 3,
         "odin_hacc_bundle_name": "odin_hacc_micro",
-        "cores": [{"max_axons": 8, "max_neurons": 8, "count": 2}],
+        "cores": [{"max_axons": 128, "max_neurons": 256, "count": 2,
+                   "has_bias": False}],
     }
     config.update(overrides)
     return config
 
 
+#: The declared platform IS the stock fabric (`odin_stock_256x256`): 128 logical
+#: slots signed per axon, 127 effective without a bias lane, a 4-bit cell on an
+#: 8-bit membrane. The tiny mapping uses four of those slots — what matters is
+#: that the bundle's claims NAME a fabric a package can be built for.
 PLATFORM_RESOLVED = {
-    "cores": [{"max_axons": 8, "max_neurons": 8, "count": 2}],
+    "cores": [{"max_axons": 128, "max_neurons": 256, "count": 2,
+               "has_bias": False}],
     "weight_bits": WEIGHT_BITS,
     "cores_per_tile": 0, "tile_grid_rows": 0, "tile_grid_cols": 0,
 }
 
+#: The SAME network declared against the WIDE fabric: 1024 slots signed per
+#: synapse on a 16-bit membrane, which is the chip configuration
+#: `odin_wide_1024x256_mb16` and nothing else. The tiny mapping packs into the
+#: wide core's declared geometry exactly as a real one does — the point under
+#: test is the fabric axis, not the network.
+WIDE_WEIGHT_BITS = 8
+WIDE_MEMBRANE_BITS = 16
+WIDE_CORES = [
+    {"max_axons": 1024, "max_neurons": 256, "count": 2, "has_bias": False}]
+
+WIDE_PLATFORM_RESOLVED = {
+    "cores": [dict(core) for core in WIDE_CORES],
+    "weight_bits": WIDE_WEIGHT_BITS,
+    "cores_per_tile": 0, "tile_grid_rows": 0, "tile_grid_cols": 0,
+}
+
+
+def wide_config_overrides() -> Dict[str, Any]:
+    """The cell keys that make this deployment a WIDE-fabric one."""
+    return {
+        "weight_bits": WIDE_WEIGHT_BITS,
+        "membrane_bits": WIDE_MEMBRANE_BITS,
+        "weight_sign_granularity": "per_synapse",
+        "cores": [dict(core) for core in WIDE_CORES],
+        "experiment_name": "odin_hacc_micro_wide",
+        "odin_hacc_bundle_name": "odin_hacc_micro_wide",
+    }
+
 
 def prepare_step(monkeypatch, step_class, *, working_directory=None,
-                 config_overrides=None):
+                 config_overrides=None, platform_resolved=None):
     """A MockPipeline-driven instance of the REAL export step.
 
     Only the SAMPLE SOURCE is stubbed: the step, the HCM reference, the
@@ -156,8 +190,11 @@ def prepare_step(monkeypatch, step_class, *, working_directory=None,
     pipeline.seed("model", object(), step_name="Model Configuration")
     pipeline.seed("hard_core_mapping", hybrid_program(),
                   step_name="Hard Core Mapping")
-    pipeline.seed("platform_constraints_resolved", dict(PLATFORM_RESOLVED),
-                  step_name="Model Configuration")
+    pipeline.seed(
+        "platform_constraints_resolved",
+        dict(platform_resolved if platform_resolved is not None
+             else PLATFORM_RESOLVED),
+        step_name="Model Configuration")
     step = step_class(pipeline)
     pipeline.prepare_step(step)
     return pipeline, step
@@ -181,9 +218,14 @@ __all__ = [
     "THETA",
     "TIMESTEPS",
     "WEIGHT_BITS",
+    "WIDE_CORES",
+    "WIDE_MEMBRANE_BITS",
+    "WIDE_PLATFORM_RESOLVED",
+    "WIDE_WEIGHT_BITS",
     "hybrid_program",
     "one_hot",
     "pipeline_config",
     "prepare_step",
     "two_core_mapping",
+    "wide_config_overrides",
 ]

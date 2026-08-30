@@ -26,8 +26,9 @@ from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
 
 REPO = Path(__file__).resolve().parents[3]
 PACKAGE = REPO / "scripts" / "hacc" / "package"
-BUNDLE_MODULE = (
-    REPO / "src" / "mimarsinan" / "chip_simulation" / "odin_deployment_bundle.py")
+CHIP_SIM = REPO / "src" / "mimarsinan" / "chip_simulation"
+BUNDLE_MODULE = CHIP_SIM / "odin_deployment_bundle.py"
+VERBATIM_MODULES = (BUNDLE_MODULE, CHIP_SIM / "odin_deployment_encoding.py")
 BUNDLE_NAME = "nc1_two_core_passes.json"
 REPLAY_NAME = "nc1_two_core_passes_capture.json"
 
@@ -45,7 +46,8 @@ def staged(tmp_path_factory) -> Path:
     (root / "deployment").mkdir()
     for name in HOST_FILES:
         shutil.copyfile(PACKAGE / "host" / name, root / "host" / name)
-    shutil.copyfile(BUNDLE_MODULE, root / "host" / "odin_deployment_bundle.py")
+    for module in VERBATIM_MODULES:
+        shutil.copyfile(module, root / "host" / module.name)
     for name in (BUNDLE_NAME, REPLAY_NAME):
         shutil.copyfile(PACKAGE / "deployment" / name, root / "deployment" / name)
     return root

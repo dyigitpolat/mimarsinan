@@ -11,6 +11,10 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_numpy,
     apply_input_shifts_numpy,
 )
+from mimarsinan.chip_simulation.odin_fpga.fabric_gates import (
+    gate_segment,
+    require_programmable_image,
+)
 from mimarsinan.chip_simulation.odin_fpga.records import OdinSegmentTiming
 from mimarsinan.chip_simulation.odin_rtl.reference import (
     per_slot_counts_by_cycle,
@@ -20,7 +24,6 @@ from mimarsinan.chip_simulation.recording.records import (
     CoreSpikeCounts,
     SegmentSpikeRecord,
 )
-from mimarsinan.mapping.export.odin.exporter import export_odin
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.spiking.segment_boundary import normalize_boundary_slices_numpy
@@ -59,6 +62,9 @@ class SegmentPlan:
     trace: Any
     export: Any
     timesteps: int
+    #: What a GENERATED fabric's gates measured; ``export`` is then None,
+    #: because there is no vendored image for a transport to program.
+    fabric_gate: Any = None
 
     @property
     def neurons(self) -> List[int]:
@@ -116,15 +122,15 @@ def plan_odin_segment(
         hcm, soma_law=soma_law, input_counts=raster,
         simulation_length=int(timesteps), membrane_init=int(membrane_init),
         chip_latency=chip_latency)
-    export = export_odin(
+    export, gate = gate_segment(
         hcm, soma_law=soma_law, weight_bits=int(weight_bits),
         weight_sign_granularity=str(weight_sign_granularity),
         effective_max_axons=int(effective_max_axons),
-        membrane_init=int(membrane_init))
+        membrane_init=int(membrane_init), cycles=int(timesteps))
     return SegmentPlan(
         hcm=hcm, chip_latency=chip_latency, entry_rates=entry_rates,
         encoded=encoded, raster=raster, trace=trace, export=export,
-        timesteps=int(timesteps))
+        timesteps=int(timesteps), fabric_gate=gate)
 
 
 def segment_record(
@@ -224,6 +230,8 @@ def run_odin_segment(
         weight_sign_granularity=weight_sign_granularity,
         wire_divisors=wire_divisors, node_shifts=node_shifts)
     trace = plan.trace
+    require_programmable_image(
+        plan.export, stage=stage.name, granularity=weight_sign_granularity)
 
     receipt = transport.program(plan.export)
     run = transport.run_samples(plan.injection_plan(), latencies=trace.latencies)

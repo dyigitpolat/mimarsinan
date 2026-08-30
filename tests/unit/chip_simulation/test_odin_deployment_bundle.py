@@ -20,11 +20,26 @@ from pathlib import Path
 import pytest
 
 from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
+from mimarsinan.chip_simulation import odin_deployment_encoding as aer
 from mimarsinan.chip_simulation.odin_fpga import kernel_registers
+from mimarsinan.chip_simulation.odin_fpga.chip_configs import (
+    STOCK_CHIP,
+    WIDE_CHIP,
+    chip_config_named,
+)
 from mimarsinan.chip_simulation.odin_rtl import reference
+from mimarsinan.chip_simulation.odin_rtl.stimulus import (
+    all_neuron_tref_event,
+    neuron_spike_event,
+    variant_axon_event,
+    variant_tref_event,
+)
 
 REPO = Path(__file__).resolve().parents[3]
-MODULE = REPO / "src" / "mimarsinan" / "chip_simulation" / "odin_deployment_bundle.py"
+CHIP_SIM = REPO / "src" / "mimarsinan" / "chip_simulation"
+MODULE = CHIP_SIM / "odin_deployment_bundle.py"
+ENCODING_MODULE = CHIP_SIM / "odin_deployment_encoding.py"
+SHIPPED_MODULES = (MODULE, ENCODING_MODULE)
 PACKAGE = REPO / "scripts" / "hacc" / "package"
 BUNDLE_PATH = PACKAGE / "deployment" / "nc1_two_core_passes.json"
 REPLAY_PATH = PACKAGE / "deployment" / "nc1_two_core_passes_capture.json"
@@ -33,6 +48,17 @@ REPLAY_PATH = PACKAGE / "deployment" / "nc1_two_core_passes_capture.json"
 STDLIB_ONLY = {
     "__future__", "base64", "hashlib", "json", "struct", "typing", "zlib",
 }
+
+
+def claims_of(config) -> dict:
+    """A chip configuration as the ``chip_config`` block a bundle would carry."""
+    claims = dict(config.bundle_claims())
+    claims["soma_law"] = {
+        "membrane_bits": claims.pop("membrane_bits"),
+        "firing_granularity": (
+            "per_event" if config.core_spec.per_event else "per_cycle"),
+    }
+    return claims
 
 
 @pytest.fixture(scope="module")
@@ -52,8 +78,9 @@ def driver():
 
 class TestItShipsWhereThereIsNothingToImport:
 
-    def test_it_imports_nothing_outside_the_standard_library(self):
-        tree = ast.parse(MODULE.read_text(encoding="utf-8"))
+    @pytest.mark.parametrize("module", SHIPPED_MODULES, ids=lambda p: p.name)
+    def test_it_imports_nothing_outside_the_standard_library(self, module):
+        tree = ast.parse(module.read_text(encoding="utf-8"))
         imported = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -61,14 +88,16 @@ class TestItShipsWhereThereIsNothingToImport:
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imported.add(node.module.split(".")[0])
         assert imported <= STDLIB_ONLY, (
-            f"the shipped bundle module imports {sorted(imported - STDLIB_ONLY)}, "
-            f"which a HACC board node is not promised")
+            f"the shipped module {module.name} imports "
+            f"{sorted(imported - STDLIB_ONLY)}, which a HACC board node is not "
+            f"promised")
 
-    def test_the_packager_ships_it_verbatim(self):
+    def test_the_packager_ships_both_halves_verbatim(self):
         source = (REPO / "scripts" / "hacc" / "make_package.py").read_text()
-        assert 'copy(BUNDLE_MODULE, "host/odin_deployment_bundle.py")' in source
-        assert "BUNDLE_MODULE = (" in source
-        assert "odin_deployment_bundle.py" in source
+        assert "VERBATIM_HOST_MODULES = (BUNDLE_MODULE, ENCODING_MODULE)" in source
+        assert 'copy(module, f"host/{module.name}")' in source
+        for module in SHIPPED_MODULES:
+            assert module.name in source
 
     def test_the_seal_is_the_fixtures_seal(self, driver):
         probe = {"schema": "probe", "a": [1, 2, {"b": "c"}], "d": True}
@@ -99,6 +128,69 @@ class TestTheRoutingRuleHasOneHome:
              (bundle.SOURCE_INPUT, 1), (0, 2)],
             [(5, 6, 7)], [9, 4], where="core 0")
         assert slots == (0, 1, 4, 7)
+
+
+class TestTheAerWordingIsDispatchedOnTheFabricTheClaimsName:
+    """The shipped mirror of ``odin_rtl/stimulus.py``, per fabric.
+
+    The hazard this closes is silent: 0x7F is the vendored core's all-neuron
+    time reference and, read on a generated core, a perfectly valid spike on
+    axon slot 127. Nothing downstream can tell the two apart, so the WORDING
+    must be chosen by the claims a bundle carries and never assumed.
+    """
+
+    def test_the_stock_claims_word_every_row_as_the_repository_encoder_does(self):
+        encoding = aer.aer_encoding_of(claims_of(chip_config_named(STOCK_CHIP)))
+        assert encoding.name == aer.AER_STOCK
+        assert encoding.emits_tref
+        assert encoding.tref_word == all_neuron_tref_event()
+        for row in range(1 << encoding.address_bits):
+            assert encoding.spike_word(row) == neuron_spike_event(row)
+
+    def test_the_wide_claims_word_every_slot_as_the_p6_gate_vectors_do(self):
+        wide = chip_config_named(WIDE_CHIP)
+        encoding = aer.aer_encoding_of(claims_of(wide))
+        bits = int(wide.core_spec.axon_address_bits)
+        assert (encoding.name, encoding.address_bits) == (aer.AER_VARIANT, bits)
+        assert not encoding.emits_tref
+        assert encoding.tref_word == variant_tref_event(axon_address_bits=bits)
+        for slot in range(1 << bits):
+            assert encoding.spike_word(slot) == variant_axon_event(
+                slot, axon_address_bits=bits)
+
+    def test_the_stock_time_reference_is_a_real_slot_on_the_wide_fabric(self):
+        """WHY the dispatch exists, stated as a number."""
+        wide = aer.aer_encoding_of(claims_of(chip_config_named(WIDE_CHIP)))
+        assert wide.spike_word(aer.AER_ALL_NEURON_TREF) == 127
+        assert wide.tref_word != aer.AER_ALL_NEURON_TREF
+
+    def test_a_slot_outside_the_declared_address_space_refuses(self):
+        wide = aer.aer_encoding_of(claims_of(chip_config_named(WIDE_CHIP)))
+        with pytest.raises(aer.OdinEncodingRefusal, match="10-bit address"):
+            wide.spike_word(1 << wide.address_bits)
+
+    def test_the_committed_bundle_dispatches_to_the_stock_wording(self, document):
+        encoding = aer.encoding_of_bundle(document)
+        assert encoding.name == aer.AER_STOCK
+        assert encoding.tref_word == aer.AER_ALL_NEURON_TREF
+
+    def test_a_sign_granularity_no_fabric_has_refuses(self):
+        with pytest.raises(aer.OdinEncodingRefusal, match="names no fabric"):
+            aer.aer_encoding_of({"weight_sign_granularity": "per_column"})
+
+    def test_a_ragged_generated_row_count_refuses_rather_than_rounding(self):
+        with pytest.raises(aer.OdinEncodingRefusal, match="not a power of two"):
+            aer.aer_encoding_of({
+                "weight_sign_granularity": aer.SIGN_PER_SYNAPSE,
+                "effective_max_axons": 999,
+                "soma_law": {"firing_granularity": "per_event"}})
+
+    def test_a_generated_core_under_a_per_cycle_law_refuses(self):
+        with pytest.raises(aer.OdinEncodingRefusal, match="carries no "):
+            aer.aer_encoding_of({
+                "weight_sign_granularity": aer.SIGN_PER_SYNAPSE,
+                "effective_max_axons": 1023,
+                "soma_law": {"firing_granularity": "per_cycle"}})
 
 
 class TestTheSeal:
@@ -233,12 +325,13 @@ class TestTheStimulusMirrorStillMatchesTheEncoder:
                                                           rebuilt):
         builds, traces = rebuilt
         cycles = int(document["cycles_per_sample"])
+        encoding = aer.encoding_of_bundle(document)
         for plan, build in zip(bundle.pass_plans(document), builds):
             for trace in traces:
                 mirrored = bundle.pass_stimulus_tokens(
                     plan,
                     [trace.inputs[cycle][build.index] for cycle in range(cycles)],
-                    sample=0, cycles_per_sample=cycles)
+                    encoding=encoding, sample=0, cycles_per_sample=cycles)
                 assert mirrored == list(build.reference_stimulus(trace))
 
     def test_a_short_transcode_refuses_instead_of_running_a_truncated_pass(
@@ -246,7 +339,8 @@ class TestTheStimulusMirrorStillMatchesTheEncoder:
         plan = bundle.pass_plans(document)[0]
         with pytest.raises(bundle.OdinBundleError, match="truncated network"):
             bundle.pass_stimulus_tokens(
-                plan, [(0,) * len(plan["routes"])], sample=0,
+                plan, [(0,) * len(plan["routes"])],
+                encoding=aer.encoding_of_bundle(document), sample=0,
                 cycles_per_sample=int(document["cycles_per_sample"]))
 
 

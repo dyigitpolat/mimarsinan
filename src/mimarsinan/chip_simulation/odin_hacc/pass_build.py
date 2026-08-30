@@ -1,4 +1,10 @@
-"""One core of a network as ONE host-mediated pass: its export and its stimulus."""
+"""One core of a network as ONE host-mediated pass: its export and its stimulus.
+
+The STOCK fabric's build lives here; the generated fabric's is its sibling in
+``variant_pass_build.py``, and ``pass_builds`` is the ONE place that chooses
+between them — on the same claims the shipped reader dispatches its AER wording
+on, so a bundle's stimulus and the fabric it names can never come apart.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +23,7 @@ from mimarsinan.chip_simulation.odin_rtl.program_ops import (
     slot_rows_from_inject,
     stages_of_kind,
 )
-from mimarsinan.chip_simulation.odin_rtl.reference import CycleTrace
+from mimarsinan.chip_simulation.odin_rtl.reference import CycleTrace, core_routes
 from mimarsinan.chip_simulation.odin_rtl.stimulus import OP_TAG, encode_ops
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.export.odin.exporter import export_odin
@@ -75,7 +81,7 @@ class PassBuild:
         self.latency = int(trace.latencies[index])
         self.neurons = int(self.core.neurons_per_core)
         self.used = used_neurons(self.core)
-        self.routes = bundle.core_routes(self.core)
+        self.routes = core_routes(self.core)
         self.export = export_odin(
             pass_mapping(self.core), soma_law=soma_law, weight_bits=int(weight_bits),
             weight_sign_granularity=str(weight_sign_granularity),
@@ -130,3 +136,4 @@ class PassBuild:
                 len(self.reference_stimulus(trace)) for trace in traces),
             "program": bundle.encode_payload(self.program_bytes),
         }
+

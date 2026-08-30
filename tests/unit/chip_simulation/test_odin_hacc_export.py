@@ -21,12 +21,17 @@ from pathlib import Path
 
 import pytest
 
-from integration.odin_hacc_harness import CLASSES, prepare_step
+from integration.odin_hacc_harness import CLASSES, hybrid_program, prepare_step
 
 from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
 from mimarsinan.chip_simulation.odin_hacc.artifact import render_bundle
 from mimarsinan.chip_simulation.odin_hacc.freeze import BundleRefusal
+from mimarsinan.chip_simulation.odin_hacc.program_freeze import (
+    OdinHaccExportRefusal,
+    readout_core_of,
+)
 from mimarsinan.chip_simulation.odin_hacc.witness import TwinWitness
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.pipelining.pipeline_steps.verification import (
     odin_hacc_deployment_step as step_module,
 )
@@ -36,8 +41,11 @@ from mimarsinan.pipelining.pipeline_steps.verification.odin_hacc_deployment_step
 
 REPO = Path(__file__).resolve().parents[3]
 PACKAGE = REPO / "scripts" / "hacc" / "package"
-BUNDLE_MODULE = (
-    REPO / "src" / "mimarsinan" / "chip_simulation" / "odin_deployment_bundle.py")
+CHIP_SIM = REPO / "src" / "mimarsinan" / "chip_simulation"
+VERBATIM_MODULES = (
+    CHIP_SIM / "odin_deployment_bundle.py",
+    CHIP_SIM / "odin_deployment_encoding.py",
+)
 HOST_FILES = (
     "odin_board_driver.py", "fake_pyxrt_for_selftest.py",
     "odin_deployment_executor.py",
@@ -68,7 +76,8 @@ def staged(tmp_path_factory, exported):
     (root / "deployment").mkdir()
     for name in HOST_FILES:
         shutil.copyfile(PACKAGE / "host" / name, root / "host" / name)
-    shutil.copyfile(BUNDLE_MODULE, root / "host" / "odin_deployment_bundle.py")
+    for module in VERBATIM_MODULES:
+        shutil.copyfile(module, root / "host" / module.name)
     shutil.copyfile(stats["paths"]["bundle"], root / "deployment" / "bundle.json")
     shutil.copyfile(stats["paths"]["capture"], root / "deployment" / "replay.json")
     return root
@@ -164,6 +173,49 @@ class TestTheExportRefusesRatherThanShipsAWrongExpectation:
                 readout_core=0, certification=[], kernel_table={}, model={},
                 provenance={"derivation": COSIM_DERIVATION},
                 witness=TwinWitness())
+
+
+class TestTheFreezeRefusesAReadoutThatIsNotTheClassifier:
+    """A host-readout vehicle would freeze argmax over TRUNK features.
+
+    ``argmax`` over a segment's own neurons is always a well-formed number.
+    What makes it the network's prediction is that the segment IS the last
+    stage and that its readout core carries exactly the classes — so both are
+    asked of the mapping rather than assumed.
+    """
+
+    def test_a_host_stage_after_the_segment_refuses(self):
+        program = hybrid_program()
+        segment = program.stages[0].hard_core_mapping
+        program.stages.append(
+            HybridStage(kind="compute", name="host_readout"))
+        with pytest.raises(OdinHaccExportRefusal, match="not the LAST stage"):
+            readout_core_of(program, segment, classes=CLASSES)
+
+    def test_the_intact_program_still_resolves_its_readout_core(self):
+        program = hybrid_program()
+        segment = program.stages[0].hard_core_mapping
+        assert readout_core_of(program, segment, classes=CLASSES) == 1
+
+    def test_a_readout_core_wider_than_the_class_count_refuses(self):
+        program = hybrid_program()
+        segment = program.stages[0].hard_core_mapping
+        # The readout core keeps its three wires but declares five USED
+        # neurons: the bundle scores every one of them.
+        segment.cores[1].neurons_per_core = 5
+        segment.cores[1].available_neurons = 0
+        with pytest.raises(OdinHaccExportRefusal, match="used neuron"):
+            readout_core_of(program, segment, classes=CLASSES)
+
+    def test_a_program_whose_output_width_is_not_the_class_count_refuses(
+            self, tmp_path, monkeypatch):
+        """End to end, through the REAL step: the mapping and the model disagree."""
+        _pipeline, step = prepare_step(
+            monkeypatch, OdinHaccDeploymentStep, working_directory=str(tmp_path),
+            config_overrides={"num_classes": CLASSES + 1})
+        with pytest.raises(OdinHaccExportRefusal, match="class\\(es\\)"):
+            step.process()
+        assert not list(tmp_path.glob("odin_hacc/*.json"))
 
 
 class TestTheBundleIsSealedAndDeterministic:

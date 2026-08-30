@@ -8,7 +8,9 @@ It defines the schema (manifest, per-core PROGRAM streams, per-sample core-0
 STIMULUS streams, routing plan, frozen expectations), the fixtures' self-hash
 seal, the inter-core TRANSCODE — the axon gather that turns one core's spike
 counts into the next core's slot counts — and the token arithmetic that makes
-those slot counts a stimulus stream.
+those slot counts a stimulus stream. That arithmetic is fabric-AGNOSTIC: the
+AER-in wording arrives as an ``AerEncoding``, which ``odin_deployment_encoding``
+dispatches on the chip claims a bundle carries.
 
 It sits here rather than under ``odin_fpga/`` because ``odin_rtl/reference.py``
 consumes the gather rule, and reaching it through the backend package would
@@ -32,11 +34,10 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 SCHEMA = "odin_hacc_deployment/1"
 WORD_BYTES = 4
 
-#: Sequencer opcodes (odin_rtl/stimulus.py) and the AER-in address suffixes
-#: (ODIN doc/README.md Sec.2.2.1) this module emits.
+#: Sequencer opcodes (odin_rtl/stimulus.py). The AER-in WORDING is not here:
+#: it is dispatched per fabric by ``odin_deployment_encoding.py``, and this
+#: module's token arithmetic words an event through whatever it is handed.
 OP_END, OP_SPI_W, OP_AER, OP_WAIT, OP_TAG = 0, 1, 3, 4, 5
-AER_NEURON_SPIKE_SUFFIX = 0x07
-AER_ALL_NEURON_TREF = 0x7F
 
 #: Tag 0 is what the sequencer starts with, so windows number from 1 (cosim.py).
 FIRST_TAG = 1
@@ -132,22 +133,6 @@ def load_bundle(path: str) -> Dict[str, Any]:
 # --- the TRANSCODE: one core's counts become the next core's slot counts ---
 
 
-def route_of_source(source: Any) -> Tuple[int, int]:
-    """``(kind, index)`` for one axon source: a sentinel, or a producing core."""
-    if getattr(source, "is_off_", False):
-        return (SOURCE_OFF, 0)
-    if getattr(source, "is_input_", False):
-        return (SOURCE_INPUT, int(source.neuron_))
-    if getattr(source, "is_always_on_", False):
-        return (SOURCE_ALWAYS_ON, 0)
-    return (int(source.core_), int(source.neuron_))
-
-
-def core_routes(core: Any) -> Tuple[Tuple[int, int], ...]:
-    """One core's axon-source table, in canonical slot order."""
-    return tuple(route_of_source(s) for s in core.axon_sources)
-
-
 def _read(values: Sequence[Any], index: int, what: str) -> Any:
     """Index a gather source loudly: an out-of-range read is a mapping defect."""
     if index < 0 or index >= len(values):
@@ -195,13 +180,6 @@ def tag_of(sample: int, cycle: int, cycles_per_sample: int) -> int:
     return FIRST_TAG + int(sample) * int(cycles_per_sample) + int(cycle)
 
 
-def aer_spike_word(row: int) -> int:
-    """The 17-bit AER-in address of one neuron-spike event on ``row``."""
-    if row < 0 or row >= (1 << 8):
-        raise OdinBundleError(f"pre-synaptic row {row} is not an 8-bit value")
-    return (int(row) << 8) | AER_NEURON_SPIKE_SUFFIX
-
-
 def inject_pairs(
     slot_rows: Mapping[int, Sequence[int]], counts: Sequence[int],
 ) -> Tuple[Tuple[int, int], ...]:
@@ -219,23 +197,25 @@ def inject_pairs(
 
 def cycle_tokens(
     slot_rows: Mapping[int, Sequence[int]], counts: Sequence[int], *,
-    tag: int, barrier_cycles: int, inject: bool, core: int = 0,
+    encoding: Any, tag: int, barrier_cycles: int, inject: bool,
+    core: int = 0,
 ) -> List[int]:
     """One cycle of a pass: TAG, the AER deliveries, the TREF, the BARRIER."""
     tokens: List[int] = [OP_TAG, int(tag)]
     if inject:
         for row, multiplicity in inject_pairs(slot_rows, counts):
-            word = aer_spike_word(row)
+            word = encoding.spike_word(row)
             for _occurrence in range(multiplicity):
                 tokens.extend((OP_AER, int(core), word))
-    tokens.extend((OP_AER, int(core), AER_ALL_NEURON_TREF))
+    if encoding.emits_tref:
+        tokens.extend((OP_AER, int(core), encoding.tref_word))
     tokens.extend((OP_WAIT, int(barrier_cycles)))
     return tokens
 
 
 def pass_stimulus_tokens(
     plan: Mapping[str, Any], per_cycle_slots: Sequence[Sequence[int]], *,
-    sample: int, cycles_per_sample: int,
+    encoding: Any, sample: int, cycles_per_sample: int,
 ) -> List[int]:
     """The whole per-sample stimulus of one pass: CLEAR prefix, then the cycles."""
     slot_rows = {int(slot): tuple(int(row) for row in rows)
@@ -250,7 +230,7 @@ def pass_stimulus_tokens(
     tokens: List[int] = [int(word) for word in plan["clear_prefix"]]
     for cycle, counts in enumerate(per_cycle_slots):
         tokens.extend(cycle_tokens(
-            slot_rows, counts,
+            slot_rows, counts, encoding=encoding,
             tag=tag_of(sample, cycle, cycles_per_sample),
             barrier_cycles=barrier, inject=cycle >= latency))
     tokens.append(OP_END)

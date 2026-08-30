@@ -7,7 +7,9 @@ from typing import Any, Dict, List, Mapping
 import json
 
 from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
+from mimarsinan.chip_simulation import odin_deployment_encoding as encoding
 from mimarsinan.chip_simulation.odin_fpga import kernel_registers
+from mimarsinan.chip_simulation.odin_fpga.chip_selection import named_chip_of_bundle
 
 BUNDLE_BASENAME = "deployment_bundle.json"
 CAPTURE_BASENAME = "deployment_bundle_capture.json"
@@ -65,14 +67,32 @@ def frozen_accuracy(document: Mapping[str, Any]) -> float:
     return hits / len(rows)
 
 
+def bundle_fabric(document: Mapping[str, Any]) -> Dict[str, Any]:
+    """WHICH FABRIC this bundle names, DERIVED from its own claims.
+
+    Nothing in the sealed document says a chip name — it says the claims that
+    identify one — so the name a package and a build read is resolved here and
+    never declared. ``None`` means the declared envelope is narrower than any
+    fabric this build produces, which is executable on a wider one and is only
+    a refusal where a bitstream has to be chosen.
+    """
+    return {
+        "chip": named_chip_of_bundle(document),
+        "aer_encoding": encoding.encoding_of_bundle(document).as_dict(),
+    }
+
+
 def bundle_stats(document: Mapping[str, Any], capture: Mapping[str, Any],
                  paths: Mapping[str, str]) -> Dict[str, Any]:
     """The JSON-safe projection a pipeline entry and a record fragment carry."""
     cores = document["cores"]
+    fabric = bundle_fabric(document)
     return {
         "name": document["name"],
         "self_hash": document["self_hash"],
         "schema": document["schema"],
+        "chip": fabric["chip"],
+        "aer_encoding": fabric["aer_encoding"],
         "samples": len(document["samples"]),
         "cores": len(cores),
         "pass_order": list(document["pass_order"]),

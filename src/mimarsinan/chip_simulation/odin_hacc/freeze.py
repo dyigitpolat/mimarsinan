@@ -23,10 +23,12 @@ import hashlib
 from typing import Any, Dict, List, Sequence
 
 from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
+from mimarsinan.chip_simulation import odin_deployment_encoding as encoding
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (
     SHIPPED_CAPTURE_EVENTS,
 )
-from mimarsinan.chip_simulation.odin_hacc.pass_build import PassBuild, used_neurons
+from mimarsinan.chip_simulation.odin_hacc.fabric_builds import pass_builds
+from mimarsinan.chip_simulation.odin_hacc.pass_build import used_neurons
 from mimarsinan.chip_simulation.odin_hacc.witness import PassWitness
 from mimarsinan.chip_simulation.odin_rtl.reference import simulate_cycles
 
@@ -53,12 +55,12 @@ def _require_witness_matches_twin(name, index, counts, traces) -> None:
                     f"measurement of this network")
 
 
-def _require_reader_agrees(name, build, traces, plan, cycles) -> None:
+def _require_reader_agrees(name, build, traces, plan, cycles, aer) -> None:
     for sample, trace in enumerate(traces):
         mirrored = bundle.pass_stimulus_tokens(
             plan, [trace.inputs[cycle][build.index]
                    for cycle in range(trace.total_cycles)],
-            sample=0, cycles_per_sample=cycles)
+            encoding=aer, sample=0, cycles_per_sample=cycles)
         reference = list(build.reference_stimulus(trace))
         if mirrored != reference:
             raise BundleRefusal(
@@ -136,19 +138,24 @@ def build_bundle(
         raise BundleRefusal(
             f"{name}: {len(traces)} trace(s) against {len(rasters)} sample(s)")
     cycles = traces[0].total_cycles
-    builds = [
-        PassBuild(mapping, index, traces[0], weight_bits=weight_bits,
-                  effective_max_axons=effective_max_axons, soma_law=soma_law,
-                  weight_sign_granularity=weight_sign_granularity,
-                  membrane_init=membrane_init)
-        for index in range(len(mapping.cores))
-    ]
+    builds = pass_builds(
+        mapping, traces, weight_bits=weight_bits,
+        effective_max_axons=effective_max_axons, soma_law=soma_law,
+        weight_sign_granularity=weight_sign_granularity,
+        membrane_init=membrane_init)
+    # The wording the SHIPPED reader will dispatch for this bundle, resolved
+    # from the very claims the document is about to declare.
+    aer = encoding.aer_encoding_of({
+        "weight_sign_granularity": str(weight_sign_granularity),
+        "effective_max_axons": int(effective_max_axons),
+        "soma_law": {"firing_granularity": str(soma_law.firing_granularity)},
+    })
 
     cores: List[Dict[str, Any]] = []
     replay: List[Dict[str, Any]] = []
     for build in builds:
         plan = build.plan_document(traces)
-        _require_reader_agrees(name, build, traces, plan, cycles)
+        _require_reader_agrees(name, build, traces, plan, cycles, aer)
         measured = witness.measure(build, traces)
         _require_witness_matches_twin(name, build.index, measured.counts, traces)
         per_sample_events = [

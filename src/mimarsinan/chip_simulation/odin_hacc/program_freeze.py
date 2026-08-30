@@ -34,6 +34,7 @@ from mimarsinan.chip_simulation.odin_fpga.segment import (
     plan_odin_segment,
     segment_record,
 )
+from mimarsinan.chip_simulation.odin_hacc.pass_build import used_neurons
 from mimarsinan.chip_simulation.recording.records import RunRecord
 from mimarsinan.chip_simulation.soma_capability import require_soma_law_supported
 from mimarsinan.spiking.segment_boundary import (
@@ -137,7 +138,37 @@ class ProgramFreezer:
             record=record)
 
 
-def readout_core_of(segment_mapping: Any) -> int:
+def _require_segment_is_the_classifier(program: Any, segment_mapping: Any,
+                                       classes: int) -> None:
+    """The frozen segment must BE the network's readout, not a trunk before one.
+
+    Nothing downstream can tell the difference: a host-readout vehicle's segment
+    emits trunk FEATURES, and ``argmax`` over them is a well-formed number that
+    is not this network's prediction. Two facts of the mapping settle it — the
+    program must END with this segment (a compute stage after it is the readout
+    the host would run), and the segment's output width must be the class count.
+    """
+    stages = list(program.stages)
+    last = stages[-1] if stages else None
+    if last is None or last.kind != "neural" \
+            or last.hard_core_mapping is not segment_mapping:
+        trailing = [stage.kind for stage in stages[-3:]]
+        raise OdinHaccExportRefusal(
+            f"the frozen neural segment is not the LAST stage of the mapped "
+            f"program (its tail is {trailing}); whatever follows it is a HOST "
+            f"stage that turns this segment's output into the answer, so an "
+            f"argmax over the segment's own neurons would freeze a readout the "
+            f"network does not have. Deploy a vehicle whose classifier is on "
+            f"chip, or extend the bundle schema to carry the host tail")
+    width = len(list(np.asarray(program.output_sources).flatten()))
+    if width != int(classes):
+        raise OdinHaccExportRefusal(
+            f"the mapped program's output is {width} wire(s) against the "
+            f"model's {classes} class(es); the bundle scores classes and the "
+            f"mapping does not agree that this is where they are")
+
+
+def readout_core_of(program: Any, segment_mapping: Any, *, classes: int) -> int:
     """The ONE core the segment's outputs are gathered from, or a refusal.
 
     ``argmax`` over a readout window is only defined when the class scores are
@@ -145,6 +176,7 @@ def readout_core_of(segment_mapping: Any) -> int:
     board reader does not implement, and guessing one would report another
     network's accuracy.
     """
+    _require_segment_is_the_classifier(program, segment_mapping, classes)
     sources = list(np.asarray(segment_mapping.output_sources).flatten())
     cores = {int(source.core_) for source in sources}
     if len(cores) != 1:
@@ -159,6 +191,14 @@ def readout_core_of(segment_mapping: Any) -> int:
             f"the segment's output wires read core {core} neurons {neurons}, "
             f"not 0..{len(neurons) - 1} in order; the bundle's readout rule "
             f"scores a contiguous prefix of one core")
+    used = used_neurons(segment_mapping.cores[core])
+    if used != int(classes):
+        raise OdinHaccExportRefusal(
+            f"the readout core {core} carries {used} used neuron(s) against "
+            f"the model's {classes} class(es); the bundle freezes "
+            f"argmax over EVERY used neuron of that core, so a wider one would "
+            f"score features rather than classes. Map the classifier onto its "
+            f"own core, or deploy a vehicle whose last hop IS the readout")
     return int(core)
 
 

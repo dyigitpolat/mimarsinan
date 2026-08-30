@@ -45,11 +45,13 @@ if _HERE not in sys.path:
 try:
     import odin_board_driver as driver
     import odin_deployment_bundle as bundle
+    import odin_deployment_encoding as encoding
 except ImportError as _exc:  # pragma: no cover - a package missing its own halves
     raise SystemExit(
         f"REFUSING: {_exc}. odin_deployment_executor.py runs beside "
-        f"odin_board_driver.py and odin_deployment_bundle.py in the package's "
-        f"host/ directory; re-unzip the package rather than moving one half")
+        f"odin_board_driver.py, odin_deployment_bundle.py and "
+        f"odin_deployment_encoding.py in the package's host/ directory; "
+        f"re-unzip the package rather than moving one half")
 
 #: The default campaign size, and the env var that bounds it. Every shipped
 #: sample is certified against its frozen readout, but a bundle carrying
@@ -104,6 +106,36 @@ def require_protocol_agrees(document: Dict[str, Any], *, source: str) -> None:
             f"driver={driver.KERNEL_TABLE}. The bundle was assembled against a "
             f"different kernel — rebuild it with "
             f"scripts/hacc/make_deployment_bundle.py rather than mixing halves")
+
+
+def require_fabric_matches(document: Dict[str, Any], capacity: Any, *,
+                           source: str) -> Any:
+    """The FABRIC this session declares must be the one the bundle was mapped on.
+
+    A bundle carries no chip name — it carries the claims that identify one, and
+    the axon-slot count those claims imply is what its stimulus addresses. A
+    stock bundle on a wide bitstream (or the reverse) would word every event for
+    the wrong crossbar and answer with a number nobody could tell was wrong.
+    """
+    aer = encoding.encoding_of_bundle(document)
+    fabric = driver.chip_config_named(capacity.chip)
+    mapped = str(document["chip_config"]["weight_sign_granularity"])
+    if mapped != str(fabric["weight_sign_granularity"]):
+        raise OdinDeploymentRefusal(
+            f"{source}: this bundle was mapped against a "
+            f"{mapped!r}-signed crossbar (AER wording {aer.name}), and chip "
+            f"{capacity.chip!r} signs {fabric['weight_sign_granularity']!r}. "
+            f"The two word an axon event differently and neither refuses the "
+            f"other's stream — pass --chip for the fabric this bitstream holds")
+    slots = int(document["chip_config"]["effective_max_axons"]) + 1
+    declared = int(capacity.axon_slots_per_core)
+    if slots > declared:
+        raise OdinDeploymentRefusal(
+            f"{source}: the bundle's claims need {slots} axon slot(s) per core "
+            f"and chip {capacity.chip!r} declares {declared}; every slot above "
+            f"the crossbar's width would be delivered to a row that is not "
+            f"there")
+    return aer
 
 
 def verify_replay(replay: Dict[str, Any], document: Dict[str, Any], *,
@@ -312,6 +344,10 @@ class Campaign:
         self.samples = list(samples)
         self.cycles = int(document["cycles_per_sample"])
         self.length = int(document["chip_config"]["simulation_length"])
+        # THE AER WORDING, dispatched once on this bundle's own chip claims: a
+        # stock stream read on a generated core would deliver the all-neuron
+        # TREF 0x7F as a spike on axon slot 127.
+        self.encoding = encoding.encoding_of_bundle(document)
         self.certified = set(bundle.certification_samples(document))
         self.rasters = {int(entry["index"]): entry["entry_raster"]
                         for entry in document["samples"]}
@@ -355,7 +391,8 @@ class Campaign:
         slots = transcode_slots(
             self.document, plan, self.outputs[sample], self.rasters[sample])
         tokens = bundle.pass_stimulus_tokens(
-            plan, slots, sample=0, cycles_per_sample=self.cycles)
+            plan, slots, encoding=self.encoding, sample=0,
+            cycles_per_sample=self.cycles)
         stimulus = bundle.tokens_to_bytes(tokens)
         transcode_s = time.perf_counter() - transcode_started
         if core == self.first_core:
@@ -512,6 +549,7 @@ def report(campaign: Campaign, *, document: Dict[str, Any], options: Any,
             "name": document["name"], "self_hash": document["self_hash"],
             "provenance": document["provenance"], "model": document["model"],
             "chip_config": document["chip_config"],
+            "aer_encoding": campaign.encoding.as_dict(),
             "pass_order": document["pass_order"],
             "cycles_per_sample": document["cycles_per_sample"],
         },
@@ -549,6 +587,10 @@ def mode_deploy(options: Any) -> int:
     print(f"[deploy] samples  : {len(samples)} of "
           f"{len(document['samples'])} shipped ({options.samples_source})")
     session = driver.open_session(options)
+    aer = require_fabric_matches(document, session.capacity, source=options.bundle)
+    print(f"[deploy] fabric   : {session.capacity.chip} "
+          f"({session.capacity.axon_slots_per_core} axon slots/core), "
+          f"AER {aer.name}")
     if options.replay:
         # A FAKE pyxrt is handed the frozen per-pass answers to replay, keyed by
         # the stimulus that earned each one; the real binding has no arm().
@@ -615,6 +657,12 @@ def build_parser() -> argparse.ArgumentParser:
                         default=driver.DEFAULT_CAPTURE_EVENTS)
     parser.add_argument("--declare-cores", type=int, default=0)
     parser.add_argument("--capture-ram-events", type=int, default=0)
+    parser.add_argument(
+        "--chip", default=os.environ.get("ODIN_CHIP", ""),
+        help=f"WHICH FABRIC this bitstream holds ($ODIN_CHIP; default "
+             f"{driver.SHIPPED_CHIP_CONFIG}). The bundle names the fabric it "
+             f"was mapped against through its own claims, and a mismatch "
+             f"refuses rather than words events for the wrong crossbar")
     parser.add_argument("--run-timeout-ms", type=int,
                         default=driver.BLOCK_UNTIL_DONE_MS)
     parser.add_argument("--fake-pyxrt", default=None,

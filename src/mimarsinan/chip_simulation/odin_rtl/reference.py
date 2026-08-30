@@ -26,7 +26,6 @@ from mimarsinan.chip_simulation.odin_deployment_bundle import (
     SOURCE_INPUT,
     SOURCE_OFF,
     OdinRoutingRefusal,
-    core_routes,
     gather_axon_slots,
 )
 from mimarsinan.chip_simulation.soma_law import SomaLaw
@@ -38,8 +37,10 @@ __all__ = [
     "SOURCE_OFF",
     "CycleTrace",
     "ReferenceTraceError",
+    "core_routes",
     "gather_axon_counts",
     "per_slot_counts_by_cycle",
+    "route_of_source",
     "simulate_cycles",
 ]
 
@@ -47,6 +48,27 @@ __all__ = [
 #: board executor's host-mediated routing and this twin cannot drift; the
 #: historical name stays bound to the same class.
 ReferenceTraceError = OdinRoutingRefusal
+
+
+def route_of_source(source: Any) -> Tuple[int, int]:
+    """``(kind, index)`` for one axon source: a sentinel, or a producing core.
+
+    The PROJECTION of a repository ``SpikeSource`` onto the sentinel pairs a
+    bundle carries. It lives here rather than in the shipped module because a
+    board node holds routing tables, never SpikeSource objects.
+    """
+    if getattr(source, "is_off_", False):
+        return (SOURCE_OFF, 0)
+    if getattr(source, "is_input_", False):
+        return (SOURCE_INPUT, int(source.neuron_))
+    if getattr(source, "is_always_on_", False):
+        return (SOURCE_ALWAYS_ON, 0)
+    return (int(source.core_), int(source.neuron_))
+
+
+def core_routes(core: Any) -> Tuple[Tuple[int, int], ...]:
+    """One core's axon-source table, in canonical slot order."""
+    return tuple(route_of_source(s) for s in core.axon_sources)
 
 
 @dataclass(frozen=True)

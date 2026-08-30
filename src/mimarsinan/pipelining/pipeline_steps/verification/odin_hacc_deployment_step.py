@@ -188,7 +188,9 @@ class OdinHaccDeploymentStep(PipelineStep):
             effective_max_axons=int(params.effective_max_axons),
             weight_sign_granularity=freezer.weight_sign_granularity,
             membrane_init=MEMBRANE_INIT,
-            readout_core=readout_core_of(segment),
+            readout_core=readout_core_of(
+                self.get_entry("hard_core_mapping"), segment,
+                classes=int(config["num_classes"])),
             certification=certification,
             provenance=self._provenance(arms),
             kernel_table=kernel_table(),

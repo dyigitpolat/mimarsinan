@@ -7,8 +7,15 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-from mimarsinan.mapping.export.odin.feasibility import OdinFeasibilityError
-from mimarsinan.mapping.export.odin_gen.spec import CoreSpec
+from mimarsinan.mapping.export.odin.feasibility import (
+    EMISSION_CEILING,
+    OdinFeasibilityError,
+    check_fan_in,
+    check_membrane_init,
+    check_weight_magnitudes,
+    propagate_emission_bounds,
+)
+from mimarsinan.mapping.export.odin_gen.spec import CoreSpec, require_generatable
 
 KEY_VARIANT_THETA = "odin_gen.theta_range"
 KEY_NO_SATURATION = "odin_gen.no_saturation"
@@ -116,6 +123,56 @@ def require_no_saturation(
                 f"fan-in, or raise theta.")
         bounds.append(bound)
     return tuple(bounds)
+
+
+@dataclass(frozen=True)
+class VariantSegmentGate:
+    """What a generated fabric's feasibility gates MEASURED on one segment."""
+
+    thetas: Dict[int, int]
+    emission_bounds: Dict[Tuple[int, int], int]
+    saturation: Tuple[SaturationBound, ...]
+
+    @property
+    def peak_emission(self) -> int:
+        """The largest per-window count any neuron of this segment can emit."""
+        return max(self.emission_bounds.values(), default=0)
+
+
+def gate_variant_segment(
+    mapping: Any, *, spec: CoreSpec, membrane_init: int, cycles: int,
+) -> VariantSegmentGate:
+    """Every gate a GENERATED fabric imposes on a whole segment, in one call.
+
+    The stock exporter is where a stock deployment meets its gates; a generated
+    fabric has no such exporter yet, so this is that seam — geometry, theta,
+    the weight grid, and the COUNT CURRENCY, which the wider crossbar does not
+    lift because it is what a segment boundary carries and not what a core is.
+    """
+    require_generatable(spec)
+    thetas: Dict[int, int] = {}
+    for core_index, core in enumerate(mapping.cores):
+        theta = check_variant_theta(
+            core.threshold, spec=spec, core_index=core_index)
+        check_membrane_init(membrane_init, theta=theta, core_index=core_index)
+        check_fan_in(
+            int(core.axons_per_core) - int(core.available_axons or 0),
+            effective_max_axons=int(spec.max_axons) - 1, core_index=core_index)
+        check_weight_magnitudes(
+            np.rint(np.asarray(core.get_core_matrix()).astype(np.float64)
+                    ).astype(np.int64),
+            weight_bits=int(spec.weight_bits),
+            weight_sign_granularity=str(spec.weight_sign_granularity),
+            core_index=core_index)
+        thetas[core_index] = theta
+    return VariantSegmentGate(
+        thetas=thetas,
+        emission_bounds=propagate_emission_bounds(
+            mapping, ceiling=EMISSION_CEILING),
+        saturation=require_no_saturation(
+            mapping, spec=spec, thetas=thetas, cycles=int(cycles),
+            membrane_init=int(membrane_init)),
+    )
 
 
 def _as_integer(value: Any):
