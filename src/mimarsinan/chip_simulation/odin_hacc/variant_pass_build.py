@@ -33,8 +33,8 @@ from mimarsinan.chip_simulation.odin_rtl.stimulus import Op, encode_ops
 from mimarsinan.mapping.export.odin.feasibility import (
     check_fan_in,
     check_membrane_init,
-    check_theta_ceiling,
 )
+from mimarsinan.mapping.export.odin_gen.feasibility import check_variant_theta
 from mimarsinan.mapping.export.odin_gen.packer import build_variant_core_image
 from mimarsinan.mapping.export.odin_gen.spec import CoreSpec
 
@@ -54,9 +54,8 @@ class VariantPassBuild:
         self.neurons = int(self.core.neurons_per_core)
         self.used = used_neurons(self.core)
         self.routes = core_routes(self.core)
-        self.theta = check_theta_ceiling(
-            self.core.threshold, membrane_bits=int(spec.membrane_bits),
-            core_index=self.index)
+        self.theta = check_variant_theta(
+            self.core.threshold, spec=spec, core_index=self.index)
         initial = check_membrane_init(
             membrane_init, theta=self.theta, core_index=self.index)
         check_fan_in(

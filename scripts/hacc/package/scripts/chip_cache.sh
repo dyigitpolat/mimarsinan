@@ -289,19 +289,30 @@ cmd_adopt() {
     [ -n "${install}" ] || die "adopt needs an install path"
     install="$(cd "${install}" && pwd)" || die "no such install"
     local target xclbin sidecar key entry stage
-    local adopt_chip adopt_suffix
-    # The install's OWN chip, when its sidecar records one. Sidecars written
-    # before the chip axis existed name no fabric and are the default one.
+    local adopt_chip candidate probe
+    # WHICH FABRIC this install holds: the build directory it landed in says so
+    # (each chip has its own suffix), and its sidecar says so again when it was
+    # written after the chip axis existed. A sidecar older than the axis names
+    # no fabric, and the directory it sits in is then the answer.
     for target in hw hw_emu; do
-        adopt_chip="$(sed -n 's/^chip_config=//p' \
-            "${install}/build/hacc/${target}_nc1/odin_fpga_${target}.xclbin.built_with" \
-            2>/dev/null | head -1)"
-        [ -n "${adopt_chip}" ] || adopt_chip="$(odin_chip)"
-        adopt_suffix="$(odin_chip_field build_suffix "${adopt_chip}")" || die \
-            "the install names chip '${adopt_chip}', which this package does not carry"
-        xclbin="${install}/build/hacc/${target}_nc1${adopt_suffix}/odin_fpga_${target}.xclbin"
-        [ -f "${xclbin}" ] || continue
+        xclbin=""
+        adopt_chip=""
+        for candidate in $(odin_chip_names); do
+            probe="${install}/build/hacc/${target}_nc1$(
+                odin_chip_field build_suffix "${candidate}")/odin_fpga_${target}.xclbin"
+            if [ -f "${probe}" ]; then
+                xclbin="${probe}"
+                adopt_chip="${candidate}"
+                break
+            fi
+        done
+        [ -n "${xclbin}" ] || continue
         sidecar="${xclbin}.built_with"
+        if [ -f "${sidecar}" ]; then
+            adopt_chip="$(sed -n 's/^chip_config=//p' "${sidecar}" | head -1 \
+                || true)"
+            [ -n "${adopt_chip}" ] || adopt_chip="${candidate}"
+        fi
         [ -f "${sidecar}" ] || die \
             "${xclbin} has no .built_with sidecar, so nothing says which card, \
 platform and build script produced it; a cache entry keyed on a guess is worse \
