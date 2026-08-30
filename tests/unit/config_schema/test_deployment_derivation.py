@@ -342,6 +342,21 @@ class TestRecipeKnobExplicitWins:
         derive_deployment_parameters(dp)
         assert dp["wq_endpoint_recovery_steps"] == 2000
 
+    def test_explicit_endpoint_recovery_steps_wins_over_the_recipe(self):
+        # The mode-stage endpoint cap is per-cell like its wq_/aa_ siblings:
+        # the recipe's convergence-grounded 600 is the unset default, and a
+        # cell whose LIF endpoint EXHAUSTS it while still climbing must be
+        # able to fund the leg without editing the shared recipe.
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "endpoint_recovery_steps": 4000}
+        derive_deployment_parameters(dp)
+        assert dp["endpoint_recovery_steps"] == 4000
+
+    def test_unset_endpoint_recovery_steps_takes_the_lif_recipe_cap(self):
+        dp = {"spiking_mode": "lif", "weight_quantization": True}
+        derive_deployment_parameters(dp)
+        assert dp["endpoint_recovery_steps"] == 600
+
     def test_explicit_kd_ce_alpha_wins_over_the_lif_recipe(self):
         dp = {"spiking_mode": "lif", "weight_quantization": True,
               "kd_ce_alpha": 0.1}

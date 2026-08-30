@@ -153,6 +153,9 @@ CONFIG_KEYS_SET: Set[str] = {
     # WQ knobs, both ConversionPolicy-recipe-defaulted: the endpoint step cap
     # and the [M2/R1] two-scale projection grids (ttfs_cycle_based + lif).
     "wq_endpoint_recovery_steps", "wq_two_scale_projection",
+    # The MODE stage's endpoint cap (LIF / TTFS cycle), same recipe-default
+    # contract as its wq_/aa_ siblings.
+    "endpoint_recovery_steps",
     # LIF deployment-exactness promotions (lif_deployment_exactness.md §7):
     # the recipe arms the C2/C3/C4/C5 corrections for lif (C3 per R5,
     # lossless_refinement_ledger.md §2B). All default OFF here.

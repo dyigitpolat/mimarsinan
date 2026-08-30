@@ -31,7 +31,8 @@ class TestCoverage:
     def test_flagship_orphans_are_registered(self):
         # The keys whose non-registration caused silent template loss (S4).
         for key in ("endpoint_floor_steps", "tuning_batch_size", "conversion_draws",
-                    "wq_endpoint_recovery_steps", "nf_scm_parity_samples",
+                    "wq_endpoint_recovery_steps", "endpoint_recovery_steps",
+                    "nf_scm_parity_samples",
                     "capacity_gate", "pretrain_floor_chance_multiple"):
             assert key in REGISTRY, key
 
@@ -315,7 +316,8 @@ class TestModeHonesty:
         for key in ("eval_subsample_target", "tuning_step_cap_epochs",
                     "prefix_stage_lr", "endpoint_floor_lr",
                     "proven_recovery_depth", "endpoint_floor_steps",
-                    "wq_endpoint_recovery_steps", "conversion_draws",
+                    "wq_endpoint_recovery_steps", "endpoint_recovery_steps",
+                    "conversion_draws",
                     "finetune_lr", "tuning_batch_size",
                     "start_step", "stop_step", "input_data_scale",
                     "pruning_fraction"):

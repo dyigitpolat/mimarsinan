@@ -61,6 +61,16 @@ ENTRIES = (
        provenance="builder profile",
        derived_default=_frozen(TUNING_POLICY.endpoint_floor_lr),
        empty_means="the builder's registration, else the frozen TUNING_POLICY value"),
+    _E("endpoint_recovery_steps", group="tuning", owner="endpoint_recovery",
+       type=T.INT, category=Category.ADVANCED, unit="steps",
+       label="Mode Endpoint Recovery Steps",
+       doc="Per-cell cap on the MODE stage's endpoint recovery (LIF / TTFS "
+           "cycle), the sibling of wq_/aa_endpoint_recovery_steps. The recipe "
+           "cap is convergence-grounded on healthy endpoints; a cell whose leg "
+           "exhausts it while still climbing funds the leg here rather than by "
+           "editing the shared recipe.", bounds=(0, None),
+       provenance="ConversionPolicy recipe", derived_default=_frozen(0),
+       empty_means="the ConversionPolicy recipe cap for the mode"),
     _E("aa_endpoint_recovery_steps", group="tuning", owner="endpoint_recovery",
        type=T.INT, category=Category.ADVANCED, unit="steps",
        label="AA Endpoint Recovery Steps",
