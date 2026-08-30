@@ -405,6 +405,133 @@ class TestBestDeployedFinalize:
             tuner.close()
 
 
+class TestKDBlendBestDeployedFinalize:
+    """[WS-A A1] the KD-blend family (LIF/TTFS) finalizes through the SAME
+    arbitration as its activation-adaptation sibling. Measured on narrowconv
+    once the ladder began probing the true deployed composition: the rate-1.0
+    attempt read a deployed 0.8482 and was retention-rejected — the correct
+    rung call — while the stall finalized from the 0.7991 rung."""
+
+    def _probe_seq(self, tuner, values):
+        seq = list(values)
+        tuner.probe = lambda: float(seq.pop(0)) if seq else float(values[-1])
+
+    @staticmethod
+    def _arm(tuner):
+        tuner.pipeline.config["num_classes"] = 100
+
+    @staticmethod
+    def _inject(monkeypatch, *, entry, full_accs, final_read):
+        """``_inject_measurements`` with an honest FINAL read: the gate's entry
+        probe and the finalize arbitration are distinct measurements of
+        distinct states, so one constant cannot pin both."""
+        _inject_measurements(monkeypatch, entry=entry, full_accs=full_accs)
+        reads = {"n": 0}
+
+        def fake_full_transform_measurement(tuner):
+            reads["n"] += 1
+            return float(entry) if reads["n"] == 1 else float(final_read)
+
+        monkeypatch.setattr(
+            mbh_ledger, "full_transform_measurement",
+            fake_full_transform_measurement,
+        )
+
+    @staticmethod
+    def _shared_state_equal(sd_a, sd_b):
+        keys = sd_a.keys() & sd_b.keys()
+        assert keys, "no shared parameters to compare"
+        return all(torch.equal(sd_a[k], sd_b[k]) for k in keys)
+
+    @staticmethod
+    def _ladder_states(monkeypatch):
+        """Snapshot the live weights at every gate read, so a test can name the
+        candidate state the gate cloned rather than infer it."""
+        seen = []
+        wrapped = mbh_ledger.rung_measurements
+
+        def recording_rung_measurements(tuner):
+            out = wrapped(tuner)
+            seen.append((float(out["full_acc"]), _state_dict_clone(tuner.model)))
+            return out
+
+        monkeypatch.setattr(
+            mbh_ledger, "rung_measurements", recording_rung_measurements
+        )
+        return seen
+
+    def test_stalled_ladder_finalizes_from_the_best_deployed_candidate(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        # rung0 accepts at deployed 0.7991; every rung-1 attempt is
+        # retention-rejected and the FIRST carries the best deployed read
+        # (0.8482), so the constructive stall restores the 0.7991 state.
+        self._inject(
+            monkeypatch, entry=0.5084,
+            full_accs=[0.7991, 0.8482, 0.79, 0.79, 0.79], final_read=0.7991,
+        )
+        seen = self._ladder_states(monkeypatch)
+        torch.manual_seed(0)
+        tuner = _lif_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.87, 0.87, 0.10])
+            tuner._driver_attempt(0.5)
+            tuner._driver_attempt(1.0)
+            assert tuner._mbh_gate_state.stalled is True
+            assert tuner._mbh_gate_state.best_deployed_acc == pytest.approx(0.8482)
+
+            best_deployed = next(sd for acc, sd in seen if acc == pytest.approx(0.8482))
+            stalled = _state_dict_clone(tuner.model)
+            assert not self._shared_state_equal(stalled, best_deployed), (
+                "fixture invariant: the stall must land on a DIFFERENT state "
+                "from the best-deployed candidate"
+            )
+
+            tuner._after_run()
+
+            assert self._shared_state_equal(tuner.model.state_dict(), best_deployed)
+            assert tuner._committed_rate == pytest.approx(1.0)
+        finally:
+            tuner.close()
+        restores = [l for l in _gate_lines(capsys.readouterr().out)
+                    if "finalize_best_deployed" in l]
+        assert restores == [
+            "[MBH-GATE] tuner=LIFAdaptationTuner finalize_best_deployed "
+            "restored=0.848200 final_read=0.799100"
+        ]
+
+    def test_ladder_reaching_target_rate_finalizes_from_its_own_state(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        # Healthy ladder: every rung accepts and the LAST accept IS the
+        # deployed best, so the arbitration is inert and finalize runs from
+        # exactly the state the ladder left behind.
+        self._inject(
+            monkeypatch, entry=0.30, full_accs=[0.30, 0.60], final_read=0.60,
+        )
+        torch.manual_seed(0)
+        tuner = _lif_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.87, 0.87, 0.87])
+            for target in tuner._fixed_ladder_rates:
+                tuner._driver_attempt(target)
+            assert tuner._mbh_gate_state.stalled is False
+            assert tuner._committed_rate == pytest.approx(1.0)
+
+            pre_finalize = _state_dict_clone(tuner.model)
+            tuner._after_run()
+
+            assert self._shared_state_equal(tuner.model.state_dict(), pre_finalize)
+        finally:
+            tuner.close()
+        assert not [l for l in _gate_lines(capsys.readouterr().out)
+                    if "finalize_best_deployed" in l]
+
+
 # -- default equivalence: all-accepts == the historical ungated ladder --------------
 
 class TestDefaultEquivalence:

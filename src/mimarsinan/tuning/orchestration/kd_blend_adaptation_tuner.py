@@ -20,6 +20,7 @@ from mimarsinan.tuning.orchestration.genuine_probe import (
     genuine_acc_on_clone,
     iter_val_batches,
 )
+from mimarsinan.tuning.orchestration.mbh_gate import finalize_on_best_deployed
 from mimarsinan.tuning.orchestration.ramp_strategy import (
     RampStrategy,
     ValueDomainProxyRamp,
@@ -316,6 +317,11 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _after_run(self):
         try:
             self._continue_to_full_rate()
+            # [WS-A A1] a ladder that ends below rate 1.0 finalizes from a state
+            # whose deployed read can sit far below a mid-ladder candidate; the
+            # gate arbitration restores the best deployed state (inert when the
+            # final state already reads best).
+            finalize_on_best_deployed(self)
             self._set_rate(1.0)
             ramp_metric = self._safe_eval()
         finally:
