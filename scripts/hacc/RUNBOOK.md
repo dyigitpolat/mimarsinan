@@ -603,11 +603,17 @@ physical rows, 6.1x the crossbar — which the mapper refuses outright with no
 inter-core membrane partial-sum transfer to coalesce into, and its two MaxPool
 stages split the program into TWO neural segments where a bundle freezes one.
 On top of the geometry, `export_odin` deploys only `firing_granularity=per_event`,
-and the event-serial training twin folds a hop only when its effective weight
-spans its WHOLE input and its upstream is another hop: a 3x3 conv over a 7x7
-map is refused by the TWIN (that core fits the crossbar fine at 127 axons), and
-so is a `Flatten` sitting between two hops. `narrow_conv` states both
-conditions in the architecture. `simple_mlp` clears the geometry at widths
+and the event-serial training twin folds a hop only when its upstream is
+another hop — a `Flatten` sitting between two hops carries no event train and
+is refused. The twin's OTHER historical condition, that a hop's effective
+weight span its WHOLE input, is **gone as of the C1 flow fixes**: the twin now
+reads the mapper's own unfold (`Mapper.serial_slot_unfold`) and folds per
+mapped position with a membrane each, so a 3x3 conv over a 7x7 map — which
+fits the crossbar fine at 127 axons — deploys. That was the vehicle blocker:
+the highest-pretraining `narrow_conv` screens are the ones with body stages
+(b3c14 pretrains 0.9910 against the shipped b0 vehicle's 0.9820), and every one
+of them was refused by name before that fix. `narrow_conv` states the remaining
+condition in the architecture. `simple_mlp` clears the geometry at widths
 120/96 but not the bias grid, as above.
 
 The default bundle's measured ladder at HEAD — pretrain 0.9820, AQ 0.9820, LIF

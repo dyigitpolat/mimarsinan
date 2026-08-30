@@ -139,7 +139,10 @@ def lif_serial_fold(
 
     ``lead`` is empty for the per-core reference loop and ``(G,)`` for the
     packed executor's bucket group; the fold is otherwise shape-agnostic, so
-    both torch paths execute the SAME arithmetic in the same order.
+    both torch paths execute the SAME arithmetic in the same order. A SHARED
+    weight bank (a convolution's cores) passes ``(N, A)`` and lets it broadcast
+    across ``lead`` — every core folds the same columns against its OWN
+    membrane, which is what a shared bank is.
 
     A masked add carries the occurrence: lanes with ``e[a] <= k`` receive a
     ZERO-magnitude event, which is a no-op for the compare too because every

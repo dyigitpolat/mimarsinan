@@ -85,6 +85,7 @@ class GatheredSlotUnfold:
                 f"shape {index.shape}"
             )
         self._index = torch.as_tensor(index, dtype=torch.long)
+        self._device_index: torch.Tensor | None = None
         self.n_cores = int(index.shape[0])
         self.n_slots = int(index.shape[1])
         self.source_size = int(source_size)
@@ -98,10 +99,16 @@ class GatheredSlotUnfold:
                 f"output grid of {self._output_grid}"
             )
 
+    def _index_on(self, device) -> torch.Tensor:
+        """The table lives where the events do; every cycle of every hop reads it."""
+        if self._device_index is None or self._device_index.device != device:
+            self._device_index = self._index.to(device)
+        return self._device_index
+
     def unfold_events(self, events: torch.Tensor) -> torch.Tensor:
         flat = events.reshape(events.shape[0], -1)
         padded = torch.cat([flat, flat.new_zeros(flat.shape[0], 1)], dim=1)
-        return padded[:, self._index.to(flat.device)]
+        return padded[:, self._index_on(flat.device)]
 
     def group_major(self, activation: torch.Tensor) -> torch.Tensor:
         batch = activation.shape[0]
