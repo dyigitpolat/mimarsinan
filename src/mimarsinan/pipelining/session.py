@@ -54,6 +54,10 @@ def parse_deployment_config(
     deployment_parameters = dict(deployment_config["deployment_parameters"])
     # The top-level seed must reach the merged pipeline config so DeploymentPlan.seed (and every config.get("seed") consumer) sees the configured value, not the fallback 0.
     deployment_parameters.setdefault("seed", int(deployment_config.get("seed", 0)))
+    # Same rule for the run's NAME: artifacts that sign themselves (the ODIN
+    # deployment bundle's provenance and its default name) read it off the
+    # merged config, and a top-level-only key reaches them as "".
+    deployment_parameters.setdefault("experiment_name", str(deployment_name))
 
     if data_provider_factory is None:
         data_provider_factory = BasicDataProviderFactory(

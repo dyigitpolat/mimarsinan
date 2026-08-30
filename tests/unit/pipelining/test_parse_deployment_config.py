@@ -81,3 +81,38 @@ class TestParseDeploymentConfigFixedHw:
         parse_deployment_config(cfg)
 
         assert cfg["platform_constraints"] == pc_before
+
+
+class TestParseDeploymentConfigRunName:
+    """The run's NAME must reach the merged pipeline config, like its seed.
+
+    Every artifact a step signs -- the ODIN deployment bundle's provenance and
+    its default bundle name are the ones that made this visible -- names the run
+    through ``config["experiment_name"]``. It is a TOP-LEVEL document key, so a
+    step reading the merged config saw an empty string on every real run while
+    unit harnesses (which build the flat config themselves) saw the real name.
+    """
+
+    def test_experiment_name_reaches_the_merged_parameters(self, tmp_path):
+        cfg = _minimal_deployment_config(tmp_path, hw_search=False)
+
+        parsed = parse_deployment_config(cfg)
+
+        assert parsed.deployment_parameters["experiment_name"] == "t_parse"
+        assert parsed.deployment_name == "t_parse"
+
+    def test_an_explicit_parameter_wins_over_the_document_key(self, tmp_path):
+        cfg = _minimal_deployment_config(tmp_path, hw_search=False)
+        cfg["deployment_parameters"]["experiment_name"] = "explicit"
+
+        parsed = parse_deployment_config(cfg)
+
+        assert parsed.deployment_parameters["experiment_name"] == "explicit"
+
+    def test_the_input_document_is_not_mutated(self, tmp_path):
+        cfg = _minimal_deployment_config(tmp_path, hw_search=False)
+        parameters_before = dict(cfg["deployment_parameters"])
+
+        parse_deployment_config(cfg)
+
+        assert cfg["deployment_parameters"] == parameters_before
