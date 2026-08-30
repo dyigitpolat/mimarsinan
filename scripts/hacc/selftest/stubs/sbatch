@@ -68,7 +68,18 @@ if [ -n "${ODIN_TARGET:-}" ]; then
         echo "[stub-slurm] the ${ODIN_TARGET} build failed" >&2
         exit 1
     fi
-    out="${PKG}/build/hacc/${ODIN_TARGET}_nc1"
+    # WHERE the real job would leave it. `build_xclbn.sh` files an artifact
+    # under the FABRIC's own build suffix, and run_all.sh looks for it there,
+    # so a stub that always wrote the unsuffixed path would fail every
+    # generated-chip flow for a reason the package does not have. The suffix
+    # rule is read from the package's own chips.sh rather than copied.
+    suffix=""
+    if [ -f "${PKG}/scripts/hacc/chips.sh" ]; then
+        # shellcheck source=scripts/hacc/chips.sh
+        source "${PKG}/scripts/hacc/chips.sh"
+        suffix="$(odin_chip_field build_suffix "$(odin_chip)")"
+    fi
+    out="${PKG}/build/hacc/${ODIN_TARGET}_nc1${suffix}"
     mkdir -p "${out}/reports" "${out}/logs"
     printf 'stub xclbin for %s\n' "${ODIN_TARGET}" \
         > "${out}/odin_fpga_${ODIN_TARGET}.xclbin"
