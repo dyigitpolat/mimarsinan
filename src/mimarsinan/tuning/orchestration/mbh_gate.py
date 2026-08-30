@@ -4,82 +4,26 @@ from __future__ import annotations
 
 import copy
 import time
-from dataclasses import dataclass
-from typing import Any
 
-from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.tuning.orchestration import dhat_highwater, mbh_ledger
-from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
+from mimarsinan.tuning.orchestration.mbh_gate_entry import (
+    MBHGateState as MBHGateState,
+    _ensure_gate_state,
+    _event,
+    _log,
+    entry_is_lossless as entry_is_lossless,
+    lossless_entry_short_circuit as lossless_entry_short_circuit,
+    pre_transform_reference as pre_transform_reference,
+)
 
 ACCEPT_TOLERANCE = 0.01
 MAX_REFINEMENTS = 3
 
 
-def entry_is_lossless(entry_full: float, entry_post: float, se: float) -> bool:
-    """[recipe-economics] the transform-damage predicate: the FULL transform's
-    entry read within ``lossless_entry_se_margin`` SE of the blended entry
-    means the ladder/ramp has nothing to smooth."""
-    margin = float(TUNING_POLICY.lossless_entry_se_margin) * float(se)
-    return float(entry_full) >= float(entry_post) - margin
-
-
-def lossless_entry_short_circuit(tuner) -> bool:
-    """Driver predicate: measure the entry (isolation-guarded, memoized in the
-    gate state), decide, and on a lossless entry commit rate 1.0 for finalize.
-    Loud by contract — a skipped ladder must never be silent."""
-    state = _ensure_gate_state(tuner)
-    if state.prev_post_acc is None:
-        return False
-    se = float(tuner._budget.accuracy_se())
-    if not entry_is_lossless(state.best_full_acc, float(state.prev_post_acc), se):
-        return False
-    tuner._committed_rate = 1.0
-    tuner._entry_short_circuited = True
-    _log(
-        tuner,
-        f"entry_fast_path: full={state.best_full_acc:.6f} "
-        f"post={state.prev_post_acc:.6f} se={se:.6f} — transform lossless at "
-        f"entry; ladder+ramp skipped, finalize at rate 1.0",
-    )
-    _event(
-        tuner, "entry_fast_path", full_acc=float(state.best_full_acc),
-        post_acc=float(state.prev_post_acc or 0.0), se=se,
-    )
-    return True
 def _retention_tolerance(tuner) -> float:
     """Never demand retention finer than the metric's own noise: 2x the
     Bernoulli SE of the gate's eval window, floored at ACCEPT_TOLERANCE."""
     return max(ACCEPT_TOLERANCE, 2.0 * float(tuner._budget.accuracy_se()))
-
-
-def _retention_armed(tuner, entry_post: float) -> bool:
-    """Retention arms only above the pretrain chance envelope (the engine's
-    ``pretrain_floor_chance_multiple`` SSOT): a relative retention bound on a
-    chance-level backbone gates pure noise."""
-    num_classes = tuner.pipeline.config.get("num_classes")
-    if not num_classes or int(num_classes) <= 1:
-        return True
-    multiple = float(
-        tuner.pipeline.config.get("pretrain_floor_chance_multiple", 5.0)
-    )
-    return float(entry_post) >= multiple / float(num_classes)
-
-
-@dataclass
-class MBHGateState:
-    """Per-run gate scratch: the D-hat ratchet anchor and its model snapshot."""
-
-    best_full_acc: float
-    best_state: Any
-    stalled: bool = False
-    rung: int = -1
-    prev_post_acc: float | None = None
-    retention_armed: bool = False
-    # Best DEPLOYED (full-transform) read over ALL attempts, accepted or
-    # rejected — the finalize-arbitration candidate (retention can rightly
-    # reject the deploy-best state mid-ladder; see finalize_on_best_deployed).
-    best_deployed_acc: float = float("-inf")
-    best_deployed_state: Any = None
 
 
 def gated_fast_rate_attempt(tuner, target: float) -> float:
@@ -176,37 +120,6 @@ def gated_fast_rate_attempt(tuner, target: float) -> float:
     return committed_before
 
 
-def _ensure_gate_state(tuner) -> MBHGateState:
-    """Lazily anchor the ratchet on the ENTRY D-hat (the debt is largest at the
-    first rung, where the blended gate is most confidently wrong — X1 §5b) and
-    the retention anchor on the ENTRY blended read (isolation-guarded: the
-    extra probe must not perturb the live RNG/cursor trajectory)."""
-    state = getattr(tuner, "_mbh_gate_state", None)
-    if state is None:
-        entry = float(mbh_ledger.full_transform_measurement(tuner))
-        dhat_highwater.observe(tuner.pipeline, entry)
-        with mbh_ledger._measurement_guard(tuner.trainer):
-            entry_post = float(tuner.probe())
-        armed = _retention_armed(tuner, entry_post)
-        entry_state = tuner._clone_state()
-        state = MBHGateState(
-            best_full_acc=entry, best_state=entry_state,
-            prev_post_acc=entry_post, retention_armed=armed,
-            best_deployed_acc=entry, best_deployed_state=entry_state,
-        )
-        tuner._mbh_gate_state = state
-        _log(
-            tuner,
-            f"entry best_full_acc={entry:.6f} post_acc={entry_post:.6f} "
-            f"retention_armed={armed}",
-        )
-        _event(
-            tuner, "entry", best_full_acc=entry, post_acc=entry_post,
-            retention_armed=armed,
-        )
-    return state
-
-
 def _accept(tuner, state, rate, post_acc, full_acc, t0) -> None:
     """Commit the rung exactly like the ungated attempt, then ratchet best-D-hat."""
     tuner._committed_rate = float(rate)
@@ -287,12 +200,3 @@ def _add_phase_seconds(tuner, t0) -> None:
     )
 
 
-def _log(tuner, message: str) -> None:
-    print(f"[MBH-GATE] tuner={type(tuner).__name__} {message}", flush=True)
-
-
-def _event(tuner, action: str, **payload) -> None:
-    emit_reporter_event(
-        tuner.pipeline.reporter,
-        "mbh_gate", {"action": action, "tuner": type(tuner).__name__, **payload},
-    )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import torch
+from torch.nn.parameter import UninitializedBuffer, UninitializedParameter
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.mapping.verification.verifier import (
@@ -85,6 +86,31 @@ def model_repr_from_wizard_body(body: dict) -> Any:
     return model_repr
 
 
+def materialise_lazy_parameters(model: Any, input_shape) -> None:
+    """Give a lazy module the one batch it needs before its weights exist.
+
+    A ``LazyBatchNorm`` that has never seen a forward carries uninitialized
+    buffers, and reading its affine parameters raises — which a layout call
+    would otherwise have to report as 'this model does not fit the chip'.
+    Inert (and side-effect-free) for every model that has already run.
+    """
+    if input_shape is None:
+        return
+    uninitialized = any(
+        isinstance(t, (UninitializedBuffer, UninitializedParameter))
+        for t in list(model.parameters()) + list(model.buffers())
+    )
+    if not uninitialized:
+        return
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            model(torch.randn(2, *tuple(int(d) for d in input_shape)))
+    finally:
+        model.train(was_training)
+
+
 def model_repr_from_model(
     model: Any,
     *,
@@ -102,6 +128,7 @@ def model_repr_from_model(
     model_repr = None
     with best_effort("snapshot mapper-repr extraction"):
         if hasattr(model, "get_mapper_repr"):
+            materialise_lazy_parameters(model, input_shape)
             model_repr = model.get_mapper_repr()
         else:
             if input_shape is None or num_classes is None:

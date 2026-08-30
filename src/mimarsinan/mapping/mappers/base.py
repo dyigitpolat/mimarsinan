@@ -9,6 +9,10 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     first_source_scale,
     present_source_scales,
 )
+from mimarsinan.mapping.platform.slot_unfold import (
+    SerialSlotUnfold,
+    WholeInputSlotUnfold,
+)
 
 
 def resolve_activation_type(perceptron) -> str | None:
@@ -62,6 +66,17 @@ class Mapper(nn.Module):
     def flowchart_node_estimate(self, out_shape):
         """Software summary + optional FC estimate spec for the softcore flowchart; default is neither."""
         return FlowchartNodeEstimate()
+
+    def serial_slot_unfold(self, *, input_shape, n_slots: int) -> SerialSlotUnfold:
+        """How this node's upstream cells fill its cores' axon slot tables.
+
+        The NF event-serial twin folds through THIS answer, so a mapper that
+        tiles one weight bank across positions must override it (see
+        ``Conv2DPerceptronMapper``); the default is the whole input in feature
+        order, which is what a fully-connected hop maps to.
+        """
+        del input_shape
+        return WholeInputSlotUnfold(n_slots)
 
     @property
     def source_mapper(self) -> "Mapper | None":

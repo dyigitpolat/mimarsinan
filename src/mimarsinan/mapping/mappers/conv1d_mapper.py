@@ -8,11 +8,17 @@ import torch.nn.functional as F
 
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
 from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes, pad_source_grid
+from mimarsinan.mapping.mappers.conv_unfold import (
+    ConvPatchGather,
+    conv_patch_gather,
+    conv_slot_unfold,
+)
 from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
 from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_boundary_scale,
     perceptron_per_source_scale,
 )
+from mimarsinan.mapping.platform.slot_unfold import SerialSlotUnfold
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.transformations.pruning.committed_masks import commit_layer_pruning
@@ -71,6 +77,27 @@ class Conv1DPerceptronMapper(Mapper):
 
     def owned_perceptron_groups(self):
         return [[self.perceptron]]
+
+    def patch_gather(self, input_shape) -> ConvPatchGather:
+        """This convolution's unfold over a ``(C, L)`` input — the SSOT the IR
+        mapping and the NF event-serial twin both read."""
+        c_in, l_in = (int(v) for v in input_shape)
+        if c_in != self.in_channels:
+            raise ValueError(
+                f"{self.name}: expected in_channels={self.in_channels}, got {c_in}"
+            )
+        return conv_patch_gather(
+            in_channels=self.in_channels,
+            source_grid=(l_in,),
+            kernel=(self.kernel_size,),
+            stride=(self.stride,),
+            padding=(self.padding,),
+            dilation=(self.dilation,),
+        )
+
+    def serial_slot_unfold(self, *, input_shape, n_slots: int) -> SerialSlotUnfold:
+        del n_slots  # the twin checks the table against its own weight
+        return conv_slot_unfold(self.patch_gather(input_shape))
 
     def propagate_source_scale(self, deps, out_scales):
         return perceptron_per_source_scale(self, deps, out_scales)
@@ -148,11 +175,8 @@ class Conv1DPerceptronMapper(Mapper):
                 f"{self.name}: expected in_channels={self.in_channels}, got {c_in}"
             )
 
-        k = self.kernel_size
-        s = self.stride
-        p = self.padding
-        d = self.dilation
-        l_out = (l_in + 2 * p - d * (k - 1) - 1) // s + 1
+        gather = self.patch_gather((c_in, l_in))
+        (l_out,) = gather.out_grid
 
         if getattr(self.perceptron, "is_encoding_layer", False):
             flat_in = np.array(input_sources, dtype=object).flatten()
@@ -166,8 +190,8 @@ class Conv1DPerceptronMapper(Mapper):
             )
             return out.reshape(self.out_channels, l_out)
 
-        if p > 0:
-            input_sources = pad_source_grid(input_sources, ((0, 0), (p, p)))
+        if gather.pads_anything:
+            input_sources = pad_source_grid(input_sources, gather.pad_width)
 
         full_w = PerceptronTransformer().get_effective_weight(self.perceptron)
         full_b = PerceptronTransformer().get_effective_bias(self.perceptron)
@@ -199,14 +223,7 @@ class Conv1DPerceptronMapper(Mapper):
             bank_channel_ranges.append((start_idx, end_idx))
             start_idx = end_idx
 
-        l_base = np.arange(l_out) * s
-        k_off = np.arange(k) * d
-        l_idx = l_base[:, None] + k_off[None, :]
-        c_idx = np.arange(self.in_channels)[:, None, None]
-        l_idx_b, c_idx_b = np.broadcast_arrays(l_idx[None, :, :], c_idx)
-        patches = input_sources[c_idx_b, l_idx_b]
-        patch_size = self.in_channels * k
-        patches_flat = patches.reshape(l_out, patch_size)
+        patches_flat = gather.gather(input_sources)
 
         all_output_sources = []
         for pos in range(l_out):

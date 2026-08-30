@@ -37,11 +37,11 @@ class NarrowConvNet(nn.Module):
     EVERY STAGE IS A CONV, AND NOTHING RESHAPES BETWEEN THEM, because an
     event-serial soma law folds each core's charge in the mapper's own slot
     order and the training twin reproduces that order only where a hop's
-    upstream is another hop (an intervening ``Flatten`` carries no event train)
-    and its effective weight spans its whole input (a partial receptive field is
-    an unfold the twin does not reproduce). The collapse and pointwise stages
-    satisfy the second condition by construction; the single trailing flatten
-    sits after the last hop, where nothing downstream needs events.
+    upstream is another hop — an intervening ``Flatten`` carries no event
+    train. A PARTIAL receptive field is no longer a restriction: the twin reads
+    the mapper's own unfold (``Conv2DPerceptronMapper.serial_slot_unfold``) and
+    folds per mapped position, so body stages are admitted. The single trailing
+    flatten sits after the last hop, where nothing downstream needs events.
     """
 
     def __init__(

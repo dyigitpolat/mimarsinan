@@ -237,6 +237,9 @@ class TestScheduleErrorsPropagate:
 
 class TestVerifierExplicitFallbacks:
     def test_soft_verifier_reports_error_result_and_warns(self, caplog):
+        """The ONE declared refusal: the caller handed over something that is
+        not a mapper graph at all. Checked as a precondition, never inferred
+        from a swallowed exception."""
         from mimarsinan.mapping.verification.verifier.mapping_verifier_soft import (
             verify_soft_core_mapping,
         )
@@ -253,6 +256,117 @@ class TestVerifierExplicitFallbacks:
         assert any(
             r.levelno >= logging.WARNING for r in caplog.records
         ), "soft-mapping verification failure must be logged at warning level"
+
+    def test_a_layout_defect_propagates_instead_of_reading_as_infeasible(
+        self, monkeypatch,
+    ):
+        """A break INSIDE the layout walk is a defect, not a verdict. Reporting
+        it as ``feasible=False`` is verification degrading itself: it is exactly
+        how an unsupported conv patch-gather index form spent a whole program
+        being read as 'this model does not fit the chip'."""
+        import mimarsinan.mapping.verification.verifier.mapping_verifier_soft as mvs
+
+        def _bug(self, model_representation):
+            raise TypeError("LayoutSourceView: unsupported index element")
+
+        monkeypatch.setattr(
+            mvs.LayoutIRMapping, "collect_layout_softcores", _bug, raising=True,
+        )
+        with pytest.raises(TypeError, match="unsupported index element"):
+            mvs.verify_soft_core_mapping(
+                SimpleNamespace(map_to_ir=lambda _m: None),
+                max_axons=64, max_neurons=64,
+            )
+
+    def test_a_declared_layout_refusal_is_still_a_verdict(self, monkeypatch):
+        """The chip genuinely cannot map this graph: a VERDICT about the
+        (model, platform) pair, and the one class that keeps its result."""
+        import mimarsinan.mapping.verification.verifier.mapping_verifier_soft as mvs
+        from mimarsinan.mapping.platform.mapping_structure import (
+            WideFanInUnsupportedError,
+        )
+
+        def _refuse(self, model_representation):
+            raise WideFanInUnsupportedError("fan-in 785 exceeds max_axons 784")
+
+        monkeypatch.setattr(
+            mvs.LayoutIRMapping, "collect_layout_softcores", _refuse, raising=True,
+        )
+        result = mvs.verify_soft_core_mapping(
+            SimpleNamespace(map_to_ir=lambda _m: None),
+            max_axons=784, max_neurons=256,
+        )
+        assert result.feasible is False
+        assert result.error is not None and "785" in result.error
+
+    def test_the_compute_op_probe_propagates_its_own_defects(self, monkeypatch):
+        """The no-neural-cores probe is verification too; a broken probe must
+        not silently become the 'no perceptron layers' verdict."""
+        import mimarsinan.mapping.verification.verifier.mapping_verifier_soft as mvs
+        import mimarsinan.mapping.ir_mapping_class as irm
+
+        monkeypatch.setattr(
+            mvs.LayoutIRMapping, "collect_layout_softcores",
+            lambda self, model_representation: [], raising=True,
+        )
+
+        def _bug(self, model_representation):
+            raise RuntimeError("compute-op probe invariant broken")
+
+        monkeypatch.setattr(irm.IRMapping, "map", _bug, raising=True)
+        with pytest.raises(RuntimeError, match="compute-op probe invariant"):
+            mvs.verify_soft_core_mapping(
+                SimpleNamespace(map_to_ir=lambda _m: None),
+                max_axons=64, max_neurons=64,
+            )
+
+
+class TestLazyModelsAreMaterialisedNotDeclaredInfeasible:
+    def test_a_never_forwarded_lazy_flow_is_laid_out_rather_than_refused(self):
+        """A ``LazyBatchNorm`` with no forward behind it has no weights to read,
+        and reading them raises — which the layout path used to swallow into
+        'this model does not fit the chip'. Give it its one batch instead."""
+        from mimarsinan.models.builders import BUILDERS_REGISTRY, build_model
+        from mimarsinan.mapping.verification.verifier import verify_soft_core_mapping
+        from mimarsinan.mapping.verification.wizard_layout_verify import (
+            model_repr_from_model,
+        )
+
+        builder = BUILDERS_REGISTRY["simple_mlp"]("cpu", (1, 28, 28), 10, {})
+        flow = build_model(
+            builder, {"mlp_width_1": 64, "mlp_width_2": 32},
+            encoding_placement="offload",
+        )
+        model_repr = model_repr_from_model(
+            flow, input_shape=(1, 28, 28), num_classes=10,
+        )
+        result = verify_soft_core_mapping(
+            model_repr, max_axons=784, max_neurons=256, allow_coalescing=True,
+        )
+        assert result.feasible, result.error
+        assert result.num_neural_cores > 0
+
+    def test_a_model_that_already_ran_is_left_untouched(self):
+        """The warm-up is a precondition repair, not a forward pass on live
+        models: an initialized model must not be run at all."""
+        from mimarsinan.mapping.verification.wizard_layout_verify import (
+            materialise_lazy_parameters,
+        )
+
+        calls = []
+
+        class _Initialized(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(4, 4)
+
+            def forward(self, x):
+                calls.append(x)
+                return self.linear(x)
+
+        model = _Initialized()
+        materialise_lazy_parameters(model, (4,))
+        assert calls == []
 
 
 class TestSuggesterExplicitFallback:

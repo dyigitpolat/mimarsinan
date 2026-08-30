@@ -174,12 +174,20 @@ class LayoutSourceView:
         return shape_t[:idx] + (self._size // known,) + shape_t[idx + 1:]
 
     def _resolve_getitem_shape(self, idx) -> tuple[int, ...]:
-        """Shape of ``self[idx]`` without materialising; supports int / slice / None tuples."""
-        if not isinstance(idx, tuple):
-            idx = (idx,)
+        """Shape of ``self[idx]`` without materialising the source grid.
+
+        Basic forms (int / slice / None) are resolved arithmetically — no
+        allocation at all. Every other form (the convolution mappers' broadcast
+        integer-array patch gather, boolean masks, ``Ellipsis``) is resolved by
+        indexing a zero-strided probe, so the answer IS numpy's own and the
+        refusal for a form numpy cannot index is numpy's own too.
+        """
+        items = idx if isinstance(idx, tuple) else (idx,)
+        if not all(item is None or isinstance(item, (int, slice)) for item in items):
+            return self._probe_getitem_shape(idx)
         result: list[int] = []
         dim_iter = iter(self._shape)
-        for item in idx:
+        for item in items:
             if item is None:
                 result.append(1)
                 continue
@@ -192,20 +200,24 @@ class LayoutSourceView:
                 ) from exc
             if isinstance(item, int):
                 continue
-            if isinstance(item, slice):
-                start, stop, step = item.indices(size)
-                if step > 0:
-                    length = max(0, (stop - start + step - 1) // step)
-                else:
-                    length = max(0, (start - stop - step - 1) // (-step))
-                result.append(length)
-                continue
-            raise TypeError(
-                f"LayoutSourceView: unsupported index element {item!r}"
-            )
+            start, stop, step = item.indices(size)
+            if step > 0:
+                length = max(0, (stop - start + step - 1) // step)
+            else:
+                length = max(0, (start - stop - step - 1) // (-step))
+            result.append(length)
         for remaining in dim_iter:
             result.append(remaining)
         return tuple(result)
+
+    def _probe_getitem_shape(self, idx) -> tuple[int, ...]:
+        """Numpy's own result shape, measured on a stride-0 probe of this shape.
+
+        The probe costs no source memory; only the RESULT is materialised, and
+        as one byte per cell rather than one ``IRSource`` object.
+        """
+        probe = np.broadcast_to(np.zeros((), dtype=np.int8), self._shape)
+        return tuple(int(d) for d in probe[idx].shape)
 
 
 from mimarsinan.mapping.layout.layout_source_view_ops import (

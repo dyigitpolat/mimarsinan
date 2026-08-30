@@ -499,20 +499,34 @@ class TestSuggestHardwareConfigForModel:
         else:
             assert result.total_cores > 0
 
-    def test_invalid_model_repr_returns_empty(self):
-        """A broken model repr should return empty suggestion with error rationale."""
+    def test_not_a_mapper_graph_returns_empty(self):
+        """The declared precondition: nothing to lay out, said as a result."""
 
-        class BrokenRepr:
-            def map_to_ir(self, mapping):
-                raise RuntimeError("Intentional failure")
+        class NotAMapperGraph:
+            pass
 
         result = suggest_hardware_config_for_model(
-            BrokenRepr(),
+            NotAMapperGraph(),
             max_axons=256,
             max_neurons=256,
         )
         assert result.total_cores == 0
         assert "failed" in result.rationale.lower()
+
+    def test_a_broken_mapper_graph_propagates_rather_than_suggesting_nothing(self):
+        """A break INSIDE the walk is a defect, not a hardware verdict: a
+        suggester that answers 'no cores' to it hides the bug behind a plan."""
+
+        class BrokenRepr:
+            def map_to_ir(self, mapping):
+                raise RuntimeError("Intentional failure")
+
+        with pytest.raises(RuntimeError, match="Intentional failure"):
+            suggest_hardware_config_for_model(
+                BrokenRepr(),
+                max_axons=256,
+                max_neurons=256,
+            )
 
     def test_deterministic_suggestion(self):
         """Two identical calls should produce identical suggestions (no RNG)."""

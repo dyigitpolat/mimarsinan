@@ -8,11 +8,17 @@ import torch.nn.functional as F
 
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
 from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes, pad_source_grid
+from mimarsinan.mapping.mappers.conv_unfold import (
+    ConvPatchGather,
+    conv_patch_gather,
+    conv_slot_unfold,
+)
 from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
 from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_boundary_scale,
     perceptron_per_source_scale,
 )
+from mimarsinan.mapping.platform.slot_unfold import SerialSlotUnfold
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.transformations.pruning.committed_masks import commit_layer_pruning
@@ -93,6 +99,27 @@ class Conv2DPerceptronMapper(Mapper):
 
     def owned_perceptron_groups(self):
         return [[self.perceptron]]
+
+    def patch_gather(self, input_shape) -> ConvPatchGather:
+        """This convolution's unfold over an ``(C, H, W)`` input — the SSOT the
+        IR mapping and the NF event-serial twin both read."""
+        c_in, h_in, w_in = (int(v) for v in input_shape)
+        if c_in != self.in_channels:
+            raise ValueError(
+                f"{self.name}: expected in_channels={self.in_channels}, got {c_in}"
+            )
+        return conv_patch_gather(
+            in_channels=self.in_channels,
+            source_grid=(h_in, w_in),
+            kernel=self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+        )
+
+    def serial_slot_unfold(self, *, input_shape, n_slots: int) -> SerialSlotUnfold:
+        del n_slots  # the twin checks the table against its own weight
+        return conv_slot_unfold(self.patch_gather(input_shape))
 
     def propagate_source_scale(self, deps, out_scales):
         return perceptron_per_source_scale(self, deps, out_scales)
@@ -178,12 +205,8 @@ class Conv2DPerceptronMapper(Mapper):
                 f"{self.name}: expected in_channels={self.in_channels}, got {c_in}"
             )
 
-        k_h, k_w = self.kernel_size
-        s_h, s_w = self.stride
-        p_h, p_w = self.padding
-        d_h, d_w = self.dilation
-        h_out = (h_in + 2 * p_h - d_h * (k_h - 1) - 1) // s_h + 1
-        w_out = (w_in + 2 * p_w - d_w * (k_w - 1) - 1) // s_w + 1
+        gather = self.patch_gather((c_in, h_in, w_in))
+        h_out, w_out = gather.out_grid
 
         if getattr(self.perceptron, "is_encoding_layer", False):
             flat_in = np.array(input_sources, dtype=object).flatten()
@@ -197,10 +220,8 @@ class Conv2DPerceptronMapper(Mapper):
             )
             return out.reshape(self.out_channels, h_out, w_out)
 
-        if p_h > 0 or p_w > 0:
-            input_sources = pad_source_grid(
-                input_sources, ((0, 0), (p_h, p_h), (p_w, p_w))
-            )
+        if gather.pads_anything:
+            input_sources = pad_source_grid(input_sources, gather.pad_width)
 
         full_w = PerceptronTransformer().get_effective_weight(self.perceptron)
         full_b = PerceptronTransformer().get_effective_bias(self.perceptron)
@@ -234,18 +255,8 @@ class Conv2DPerceptronMapper(Mapper):
             bank_channel_ranges.append((start_idx, end_idx))
             start_idx = end_idx
 
-        h_base = np.arange(h_out) * s_h
-        w_base = np.arange(w_out) * s_w
-        kh_off = np.arange(k_h) * d_h
-        kw_off = np.arange(k_w) * d_w
-        h_idx = (h_base[:, None, None, None, None] + kh_off[None, None, None, :, None])
-        w_idx = (w_base[None, :, None, None, None] + kw_off[None, None, None, None, :])
-        c_idx = np.arange(self.in_channels)[None, None, :, None, None]
-        h_idx_b, w_idx_b, c_idx_b = np.broadcast_arrays(h_idx, w_idx, c_idx)
-        patches = input_sources[c_idx_b, h_idx_b, w_idx_b]
-        n_positions = h_out * w_out
-        patch_size = self.in_channels * k_h * k_w
-        patches_flat = patches.reshape(n_positions, patch_size)
+        patches_flat = gather.gather(input_sources)
+        n_positions = gather.n_positions
 
         all_output_sources = []
         for pos in range(n_positions):

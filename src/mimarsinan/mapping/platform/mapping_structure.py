@@ -25,7 +25,18 @@ def compute_core_input_count(
 TilingMode = Literal["single", "coalescing", "output_tiled"]
 
 
-class WideFanInUnsupportedError(ValueError):
+class LayoutRefusalError(Exception):
+    """This graph cannot be laid out on this chip AS DECLARED.
+
+    A VERDICT about the (model, platform) pair, not a defect — the only class
+    the soft-core verifier turns into an infeasible result. Everything else
+    raised during a layout walk is a bug and must reach the caller: a defect
+    reported as 'this model does not fit' is a diagnosis nobody can act on.
+    Opt in by inheriting; never by widening a catch.
+    """
+
+
+class WideFanInUnsupportedError(LayoutRefusalError, ValueError):
     """A layer's fan-in exceeds one core and the chip cannot coalesce; raised instead of emitting an unrunnable mapping."""
 
 

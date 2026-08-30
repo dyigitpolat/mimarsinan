@@ -152,12 +152,27 @@ def test_the_nf_raster_equals_the_deployed_raster_at_atol_zero():
 def test_a_multi_source_hop_refuses_instead_of_guessing_the_slot_order():
     repr_, _ = build_chain()
     model = _nf_model(repr_)
-    lif = model.get_perceptrons()[1].activation
+    perceptron = model.get_perceptrons()[1]
+    lif = perceptron.activation
     from mimarsinan.spiking.segment_policy_lif_serial import _arm_serial_slot
 
     with pytest.raises(SerialFoldUnsupportedError, match="ONE upstream event"):
-        _arm_serial_slot(PER_EVENT_UNBOUNDED, model.get_perceptrons()[1], lif,
+        _arm_serial_slot(PER_EVENT_UNBOUNDED, object(), perceptron, lif,
                          [None, None])
+
+
+def test_a_node_with_no_declared_unfold_refuses_instead_of_inventing_one():
+    """The twin reads the mapping's unfold; a node that states none is a
+    refusal, never an excuse to assume the whole input is one slot table."""
+    repr_, _ = build_chain()
+    model = _nf_model(repr_)
+    perceptron = model.get_perceptrons()[1]
+    lif = perceptron.activation
+    from mimarsinan.spiking.segment_policy_lif_serial import _arm_serial_slot
+
+    events = torch.zeros(T, 2, 6)
+    with pytest.raises(SerialFoldUnsupportedError, match="serial_slot_unfold"):
+        _arm_serial_slot(PER_EVENT_UNBOUNDED, object(), perceptron, lif, [events])
 
 
 def _slot(weight: torch.Tensor):

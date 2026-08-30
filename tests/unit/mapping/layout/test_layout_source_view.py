@@ -127,6 +127,53 @@ def test_views_compare_shapes() -> None:
     assert a.shape == b.shape
 
 
+def test_view_getitem_with_the_conv_patch_gather_stays_a_view() -> None:
+    """The convolution mapper gathers its patches with broadcast INTEGER-ARRAY
+    indices; a view that refuses that form makes every conv layout unmappable
+    (it surfaced as a swallowed ``TypeError`` reported as layout infeasible)."""
+    v = _producer_view(7, (2, 4, 4))
+    h_idx = (np.arange(3) * 1)[:, None, None, None, None] + \
+        np.arange(2)[None, None, None, :, None]
+    w_idx = (np.arange(3) * 1)[None, :, None, None, None] + \
+        np.arange(2)[None, None, None, None, :]
+    c_idx = np.arange(2)[None, None, :, None, None]
+    c_b, h_b, w_b = np.broadcast_arrays(c_idx, h_idx, w_idx)
+
+    patches = v[c_b, h_b, w_b]
+
+    assert isinstance(patches, LayoutSourceView)
+    assert patches.shape == (3, 3, 2, 2, 2)
+    assert node_ids_of(patches) == {7}
+    assert np.array_equal(
+        np.asarray(patches, dtype=object),
+        np.asarray(v, dtype=object)[c_b, h_b, w_b],
+    )
+
+
+def test_view_getitem_advanced_shape_matches_numpy_exactly() -> None:
+    """Separated advanced indices move the broadcast dims to the FRONT; the
+    view must report the shape numpy itself would, never a guessed one."""
+    v = _producer_view(3, (4, 5, 6))
+    rows = np.array([[0, 1], [2, 3]])
+    cols = np.array([[1, 2], [3, 4]])
+    for idx in (
+        (rows, slice(None), cols),
+        (rows, cols),
+        (slice(None), rows, 2),
+        ([0, 2], slice(1, 3), slice(None)),
+    ):
+        got = v[idx]
+        expected = np.asarray(v, dtype=object)[idx]
+        assert got.shape == expected.shape, idx
+        assert np.array_equal(np.asarray(got, dtype=object), expected), idx
+
+
+def test_view_getitem_still_refuses_a_form_numpy_cannot_index() -> None:
+    v = _producer_view(3, (4, 5))
+    with pytest.raises(IndexError):
+        v[object()]
+
+
 def test_node_ids_excludes_off_and_negative_sentinels() -> None:
     """``IRSource`` with ``node_id < 0`` are sentinels (off/input/always-on)
     and must not be counted as upstream producers."""

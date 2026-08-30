@@ -4,10 +4,14 @@
 cannot reach an event-serial law through the fused pre-activation. The slot
 carries the decomposition the mapper itself uses — ``get_effective_weight``,
 the same columns in the same order — and hands it to ``lif_serial_fold``, the
-one kernel both torch executors run. The fused pre-activation is still computed
-and is checked against the decomposition every cycle, refusing by name: that
-comparison IS the NF-order == mapper-order contract, checked rather than
-believed (and a raise, never an assert — the contract must survive ``-O``).
+one kernel both torch executors run. WHICH upstream cells fill each core's
+table is the mapper's own unfold (``Mapper.serial_slot_unfold``), read here and
+never re-derived: a fully-connected hop maps to one whole-input core, a
+convolution to one core per output position over a shared weight bank. The
+fused pre-activation is still computed and is checked against the decomposition
+every cycle, refusing by name: that comparison IS the NF-order == mapper-order
+contract, checked rather than believed (and a raise, never an assert — the
+contract must survive ``-O``).
 """
 
 from __future__ import annotations
@@ -18,6 +22,10 @@ import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.platform.event_order import canonical_slot_order
+from mimarsinan.mapping.platform.slot_unfold import (
+    SerialSlotUnfold,
+    WholeInputSlotUnfold,
+)
 from mimarsinan.models.spiking.serial import (
     SerialDecompositionMismatchError,
     SerialFoldUnsupportedError,
@@ -43,14 +51,26 @@ class SerialFoldSlot:
 
     def __init__(self, *, soma_law: SomaLaw, weight: torch.Tensor,
                  bias: Optional[torch.Tensor], theta: float,
-                 membrane_init: float) -> None:
+                 membrane_init: float,
+                 unfold: Optional[SerialSlotUnfold] = None) -> None:
         if weight.dim() != 2:
             raise SerialFoldUnsupportedError(
                 f"the NF event-serial twin decomposes a rank-2 effective "
                 f"weight (out, in); this perceptron's is rank {weight.dim()} "
-                f"{tuple(weight.shape)}. A convolutional receptive field's "
-                f"axon order is the mapper's unfold, which this twin does not "
-                f"reproduce — it would silently fold a DIFFERENT order."
+                f"{tuple(weight.shape)}. Fan-in structure belongs to the "
+                f"mapper's unfold (``serial_slot_unfold``), never to the "
+                f"weight's rank."
+            )
+        n_slots = int(weight.shape[1])
+        self.unfold: SerialSlotUnfold = (
+            WholeInputSlotUnfold(n_slots) if unfold is None else unfold
+        )
+        if int(self.unfold.n_slots) != n_slots:
+            raise SerialFoldUnsupportedError(
+                f"the mapper's unfold fills {int(self.unfold.n_slots)}-slot "
+                f"tables but this perceptron's effective weight has {n_slots} "
+                f"columns: the twin and the deployment disagree about the "
+                f"receptive field."
             )
         self.soma_law = soma_law
         self.theta = float(theta)
@@ -63,23 +83,27 @@ class SerialFoldSlot:
         self.counts: list = []
 
     def feed(self, events: torch.Tensor) -> None:
-        """The cycle's per-slot multiplicities, in the mapper's slot order."""
+        """This cycle's upstream multiplicities, tiled into the mapper's slot tables."""
         flat = events.reshape(events.shape[0], -1)
-        n_slots = int(self.weight.shape[1])
-        if int(flat.shape[1]) != n_slots:
+        cells = int(flat.shape[1])
+        if cells != int(self.unfold.source_size):
             raise SerialFoldUnsupportedError(
-                f"the NF feature order carries {int(flat.shape[1])} slots but "
-                f"the mapper's effective weight has {n_slots}: the twin and "
-                f"the deployment disagree about the canonical slot order."
+                f"the NF feature order carries {cells} slots but the mapper's "
+                f"unfold consumes {int(self.unfold.source_size)} of them into "
+                f"{int(self.unfold.n_cores)} core(s) of "
+                f"{int(self.unfold.n_slots)} slots: the twin and the "
+                f"deployment disagree about the canonical slot order."
             )
+        n_slots = int(self.unfold.n_slots)
         if list(canonical_slot_order(n_slots)) != list(range(n_slots)):
             raise SerialDecompositionMismatchError(
-                f"the NF twin feeds its feature order straight through as the "
-                f"slot order, but canonical_slot_order({n_slots}) is not "
-                f"ascending: the mapper folds a DIFFERENT order than this "
-                f"twin, and the two counts would diverge silently."
+                f"the NF twin feeds each core's gathered table straight "
+                f"through as the slot order, but canonical_slot_order("
+                f"{n_slots}) is not ascending: the mapper folds a DIFFERENT "
+                f"order than this twin, and the two counts would diverge "
+                f"silently."
             )
-        self.events = flat
+        self.events = self.unfold.unfold_events(flat)
 
     def _decomposition_tolerance(
         self, charge: torch.Tensor, decomposed: torch.Tensor,
@@ -106,7 +130,7 @@ class SerialFoldSlot:
                 "the armed serial slot was driven without this cycle's event "
                 "multiplicities; feed() must precede every forward."
             )
-        charge = (x / safe_scale).reshape(x.shape[0], -1) * self.theta
+        charge = self.unfold.group_major(x / safe_scale) * self.theta
         decomposed = torch.nn.functional.linear(
             events.to(self.weight.dtype), self.weight, self.bias)
         max_error = float((charge - decomposed).abs().max())
@@ -122,8 +146,10 @@ class SerialFoldSlot:
                 f"deployment it is supposed to mirror."
             )
         if self.membrane is None:
+            # One membrane per (core, neuron): a tiled hop's cores integrate
+            # independently on the chip, and so must the twin.
             self.membrane = torch.full(
-                (events.shape[0], int(self.weight.shape[0])),
+                tuple(events.shape[:-1]) + (int(self.weight.shape[0]),),
                 self.membrane_init * self.theta,
                 dtype=self.weight.dtype, device=self.weight.device,
             )
@@ -134,14 +160,14 @@ class SerialFoldSlot:
             soma_law=self.soma_law, hw_bias=self.bias,
         )
         self.events = None
-        typed = counts.to(x.dtype).reshape(x.shape)
+        typed = self.unfold.restore(counts.to(x.dtype), x)
         self.counts.append(typed.detach())
         # Straight-through: the fold is a hard integer count with no gradient,
         # and every theta of charge buys exactly one spike, so the normalized
         # pre-activation IS the count's first-order surrogate. Forward is
         # BYTE-identical (the residual is exactly zero without autograd); the
         # backward path is the one the endpoint stages train through.
-        surrogate = charge.reshape(x.shape) / self.theta
+        surrogate = self.unfold.restore(charge, x) / self.theta
         return typed + (surrogate - surrogate.detach())
 
 
