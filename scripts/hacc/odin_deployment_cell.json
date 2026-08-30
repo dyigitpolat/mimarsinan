@@ -1,7 +1,7 @@
 {
   "seed": 1,
   "pipeline_mode": "phased",
-  "experiment_name": "odin_narrowconv_lifs_wq_s4_nobias",
+  "experiment_name": "odin_narrowconv_lifs_wq_s16_nobias",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -16,8 +16,8 @@
     "max_axons": 128,
     "max_neurons": 256,
     "has_bias": false,
-    "target_tq": 4,
-    "simulation_steps": 4,
+    "target_tq": 16,
+    "simulation_steps": 16,
     "weight_bits": 4,
     "allow_coalescing": false,
     "allow_neuron_splitting": false,
@@ -87,10 +87,10 @@
     "enable_odin_hacc_export": true,
     "odin_hacc_bundle_samples": 300,
     "odin_hacc_certification_samples": 50,
-    "odin_hacc_bundle_name": "odin_narrowconv_mnist_wb4_s4"
+    "odin_hacc_bundle_name": "odin_narrowconv_mnist_wb4_s16"
   },
   "target_metric_override": null,
   "start_step": null,
   "stop_step": null,
-  "_note": "THE ODIN DEPLOYMENT CELL \u2014 the recipe for the FIRST bundle cut from a real trained network, and it is CONV-FIRST. MEASURED 2026-08-28, end to end, exit 0. WHY NOT THE OLD OCCUPANT: this file used to hold the withdrawn MLP tier row t0_55, blocked twice at the stock core (wb=4 per_axon took it 0.9314 -> 0.6117 at Weight Quantization, then NF<->SCM parity refused at 0.7969 against 0.9). WHY NOT LENET5: the stock crossbar is 256 PHYSICAL rows and the per-axon sign expansion spends two per logical slot, so a core holds 128 logical axons and 127 effective without a bias lane; lenet5's flatten->FC junction is ONE 785-axon soft core (1570 physical rows, 6.1x the crossbar) and, with no inter-core membrane partial-sum transfer to coalesce into, the mapper refuses it outright \u2014 measured, on the committed shapes, before any training. Its two MaxPool stages also split the program into TWO neural segments and a bundle freezes one. WHAT THE PER-EVENT LAW ADDS: export_odin deploys only firing_granularity=per_event, and the event-serial training twin folds a hop only when its effective weight spans its WHOLE input and its upstream is another hop \u2014 so a 3x3 conv over a 7x7 map is refused by the TWIN (not by ODIN: that core fits at 127 axons), and so is a Flatten between two hops. narrow_conv states both: a conv stem the subsume placement hands to the host, a collapse conv over the whole residual extent, pointwise trunk stages, a pointwise ACTIVATED readout so the class scores stay on a spiking core for the bundle's argmax rule. GEOMETRY (measured before training): 2 cores in ONE neural segment \u2014 core 0 at 127 logical axons / 254 physical rows / 120 neurons, core 1 at 121 / 242 / 10. THE LADDER: pretrain 0.9820, AQ 0.9812, LIF 0.8972, WQ at wb=4 0.8814 (the MLP lost 0.32 here; this vehicle loses 0.016), QV 0.8814, NF 0.8807, NF<->SCM parity 0.9883 over 256 samples, HCM 0.8830, nevresim probe 0.92 (25 samples, windows exact vs HCM), frozen bundle accuracy 0.873333 over 300 samples. TRUNK DEPTH IS A MEASURED CHOICE: trunk_blocks=2 was tried first and MBH-A6 read total_first_fire_delay=6.69 against a window of 4, with the LIF ladder stalling at 0.5174; trunk_blocks=1 reads 4.81 and the ladder closes at 0.8972. degradation_tolerance stays at the tier default 0.15 \u2014 nothing here is widened to admit a number."
+  "_note": "THE ODIN DEPLOYMENT CELL \u2014 the recipe for the bundle cut from a real trained network, CONV-FIRST, at S=16. MEASURED 2026-08-30, end to end, exit 0, deployed 0.9366 over the full test set on the DEFAULT core geometry (2 hard cores, one neural segment: core 0 at 127 logical axons / 254 physical rows / 120 neurons, core 1 at 121 / 242 / 10). WHY S=16 AND NOT S=4: S is DEPLOYMENT CONFIG, not a chip constraint, and S=4 was the whole 88% story. The same cell, changing only simulation_steps (with target_tq kept equal to it, the tier idiom and the domain rule's divisibility) deploys 0.8790 / 0.9129 / 0.9366 at S = 4 / 8 / 16 \u2014 +5.8 pp for a two-key edit, with the LIF-adaptation stage carrying it (0.8552 / 0.9113 / 0.9397). Both A6 pre-flight gauges said so before a single step ran: at levels=4 the VALUE gauge read FAIL (stem_0_full starved \u2014 its sample median 0.129 sits at 0.19 of the 2.65/4 grid step), and the TEMPORAL gauge reads a chain first-fire delay of 4.81 cycles that barely moves with S (4.73 / 4.88 / 4.96 at S = 8 / 16 / 32), so the delay/window ratio is 1.20 / 0.59 / 0.31 / 0.16 \u2014 only S=4 starts with its deepest hop firing after the window has closed. That 1.20 read PASS under the old 2x recovery bar; the bar is now the window itself. WHY NOT S=32: the T-anneal entry probe and the full-transform probe landed within one SE of each other (0.7730 vs 0.7779), so tuning_lossless_entry_fast_path declared a transform that cost 0.9823 -> 0.7730 'lossless at entry' and SKIPPED the whole ladder. The predicate compares two post-damage reads, so it cannot see damage; that is a filed flow defect, not an S=32 result. WHY NOT A WIDER VEHICLE: measured. 22 pretrain-only screens; the per-event twin folds a hop only when its effective weight spans its WHOLE input, so every narrow_conv with body_blocks >= 1 is refused by SLOT COUNT (a 3x3 conv over a 14x14 map feeds 2744 slots into a 126-slot weight), which rules out every candidate that reached 0.99 pretrain (0.9902-0.9910). The best FEASIBLE vehicle is a k27/s10 stem with trunk_width=126, trunk_blocks=2 at 0.9884 pretrain, and it runs the flow better than this one (LIF 0.9687 vs 0.9397, WQ cost 0.0000) \u2014 but ODIN's 127 count-currency ceiling refuses it at BOTH S: 129 events in one cycle at S=16 (lif_serial_fold) and a 134-per-window static bound at S=8 (odin export feasibility). Its 3-core mapping is otherwise clean and parity-exact. Depth x fan-in x S is bounded by that ceiling; this 2-hop vehicle is inside it. THE LADDER: pretrain 0.9820, AQ 0.9820, LIF 0.9397, WQ at wb=4 0.9362, QV 0.9362, NF 0.9363, NF<->SCM streamed EXACT (torch.equal, 64 samples, atol=0), HCM 0.9366, nevresim probe 0.96 (25 samples), spike-count certificate exact=1.0 max|dcount|=0 over 20 neuron-windows. degradation_tolerance stays at the tier default 0.15 \u2014 nothing here is widened to admit a number."
 }
