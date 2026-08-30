@@ -555,16 +555,45 @@ re-measures every count.
 
 The bring-up package (`odin_hacc_package.zip`) carries the committed two-core
 witness bundle and phase 8 runs that. A DEPLOYMENT package
-(`odin_hacc_deployment.zip`) carries whatever bundle the export step produced,
-named by `deployment/DEPLOYMENT.json`; phase 8 reads that index. TODAY that
-bundle is **`odin_narrowconv_mnist_wb4_s4`** — a REAL TRAINED NETWORK, exported
-2026-08-28 from `scripts/hacc/odin_deployment_cell.json`: a `narrow_conv` MNIST
-vehicle as **2 host-mediated NC=1 passes**, 300 shipped samples, 50 of them
-carrying frozen per-pass counts, **frozen accuracy 0.873333 (262/300)**. It
-replaces the synthetic `odin_hacc_micro` witness (a transport proof whose
-1.000000 over 3 one-hot stimuli must never be quoted as deployed accuracy);
-that witness still ships inside the bring-up package and phase 8 runs it there.
-Same bootstrap, same `run_all.sh`, and `ODIN_BUNDLE=<path>` overrides either.
+(`odin_hacc_deployment.zip`) carries whatever bundles the export step produced,
+indexed by `deployment/DEPLOYMENT.json`; phase 8 runs that index's `default`.
+`--deployment` is repeatable and the FIRST one given becomes the default, so
+TODAY the package carries TWO REAL TRAINED NETWORKS, both exported 2026-08-30
+from `scripts/hacc/odin_deployment_cell.json`:
+
+| bundle | S | passes | shipped / certified | frozen accuracy | deployed (full test set) |
+| --- | --- | --- | --- | --- | --- |
+| **`odin_narrowconv_mnist_wb4_s16`** (default) | 16 | 2 | 300 / 50 | **0.943333** | **0.9340** |
+| `odin_narrowconv_mnist_wb4_s8` | 8 | 2 | 300 / 50 | 0.910000 | 0.9109 |
+
+Same `narrow_conv` MNIST vehicle at two temporal resolutions; the second is the
+cell with `target_tq`/`simulation_steps` at 8 and nothing else changed. They
+carry the **identical chip key** — soma law, `weight_bits=4`,
+`effective_max_axons=127`, `per_axon`, `membrane_init=0`, and even
+`chip_latency=2` all match — and the only `chip_config` field that differs is
+`simulation_length`, which is a per-network deployment fact, not a fabric one.
+Together they replace the synthetic `odin_hacc_micro` witness (a transport proof
+whose 1.000000 over 3 one-hot stimuli must never be quoted as deployed
+accuracy); that witness still ships inside the bring-up package and phase 8 runs
+it there. Same bootstrap, same `run_all.sh`, and `ODIN_BUNDLE=<path>` overrides
+either.
+
+**Why both bundles are the same vehicle, and not an MLP.** The `simple_mlp`
+family is `[784, w1, w2, w1, 10]`, so it is a THREE-hop on-chip segment and
+would have been the more interesting second network. It does not deploy at this
+soma point, for two named refusals rather than a tuning shortfall. Without
+bias-row splitting, `WeightQuantizationStep` raises `BiasGridDominanceError`:
+`max|effective bias| / max|effective weight| = 5.7` against the `q_max/2 = 3.5`
+limit at 4 bits, so the shared per-perceptron grid is set by the BIAS and the
+largest weight keeps 3 levels at 99.6% zeros. With `bias_row_splitting='auto'`
+— the remedy that refusal names — the computed bound is k=6 always-on rows and
+`BiasRowSplitEventSerialError` refuses THAT: under `per_event` with a
+fixed-width membrane the split is not a value-preserving re-encoding (the twin
+adds one number, the chip delivers six separately-thresholded events, and
+NF↔SCM atol=0 breaks). Both hold at S=4 and at S=16, so S is not the lever: at
+S=16 the MLP's LIF leg lifts 0.9314 → 0.9731 and Weight Quantization still
+refuses at the same gate. The precondition for an MLP bundle is a vehicle whose
+computed bias-row bound is ONE row (`max|b| <= max|w| * q_max / s_w`).
 
 What the network had to be, and why nothing off the shelf was: the stock
 crossbar is 256 PHYSICAL rows and the per-axon sign expansion spends two per
@@ -578,10 +607,22 @@ and the event-serial training twin folds a hop only when its effective weight
 spans its WHOLE input and its upstream is another hop: a 3x3 conv over a 7x7
 map is refused by the TWIN (that core fits the crossbar fine at 127 axons), and
 so is a `Flatten` sitting between two hops. `narrow_conv` states both
-conditions in the architecture. The measured ladder — pretrain 0.9820, LIF
-0.8972, wb=4 weight quantization **0.8814** (the platform-J MLP lost 0.32
-here; this vehicle loses 0.016), NF↔SCM parity **0.9883** over 256 samples,
-HCM 0.8830 — is recorded in the cell's own `_note`.
+conditions in the architecture. `simple_mlp` clears the geometry at widths
+120/96 but not the bias grid, as above.
+
+The default bundle's measured ladder at HEAD — pretrain 0.9820, AQ 0.9820, LIF
+**0.9487**, wb=4 weight quantization **0.9329** (this vehicle loses 0.016 here;
+the MLP loses 0.32), NF↔SCM streamed EXACT at atol=0, HCM **0.9340**, nevresim
+probe 0.96 over 25 samples — is recorded in the cell's own `_note`, together
+with why the cell's earlier 0.9366 was a pre-STE read.
+
+`t0_54`, the highest tier-0 `per_event` cell (0.9618 deployed at HEAD, 3 hard
+cores), is **not** exportable here and never was: its hard cores are 512 logical
+slots wide, which the per-axon expansion turns into 1024 physical rows over a
+256-row crossbar, and its wb=5 grid reaches |w|=15 against the 3-bit unsigned
+cell. Its per-pass emission bounds (4 / 19 / 10) are comfortably inside the
+count currency — geometry and the weight grid are what refuse it, not the
+counts.
 
 That bundle is produced by the pipeline itself, not by hand. The step is
 `"HACC NUS - ODIN Deployment"`; a tier cell (or any deployment document) turns

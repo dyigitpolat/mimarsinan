@@ -375,14 +375,27 @@ T0 = [
     # misses the 15% retention gate (0.6169 / 0.6139 / 0.62 over three
     # ladders: the family lr=0.003, a 10x gentler lr=3e-4 with
     # endpoint_floor_lr=2e-4, and the WQ endpoint recovery capped at 200
-    # steps instead of 16k). t0_54's wb=5 grid holds 0.92 through the same
-    # leg, so the 3-bit magnitude cell is what costs the 0.32, and no LR or
-    # budget knob buys it back. THE PRECONDITION FOR RE-ADDING THE ROW is a
-    # weight-quantization path that survives 15 levels on this vehicle — or a
-    # larger S, which raises the integer theta lattice and the output rate
-    # code together, at a wall this tier does not fund. Platform J stays
-    # declared above: it is the stock crossbar's real shape, and the next
-    # attempt starts from it.
+    # steps instead of 16k). The VERDICT stands; the CAUSE first written here
+    # — "the 3-bit magnitude cell" — was wrong, and 2026-08-30 measured what
+    # it is. WeightQuantizationStep now refuses this vehicle BY NAME:
+    # BiasGridDominanceError, max|effective bias| / max|effective weight| =
+    # 5.7 at 4 bits against the q_max/2 = 3.5 limit. The per-perceptron grid
+    # is shared and scaled by max(|w|,|b|), so the BIAS sets it and the
+    # largest weight keeps 3 levels at 99.6% zeros. Two levers exist and both
+    # are closed at THIS soma point: bias_row_splitting='auto' computes k=6
+    # always-on rows and is then refused by BiasRowSplitEventSerialError
+    # (under per_event with a fixed-width membrane the split is not a
+    # value-preserving re-encoding — the twin adds one number, the chip
+    # delivers six separately-thresholded events, and NF<->SCM atol=0
+    # breaks); and a larger S was measured, not assumed — at S=16 the LIF leg
+    # lifts 0.9314 -> 0.9731 and Weight Quantization refuses at the very same
+    # bias-grid gate, so S is not the lever. wb=8 clears it (0.9423 measured)
+    # because q_max=127 puts 5.7 far under the bar, but the stock cell is
+    # 3-bit. THE PRECONDITION FOR RE-ADDING THE ROW is therefore exact: a
+    # vehicle whose computed bias-row bound is ONE row at the per_event point
+    # (max|b| <= max|w| * q_max / s_w), since k=1 is exact at every soma
+    # point. Platform J stays declared above: it is the stock crossbar's real
+    # shape, and the next attempt starts from it.
     # [W5.3] the ONE searched-hardware cell. Every other row in every tier
     # pins hw_config_mode "fixed", so the co-search path — ArchitectureSearchStep,
     # the objectives registry's per-mode availability, the live search_event
