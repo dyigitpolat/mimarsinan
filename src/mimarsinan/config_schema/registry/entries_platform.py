@@ -267,8 +267,10 @@ ENTRIES = _BIAS_ENTRIES + (
     _E("scm_torch_sim_parity_min_agreement", group="deployment_target",
        owner="soft_core_mapping", type=T.FLOAT, category=Category.ADVANCED,
        label="Readout Drift Expected Agreement",
-       doc="Agreement below which the readout-drift report prints DRIFT; it never "
-           "fails the step.", bounds=(0.0, 1.0),
+       doc="Agreement floor for the readout-drift observable. Where the NF-SCM "
+           "exactness gate arms (streamed lif) this is report-only; where it is "
+           "the hop's ONLY guard (sync families) the step fails below it.",
+       bounds=(0.0, 1.0),
        provenance="consumer frozen default", derived_default=_frozen(0.98)),
     _E("onchip_majority_gate", group="deployment_target", owner="certification",
        type=T.BOOL, category=Category.ADVANCED, label="On-chip Majority Gate",

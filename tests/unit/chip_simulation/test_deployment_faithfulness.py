@@ -45,7 +45,7 @@ class TestStandingGatesRegistry:
         and can never be the reason one dies (t0_55 died on it at 0.7969 while
         the per-neuron gate was green at atol=0)."""
         fatal = {g.name for g in DEPLOYMENT_FAITHFULNESS_GATES if g.fatal}
-        assert fatal == {"nf_scm_per_neuron_parity"}
+        assert fatal == {"nf_scm_per_neuron_parity", "readout_decision_drift"}
 
     def test_every_declared_gate_names_a_config_flag(self):
         for gate in DEPLOYMENT_FAITHFULNESS_GATES:
@@ -107,6 +107,45 @@ class TestReadoutDriftReportIsStanding:
         model = SimpleNamespace(get_perceptrons=lambda: [])
         step._run_readout_decision_drift_diagnostic(model=model, ir_graph=object())
         assert built == [1], "the readout-drift report must be standing (default-on)"
+
+    def test_sole_guard_below_floor_fails_the_step(self, monkeypatch):
+        """Where no exactness gate arms, the floor is the hop's only fatal
+        guard (A1): agreement below it must raise, naming the floor."""
+        import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
+        import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as scm_mod
+
+        monkeypatch.setattr(
+            scm_mod, "build_spiking_hybrid_flow", lambda *a, **k: object())
+        monkeypatch.setattr(
+            scm_mod, "build_identity_mapping_for_pipeline",
+            lambda *a, **k: object())
+        monkeypatch.setattr(
+            nf_scm_parity, "measure_readout_decision_drift",
+            lambda *a, **k: 0.5)
+
+        step = self._make_step("ttfs_cycle_based")
+        model = SimpleNamespace(get_perceptrons=lambda: [])
+        with pytest.raises(RuntimeError, match="only fatal guard"):
+            step._run_readout_decision_drift_diagnostic(
+                model=model, ir_graph=object())
+
+    def test_sole_guard_above_floor_passes(self, monkeypatch):
+        import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
+        import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as scm_mod
+
+        monkeypatch.setattr(
+            scm_mod, "build_spiking_hybrid_flow", lambda *a, **k: object())
+        monkeypatch.setattr(
+            scm_mod, "build_identity_mapping_for_pipeline",
+            lambda *a, **k: object())
+        monkeypatch.setattr(
+            nf_scm_parity, "measure_readout_decision_drift",
+            lambda *a, **k: 1.0)
+
+        step = self._make_step("ttfs_cycle_based")
+        model = SimpleNamespace(get_perceptrons=lambda: [])
+        step._run_readout_decision_drift_diagnostic(
+            model=model, ir_graph=object())
 
     def test_can_be_explicitly_disabled(self, monkeypatch):
         import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as scm_mod

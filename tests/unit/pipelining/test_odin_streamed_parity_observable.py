@@ -15,7 +15,7 @@ import torch.nn as nn
 
 from mimarsinan.models.nn.lif_kernels import in_measurement_plane
 from mimarsinan.pipelining.core.nf_scm_parity import (
-    assert_torch_vs_deployed_sim_parity_or_raise,
+    measure_readout_decision_drift,
 )
 
 
@@ -74,7 +74,7 @@ class TestParityObservable:
         assert np.array_equal(np.rint(counts), np.asarray(_SIM_COUNTS[0])), (
             "fixture invariant: both twins must carry the same window counts"
         )
-        agreement = assert_torch_vs_deployed_sim_parity_or_raise(
+        agreement = measure_readout_decision_drift(
             _Fixed(_NF_THETA_COUNTS), _Fixed(_SIM_COUNTS),
             torch.zeros(1, 1), min_agreement=0.0,
         )
@@ -97,7 +97,7 @@ class TestParityObservable:
         """
         nf = _PlaneProbe(_NF_THETA_COUNTS)
         sim = _PlaneProbe(_SIM_COUNTS)
-        assert_torch_vs_deployed_sim_parity_or_raise(
+        measure_readout_decision_drift(
             nf, sim, torch.zeros(1, 1), min_agreement=0.0,
         )
         assert nf.saw_plane and sim.saw_plane, (

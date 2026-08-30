@@ -501,15 +501,19 @@ class SoftCoreMappingStep(PipelineStep):
         reference = nf_scm_parity.torch_parity_reference(model)
         # [calculus §17] the original model and the deployed IR are DIFFERENT
         # float programs; how far apart they land on one integer readout lattice
-        # is a REPORT. The verdict on deployment faithfulness is the count
-        # certificate, so this never gates — no threshold is passed at all.
+        # is a report — EXCEPT where no exactness gate arms for this contract:
+        # there this floor is the hop's only fatal guard, and removing it would
+        # leave the torch<->executor hop ungated (the pre-rework 0.90 floor's
+        # one legitimate job).
         expected = float(
             _effective(self.pipeline.config, "scm_torch_sim_parity_min_agreement")
         )
         agreement = nf_scm_parity.measure_readout_decision_drift(
             reference, flow, samples, labels=labels,
         )
-        status = "ok" if agreement >= expected else "DRIFT (reported, never fatal)"
+        sole_guard = not nf_scm_parity.nf_scm_parity_enabled(contract)
+        status = "ok" if agreement >= expected else (
+            "BELOW FLOOR" if sole_guard else "DRIFT (reported; exactness gates)")
         print(
             f"[SoftCoreMappingStep] readout decision drift: {agreement:.4f} of "
             f"readout counts agree over {int(samples.shape[0])} samples [{status}]"
@@ -518,7 +522,17 @@ class SoftCoreMappingStep(PipelineStep):
             "kind": "readout_decision_drift",
             "agreement": float(agreement),
             "samples": int(samples.shape[0]),
+            "sole_guard": bool(sole_guard),
         })
+        if sole_guard and agreement < expected:
+            raise RuntimeError(
+                f"readout decision drift {agreement:.4f} is below the "
+                f"scm_torch_sim_parity_min_agreement floor {expected:.4f} over "
+                f"{int(samples.shape[0])} samples, and no NF<->SCM exactness "
+                f"gate arms for this contract — this floor is the "
+                f"torch<->executor hop's only fatal guard here. The observable "
+                f"is in-plane integer readout-count agreement, not float argmax."
+            )
 
     def _run_membrane_readout_diagnostic(self, model, ir_graph) -> None:
         """[C2] Engagement report for the armed membrane readout, including

@@ -470,7 +470,6 @@ def measure_readout_decision_drift(
 
 
 # The pinned observable test imports the pre-rename name; keep it bound.
-assert_torch_vs_deployed_sim_parity_or_raise = measure_readout_decision_drift
 
 
 def compare_normalized_records(

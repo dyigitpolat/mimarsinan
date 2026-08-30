@@ -35,12 +35,16 @@ DEPLOYMENT_FAITHFULNESS_GATES: Tuple[FaithfulnessGate, ...] = (
         name="readout_decision_drift",
         config_flag="scm_torch_sim_parity_check",
         default_on=True,
-        fatal=False,
+        # Fatal exactly where it is the hop's only guard: sync families, where
+        # the NF-SCM exactness gate does not arm. Under streamed lif it does
+        # not run at all (exactness holds the same hop at atol=0).
+        fatal=True,
         description=(
             "How much of the readout the trained torch NF and the EXACT spiking sim "
             "run_scm_identity_metric deploys (build_spiking_hybrid_flow) place on the "
             "same integer count, both read inside the chip-lattice measurement plane. "
-            "A REPORT, never a verdict: the two are different float programs, and "
+            "A floor-gated observable: report-only where exactness arms, fatal where "
+            "it is the sole guard. The two are different float programs, and "
             "reading them as an argmax agreement measured float32 tie-breaking on a "
             "tie-dense integer readout instead (narrowconv 0.9883 = 3 flips, all on "
             "IDENTICAL counts). It does not arm for streamed lif, where the count "
