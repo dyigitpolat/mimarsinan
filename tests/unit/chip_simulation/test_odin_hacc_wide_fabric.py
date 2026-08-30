@@ -16,6 +16,7 @@ is under test is the FABRIC axis:
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import struct
@@ -37,6 +38,8 @@ from integration.odin_hacc_harness import (
 
 from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
 from mimarsinan.chip_simulation import odin_deployment_encoding as aer
+from mimarsinan.chip_simulation.odin_deployment_bundle import seal
+from mimarsinan.chip_simulation.odin_hacc.artifact import render_bundle
 from mimarsinan.chip_simulation.odin_fpga.chip_configs import (
     STOCK_CHIP,
     WIDE_CHIP,
@@ -244,6 +247,51 @@ class TestTheWiderCrossbarDoesNotLiftTheCountCurrency:
         with pytest.raises(OdinFeasibilityError, match="count-currency ceiling"):
             gate_variant_segment(
                 mapping, spec=wide.core_spec, membrane_init=0, cycles=TIMESTEPS)
+
+
+@pytest.fixture(scope="module")
+def auditor():
+    """``scripts/hacc/selftest/deployment_envelope_audit.py`` as a module."""
+    path = REPO / "scripts" / "hacc" / "selftest" / "deployment_envelope_audit.py"
+    spec = importlib.util.spec_from_file_location("odin_envelope_audit", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestTheBundleSurvivesLosingItsProducer:
+    """The audit checks a bundle against NOTHING but its own decoded bytes."""
+
+    def test_a_clean_wide_bundle_audits_green(self, auditor, wide_export):
+        _document, stats = wide_export
+        report = auditor.audit(Path(stats["paths"]["bundle"]), samples=3)
+        assert report["chip"] == WIDE_CHIP
+        assert report["stimulus"]["wording"] == aer.AER_VARIANT
+        assert report["frozen_truth"]["samples_re_derived"] == 3
+        assert report["frozen_truth"]["peak_emission_bound"] <= EMISSION_CEILING
+        low, high = report["envelope"]["weight_range"]
+        assert report["envelope"]["peak_abs_weight"] <= max(abs(low), high)
+
+    def test_one_frozen_count_too_many_is_a_finding(
+            self, auditor, wide_export, tmp_path):
+        _document, stats = wide_export
+        document = json.loads(Path(stats["paths"]["bundle"]).read_text())
+        sample = document["certification"]["samples"][0]
+        core = sorted(document["certification"]["windows"][str(sample)])[0]
+        document["certification"]["windows"][str(sample)][core][0][0] += 1
+        mutated = tmp_path / "mutated.json"
+        # RESEALED: the seal still verifies, so only the re-derivation can catch it.
+        mutated.write_text(render_bundle(seal(document)), encoding="utf-8")
+        with pytest.raises(auditor.AuditFinding, match="re-derived from the shipped"):
+            auditor.audit(mutated, samples=3)
+
+    def test_the_stock_fabric_is_declined_rather_than_half_audited(self, auditor):
+        committed = (REPO / "scripts" / "hacc" / "package" / "deployment"
+                     / "nc1_two_core_passes.json")
+        with pytest.raises(auditor.AuditUndecodable, match="did not run"):
+            auditor.audit(committed, samples=3)
 
 
 class TestTheFabricIsSelectedByTheDeclaredEnvelope:
