@@ -22,32 +22,22 @@ from pathlib import Path
 
 import pytest
 
+from integration.odin_hacc_harness import stage_package_host
+
 from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
 
 REPO = Path(__file__).resolve().parents[3]
 PACKAGE = REPO / "scripts" / "hacc" / "package"
-CHIP_SIM = REPO / "src" / "mimarsinan" / "chip_simulation"
-BUNDLE_MODULE = CHIP_SIM / "odin_deployment_bundle.py"
-VERBATIM_MODULES = (BUNDLE_MODULE, CHIP_SIM / "odin_deployment_encoding.py")
 BUNDLE_NAME = "nc1_two_core_passes.json"
 REPLAY_NAME = "nc1_two_core_passes_capture.json"
-
-HOST_FILES = (
-    "odin_board_driver.py", "fake_pyxrt_for_selftest.py",
-    "odin_deployment_executor.py", "render_die_map.py",
-)
 
 
 @pytest.fixture(scope="module")
 def staged(tmp_path_factory) -> Path:
     """The package's host/ + deployment/, exactly as make_package assembles it."""
     root = tmp_path_factory.mktemp("odin_deploy_pkg")
-    (root / "host").mkdir()
+    stage_package_host(root)
     (root / "deployment").mkdir()
-    for name in HOST_FILES:
-        shutil.copyfile(PACKAGE / "host" / name, root / "host" / name)
-    for module in VERBATIM_MODULES:
-        shutil.copyfile(module, root / "host" / module.name)
     for name in (BUNDLE_NAME, REPLAY_NAME):
         shutil.copyfile(PACKAGE / "deployment" / name, root / "deployment" / name)
     return root

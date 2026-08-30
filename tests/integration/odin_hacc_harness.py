@@ -229,3 +229,33 @@ __all__ = [
     "two_core_mapping",
     "wide_config_overrides",
 ]
+
+
+#: The packaged host, staged the way ``scripts/hacc/make_package.py`` stages it.
+#: ONE list, because a fixture that stages the executor without every module it
+#: imports VERBATIM does not fail as a missing file -- it fails as the
+#: executor's own "re-unzip the package" refusal, which is a true statement
+#: about a package nobody built.
+PACKAGE_HOST_FILES = (
+    "odin_board_driver.py", "fake_pyxrt_for_selftest.py",
+    "odin_deployment_executor.py", "render_die_map.py",
+)
+VERBATIM_HOST_MODULES = (
+    "odin_deployment_bundle.py", "odin_deployment_encoding.py",
+)
+
+
+def stage_package_host(root) -> None:
+    """Lay out ``root/host`` exactly as an unzipped package's host/ directory."""
+    import shutil
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    package_host = repo / "scripts" / "hacc" / "package" / "host"
+    chip_sim = repo / "src" / "mimarsinan" / "chip_simulation"
+    host = Path(root) / "host"
+    host.mkdir(parents=True, exist_ok=True)
+    for name in PACKAGE_HOST_FILES:
+        shutil.copyfile(package_host / name, host / name)
+    for name in VERBATIM_HOST_MODULES:
+        shutil.copyfile(chip_sim / name, host / name)

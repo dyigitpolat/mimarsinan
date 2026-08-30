@@ -21,7 +21,12 @@ from pathlib import Path
 
 import pytest
 
-from integration.odin_hacc_harness import CLASSES, hybrid_program, prepare_step
+from integration.odin_hacc_harness import (
+    CLASSES,
+    hybrid_program,
+    prepare_step,
+    stage_package_host,
+)
 
 from mimarsinan.chip_simulation import odin_deployment_bundle as bundle
 from mimarsinan.chip_simulation.odin_hacc.artifact import render_bundle
@@ -42,14 +47,6 @@ from mimarsinan.pipelining.pipeline_steps.verification.odin_hacc_deployment_step
 REPO = Path(__file__).resolve().parents[3]
 PACKAGE = REPO / "scripts" / "hacc" / "package"
 CHIP_SIM = REPO / "src" / "mimarsinan" / "chip_simulation"
-VERBATIM_MODULES = (
-    CHIP_SIM / "odin_deployment_bundle.py",
-    CHIP_SIM / "odin_deployment_encoding.py",
-)
-HOST_FILES = (
-    "odin_board_driver.py", "fake_pyxrt_for_selftest.py",
-    "odin_deployment_executor.py",
-)
 
 
 @pytest.fixture(scope="module")
@@ -72,12 +69,8 @@ def staged(tmp_path_factory, exported):
     """The package's host/ beside the freshly exported bundle and its replay."""
     _document, stats = exported
     root = tmp_path_factory.mktemp("odin_hacc_pkg")
-    (root / "host").mkdir()
+    stage_package_host(root)
     (root / "deployment").mkdir()
-    for name in HOST_FILES:
-        shutil.copyfile(PACKAGE / "host" / name, root / "host" / name)
-    for module in VERBATIM_MODULES:
-        shutil.copyfile(module, root / "host" / module.name)
     shutil.copyfile(stats["paths"]["bundle"], root / "deployment" / "bundle.json")
     shutil.copyfile(stats["paths"]["capture"], root / "deployment" / "replay.json")
     return root

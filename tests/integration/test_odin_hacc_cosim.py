@@ -17,7 +17,6 @@ the same code either way.
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +28,7 @@ from integration.odin_hacc_harness import (
     ODIN_LAW,
     TIMESTEPS,
     one_hot,
+    stage_package_host,
     two_core_mapping,
 )
 from integration.odin_rtl_harness import require_simulator, timed
@@ -49,13 +49,6 @@ from mimarsinan.mapping.latency.chip import ChipLatency
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 REPO = Path(__file__).resolve().parents[2]
-PACKAGE = REPO / "scripts" / "hacc" / "package"
-BUNDLE_MODULE = (
-    REPO / "src" / "mimarsinan" / "chip_simulation" / "odin_deployment_bundle.py")
-HOST_FILES = (
-    "odin_board_driver.py", "fake_pyxrt_for_selftest.py",
-    "odin_deployment_executor.py",
-)
 
 #: One entry raster per class: line ``k`` fires in every cycle, so the readout
 #: is one-hot on ``k`` and the true label is ``k``.
@@ -106,11 +99,8 @@ def measured(tmp_path_factory):
     with timed("P8 cosim-witnessed bundle"):
         document, capture = _freeze(CosimWitness())
     root = tmp_path_factory.mktemp("odin_hacc_cosim")
-    (root / "host").mkdir()
+    stage_package_host(root)
     (root / "deployment").mkdir()
-    for name in HOST_FILES:
-        shutil.copyfile(PACKAGE / "host" / name, root / "host" / name)
-    shutil.copyfile(BUNDLE_MODULE, root / "host" / "odin_deployment_bundle.py")
     (root / "deployment" / "bundle.json").write_text(
         render_bundle(document), encoding="utf-8")
     (root / "deployment" / "replay.json").write_text(
