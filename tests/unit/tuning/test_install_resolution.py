@@ -125,6 +125,16 @@ class TestTemporalWindowGauge:
         gauge = temporal_window_gauge({1: 1.0, 2: 1.0, 3: 0.8}, window=4)
         assert gauge.fails is False
 
+    def test_a_delay_that_reaches_the_window_fails(self):
+        """The bar IS the window: at ratio 1 the deepest hop's mean-drive
+        neuron first fires after the window has closed."""
+        assert temporal_window_gauge({1: 2.0, 2: 2.0}, window=4).fails is True
+        assert temporal_window_gauge({1: 2.0, 2: 1.9}, window=4).fails is False
+
+    def test_delay_ratio_is_the_reported_arithmetic(self):
+        gauge = temporal_window_gauge({1: 3.0, 2: 1.0}, window=8)
+        assert gauge.delay_ratio == 0.5
+
     def test_deep_chain_with_wide_window_passes(self):
         # deep_mlp d8 at T=32 (X4 t0_04): sum ~ 9 << 32.
         gauge = temporal_window_gauge({d: 1.0 for d in range(1, 10)}, window=32)
@@ -263,6 +273,14 @@ class TestEmission:
         assert "kind=temporal" in out
         assert "verdict=FAIL" in out
         assert "9.0" in out and "window=4" in out
+        assert "ratio=2.25" in out
+
+    def test_temporal_emit_names_the_recovery_band(self, capsys):
+        emit_temporal_gauge(
+            "LIFAdaptationTuner", temporal_window_gauge({1: 5.0}, window=4),
+        )
+        out = capsys.readouterr().out
+        assert "verdict=FAIL" in out and "recovery_band=True" in out
 
 
 class TestThresholdConstants:
@@ -275,9 +293,11 @@ class TestThresholdConstants:
             NEAREST_MIN_MEDIAN_EFFECTIVE_LEVELS,
             PROVEN_RECOVERY_DEPTH,
             TEMPORAL_RECOVERY_HEADROOM,
+            TEMPORAL_WINDOW_HEADROOM,
         )
 
         assert NEAREST_MIN_MEDIAN_EFFECTIVE_LEVELS == 1.0
+        assert TEMPORAL_WINDOW_HEADROOM == 1.0
         assert TEMPORAL_RECOVERY_HEADROOM == 2.0
         assert PROVEN_RECOVERY_DEPTH == 6
 
@@ -320,13 +340,15 @@ class TestCorpusConditioning:
         )
         assert hop.starved is True
 
-    def test_temporal_gauge_passes_the_recovered_corpus_band(self):
-        # t01_02 (S=16, PASS 0.97): total ~26.8 over window 16 -> ratio 1.68,
-        # inside the measured recovery headroom.
+    def test_temporal_gauge_flags_the_recovered_corpus_band_as_recoverable(self):
+        # t01_02 (S=16, PASS 0.97): total ~26.8 over window 16 -> ratio 1.68.
+        # Past the window bar, but inside the band the T-anneal family has
+        # healed before — the emit says so instead of staying silent.
         gauge = temporal_window_gauge(
             {d: 26.8 / 8 for d in range(1, 9)}, window=16,
         )
-        assert gauge.fails is False
+        assert gauge.fails is True
+        assert gauge.within_recovery_band is True
 
     def test_temporal_gauge_fails_past_the_recovery_headroom(self):
         # t01_01 (S=8, FAIL 0.91): the same chain against window 8 -> 3.35x.
@@ -334,6 +356,18 @@ class TestCorpusConditioning:
             {d: 26.8 / 8 for d in range(1, 9)}, window=8,
         )
         assert gauge.fails is True
+        assert gauge.within_recovery_band is False
+
+    def test_temporal_gauge_reads_the_odin_narrowconv_window_blind_spot(self):
+        # The measured blind spot the window bar closes: the ODIN narrowconv
+        # cell reads per-depth [2.89, 1.92] = 4.81 cycles. Against S=4 (ratio
+        # 1.20) the 2x bar said PASS while the LIF ladder lost 13 pp and the
+        # flow deployed 0.879; the same install fits every wider window.
+        delays = {1: 2.8918615754024852, 2: 1.9178356833948456}
+        assert temporal_window_gauge(delays, window=4).fails is True
+        assert temporal_window_gauge(delays, window=4).within_recovery_band is True
+        for window in (8, 16, 32):
+            assert temporal_window_gauge(delays, window=window).fails is False
 
     def test_chain_gauge_fails_single_segment_deep_chains_only(self):
         from mimarsinan.tuning.orchestration.install_resolution import (

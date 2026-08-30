@@ -22,11 +22,19 @@ ceil-kernel threshold."""
 STARVED_MASS_WARN = 0.5
 """A6(i): warn when most of a hop's positive activation mass sits under one grid step."""
 
+TEMPORAL_WINDOW_HEADROOM = 1.0
+"""A6(ii): the bar IS the window. A chain whose accumulated first-fire delay
+reaches T starts with its deepest hop's mean-drive neuron firing AFTER the
+window has closed — a physical starvation read, not a headroom estimate. The
+2x recovery bar blind-spotted exactly that band: the ODIN narrowconv cell reads
+4.81 cycles against S=4 (ratio 1.20 = PASS) while its LIF ladder lost 13 pp and
+the flow deployed 0.879."""
+
 TEMPORAL_RECOVERY_HEADROOM = 2.0
-"""A6(ii): the T-anneal recovery family heals chains whose accumulated
-first-fire delay sits below ~2x the window (tier-0.1 corpus: ratios 1.3-1.7
-all recovered — t01_02 0.97, t01_16 0.99; ratios >= 3.3 all failed —
-t01_01 0.91, t0_01 0.947)."""
+"""A6(ii): the band a FAILING chain has been healed out of before — the
+T-anneal recovery family lifted tier-0.1 ratios 1.3-1.7 (t01_02 0.97, t01_16
+0.99), while ratios >= 3.3 all failed (t01_01 0.91, t0_01 0.947). Reported
+alongside the verdict so a warn carries its own prognosis."""
 
 PROVEN_RECOVERY_DEPTH = 6
 """Single-segment cascade chains below this depth climbed out of equally-deep
@@ -149,9 +157,17 @@ class TemporalWindowGauge:
     per_depth_delays: Tuple[float, ...]
 
     @property
+    def delay_ratio(self) -> float:
+        return self.total_delay / max(float(self.window), 1.0)
+
+    @property
     def fails(self) -> bool:
-        # Corpus-conditioned: recovery heals below ~2x the window (tier-0.1).
-        return self.total_delay >= TEMPORAL_RECOVERY_HEADROOM * self.window
+        return self.delay_ratio >= TEMPORAL_WINDOW_HEADROOM
+
+    @property
+    def within_recovery_band(self) -> bool:
+        """A failing chain the T-anneal family has healed at this ratio before."""
+        return self.fails and self.delay_ratio < TEMPORAL_RECOVERY_HEADROOM
 
 
 def temporal_window_gauge(delays_by_depth, window: int) -> TemporalWindowGauge:

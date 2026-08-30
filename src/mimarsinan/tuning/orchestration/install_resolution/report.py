@@ -61,13 +61,17 @@ def emit_temporal_gauge(context: str, gauge: TemporalWindowGauge, *, reporter=No
         emit_reporter_event(reporter, "mbh_a6", {
             "gauge": "temporal", "context": context, "verdict": verdict,
             "total_first_fire_delay": gauge.total_delay, "window": gauge.window,
+            "delay_ratio": gauge.delay_ratio,
+            "within_recovery_band": gauge.within_recovery_band,
             "per_depth_delays": list(gauge.per_depth_delays),
         })
     delays = ", ".join(f"{d:.2f}" for d in gauge.per_depth_delays)
     print(
         f"[MBH-A6] kind=temporal context={context} "
         f"total_first_fire_delay={gauge.total_delay} window={gauge.window} "
-        f"verdict={verdict} per_depth=[{delays}] (pre-flight, warn-only)",
+        f"ratio={gauge.delay_ratio:.2f} verdict={verdict} "
+        f"recovery_band={gauge.within_recovery_band} "
+        f"per_depth=[{delays}] (pre-flight, warn-only)",
         flush=True,
     )
 

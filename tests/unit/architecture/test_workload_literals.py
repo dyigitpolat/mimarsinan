@@ -191,8 +191,10 @@ CALIBRATED_CONSTANT_INVENTORY = (
      "G7/A6: nearest-kernel starvation bar"),
     ("mimarsinan.tuning.orchestration.install_resolution.gauges", "STARVED_MASS_WARN", 0.5,
      "G7/A6: starved-mass warn fraction"),
+    ("mimarsinan.tuning.orchestration.install_resolution.gauges", "TEMPORAL_WINDOW_HEADROOM", 1.0,
+     "G7/A6(ii): delay/window starvation bar — the window itself (odin narrowconv 1.20 blind spot)"),
     ("mimarsinan.tuning.orchestration.install_resolution.gauges", "TEMPORAL_RECOVERY_HEADROOM", 2.0,
-     "G7/A6(ii): delay/window recovery headroom (t01 ratios 1.3-1.7 recovered, >=3.3 failed)"),
+     "G7/A6(ii): delay/window recovery band, reported not enforced (t01 ratios 1.3-1.7 recovered, >=3.3 failed)"),
     ("mimarsinan.tuning.orchestration.install_resolution.gauges", "PROVEN_RECOVERY_DEPTH", 6,
      "G8: chain-depth law (t0_22/t0_18/t0_03 vs t01_12); override: proven_recovery_depth"),
     # -- Hop staging (T12) --
@@ -243,7 +245,10 @@ class TestCalibratedConstantInventory:
         # inventory needs an audit-level rationale in the same commit.
         # 38 -> 40 (C1): the two new TuningPolicy convergence-stop constants
         # are tier-0-calibrated and must be pinned like their siblings.
-        assert len(CALIBRATED_CONSTANT_INVENTORY) == 40
+        # 40 -> 41 (A6(ii)): the delay/window bar SPLIT — the enforced bar is
+        # now the window itself and the 2x recovery band survives as a reported
+        # prognosis, so both corpus reads need their own pinned row.
+        assert len(CALIBRATED_CONSTANT_INVENTORY) == 41
 
     @pytest.mark.parametrize(
         "module,attr,expected",
