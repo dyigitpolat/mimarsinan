@@ -107,6 +107,10 @@ from integration.odin_rtl_harness import (  # noqa: E402
 
 from mimarsinan.chip_simulation import odin_deployment_bundle  # noqa: E402
 from mimarsinan.chip_simulation.odin_fpga import kernel_registers  # noqa: E402
+from mimarsinan.chip_simulation.odin_fpga.chip_configs import (  # noqa: E402
+    chip_config_named,
+    chip_configs,
+)
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (  # noqa: E402
     KERNEL_NAME,
     SHIPPED_CAPTURE_EVENTS,
@@ -125,6 +129,7 @@ from mimarsinan.mapping.latency.chip import ChipLatency  # noqa: E402
 
 #: 1980-01-01, the earliest a zip entry may carry: no build clock leaks in.
 ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+
 
 
 class PackagingRefusal(RuntimeError):
@@ -443,13 +448,29 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def rtl_digest() -> str:
-    """One hash over every RTL source the cosimulation and the build compile."""
+def digest_of_sources(paths: Sequence[Path]) -> str:
+    """One hash over a source set, keyed on each file's repo-relative path."""
     digest = hashlib.sha256()
-    for path in sorted(design_sources(overlay=True) + kernel_sources()):
+    for path in sorted(paths):
         digest.update(str(path.relative_to(REPO)).encode("utf-8"))
         digest.update(sha256_file(path).encode("ascii"))
     return digest.hexdigest()
+
+
+def chip_rtl_digest(name: str) -> str:
+    """The RTL identity of ONE chip configuration's fabric."""
+    config = chip_config_named(name)
+    return digest_of_sources(config.rtl_sources())
+
+
+def rtl_digest() -> str:
+    """One hash over every RTL source the cosimulation and the STOCK build compile.
+
+    Byte-identical to the digest this function returned before the chip axis
+    existed: the stock configuration's source set IS ``design_sources(overlay) +
+    kernel_sources()``, and the chip axis adds files to neither.
+    """
+    return digest_of_sources(design_sources(overlay=True) + kernel_sources())
 
 
 #: ONE device-protocol table. The driver is the file the board node runs, so the
@@ -480,7 +501,37 @@ _PROTOCOL_MIRRORS = (
     ("CAPTURE_NO_VERDICT", "CAPTURE_NO_VERDICT"),
     ("SHIPPED_CAPTURE_WORDS", "SHIPPED_CAPTURE_WORDS"),
     ("SHIPPED_CAPTURE_EVENTS", "SHIPPED_CAPTURE_EVENTS"),
+    ("SHIPPED_CHIP_CONFIG", "SHIPPED_CHIP_CONFIG"),
+    ("SHIPPED_NEURONS_PER_CORE", "SHIPPED_NEURONS_PER_CORE"),
+    ("SHIPPED_AXON_SLOTS_PER_CORE", "SHIPPED_AXON_SLOTS_PER_CORE"),
 )
+
+
+def require_chip_table_agrees() -> None:
+    """The shipped driver's fabric table and the repository SSOT are the SAME.
+
+    The driver imports nothing but stdlib, so the chip table is a second copy by
+    necessity; a package whose halves disagreed would let a board node declare a
+    geometry no bitstream was built at.
+    """
+    ours = {
+        config.name: {
+            "cores": int(config.cores),
+            "capture_events": int(config.capture_events),
+            "neurons_per_core": config.max_neurons,
+            "axon_slots_per_core": config.max_axons,
+        }
+        for config in chip_configs()
+    }
+    theirs = {
+        name: {key: int(value) for key, value in row.items()}
+        for name, row in driver.CHIP_CONFIGS.items()
+    }
+    if ours != theirs:
+        raise PackagingRefusal(
+            f"the shipped driver and chip_configs.py declare different fabrics: "
+            f"repository {ours}, driver {theirs}. One of the two was edited "
+            f"alone, and a board node would declare a geometry nobody built")
 
 
 #: The seal is the fixtures' discipline and the bundles': two implementations
@@ -751,6 +802,21 @@ def hw_payload() -> List[Tuple[Path, str]]:
         if path.suffix not in (".v", ".md", ".sha256") and path.name != "LICENSE":
             continue
         entries.append((path, str(path.relative_to(REPO))))
+    # Every GENERATED chip configuration's fabric, because the build node has no
+    # `src/` to expand a template with.
+    for config in chip_configs():
+        if config.is_stock:
+            continue
+        for name in config.generated_filenames():
+            path = config.committed_rtl_root / name
+            if not path.is_file():
+                raise PackagingRefusal(
+                    f"{config.name} declares {name}, which is not committed at "
+                    f"{path.relative_to(REPO)}. Emit it with "
+                    f"scripts/hacc/gen_chip_rtl.py --chip {config.name}; a "
+                    f"package that shipped a chip profile with no RTL would "
+                    f"refuse hours into a build slot")
+            entries.append((path, str(path.relative_to(REPO))))
     return entries
 
 
@@ -834,8 +900,8 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
 
     for source, relative in hw_payload():
         copy(source, relative)
-    for name in ("build_xclbn.sh", "cards.sh", "odin_u55c.cfg", "odin_u250.cfg",
-                 "toolchain.sh", "mine_checkpoint.sh"):
+    for name in ("build_xclbn.sh", "cards.sh", "chips.sh", "odin_u55c.cfg",
+                 "odin_u250.cfg", "toolchain.sh", "mine_checkpoint.sh"):
         copy(REPO / "scripts" / "hacc" / name, f"scripts/hacc/{name}")
     frozen_xml = kernel_xml_text()
     write_text("scripts/hacc/kernel.xml", frozen_xml)
@@ -894,6 +960,17 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
         "generating_commit": head,
         "worktree_dirty": dirty,
         "rtl_sha256": rtl,
+        # One RTL identity PER FABRIC. `rtl_sha256` above stays the stock one --
+        # it is what `chip_cache.sh` reads for the default chip and what every
+        # already-published cache entry was keyed on -- and this table is what a
+        # non-stock chip's key reads instead.
+        "chip_rtl_sha256": {
+            config.name: chip_rtl_digest(config.name)
+            for config in chip_configs()
+        },
+        "chips": {
+            config.name: config.as_dict() for config in chip_configs()
+        },
         "kernel": dict(KERNEL_TABLE),
         "files": {
             relative: sha256_file(STAGE / relative)
@@ -971,6 +1048,7 @@ def main() -> int:
     deployments = [Path(p).resolve() for p in options.deployment]
 
     require_protocol_agrees()
+    require_chip_table_agrees()
     require_seal_agrees()
     require_bundles_load()
     engine = available_engine()

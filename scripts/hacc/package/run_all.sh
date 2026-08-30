@@ -57,6 +57,8 @@ LOCK="${HERE}/.run_all.lock"
 source "${HERE}/scripts/hacc/toolchain.sh"
 # shellcheck source=scripts/hacc/cards.sh
 source "${HERE}/scripts/hacc/cards.sh"
+# shellcheck source=scripts/hacc/chips.sh
+source "${HERE}/scripts/hacc/chips.sh"
 
 # /data is the only path the head node and the board VMs share
 # (hacc_demo/doc/1-FPGA-allocation.md line 155). ODIN_DATA_ROOT moves it so the
@@ -143,7 +145,12 @@ record_pick() {
     printf '%s\t%s\t%s\n' "$(utc)" "$1" "$2" >> "${PICK_LOG}"
 }
 
-xclbin_of() { printf '%s/%s_nc1/odin_fpga_%s.xclbin\n' "${BUILD_DIR}" "$1" "$1"; }
+# The chip's build directory; the DEFAULT chip's suffix is empty, so this is the
+# same path it printed before the fabric axis existed.
+xclbin_of() {
+    printf '%s/%s_nc1%s/odin_fpga_%s.xclbin\n' \
+        "${BUILD_DIR}" "$1" "$(odin_chip_field build_suffix "$(odin_chip)")" "$1"
+}
 
 # ---------------------------------------------------------------------------
 # One live run at a time
@@ -515,6 +522,7 @@ write_sidecar() {
         printf 'build_script_sha256=%s\n' "$(build_script_sha)"
         printf 'target=%s\n' "${target}"
         printf 'card=%s\n' "${CARD}"
+        printf 'chip_config=%s\n' "$(odin_chip)"
         printf 'platform=%s\n' "${PLATFORM}"
         printf 'vxx_config=%s\n' "${CFG}"
         printf 'partition=%s\n' "${PICKED}"

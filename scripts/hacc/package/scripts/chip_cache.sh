@@ -16,6 +16,12 @@
 # under a key a build would never look up:
 #
 #   rtl_sha256   the package MANIFEST's digest over every RTL source v++ compiles
+#                FOR THIS CHIP -- the stock fabric reads the manifest's own
+#                `rtl_sha256`, any other reads its entry in `chip_rtl_sha256`
+#   chip_config  the fabric profile (scripts/hacc/chips.sh): which core the
+#                kernel instantiates. Two fabrics compiled from disjoint source
+#                sets must never share a key, and rtl_sha256 alone would not
+#                separate a chip whose RTL happened to be unchanged
 #   card         the card profile (scripts/hacc/cards.sh)
 #   platform     the shell v++ links against
 #   part         the Vivado part
@@ -53,6 +59,8 @@ KERNEL_TOP="${HERE}/hw/fpga/kernel/odin_fpga_kernel_top.v"
 source "${HERE}/scripts/hacc/toolchain.sh"
 # shellcheck source=../scripts/hacc/cards.sh
 source "${HERE}/scripts/hacc/cards.sh"
+# shellcheck source=../scripts/hacc/chips.sh
+source "${HERE}/scripts/hacc/chips.sh"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'REFUSING: %s\n' "$*" >&2; exit 2; }
@@ -81,10 +89,25 @@ verilog_parameter() {
     esac
 }
 
+# The RTL identity of ONE fabric. The default chip reads the manifest's own
+# top-level `rtl_sha256` -- the field every published cache entry was keyed on --
+# and any other reads its entry in the `chip_rtl_sha256` table.
 manifest_rtl_sha256() {
+    local chip="${1:-$(odin_chip)}" digest
     [ -f "${MANIFEST}" ] || die "${MANIFEST} is missing; re-unzip the package"
-    sed -n 's/.*"rtl_sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
-        "${MANIFEST}" | head -1
+    if [ "${chip}" = "${ODIN_CHIP_DEFAULT}" ]; then
+        sed -n 's/.*"rtl_sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+            "${MANIFEST}" | head -1
+        return 0
+    fi
+    digest="$(sed -n '/"chip_rtl_sha256"/,/}/p' "${MANIFEST}" \
+        | sed -n 's/.*"'"${chip}"'"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+        | head -1)"
+    [ -n "${digest}" ] || die \
+        "the package MANIFEST carries no chip_rtl_sha256 for '${chip}'; it was \
+built before that fabric existed, and a key derived from a guess would resurrect \
+someone else's bitstream"
+    printf '%s' "${digest}"
 }
 
 clock_hz() {
@@ -116,8 +139,10 @@ cache_key_inputs() {
     local target="$1" rtl="$2" card="$3" platform="$4" part="$5" cfg="$6"
     local nc="${7:-$(verilog_parameter NC)}"
     local script="${9:-$(build_script_sha)}"
+    local chip="${10:-$(odin_chip)}"
     printf 'target=%s\n' "${target}"
     printf 'rtl_sha256=%s\n' "${rtl}"
+    printf 'chip_config=%s\n' "${chip}"
     printf 'card=%s\n' "${card}"
     printf 'platform=%s\n' "${platform}"
     printf 'part=%s\n' "${part}"
@@ -141,7 +166,12 @@ cache_key_for_target() {
 
 cache_entry() { printf '%s/%s\n' "${CACHE_ROOT}" "$1"; }
 
-xclbin_of() { printf '%s/%s_nc1/odin_fpga_%s.xclbin\n' "${BUILD_DIR}" "$1" "$1"; }
+# The build directory the chip's artifact lands in. The DEFAULT chip's suffix is
+# empty, so every path this printed before the chip axis existed is unchanged.
+xclbin_of() {
+    printf '%s/%s_nc1%s/odin_fpga_%s.xclbin\n' \
+        "${BUILD_DIR}" "$1" "$(odin_chip_field build_suffix "${2:-$(odin_chip)}")" "$1"
+}
 
 # An entry is COMPLETE when it holds the bitstream and the sidecar that says
 # what produced it. A half-copied entry must never satisfy a lookup.
@@ -259,8 +289,17 @@ cmd_adopt() {
     [ -n "${install}" ] || die "adopt needs an install path"
     install="$(cd "${install}" && pwd)" || die "no such install"
     local target xclbin sidecar key entry stage
+    local adopt_chip adopt_suffix
+    # The install's OWN chip, when its sidecar records one. Sidecars written
+    # before the chip axis existed name no fabric and are the default one.
     for target in hw hw_emu; do
-        xclbin="${install}/build/hacc/${target}_nc1/odin_fpga_${target}.xclbin"
+        adopt_chip="$(sed -n 's/^chip_config=//p' \
+            "${install}/build/hacc/${target}_nc1/odin_fpga_${target}.xclbin.built_with" \
+            2>/dev/null | head -1)"
+        [ -n "${adopt_chip}" ] || adopt_chip="$(odin_chip)"
+        adopt_suffix="$(odin_chip_field build_suffix "${adopt_chip}")" || die \
+            "the install names chip '${adopt_chip}', which this package does not carry"
+        xclbin="${install}/build/hacc/${target}_nc1${adopt_suffix}/odin_fpga_${target}.xclbin"
         [ -f "${xclbin}" ] || continue
         sidecar="${xclbin}.built_with"
         [ -f "${sidecar}" ] || die \
@@ -268,8 +307,7 @@ cmd_adopt() {
 platform and build script produced it; a cache entry keyed on a guess is worse \
 than no entry"
         local rtl card platform part cfg
-        rtl="$(sed -n 's/.*"rtl_sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
-            "${install}/MANIFEST.json" | head -1)"
+        rtl="$(MANIFEST="${install}/MANIFEST.json" manifest_rtl_sha256 "${adopt_chip}")"
         card="$(sed -n 's/^card=//p' "${sidecar}" | head -1)"
         platform="$(sed -n 's/^platform=//p' "${sidecar}" | head -1)"
         cfg="${install}/$(sed -n 's/^vxx_config=//p' "${sidecar}" | head -1)"
@@ -279,7 +317,7 @@ than no entry"
         local script
         script="$(sed -n 's/^build_script_sha256=//p' "${sidecar}" | head -1)"
         key="$(cache_key_inputs "${target}" "${rtl}" "${card}" "${platform}" \
-            "${part}" "${cfg}" "" "" "${script}" | digest_of)"
+            "${part}" "${cfg}" "" "" "${script}" "${adopt_chip}" | digest_of)"
         entry="$(cache_entry "${key}")"
         mkdir -p "${CACHE_ROOT}"
         if entry_complete "${entry}"; then
@@ -296,7 +334,8 @@ than no entry"
             fi
             cp "${sidecar}" "${stage}/built_with.txt"
             cache_key_inputs "${target}" "${rtl}" "${card}" "${platform}" \
-                "${part}" "${cfg}" "" "" "${script}" > "${stage}/key_inputs.txt"
+                "${part}" "${cfg}" "" "" "${script}" "${adopt_chip}" \
+                > "${stage}/key_inputs.txt"
             printf 'adopted_utc=%s\nhost=%s\nfrom=%s\n' \
                 "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(hostname)" "${xclbin}" \
                 > "${stage}/published.txt"

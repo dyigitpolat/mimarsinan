@@ -97,6 +97,53 @@ every run and clears itself the moment either admin fix lands. Off-cluster,
 where there is no platform root to read, it says nothing at all — no evidence
 is never treated as evidence of a problem.
 
+### And the CHIP is a parameter too (v4)
+
+The card says which board. `ODIN_CHIP` says which **fabric** — which core the
+kernel instantiates — and the two axes are independent.
+`scripts/hacc/chips.sh` is the ONE place the shell knows what a chip implies
+(its Python SSOT is
+`src/mimarsinan/chip_simulation/odin_fpga/chip_configs.py`, and a unit gate
+refuses any drift between them):
+
+| | `odin_stock_256x256` (default) | `odin_wide_1024x256_mb16` |
+|---|---|---|
+| core | the vendored ODIN, SPI-programmed | generated `odin_gen_core`, direct config port |
+| axon slots / core | 128 (on 256 physical rows) | **1024** (one row per slot) |
+| usable fan-in | 127 | **1023** — a 784-line raster maps whole |
+| neurons / core | 256 | 256 |
+| synapse cell | 4-bit magnitude, signed per ROW → `[-7, 7]` | 8-bit two's complement → **`[-128, 127]`** |
+| membrane / theta ceiling | 8-bit → 255 | 16-bit → **65,535** |
+| RTL compiled | the `hw/fpga/kernel` tree + `hw/vendor/odin` | the shared wrapper + `hw/gen/chips/<chip>/` |
+| build directory | `build/hacc/<target>_nc1` | `build/hacc/<target>_nc1_<chip>` |
+
+```bash
+ODIN_CARD=u250 ODIN_CHIP=odin_wide_1024x256_mb16 scripts/hacc/build_xclbn.sh hw
+```
+
+**What selects the fabric is the SOURCE SET, not a parameter.** The wide chip's
+kernel is a generated file that declares the *same* module `odin_fpga_kernel`
+with the same port list, so `hw/fpga/kernel/odin_fpga_kernel_top.v` — the Vitis
+kernel, its `kernel.xml`, its six arguments, its register map and the host
+driver's protocol table — is shared and byte-untouched. The stock kernel file is
+never edited either, which is the point: the chip cache keys a place-and-routed
+xclbin on a digest over the stock source set, and that digest has not moved.
+
+The generated RTL is **committed** under `hw/gen/chips/<chip>/` because the
+cluster build runs from a package that ships no `src/` and cannot expand a
+template. Re-emit and gate it with:
+
+```bash
+env/bin/python scripts/hacc/gen_chip_rtl.py            # emit
+env/bin/python scripts/hacc/gen_chip_rtl.py --check    # byte-compare
+```
+
+The cache key now carries `chip_config=` as its own line, so two fabrics can
+never collide on one entry. **Note for an existing install:** the key of the
+stock chip moved once when the chip axis landed, because `build_xclbn.sh` is
+part of the recipe the key hashes. An already-routed xclbin is re-adopted under
+the new key with `scripts/chip_cache.sh adopt <install> --alias <name>`.
+
 ---
 
 **There is now a shorter path: one zip and one `sh` (v2, carded in v3).**

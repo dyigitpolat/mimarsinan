@@ -103,6 +103,27 @@ SHIPPED_CAPTURE_EVENTS = (SHIPPED_CAPTURE_WORDS - CAPTURE_HEADER_WORDS) // (
     CAPTURE_RECORD_WORDS)
 DEFAULT_CAPTURE_EVENTS = 1 << 20
 
+#: WHICH FABRIC. The capture layout above belongs to the WRAPPER and is the same
+#: for every chip configuration; the CORE geometry is not, so a session says
+#: which fabric its declaration describes. This table is the host copy of
+#: `src/mimarsinan/chip_simulation/odin_fpga/chip_configs.py` (the driver imports
+#: nothing but stdlib), and make_package.py REFUSES to package when the two have
+#: drifted. Defaults are the stock fabric's: the only one ever placed and routed.
+SHIPPED_CHIP_CONFIG = "odin_stock_256x256"
+SHIPPED_NEURONS_PER_CORE = 256
+SHIPPED_AXON_SLOTS_PER_CORE = 128
+
+CHIP_CONFIGS = {
+    "odin_stock_256x256": {
+        "cores": 1, "capture_events": SHIPPED_CAPTURE_EVENTS,
+        "neurons_per_core": 256, "axon_slots_per_core": 128,
+    },
+    "odin_wide_1024x256_mb16": {
+        "cores": 1, "capture_events": SHIPPED_CAPTURE_EVENTS,
+        "neurons_per_core": 256, "axon_slots_per_core": 1024,
+    },
+}
+
 SHIPPED_CAPACITY_PROVENANCE = (
     "declared from hw/fpga/kernel/odin_fpga_kernel_top.v (CAP_WORDS = "
     f"{SHIPPED_CAPTURE_WORDS}) at NC = {SHIPPED_KERNEL_CORES}, the only geometry "
@@ -269,10 +290,16 @@ class KernelCapacity:
 
     def __init__(self, *, cores: int = SHIPPED_KERNEL_CORES,
                  capture_events: int = SHIPPED_CAPTURE_EVENTS,
-                 provenance: str = SHIPPED_CAPACITY_PROVENANCE) -> None:
+                 provenance: str = SHIPPED_CAPACITY_PROVENANCE,
+                 chip: str = SHIPPED_CHIP_CONFIG,
+                 neurons_per_core: int = SHIPPED_NEURONS_PER_CORE,
+                 axon_slots_per_core: int = SHIPPED_AXON_SLOTS_PER_CORE) -> None:
         self.cores = int(cores)
         self.capture_events = int(capture_events)
         self.provenance = str(provenance)
+        self.chip = str(chip)
+        self.neurons_per_core = int(neurons_per_core)
+        self.axon_slots_per_core = int(axon_slots_per_core)
 
     def ceiling(self, host_events: int) -> int:
         return min(int(host_events), self.capture_events)
@@ -282,7 +309,22 @@ class KernelCapacity:
             "capture_events": self.capture_events,
             "cores": self.cores,
             "provenance": self.provenance,
+            "chip": self.chip,
+            "neurons_per_core": self.neurons_per_core,
+            "axon_slots_per_core": self.axon_slots_per_core,
         }
+
+
+def chip_config_named(name):
+    """One chip configuration's declaration, refusing a fabric this package
+    does not carry rather than declaring a geometry nobody built."""
+    try:
+        return CHIP_CONFIGS[str(name)]
+    except KeyError:
+        raise OdinDriverError(
+            "--chip %r names no fabric this package carries; it knows %s. A "
+            "capacity declared for a bitstream nobody built would turn every "
+            "refusal into a wrong number." % (name, ", ".join(sorted(CHIP_CONFIGS))))
 
 
 def require_declared_storage(capacity: KernelCapacity, *, transport: str) -> None:
@@ -956,10 +998,14 @@ def write_result(results_dir: str, name: str, payload: Dict[str, Any]) -> str:
 
 def capacity_from_options(options) -> KernelCapacity:
     """The capacity this session declares, and where that number came from."""
-    cores = int(options.declare_cores or SHIPPED_KERNEL_CORES)
-    capture_ram = int(options.capture_ram_events or SHIPPED_CAPTURE_EVENTS)
+    chip_name = str(getattr(options, "chip", "") or SHIPPED_CHIP_CONFIG)
+    chip = chip_config_named(chip_name)
+    cores = int(options.declare_cores or chip["cores"])
+    capture_ram = int(options.capture_ram_events or chip["capture_events"])
     provenance = SHIPPED_CAPACITY_PROVENANCE
     overrides = []
+    if chip_name != SHIPPED_CHIP_CONFIG:
+        overrides.append(f"--chip {chip_name}")
     if options.declare_cores:
         overrides.append(f"--declare-cores {cores}")
     if options.capture_ram_events:
@@ -969,7 +1015,9 @@ def capacity_from_options(options) -> KernelCapacity:
             f"OVERRIDDEN on the command line ({', '.join(overrides)}); the "
             f"package's own declaration is: {SHIPPED_CAPACITY_PROVENANCE}")
     return KernelCapacity(
-        cores=cores, capture_events=capture_ram, provenance=provenance)
+        cores=cores, capture_events=capture_ram, provenance=provenance,
+        chip=chip_name, neurons_per_core=int(chip["neurons_per_core"]),
+        axon_slots_per_core=int(chip["axon_slots_per_core"]))
 
 
 def open_session(options, capacity: KernelCapacity | None = None) -> BoardSession:
@@ -1278,6 +1326,10 @@ def build_parser() -> argparse.ArgumentParser:
                         default=DEFAULT_CAPTURE_EVENTS,
                         help="the HOST's capture ceiling; the session takes the "
                              "min of it and the fabric's declared one")
+    parser.add_argument("--chip", default=SHIPPED_CHIP_CONFIG,
+                        help=f"the FABRIC this bitstream was built from "
+                             f"(default {SHIPPED_CHIP_CONFIG}); known: "
+                             f"{', '.join(sorted(CHIP_CONFIGS))}")
     parser.add_argument("--declare-cores", type=int, default=0,
                         help=f"declare a core count other than the packaged "
                              f"NC={SHIPPED_KERNEL_CORES} (no host can read it "

@@ -8,6 +8,16 @@
 # Default is u55c, which on this cluster REFUSES with the deadlock reason
 # (only a 2022.2-locked U55C shell installed, and no 2022.2 Vitis).
 #
+# THE CHIP IS A PARAMETER TOO (v4). ODIN_CHIP selects a profile in
+# scripts/hacc/chips.sh — which core the kernel instantiates and therefore which
+# RTL v++ compiles — and the two axes are independent:
+#   ODIN_CARD=u250 ODIN_CHIP=odin_wide_1024x256_mb16 scripts/hacc/build_xclbn.sh hw
+# Default is odin_stock_256x256, the vendored fabric, whose source list and
+# build directory are byte-identical to what this script compiled before the
+# chip axis existed. A generated fabric ships its RTL under hw/gen/chips/<chip>/
+# (emitted and gated by scripts/hacc/gen_chip_rtl.py) and its artifacts land in
+# a chip-suffixed build directory, so the two never overwrite each other.
+#
 # WHERE: hacchead or a compile partition — NEVER on a board reservation: the
 # bare board partitions are capped at ONE HOUR and a placed-and-routed build is
 # hours. FIELD-OBSERVED 2026-08-25: `vck5000_compile` (hacc-node0,
@@ -41,11 +51,16 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$(dirname "${BASH_SOURCE[0]}")/toolchain.sh"
 # shellcheck source=scripts/hacc/cards.sh
 source "$(dirname "${BASH_SOURCE[0]}")/cards.sh"
+# shellcheck source=scripts/hacc/chips.sh
+source "$(dirname "${BASH_SOURCE[0]}")/chips.sh"
 cd "${here}"
 
 # CARD / PLATFORM / PART / CFG, and ODIN_VITIS_PREFER for the probe below.
 # A card this cluster cannot build refuses HERE, before a compile slot is spent.
 odin_card_resolve
+# CHIP / CHIP_CORE_KIND / CHIP_VARIANT / CHIP_SUFFIX / CHIP_RTL_DIR. A generated
+# fabric whose RTL is not in this tree refuses here too.
+odin_chip_resolve
 
 # --- REFUSE LOUD off-cluster -------------------------------------------------
 # The version is DISCOVERED (field-observed 2026-08-25: 2020.1 2020.2 2021.2
@@ -73,10 +88,11 @@ fi
 # treats as fatal — odin_source_toolchain relaxes it for exactly these two.
 odin_source_toolchain "${VITIS_SETTINGS}"
 
-BUILD="build/hacc/${TARGET}_nc${NC}"
+BUILD="build/hacc/${TARGET}_nc${NC}${CHIP_SUFFIX}"
 mkdir -p "${BUILD}"
 
 echo "[hacc-build] card     : ${CARD}"
+echo "[hacc-build] chip     : ${CHIP} (${CHIP_CORE_KIND}${CHIP_VARIANT:+ ${CHIP_VARIANT}})"
 echo "[hacc-build] vitis    : ${XILINX_ROOT}/Vitis/${VITIS_VERSION} (prefer ${ODIN_VITIS_PREFER:-none})"
 echo "[hacc-build] platform : ${PLATFORM}"
 echo "[hacc-build] part     : ${PART}"
@@ -98,16 +114,21 @@ python3 scripts/hacc/gen_kernel_xml.py \
     --output "${BUILD}/kernel.xml" --kernel "${KERNEL}"
 
 # --- 2. package_xo: Verilog + kernel.xml -> .xo ------------------------------
-SOURCES=(
-    hw/fpga/kernel/odin_spi_master.v
-    hw/fpga/kernel/odin_aer_bridge.v
-    hw/fpga/kernel/odin_fpga_kernel.v
-    hw/fpga/kernel/odin_fpga_kernel_top.v
-    hw/fpga/mem/SRAM_256x128_wrapper.v
-    hw/fpga/mem/SRAM_8192x32_wrapper.v
-)
-while IFS= read -r -d '' src; do SOURCES+=("${src}"); done \
-    < <(find hw/vendor/odin/src -name '*.v' -print0 | sort -z)
+# The RTL is the CHIP's, in compile order: scripts/hacc/chips.sh is the only
+# place that knows which files a fabric is made of, and the stock chip's list is
+# the one this script used to spell out literally.
+SOURCES=()
+while IFS= read -r src; do
+    [ -n "${src}" ] || continue
+    if [[ ! -f "${src}" ]]; then
+        echo "REFUSING: the ${CHIP} source list names ${src}, which is not in" >&2
+        echo "  this tree. Emit a generated fabric with" >&2
+        echo "  scripts/hacc/gen_chip_rtl.py, or re-unzip the package." >&2
+        exit 2
+    fi
+    SOURCES+=("${src}")
+done < <(odin_chip_sources "${CHIP}")
+echo "[hacc-build] sources  : ${#SOURCES[@]} RTL file(s)"
 
 # package_xo is a Vivado Tcl command, NOT a Vitis binary (field-observed
 # 2026-08-25 on hacc-node0: ${XILINX_VITIS}/bin has no package_xo). The
