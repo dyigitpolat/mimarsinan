@@ -14,7 +14,7 @@ remaining ANN→SNN conversion gap on the deployed cascade.
 ## Key files
 | File | Purpose |
 |---|---|
-| `spike_trains.py` | Spike-train constructors: uniform, cycle-accurate signed-IF (`lif_spike_train`), materialized, and the legacy rate fallback. |
+| `spike_trains.py` | Spike-train constructors: uniform, its straight-through encode (`straight_through_spike_train`), cycle-accurate signed-IF (`lif_spike_train`), materialized, and the legacy rate fallback. |
 | `boundary_config.py` | `BoundaryConfig` dataclass — runtime knobs for boundary encode/decode (T, spiking mode, cycle accuracy, dtype, negative shift). |
 | `segment_boundary.py` | SSOT boundary encode/decode: `encode_segment_input` (cached trains take precedence; missing non-raw slices are a hard error), `decode_segment_output(_torch)` (counts / T), the mode-agnostic wire transcode (`normalize_boundary_value`, TTFS alias kept) and its per-slice rate/LIF seam twins (`boundary_normalization_scales` — the derived view `kappa_fold / kappa_buf` of the stamped gauge tables, with a legacy wrapper-walk fallback for pre-stamp pickles — plus `normalize_boundary_slices_torch/_numpy`, applied by the hybrid twin and every deployed runner). |
 | `segment_input_encoding.py` | `encode_segment_input` itself — the `(T, B, in_size)` segment input assembly: cached producer trains take precedence (except for retimed level stages, whose input is the COUNT re-encode by definition), missing non-raw slices are a hard error, raw-input gaps are uniform-encoded. Re-exported by `segment_boundary.py`. |
