@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import time
 import warnings
-from typing import TYPE_CHECKING, Any, cast
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Dict, cast
 
 from mimarsinan.tuning.trace import DecisionRecord, DecisionTrace
 from mimarsinan.tuning.orchestration import adaptation_ledger
@@ -24,6 +25,16 @@ from mimarsinan.tuning.orchestration.tuner_base import (
     _STUCK_STREAK_REQUIRED,
 )
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
+
+
+@dataclass(frozen=True)
+class TunerStateSnapshot:
+    """Everything a rate attempt can move: model state, axis extra state, and the
+    live trainer WIRES an axis re-points to apply its rate."""
+
+    model: Any
+    extra: Any
+    trainer_wires: Dict[str, Any] = field(default_factory=dict)
 
 
 class SmoothAdaptationCycleMixin(TunerBase):
@@ -154,14 +165,29 @@ class SmoothAdaptationCycleMixin(TunerBase):
             "passes": self.ft_pass_walls,
         }
 
-    def _clone_state(self):
-        return (self._checkpoint_guard.snapshot(), self._get_extra_state())
+    _LIVE_TRAINER_WIRES = ("perceptron_transformation",)
 
-    def _restore_state(self, state):
-        model_state, extra = state
-        self._checkpoint_guard.restore(model_state)
-        if extra is not None:
-            self._set_extra_state(extra)
+    def _clone_state(self) -> TunerStateSnapshot:
+        # Some axes apply their rate by re-pointing a live TRAINER wire (the
+        # perceptron-transform closure), which no model snapshot captures: a
+        # restore that missed it would keep training through the abandoned
+        # rate's transform (measured: t0_54 WQ 0.9520 -> 0.9287 after one
+        # rate-1.0 probe).
+        return TunerStateSnapshot(
+            model=self._checkpoint_guard.snapshot(),
+            extra=self._get_extra_state(),
+            trainer_wires={
+                name: getattr(self.trainer, name)
+                for name in self._LIVE_TRAINER_WIRES if hasattr(self.trainer, name)
+            },
+        )
+
+    def _restore_state(self, state: TunerStateSnapshot) -> None:
+        self._checkpoint_guard.restore(state.model)
+        if state.extra is not None:
+            self._set_extra_state(state.extra)
+        for name, wire in state.trainer_wires.items():
+            setattr(self.trainer, name, wire)
 
     def _record_refinement(self, kind, detail=""):
         """Note one controller self-refinement on the run's adaptation ledger."""
@@ -391,7 +417,8 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     def _rollback_cycle(self, ctx: CycleContext, outcome: str):
         """Restore the pre-cycle state and record the (catastrophic|rollback) trace."""
-        self._restore_state(ctx.pre_state)
+        # The driver carries the host's snapshot opaquely; this host makes it.
+        self._restore_state(cast(TunerStateSnapshot, ctx.pre_state))
         if hasattr(self, "_cycle_log"):
             if outcome == "catastrophic":
                 self._cycle_log.record(DecisionRecord(

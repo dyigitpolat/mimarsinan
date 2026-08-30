@@ -43,7 +43,7 @@ class TestActivationAdaptationExtraState:
             tuner.adaptation_manager.update_activation(tuner.pipeline.config, p)
 
         state = tuner._clone_state()
-        _, extra = state
+        extra = state.extra
         rate, base_acts = extra
         assert rate == pytest.approx(0.6)
 
@@ -122,7 +122,7 @@ class TestClampTunerExtraState:
             tuner.adaptation_manager.update_activation(tuner.pipeline.config, p)
 
         state = tuner._clone_state()
-        _, extra = state
+        extra = state.extra
         assert extra == pytest.approx(0.5)
 
     def test_restore_resets_clamp_rate(self, tuner):
@@ -152,7 +152,7 @@ class TestActivationQuantizationExtraState:
             tuner.adaptation_manager.update_activation(tuner.pipeline.config, p)
 
         state = tuner._clone_state()
-        _, extra = state
+        extra = state.extra
         assert extra == pytest.approx(0.3)
 
     def test_restore_resets_quantization_rate(self, tuner):
@@ -182,7 +182,7 @@ class TestNoiseTunerExtraState:
             tuner.adaptation_manager.update_activation(tuner.pipeline.config, p)
 
         state = tuner._clone_state()
-        _, extra = state
+        extra = state.extra
         assert extra == pytest.approx(0.4)
 
     def test_restore_resets_noise_rate(self, tuner):

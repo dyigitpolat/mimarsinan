@@ -94,6 +94,47 @@ class TestNAPQProbeIsolation:
         finally:
             tuner.close()
 
+    def test_the_value_domain_half_of_the_probe_also_leaves_live_state_untouched(
+        self, tmp_path,
+    ):
+        """``_probe_full_transform`` has TWO halves: the D-hat clone read above
+        and ``_value_full_transform_eval``, which drives the LIVE model to rate
+        1.0 and restores it. The fixed ladder now runs both per commit, so the
+        restoring half has to hold on the closure-apply families too."""
+        tuner = _napq_tuner(tmp_path)
+        try:
+            pre_model = _state_dict_clone(tuner.model)
+            pre_transform = tuner.trainer.perceptron_transformation
+            pre_extra = tuner._get_extra_state()
+
+            acc = tuner._value_full_transform_eval()
+
+            assert 0.0 <= acc <= 1.0
+            _assert_state_dicts_equal(pre_model, tuner.model, "live model")
+            assert tuner.trainer.perceptron_transformation is pre_transform, (
+                "the probe must not re-point the live trainer's transformation"
+            )
+            assert tuner._get_extra_state() == pre_extra
+        finally:
+            tuner.close()
+
+    def test_the_snapshot_seam_itself_carries_the_live_trainer_wire(self, tmp_path):
+        """Generic, not probe-specific: every rollback path restores through
+        ``_clone_state``/``_restore_state``, so the wire belongs THERE — a
+        rejected rung that kept the rejected transform trains through it."""
+        tuner = _napq_tuner(tmp_path)
+        try:
+            pre = tuner._clone_state()
+            pre_transform = tuner.trainer.perceptron_transformation
+            tuner._axis.set_rate(1.0)
+            assert tuner.trainer.perceptron_transformation is not pre_transform, (
+                "fixture invariant: applying a rate must re-point the wire"
+            )
+            tuner._restore_state(pre)
+            assert tuner.trainer.perceptron_transformation is pre_transform
+        finally:
+            tuner.close()
+
     def test_probe_forward_transforms_the_clone(self, tmp_path):
         tuner = _napq_tuner(tmp_path)
         try:
