@@ -111,6 +111,9 @@ class GatheredSlotUnfold:
         return padded[:, self._index_on(flat.device)]
 
     def group_major(self, activation: torch.Tensor) -> torch.Tensor:
+        # Channels-first: the convolution mappers declare
+        # ``output_channel_axis = 1``, so axis 1 IS the core's neurons and the
+        # trailing axes are the positions its cores are laid out over.
         batch = activation.shape[0]
         neurons = int(activation.shape[1])
         return activation.reshape(batch, neurons, self.n_cores).transpose(1, 2)
