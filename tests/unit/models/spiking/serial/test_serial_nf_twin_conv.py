@@ -209,6 +209,21 @@ class TestTheConvTwinIsTheDeployment:
                     core.threshold = float(core.threshold) * 2.0
         assert not torch.equal(nf, _hcm_rates(hybrid, x))
 
+    def test_the_packed_and_reference_executors_agree_on_the_tiled_hop(self):
+        """The third arm: the production read takes the PACKED path and the
+        NF↔SCM gate takes the per-core reference loop, so a difference between
+        them on a tiled hop is a defect no other gate here can see."""
+        _, hybrid, _ = build_conv_chain(**HOT)
+        x = _sample()
+        ref_out, ref_counts = run_counts(
+            build_flow(hybrid, law=PER_EVENT_UNBOUNDED, packed=False), x)
+        got_out, got_counts = run_counts(
+            build_flow(hybrid, law=PER_EVENT_UNBOUNDED, packed=True), x)
+        assert len(ref_counts) == len(got_counts) >= 1
+        for i, (r, g) in enumerate(zip(ref_counts, got_counts)):
+            assert torch.equal(r, g), f"stage {i}: packed differs from reference"
+        assert torch.equal(ref_out, got_out)
+
     def test_each_mapped_position_carries_its_own_membrane(self):
         """One shared membrane across positions would make the fold depend on
         the order positions were visited in; the counts must be position-wise."""
