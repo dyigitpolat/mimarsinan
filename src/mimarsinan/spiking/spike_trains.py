@@ -32,6 +32,22 @@ def uniform_spike_train(
     return torch.stack(trains, dim=0)
 
 
+def straight_through_spike_train(
+    rate: torch.Tensor, T: int, *, phase_dither: bool = False,
+) -> torch.Tensor:
+    """:func:`uniform_spike_train` with the window count's surrogate behind it.
+
+    The comb is built from comparisons, so the hard encode carries NO gradient
+    and everything upstream of an encode boundary is frozen. Forward is
+    byte-identical (the residual is exactly zero without autograd); backward
+    spreads ``d(count)/d(rate) = T`` as one unit per cycle, which is the same
+    straight-through law the per-event fold already runs.
+    """
+    train = uniform_spike_train(rate, T, phase_dither=phase_dither)
+    surrogate = rate.clamp(0.0, 1.0).expand_as(train)
+    return train + (surrogate - surrogate.detach())
+
+
 def lif_spike_train(
     pre_activation: torch.Tensor,
     lif: LIFActivation,

@@ -13,7 +13,7 @@ from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.segment_partition import perceptron_of
 from mimarsinan.spiking.segment_policy_lif_serial import run_streamed_lif_cycles
 from mimarsinan.spiking.segment_policy_ttfs import TtfsSegmentPolicy
-from mimarsinan.spiking.spike_trains import uniform_spike_train
+from mimarsinan.spiking.spike_trains import straight_through_spike_train, uniform_spike_train
 
 __all__ = ["AnalyticalSegmentPolicy", "LifSegmentPolicy", "TtfsSegmentPolicy"]
 
@@ -213,7 +213,8 @@ class LifSegmentPolicy:
                     node_rate[node] = rate_norm
                     # Mirror of encode_compute_boundary: the deployed boundary is
                     # a uniform wire train; *scale keeps NF value-domain magnitudes.
-                    node_events[node] = uniform_spike_train(
+                    # STE-encoded, or the hard comb freezes the whole encoding hop.
+                    node_events[node] = straight_through_spike_train(
                         rate_norm, T, phase_dither=self.phase_dither)
                     node_train[node] = node_events[node] * scale
                 elif self.synchronized:
