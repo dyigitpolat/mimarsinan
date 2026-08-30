@@ -135,15 +135,25 @@ def audit_envelope(document: Dict[str, Any], config: Any,
     """Every decoded number against the envelope of the fabric it names."""
     low, high = config.weight_range
     ceiling = config.theta_ceiling
-    peak_weight, peak_theta, slots = 0, 0, 0
+    peak_weight, peak_theta, slots, fan_in = 0, 0, 0, 0
     for plan, core in zip(document["cores"], decoded):
         index = int(plan["core"])
         used = int(plan["used_neurons"])
         width = len(plan["routes"])
         slots = max(slots, width)
-        check(width <= config.effective_max_axons,
+        check(width <= config.max_axons,
               f"core {index}: {width} axon slot(s) against the fabric's "
-              f"effective fan-in {config.effective_max_axons}")
+              f"{config.max_axons}-row crossbar")
+        # The mapper pads the declared width with OFF sentinels; what the
+        # FAN-IN limit is about is the slots something actually drives, and the
+        # always-on bias row is the one the limit already reserves.
+        driven = sum(1 for kind, _index in plan["routes"]
+                     if int(kind) not in (bundle.SOURCE_OFF,
+                                          bundle.SOURCE_ALWAYS_ON))
+        fan_in = max(fan_in, driven)
+        check(driven <= config.effective_max_axons,
+              f"core {index}: {driven} driven axon slot(s) against the "
+              f"fabric's effective fan-in {config.effective_max_axons}")
         for slot in range(width):
             for neuron in range(used):
                 weight = int(core["grid"][slot][neuron])
@@ -162,7 +172,8 @@ def audit_envelope(document: Dict[str, Any], config: Any,
                   f"below its own threshold")
     return {"peak_abs_weight": peak_weight, "weight_range": [low, high],
             "peak_theta": peak_theta, "theta_ceiling": ceiling,
-            "widest_core_slots": slots,
+            "widest_core_slots": slots, "crossbar_rows": config.max_axons,
+            "widest_driven_fan_in": fan_in,
             "effective_max_axons": config.effective_max_axons}
 
 

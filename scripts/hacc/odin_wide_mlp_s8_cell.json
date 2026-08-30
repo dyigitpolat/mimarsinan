@@ -1,0 +1,89 @@
+{
+  "seed": 1,
+  "pipeline_mode": "phased",
+  "experiment_name": "odin_wide_mlp_s8",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 1024,
+        "max_neurons": 256,
+        "count": 120,
+        "has_bias": false
+      }
+    ],
+    "max_axons": 1024,
+    "max_neurons": 256,
+    "has_bias": false,
+    "target_tq": 8,
+    "simulation_steps": 8,
+    "weight_bits": 8,
+    "allow_coalescing": false,
+    "allow_neuron_splitting": false,
+    "membrane_bits": 16,
+    "weight_sign_granularity": "per_synapse"
+  },
+  "deployment_parameters": {
+    "lr": 0.003,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.15,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "simple_mlp",
+    "model_config": {
+      "mlp_width_1": 256,
+      "mlp_width_2": 128
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 25,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": false,
+    "spiking_family": "lif",
+    "spiking_variant": "streamed",
+    "firing_mode": "Novena",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<=",
+    "encoding_layer_placement": "subsume",
+    "weight_quantization": true,
+    "scale_migration": true,
+    "endpoint_floor_steps": 17200,
+    "training_epochs": 6,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "firing_granularity": "per_event",
+    "enable_odin_hacc_export": true,
+    "odin_hacc_bundle_samples": 300,
+    "odin_hacc_certification_samples": 50,
+    "odin_hacc_bundle_name": "odin_wide_mlp_mnist_wb8_s8"
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null,
+  "_note": "[ODIN C3] the SAME wide vehicle at S=8 -- the temporal-resolution sibling, and the informed retry for what refused at S=4. The S=4 re-platform DEPLOYS at 0.9750 (against t0_54's 0.9618 on the stock point it cannot be exported from) and is then refused by the COUNT CURRENCY at export: the readout core can emit 133 events in one cycle against the 127 ceiling, which the wider crossbar does not lift. theta is the divisor in that bound and theta is the folded quantization scale, so a finer temporal grid raises theta and lowers the bound -- which is what this run FALSIFIED: MEASURED 2026-08-31, pretrain 0.9856, LIF 0.9716, DEPLOYED 0.9773 -- better than S=4's 0.9750 and still refused, at core 2 with 131 events in one cycle. The three points are S = 4 / 8 / 16 -> deployed 0.9750 / 0.9773 / 0.9800 and bound 133 / 131 / 146. Accuracy rises monotonically with S and the bound does not fall with it, so S is NOT the lever the refusal names; FAN-IN is."
+}

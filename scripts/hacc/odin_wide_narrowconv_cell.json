@@ -1,0 +1,96 @@
+{
+  "seed": 1,
+  "pipeline_mode": "phased",
+  "experiment_name": "odin_wide_narrowconv_s16",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 1024,
+        "max_neurons": 256,
+        "count": 120,
+        "has_bias": false
+      }
+    ],
+    "max_axons": 1024,
+    "max_neurons": 256,
+    "has_bias": false,
+    "target_tq": 16,
+    "simulation_steps": 16,
+    "weight_bits": 8,
+    "allow_coalescing": false,
+    "allow_neuron_splitting": false,
+    "membrane_bits": 16,
+    "weight_sign_granularity": "per_synapse"
+  },
+  "deployment_parameters": {
+    "lr": 0.003,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.15,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "narrow_conv",
+    "model_config": {
+      "stem_channels": 14,
+      "stem_kernel": 13,
+      "stem_stride": 10,
+      "body_blocks": 0,
+      "body_channels": 14,
+      "trunk_width": 120,
+      "trunk_blocks": 1,
+      "readout": "activated",
+      "base_activation": "ReLU"
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 25,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": false,
+    "spiking_family": "lif",
+    "spiking_variant": "streamed",
+    "firing_mode": "Novena",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<=",
+    "encoding_layer_placement": "subsume",
+    "weight_quantization": true,
+    "scale_migration": true,
+    "endpoint_floor_steps": 17200,
+    "training_epochs": 4,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "firing_granularity": "per_event",
+    "enable_odin_hacc_export": true,
+    "odin_hacc_bundle_samples": 300,
+    "odin_hacc_certification_samples": 50,
+    "odin_hacc_bundle_name": "odin_wide_narrowconv_mnist_wb8_s16"
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null,
+  "_note": "[ODIN C3] the WIDE-fabric bundle, cut from the ONE architecture measured to fit the count currency. Everything about the network is the shipped deployment cell's (narrow_conv, k13/s10 stem, trunk_width 120, one trunk block, activated readout, S=16) which deploys 0.9340 on the stock fabric as odin_narrowconv_mnist_wb4_s16. What changes is the fabric: 1024 axon slots signed per SYNAPSE on a 16-bit membrane, chip configuration odin_wide_1024x256_mb16. WHY THIS VEHICLE AND NOT THE MLP: the simple_mlp family DEPLOYS better on the wide fabric than anything on the stock one (0.9750 / 0.9773 / 0.9800 at S = 4 / 8 / 16 against t0_54's 0.9618) and is refused at EXPORT by the count currency every time -- 133 / 131 / 146 events in one cycle against 127, and 129 after the fan-in was cut to 192/112. Its chain is three on-chip cores deep and the bound grows down the cascade; this one is two, which is why it is the one that ships. What the wider cell buys it is the weight grid: at wb=4 this vehicle loses 0.0158 at Weight Quantization (0.9487 -> 0.9329), and an 8-bit two's-complement cell has no such damage to do. MEASURED 2026-08-31, end to end, exit 0: pretrain 0.9820, AQ 0.9820, LIF 0.9487 (the stock cell's own LIF number, to four places -- nothing about the network changed), weight quantization at wb=8 0.9505 (a GAIN of +0.0018 where wb=4 took 0.0158), NF 0.9504, HCM DEPLOYED 0.9500 against the stock fabric's 0.9340. The exported bundle is odin_wide_narrowconv_mnist_wb8_s16 -- 2 host-mediated NC=1 passes on the WIDE fabric, 300 shipped samples, 50 certified, frozen accuracy 0.963333, 2,183,837 bytes. Audited from its own decoded bytes: peak |w| 127 against the cell's 127 (the 8-bit grid is spent, not padded), peak theta 244 against 65,535, widest driven fan-in 126 against 1023, peak emission bound 44 against the 127 count currency, and 82,697 AER words every one of which is inside the wide core's 10-bit axon address space."
+}

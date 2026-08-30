@@ -1,0 +1,89 @@
+{
+  "seed": 1,
+  "pipeline_mode": "phased",
+  "experiment_name": "odin_wide_mlp_s16",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 1024,
+        "max_neurons": 256,
+        "count": 120,
+        "has_bias": false
+      }
+    ],
+    "max_axons": 1024,
+    "max_neurons": 256,
+    "has_bias": false,
+    "target_tq": 16,
+    "simulation_steps": 16,
+    "weight_bits": 8,
+    "allow_coalescing": false,
+    "allow_neuron_splitting": false,
+    "membrane_bits": 16,
+    "weight_sign_granularity": "per_synapse"
+  },
+  "deployment_parameters": {
+    "lr": 0.003,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.15,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "simple_mlp",
+    "model_config": {
+      "mlp_width_1": 256,
+      "mlp_width_2": 128
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 25,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": false,
+    "spiking_family": "lif",
+    "spiking_variant": "streamed",
+    "firing_mode": "Novena",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<=",
+    "encoding_layer_placement": "subsume",
+    "weight_quantization": true,
+    "scale_migration": true,
+    "endpoint_floor_steps": 17200,
+    "training_epochs": 6,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "firing_granularity": "per_event",
+    "enable_odin_hacc_export": true,
+    "odin_hacc_bundle_samples": 300,
+    "odin_hacc_certification_samples": 50,
+    "odin_hacc_bundle_name": "odin_wide_mlp_mnist_wb8_s16"
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null,
+  "_note": "[ODIN C3] the 98-99 CANDIDATE, designed from the measured record rather than guessed. THREE things the wide fabric changes and one it does not. (1) GEOMETRY: 1023 effective slots means the 784-line raster plus its always-on bias row maps WHOLE onto one core, which the 127-slot stock crossbar refuses outright -- the simple_mlp family is what that unlocks. (2) THE WEIGHT GRID: the stock cell is a 4-bit unsigned magnitude signed per row, [-7, 7], and WeightQuantizationStep refused this family there by name (BiasGridDominanceError: max|effective bias| / max|effective weight| = 5.7 against the q_max/2 = 3.5 limit at 4 bits). At wb=8 that limit is 63.5 and the same ratio clears it with room. (3) THETA: a 16-bit membrane raises the threshold ceiling from 255 to 65,535, and theta is the divisor in the emission bound -- which is the headroom the count currency needs. WHAT IT DOES NOT CHANGE is that currency itself: 127 events per cycle, cross-implementation, and the export refuses above it rather than clamping. S=16 AND NOT 4: measured on the deployment cell, S is the largest lever there is (0.8790 / 0.9129 / 0.9366 at S = 4 / 8 / 16 for a two-key edit), and the A6 temporal gauge reads this network's chain first-fire delay at 6.44 cycles -- a delay/window ratio of 1.61 at S=4 (the deepest hop fires after the window has closed) against 0.40 at S=16."
+}

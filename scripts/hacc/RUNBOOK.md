@@ -720,12 +720,70 @@ probe 0.96 over 25 samples — is recorded in the cell's own `_note`, together
 with why the cell's earlier 0.9366 was a pre-STE read.
 
 `t0_54`, the highest tier-0 `per_event` cell (0.9618 deployed at HEAD, 3 hard
-cores), is **not** exportable here and never was: its hard cores are 512 logical
-slots wide, which the per-axon expansion turns into 1024 physical rows over a
-256-row crossbar, and its wb=5 grid reaches |w|=15 against the 3-bit unsigned
-cell. Its per-pass emission bounds (4 / 19 / 10) are comfortably inside the
-count currency — geometry and the weight grid are what refuse it, not the
-counts.
+cores), is **not** exportable on the STOCK fabric and never was: its hard cores
+use 257 logical slots against a 127-slot effective fan-in, and its wb=5 grid
+reaches |w|=15 against the 3-bit unsigned cell. Geometry and the weight grid are
+what refuse it there — read on for what happens when both are lifted.
+
+### On the WIDE fabric: what it buys, and the one wall that is left (C3)
+
+Re-platformed onto `odin_wide_1024x256_mb16` — 1023 effective slots, a
+two's-complement `[-128, 127]` cell at wb=8, a 16-bit membrane — the
+`simple_mlp` family stops being refused for either reason and **deploys better
+than anything on the stock fabric**. Four full cell runs, MEASURED 2026-08-31
+(`scripts/hacc/odin_wide_*_cell.json`):
+
+| cell | S | widths | pretrain | LIF | WQ (wb=8) | deployed (HCM) | export |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `odin_wide_t054_cell` | 4 | 256/128 | 0.9789 | 0.9669 | **0.9749 (+0.0080)** | **0.9750** | REFUSED, 133 |
+| `odin_wide_mlp_s8_cell` | 8 | 256/128 | 0.9856 | 0.9716 | 0.9773 | **0.9773** | REFUSED, 131 |
+| `odin_wide_mlp_s16_cell` | 16 | 256/128 | 0.9862 | 0.9761 | 0.9798 | **0.9800** | REFUSED, 146 |
+| `odin_wide_mlp_w192_s16_cell` | 16 | 192/112 | 0.9857 | 0.9748 | 0.9713 | **0.9723** | REFUSED, 129 |
+
+Weight quantization at wb=8 is not a cost on this vehicle, it is a **gain**
+(+0.0080 at S=4): the 8-bit cell hands back what the 4-bit one would have taken.
+
+**What refuses them all is the COUNT CURRENCY, and the wider crossbar does not
+lift it** — 127 events per cycle is what a segment BOUNDARY carries, not what a
+core is. Decoded from the mappings (host-subsumed 784-wide encode, then three
+on-chip cores):
+
+| core | shape | theta (S=4 / S=16) | max positive column sum | emission bound |
+| --- | --- | --- | --- | --- |
+| 1 | 256 -> 128, fed by the entry raster | 159 / 174 | 2842 / 2570 | 18 / 15 |
+| 2 | 128 -> 256, fed by core 1 | 84 / 100 | 813 / 1406 | 108 / **127** |
+| 0 | 256 -> 10, the readout, fed by core 2 | 409 / 378 | 1444 / 1290 | **133 / 146** |
+
+The bound GROWS down the cascade, and two levers were tested against it:
+
+* **S is not the lever.** A finer temporal grid lowers theta against the same
+  weights, so the bound gets *worse* while the accuracy gets better: 133 / 131 /
+  146 at S = 4 / 8 / 16 against deployed 0.9750 / 0.9773 / 0.9800.
+* **Fan-in is the lever, and it fights a second gate.** Halving to 128/64 is
+  refused by `OnchipMajorityError` — the subsumed 784-wide encode is then 85% of
+  the parameters against a 20% on-chip floor. 192/112 clears that (23.1% on
+  chip) and still lands at 129, two events over.
+
+So on the wide fabric this family's wall is neither the crossbar nor the weight
+cell: it is a **three-hop on-chip cascade under a 127-event currency**.
+
+**The bundle that ships** is the two-hop one — `odin_wide_narrowconv_cell.json`,
+the shipped `narrow_conv` deployment cell re-platformed and nothing else
+changed. Its ladder is the stock one to four places until the weight grid:
+pretrain 0.9820, AQ 0.9820, LIF **0.9487** (the stock cell's own number), then
+weight quantization at wb=8 **0.9505 — a GAIN of +0.0018 where wb=4 took
+0.0158** — and **DEPLOYED 0.9500 against the stock fabric's 0.9340**. It ships as
+`odin_wide_narrowconv_mnist_wb8_s16`: 2 host-mediated NC=1 passes, 300 samples,
+50 certified, frozen accuracy 0.963333, 2,183,837 bytes, and 328,971 program
+words per core (a generated core is programmed through its configuration port,
+one 4-argument `OP_PROG` per write, over a 65,536-word synapse memory).
+
+Audited from its own decoded bytes
+(`scripts/hacc/selftest/deployment_envelope_audit.py`): peak |w| 127 against the
+cell's 127 — the 8-bit grid is spent, not padded — peak theta 244 against
+65,535, widest DRIVEN fan-in 126 against 1023, peak emission bound 44 against
+the 127 currency, and 82,697 AER words every one of which is inside the wide
+core's 10-bit axon address space, with none of them the stock fabric's `0x7F`.
 
 That bundle is produced by the pipeline itself, not by hand. The step is
 `"HACC NUS - ODIN Deployment"`; a tier cell (or any deployment document) turns
