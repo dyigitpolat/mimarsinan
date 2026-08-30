@@ -86,6 +86,40 @@ if [ -f "${HERE}/.odin_card" ]; then
     ODIN_CARD="${PINNED_CARD}"
     export ODIN_CARD
 fi
+deployment_chip() {
+    # WHICH FABRIC the packaged bundle was mapped against, read without a JSON
+    # parser the node may lack. make_package.py resolves it from the bundle's
+    # own chip_config claims; nothing here re-derives it.
+    sed -n 's/.*"default_chip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "${DEPLOYMENT_INDEX}" | head -n 1
+}
+
+# AND THE CHIP IS A PARAMETER TOO — but a DEPLOYMENT package does not leave it
+# to the environment: the bundle it ships names its fabric through its own
+# chip_config claims, make_package.py resolves that name into DEPLOYMENT.json,
+# and every phase from the build onward reads it. A bundle worded for one
+# crossbar delivered to the other is not a wrong number, it is an unnoticed
+# one — so a contradicting ODIN_CHIP REFUSES rather than being overridden.
+if [ -f "${DEPLOYMENT_INDEX}" ]; then
+    INDEX_CHIP="$(deployment_chip)"
+    if [ -n "${INDEX_CHIP}" ]; then
+        if [ -z "${ODIN_CHIP:-}" ]; then
+            ODIN_CHIP="${INDEX_CHIP}"
+            export ODIN_CHIP
+            printf '[chip] the deployment index names fabric %s; building it.\n' \
+                "${INDEX_CHIP}"
+        elif [ "${ODIN_CHIP}" != "${INDEX_CHIP}" ]; then
+            printf 'REFUSING: ODIN_CHIP=%s, but the packaged bundle was mapped\n' \
+                "${ODIN_CHIP}" >&2
+            printf '  against %s (deployment/DEPLOYMENT.json). The two word an\n' \
+                "${INDEX_CHIP}" >&2
+            printf '  axon event differently and neither refuses the other stream.\n' >&2
+            printf '  Unset ODIN_CHIP, or package a bundle for the fabric you mean.\n' >&2
+            exit 2
+        fi
+    fi
+fi
+
 CARD="$(odin_card)"
 PLATFORM="$(odin_effective_platform "${CARD}" 2>/dev/null || true)"
 read -r -a BOARD_CANDIDATES <<< "$(odin_card_field board_candidates "${CARD}" 2>/dev/null || true)"
@@ -790,6 +824,7 @@ phase_8() {
     do_cmd env \
         ODIN_PKG="${HERE}" ODIN_XCLBIN="${XCLBIN_STAGED}" ODIN_MODE=deploy \
         ODIN_CARD="${CARD}" ODIN_BUNDLE="${ODIN_BUNDLE:-}" \
+        ODIN_CHIP="$(odin_chip)" \
         ODIN_DEPLOY_SAMPLES="${ODIN_DEPLOY_SAMPLES:-}" \
         ODIN_RESULTS="${RESULTS}/board_deploy" ODIN_LOG="${log}" \
         sbatch --wait -p "${PICKED}" \

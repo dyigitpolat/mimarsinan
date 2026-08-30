@@ -70,10 +70,13 @@ DEPLOYMENT_BOOTSTRAP = DIST / "bootstrap_hacc_deployment.sh"
 DEPLOYMENT_INDEX = "deployment/DEPLOYMENT.json"
 CACHE = REPO / "build" / "hacc_fixture_cache"
 
-#: The bundle-schema SSOT ships VERBATIM: the board executor runs THESE bytes,
-#: so there is no second copy to drift, only a copy to hash-verify.
-BUNDLE_MODULE = (
-    REPO / "src" / "mimarsinan" / "chip_simulation" / "odin_deployment_bundle.py")
+#: The bundle-schema SSOT and the AER-wording dispatch ship VERBATIM: the board
+#: executor runs THESE bytes, so there is no second copy to drift, only copies
+#: to hash-verify.
+CHIP_SIM = REPO / "src" / "mimarsinan" / "chip_simulation"
+BUNDLE_MODULE = CHIP_SIM / "odin_deployment_bundle.py"
+ENCODING_MODULE = CHIP_SIM / "odin_deployment_encoding.py"
+VERBATIM_HOST_MODULES = (BUNDLE_MODULE, ENCODING_MODULE)
 DEPLOYMENT_SRC = PACKAGE_SRC / "deployment"
 
 sys.path.insert(0, str(REPO / "src"))
@@ -108,8 +111,12 @@ from integration.odin_rtl_harness import (  # noqa: E402
 from mimarsinan.chip_simulation import odin_deployment_bundle  # noqa: E402
 from mimarsinan.chip_simulation.odin_fpga import kernel_registers  # noqa: E402
 from mimarsinan.chip_simulation.odin_fpga.chip_configs import (  # noqa: E402
+    ChipConfig,
     chip_config_named,
     chip_configs,
+)
+from mimarsinan.chip_simulation.odin_fpga.chip_selection import (  # noqa: E402
+    named_chip_of_bundle,
 )
 from mimarsinan.chip_simulation.odin_fpga.kernel_registers import (  # noqa: E402
     KERNEL_NAME,
@@ -520,13 +527,14 @@ def require_chip_table_agrees() -> None:
             "capture_events": int(config.capture_events),
             "neurons_per_core": config.max_neurons,
             "axon_slots_per_core": config.max_axons,
+            # The sign granularity IS the fabric identity a bundle's claims
+            # carry, and the executor refuses a bundle worded for the other one.
+            "weight_sign_granularity": str(
+                config.core_spec.weight_sign_granularity),
         }
         for config in chip_configs()
     }
-    theirs = {
-        name: {key: int(value) for key, value in row.items()}
-        for name, row in driver.CHIP_CONFIGS.items()
-    }
+    theirs = {name: dict(row) for name, row in driver.CHIP_CONFIGS.items()}
     if ours != theirs:
         raise PackagingRefusal(
             f"the shipped driver and chip_configs.py declare different fabrics: "
@@ -834,6 +842,28 @@ def kernel_xml_text() -> str:
     return text
 
 
+def require_bundle_names_a_fabric(document: Dict[str, Any], path: Path) -> str:
+    """WHICH FABRIC this package must build for the bundle it is shipping.
+
+    A bundle carries the claims that identify a fabric, never its name, so the
+    name is resolved here. An envelope no built fabric can be is executable in
+    principle on a wider one, but a PACKAGE has to choose a bitstream — so it
+    refuses rather than shipping a network nothing here can be built for.
+    """
+    chip = named_chip_of_bundle(document)
+    if chip is None:
+        raise PackagingRefusal(
+            f"{path.name}: its chip_config claims "
+            f"{ChipConfig.claims_of_bundle(document['chip_config'])} name no "
+            f"fabric this build carries ("
+            + ", ".join(c.name for c in chip_configs())
+            + "). run_all.sh has to build ONE bitstream for the bundle it "
+              "deploys, so an unnamed fabric is a refusal here even though a "
+              "narrower envelope would execute on a wider crossbar. Re-export "
+              "against a declared platform one of the fabrics can be.")
+    return chip
+
+
 def stage_deployment(bundles: Sequence[Path], copy, write_text) -> None:
     """Stage exported bundles + the index that names the DEFAULT one.
 
@@ -844,6 +874,7 @@ def stage_deployment(bundles: Sequence[Path], copy, write_text) -> None:
     staged: List[Dict[str, Any]] = []
     for path in bundles:
         document = require_bundle_document(path)
+        chip = require_bundle_names_a_fabric(document, path)
         copy(path, f"deployment/{path.name}")
         capture = path.with_name(f"{path.stem}_capture.json")
         if not capture.is_file():
@@ -855,6 +886,7 @@ def stage_deployment(bundles: Sequence[Path], copy, write_text) -> None:
         staged.append({
             "bundle": f"deployment/{path.name}",
             "replay": f"deployment/{capture.name}",
+            "chip": chip,
             "name": document["name"],
             "self_hash": document["self_hash"],
             "samples": len(document["samples"]),
@@ -869,10 +901,15 @@ def stage_deployment(bundles: Sequence[Path], copy, write_text) -> None:
         "schema": "odin_hacc_deployment_index/1",
         "default": staged[0]["bundle"],
         "default_replay": staged[0]["replay"],
+        "default_chip": staged[0]["chip"],
         "bundles": staged,
         "note": (
             "run_all.sh phase 8 runs 'default' unless ODIN_BUNDLE names another "
-            "file. ODIN_DEPLOY_SAMPLES bounds the campaign on the node; the "
+            "file, and BUILDS 'default_chip' unless ODIN_CHIP names another "
+            "fabric (in which case it refuses rather than running a bundle "
+            "worded for the other crossbar). Each bundle's chip is RESOLVED "
+            "from its own chip_config claims, not declared. "
+            "ODIN_DEPLOY_SAMPLES bounds the campaign on the node; the "
             "bundle can only execute the samples it ships, so raising it past "
             "'samples' runs every shipped sample and no more."),
     }, indent=2, sort_keys=True) + "\n")
@@ -929,13 +966,14 @@ def build_tree(documents: Sequence[Dict[str, Any]], *, head: str, dirty: bool,
     copy(PACKAGE_SRC / "host" / "odin_deployment_executor.py",
          "host/odin_deployment_executor.py")
     copy(PACKAGE_SRC / "host" / "render_die_map.py", "host/render_die_map.py")
-    # VERBATIM, and hash-verified below: the board executor imports the very
-    # module the repository's cycle-accurate twin executes.
-    copy(BUNDLE_MODULE, "host/odin_deployment_bundle.py")
-    if sha256_file(STAGE / "host/odin_deployment_bundle.py") != sha256_file(BUNDLE_MODULE):
-        raise PackagingRefusal(
-            "the staged bundle-schema module is not byte-identical to "
-            f"{BUNDLE_MODULE.relative_to(REPO)}")
+    # VERBATIM, and hash-verified: the board executor imports the very modules
+    # the repository's cycle-accurate twin and its freezer execute.
+    for module in VERBATIM_HOST_MODULES:
+        copy(module, f"host/{module.name}")
+        if sha256_file(STAGE / f"host/{module.name}") != sha256_file(module):
+            raise PackagingRefusal(
+                f"the staged host module host/{module.name} is not "
+                f"byte-identical to {module.relative_to(REPO)}")
     for path in require_bundles_load():
         copy(path, f"deployment/{path.name}")
     if deployments:

@@ -19,8 +19,10 @@
 # ODIN_MODE=deploy is "HACC NUS - ODIN Deployment": the sealed bundle under
 # deployment/ executed as one host-mediated PASS per core -- program the core
 # once, run each sample, transcode the counts into the next core's axon slots.
-# ODIN_BUNDLE names a bundle other than the packaged default; ODIN_DEPLOY_SAMPLES
-# bounds the campaign.
+# ODIN_BUNDLE names a bundle other than the packaged default; ODIN_CHIP names
+# WHICH FABRIC this bitstream holds (the executor refuses a bundle whose own
+# chip_config claims name the other one); ODIN_DEPLOY_SAMPLES bounds the
+# campaign.
 #
 # FIELD-OBSERVED 2026-08-25: the U55C board partition's AllowGroups is
 # lab,hgpu,fpga_u55c — reachable through `hgpu` without fpga_u55c membership —
@@ -87,6 +89,9 @@ case "${MODE}" in
         DEPLOY_ARGS=(--xclbin "${XCLBIN}" --results "${RESULTS}")
         if [[ -n "${ODIN_BUNDLE:-}" ]]; then
             DEPLOY_ARGS+=(--bundle "${ODIN_BUNDLE}")
+        fi
+        if [[ -n "${ODIN_CHIP:-}" ]]; then
+            DEPLOY_ARGS+=(--chip "${ODIN_CHIP}")
         fi
         python3 "${PKG}/host/odin_deployment_executor.py" "${DEPLOY_ARGS[@]}"
         ;;

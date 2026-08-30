@@ -117,10 +117,12 @@ CHIP_CONFIGS = {
     "odin_stock_256x256": {
         "cores": 1, "capture_events": SHIPPED_CAPTURE_EVENTS,
         "neurons_per_core": 256, "axon_slots_per_core": 128,
+        "weight_sign_granularity": "per_axon",
     },
     "odin_wide_1024x256_mb16": {
         "cores": 1, "capture_events": SHIPPED_CAPTURE_EVENTS,
         "neurons_per_core": 256, "axon_slots_per_core": 1024,
+        "weight_sign_granularity": "per_synapse",
     },
 }
 

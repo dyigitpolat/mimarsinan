@@ -138,6 +138,34 @@ env/bin/python scripts/hacc/gen_chip_rtl.py            # emit
 env/bin/python scripts/hacc/gen_chip_rtl.py --check    # byte-compare
 ```
 
+**A DEPLOYMENT package does not leave the chip to the environment (v5).** A
+sealed bundle carries no fabric NAME — it carries the four claims that identify
+one (`weight_bits`, `weight_sign_granularity`, `effective_max_axons`, and the
+membrane width inside its soma law: `ChipConfig.bundle_claims`). `make_package.py
+--deployment` resolves that identity into `deployment/DEPLOYMENT.json` as
+`default_chip`, `run_all.sh` reads it before the build phases and exports
+`ODIN_CHIP` from it, and a contradicting `ODIN_CHIP` in the environment REFUSES
+rather than being overridden. Phase 8 passes the same name to the executor,
+which refuses a bundle whose claims name the other crossbar.
+
+Why that matters more than a build directory: **the two fabrics word an axon
+event differently, and neither refuses the other's stream.** The vendored core
+signs a whole pre-synaptic row, so an event is the 17-bit `{row, 0x07}` and every
+cycle ends with the all-neuron time reference `0x7F`. A generated core signs each
+synapse, so its AER word IS the axon slot — and `0x7F` read there is a perfectly
+valid spike on slot 127. The wording is therefore DISPATCHED on the bundle's own
+claims (`src/mimarsinan/chip_simulation/odin_deployment_encoding.py`, shipped
+verbatim beside the bundle module), and it is a unit gate, not a convention, that
+holds both wordings byte-equal to `odin_rtl/stimulus.py`.
+
+The rest follows the same fork. A pass on the wide fabric is programmed through
+the generated core's configuration port (`OP_PROG`, one write per clock) instead
+of over SPI, one logical slot is one physical row instead of an
+excitatory/inhibitory pair, and the event-serial law's cycle carries no TREF at
+all. `odin_hacc/fabric_builds.py` is the one place that chooses; a per-cycle
+generated law is refused rather than guessed at, because no bundle has frozen
+that schedule.
+
 The cache key now carries `chip_config=` as its own line, so two fabrics can
 never collide on one entry. **Note for an existing install:** the key of the
 stock chip moved once when the chip axis landed, because `build_xclbn.sh` is

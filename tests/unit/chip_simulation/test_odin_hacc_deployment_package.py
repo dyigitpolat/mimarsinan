@@ -17,8 +17,14 @@ from pathlib import Path
 
 import pytest
 
-from integration.odin_hacc_harness import prepare_step
+from integration.odin_hacc_harness import (
+    WIDE_PLATFORM_RESOLVED,
+    prepare_step,
+    wide_config_overrides,
+)
 
+from mimarsinan.chip_simulation.odin_deployment_bundle import seal
+from mimarsinan.chip_simulation.odin_fpga.chip_configs import STOCK_CHIP, WIDE_CHIP
 from mimarsinan.chip_simulation.odin_hacc.artifact import render_bundle
 from mimarsinan.pipelining.pipeline_steps.verification.odin_hacc_deployment_step import (
     OdinHaccDeploymentStep,
@@ -57,6 +63,28 @@ def bundle_pair(tmp_path_factory):
     named.write_text(render_bundle(step.document), encoding="utf-8")
     Path(stats["paths"]["capture"]).rename(
         named.with_name("micro_deploy_capture.json"))
+    return named, step.document
+
+
+@pytest.fixture(scope="module")
+def wide_bundle_pair(tmp_path_factory):
+    """The same network exported against the WIDE fabric, ready to package."""
+    monkeypatch = pytest.MonkeyPatch()
+    root = tmp_path_factory.mktemp("odin_hacc_pkg_export_wide")
+    try:
+        pipeline, step = prepare_step(
+            monkeypatch, OdinHaccDeploymentStep, working_directory=str(root),
+            config_overrides=wide_config_overrides(),
+            platform_resolved=WIDE_PLATFORM_RESOLVED)
+        step.process()
+    finally:
+        monkeypatch.undo()
+    stats = pipeline.cache["OdinHaccDeploymentStep.odin_hacc_deployment_bundle"]
+    source = Path(stats["paths"]["bundle"])
+    named = source.with_name("wide_deploy.json")
+    named.write_text(render_bundle(step.document), encoding="utf-8")
+    Path(stats["paths"]["capture"]).rename(
+        named.with_name("wide_deploy_capture.json"))
     return named, step.document
 
 
@@ -114,6 +142,59 @@ class TestTheDeploymentPackageDeclaresWhatItDeploys:
         out = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
         assert out.stdout.strip() == "deployment/micro_deploy.json"
+
+
+class TestThePackageBuildsTheFabricItsBundleWasMappedOn:
+    """A bundle names no chip; its CLAIMS do, and a package must build one."""
+
+    def test_the_index_names_the_fabric_of_every_bundle(
+        self, packager, bundle_pair, tmp_path,
+    ):
+        path, _document = bundle_pair
+        written = _stage(packager, [path], tmp_path)
+        index = json.loads(written["deployment/DEPLOYMENT.json"].read_text())
+        assert index["default_chip"] == STOCK_CHIP
+        assert index["bundles"][0]["chip"] == STOCK_CHIP
+
+    def test_a_wide_bundle_makes_the_package_build_the_wide_fabric(
+        self, packager, wide_bundle_pair, tmp_path,
+    ):
+        path, _document = wide_bundle_pair
+        written = _stage(packager, [path], tmp_path)
+        index = json.loads(written["deployment/DEPLOYMENT.json"].read_text())
+        assert index["default_chip"] == WIDE_CHIP
+
+    @pytest.mark.parametrize("chip", [STOCK_CHIP, WIDE_CHIP])
+    def test_run_all_reads_the_chip_the_same_way_the_node_will(
+        self, packager, bundle_pair, wide_bundle_pair, tmp_path, chip,
+    ):
+        """``sed`` on the index — a board node is promised no JSON tool."""
+        path = (bundle_pair if chip == STOCK_CHIP else wide_bundle_pair)[0]
+        written = _stage(packager, [path], tmp_path / chip)
+        index = written["deployment/DEPLOYMENT.json"]
+        script = (
+            f'DEPLOYMENT_INDEX="{index}"\n'
+            + _function_source("deployment_chip")
+            + "\ndeployment_chip\n"
+        )
+        out = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        assert out.stdout.strip() == chip
+
+    def test_a_bundle_whose_envelope_no_fabric_can_be_refuses(
+        self, packager, bundle_pair, tmp_path,
+    ):
+        path, document = bundle_pair
+        narrowed = json.loads(path.read_text())
+        narrowed["chip_config"] = dict(narrowed["chip_config"])
+        narrowed["chip_config"]["effective_max_axons"] = 7
+        resealed = tmp_path / "narrow.json"
+        resealed.write_text(
+            render_bundle(seal(narrowed)), encoding="utf-8")
+        (tmp_path / "narrow_capture.json").write_text("{}", encoding="utf-8")
+        with pytest.raises(packager.PackagingRefusal, match="name no fabric"):
+            _stage(packager, [resealed], tmp_path / "stage")
 
 
 class TestPackagingRefusesAnUnrunnableDeployment:
