@@ -81,6 +81,18 @@ SMOKE="${ODIN_EMU_SMOKE:-smallest}"
 SMOKE_TIMEOUT="${ODIN_EMU_SMOKE_TIMEOUT:-5400}"
 SMALLEST_FIXTURE="nc1_single_core_ceiling"
 
+# The shipped smoke fixtures speak the STOCK program form (SPI ops); a
+# generated fabric's sequencer speaks OP_PROG and refuses SPI by design, so
+# running the smoke there would report a spurious packaging failure in
+# seconds. Skip it honestly; B0/B1 on silicon cover the generated fabric.
+if [[ "${TARGET}" == "hw_emu" && "${CHIP_CORE_KIND}" != "vendored" ]]; then
+    if [[ "${SMOKE}" != "off" && "${SMOKE}" != "0" ]]; then
+        echo "[build] EMU SMOKE SKIPPED: the shipped fixtures program over SPI;"
+        echo "        fabric ${CHIP} (${CHIP_CORE_KIND}) programs over its"
+        echo "        config port and refuses SPI. B0/B1 on silicon cover it."
+    fi
+    SMOKE="off"
+fi
 if [[ "${TARGET}" == "hw_emu" && "${SMOKE}" != "off" && "${SMOKE}" != "0" ]]; then
     emu_dir="${BUILD_OUT}"
     emu_results="${PKG}/results/hw_emu"
