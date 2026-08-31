@@ -12,8 +12,9 @@ questions the producer is not allowed to answer:
   1. THE ENVELOPE. Is every decoded weight inside the representable cell of the
      fabric this bundle's own claims name, every decoded threshold inside its
      membrane register, every axon address inside its crossbar, and every
-     per-cycle emission inside the 127 COUNT CURRENCY -- which no crossbar width
-     lifts, because it is what a segment boundary carries and not what a core is?
+     per-cycle emission inside the COUNT CURRENCY of the chip THIS BUNDLE
+     declares -- which no crossbar width lifts (the wire carries no count field
+     at all), only the register width the bundle's own soma law names?
 
   2. THE FROZEN TRUTH. Does the cycle-accurate twin, run on the network
      RECONSTRUCTED FROM THE SHIPPED BYTES and driven by the shipped entry
@@ -52,7 +53,7 @@ from mimarsinan.chip_simulation.odin_rtl.stimulus import (  # noqa: E402
 from mimarsinan.chip_simulation.soma_law import SomaLaw  # noqa: E402
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource  # noqa: E402
 from mimarsinan.mapping.export.odin.feasibility import (  # noqa: E402
-    EMISSION_CEILING,
+    count_ceiling,
     propagate_emission_bounds,
 )
 from mimarsinan.mapping.export.odin_gen.packer import (  # noqa: E402
@@ -220,8 +221,13 @@ def source_of(route) -> SpikeSource:
 
 def rebuild_mapping(document: Dict[str, Any],
                     decoded: List[Dict[str, Any]]) -> HardCoreMapping:
-    """The network the shipped PROGRAM BYTES describe, and nothing else."""
-    cores: List[HardCore] = []
+    """The network the shipped PROGRAM BYTES describe, and nothing else.
+
+    The plan list is in PASS ORDER, which is a schedule and not an addressing
+    scheme: every route names a core by its declared INDEX, so each rebuilt core
+    is placed at that index rather than where its plan happened to be listed.
+    """
+    by_index: Dict[int, HardCore] = {}
     for plan, image in zip(document["cores"], decoded):
         width = len(plan["routes"])
         neurons = int(plan["neurons"])
@@ -240,9 +246,15 @@ def rebuild_mapping(document: Dict[str, Any],
         core.threshold = float(thetas.pop())
         core.available_axons = 0
         core.available_neurons = neurons - used
-        cores.append(core)
+        index = int(plan["core"])
+        check(index not in by_index,
+              f"two plans both declare core {index}; a core has one program")
+        by_index[index] = core
+    check(sorted(by_index) == list(range(len(by_index))),
+          f"the shipped plans declare cores {sorted(by_index)}, which is not "
+          f"the contiguous index space every route addresses")
     mapping = HardCoreMapping(chip_cores=[])
-    mapping.cores = cores
+    mapping.cores = [by_index[index] for index in range(len(by_index))]
     readout = int(document["readout"]["core"])
     mapping.output_sources = np.asarray(
         [SpikeSource(readout, neuron)
@@ -293,11 +305,14 @@ def audit_frozen_truth(document: Dict[str, Any], mapping: HardCoreMapping,
         check(bundle.predicted_label(document, scores) == int(expected["predicted"]),
               f"sample {index}: the re-derived prediction is not the frozen one")
         scored += 1
-    bounds = propagate_emission_bounds(mapping, ceiling=EMISSION_CEILING)
+    # The currency is read off the law the SHIPPED BYTES declare, so a bundle
+    # cannot be audited against a ceiling its own chip never claimed.
+    currency = count_ceiling(law)
+    bounds = propagate_emission_bounds(mapping, ceiling=currency)
     return {"samples_re_derived": scored,
             "certified_samples": len(bundle.certification_samples(document)),
             "peak_emission_bound": max(bounds.values(), default=0),
-            "count_currency": EMISSION_CEILING}
+            "count_currency": currency}
 
 
 def audit(path: Path, *, samples: int) -> Dict[str, Any]:

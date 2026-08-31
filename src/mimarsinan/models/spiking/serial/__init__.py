@@ -1,7 +1,6 @@
 """The event-serial soma law: one fold kernel, its policy, and its refusals."""
 
 from mimarsinan.models.spiking.serial.fold import (
-    EMISSION_COUNT_CEILING,
     lif_serial_fold,
     require_event_counts,
     require_serial_law,
@@ -11,8 +10,12 @@ from mimarsinan.models.spiking.serial.guards import (
 )
 from mimarsinan.models.spiking.serial.policy import SerialLIFCyclePolicy
 from mimarsinan.models.spiking.serial.refusals import (
+    COUNT_CURRENCY_LIMIT,
+    COUNT_CURRENCY_WORD_BITS,
+    EMISSION_COUNT_CEILING,
     CycleAtomicRefusalError,
     EmissionBoundExceededError,
+    count_ceiling,
     MappingTransformRefusalError,
     SaturatingMembraneRefusalError,
     SerialDecompositionMismatchError,
@@ -26,6 +29,8 @@ from mimarsinan.models.spiking.serial.refusals import (
 )
 
 __all__ = [
+    "COUNT_CURRENCY_LIMIT",
+    "COUNT_CURRENCY_WORD_BITS",
     "CycleAtomicRefusalError",
     "EMISSION_COUNT_CEILING",
     "EmissionBoundExceededError",
@@ -37,6 +42,7 @@ __all__ = [
     "SerialMembraneInitError",
     "SerialResetLawError",
     "SomaLawRefusalError",
+    "count_ceiling",
     "lif_serial_fold",
     "refuse_cycle_atomic",
     "refuse_cycle_atomic_walk",

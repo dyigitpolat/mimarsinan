@@ -115,9 +115,19 @@ class ChipConfig:
         return (-((1 << (bits - 1)) - 1), (1 << (bits - 1)) - 1)
 
     @property
+    def membrane_bits(self) -> int:
+        """The width this fabric declares its membrane register at.
+
+        A CLAIM, named here because more than the geometry reads it: theta's
+        ceiling, the bundle's fabric-match block, and the chip's COUNT CURRENCY
+        (``models/spiking/serial/refusals.count_ceiling``) are all this number.
+        """
+        return int(self.core_spec.membrane_bits)
+
+    @property
     def theta_ceiling(self) -> int:
         """theta shares the membrane register, so it shares its top value."""
-        return (1 << int(self.core_spec.membrane_bits)) - 1
+        return (1 << self.membrane_bits) - 1
 
     def generated_filenames(self) -> Tuple[str, ...]:
         """The RTL this configuration EMITS; empty for the vendored fabric."""
@@ -175,7 +185,7 @@ class ChipConfig:
             "weight_sign_granularity": str(
                 self.core_spec.weight_sign_granularity),
             "effective_max_axons": self.effective_max_axons,
-            "membrane_bits": int(self.core_spec.membrane_bits),
+            "membrane_bits": self.membrane_bits,
         }
 
     @staticmethod
@@ -207,7 +217,7 @@ class ChipConfig:
             "weight_bits": int(self.core_spec.weight_bits),
             "weight_sign_granularity": str(self.core_spec.weight_sign_granularity),
             "weight_range": [low, high],
-            "membrane_bits": int(self.core_spec.membrane_bits),
+            "membrane_bits": self.membrane_bits,
             "theta_ceiling": self.theta_ceiling,
         }
 

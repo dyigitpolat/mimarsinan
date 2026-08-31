@@ -9,11 +9,15 @@ of a missing feature.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
+from mimarsinan.chip_simulation.soma_axes import MEMBRANE_BITS_KEY
 from mimarsinan.models.nn.lif_kernels import MembraneRailTouchedError
 
 __all__ = [
+    "COUNT_CURRENCY_FLOOR_BITS",
+    "COUNT_CURRENCY_LIMIT",
+    "COUNT_CURRENCY_WORD_BITS",
     "CycleAtomicRefusalError",
     "EMISSION_COUNT_CEILING",
     "EmissionBoundExceededError",
@@ -25,18 +29,76 @@ __all__ = [
     "SerialMembraneInitError",
     "SerialResetLawError",
     "SomaLawRefusalError",
+    "count_ceiling",
     "refuse_cycle_atomic",
     "refuse_cycle_atomic_walk",
     "refuse_saturating_membrane",
 ]
 
-EMISSION_COUNT_CEILING = 127
-"""The count currency's ceiling. A window/cycle count travels as one signed
-8-bit event count (nevresim's ``spike_t``), the counted raster prints it and
-the exporter prices the wire from the same number, so 127 is the loudest bound
-EVERY implementation shares (plan §2.2). It is asserted, never clamped: a
-silent saturation here is the exact failure the count currency exists to make
-impossible."""
+COUNT_CURRENCY_FLOOR_BITS = 8
+"""A chip narrower than a byte still gets the byte's currency: no
+implementation of the fold carries counts in a sub-byte word."""
+
+COUNT_CURRENCY_WORD_BITS = 16
+"""The width of the widest count EVERY implementation carries, whatever chip is
+running: nevresim's ``spike_t`` (``std::int16_t``), the counted raster it
+prints, the ``int16`` arrays the host re-packs it into, and the torch fold's
+own tensor. A ceiling above this would name a number some implementation cannot
+hold, so ``count_ceiling`` floors every chip's claim at it."""
+
+COUNT_CURRENCY_LIMIT = (1 << (COUNT_CURRENCY_WORD_BITS - 1)) - 1
+
+
+def count_ceiling(chip_claims: Any) -> int:
+    """THE count currency of ONE chip: what a per-window count may reach on it.
+
+    The currency is a REPRESENTATION, not a geometry: the wire carries no count
+    field at all (multiplicity is k adjacent AER events), so no crossbar width
+    moves this number. What DOES move it is the width the chip declares its
+    registers at, because that is the width at which every implementation
+    instantiates the chip's law — nevresim's ``EventSerialIntegrate<bits>``, the
+    generated core's accumulator, and this fold's own assertion. So the ceiling
+    is the largest positive value a SIGNED word of the chip's declared
+    arithmetic width holds, floored at a byte and capped by what the narrowest
+    implementation carries.
+
+    ``chip_claims`` is any surface that names ``membrane_bits`` — a resolved
+    ``SomaLaw``, a ``CoreSpec``, a ``ChipConfig``, or a sealed bundle's
+    ``chip_config`` mapping. TOTAL over every shape, like
+    ``soma_axes.resolved_membrane_bits``: an undeclared or malformed width reads
+    as undeclared and takes the byte's currency, because the registry's own
+    bounds error is the single truth about a bad declaration.
+    """
+    bits = max(_claimed_membrane_bits(chip_claims), COUNT_CURRENCY_FLOOR_BITS)
+    return min((1 << (bits - 1)) - 1, COUNT_CURRENCY_LIMIT)
+
+
+def _claimed_membrane_bits(chip_claims: Any) -> int:
+    """``membrane_bits`` off any claims surface; 0 = the chip declares none."""
+    if isinstance(chip_claims, Mapping):
+        value = chip_claims.get(MEMBRANE_BITS_KEY)
+        if value is None:
+            nested = chip_claims.get("soma_law")
+            value = (nested.get(MEMBRANE_BITS_KEY)
+                     if isinstance(nested, Mapping) else None)
+    else:
+        value = getattr(chip_claims, MEMBRANE_BITS_KEY, None)
+    if value is None or isinstance(value, bool):
+        return 0
+    try:
+        bits = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return bits if bits > 0 else 0
+
+
+EMISSION_COUNT_CEILING = count_ceiling(None)
+"""The count currency of a chip that declares NO register width — the byte's
+127. It is the default ceiling every consumer falls back to and the STOCK
+fabric's own currency (it declares an 8-bit membrane); a chip that declares a
+wider register gets ``count_ceiling``'s answer instead. It is asserted, never
+clamped: a silent saturation here is the exact failure the count currency
+exists to make impossible."""
 
 
 class SomaLawRefusalError(NotImplementedError):

@@ -124,7 +124,9 @@ def raster_from_spike_trains(
     ``input`` passthroughs replay the segment input train (which a
     SpikeTrain-mode segment has and a value-mode one reconstructs via the
     encoder twin)."""
-    out = np.zeros((int(T), len(output_sources)), dtype=np.uint8)
+    # int16 IS the count currency's word: a per-event producer's raster carries
+    # COUNTS, and a byte would silently wrap the ones a wide chip may reach.
+    out = np.zeros((int(T), len(output_sources)), dtype=np.int16)
     for j, (kind, core, neuron) in enumerate(output_sources):
         if kind == "on":
             out[:, j] = 1
@@ -141,7 +143,7 @@ def raster_from_spike_trains(
                 continue
             emissions = rows[neuron]
             width = min(int(T), len(emissions))
-            out[:width, j] = np.asarray(emissions[:width], dtype=np.uint8)
+            out[:width, j] = np.asarray(emissions[:width], dtype=np.int16)
     return out
 
 

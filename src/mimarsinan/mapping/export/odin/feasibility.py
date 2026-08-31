@@ -11,6 +11,12 @@ from mimarsinan.chip_simulation.soma_axes import (
     PER_SYNAPSE_SIGN,
     physical_row_expansion,
 )
+from mimarsinan.models.spiking.serial.refusals import (
+    EMISSION_COUNT_CEILING,
+    # Re-exported: the ODIN export side takes the currency SSOT from HERE, so
+    # the gates, the manifest and the auditor share one import.
+    count_ceiling as count_ceiling,
+)
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 KEY_THETA_CEILING = "odin.theta_ceiling"
@@ -24,10 +30,13 @@ KEY_MEMBRANE_INIT = "odin.membrane_init"
 #: row by SPI_SYN_SIGN, so a logical slot costs an excitatory/inhibitory row PAIR.
 STOCK_ROW_EXPANSION = 2
 
-#: The count currency a segment boundary carries (plan Sec.2.2): a per-window
-#: count above this cannot be transported, so the deployment refuses at export
-#: time rather than overflowing one of the four implementations.
-EMISSION_CEILING = 127
+#: The count currency of a chip that declares no register width (plan Sec.2.2),
+#: which is also the STOCK fabric's own: a per-window count above it cannot be
+#: transported, so the deployment refuses at export time rather than overflowing
+#: one of the four implementations. A chip that declares a WIDER register gets
+#: ``count_ceiling``'s answer instead — the currency is one SSOT, in
+#: ``models/spiking/serial/refusals.py``, and this is its default point.
+EMISSION_CEILING = EMISSION_COUNT_CEILING
 
 
 class OdinFeasibilityError(ValueError):

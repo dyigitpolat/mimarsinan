@@ -113,14 +113,15 @@ class TestTheDeploymentPackageDeclaresWhatItDeploys:
     ):
         path, document = bundle_pair
         written = _stage(packager, [path], tmp_path)
+        name = document["name"]
         assert set(written) == {
-            "deployment/micro_deploy.json",
-            "deployment/micro_deploy_capture.json",
+            f"deployment/{name}.json",
+            f"deployment/{name}_capture.json",
             "deployment/DEPLOYMENT.json",
         }
         index = json.loads(written["deployment/DEPLOYMENT.json"].read_text())
-        assert index["default"] == "deployment/micro_deploy.json"
-        assert index["default_replay"] == "deployment/micro_deploy_capture.json"
+        assert index["default"] == f"deployment/{name}.json"
+        assert index["default_replay"] == f"deployment/{name}_capture.json"
         entry = index["bundles"][0]
         assert entry["self_hash"] == document["self_hash"]
         assert entry["samples"] == len(document["samples"])
@@ -131,7 +132,7 @@ class TestTheDeploymentPackageDeclaresWhatItDeploys:
         self, packager, bundle_pair, tmp_path,
     ):
         """The node parses this file with ``sed``; a JSON tool is not promised."""
-        path, _document = bundle_pair
+        path, document = bundle_pair
         written = _stage(packager, [path], tmp_path)
         index = written["deployment/DEPLOYMENT.json"]
         script = (
@@ -141,7 +142,72 @@ class TestTheDeploymentPackageDeclaresWhatItDeploys:
         )
         out = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
-        assert out.stdout.strip() == "deployment/micro_deploy.json"
+        assert out.stdout.strip() == f"deployment/{document['name']}.json"
+
+
+class TestTwoBundlesCannotOverwriteEachOther:
+    """[ODIN C4] EVERY export writes ``odin_hacc/deployment_bundle.json``, so
+    the arriving FILENAME identifies nothing. Two bundles staged under it landed
+    on top of each other and the index pointed the first entry at the second
+    one's bytes — a package that named a network it did not carry."""
+
+    def test_a_bundle_is_staged_under_the_name_it_declares(
+        self, packager, bundle_pair, tmp_path,
+    ):
+        path, document = bundle_pair
+        written = _stage(packager, [path], tmp_path)
+        assert set(written) == {
+            f"deployment/{document['name']}.json",
+            f"deployment/{document['name']}_capture.json",
+            "deployment/DEPLOYMENT.json",
+        }
+        index = json.loads(written["deployment/DEPLOYMENT.json"].read_text())
+        assert index["default"] == f"deployment/{document['name']}.json"
+
+    def test_two_bundles_arriving_under_one_filename_both_survive(
+        self, packager, bundle_pair, wide_bundle_pair, tmp_path,
+    ):
+        """The exact shape the pipeline produces: the same basename twice."""
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        pairs = []
+        for slot, (path, document) in (("a", bundle_pair), ("b", wide_bundle_pair)):
+            landed = tmp_path / slot / "deployment_bundle.json"
+            landed.write_bytes(path.read_bytes())
+            (tmp_path / slot / "deployment_bundle_capture.json").write_bytes(
+                path.with_name(f"{path.stem}_capture.json").read_bytes())
+            pairs.append((landed, document))
+        written = _stage(packager, [p for p, _ in pairs], tmp_path / "stage")
+        index = json.loads(written["deployment/DEPLOYMENT.json"].read_text())
+        assert len(index["bundles"]) == 2
+        for entry, (_landed, document) in zip(index["bundles"], pairs):
+            staged = written[entry["bundle"]]
+            assert json.loads(staged.read_text())["self_hash"] == \
+                document["self_hash"]
+        assert index["default"] == index["bundles"][0]["bundle"]
+
+    def test_two_bundles_declaring_ONE_name_refuse(
+        self, packager, bundle_pair, tmp_path,
+    ):
+        path, _document = bundle_pair
+        twin = tmp_path / "twin.json"
+        twin.write_bytes(path.read_bytes())
+        (tmp_path / "twin_capture.json").write_bytes(
+            path.with_name("micro_deploy_capture.json").read_bytes())
+        with pytest.raises(packager.PackagingRefusal, match="already staged"):
+            _stage(packager, [path, twin], tmp_path / "stage")
+
+    def test_a_bundle_naming_a_path_instead_of_a_name_refuses(
+        self, packager, bundle_pair, tmp_path,
+    ):
+        path, _document = bundle_pair
+        document = json.loads(path.read_text())
+        document["name"] = "../../etc/passwd"
+        escaping = tmp_path / "escaping.json"
+        escaping.write_text(render_bundle(seal(document)), encoding="utf-8")
+        (tmp_path / "escaping_capture.json").write_text("{}", encoding="utf-8")
+        with pytest.raises(packager.PackagingRefusal, match="file name"):
+            _stage(packager, [escaping], tmp_path / "stage")
 
 
 class TestThePackageBuildsTheFabricItsBundleWasMappedOn:

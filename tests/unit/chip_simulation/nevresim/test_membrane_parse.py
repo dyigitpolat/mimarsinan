@@ -130,15 +130,32 @@ class TestSpikeTrainParse:
             {0: [[0, 3, 1, 0], [2, 0, 0, 0]], 1: [[0, 0, 0, 0]]},
         ]
 
-    def test_a_counted_line_above_the_currency_ceiling_fails_loud(self):
+    def test_a_count_a_wide_chip_may_legally_reach_parses(self):
+        """The parser guards the WORD, not one chip's ceiling: 128 is over the
+        stock fabric's currency and is a perfectly legal count on a chip that
+        declares a 16-bit register, which ``EventSerialIntegrate`` — not this
+        parser — is the one to refuse."""
+        from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
+            parse_spike_trains,
+        )
+
+        assert parse_spike_trains("SPKTRN2 0 0,128,32767\nSPKTRN_END\n") == [
+            {0: [[0, 128, 32767]]},
+        ]
+
+    def test_a_count_past_the_currency_word_fails_loud(self):
         import pytest
 
         from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
             parse_spike_trains,
         )
+        from mimarsinan.models.spiking.serial.refusals import (
+            COUNT_CURRENCY_LIMIT,
+        )
 
-        with pytest.raises(ValueError, match="ceiling"):
-            parse_spike_trains("SPKTRN2 0 0,128\nSPKTRN_END\n")
+        over = COUNT_CURRENCY_LIMIT + 1
+        with pytest.raises(ValueError, match="count currency"):
+            parse_spike_trains(f"SPKTRN2 0 0,{over}\nSPKTRN_END\n")
 
     def test_a_counted_line_with_a_non_count_field_fails_loud(self):
         import pytest

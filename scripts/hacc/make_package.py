@@ -864,6 +864,22 @@ def require_bundle_names_a_fabric(document: Dict[str, Any], path: Path) -> str:
     return chip
 
 
+def staged_bundle_name(document: Dict[str, Any], path: Path) -> str:
+    """The base name a bundle is STAGED under: the one it DECLARES.
+
+    Never the arriving filename — every export writes
+    ``<run>/odin_hacc/deployment_bundle.json``, so the file a bundle arrives in
+    identifies nothing and two of them would land on top of each other.
+    """
+    name = str(document.get("name") or "")
+    if name != Path(name).name or name in ("", ".", "..") or name.startswith("."):
+        raise PackagingRefusal(
+            f"{path.name}: the bundle declares name {name!r}, which is not a "
+            f"usable file name. A bundle is staged under the name it declares, "
+            f"so that name must be a plain basename")
+    return name
+
+
 def stage_deployment(bundles: Sequence[Path], copy, write_text) -> None:
     """Stage exported bundles + the index that names the DEFAULT one.
 
@@ -872,20 +888,32 @@ def stage_deployment(bundles: Sequence[Path], copy, write_text) -> None:
     which network phase 8 should run, and run_all.sh reads exactly this file.
     """
     staged: List[Dict[str, Any]] = []
+    names: Dict[str, str] = {}
     for path in bundles:
         document = require_bundle_document(path)
         chip = require_bundle_names_a_fabric(document, path)
-        copy(path, f"deployment/{path.name}")
+        name = staged_bundle_name(document, path)
+        if name in names:
+            raise PackagingRefusal(
+                f"{path.name}: a bundle named {name!r} is already staged from "
+                f"{names[name]}. Two bundles cannot share one name — the second "
+                f"would overwrite the first and the index would point at bytes "
+                f"it does not describe. Re-export one with a different "
+                f"odin_hacc_bundle_name")
+        names[name] = path.name
+        bundle_relative = f"deployment/{name}.json"
+        replay_relative = f"deployment/{name}_capture.json"
+        copy(path, bundle_relative)
         capture = path.with_name(f"{path.stem}_capture.json")
         if not capture.is_file():
             raise PackagingRefusal(
                 f"{path.name}: no {capture.name} beside it. The replay is what "
                 f"lets the node's own selftest run the bundle with no card; a "
                 f"deployment package without it can only be verified on silicon")
-        copy(capture, f"deployment/{capture.name}")
+        copy(capture, replay_relative)
         staged.append({
-            "bundle": f"deployment/{path.name}",
-            "replay": f"deployment/{capture.name}",
+            "bundle": bundle_relative,
+            "replay": replay_relative,
             "chip": chip,
             "name": document["name"],
             "self_hash": document["self_hash"],

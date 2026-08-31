@@ -12,11 +12,11 @@ from mimarsinan.chip_simulation.soma_axes import (
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.export.odin.expansion import RowPairExpansion
 from mimarsinan.mapping.export.odin.feasibility import (
-    EMISSION_CEILING,
     check_fan_in,
     check_membrane_init,
     check_sign_granularity,
     check_theta_ceiling,
+    count_ceiling,
     entry_event_bound,
     propagate_emission_bounds,
 )
@@ -71,7 +71,8 @@ def export_odin(
     _require_odin_soma_law(soma_law)
     _require_computed_latencies(mapping)
     sign_expansion = check_sign_granularity(weight_sign_granularity)
-    bounds = propagate_emission_bounds(mapping, ceiling=EMISSION_CEILING)
+    bounds = propagate_emission_bounds(
+        mapping, ceiling=count_ceiling(soma_law))
 
     images: List[OdinCoreImage] = []
     expansions: List[RowPairExpansion] = []

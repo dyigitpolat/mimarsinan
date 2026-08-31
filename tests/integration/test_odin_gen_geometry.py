@@ -42,6 +42,10 @@ from mimarsinan.mapping.export.odin_gen import (
 )
 from mimarsinan.mapping.export.odin_gen.passthrough import vendored_file_set
 from mimarsinan.mapping.export.odin_gen.variants import variant_named
+from mimarsinan.models.spiking.serial.refusals import (
+    EMISSION_COUNT_CEILING,
+    count_ceiling,
+)
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
@@ -437,3 +441,190 @@ class TestTheStockSpecStaysAVendoredPassthrough:
         assert dict(generated.files) == dict(vendored_file_set())
         print(f"[odin-gen] stock passthrough: {len(generated.files)} vendored "
               f"files byte-identical, spec_key={spec.spec_key()}")
+
+
+# ---------------------------------------------------------------------------
+# [ODIN C4] The COUNT CURRENCY at the chip's own width — the wall C3 measured
+# ---------------------------------------------------------------------------
+
+#: 300 spikes from ONE neuron in ONE cycle. Every implementation refused this at
+#: 127 before the currency became a chip-claimed quantity; on a chip declaring a
+#: 16-bit register all three arms must now carry it EXACTLY, unclamped. 300 and
+#: not 200 on purpose: it is past an UNSIGNED byte too, so a raster that stored
+#: counts in one would wrap to 44 rather than survive by luck.
+HIGH_MULTIPLICITY = 300
+HIGH_MULT_S = 2
+HIGH_MULT_THETA = 5.0
+HIGH_MULT_TAIL = 3
+
+
+def _high_multiplicity_mapping():
+    """theta=5 with a weight of 5 on slot 0: every occurrence crosses and the
+    hard-zero reset returns the membrane, so the emitted count IS the slot's
+    multiplicity — the cleanest hand-derived number a fold can be checked on."""
+    matrix = np.zeros((WIDE_AXONS, WIDE_NEURONS), dtype=np.float64)
+    matrix[0][0] = 5.0
+    # A neuron that needs TWO occurrences of its slot to cross once, so the
+    # case is not one saturated neuron and nothing else.
+    matrix[5][1] = 3.0
+    # The last neuron address, driven from the last axon row.
+    matrix[WIDE_AXONS - 1][WIDE_NEURONS - 1] = 5.0
+    core = hard_core(
+        matrix, threshold=HIGH_MULT_THETA,
+        sources=[SpikeSource(-2, i, is_input=True) for i in range(WIDE_AXONS)],
+    )
+    return mapping_of([core], [SpikeSource(0, 0)])
+
+
+def _high_multiplicity_raster():
+    first = [0] * WIDE_AXONS
+    first[0] = HIGH_MULTIPLICITY
+    first[5] = 2
+    first[WIDE_AXONS - 1] = 1
+    second = [0] * WIDE_AXONS
+    second[0] = HIGH_MULT_TAIL
+    return [first, second]
+
+
+@pytest.fixture(scope="module")
+def high_multiplicity_variant():
+    require_simulator()
+    law = per_event_law(16)
+    spec = spec_for(law, axons=WIDE_AXONS, neurons=WIDE_NEURONS)
+    mapping = _high_multiplicity_mapping()
+    generated = generate_core(spec)
+    images = images_for(mapping, spec)
+    samples = traces_for(
+        mapping, [_high_multiplicity_raster()], soma_law=law,
+        simulation_length=HIGH_MULT_S)
+    with timed("512x256 mb16 high-multiplicity cosim"):
+        result = run_variant_cosim(
+            generated, images, [list(s.per_cycle) for s in samples],
+            latencies=samples[0].trace.latencies)
+    report("512x256mb16-highmult", result)
+    return spec, mapping, samples, result
+
+
+class TestTheCountCurrencyIsCarriedAtTheChipsOwnWidth:
+    """[ODIN C4] The wall Phase C3 measured, discharged on three independent
+    arms: 200 events in one cycle, exact everywhere, refused nowhere."""
+
+    def test_the_case_is_genuinely_over_the_stock_currency(
+            self, high_multiplicity_variant):
+        spec, _mapping, samples, _result = high_multiplicity_variant
+        peak = max(
+            int(count) for sample in samples
+            for per_core in sample.trace.outputs for counts in per_core
+            for count in counts)
+        assert peak == HIGH_MULTIPLICITY
+        assert peak > EMISSION_COUNT_CEILING
+        assert peak > 255  # and past an unsigned byte, so no store survives by luck
+        assert peak <= count_ceiling(spec)
+        assert count_ceiling(spec) == 32767
+
+    def test_no_cycle_of_the_rtl_differs_from_the_fold(
+            self, high_multiplicity_variant):
+        _spec, _mapping, samples, result = high_multiplicity_variant
+        assert compare_cycle_counts(result, samples) == []
+        assert result.capture.spec_failures == 0
+
+    def test_the_rtl_emitted_every_transaction_of_the_cycle(
+            self, high_multiplicity_variant):
+        """The wire carries no count field: 300 is 300 ADJACENT AER
+        transactions, which is what makes the currency a representation."""
+        _spec, _mapping, _samples, result = high_multiplicity_variant
+        assert result.cycle_counts(0, 0, 0, 2)[0] == HIGH_MULTIPLICITY
+        assert result.cycle_counts(0, 1, 0, 1)[0] == HIGH_MULT_TAIL
+
+    @pytest.mark.skipif(not have_cxx_compiler(), reason="C++ compiler unavailable")
+    def test_nevresim_carries_the_same_count_as_the_fold_and_the_rtl(
+            self, high_multiplicity_variant):
+        _spec, mapping, samples, result = high_multiplicity_variant
+        ensure_nevresim_ready()
+        from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
+
+        loader = [
+            (np.asarray(raster, dtype=np.float64).reshape(-1),
+             np.zeros(WIDE_NEURONS))
+            for raster in [_high_multiplicity_raster()]
+        ]
+        with timed("512x256 mb16 high-multiplicity nevresim"), \
+                tempfile.TemporaryDirectory() as tmp:
+            driver = NevresimDriver(
+                WIDE_AXONS, mapping, tmp, int,
+                spike_generation_mode="SpikeTrain", firing_mode="Novena",
+                thresholding_mode="<=", spiking_mode="lif", threshold_type=int,
+                connectivity_mode="runtime", verbose=False,
+                soma_law=per_event_law(16))
+            _raw, records = driver.predict_spiking_raw_with_records(
+                loader, HIGH_MULT_S, max(samples[0].trace.latencies))
+
+        rtl = result.window_counts(
+            latencies=samples[0].trace.latencies,
+            simulation_length=HIGH_MULT_S,
+            neurons=[int(core.neurons_per_core) for core in mapping.cores])
+        fold = samples[0].trace.window_counts()
+        nevresim = tuple(
+            int(v) for v in np.asarray(records[0][0]["out"])[:WIDE_NEURONS])
+        assert nevresim == fold[0]
+        assert nevresim == rtl[0][0]
+        # The hand-derived number, stated once so a self-consistent trio of
+        # wrong implementations still fails: 300 crossings then 3 more.
+        assert nevresim[0] == HIGH_MULTIPLICITY + HIGH_MULT_TAIL
+        assert nevresim[1] == 1
+        assert nevresim[WIDE_NEURONS - 1] == 1
+
+    @pytest.mark.skipif(not have_cxx_compiler(), reason="C++ compiler unavailable")
+    def test_the_counted_raster_carries_the_per_cycle_count_too(
+            self, high_multiplicity_variant):
+        """SPKTRN2, not just SPKREC: the per-CYCLE raster nevresim prints and
+        the host re-packs is the other half of the currency, and a byte-wide
+        store would have wrapped 200 to 200 only by luck and 300 to 44."""
+        _spec, mapping, samples, _result = high_multiplicity_variant
+        ensure_nevresim_ready()
+        from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
+
+        loader = [
+            (np.asarray(_high_multiplicity_raster(), dtype=np.float64).reshape(-1),
+             np.zeros(WIDE_NEURONS))
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            driver = NevresimDriver(
+                WIDE_AXONS, mapping, tmp, int,
+                spike_generation_mode="SpikeTrain", firing_mode="Novena",
+                thresholding_mode="<=", spiking_mode="lif", threshold_type=int,
+                connectivity_mode="runtime", verbose=False,
+                soma_law=per_event_law(16))
+            _raw, _records, trains = driver.predict_spiking_raw_with_spike_trains(
+                loader, HIGH_MULT_S, max(samples[0].trace.latencies))
+
+        raster = trains[0][0]
+        assert int(raster[0][0]) == HIGH_MULTIPLICITY
+        assert int(raster[0][1]) == HIGH_MULT_TAIL
+        # The identity the two record builds owe each other, at a count no byte
+        # holds: the raster's window sum IS the SPKREC count.
+        assert int(raster[0].sum()) == HIGH_MULTIPLICITY + HIGH_MULT_TAIL
+
+    def test_the_same_events_are_refused_by_an_eight_bit_register(self):
+        """Non-vacuity: nothing about this case is legal on the stock currency."""
+        import torch
+
+        from mimarsinan.models.spiking.serial import (
+            EmissionBoundExceededError,
+            lif_serial_fold,
+        )
+
+        events = torch.tensor([[float(HIGH_MULTIPLICITY)]], dtype=torch.float64)
+        weight = torch.tensor([[5.0]], dtype=torch.float64)
+        theta = torch.tensor(HIGH_MULT_THETA, dtype=torch.float64)
+        for bits, expectation in ((8, pytest.raises(EmissionBoundExceededError)),
+                                  (16, None)):
+            memb = torch.zeros(1, 1, dtype=torch.float64)
+            if expectation is None:
+                counts = lif_serial_fold(
+                    memb, weight, events, theta, soma_law=per_event_law(bits))
+                assert counts.tolist() == [[float(HIGH_MULTIPLICITY)]]
+            else:
+                with expectation:
+                    lif_serial_fold(memb, weight, events, theta,
+                                    soma_law=per_event_law(bits))

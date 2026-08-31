@@ -15,6 +15,7 @@ from mimarsinan.models.spiking.serial import (
     EmissionBoundExceededError,
     SerialFoldUnsupportedError,
     SerialResetLawError,
+    count_ceiling,
     lif_serial_fold,
 )
 
@@ -163,6 +164,28 @@ def test_emission_bound_raises_and_never_clamps():
         _fold([[1.0]], [[over]], 1.0)
     at_bound, _ = _fold([[1.0]], [[float(EMISSION_COUNT_CEILING)]], 1.0)
     assert at_bound.tolist() == [[float(EMISSION_COUNT_CEILING)]]
+
+
+def test_the_bound_is_the_declared_chips_currency_not_a_universal_127():
+    """[ODIN C4] The same 200-event cycle: refused on a chip declaring an 8-bit
+    register, folded exactly on one declaring 16."""
+    wide = _saturating(16)
+    counts, _ = _fold([[1.0]], [[200.0]], 1.0, law=wide)
+    assert counts.tolist() == [[200.0]]
+    assert count_ceiling(wide) == 32767
+
+    narrow = _saturating(8)
+    with pytest.raises(EmissionBoundExceededError, match="membrane_bits=8"):
+        _fold([[1.0]], [[200.0]], 1.0, law=narrow)
+
+
+def test_the_wide_chips_bound_is_a_refusal_too_and_never_a_clamp():
+    wide = _saturating(16)
+    ceiling = count_ceiling(wide)
+    at_bound, _ = _fold([[1.0]], [[float(ceiling)]], 1.0, law=wide)
+    assert at_bound.tolist() == [[float(ceiling)]]
+    with pytest.raises(EmissionBoundExceededError, match=str(ceiling)):
+        _fold([[1.0]], [[float(ceiling + 1)]], 1.0, law=wide)
 
 
 def test_non_integer_and_negative_multiplicities_are_refused():

@@ -4,7 +4,10 @@ import os
 import subprocess
 import time
 
-from mimarsinan.models.spiking.serial.refusals import EMISSION_COUNT_CEILING
+from mimarsinan.models.spiking.serial.refusals import (
+    COUNT_CURRENCY_LIMIT,
+    COUNT_CURRENCY_WORD_BITS,
+)
 from mimarsinan.chip_simulation.execution_bounds import (
     SimulationTimeoutError,
     kill_process_group,
@@ -68,7 +71,13 @@ def _parse_binary_train(core: int, token: str) -> list[int]:
 
 
 def _parse_counted_train(core: int, token: str) -> list[int]:
-    """One neuron's SPKTRN2 comma-joined per-cycle counts."""
+    """One neuron's SPKTRN2 comma-joined per-cycle counts.
+
+    The bound checked here is the count currency's WORD, not any one chip's
+    ceiling: which count a chip may legally reach is its own declared
+    ``count_ceiling``, refused by ``EventSerialIntegrate`` before it is ever
+    printed. A value past the word is a corrupt line or a simulator that
+    overflowed its own type — a protocol violation either way."""
     counts = []
     for field in token.split(","):
         if not field.isdigit():
@@ -76,10 +85,12 @@ def _parse_counted_train(core: int, token: str) -> list[int]:
                 f"SPKTRN2 core {core}: {field!r} is not a per-cycle count"
             )
         count = int(field)
-        if count > EMISSION_COUNT_CEILING:
+        if count > COUNT_CURRENCY_LIMIT:
             raise ValueError(
-                f"SPKTRN2 core {core}: per-cycle count {count} exceeds the "
-                f"count currency's ceiling {EMISSION_COUNT_CEILING}"
+                f"SPKTRN2 core {core}: per-cycle count {count} does not fit "
+                f"the count currency's {COUNT_CURRENCY_WORD_BITS}-bit signed "
+                f"word (max {COUNT_CURRENCY_LIMIT}); nevresim's spike_t cannot "
+                f"have produced it, so this line is not a count record"
             )
         counts.append(count)
     return counts

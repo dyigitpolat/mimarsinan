@@ -32,10 +32,10 @@ from mimarsinan.models.nn.lif_kernels import (
     snap_membrane_to_lattice,
 )
 from mimarsinan.models.spiking.serial.refusals import (
-    EMISSION_COUNT_CEILING,
     EmissionBoundExceededError,
     SerialFoldUnsupportedError,
     SerialResetLawError,
+    count_ceiling,
 )
 
 
@@ -193,14 +193,17 @@ def lif_serial_fold(
             soma_law=soma_law, bounds=bounds, lattice_scale=lattice_scale,
         )
 
-    if counts.numel() and float(counts.max()) > EMISSION_COUNT_CEILING:
+    ceiling = count_ceiling(soma_law)
+    if counts.numel() and float(counts.max()) > ceiling:
         raise EmissionBoundExceededError(
             f"a neuron emitted {int(counts.max())} spikes in ONE cycle, above "
-            f"the count-currency ceiling {EMISSION_COUNT_CEILING}: the wire, "
-            f"the records and the exported image all carry a count that no "
-            f"longer fits. This is refused, NEVER clamped — a clamp would "
-            f"report a number the deployment cannot produce. Lower the fan-in "
-            f"or raise theta (plan §2.2's propagated emission bound)."
+            f"the count-currency ceiling {ceiling} of a chip declaring "
+            f"membrane_bits={soma_law.membrane_bits}: the wire, the records "
+            f"and the exported image all carry a count that no longer fits. "
+            f"This is refused, NEVER clamped — a clamp would report a number "
+            f"the deployment cannot produce. Lower the fan-in, raise theta "
+            f"(plan §2.2's propagated emission bound), or deploy a chip that "
+            f"declares a wider register."
         )
     if output_dtype is not None and output_dtype != counts.dtype:
         return counts.to(output_dtype)

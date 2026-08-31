@@ -297,23 +297,48 @@ class TestABundleAndABitstreamCanBeCompared:
 
 
 class TestTheCountCurrencyIsNotAGeometryLimit:
-    """The one ceiling the wider fabric does NOT lift, stated where it is read.
+    """[ODIN C4] The currency is a REPRESENTATION, and which one is the CHIP's.
 
-    A per-window spike count travels as one signed 8-bit event count in every
-    implementation (nevresim's ``spike_t``, the torch fold's assertion, the
-    exporter's propagated bound), and the generated core carries no count field
-    at all -- multiplicity is k adjacent AER transactions on the wire. So 127 is
-    a TRANSPORT ceiling shared by both fabrics, and widening the crossbar cannot
-    and does not move it.
+    A per-window spike count carries no field on the wire at all -- multiplicity
+    is k adjacent AER transactions -- so the crossbar's width cannot and does
+    not move it, which is what C2 proved and what stays true here. What a chip
+    DOES decide is the width its implementations instantiate its law at, and the
+    count travels in a signed word of exactly that width: nevresim's
+    ``EventSerialIntegrate<bits>``, the torch fold's assertion and the
+    exporter's propagated bound all take it from ``count_ceiling``.
     """
 
-    def test_both_fabrics_share_the_same_count_ceiling(self):
+    def test_the_default_and_the_stock_fabric_still_carry_127(self):
         from mimarsinan.mapping.export.odin.feasibility import EMISSION_CEILING
         from mimarsinan.models.spiking.serial.refusals import (
             EMISSION_COUNT_CEILING,
+            count_ceiling,
         )
         assert EMISSION_CEILING == EMISSION_COUNT_CEILING == 127
+        assert count_ceiling(chip_config_named(STOCK_CHIP)) == 127
+
+    def test_no_fabric_publishes_a_count_field_of_its_own(self):
         for config in chip_configs():
             assert "count" not in config.as_dict()
             # The membrane ceiling is the axis a wider register DOES move.
             assert config.theta_ceiling >= 255
+
+    def test_the_wide_fabric_carries_its_own_declared_word(self):
+        from mimarsinan.models.spiking.serial.refusals import count_ceiling
+
+        wide = chip_config_named(WIDE_CHIP)
+        assert wide.membrane_bits == 16
+        assert count_ceiling(wide) == (1 << 15) - 1
+
+    def test_the_currency_moves_only_with_the_register(self):
+        """Every OTHER claim differs between the two fabrics too, so the test
+        that isolates the register is the one that names it."""
+        from mimarsinan.mapping.export.odin_gen.variants import (
+            per_event_law,
+            spec_for,
+        )
+        from mimarsinan.models.spiking.serial.refusals import count_ceiling
+
+        wide_geometry_narrow_register = spec_for(
+            per_event_law(8), axons=1024, neurons=256, weight_bits=8)
+        assert count_ceiling(wide_geometry_narrow_register) == 127

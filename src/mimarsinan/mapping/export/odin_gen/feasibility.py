@@ -8,11 +8,11 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 from mimarsinan.mapping.export.odin.feasibility import (
-    EMISSION_CEILING,
     OdinFeasibilityError,
     check_fan_in,
     check_membrane_init,
     check_weight_magnitudes,
+    count_ceiling,
     propagate_emission_bounds,
 )
 from mimarsinan.mapping.export.odin_gen.spec import CoreSpec, require_generatable
@@ -146,8 +146,10 @@ def gate_variant_segment(
 
     The stock exporter is where a stock deployment meets its gates; a generated
     fabric has no such exporter yet, so this is that seam — geometry, theta,
-    the weight grid, and the COUNT CURRENCY, which the wider crossbar does not
-    lift because it is what a segment boundary carries and not what a core is.
+    the weight grid, and the COUNT CURRENCY at THIS spec's ceiling. A wider
+    crossbar still does not lift the currency (the wire carries no count field
+    at all); the chip's declared REGISTER WIDTH is what moves it, which is why
+    the ceiling is read off the spec rather than taken as a constant.
     """
     require_generatable(spec)
     thetas: Dict[int, int] = {}
@@ -168,7 +170,7 @@ def gate_variant_segment(
     return VariantSegmentGate(
         thetas=thetas,
         emission_bounds=propagate_emission_bounds(
-            mapping, ceiling=EMISSION_CEILING),
+            mapping, ceiling=count_ceiling(spec)),
         saturation=require_no_saturation(
             mapping, spec=spec, thetas=thetas, cycles=int(cycles),
             membrane_init=int(membrane_init)),

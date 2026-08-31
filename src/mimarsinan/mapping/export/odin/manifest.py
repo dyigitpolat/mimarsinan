@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
-from mimarsinan.mapping.export.odin.feasibility import EMISSION_CEILING
+from mimarsinan.mapping.export.odin.feasibility import count_ceiling
 
 EXPORT_FORMAT_VERSION = 1
 
@@ -52,7 +52,7 @@ def build_manifest(
             "cores": geometry_rows,
         },
         "emission_bounds": {
-            "ceiling": EMISSION_CEILING,
+            "ceiling": count_ceiling(soma_law),
             "max": max(bounds.values(), default=0),
             "per_core_max": per_core_max,
         },

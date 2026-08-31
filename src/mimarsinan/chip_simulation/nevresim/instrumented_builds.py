@@ -149,10 +149,11 @@ def predict_spiking_raw_with_spike_trains(
         record_spike_trains=True,
         timeout_s=driver.simulation_step_timeout_s,
     )
-    # uint8 holds the whole count currency (ceiling 127) as well as the bit
-    # raster, so both wire versions land in the same array type.
+    # int16 IS the count currency's word (nevresim's ``spike_t``), so it holds
+    # any chip's counts as well as the bit raster and both wire versions land
+    # in the same array type.
     as_arrays = [
-        {core: np.array(trains, dtype=np.uint8).reshape(len(trains), -1)
+        {core: np.array(trains, dtype=np.int16).reshape(len(trains), -1)
          for core, trains in sample.items()}
         for sample in spike_trains
     ]

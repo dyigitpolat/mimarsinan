@@ -32,6 +32,7 @@ from integration.odin_hacc_harness import (
     TIMESTEPS,
     WIDE_PLATFORM_RESOLVED,
     prepare_step,
+    stage_package_host,
     two_core_mapping,
     wide_config_overrides,
 )
@@ -61,8 +62,10 @@ from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.export.odin.feasibility import (
     EMISSION_CEILING,
     OdinFeasibilityError,
+    count_ceiling,
 )
 from mimarsinan.mapping.export.odin_gen.feasibility import gate_variant_segment
+from mimarsinan.mapping.export.odin_gen.variants import per_event_law, spec_for
 from mimarsinan.mapping.platform.platform_constraints import (
     resolve_platform_mapping_params,
 )
@@ -77,14 +80,6 @@ from mimarsinan.pipelining.pipeline_steps.verification.odin_hacc_deployment_step
 REPO = Path(__file__).resolve().parents[3]
 PACKAGE = REPO / "scripts" / "hacc" / "package"
 CHIP_SIM = REPO / "src" / "mimarsinan" / "chip_simulation"
-VERBATIM_MODULES = (
-    CHIP_SIM / "odin_deployment_bundle.py",
-    CHIP_SIM / "odin_deployment_encoding.py",
-)
-HOST_FILES = (
-    "odin_board_driver.py", "fake_pyxrt_for_selftest.py",
-    "odin_deployment_executor.py",
-)
 
 
 @pytest.fixture(scope="module")
@@ -183,12 +178,8 @@ class TestTheWideStimulusIsWordedForItsOwnFabric:
 def staged_wide(tmp_path_factory, wide_export):
     _document, stats = wide_export
     root = tmp_path_factory.mktemp("odin_hacc_wide_pkg")
-    (root / "host").mkdir()
+    stage_package_host(root)
     (root / "deployment").mkdir()
-    for name in HOST_FILES:
-        shutil.copyfile(PACKAGE / "host" / name, root / "host" / name)
-    for module in VERBATIM_MODULES:
-        shutil.copyfile(module, root / "host" / module.name)
     shutil.copyfile(stats["paths"]["bundle"], root / "deployment" / "bundle.json")
     shutil.copyfile(stats["paths"]["capture"], root / "deployment" / "replay.json")
     return root
@@ -232,30 +223,65 @@ class TestTheShippedExecutorRunsItOnTheRightFabricOnly:
         assert proc.returncode == 2, proc.stdout + proc.stderr
 
 
-class TestTheWiderCrossbarDoesNotLiftTheCountCurrency:
-    """127 events per cycle is what a segment BOUNDARY carries, not a core."""
+def _flooded_mapping(rows: int, weight: float):
+    """One core driven by ``rows`` entry axons at theta=1 — ``rows*weight``
+    events in a single cycle, which is what the count currency prices."""
+    mapping = two_core_mapping()
+    core = mapping.cores[0]
+    core.core_matrix = np.full(
+        (rows, core.neurons_per_core), weight, dtype=np.float64)
+    core.axon_sources = [
+        SpikeSource(-2, index, is_input=True) for index in range(rows)]
+    core.axons_per_core = rows
+    core.threshold = 1.0
+    return mapping
+
+
+class TestTheCountCurrencyIsTheChipsOwnWord:
+    """[ODIN C4] The wider CROSSBAR still does not lift the currency — the wire
+    carries no count field at all. The wider REGISTER does: the wide fabric
+    declares 16 bits, so its implementations carry what a signed 16-bit word
+    holds, and the ceiling is read off the chip instead of assumed."""
 
     def test_the_gate_reports_what_the_segment_can_emit(self):
         wide = chip_config_named(WIDE_CHIP)
         mapping = two_core_mapping()
         gate = gate_variant_segment(
             mapping, spec=wide.core_spec, membrane_init=0, cycles=TIMESTEPS)
-        assert gate.peak_emission <= EMISSION_CEILING
+        assert gate.peak_emission <= count_ceiling(wide.core_spec)
         assert set(gate.thetas) == set(range(len(mapping.cores)))
 
-    def test_a_neuron_over_the_ceiling_refuses_on_the_wide_fabric_too(self):
+    def test_a_count_the_stock_currency_refuses_deploys_on_the_wide_fabric(self):
+        """THE WALL PHASE C3 MEASURED, moved. 200 events in one cycle is inside
+        the 1023-slot crossbar and the [-128, 127] cell, was outside the 127
+        currency, and is inside the wide chip's own."""
         wide = chip_config_named(WIDE_CHIP)
-        mapping = two_core_mapping()
-        # theta 1 with 200 unit inputs is 200 events in one cycle: inside the
-        # 1023-slot crossbar and the [-128, 127] cell, outside the currency.
-        core = mapping.cores[0]
-        core.core_matrix = np.ones((200, core.neurons_per_core), dtype=np.float64)
-        core.axon_sources = [
-            SpikeSource(-2, index, is_input=True) for index in range(200)]
-        core.axons_per_core = 200
+        mapping = _flooded_mapping(200, 1.0)
+        gate = gate_variant_segment(
+            mapping, spec=wide.core_spec, membrane_init=0, cycles=TIMESTEPS)
+        assert gate.peak_emission == 200
+        assert 200 > EMISSION_CEILING
+        assert gate.peak_emission <= count_ceiling(wide.core_spec)
+
+    def test_the_same_mapping_is_still_refused_by_an_eight_bit_register(self):
+        """The currency moved because the REGISTER did, and nothing else: the
+        identical geometry on a chip declaring 8 bits is refused as before."""
+        narrow = spec_for(per_event_law(8), axons=1024, neurons=256,
+                          weight_bits=8)
+        assert count_ceiling(narrow) == EMISSION_CEILING == 127
         with pytest.raises(OdinFeasibilityError, match="count-currency ceiling"):
             gate_variant_segment(
-                mapping, spec=wide.core_spec, membrane_init=0, cycles=TIMESTEPS)
+                _flooded_mapping(200, 1.0), spec=narrow, membrane_init=0,
+                cycles=TIMESTEPS)
+
+    def test_a_neuron_over_the_WIDE_ceiling_still_refuses(self):
+        """The ceiling is a real refusal on the wide fabric too — 300 rows of
+        the cell's top weight is 38,100 events, past its own 32,767."""
+        wide = chip_config_named(WIDE_CHIP)
+        with pytest.raises(OdinFeasibilityError, match="count-currency ceiling"):
+            gate_variant_segment(
+                _flooded_mapping(300, 127.0), spec=wide.core_spec,
+                membrane_init=0, cycles=TIMESTEPS)
 
 
 @pytest.fixture(scope="module")
@@ -268,6 +294,45 @@ def auditor():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+class TestTheAuditorAddressesCoresByIndexNotByPosition:
+    """[ODIN C4] The plan list is in PASS ORDER, and a pass order is a SCHEDULE.
+
+    Every route names a core by its declared index, so an auditor that rebuilt
+    the network in plan-list position built a different graph the moment the
+    two stopped coinciding — which a three-hop cascade is the first bundle to do.
+    """
+
+    def _decoded(self, auditor, document, config):
+        return [auditor.decode_variant_core(plan, config.core_spec)
+                for plan in document["cores"]]
+
+    def test_a_shuffled_plan_list_rebuilds_the_same_network(
+            self, auditor, wide_export):
+        document, _stats = wide_export
+        config = chip_config_named(WIDE_CHIP)
+        straight = auditor.rebuild_mapping(
+            document, self._decoded(auditor, document, config))
+        shuffled_doc = dict(document)
+        shuffled_doc["cores"] = list(reversed(document["cores"]))
+        shuffled = auditor.rebuild_mapping(
+            shuffled_doc, self._decoded(auditor, shuffled_doc, config))
+        assert len(shuffled.cores) == len(straight.cores)
+        for index, (a, b) in enumerate(zip(straight.cores, shuffled.cores)):
+            assert np.array_equal(a.core_matrix, b.core_matrix), index
+            assert [(s.core_, s.neuron_) for s in a.axon_sources] == \
+                [(s.core_, s.neuron_) for s in b.axon_sources], index
+
+    def test_two_plans_claiming_one_core_index_are_a_finding(
+            self, auditor, wide_export):
+        document, _stats = wide_export
+        config = chip_config_named(WIDE_CHIP)
+        doubled = dict(document)
+        doubled["cores"] = [document["cores"][0], document["cores"][0]]
+        with pytest.raises(auditor.AuditFinding, match="one program"):
+            auditor.rebuild_mapping(
+                doubled, self._decoded(auditor, doubled, config))
 
 
 class TestTheBundleSurvivesLosingItsProducer:
