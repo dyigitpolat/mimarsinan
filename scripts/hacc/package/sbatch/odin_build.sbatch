@@ -77,7 +77,12 @@ ls -l "${BUILD_OUT}/"
 # smallest shipped fixture is the DEFAULT smoke, under a timeout, and a timeout
 # writes an honest note and lets the build stand. ODIN_EMU_SMOKE=all runs all
 # five; ODIN_EMU_SMOKE=off skips it. B0/B1 on silicon supersede it either way.
-SMOKE="${ODIN_EMU_SMOKE:-smallest}"
+# OPT-IN since 2026-08-31: silicon B0/B1 supersede this smoke entirely, and
+# its worst case is sitting the full timeout on a slow node learning nothing
+# (field: gpu3 finished the same fixture in ~18 min; node0 burned the whole
+# 5400 s budget). ODIN_EMU_SMOKE=smallest|all turns it on when the emulation
+# number is wanted for its own sake.
+SMOKE="${ODIN_EMU_SMOKE:-off}"
 SMOKE_TIMEOUT="${ODIN_EMU_SMOKE_TIMEOUT:-5400}"
 SMALLEST_FIXTURE="nc1_single_core_ceiling"
 

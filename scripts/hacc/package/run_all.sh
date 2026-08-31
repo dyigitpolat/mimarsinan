@@ -626,7 +626,7 @@ submit_build() {
     do_cmd env \
         ODIN_PKG="${HERE}" ODIN_TARGET="${target}" ODIN_PLATFORM="${PLATFORM}" \
         ODIN_CARD="${CARD}" \
-        ODIN_LOG="${log}" ODIN_EMU_SMOKE="${ODIN_EMU_SMOKE:-smallest}" \
+        ODIN_LOG="${log}" ODIN_EMU_SMOKE="${ODIN_EMU_SMOKE:-off}" \
         ODIN_EMU_SMOKE_TIMEOUT="${ODIN_EMU_SMOKE_TIMEOUT:-5400}" \
         sbatch --wait -p "${PICKED}" \
         "${HERE}/scripts/hacc/odin_build.sbatch" || status=$?
@@ -658,8 +658,9 @@ phase_2() {
     say "map answers, the AXI master moves the payloads and the capture decodes"
     say "into the frozen counts. It cannot prove HBM ordering behind a real XDMA"
     say "shell, XRT's allocation on silicon, or timing closure — that is B0/B1."
-    say "The smoke is BOUNDED: the smallest fixture only, under"
-    say "${ODIN_EMU_SMOKE_TIMEOUT:-5400}s. ODIN_EMU_SMOKE=all runs all five."
+    say "The emu smoke is OPT-IN (silicon B0/B1 supersede it):"
+    say "ODIN_EMU_SMOKE=smallest|all enables it, bounded by"
+    say "ODIN_EMU_SMOKE_TIMEOUT (default 5400s)."
     submit_build hw_emu 2
 }
 
