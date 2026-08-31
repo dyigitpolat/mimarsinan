@@ -52,8 +52,16 @@ echo "[build] target  ${TARGET}"
 cd "${PKG}"
 scripts/hacc/build_xclbn.sh "${TARGET}"
 
-echo "[build] artefacts under ${PKG}/build/hacc/${TARGET}_nc1/"
-ls -l "${PKG}/build/hacc/${TARGET}_nc1/"
+# The build directory carries the CHIP's suffix (empty for stock) — resolve it
+# the same way build_xclbn.sh just did, or a generated fabric's artifacts are
+# reported at a directory that does not exist and set -e kills a good build.
+# shellcheck source=scripts/hacc/chips.sh
+source scripts/hacc/chips.sh
+odin_chip_resolve
+BUILD_OUT="${PKG}/build/hacc/${TARGET}_nc1${CHIP_SUFFIX}"
+
+echo "[build] artefacts under ${BUILD_OUT}/"
+ls -l "${BUILD_OUT}/"
 
 # --- the hw_emu smoke, ON THIS BUILD NODE, with NO card ----------------------
 # XCL_EMULATION_MODE=hw_emu makes XRT bind to the QEMU/RTL emulation model that
@@ -74,7 +82,7 @@ SMOKE_TIMEOUT="${ODIN_EMU_SMOKE_TIMEOUT:-5400}"
 SMALLEST_FIXTURE="nc1_single_core_ceiling"
 
 if [[ "${TARGET}" == "hw_emu" && "${SMOKE}" != "off" && "${SMOKE}" != "0" ]]; then
-    emu_dir="${PKG}/build/hacc/hw_emu_nc1"
+    emu_dir="${BUILD_OUT}"
     emu_results="${PKG}/results/hw_emu"
     mkdir -p "${emu_results}"
     # build_xclbn.sh sourced the toolchain in a CHILD process, so this shell has
