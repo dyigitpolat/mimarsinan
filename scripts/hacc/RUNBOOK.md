@@ -743,10 +743,11 @@ than anything on the stock fabric**. Four full cell runs, MEASURED 2026-08-31
 Weight quantization at wb=8 is not a cost on this vehicle, it is a **gain**
 (+0.0080 at S=4): the 8-bit cell hands back what the 4-bit one would have taken.
 
-**What refuses them all is the COUNT CURRENCY, and the wider crossbar does not
+**What refused them all is the COUNT CURRENCY, and the wider crossbar does not
 lift it** — 127 events per cycle is what a segment BOUNDARY carries, not what a
-core is. Decoded from the mappings (host-subsumed 784-wide encode, then three
-on-chip cores):
+core is. (C4 lifted it a different way; read this table first, then
+"The currency is the chip's own word" below.) Decoded from the mappings
+(host-subsumed 784-wide encode, then three on-chip cores):
 
 | core | shape | theta (S=4 / S=16) | max positive column sum | emission bound |
 | --- | --- | --- | --- | --- |
@@ -767,7 +768,53 @@ The bound GROWS down the cascade, and two levers were tested against it:
 So on the wide fabric this family's wall is neither the crossbar nor the weight
 cell: it is a **three-hop on-chip cascade under a 127-event currency**.
 
-**The bundle that ships** is the two-hop one — `odin_wide_narrowconv_cell.json`,
+### The currency is the chip's own word, and the MLP ships (C4)
+
+The 127 above is **not fabric** — C2 proved that already: the generated core
+carries no count field at all, and a multiplicity of k is k adjacent AER
+transactions on the wire. It was a SOFTWARE representation, shared by four
+implementations that all happened to be built at one byte, and a representation
+is a thing a chip gets to DECLARE.
+
+`count_ceiling(chip_claims)`
+(`src/mimarsinan/models/spiking/serial/refusals.py`) is now the one place that
+answers it: the largest positive value a SIGNED word of the width the chip
+declares its registers at holds, floored at a byte and capped by the currency's
+own 16-bit word. That width is the one every implementation instantiates the
+chip's law at — nevresim's `EventSerialIntegrate<bits>`, the generated core's
+accumulator, the exporter's theta ceiling — so it is a claim, not an analogy.
+
+| fabric | `membrane_bits` | count currency |
+| --- | --- | --- |
+| `odin_stock_256x256` | 8 | **127**, exactly as before |
+| `odin_wide_1024x256_mb16` | 16 | **32,767** |
+
+Nothing about a crossbar moves it: the same 1024x256 geometry on a chip
+declaring 8 bits still carries 127, and the refusal is still a refusal — a
+neuron over its own chip's ceiling is named and never clamped.
+
+**So the S=16 MLP exports.** Re-exported from the same cached run at
+`deployed 0.9800` — the identical ladder, nothing re-tuned — as
+`odin_wide_mlp_mnist_wb8_s16`: **3 host-mediated passes** in causal order
+`[1, 2, 0]`, 300 samples, 50 certified, frozen accuracy 0.990000, 19
+cycles/sample, 4,427,414 bytes. Audited from its own decoded bytes: peak |w|
+127 against the cell's 127, peak theta 378 against 65,535, widest DRIVEN fan-in
+256 against 1023, 87,842 AER words all inside the wide core's 10-bit address
+space, and **peak emission bound 146 against a 32,767 currency** — the exact
+number that refused it, now inside the chip's own word.
+
+Two defects the three-hop bundle exposed, both invisible while every shipped
+bundle was two-hop:
+
+* the freezer emitted the pass order as `range(len(cores))`, so a readout at
+  index 0 was scheduled before the core it reads. The shipped executor refused
+  it by name (`require_pass_order_is_causal`) — a consumer stimulated with
+  counts nobody measured. `causal_core_order` is now a topological sort;
+* the envelope auditor rebuilt the network in PLAN-LIST position, which stopped
+  coinciding with core index the moment the pass order did. Cores are placed at
+  the index their routes name.
+
+**The bundle that shipped before C4** is the two-hop one — `odin_wide_narrowconv_cell.json`,
 the shipped `narrow_conv` deployment cell re-platformed and nothing else
 changed. Its ladder is the stock one to four places until the weight grid:
 pretrain 0.9820, AQ 0.9820, LIF **0.9487** (the stock cell's own number), then
@@ -782,8 +829,24 @@ Audited from its own decoded bytes
 (`scripts/hacc/selftest/deployment_envelope_audit.py`): peak |w| 127 against the
 cell's 127 — the 8-bit grid is spent, not padded — peak theta 244 against
 65,535, widest DRIVEN fan-in 126 against 1023, peak emission bound 44 against
-the 127 currency, and 82,697 AER words every one of which is inside the wide
-core's 10-bit axon address space, with none of them the stock fabric's `0x7F`.
+the 127 currency (its own chip's is 32,767), and 82,697 AER words every one of
+which is inside the wide core's 10-bit axon address space, with none of them the
+stock fabric's `0x7F`.
+
+**The deployment package carries BOTH**, the MLP as the default:
+
+```bash
+env/bin/python scripts/hacc/make_package.py \
+    --deployment generated/odin_wide_mlp_s16_phased_deployment_run/odin_hacc/deployment_bundle.json \
+    --deployment generated/odin_wide_narrowconv_s16_phased_deployment_run/odin_hacc/deployment_bundle.json
+```
+
+The FIRST is what phase 8 runs. Each bundle is staged under the name it
+DECLARES (`deployment/odin_wide_mlp_mnist_wb8_s16.json`), never the file it
+arrived in — every export writes `deployment_bundle.json`, so two of them
+staged by filename landed on top of each other and the index named a network
+the package did not carry. `make_package.py` refuses two bundles claiming one
+name.
 
 That bundle is produced by the pipeline itself, not by hand. The step is
 `"HACC NUS - ODIN Deployment"`; a tier cell (or any deployment document) turns
