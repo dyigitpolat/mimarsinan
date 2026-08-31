@@ -259,7 +259,12 @@ entering membrane (≤ θ−1) plus the summed positive drive, and each fire con
 under zero reset, so the floor is a proven upper bound (the earlier ⌈·⌉ form was loose:
 Σ=3, θ=4 bounded 2 where 1 is true; tightened in the P4 fix cycle, §14 addendum) —
 propagated in topological order within the segment. The deployment refuses at
-mapping/export time when any `e_out > 127` (the count-currency ceiling), **and** every
+mapping/export time when any `e_out` exceeds the count-currency ceiling — **since C4
+(2026-08-31) chip-claims-derived**: `count_ceiling(claims) = min(2^(max(membrane_bits,8)-1)-1,
+32767)`, so the stock chip keeps **127** byte-for-byte while `odin_wide_1024x256_mb16`
+(16-bit membranes) carries **32,767**; SSOT `models/spiking/serial/refusals.py::count_ceiling`,
+nevresim widened on `odin-integration-policy` with zero count movement across all gates —
+**and** every
 implementation carries a runtime assertion at the same bound so a violation fails loud
 identically everywhere rather than overflowing one of the four.
 
