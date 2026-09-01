@@ -126,7 +126,7 @@ foreach cell [get_cells -hierarchical -quiet -filter {IS_PRIMITIVE == 1}] {
     incr placed
 }
 close \$fh
-puts "[mine] wrote \$placed placed primitives"
+puts "\[mine\] wrote \$placed placed primitives"
 TCLEOF
 
 vivado -mode batch -nojournal -log "${OUT}/reports/mine_checkpoint.log" \
