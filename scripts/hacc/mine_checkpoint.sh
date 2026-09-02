@@ -44,7 +44,11 @@ done
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG="$(cd "${HERE}/.." && pwd)"
 [ -f "${PKG}/MANIFEST.json" ] || PKG="$(cd "${HERE}/../.." && pwd)"
-BUILD="${ODIN_BUILD_DIR:-${PKG}/build/hacc}/${TARGET}_nc1"
+# The build directory carries the CHIP's suffix (empty for stock) — fourth and
+# last home of that blindness: without it a generated fabric's install finds no
+# checkpoint and the evidence that comes home is some other fabric's.
+source "${HERE}/chips.sh"
+BUILD="${ODIN_BUILD_DIR:-${PKG}/build/hacc}/${TARGET}_nc1$(odin_chip_field build_suffix "$(odin_chip)")"
 KERNEL_INSTANCE="${ODIN_KERNEL_INSTANCE:-odin_0}"
 RENDERER="${PKG}/host/render_die_map.py"
 CHIP_CACHE="${PKG}/scripts/chip_cache.sh"
