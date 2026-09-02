@@ -729,9 +729,28 @@ phase_5() {
     submit_board probe
 }
 
+# The shipped B1 fixtures are STOCK programs: they configure a core over SPI.
+# A generated fabric's sequencer programs over its config port and REFUSES
+# SPI, so running them there measures nothing (field 2026-09-01: every fixture
+# came back events=0, device_cycles=3). The deployment bundle carries this
+# fabric's own encoding and is what certifies it; B0's null run is
+# fabric-agnostic and still applies.
+fixtures_speak_this_fabric() {
+    [ "$(odin_chip_field core_kind "$(odin_chip)")" = "vendored" ]
+}
+
 phase_6() {
     pick_partition board "${ODIN_BOARD_PARTITION:-}" "${BOARD_CANDIDATES[@]}" || return 2
     head_line "phase 6: B1 parity campaign on ${PICKED}"
+    if ! fixtures_speak_this_fabric; then
+        say "SKIPPED: the shipped fixtures program a core over SPI, and fabric"
+        say "$(odin_chip) refuses SPI — it is programmed over its config port."
+        say "Nothing here would be measured. B0 (fabric-agnostic) covered the"
+        say "round trip; phase 8's bundle carries THIS fabric's own encoding"
+        say "and is what certifies it."
+        journal 6 SKIP "fixtures are stock-SPI; $(odin_chip) programs over its config port"
+        return 0
+    fi
     say "Every shipped fixture, one certificate line each. Anything other than"
     say "PASS exact=1.000000 max|dcount|=0 is a finding, not a tolerance."
     submit_board run
@@ -741,6 +760,14 @@ phase_6() {
 # 7. the two-component run
 # ---------------------------------------------------------------------------
 phase_7() {
+    if ! fixtures_speak_this_fabric; then
+        head_line "phase 7: board + independent reference"
+        say "SKIPPED: component A replays the shipped stock-SPI fixtures, which"
+        say "fabric $(odin_chip) refuses — see phase 6. The join would compare"
+        say "two references to a run that measured nothing."
+        journal 7 SKIP "fixtures are stock-SPI; $(odin_chip) programs over its config port"
+        return 0
+    fi
     pick_partition joint "${ODIN_JOINT_PARTITION:-}" "${JOINT_CANDIDATES[@]}" || return 2
     head_line "phase 7: board + independent reference in ONE job on ${PICKED}"
     case "$(odin_card_field joint_model "${CARD}")" in
@@ -892,7 +919,7 @@ phase_done() {
             return 1
             ;;
         5)
-            if [ -f "${RESULTS}/board_probe/probe.json" ]; then
+            if artifact_passed "${RESULTS}/board_probe/probe.json"; then
                 DONE_WHY="${RESULTS}/board_probe/probe.json — the null-program"
                 DONE_WHY="${DONE_WHY} round trip closed"
                 return 0
@@ -900,21 +927,21 @@ phase_done() {
             return 1
             ;;
         6)
-            if [ -f "${RESULTS}/board_run/summary_board.json" ]; then
+            if artifact_passed "${RESULTS}/board_run/summary_board.json"; then
                 DONE_WHY="${RESULTS}/board_run/summary_board.json — the campaign certified"
                 return 0
             fi
             return 1
             ;;
         7)
-            if [ -f "${RESULTS}/joint/summary_join.json" ]; then
+            if artifact_passed "${RESULTS}/joint/summary_join.json"; then
                 DONE_WHY="${RESULTS}/joint/summary_join.json — the join is written"
                 return 0
             fi
             return 1
             ;;
         8)
-            if [ -f "${RESULTS}/board_deploy/deployment_report.json" ]; then
+            if artifact_passed "${RESULTS}/board_deploy/deployment_report.json"; then
                 DONE_WHY="${RESULTS}/board_deploy/deployment_report.json — the"
                 DONE_WHY="${DONE_WHY} deployment ran and reported its accuracy"
                 return 0
@@ -923,6 +950,25 @@ phase_done() {
             ;;
         *) return 1 ;;
     esac
+}
+
+# An artifact is evidence only if it carries a verdict, and only if that
+# verdict is PASS. Existence alone once let a FAILED B1 print "the campaign
+# certified" on the next status (field, 2026-09-01, the wide install).
+artifact_passed() {
+    python3 - "$1" <<'PY' 2>/dev/null
+import json, sys
+try:
+    doc = json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit(1)
+verdict = doc.get("passed")
+if verdict is None:
+    # probe.json states its claims rather than a boolean: a null run that
+    # closed carries them, a refused one never got written.
+    verdict = bool(doc.get("proves"))
+raise SystemExit(0 if verdict else 1)
+PY
 }
 
 print_status() {
