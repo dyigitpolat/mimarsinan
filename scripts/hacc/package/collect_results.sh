@@ -42,13 +42,19 @@ printf 'Collecting from %s\n' "${HERE}"
 copy_if_present "${HERE}/results" "results"
 copy_if_present "${HERE}/MANIFEST.json" "MANIFEST.json"
 copy_if_present "${HERE}/fixtures/INDEX.json" "fixtures_INDEX.json"
+# The build directory carries the CHIP's suffix (empty for stock): a generated
+# fabric's artifacts live under <target>_nc1_<chip>, and collecting the
+# unsuffixed name silently reported every one of them absent (field
+# 2026-09-01, the wide install).
+# shellcheck source=scripts/hacc/chips.sh
+source "${HERE}/scripts/hacc/chips.sh"
+CHIP_BUILD_SUFFIX="$(odin_chip_field build_suffix "$(odin_chip)")"
 for target in hw_emu hw; do
-    copy_if_present "${HERE}/build/hacc/${target}_nc1/odin_fpga_${target}.xclbin.built_with" \
+    build_dir="${HERE}/build/hacc/${target}_nc1${CHIP_BUILD_SUFFIX}"
+    copy_if_present "${build_dir}/odin_fpga_${target}.xclbin.built_with" \
         "built_with/${target}_nc1.txt"
-    copy_if_present "${HERE}/build/hacc/${target}_nc1/reports" \
-        "build_reports/${target}_nc1"
-    copy_if_present "${HERE}/build/hacc/${target}_nc1/logs" \
-        "build_logs/${target}_nc1"
+    copy_if_present "${build_dir}/reports" "build_reports/${target}_nc1"
+    copy_if_present "${build_dir}/logs" "build_logs/${target}_nc1"
 done
 
 CHIP_CACHE="${HERE}/scripts/chip_cache.sh"
