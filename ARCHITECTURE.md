@@ -48,16 +48,20 @@ docs in sync with the files they describe.
 - `templates/` + `scripts/run_tier.py` — tiered end-to-end run matrices
   (doubling as the wizard's template library).
 - `scripts/` — commit gates: typecheck, module budget, undefined names.
-- `nevresim/`, `spikingjelly/` — vendored simulator / spiking dependencies.
+- `nevresim/` — the co-owned C++ simulator, the one remaining submodule
+  (consumed by path, not imported). Every other third-party inclusion is a
+  declared dependency in `pyproject.toml`; `third_party/patches/` is the
+  (currently empty) hook for patching one.
 - `generated/` — per-run working directories (configs, caches, artifacts).
 
 ## Entry points and execution flow
 
-Run the deployment pipeline from the project root with the `env/` virtualenv
-active:
+Install once with `make install` (`uv sync` against `pyproject.toml` +
+`uv.lock`), then run the deployment pipeline from the project root with the
+virtualenv active:
 
 ```bash
-source env/bin/activate
+source .venv/bin/activate
 python run.py <deployment_config.json>   # CLI run, monitor GUI attached
 python run.py --ui                       # wizard + run manager (spawns headless runs)
 python run.py --headless <config.json>   # one run, file-based monitoring, exit code
