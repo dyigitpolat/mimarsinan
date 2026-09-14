@@ -170,37 +170,17 @@ def have_cxx_compiler() -> bool:
 
 
 def build_sanafe_plugins() -> Path:
-    """Compile mimarsinan SANA-FE plugins (same output as ``bootstrap_sanafe.sh``)."""
+    """Compile mimarsinan SANA-FE plugins through the project's own build script.
+
+    ``scripts/build_sanafe_plugins.py`` is the single build entry point since the
+    SANA-FE submodule became a declared dependency: CMake fetches the v2.1.1
+    header archive, pinned by SHA256, into ``build/``. ``MIMARSINAN_SANAFE_SRC``
+    still points the build at an existing checkout.
+    """
     root = mimarsinan_root()
-    plugin_src = _plugin_sources_dir()
     plugin_build = _plugin_build_dir()
-    sanafe_src = root / "sana_fe" / "src"
-    if not sanafe_src.is_dir():
-        subprocess.run(
-            ["git", "submodule", "update", "--init", "--recursive", "sana_fe"],
-            cwd=root,
-            check=True,
-        )
-    if not sanafe_src.is_dir():
-        raise RuntimeError(
-            f"SANA-FE submodule missing at {sanafe_src}; "
-            "run scripts/bootstrap_sanafe.sh"
-        )
-    plugin_build.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        [
-            "cmake",
-            "-S",
-            str(plugin_src),
-            "-B",
-            str(plugin_build),
-            f"-DSANAFE_SRC={sanafe_src}",
-        ],
-        cwd=root,
-        check=True,
-    )
-    subprocess.run(
-        ["cmake", "--build", str(plugin_build), "--parallel"],
+        [sys.executable, str(root / "scripts" / "build_sanafe_plugins.py")],
         cwd=root,
         check=True,
     )
@@ -217,7 +197,7 @@ def ensure_sanafe(*, rebuild_if_stale: bool = True) -> None:
             check=True,
         )
     if not have_sanafe():
-        pytest.fail("SANA-FE install failed; run scripts/bootstrap_sanafe.sh")
+        pytest.fail("SANA-FE install failed; run make install SANAFE=1")
     if rebuild_if_stale and sanafe_plugins_stale():
         try:
             build_sanafe_plugins()
@@ -226,7 +206,7 @@ def ensure_sanafe(*, rebuild_if_stale: bool = True) -> None:
     if not have_sanafe_plugins():
         pytest.fail(
             "mimarsinan SANA-FE plugins missing after rebuild; "
-            "run scripts/bootstrap_sanafe.sh"
+            "run make install SANAFE=1"
         )
 
 
