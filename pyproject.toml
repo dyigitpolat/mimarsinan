@@ -1,0 +1,128 @@
+[project]
+name = "mimarsinan"
+version = "0.1.0"
+description = "A pipeline for modeling in-memory architectures for spiking neural networks."
+readme = "README.md"
+license = { file = "LICENSE" }
+# lava-nc 0.10.0's metadata says <3.11 and the golden traces were taken on
+# 3.10.20. Lifting the ceiling means taking the lava fork option first
+# (one commit relaxing python/numpy/networkx, tagged and installed by git URL).
+requires-python = ">=3.10,<3.11"
+dependencies = [
+  "nni",
+  "numpy>=2",
+  # [TS2] The Sobol' sampling backend seeds `qmc.Sobol` through the `rng=`
+  # argument scipy 1.15 renamed it to; on an older release the same call is a
+  # TypeError, so the floor is declared rather than found at run time.
+  "scipy>=1.15",
+  # Pin the stable release: torch 2.12.0+cu130 was a bleeding-edge DEV build
+  # whose flash/mem-efficient SDP BACKWARD kernels SIGKILL the mapped-ViT
+  # attention during deployment training (offloaded_vit_deployment.md). 2.11.0
+  # (same CUDA 13) has a working SDP backward and honors compilagent's floor.
+  "torch==2.11.0",
+  "torchvision==0.26.0",
+  "einops",
+  "matplotlib",
+  # [TS1] The NSGA-II budget stop rests on pymoo calling
+  # `termination.update(algorithm)` BEFORE the generation callback -- behaviour,
+  # not API, verified against 0.6.1.6. A release that reorders it buys one extra
+  # generation past every budget boundary, so the bound is declared here rather
+  # than discovered by a red test.
+  "pymoo>=0.6.1.6,<0.7",
+  "plotly",
+  "fastapi",
+  "uvicorn[standard]",
+  "websockets",
+  "pydantic>=2",
+  "pydantic-ai",
+  "python-dotenv",
+  # lava-nc's learning_rule_applier imports asteval at graph-compile time.
+  "asteval>=1",
+  # psutil: the hard-core mapping step's memory-headroom probe.
+  # requests: the ECG data provider downloads its corpus.
+  "psutil",
+  "requests",
+  "warmup_scheduler @ git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git",
+  # The exact upstream commit the vendored submodule pinned. The LIF numerics
+  # (surrogate.ATan, IFNode's charge/fire/reset seam that _LatticeIFNode
+  # overrides) are what the golden traces and the NF<->SCM parity locks are
+  # measured against, so this is a commit pin, not a range. Bumping it to a
+  # PyPI release is a separate, gate-protected step.
+  "spikingjelly @ git+https://github.com/fangwei123456/spikingjelly@fb71d12e211a1e80c14594aea72518743c90e5c3",
+  # Hard dependency of the third architecture-search optimizer option
+  # (`arch_search.optimizer == "compilagent"`). Resolved from the sibling
+  # checkout the outer research_stuff repository pins (tool.uv.sources below),
+  # so local edits propagate without a reinstall.
+  "compilagent",
+]
+
+[project.optional-dependencies]
+# Lava / Loihi simulation step (`enable_loihi_simulation`, default off).
+# lava-nc 0.10.0 is source-equivalent to the commit the submodule pinned for
+# every symbol mimarsinan imports: the delta v0.10.0..67da6122 touches only
+# CI workflows, the lock file, the version string and lava.proc.sdn, which
+# mimarsinan does not use.
+loihi = ["lava-nc==0.10.0", "networkx>=3", "scikit-learn>=1.5"]
+# SANA-FE is GPL-3.0 and therefore stays opt-in, as the README promises.
+# 2.1.1 exactly: 2.2.x SIGFPEs on arch load, and the version guard in
+# chip_simulation/sanafe/arch_synth/spec.py refuses anything else.
+sanafe = ["sanafe==2.1.1"]
+# `ffcv` is deliberately not declared: it needs system libturbojpeg and
+# opencv4 through pkg-config, so its build fails at metadata time on a host
+# without them and would break `uv lock` for everyone. It is an opt-in data
+# loader with a lazy-import guard (EXTERNAL_DEPENDENCY_BOUNDARIES in
+# chip_simulation/deployment_faithfulness.py); its tests skip when it is
+# absent, and the torch DataLoader path is the fallback.
+dev = [
+  "pytest>=8.0",
+  "pytest-xdist>=3.8",
+  "pytest-timeout>=2.4",
+  "pyflakes>=3.2.0",
+  "basedpyright",
+]
+
+[tool.uv]
+# lava-nc 0.10.0's metadata pins numpy<2, networkx<=2.8.7 and asteval<0.10;
+# torch 2.11 needs numpy 2 and the project needs networkx 3. Lava runs fine
+# against the newer three -- verified by tests/unit/chip_simulation/
+# test_lava_loihi_runner.py + test_lava_wave_parallel.py (17 passed) -- so the
+# override is the declarative form of the `pip install --no-deps` the vendored
+# wheel recipe performed by hand.
+override-dependencies = ["numpy>=2", "networkx>=3", "asteval>=1"]
+
+# spikingjelly's pyproject at the pinned commit declares `requires-python
+# ">=3.11"` and drags in torchaudio, tensorboard, SciencePlots and h5py.
+# Neither holds for this project's use of it: the venv that has been running
+# these LIF numerics for months carries none of those four, and the import
+# chain mimarsinan touches (activation_based.{base,surrogate,neuron,functional})
+# reaches only torch and numpy at module level -- cupy and triton are guarded
+# imports. So the metadata is declared here rather than taken from the build:
+# the same distribution, with the truth about what it needs on 3.10.
+[[tool.uv.dependency-metadata]]
+name = "spikingjelly"
+version = "0.0.0.0.15"
+requires-python = ">=3.10"
+requires-dist = [
+  "torch>=2.6.0",
+  "torchvision",
+  "numpy",
+  "scipy",
+  "einops",
+  "tqdm",
+  "matplotlib",
+  "pydantic",
+]
+
+[tool.uv.sources]
+compilagent = { path = "../compilagent", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# warmup_scheduler and spikingjelly are git URLs in project.dependencies.
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mimarsinan"]

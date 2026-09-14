@@ -4,14 +4,16 @@ profile = "mimarsinan-xlog1"
 include = [
   "run.py",
   "src/**",
-  "spikingjelly/**",
-  "sana_fe/**",
   "nevresim/**",
   "hw/**",
   "scripts/**",
   "tests/**",
   "templates/**",
   "test_configs/**",
+  "third_party/**",
+  "pyproject.toml",
+  "uv.lock",
+  "Makefile",
   "requirements.txt",
   "pytest.ini",
   "datasets/MNIST/**",
@@ -38,6 +40,12 @@ nodes = 1
 
 # The de-facto runtime env (the old mimarsinan_slurmech venv was relocated and
 # its activate no longer takes effect; jobs were already running on this one).
+# Reuse stays the default while that venv is hand-built. It now needs the
+# declared dependencies rather than the synced submodule trees -- run once on
+# the remote host, inside the synced project root:
+#   uv sync --extra dev --extra loihi   (add --extra sanafe for the GPL backend)
+# and point `venv` at .venv, or drop this block entirely: slurmech runs
+# `uv sync` itself when a pyproject.toml is present.
 [env]
 mode = "reuse"
 venv = "/home/y/yigit/imagenetshaq/env"

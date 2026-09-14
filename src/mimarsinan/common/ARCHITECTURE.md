@@ -13,6 +13,7 @@ shared across the pipeline.
 |---|---|
 | `best_effort.py` | `best_effort` context manager: the single sanctioned log-and-continue seam for non-critical telemetry/rendering side work |
 | `build_utils.py` | `find_cpp20_compiler`: probe-compiles to discover a working C++20 compiler (clang++ 17-20 with libc++, g++ 11-14, clang++ with libstdc++, plain g++), plus legacy wrappers |
+| `dependency_manifest.py` | Reads what `pyproject.toml` declares (base and extra requirements, a distribution's specifier, its `==` pin, its direct reference) so an install pin has one place to live; the SANA-FE pin-drift guard and the dependency-declaration tests read it instead of a script literal |
 | `diagnostics.py` | CUDA debugging/profiling helpers: `enable_cuda_debug`, `describe_tensor`, `phase_profiler` (time/RSS/CUDA-peak), `cuda_guard` (synchronize-bracketed blocks) |
 | `env.py` | Single source of truth for `MIMARSINAN_*` (and `IMAGENET_ROOT`) environment variables; one call-time accessor per flag so tests can monkeypatch. `hw_sim_bin_dir()` resolves the RTL simulator directory the ODIN cosimulation gates look in, defaulting to the vendored `build/tools/oss-cad-suite/bin`, so a host without it skips LOUDLY with the path named instead of passing quietly |
 | `file_utils.py` | Writers for pipeline artifacts: directory prep, per-sample simulator input files (scalar and spike-train), and chip weights/code emission (`save_weights_and_chip_code`) |

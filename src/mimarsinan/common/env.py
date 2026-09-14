@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 CUDA_DEBUG_VAR = "MIMARSINAN_CUDA_DEBUG"
 VRAM_PROBE_VAR = "MIMARSINAN_VRAM_PROBE"
@@ -25,12 +26,42 @@ UNSAFE_QUANT_OVERRIDES_VAR = "MIMARSINAN_UNSAFE_QUANT_OVERRIDES"
 DEGENERATE_ROUTING_DEBUG_VAR = "MIMARSINAN_DEGENERATE_ROUTING_DEBUG"
 COHORT_TOKEN_VAR = "MIMARSINAN_COHORT_TOKEN"
 HW_SIM_BIN_VAR = "MIMARSINAN_HW_SIM_BIN"
+NEVRESIM_ROOT_VAR = "MIMARSINAN_NEVRESIM_ROOT"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
 #: Where the RTL simulators (iverilog, vvp, verilator) live when the operator
 #: has not said otherwise. The suite ships none of them: the RTL gates skip
 #: LOUDLY, naming this path, rather than passing quietly on a host without it.
 DEFAULT_HW_SIM_BIN_DIR = "build/tools/oss-cad-suite/bin"
+
+
+# ``<repo>/src/mimarsinan/common/env.py`` -> ``<repo>``: the package's own
+# location, so the default holds wherever the process is started from and
+# under an editable install. A wheel install off the tree has no sibling
+# ``nevresim/``; that deployment sets NEVRESIM_ROOT_VAR.
+_PACKAGE_DIR = Path(__file__).resolve().parents[1]
+_DERIVED_NEVRESIM_ROOT = _PACKAGE_DIR.parents[1] / "nevresim"
+
+
+def nevresim_root() -> str:
+    """Absolute path to the nevresim C++ tree (headers the simulator compiles against).
+
+    ``MIMARSINAN_NEVRESIM_ROOT`` wins when set; otherwise the ``nevresim/``
+    directory beside the package's own repository root. A cwd-relative
+    ``./nevresim`` is used only as a last resort, and only when it exists --
+    the historical behaviour, kept so a checkout laid out differently still
+    resolves. Existence of the result is NevresimDriver's contract to enforce,
+    not this accessor's.
+    """
+    override = os.environ.get(NEVRESIM_ROOT_VAR, "").strip()
+    if override:
+        return str(Path(override).expanduser().resolve())
+    if _DERIVED_NEVRESIM_ROOT.is_dir():
+        return str(_DERIVED_NEVRESIM_ROOT)
+    cwd_relative = Path("nevresim")
+    if cwd_relative.is_dir():
+        return str(cwd_relative.resolve())
+    return str(_DERIVED_NEVRESIM_ROOT)
 
 
 def cuda_debug_enabled() -> bool:

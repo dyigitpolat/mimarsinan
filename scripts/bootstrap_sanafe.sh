@@ -1,55 +1,40 @@
 #!/usr/bin/env bash
-# Bootstrap the SANA-FE submodule + mimarsinan custom plugins.
+# Bootstrap the optional SANA-FE backend: the PyPI wheel + the mimarsinan plugins.
 #
-# SANA-FE is GPL-3.0 and therefore opt-in: ``pip install -e .`` of
-# mimarsinan does NOT pull it.  Run this script once (with the project
-# venv active) before enabling ``enable_sanafe_simulation`` in a config.
+# SANA-FE is GPL-3.0 and therefore opt-in: the base install does NOT pull it,
+# and no SANA-FE source enters this tree. The plugin build fetches SANA-FE's
+# v2.1.1 header archive (pinned by SHA256 in the plugins' CMakeLists.txt) into
+# build/, exactly as the old submodule supplied it.
+#
+# Equivalent one-liner:  make install SANAFE=1
 #
 # What this script does:
-#   1. Pulls the SANA-FE submodule.
-#   2. Installs SANA-FE into the active venv (defaults to PyPI wheel —
-#      override with MIMARSINAN_SANAFE_FROM_SOURCE=1 to build from the
-#      submodule source).
-#   3. Builds the mimarsinan-owned plugins
-#      (``libmimarsinan_dendrite.so``, ``libmimarsinan_soma.so``) into
-#      ``build/mimarsinan_sanafe_plugins/``.  The plugins replace
-#      SANA-FE's built-in ``accumulator`` dendrite and ``leaky_integrate_fire``
-#      soma so the per-core neuron count is not capped at the Loihi-derived
-#      1024.
+#   1. `uv sync --extra sanafe` — installs sanafe 2.1.1 alongside the project.
+#      PINNED: the integration (arch YAML, soma model_attributes, plugins)
+#      targets 2.1.1. An unpinned install upgraded it to 2.2.x on 2026-06-17,
+#      which SIGFPEs on arch load (docs/.../SANAFE_fpe_investigation.md). Bump
+#      only after re-validating the SANA-FE parity gate and
+#      _SUPPORTED_SANAFE_VERSIONS.
+#   2. Builds the six mimarsinan-owned plugins into
+#      build/mimarsinan_sanafe_plugins/. They replace SANA-FE's built-in
+#      `accumulator` dendrite and `leaky_integrate_fire` soma so the per-core
+#      neuron count is not capped at the Loihi-derived 1024, and add the four
+#      TTFS soma variants.
+#
+# MIMARSINAN_SANAFE_SRC=/path/to/sana_fe/src builds the plugins against an
+# existing SANA-FE checkout instead of the pinned archive.
 
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-echo "==> Pulling SANA-FE submodule"
-git submodule update --init --recursive sana_fe
-
-if [ "${MIMARSINAN_SANAFE_FROM_SOURCE:-0}" = "1" ]; then
-    echo "==> Building SANA-FE from source (MIMARSINAN_SANAFE_FROM_SOURCE=1)"
-    pip uninstall -y sanafe || true
-    pip install -e ./sana_fe
-else
-    # PINNED: the integration (arch YAML, soma model_attributes, plugins) targets
-    # 2.1.1. An unpinned `pip install sanafe` upgraded it to 2.2.x on 2026-06-17,
-    # which SIGFPEs on arch load (see docs/.../SANAFE_fpe_investigation.md). Bump
-    # only after re-validating the SANA-FE parity gate + _SUPPORTED_SANAFE_VERSIONS.
-    echo "==> Installing SANA-FE wheel from PyPI (pinned 2.1.1)"
-    pip install "sanafe==2.1.1"
-fi
+echo "==> Installing SANA-FE (pinned 2.1.1) through the project manifest"
+uv sync --extra dev --extra loihi --extra sanafe
 
 echo "==> Building mimarsinan SANA-FE plugins"
-PLUGIN_SRC="$PROJECT_ROOT/src/mimarsinan/chip_simulation/sanafe/plugins"
-PLUGIN_BUILD="$PROJECT_ROOT/build/mimarsinan_sanafe_plugins"
-rm -rf "$PLUGIN_BUILD"
-mkdir -p "$PLUGIN_BUILD"
-cmake -S "$PLUGIN_SRC" -B "$PLUGIN_BUILD" \
-    -DSANAFE_SRC="$PROJECT_ROOT/sana_fe/src"
-cmake --build "$PLUGIN_BUILD" --parallel
+uv run python scripts/build_sanafe_plugins.py
 
-echo "==> SANA-FE bootstrap complete."
-echo "    Plugin binaries:"
-ls -la "$PLUGIN_BUILD"/*.so 2>/dev/null || true
 echo
-echo "    Enable ``enable_sanafe_simulation: true`` in deployment_parameters"
+echo "    Enable \`enable_sanafe_simulation: true\` in deployment_parameters"
 echo "    (or via the wizard) to run the new step."

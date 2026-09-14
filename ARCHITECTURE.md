@@ -53,7 +53,10 @@ docs in sync with the files they describe.
   `scripts/hacc/` holds the HACC@NUS packaging (`build_xclbn.sh`,
   `run_board.sh`, the `sbatch` template and the owner's `RUNBOOK.md`),
   every script refusing loud when run off-cluster.
-- `nevresim/`, `spikingjelly/` — vendored simulator / spiking dependencies.
+- `nevresim/` — the co-owned C++ simulator, the one remaining submodule
+  (consumed by path, not imported). Every other third-party inclusion is a
+  declared dependency in `pyproject.toml`; `third_party/patches/` is the
+  (currently empty) hook for patching one.
 - `hw/` — RTL only, never Python: `hw/vendor/odin/` (byte-identical
   ChFrenkel/ODIN @ 1781931 under Solderpad SHL-2.0, hashed against a
   recorded manifest and never edited), `hw/fpga/mem/` (the
@@ -69,11 +72,12 @@ docs in sync with the files they describe.
 
 ## Entry points and execution flow
 
-Run the deployment pipeline from the project root with the `env/` virtualenv
-active:
+Install once with `make install` (`uv sync` against `pyproject.toml` +
+`uv.lock`), then run the deployment pipeline from the project root with the
+virtualenv active:
 
 ```bash
-source env/bin/activate
+source .venv/bin/activate
 python run.py <deployment_config.json>   # CLI run, monitor GUI attached
 python run.py --ui                       # wizard + run manager (spawns headless runs)
 python run.py --headless <config.json>   # one run, file-based monitoring, exit code

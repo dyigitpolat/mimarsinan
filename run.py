@@ -2,7 +2,6 @@ import os
 import sys
 
 sys.path.append('./src')
-sys.path.append('./spikingjelly')
 
 # cuBLAS float32 matmuls must use one reduction order across launches: the
 # spiking forward's ceil(S*(1-V/θ)) flips on near-boundary neurons otherwise

@@ -24,7 +24,7 @@ from mimarsinan.chip_simulation.deployment_faithfulness import (
     GUARD_KINDS,
     assert_sanafe_pin_consistent,
     boundary_for,
-    bootstrap_pinned_sanafe_version,
+    manifest_pinned_sanafe_version,
     sanafe_supported_versions,
     standing_gates,
 )
@@ -210,31 +210,37 @@ class TestExternalDependencyBoundaryAudit:
 # --------------------------------------------------------------------------- #
 
 class TestSanafePinDriftDetection:
-    """E5(c): the code guard's supported-version pin and the bootstrap script's
-    `pip install sanafe==X` literal must agree. A one-sided bump (or a silent
-    `pip install sanafe` upgrade past the pin) fails loud here in CI instead of
-    SIGFPE-ing at deploy time."""
+    """E5(c): the code guard's supported-version pin and the version the install
+    manifest declares (`pyproject.toml`'s `sanafe` extra) must agree. A one-sided
+    bump (or an unpinned `sanafe` requirement that floats past the guard) fails
+    loud here in CI instead of SIGFPE-ing at deploy time."""
 
-    def test_bootstrap_pin_matches_code_guard(self):
+    def test_manifest_pin_matches_code_guard(self):
         version = assert_sanafe_pin_consistent()
         assert version in sanafe_supported_versions()
 
-    def test_bootstrap_script_declares_a_pin(self):
-        assert bootstrap_pinned_sanafe_version() is not None, (
-            "bootstrap_sanafe.sh must pin sanafe==<version>"
+    def test_manifest_declares_a_pin(self):
+        assert manifest_pinned_sanafe_version() is not None, (
+            "pyproject.toml's `sanafe` extra must pin sanafe==<version>"
         )
 
     def test_drift_fails_loud_on_mismatch(self, tmp_path):
-        script = tmp_path / "bootstrap_sanafe.sh"
-        script.write_text('pip install "sanafe==99.0.0"\n', encoding="utf-8")
+        manifest = tmp_path / "pyproject.toml"
+        manifest.write_text(
+            '[project.optional-dependencies]\nsanafe = ["sanafe==99.0.0"]\n',
+            encoding="utf-8",
+        )
         with pytest.raises(AssertionError, match="drift"):
-            assert_sanafe_pin_consistent(str(script))
+            assert_sanafe_pin_consistent(str(manifest))
 
     def test_drift_fails_loud_when_pin_absent(self, tmp_path):
-        script = tmp_path / "bootstrap_sanafe.sh"
-        script.write_text("pip install sanafe  # unpinned!\n", encoding="utf-8")
+        manifest = tmp_path / "pyproject.toml"
+        manifest.write_text(
+            '[project.optional-dependencies]\nsanafe = ["sanafe"]  # unpinned!\n',
+            encoding="utf-8",
+        )
         with pytest.raises(AssertionError, match="no .*pin"):
-            assert_sanafe_pin_consistent(str(script))
+            assert_sanafe_pin_consistent(str(manifest))
 
 
 class TestMetricProtocolDriftLock:

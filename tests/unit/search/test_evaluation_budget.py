@@ -24,7 +24,6 @@ framework that seals dollars seals a price list nobody can re-run.
 from __future__ import annotations
 
 import json
-import pathlib
 import re
 from typing import Any, Dict, List
 
@@ -32,6 +31,7 @@ import numpy as np
 import pytest
 import torch
 
+from mimarsinan.common.dependency_manifest import declared_specifier
 from mimarsinan.models.builders.simple_mlp_builder import SimpleMLPBuilder
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
     make_platform_resolver,
@@ -877,9 +877,6 @@ def boundary_run():
     return budget, problem, result
 
 
-REQUIREMENTS = pathlib.Path(__file__).resolve().parents[3] / "requirements.txt"
-
-
 class TestTheBoundaryMechanismsDependencyIsDeclared:
     def test_pymoo_carries_a_version_bound_in_the_dependency_declaration(self):
         # The generation-boundary stop depends on pymoo calling
@@ -888,14 +885,11 @@ class TestTheBoundaryMechanismsDependencyIsDeclared:
         # ``pymoo`` requirement lets a release reorder it and buy one extra
         # generation past every budget boundary. The bound belongs in the
         # dependency declaration, not only in the test that would go red.
-        lines = [
-            line.strip() for line in REQUIREMENTS.read_text().splitlines()
-            if re.match(r"^\s*pymoo\b", line)
-        ]
+        specifier = declared_specifier("pymoo")
 
-        assert len(lines) == 1, f"expected exactly one pymoo requirement, got {lines}"
-        assert re.search(r"(==|>=|~=|<)", lines[0]), (
-            f"pymoo must declare a version bound; requirements.txt says {lines[0]!r}"
+        assert specifier is not None, "pyproject.toml declares no pymoo requirement"
+        assert re.search(r"(==|>=|~=|<)", specifier), (
+            f"pymoo must declare a version bound; pyproject.toml says {specifier!r}"
         )
 
 
