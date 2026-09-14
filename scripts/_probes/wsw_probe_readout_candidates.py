@@ -3,7 +3,7 @@ import os
 import sys
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-sys.path[:0] = ["./src", "./spikingjelly"]
+sys.path[:0] = ["./src"]
 
 import torch
 import torch.nn as nn

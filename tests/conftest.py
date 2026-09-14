@@ -24,12 +24,11 @@ import numpy as np
 # One torch thread per worker: N workers × N OpenMP threads thrashes the host.
 torch.set_num_threads(1)
 
+# Every third-party dependency -- lava-nc, spikingjelly, sanafe -- is installed
+# from the manifest (pyproject.toml); only mimarsinan's own src/ is injected,
+# so the suite runs against a checkout without an editable install.
 _repo_root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(_repo_root, "src"))
-sys.path.insert(0, os.path.join(_repo_root, "spikingjelly"))
-# Lava is installed as ``lava-nc`` from PyPI in the env310 venv; no
-# sys.path injection needed and importing the vendored ``lava/src/``
-# tree on Python 3.12 silently breaks dataclasses.
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow

@@ -40,7 +40,8 @@ def force_cudnn_initialization():
     torch.nn.functional.conv2d(torch.zeros(s, s, s, s, device=dev), torch.zeros(s, s, s, s, device=dev))
 
 def init():
-    NevresimDriver.nevresim_path = "./nevresim/"
+    from mimarsinan.common.env import nevresim_root
+    NevresimDriver.nevresim_path = nevresim_root()
 
     force_cudnn_initialization()
     configure_multiprocessing()

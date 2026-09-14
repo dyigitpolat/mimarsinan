@@ -1,38 +1,26 @@
-nni
-numpy
-git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git
-# [TS2] The Sobol' sampling backend seeds `qmc.Sobol` through the `rng=`
-# argument scipy 1.15 renamed it to; on an older release the same call is a
-# TypeError, so the floor is declared here rather than found at run time.
-scipy>=1.15
-# Pin the stable release: torch 2.12.0+cu130 was a bleeding-edge DEV build whose
-# flash/mem-efficient SDP BACKWARD kernels SIGKILL the mapped-ViT attention during
-# deployment training (offloaded_vit_deployment.md). 2.11.0 (same CUDA 13) has a
-# working SDP backward and honors compilagent's torch>=2.11 floor.
-torch==2.11.0
-torchvision==0.26.0
-einops
-matplotlib
-# [TS1] The NSGA-II budget stop rests on pymoo calling
-# `termination.update(algorithm)` BEFORE the generation callback — behaviour,
-# not API, verified against 0.6.1.6. A release that reorders it buys one extra
-# generation past every budget boundary, so the bound is declared here rather
-# than discovered by a red test.
-pymoo>=0.6.1.6,<0.7
-plotly
-fastapi
-uvicorn[standard]
-websockets
-pydantic-ai
-python-dotenv
-pytest>=8.0
-pytest-xdist>=3.8
-pytest-timeout>=2.4
-pyflakes>=3.2.0
-# lava-nc's learning_rule_applier imports asteval at graph-compile time.
-asteval
-# Compilagent is a hard dependency for the third architecture-search
-# optimizer option (`arch_search.optimizer == "compilagent"`). Installed
-# editable from the sibling repo so local edits propagate without a
-# reinstall; release flow can swap to a pinned wheel.
+# pyproject.toml + uv.lock are the manifest. This file is the pip-only
+# fallback; it cannot express the two things the manifest does
+# ([tool.uv] override-dependencies and the spikingjelly metadata correction),
+# so the two lines that need them are spelled out below.
+#
+# Supported path:
+#   make install              # uv sync --extra dev --extra loihi (+ patches)
+#   make install SANAFE=1     # ... and the GPL-3.0 SANA-FE extra + its plugins
+
 -e ../compilagent
+-e .
+
+# lava-nc 0.10.0 (the `loihi` extra) pins numpy<2, networkx<=2.8.7 and
+# asteval<0.10, which torch 2.11 contradicts. --no-deps is the manual form of
+# [tool.uv] override-dependencies:
+#   pip install --no-deps lava-nc==0.10.0
+#
+# spikingjelly's pyproject at the pinned commit declares requires-python
+# ">=3.11" and pulls torchaudio/tensorboard/SciencePlots/h5py, none of which
+# this project needs. [[tool.uv.dependency-metadata]] states the truth for uv;
+# pip needs it by hand:
+#   pip install --no-deps --ignore-requires-python \
+#     "spikingjelly @ git+https://github.com/fangwei123456/spikingjelly@fb71d12e211a1e80c14594aea72518743c90e5c3"
+#
+# The GPL-3.0 SANA-FE backend stays opt-in:
+#   pip install sanafe==2.1.1 && python scripts/build_sanafe_plugins.py

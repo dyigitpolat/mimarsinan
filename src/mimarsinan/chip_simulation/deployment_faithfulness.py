@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import re
 from dataclasses import dataclass
 from typing import Callable, Optional, Tuple
 
@@ -165,41 +163,31 @@ def sanafe_supported_versions() -> Tuple[str, ...]:
     return tuple(_SUPPORTED_SANAFE_VERSIONS)
 
 
-def _project_root() -> str:
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.normpath(os.path.join(here, "..", "..", ".."))
+def manifest_pinned_sanafe_version(manifest_path: Optional[str] = None) -> Optional[str]:
+    """The ``sanafe==X.Y.Z`` version the `sanafe` extra installs (or ``None``)."""
+    from mimarsinan.common.dependency_manifest import declared_pin
+
+    return declared_pin("sanafe", manifest_path)
 
 
-def bootstrap_pinned_sanafe_version(script_path: Optional[str] = None) -> Optional[str]:
-    """The ``sanafe==X.Y.Z`` version the bootstrap script installs (or ``None``)."""
-    if script_path is None:
-        script_path = os.path.join(_project_root(), "scripts", "bootstrap_sanafe.sh")
-    if not os.path.isfile(script_path):
-        return None
-    with open(script_path, "r", encoding="utf-8") as fh:
-        text = fh.read()
-    match = re.search(r"sanafe==([0-9][0-9A-Za-z.\-]*)", text)
-    return match.group(1) if match else None
-
-
-def assert_sanafe_pin_consistent(script_path: Optional[str] = None) -> str:
-    """Fail loud if the bootstrap-script pin drifts from the code guard's SSOT; return the agreed version."""
+def assert_sanafe_pin_consistent(manifest_path: Optional[str] = None) -> str:
+    """Fail loud if the installed pin drifts from the code guard's SSOT; return the agreed version."""
     supported = sanafe_supported_versions()
     if not supported:
         raise AssertionError("SANA-FE supported-version pin is empty")
-    script_pin = bootstrap_pinned_sanafe_version(script_path)
-    if script_pin is None:
+    declared = manifest_pinned_sanafe_version(manifest_path)
+    if declared is None:
         raise AssertionError(
-            "scripts/bootstrap_sanafe.sh declares no `sanafe==<version>` pin — "
-            "the bootstrap could install an unguarded version"
+            "pyproject.toml's `sanafe` extra declares no `sanafe==<version>` pin — "
+            "an install could pick up an unguarded version"
         )
-    if script_pin not in supported:
+    if declared not in supported:
         raise AssertionError(
-            f"SANA-FE pin drift: bootstrap installs {script_pin!r} but the code "
+            f"SANA-FE pin drift: the manifest installs {declared!r} but the code "
             f"guard _SUPPORTED_SANAFE_VERSIONS={supported!r}. Re-validate the "
             f"SANA-FE parity gate and bump BOTH together."
         )
-    return script_pin
+    return declared
 
 
 def _bump_patch(version: str) -> str:
@@ -228,7 +216,7 @@ __all__ = [
     "EXTERNAL_DEPENDENCY_BOUNDARIES",
     "boundary_for",
     "sanafe_supported_versions",
-    "bootstrap_pinned_sanafe_version",
+    "manifest_pinned_sanafe_version",
     "assert_sanafe_pin_consistent",
     "DEPLOYED_METRIC_PROTOCOL",
 ]

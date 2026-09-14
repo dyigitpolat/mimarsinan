@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import math
-import pathlib
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator, List, Sequence
@@ -29,6 +28,7 @@ import pytest
 import torch
 
 from mimarsinan.gui.wizard.schema import get_wizard_nas_schema
+from mimarsinan.common.dependency_manifest import declared_specifier
 from mimarsinan.models.builders.simple_mlp_builder import SimpleMLPBuilder
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
     OPTIMIZER_BUILDERS,
@@ -279,16 +279,10 @@ class TestTheSamplersDependencyIsDeclared:
         # ``qmc.Sobol`` takes its generator as ``rng=`` only from scipy 1.15;
         # on an older release the seeded draw is a TypeError, so the floor
         # belongs in the dependency declaration, not only in a red test.
-        requirements = (
-            pathlib.Path(__file__).resolve().parents[3] / "requirements.txt"
-        ).read_text()
-        declared = [
-            line.strip() for line in requirements.splitlines()
-            if re.match(r"^\s*scipy\b", line)
-        ]
+        specifier = declared_specifier("scipy")
 
-        assert len(declared) == 1, declared
-        assert re.search(r"(==|>=|~=)", declared[0]), declared
+        assert specifier is not None, "pyproject.toml declares no scipy requirement"
+        assert re.search(r"(==|>=|~=)", specifier), specifier
 
 
 class TestSobolIsALowDiscrepancySequence:
