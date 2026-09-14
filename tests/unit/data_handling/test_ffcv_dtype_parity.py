@@ -7,8 +7,11 @@ would yield [0,255] while torchvision's ToTensor() yields [0,1]: a silent
 """
 
 import numpy as np
+import pytest
 
-from mimarsinan.data_handling.ffcv.spec_builder import image_tail_ops
+pytest.importorskip("ffcv", reason="optional ffcv backend not installed")
+
+from mimarsinan.data_handling.ffcv.spec_builder import image_tail_ops  # noqa: E402
 
 
 def _op_names(ops):

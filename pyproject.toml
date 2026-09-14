@@ -67,6 +67,12 @@ loihi = ["lava-nc==0.10.0", "networkx>=3", "scikit-learn>=1.5"]
 # 2.1.1 exactly: 2.2.x SIGFPEs on arch load, and the version guard in
 # chip_simulation/sanafe/arch_synth/spec.py refuses anything else.
 sanafe = ["sanafe==2.1.1"]
+# `ffcv` is deliberately not declared: it needs system libturbojpeg and
+# opencv4 through pkg-config, so its build fails at metadata time on a host
+# without them and would break `uv lock` for everyone. It is an opt-in data
+# loader with a lazy-import guard (EXTERNAL_DEPENDENCY_BOUNDARIES in
+# chip_simulation/deployment_faithfulness.py); its tests skip when it is
+# absent, and the torch DataLoader path is the fallback.
 dev = [
   "pytest>=8.0",
   "pytest-xdist>=3.8",
