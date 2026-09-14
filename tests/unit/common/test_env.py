@@ -199,6 +199,24 @@ class TestSimulationStepTimeoutOverride:
             env.simulation_step_timeout_override()
 
 
+class TestNevresimRoot:
+    def test_override_wins_and_is_absolute(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("MIMARSINAN_NEVRESIM_ROOT", str(tmp_path))
+        assert env.nevresim_root() == str(tmp_path.resolve())
+
+    def test_override_is_stripped_and_blank_falls_through(self, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_NEVRESIM_ROOT", "   ")
+        assert env.nevresim_root() == env.nevresim_root()
+        assert Path(env.nevresim_root()).is_absolute()
+
+    def test_default_is_the_package_sibling_not_the_cwd(self, monkeypatch, tmp_path):
+        """The default must not move when the process starts elsewhere."""
+        monkeypatch.delenv("MIMARSINAN_NEVRESIM_ROOT", raising=False)
+        here = env.nevresim_root()
+        monkeypatch.chdir(tmp_path)
+        assert env.nevresim_root() == here
+        assert Path(here) == SRC_ROOT.parents[1] / "nevresim"
+
 ALLOWED_DIRECT_READERS = {
     Path("common/env.py"),
     Path("pipelining/core/pipelines/deployment_pipeline.py"),
