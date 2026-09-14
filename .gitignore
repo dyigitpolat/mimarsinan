@@ -172,5 +172,10 @@ runs/campaign/
 experiments/campaign/
 probe_ckpt/
 
-# scratch A/B probe configs (not deliverables)
-scripts/_probes/
+# Probe residue. The probe configs and scripts under scripts/_probes/ are the
+# evidence behind research memos (docs/research/signed_seam_program_consolidation.md
+# names two of them by path), so they are tracked; only what a probe run leaves
+# beside them is ignored.
+scripts/_probes/**/out/
+scripts/_probes/**/*.log
+scripts/_probes/**/__pycache__/
