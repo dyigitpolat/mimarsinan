@@ -1,0 +1,28 @@
+# Binary types. Declaring them keeps git from attempting line-ending conversion
+# or producing a textual diff for a file that has none. Mirrors the outer
+# research_stuff repository's root .gitattributes.
+#
+# `* text=auto` is deliberately NOT set here either: see
+# docs/REPOSITORY_HYGIENE.md in the outer repository for the test to run before
+# adding it.
+
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.svg   -text
+*.pt    binary
+*.npy   binary
+*.npz   binary
+*.pkl   binary
+*.pickle binary
+*.tgz   binary
+*.tar   binary
+*.gz    binary
+*.zst   binary
+*.whl   binary
+*.pptx  binary
+*.docx  binary
+*.xlsx  binary
+*.zip   binary
+*.woff2 binary
+*.so    binary
