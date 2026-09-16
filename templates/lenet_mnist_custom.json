@@ -1,0 +1,49 @@
+{
+  "seed": 0,
+  "experiment_name": "lenet_mnist_custom",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 64,
+        "max_neurons": 128,
+        "count": 128,
+        "has_bias": true
+      },
+      {
+        "max_axons": 128,
+        "max_neurons": 64,
+        "count": 128,
+        "has_bias": true
+      }
+    ],
+    "has_bias": true,
+    "target_tq": 4,
+    "simulation_steps": 4,
+    "weight_bits": 5,
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "cores_per_tile": 1
+  },
+  "deployment_parameters": {
+    "model_type": "lenet5",
+    "model_config": {
+      "variant": "lenet5",
+      "base_activation": "ReLU"
+    },
+    "encoding_layer_placement": "offload",
+    "lr": 0.003,
+    "training_epochs": 2,
+    "batch_size": 128,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.15,
+    "max_simulation_samples": 25,
+    "allow_scheduling": true,
+    "model_config_mode": "user",
+    "arch_search": {
+      "optimizer": "nsga2"
+    }
+  },
+  "start_step": null
+}
