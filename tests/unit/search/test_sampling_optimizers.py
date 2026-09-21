@@ -352,12 +352,14 @@ class _ToyGridProblem:
     def evaluate(self, cfg) -> Dict[str, float]:
         key = json.dumps(cfg, sort_keys=True)
         cached = self._cache.get(key)
-        charge_evaluation(
+        admission = charge_evaluation(
             self.evaluation_budget, key,
             hit=cached is not None, channel=EVALUATE_CHANNEL,
         )
         if cached is not None:
             return cached
+        if not admission:
+            return {"estimated_accuracy": 0.0, "total_params": 1e18}
         self.evaluated.append(dict(cfg))
         objectives = {
             "estimated_accuracy": float(cfg["a"]),
@@ -583,11 +585,12 @@ class TestTheAccountantMetersTheStream:
 
         result = optimizer.optimize(problem, reporter=None)
 
-        assert len(problem.evaluated) == TOY_POP, "the batch in flight finishes"
+        assert len(problem.evaluated) == TOY_POP - 1, "the batch in flight is cut at the limit"
         assert {c.metadata["generation"] for c in result.all_candidates} == {1}
         assert result.ledger is not None
         assert result.ledger.stopped_at_boundary is True
-        assert result.ledger.evaluations_distinct == TOY_POP
+        assert result.ledger.evaluations_distinct == TOY_POP - 1
+        assert result.ledger.evaluations_refused == 1
         assert result.ledger.budget_limit == TOY_POP - 1
 
     def test_a_stopped_run_still_hands_over_a_winner(self):

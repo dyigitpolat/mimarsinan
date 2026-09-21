@@ -42,11 +42,21 @@ class CodecDefaults:
                     continue
                 model_defaults.setdefault(key, values[len(values) // 2])
 
-        if fixed_platform_constraints is not None and not description.searches_hw:
+        declared_cores = list((fixed_platform_constraints or {}).get("cores") or [])
+        # The baseline every plan is layered under is the DECLARED chip, the
+        # one point known feasible — not an example geometry outside the
+        # declared bounds. Only a declaration of another core-type count
+        # falls back to the described example.
+        declares_the_searched_chip = fixed_platform_constraints is not None and (
+            not description.searches_hw
+            or len(declared_cores) == int(description.num_core_types)
+        )
+        if declares_the_searched_chip:
+            assert fixed_platform_constraints is not None
             platform_defaults: Dict[str, Any] = {
                 k: v for k, v in fixed_platform_constraints.items()
             }
-            platform_defaults.setdefault("cores", list(fixed_platform_constraints.get("cores", [])))
+            platform_defaults.setdefault("cores", declared_cores)
         else:
             example_pcfg = description.to_agent_evolve_example().get(
                 "platform_constraints", {}

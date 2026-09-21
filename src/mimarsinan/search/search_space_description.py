@@ -152,9 +152,6 @@ class SearchSpaceDescription:
         ("count", "core_count_bounds"),
     )
 
-    COMPILAGENT_AXON_BOUNDS: Tuple[int, int] = (8, 8192)
-    COMPILAGENT_NEURON_BOUNDS: Tuple[int, int] = (8, 8192)
-    COMPILAGENT_COUNT_BOUNDS: Tuple[int, int] = (1, 4096)
 
     def to_compilagent_levers(self, *, workload_id: str, backend_id: str) -> Tuple[Any, ...]:
         from mimarsinan.search.search_space_compilagent import to_compilagent_levers

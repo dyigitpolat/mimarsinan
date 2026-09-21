@@ -180,6 +180,7 @@ def create_optimizer(
     generations: int,
     target_tq: int,
     active_objective_names: Sequence[str] = (),
+    weight_bits: int = 8,
 ):
     """The declared backend, built — or a refusal naming every choice there is."""
     builder = OPTIMIZER_BUILDERS.get(str(optimizer_type))
@@ -195,6 +196,7 @@ def create_optimizer(
             arch_options=arch_options,
             arch_cfg=arch_cfg,
             target_tq=target_tq,
+            weight_bits=weight_bits,
         ),
         seed=seed,
         pop_size=pop_size,

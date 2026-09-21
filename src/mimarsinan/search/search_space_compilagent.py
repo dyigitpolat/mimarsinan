@@ -45,14 +45,12 @@ def to_compilagent_levers(
             levers.append(lever)
 
     if description.searches_hw:
-        hw_bound_map = {
-            "max_axons": SearchSpaceDescription.COMPILAGENT_AXON_BOUNDS,
-            "max_neurons": SearchSpaceDescription.COMPILAGENT_NEURON_BOUNDS,
-            "count": SearchSpaceDescription.COMPILAGENT_COUNT_BOUNDS,
-        }
+        # The DECLARED bounds, the same box every other backend searches: an
+        # agent offered a wider range would be compared at equal budget over
+        # a different space, and the problem refuses anything outside it.
         for core_idx in range(description.num_core_types):
-            for dim_name, _bounds_attr in SearchSpaceDescription.HW_DIM_KINDS:
-                lo, hi = hw_bound_map[dim_name]
+            for dim_name, bounds_attr in SearchSpaceDescription.HW_DIM_KINDS:
+                lo, hi = getattr(description, bounds_attr)
                 step = (
                     CORE_DIM_GRANULARITY
                     if dim_name in ("max_axons", "max_neurons")
@@ -78,8 +76,8 @@ def to_compilagent_levers(
                         )
                     ),
                     evidence=DerivationEvidence(
-                        rule="mimarsinan.compilagent.open_range",
-                        signal=f"compilagent_{dim_name}_bounds",
+                        rule="mimarsinan.compilagent.declared_range",
+                        signal=f"arch_search.{bounds_attr}",
                         citations=("search/search_space_description.py",),
                     ),
                     backend_id=backend_id,

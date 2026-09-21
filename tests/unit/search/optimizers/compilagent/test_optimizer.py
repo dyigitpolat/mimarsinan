@@ -170,15 +170,15 @@ class TestSuccessfulRun:
     ):
         scripted_harness_registered["plans"] = [
             {
-                "description": "boost axons on core 0",
+                "description": "halve axons on core 0",
                 "interventions": [
-                    ("hw.core", "0.max_axons", 512),
+                    ("hw.core", "0.max_axons", 128),
                 ],
             },
             {
-                "description": "boost neurons on core 0",
+                "description": "halve neurons on core 0",
                 "interventions": [
-                    ("hw.core", "0.max_neurons", 512),
+                    ("hw.core", "0.max_neurons", 128),
                 ],
             },
             {

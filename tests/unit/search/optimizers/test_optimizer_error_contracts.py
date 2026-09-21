@@ -114,20 +114,23 @@ class TestNSGA2ErrorContract:
 class _ExplodingProblem:
     objectives = (ObjectiveSpec("score", "min"),)
 
+    def __init__(self, error=RuntimeError):
+        self._error = error
+
     def validate(self, configuration):
         return True
 
     def evaluate(self, configuration):
-        raise RuntimeError("evaluate blew up")
+        raise self._error("evaluate blew up")
 
 
 class TestBatchEvalErrorContract:
-    def test_evaluation_exception_records_penalty_and_warns(self, caplog):
+    def test_candidate_infeasibility_records_penalty_and_warns(self, caplog):
         optimizer = AgentEvolveOptimizer(verbose=False)
         specs = [ObjectiveSpec("score", "min")]
         with caplog.at_level(logging.WARNING, logger=BATCH_EVAL_LOGGER):
             valid, failed = optimizer._evaluate_batch(
-                _ExplodingProblem(), [{"x": 1}], specs,
+                _ExplodingProblem(CandidateInfeasibleError), [{"x": 1}], specs,
             )
         assert valid == []
         assert len(failed) == 1
@@ -138,6 +141,16 @@ class TestBatchEvalErrorContract:
             r.levelno == logging.WARNING and "evaluate blew up" in r.getMessage()
             for r in caplog.records
         )
+
+    def test_an_apparatus_exception_propagates_instead_of_becoming_a_candidate(self):
+        # The same contract every other driver keeps: only typed candidate
+        # infeasibility is a penalty row; problem-level breakage aborts.
+        optimizer = AgentEvolveOptimizer(verbose=False)
+        with pytest.raises(RuntimeError, match="evaluate blew up"):
+            optimizer._evaluate_batch(
+                _ExplodingProblem(RuntimeError), [{"x": 1}],
+                [ObjectiveSpec("score", "min")],
+            )
 
     def test_report_generation_metrics_swallows_reporter_failure(self):
         optimizer = AgentEvolveOptimizer(verbose=False)

@@ -88,12 +88,12 @@ class TestCompilagentLevers:
             assert isinstance(lv.range, EnumChoice)
             assert lv.range.candidates  # non-empty
 
-    def test_hw_levers_are_open_ranges_with_wide_bounds(self):
-        """Compilagent levers are intentionally open ranges (``IntFreeform``)
-        so the agent freely chooses scale based on the workload's
-        footprint — JSON bounds from ``core_*_bounds`` are ignored on
-        purpose. The wide defaults cover every realistic neuromorphic
-        crossbar geometry."""
+    def test_hw_levers_are_the_declared_bounds(self):
+        """Compilagent levers are integer ranges (``IntFreeform``) over the
+        DECLARED ``core_*_bounds`` — the same box every other backend
+        searches, so an equal-budget comparison is over one space and the
+        problem's domain gate never refuses a lever value the agent was
+        offered."""
         from compilagent import IntFreeform
 
         d = _description()
@@ -104,15 +104,13 @@ class TestCompilagentLevers:
             assert isinstance(lv.range, IntFreeform)
             assert lv.range.min >= 1
             assert lv.range.max >= lv.range.min
-            # The compilagent-specific wide defaults are *much* wider
-            # than the JSON `core_*_bounds`, regardless of what the
-            # user provided.
             if lv.id.endswith("max_axons"):
-                assert (lv.range.min, lv.range.max) == d.COMPILAGENT_AXON_BOUNDS
+                assert (lv.range.min, lv.range.max) == d.core_axons_bounds
             elif lv.id.endswith("max_neurons"):
-                assert (lv.range.min, lv.range.max) == d.COMPILAGENT_NEURON_BOUNDS
+                assert (lv.range.min, lv.range.max) == d.core_neurons_bounds
             else:
-                assert (lv.range.min, lv.range.max) == d.COMPILAGENT_COUNT_BOUNDS
+                assert (lv.range.min, lv.range.max) == d.core_count_bounds
+            assert lv.range.min <= lv.default <= lv.range.max
 
     def test_hw_dim_levers_have_step_granularity(self):
         """``max_axons`` and ``max_neurons`` snap to ``CORE_DIM_GRANULARITY``
@@ -127,11 +125,9 @@ class TestCompilagentLevers:
             else:
                 assert lv.range.step == CORE_DIM_GRANULARITY
 
-    def test_jsonsearch_bounds_are_ignored_by_compilagent_renderer(self):
-        """If a user passes silly-tight JSON bounds, the compilagent lever
-        surface still uses the wide defaults. The JSON bounds only flow
-        through to NSGA2 / AgentEvolve (which need them for their
-        encoded variable space)."""
+    def test_tight_declared_bounds_reach_the_compilagent_renderer(self):
+        """Tight declared bounds are exactly what the agent is offered: the
+        lever surface is the declaration, for every backend alike."""
         d = SearchSpaceDescription.from_arch_search(
             search_mode="hardware",
             arch_options=(),
@@ -146,10 +142,8 @@ class TestCompilagentLevers:
         levers = d.to_compilagent_levers(workload_id="w", backend_id="b")
         for lv in levers:
             if lv.id.endswith("max_axons"):
-                assert lv.range.min == d.COMPILAGENT_AXON_BOUNDS[0]
-                assert lv.range.max == d.COMPILAGENT_AXON_BOUNDS[1]
-                # The JSON bound 256 was discarded
-                assert lv.range.min != 256
+                assert (lv.range.min, lv.range.max) == (256, 256)
+                assert lv.default == 256
 
     def test_levers_carry_evidence_and_backend_id(self):
         d = _description()
@@ -172,9 +166,9 @@ class TestCompilagentLevers:
 
 
 class TestEdgeCases:
-    def test_collapsed_json_bounds_do_not_collapse_compilagent_levers(self):
-        """Tight JSON bounds are ignored by ``to_compilagent_levers`` —
-        the open-range surface stays wide so the agent can right-size."""
+    def test_collapsed_declared_bounds_collapse_compilagent_levers(self):
+        """A pinned dimension is pinned for the agent too: the lever's range
+        is the single declared value, and its default sits on it."""
         d = SearchSpaceDescription.from_arch_search(
             search_mode="hardware",
             arch_options=(),
@@ -189,4 +183,4 @@ class TestEdgeCases:
         levers = d.to_compilagent_levers(workload_id="w", backend_id="b")
         assert len(levers) == 3
         for lv in levers:
-            assert lv.range.max > lv.range.min
+            assert lv.range.max == lv.range.min == lv.default

@@ -277,10 +277,13 @@ class TestCandidatePlatformResolutionIsTheOneSeam:
                 "cores": [{"max_axons": 128, "max_neurons": 128, "count": 16}],
             },
         }
+        # A proposal that omits ``target_tq`` means the search's own — the
+        # same overlay every encoded vector states — so the resolved twin
+        # carries it explicitly.
         resolved = {
             "model_config": _fixed_model_config(),
             "platform_constraints": problem.resolve_candidate_platform(
-                raw["platform_constraints"]
+                {"target_tq": SEARCH_TARGET_TQ, **raw["platform_constraints"]}
             ),
         }
         assert problem.evaluate(raw) == problem.evaluate(resolved)
@@ -313,7 +316,10 @@ class TestCandidatePlatformResolutionIsTheOneSeam:
             },
         }
         assert problem.constraint_violation(raw) == 0.0
-        assert seen == [problem.resolve_candidate_platform(raw["platform_constraints"])]
+        assert seen == [problem._resolved_configuration(raw)["platform_constraints"]]
+        assert seen[0]["target_tq"] == SEARCH_TARGET_TQ, (
+            "a proposal that omits target_tq means the search's own"
+        )
         assert seen[0]["cores"][0]["has_bias"] is False, (
             "the declared bias capability must reach the constraint check"
         )

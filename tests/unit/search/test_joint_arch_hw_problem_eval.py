@@ -54,6 +54,7 @@ def _make_pipeline_config():
 def _make_problem(
     search_mode="joint",
     objective_names=None,
+    num_core_types=1,
 ):
     if objective_names is None:
         objective_names = [
@@ -82,6 +83,9 @@ def _make_problem(
         validate_fn=TorchMLPMixerCoreBuilder.validate_config,
         platform_resolver=make_platform_resolver(_make_pipeline_config()),
         active_objective_names=objective_names,
+        # The declared box every proposal below must fall inside.
+        num_core_types=num_core_types,
+        core_count_bounds=(1, 1000),
         accuracy_seed=0,
         warmup_fraction=0.10,
         accuracy_evaluator="extrapolating",
@@ -248,6 +252,7 @@ class TestAgentEvolveLikeConfigs:
                 "total_params", "total_param_capacity", "total_sync_barriers",
                 "param_utilization_pct", "neuron_wastage_pct", "axon_wastage_pct",
             ],
+            num_core_types=3,
         )
         obj = problem._evaluate_inner(mc, pcfg, problem.encoding_placement)
         assert obj["total_params"] < 1e17, f"Got penalty: {obj}"
@@ -264,7 +269,7 @@ class TestAgentEvolveLikeConfigs:
     )
     def test_full_evaluate_with_accuracy(self, mc, pcfg):
         """Full evaluate() with accuracy must return real values."""
-        problem = _make_problem()
+        problem = _make_problem(num_core_types=3)
         config = {"model_config": mc, "platform_constraints": pcfg}
         obj = problem.evaluate(config)
         penalty = problem._penalty_objectives()
@@ -281,7 +286,7 @@ class TestPerPhaseErrorHandling:
         pcfg = _make_platform_constraints()
 
         original_evaluate_accuracy = problem._evaluate_accuracy
-        def _failing_accuracy(model):
+        def _failing_accuracy(model, seed=None):
             raise RuntimeError("Simulated accuracy failure")
         problem._evaluate_accuracy = _failing_accuracy
 

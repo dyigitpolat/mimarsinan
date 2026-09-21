@@ -111,6 +111,7 @@ class ArchitectureSearchStep(PipelineStep):
             generations=generations,
             target_tq=int(self.pipeline.config["target_tq"]),
             active_objective_names=active_objective_names,
+            weight_bits=int(self.pipeline.config.get("weight_bits", 8)),
         )
 
         print(f"[ArchitectureSearchStep] model_type='{model_type}' | search_mode={search_mode} "
@@ -167,6 +168,14 @@ class ArchitectureSearchStep(PipelineStep):
         searched_options = dict(best_cfg.get("deployment_options") or {})
         for key, value in searched_options.items():
             self.pipeline.config[key] = value
+        # The winner's CHIP is written back the same way: every later
+        # resolution of the platform from the run's configuration (bias mode,
+        # the record's declared chip, a fixed-mode twin) must read the deployed
+        # chip, not the pre-search declaration — the round trip
+        # ``build_platform_constraints_resolved(config) == promised platform``.
+        self.pipeline.config["cores"] = [dict(ct) for ct in platform_constraints["cores"]]
+        if platform_constraints.get("target_tq") is not None:
+            self.pipeline.config["target_tq"] = platform_constraints["target_tq"]
 
         discovered = {
             "search_mode_used": search_mode,

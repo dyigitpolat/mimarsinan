@@ -43,7 +43,7 @@ HARNESS_ID = "usage-scripted"
 PLANS: List[Dict[str, Any]] = [
     {"description": f"chip of {count} cores",
      "interventions": [("hw.core", "0.count", count)]}
-    for count in (50, 60, 70)
+    for count in (40, 50, 60)
 ]
 
 #: The session's own baseline analysis lays out one candidate before the agent

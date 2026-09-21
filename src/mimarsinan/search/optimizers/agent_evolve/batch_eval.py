@@ -15,7 +15,7 @@ from mimarsinan.search.optimizers.search_events import (
     candidates_generated_event,
     emit_search_event,
 )
-from mimarsinan.search.problem import SearchProblem
+from mimarsinan.search.problem import CandidateInfeasibleError, SearchProblem
 from mimarsinan.search.results import ObjectiveSpec
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,11 @@ class BatchEvalMixin(EvolveHostContract):
                     gen=gen, idx=idx, configuration=config,
                     objectives=obj, is_valid=True,
                 ))
-            except Exception as e:
+            except CandidateInfeasibleError as e:
+                # Only CANDIDATE-scoped infeasibility becomes a failed row;
+                # apparatus breakage propagates and aborts, as it does in
+                # every other driver — a swallowed exception would score an
+                # unevaluated candidate as infeasible.
                 logger.warning(
                     "Candidate evaluation raised (%s: %s) for config %.500s; "
                     "recording penalty objectives %s",

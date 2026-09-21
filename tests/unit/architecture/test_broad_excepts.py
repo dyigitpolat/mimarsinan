@@ -31,7 +31,6 @@ ALLOWLIST = {
     # (name, step, error) and the exception re-raises verbatim; nothing degrades.
     "pipelining/core/engine/pipeline.py": 2,
     "pipelining/pipeline_steps/config/torch_mapping_step.py": 2,
-    "search/optimizers/agent_evolve/batch_eval.py": 1,
     "search/optimizers/compilagent/backend/backend.py": 2,
     "search/optimizers/compilagent/compilagent_optimizer.py": 1,
     "search/optimizers/llm/trace.py": 1,

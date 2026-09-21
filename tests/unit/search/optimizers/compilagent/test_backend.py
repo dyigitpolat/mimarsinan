@@ -216,6 +216,12 @@ class TestLayoutPayloadIsTheProblemsOwnCandidateLayout:
         cfg = pipeline_config(has_bias=False)
         problem = make_problem("hardware", cfg=cfg)
         configuration = _baseline_configuration(problem)
+        # The codec's baseline is the resolved declaration; strip the stamped
+        # capability so the fixture is a declaration that still needs resolving.
+        configuration["platform_constraints"]["cores"] = [
+            {k: v for k, v in core.items() if k != "has_bias"}
+            for core in configuration["platform_constraints"]["cores"]
+        ]
         payload = collect_layout_payload(problem, configuration)
 
         raw_pcfg = configuration["platform_constraints"]
@@ -451,7 +457,8 @@ class TestDeviceCapabilityAndAnalyse:
     def test_analyze_records_a_baseline_error_instead_of_aborting(self):
         # A workload whose baseline cannot be laid out still analyses: the
         # failure is REPORTED, never swallowed into a silently empty baseline.
-        # A 600-wide layer overflows the 512-axon cores the codec defaults to.
+        # A 600-wide layer overflows the declared 256-axon cores the codec
+        # lays every plan under.
         problem = make_problem("hardware", cfg=pipeline_config(width=600))
         workload_id = "real_layout_unmappable_baseline"
         _registered(workload_id, problem)
@@ -565,14 +572,20 @@ class TestCompile:
         assert "does not resolve into a chip" in (result.diagnostics or "")
 
     def test_a_chip_the_model_cannot_map_is_a_conversion_failed_compile(
-        self, registered_problem, tmp_path,
+        self, tmp_path,
     ):
-        workload_id, _ = registered_problem
-        workload = _make_workload(workload_id)
-        backend = MimarsinanLayoutBackend()
-        result = backend.compile(
-            workload, _plan(_hw_core("0.max_axons", 8)), artifact_dir=tmp_path,
-        )
+        # A 200-wide hidden layer overflows the 64-axon cores: an IN-DOMAIN
+        # chip (the declared bounds start at 64) the model still cannot map.
+        workload_id = "real_layout_unmappable_plan"
+        _registered(workload_id, make_problem("hardware", cfg=pipeline_config(width=200)))
+        try:
+            workload = _make_workload(workload_id)
+            backend = MimarsinanLayoutBackend()
+            result = backend.compile(
+                workload, _plan(_hw_core("0.max_axons", 64)), artifact_dir=tmp_path,
+            )
+        finally:
+            unregister_problem(workload_id)
         assert result.ok is False
         assert result.metadata["failure_phase"] == "hw_conversion"
         assert "fan-in" in (result.diagnostics or "")

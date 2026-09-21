@@ -102,7 +102,7 @@ def _stub_accuracy(problem):
     """Replace training with a sentinel and count the attachments."""
     calls = []
 
-    def _evaluate(model):
+    def _evaluate(model, seed=None):
         calls.append(model)
         return STUB_ACCURACY
 

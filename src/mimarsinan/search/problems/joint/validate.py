@@ -13,6 +13,7 @@ from .candidate_fragments import (
 )
 
 from .types import (
+    BUDGET_PHASE,
     HW_CONVERSION_PHASE,
     LAYOUT_CHANNEL,
     MODEL_BUILD_PHASE,
@@ -24,10 +25,24 @@ from .types import (
     CandidatePlatformError,
     JointHostContract,
     ValidationEntry,
+    candidate_replicate,
     json_key,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _budget_refusal(key: str) -> ValidationResult:
+    """The run's budget refused NEW work — a verdict about the run, never cached
+    against the candidate."""
+    return ValidationResult(
+        is_valid=False, failure_phase=BUDGET_PHASE,
+        error_message=(
+            "evaluation budget spent: this candidate was not evaluated "
+            f"(identity {key[:120]}...)"
+        ),
+    )
+
 
 class JointValidateMixin(JointHostContract):
     """Feasibility validation for :class:`JointArchHwProblem`."""
@@ -76,17 +91,35 @@ class JointValidateMixin(JointHostContract):
         mc = configuration.get("model_config", {})
         pcfg = dict(configuration.get("platform_constraints", {}))
 
+        domain = self._domain_failure(configuration)
+        if domain is not None:
+            return self._record_invalid(key, domain.message, domain.phase)
+
         structural = self._structural_failure(mc, pcfg)
         if structural is not None:
             return self._record_invalid(key, structural.message, structural.phase)
 
-        # [TS1] Past the caches AND the declaration-only check, this identity is
-        # about to cost a full resolution — the channel that gets here first pays.
-        charge_evaluation(self.evaluation_budget, key, hit=False, channel=channel)
-
-        entry, failure = self._resolve_entry(
-            mc, pcfg, self.candidate_encoding_placement(configuration),
+        # [TS1] Past the caches AND the declaration-only checks, this identity is
+        # about to cost a full resolution — the channel that gets here first
+        # reserves the token, and a spent budget refuses it here, unpriced.
+        admission = charge_evaluation(
+            self.evaluation_budget, key, hit=False, channel=channel,
         )
+        if not admission:
+            return _budget_refusal(key)
+
+        # Apparatus breakage inside the resolution evaluates nothing: the token
+        # goes back and the exception stays distinct from every candidate verdict.
+        resolved = False
+        try:
+            entry, failure = self._resolve_entry(
+                mc, pcfg, self.candidate_encoding_placement(configuration),
+                replicate=candidate_replicate(configuration),
+            )
+            resolved = True
+        finally:
+            if not resolved:
+                admission.release()
         if failure is not None:
             return self._record_invalid(key, failure.message, failure.phase)
 
@@ -126,11 +159,11 @@ class JointValidateMixin(JointHostContract):
         return None
 
     def _resolve_model(
-        self, mc: Dict, pcfg: Dict, placement: str,
+        self, mc: Dict, pcfg: Dict, placement: str, replicate: int = 0,
     ) -> Tuple[Optional[Tuple[Any, float]], Optional[CandidateFailure]]:
         """The candidate's model, or the candidate-scoped reason there is none."""
         try:
-            return self._candidate_model(mc, pcfg, placement), None
+            return self._candidate_model(mc, pcfg, placement, replicate), None
         except Exception as exc:
             if not self._searches_model:
                 # The model does not depend on the candidate here: its failure
@@ -185,10 +218,10 @@ class JointValidateMixin(JointHostContract):
         ), None
 
     def _resolve_entry(
-        self, mc: Dict, pcfg: Dict, placement: str,
+        self, mc: Dict, pcfg: Dict, placement: str, replicate: int = 0,
     ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]:
         """The ONE candidate-facts path every search mode walks: model → layout → view."""
-        facts, failure = self._resolve_model(mc, pcfg, placement)
+        facts, failure = self._resolve_model(mc, pcfg, placement, replicate)
         if failure is not None:
             return None, failure
         assert facts is not None
@@ -197,13 +230,14 @@ class JointValidateMixin(JointHostContract):
         if not self._requires_fragment("layout"):
             return ValidationEntry(
                 model=model, view=self._layoutless_view(pcfg, total_params),
+                replicate=replicate,
             ), None
 
         layout, failure = self._resolve_layout(model, pcfg, total_params, placement)
         if failure is not None:
             return None, failure
         assert layout is not None
-        return ValidationEntry(model=model, view=layout.view), None
+        return ValidationEntry(model=model, view=layout.view, replicate=replicate), None
 
     def candidate_layout(self, configuration: Dict) -> CandidateLayout:
         """This candidate, laid out on the chip a deployment would build for it.
@@ -211,23 +245,36 @@ class JointValidateMixin(JointHostContract):
         The introspection seam, walking the SAME path an evaluation walks.
         """
         resolved = self._resolved_configuration(configuration)
+        domain = self._domain_failure(resolved)
+        if domain is not None:
+            raise CandidateInfeasibleError(domain.message)
         # [TS1] This channel keeps no cache: every call really does the
         # resolution, so an introspecting driver spends the run's budget.
-        charge_evaluation(
+        admission = charge_evaluation(
             self.evaluation_budget, json_key(resolved),
             hit=False, channel=LAYOUT_CHANNEL,
         )
+        if not admission:
+            raise CandidateInfeasibleError(_budget_refusal(json_key(resolved)).error_message)
         pcfg = resolved["platform_constraints"]
         placement = self.candidate_encoding_placement(resolved)
-        facts, failure = self._resolve_model(
-            resolved["model_config"], pcfg, placement,
-        )
-        if facts is not None:
-            layout, failure = self._resolve_layout(
-                facts[0], pcfg, facts[1], placement,
+        laid_out = False
+        try:
+            facts, failure = self._resolve_model(
+                resolved["model_config"], pcfg, placement,
+                candidate_replicate(resolved),
             )
-            if layout is not None:
-                return layout
+            if facts is not None:
+                layout, failure = self._resolve_layout(
+                    facts[0], pcfg, facts[1], placement,
+                )
+                if layout is not None:
+                    laid_out = True
+                    return layout
+            laid_out = True
+        finally:
+            if not laid_out:
+                admission.release()
         assert failure is not None
         raise CandidateInfeasibleError(failure.message) from failure.cause
 

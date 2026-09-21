@@ -19,7 +19,7 @@ of truth for the joint NAS + HW search space, rendered per backend.
 | `search_space_compilagent.py` | Renders a `SearchSpaceDescription` into compilagent `Lever` tuples and derives sampled integer candidates per HW dimension |
 | `patch_borders.py` | `get_region_borders`: standalone patch-region border computation utility (no in-repo callers) |
 | `evaluators/` | Fast NAS accuracy evaluators: one-epoch `FastAccuracyEvaluator` and `ExtrapolatingAccuracyEvaluator` with parametric learning-curve fitting |
-| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM utilities (`llm/trace.py` is the ONE model-call path both LLM drivers make their requests through, `llm/trace_format.py` how an exchange is shown, [TS3] `llm/usage.py` the `LlmUsageAccumulator` that counts what those requests spent), [TS1] `budget.py` (the `EvaluationBudget` accountant, `BoundaryStop`, `LlmUsage`, and the `ResourceLedger` a run seals — see "What a search spent" below; the package `__init__` re-exports nothing so this leaf stays importable from `results.py` and the problems without dragging the backends in), `pymoo_bridge.py` (everything the NSGA-II driver says in pymoo's vocabulary — seeded sampling, the goal-carrying ↔ minimize-everything objective translation, the front in user space, and pymoo's history as the report's own 1-based rows — so the driver file describes the SEARCH), [TS2] `sampling_optimizer.py` (the non-evolutionary backends: the `SamplingStrategy` protocol and its `RandomStrategy`/`SobolStrategy`/`GridStrategy` streams behind ONE `SamplingOptimizer` driver — batch = the shared generation frame, the TS1 accountant does the counting, and the front is `results.nondominated_front`) and `catalog.py` (the optimizer CATALOGUE: the six backend ids and their labels, in a leaf carrying no backend imports so `gui` and `pipelining` can both read the one list), and `search_events.py` — the live search-event channel's SSOT (the `emit_search_event` envelope plus the `generation_start`/`candidates_generated`/`generation_complete`/`search_complete` frame constructors). The classical and LLM backends BUILD their generation frames there, so the panel's vocabulary cannot fork; emission is telemetry and degrades through `best_effort`. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
+| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM utilities (`llm/trace.py` is the ONE model-call path both LLM drivers make their requests through, `llm/trace_format.py` how an exchange is shown, [TS3] `llm/usage.py` the `LlmUsageAccumulator` that counts what those requests spent), [TS1] `budget.py` (the `EvaluationBudget` accountant, `LlmUsage`, and the `ResourceLedger` a run seals — see "What a search spent" below; `admission.py` holds the accountant's two answers, the per-ask `Admission` (admitted / refused / a distinct token to release) and the per-boundary `BoundaryStop`, re-exported from `budget.py`; the package `__init__` re-exports nothing so this leaf stays importable from `results.py` and the problems without dragging the backends in), `pymoo_bridge.py` (everything the NSGA-II driver says in pymoo's vocabulary — seeded sampling, the goal-carrying ↔ minimize-everything objective translation, the front in user space, and pymoo's history as the report's own 1-based rows — so the driver file describes the SEARCH), [TS2] `sampling_optimizer.py` (the non-evolutionary backends: the `SamplingStrategy` protocol and its `RandomStrategy`/`SobolStrategy`/`GridStrategy` streams behind ONE `SamplingOptimizer` driver — batch = the shared generation frame, the TS1 accountant does the counting, and the front is `results.nondominated_front`) and `catalog.py` (the optimizer CATALOGUE: the six backend ids and their labels, in a leaf carrying no backend imports so `gui` and `pipelining` can both read the one list), and `search_events.py` — the live search-event channel's SSOT (the `emit_search_event` envelope plus the `generation_start`/`candidates_generated`/`generation_complete`/`search_complete` frame constructors). The classical and LLM backends BUILD their generation frames there, so the panel's vocabulary cannot fork; emission is telemetry and degrades through `best_effort`. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
 | `problems/` | Concrete problems: `EncodedProblem` (vector-encoded) protocol and `JointArchHwProblem` for joint architecture + hardware co-search — see "The problem surface" below |
 
 ## The problem surface
@@ -44,6 +44,26 @@ no mode switch: it once omitted `allow_neuron_splitting` for the search only,
 and since `ChipCapabilities` reads an absent permission as DENIED, candidates
 were scored on a chip that could not split neurons while the run deploying them
 could — a searched chip must resolve exactly as the same chip declared by hand.
+
+**Is this candidate inside the declaration?** — `joint/constrain.py`'s
+`_domain_failure` (`domain_violations`), asked at every entrance before any
+work or charge. The vector encodings cannot leave the declared box (`decode`
+clips and snaps), but a JSON proposal — an LLM's, a plan codec's, a hand-written
+record's — can name any chip, so the gate refuses, as an uncharged `domain`
+verdict: a core-type count other than the declared one, a core dimension
+outside its bounds or off the `CORE_DIM_GRANULARITY` grid, a count outside its
+bounds, a moved fixed key (`target_tq`, and `weight_bits` unless it is a
+declared option axis), an arch value outside the declared choices, a moved
+model config when the model is not searched, and a deployment option that is
+not a declared axis or lies outside it. A proposal that omits `target_tq`
+means the search's own, exactly as every encoded overlay states it. The
+compilagent levers render the DECLARED bounds (`search_space_compilagent.py`)
+and its codec lays every plan under the declared chip, so the agent is offered
+exactly the space the gate admits. A candidate record may carry a `replicate`
+identifier (`types.REPLICATE_KEY`): the same configuration deliberately
+evaluated again is a DISTINCT identity — paid for, seeded
+`accuracy_seed + replicate` — so a deliberate repeat is never a free cache hit,
+while `replicate: 0` and an absent key are one canonical identity.
 
 **What is this candidate worth?** — one path, `_resolve_model` → `_resolve_layout`
 → one `CandidateStaticView` → `{spec.key: spec.value(view)}` over the ACTIVE
@@ -215,20 +235,28 @@ does not resolve into a chip is refused before any seam, and a `validate_fn` or
 neither the refusal nor the re-asks a cache later answers about that candidate
 are evaluation calls at all.
 
-`EvaluationBudget` only METERS: an exhausted budget never refuses an
-evaluation. Stopping is each driver's decision at ITS natural boundary
-(owner decision: boundary stop + exact ledger), asked through the ONE
-`BoundaryStop` — a driver that read `budget.exhausted` itself would be a
-second definition of the flag a campaign compares runs by. It is asked only
-where the run would otherwise CONTINUE, so its `stopped` IS
+`EvaluationBudget` ADMITS one evaluation at a time: `charge_evaluation(...,
+hit=False)` reserves the distinct token before the expensive resolution runs
+and returns an `Admission`; once the distinct spend has reached the limit an
+unspent identity is REFUSED — scored a penalty under the uncharged `budget`
+verdict, never cached against the candidate — so a batch larger than the
+remaining balance can never evaluate past it, from one thread or many (the
+accountant is locked). An apparatus exception inside the resolution releases
+the token and propagates untyped: nothing was evaluated, and the breakage
+stays distinct from every candidate verdict (the AgentEvolve batch evaluator
+keeps the same contract — only `CandidateInfeasibleError` becomes a failed
+row). WHERE a run ends is still each driver's decision at ITS natural boundary,
+asked through the ONE `BoundaryStop` — a driver that read `budget.exhausted`
+itself would be a second definition of the flag a campaign compares runs by.
+It is asked only where the run would otherwise CONTINUE, so its `stopped` IS
 `stopped_at_boundary`: NSGA-II asks in the generation callback and forces pymoo
 termination there (`termination.terminate()` followed by
 `termination.update(algorithm)`, because pymoo updates the criterion BEFORE
 calling back, and the flag alone would buy one more generation), and the
-sampling driver asks after each batch. The overshoot is not hidden: `ResourceLedger`
-seals the EXACT spend (`wall_s`, raw/distinct counts, asked/re-asked identities
-and the rate they derive, the declared limit, `stopped_at_boundary`, and the
-`LlmUsage` an LLM driver reports), and analysis normalizes. Every fact in one ledger covers ONE
+sampling driver asks after each batch. `ResourceLedger` seals the EXACT spend
+(`wall_s`, raw/distinct counts, `evaluations_refused`, asked/re-asked
+identities and the rate they derive, the declared limit, `stopped_at_boundary`,
+and the `LlmUsage` an LLM driver reports), and analysis normalizes. Every fact in one ledger covers ONE
 interval, so a driver seals it where its clock stops — for NSGA-II
 immediately after `minimize`, which keeps the post-search front re-read (it
 re-asks every front member) out of the duplicate rate a campaign compares.

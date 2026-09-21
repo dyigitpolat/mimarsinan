@@ -30,18 +30,28 @@ re-running it.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Set
+
+from mimarsinan.search.optimizers.admission import (  # the accountant's answers, re-exported
+    UNMETERED as UNMETERED,
+    Admission as Admission,
+    BoundaryStop as BoundaryStop,
+)
 
 
 @dataclass
 class EvaluationBudget:
-    """Meters distinct decoded evaluations against an optional limit.
+    """Admits distinct decoded evaluations against an optional limit.
 
-    Metering only: an exhausted budget never refuses an evaluation. Stopping is
-    the driver's decision at ITS natural boundary (a generation, a batch, a
-    proposal round), and the ledger records the exact spend that resulted.
-    One accountant meters one run.
+    A token is RESERVED before the expensive evaluator runs (``charge`` with
+    ``hit=False``); once the distinct spend has reached the limit, an unspent
+    identity is refused and nothing is charged, so a batch larger than the
+    remaining balance can never evaluate past it. Duplicates of a spent
+    identity are always admitted (they cost nothing). Stopping at a boundary
+    remains the driver's decision; the ledger records the exact spend and the
+    refusals. One accountant meters one run, from any number of threads.
     """
 
     limit: Optional[int] = None
@@ -55,8 +65,12 @@ class EvaluationBudget:
     _duplicates: int = field(default=0, init=False)
     _asks: int = field(default=0, init=False)
     _reasks: int = field(default=0, init=False)
+    _refused: int = field(default=0, init=False)
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, init=False, repr=False, compare=False,
+    )
 
-    def charge(self, channel: str, key: str, *, hit: bool) -> None:
+    def charge(self, channel: str, key: str, *, hit: bool) -> Admission:
         """Route one channel's ask about *key*: what did it do to this run?
 
         THE routing, so no caller has to know the law:
@@ -64,24 +78,39 @@ class EvaluationBudget:
         - unspent and a cache answered -> nothing happened. A candidate a cheap
           predicate refused before anything was built is not an evaluation the
           run made, and neither are the re-asks a cache answers about it.
+        - unspent, work about to run, limit reached -> REFUSED; nothing charged.
         - unspent and work is about to run -> the DISTINCT evaluation this run
           pays for, opening the first round of asking about it.
         - already spent -> a DUPLICATE call, whatever answered it; it joins the
           open round, or opens the next one when this channel already asked.
         """
-        if not self.has_spent(key):
-            if hit:
-                return
+        with self._lock:
+            if not self.has_spent(key):
+                if hit:
+                    return Admission(admitted=True, distinct=False, key=key)
+                if self.exhausted:
+                    self._refused += 1
+                    return Admission(admitted=False, distinct=False, key=key)
+                self._calls += 1
+                self._open_round(channel, key)
+                return Admission(admitted=True, distinct=True, key=key, budget=self)
             self._calls += 1
-            self._open_round(channel, key)
-            return
-        self._calls += 1
-        self._duplicates += 1
-        if channel in self._open_rounds[key]:
-            self._open_round(channel, key)
-            self._reasks += 1
-        else:
-            self._open_rounds[key].add(channel)
+            self._duplicates += 1
+            if channel in self._open_rounds[key]:
+                self._open_round(channel, key)
+                self._reasks += 1
+            else:
+                self._open_rounds[key].add(channel)
+            return Admission(admitted=True, distinct=False, key=key)
+
+    def release(self, key: str) -> None:
+        """Hand back a DISTINCT token: the evaluator raised, so nothing was spent."""
+        with self._lock:
+            if key not in self._open_rounds:
+                return
+            del self._open_rounds[key]
+            self._calls -= 1
+            self._asks -= 1
 
     def _open_round(self, channel: str, key: str) -> None:
         """Start a fresh round of asking about *key* — the unit the rate counts."""
@@ -95,6 +124,11 @@ class EvaluationBudget:
     @property
     def distinct_spent(self) -> int:
         return len(self._open_rounds)
+
+    @property
+    def refused(self) -> int:
+        """Asks for NEW work the limit refused — never evaluated, never charged."""
+        return self._refused
 
     @property
     def raw_calls(self) -> int:
@@ -130,17 +164,19 @@ class EvaluationBudget:
 
 def charge_evaluation(
     budget: Optional[EvaluationBudget], key: str, *, hit: bool, channel: str,
-) -> None:
+) -> Admission:
     """Tell the run's accountant what *channel*'s ask about *key* did.
 
     THE charging seam: a problem calls it at every cache that decides whether
     *key* costs work (``hit``), and at every uncached channel that is about to
     spend it (``hit=False``), naming the channel it answers through. The law is
     :meth:`EvaluationBudget.charge`; "no budget attached" costs one None check
-    here instead of a branch per problem.
+    here instead of a branch per problem. The answer says whether the work may
+    run, and a distinct admission is the token to release if it breaks.
     """
-    if budget is not None:
-        budget.charge(channel, key, hit=hit)
+    if budget is None:
+        return UNMETERED
+    return budget.charge(channel, key, hit=hit)
 
 
 def problem_budget(problem: object) -> Optional[EvaluationBudget]:
@@ -152,31 +188,6 @@ def problem_budget(problem: object) -> Optional[EvaluationBudget]:
         f"evaluation_budget must be an EvaluationBudget or None, got "
         f"{type(budget).__name__}"
     )
-
-
-@dataclass
-class BoundaryStop:
-    """A driver's own boundary, asked once per boundary: is the budget spent?
-
-    The accountant only METERS, so every driver decides where it may stop —
-    a generation, a batch, a proposal. Ask this only where the run would
-    otherwise CONTINUE, and ``stopped`` is exactly what the ledger means by
-    ``stopped_at_boundary``: the budget denied work the run wanted to do.
-    """
-
-    budget: Optional[EvaluationBudget] = None
-    _stopped: bool = field(default=False, init=False, repr=False)
-
-    def should_stop(self) -> bool:
-        """Stop here? Answering True is what makes this run a budget-bound one."""
-        if self.budget is None or not self.budget.exhausted:
-            return False
-        self._stopped = True
-        return True
-
-    @property
-    def stopped(self) -> bool:
-        return self._stopped
 
 
 @dataclass(frozen=True)
@@ -224,12 +235,15 @@ class ResourceLedger:
     #: ``evaluations_distinct`` against ``budget_limit`` for that.
     stopped_at_boundary: bool = False
     llm: Optional[LlmUsage] = None
+    #: Proposals for NEW work the limit refused before any evaluator ran.
+    evaluations_refused: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "wall_s": float(self.wall_s),
             "evaluations_raw": int(self.evaluations_raw),
             "evaluations_distinct": int(self.evaluations_distinct),
+            "evaluations_refused": int(self.evaluations_refused),
             "identities_asked": int(self.identities_asked),
             "identities_reasked": int(self.identities_reasked),
             "duplicate_rate": float(self.duplicate_rate),
@@ -252,6 +266,7 @@ class ResourceLedger:
             budget_limit=None if limit is None else int(limit),
             stopped_at_boundary=bool(payload.get("stopped_at_boundary", False)),
             llm=None if llm is None else LlmUsage.from_dict(llm),
+            evaluations_refused=int(payload.get("evaluations_refused", 0)),
         )
 
 
@@ -281,4 +296,5 @@ def seal_ledger(
         budget_limit=budget.limit,
         stopped_at_boundary=bool(stopped_at_boundary),
         llm=llm,
+        evaluations_refused=budget.refused,
     )

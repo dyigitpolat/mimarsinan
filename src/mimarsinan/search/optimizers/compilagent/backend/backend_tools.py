@@ -35,7 +35,12 @@ def description_for(problem: Any) -> SearchSpaceDescription:
         core_neurons_bounds=_int_bounds(problem, "core_neurons_bounds", (64, 1024)),
         core_count_bounds=_int_bounds(problem, "core_count_bounds", (50, 500)),
         target_tq=int(getattr(problem, "target_tq", 32)),
-        weight_bits=int(8),
+        # The RUN's weight width, off the resolved base: a fixed key the agent
+        # is told, and that the problem refuses to see moved.
+        weight_bits=int(
+            (getattr(problem, "fixed_platform_constraints", None) or {})
+            .get("weight_bits", 8)
+        ),
     )
 
 

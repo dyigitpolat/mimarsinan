@@ -75,6 +75,10 @@ class _Harness(
         """The identity resolution: these harnesses declare platforms directly."""
         return configuration
 
+    def _domain_failure(self, configuration):
+        """No declared box here: the domain gate is tested on the real problem."""
+        return None
+
     def candidate_encoding_placement(self, configuration) -> str:
         """The host's ONE placement reader: searched value, else declared."""
         return str(candidate_option(
@@ -166,10 +170,10 @@ class _EvaluateHarness(_Harness):
     def validate_detailed(self, configuration, *, channel=EVALUATE_CHANNEL):
         return ValidationResult(is_valid=True)
 
-    def _evaluate_accuracy(self, model):
+    def _evaluate_accuracy(self, model, seed=None):
         raise RuntimeError("training exploded")
 
-    def _evaluate_inner(self, mc, pcfg, _placement):
+    def _evaluate_inner(self, mc, pcfg, _placement, replicate=0):
         raise self._inner_error
 
 

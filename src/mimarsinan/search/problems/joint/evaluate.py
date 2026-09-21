@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from mimarsinan.deployment_record.objectives import CandidateStaticView
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
@@ -20,12 +20,14 @@ from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
 from .types import (
+    BUDGET_PHASE,
     EVALUATE_CHANNEL,
     HW_PACKING_PHASE,
     CandidateFailure,
     CandidatePlatformError,
     JointHostContract,
     ValidationEntry,
+    candidate_replicate,
     json_key,
 )
 
@@ -66,7 +68,10 @@ class JointEvaluateMixin(JointHostContract):
         vr = self.validate_detailed(configuration, channel=EVALUATE_CHANNEL)
         if not vr.is_valid:
             obj = self._penalty_objectives()
-            self._cache[key] = obj
+            # A budget refusal says nothing about the candidate: caching it
+            # would let a later ask read an unevaluated chip as scored.
+            if vr.failure_phase != BUDGET_PHASE:
+                self._cache[key] = obj
             return obj
 
         # The validation cache is an OPTIMIZATION, not a dependency: it is
@@ -78,6 +83,7 @@ class JointEvaluateMixin(JointHostContract):
                 configuration["model_config"],
                 configuration["platform_constraints"],
                 self.candidate_encoding_placement(configuration),
+                replicate=candidate_replicate(configuration),
             )
         else:
             obj = self._objectives_from_entry(entry)
@@ -87,9 +93,10 @@ class JointEvaluateMixin(JointHostContract):
 
     def _evaluate_inner(
         self, mc: Dict[str, Any], pcfg: Dict[str, Any], placement: str,
+        replicate: int = 0,
     ) -> Dict[str, float]:
         """Evaluate one candidate pair directly, without the configuration cache."""
-        entry, failure = self._resolve_entry(mc, pcfg, placement)
+        entry, failure = self._resolve_entry(mc, pcfg, placement, replicate=replicate)
         if entry is None:
             assert failure is not None
             return self._raise_or_penalize(failure)
@@ -128,7 +135,9 @@ class JointEvaluateMixin(JointHostContract):
                 "accuracy is an active objective but the candidate carries no model"
             )
         try:
-            return self._evaluate_accuracy(model)
+            return self._evaluate_accuracy(
+                model, seed=int(self.accuracy_seed) + int(entry.replicate),
+            )
         except Exception as exc:
             logger.warning(
                 "[JointArchHwProblem] Accuracy evaluation failed (%s: %s); "
@@ -141,7 +150,9 @@ class JointEvaluateMixin(JointHostContract):
             # retained object, so it is released as soon as it has answered.
             entry.model = None
 
-    def _evaluate_accuracy(self, model) -> float:
+    def _evaluate_accuracy(self, model, seed: Optional[int] = None) -> float:
+        """The proxy, seeded per replicate so a deliberate repeat is a new draw."""
+        seed = int(self.accuracy_seed) if seed is None else int(seed)
         if self.accuracy_evaluator == "extrapolating":
             acc_eval = ExtrapolatingAccuracyEvaluator(
                 data_provider_factory=self.data_provider_factory,
@@ -153,7 +164,7 @@ class JointEvaluateMixin(JointHostContract):
                 warmup_fraction=float(self.warmup_fraction),
                 num_workers=0,
                 training_batch_size=self.training_batch_size,
-                seed=int(self.accuracy_seed),
+                seed=seed,
             )
         else:
             acc_eval = FastAccuracyEvaluator(
@@ -163,6 +174,6 @@ class JointEvaluateMixin(JointHostContract):
                 warmup_fraction=float(self.warmup_fraction),
                 num_workers=0,
                 training_batch_size=self.training_batch_size,
-                seed=int(self.accuracy_seed),
+                seed=seed,
             )
         return float(acc_eval.evaluate(model))

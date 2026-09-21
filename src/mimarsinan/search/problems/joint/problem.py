@@ -30,8 +30,10 @@ from .types import (
     HwOnlyCache,
     ModelConfigAssembler,
     PlatformResolver,
+    REPLICATE_KEY,
     ValidateFn,
     ValidationEntry,
+    candidate_replicate,
     effective_max_dims,
     json_key,
 )
@@ -224,15 +226,23 @@ class JointArchHwProblem(
         if self.fixed_platform_constraints is None:
             self._require_platform_resolver()
         try:
-            platform = self.resolve_candidate_platform(
-                configuration.get("platform_constraints") or {}
-            )
+            # A JSON proposal that omits ``target_tq`` means the search's own,
+            # exactly as the vector encoding states it in every overlay.
+            platform = self.resolve_candidate_platform({
+                "target_tq": int(self.target_tq),
+                **(configuration.get("platform_constraints") or {}),
+            })
         except ValueError as exc:
             raise CandidatePlatformError(
                 f"candidate platform does not resolve into a chip: "
                 f"{type(exc).__name__}: {exc}"
             ) from exc
-        return {**configuration, "platform_constraints": platform}
+        resolved = {**configuration, "platform_constraints": platform}
+        # Canonical identity: the base replicate is the record WITHOUT the key,
+        # so ``replicate: 0`` and an absent replicate are one candidate.
+        if candidate_replicate(resolved) == 0:
+            resolved.pop(REPLICATE_KEY, None)
+        return resolved
 
 
 __all__ = ["JointArchHwProblem", "effective_max_dims", "json_key"]

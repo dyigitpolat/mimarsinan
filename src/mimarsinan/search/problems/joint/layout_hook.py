@@ -79,16 +79,17 @@ class JointLayoutMixin(JointHostContract):
         return cache.mapper_repr
 
     def _candidate_model(
-        self, mc: Dict, pcfg: Dict, placement: str,
+        self, mc: Dict, pcfg: Dict, placement: str, replicate: int = 0,
     ) -> Tuple[Any, float]:
         """The model this candidate is scored with, and its parameter census.
 
         A model-bearing search builds the candidate's own; a hardware-only
         search reuses the run's fixed model, which no candidate influences.
-        Seeding belongs here, next to the build it makes reproducible.
+        Seeding belongs here, next to the build it makes reproducible; a
+        replicate is a deliberately different draw of the same candidate.
         """
-        torch.manual_seed(int(self.accuracy_seed))
-        np.random.seed(int(self.accuracy_seed))
+        torch.manual_seed(int(self.accuracy_seed) + int(replicate))
+        np.random.seed(int(self.accuracy_seed) + int(replicate))
         if self._searches_model:
             return self._build_raw_model(mc, pcfg, placement)
         cache = self._ensure_hw_only_cache(placement)

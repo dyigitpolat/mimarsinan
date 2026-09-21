@@ -47,6 +47,7 @@ from mimarsinan.search.optimizers.budget import (
     seal_ledger,
 )
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
+from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.optimizers.sampling_optimizer import (
     RandomStrategy,
     SamplingOptimizer,
@@ -56,6 +57,7 @@ from mimarsinan.search.problems.joint.types import (
     CONSTRAINT_CHANNEL,
     EVALUATE_CHANNEL,
     LAYOUT_CHANNEL,
+    json_key,
 )
 from mimarsinan.search.results import Candidate, ObjectiveSpec, SearchResult
 
@@ -521,20 +523,25 @@ class TestTheCacheSeamIsTheAccountant:
             json.dumps(with_budget.evaluate(configuration), sort_keys=True)
         )
 
-    def test_an_exhausted_budget_never_refuses_an_evaluation(self):
-        # The accountant METERS; stopping is the driver's decision at its own
-        # boundary. A problem that started refusing would silently corrupt the
-        # front of every search that overshot by one candidate.
+    def test_an_exhausted_budget_refuses_new_work_unpriced(self):
+        # Admission: a spent budget refuses the NEXT distinct identity before
+        # any evaluator runs — it is scored a penalty, charged nothing, and
+        # never cached against the candidate (the refusal is the run's fact).
         budget = EvaluationBudget(limit=1)
         problem = _hw_problem(budget)
         problem.evaluate(_mid_configuration(problem))
         assert budget.exhausted
 
         x = np.asarray(problem.xl) * 0.25 + np.asarray(problem.xu) * 0.75
-        objectives = problem.evaluate(problem.decode(x))
+        refused = problem.decode(x)
+        objectives = problem.evaluate(refused)
 
-        assert set(objectives) == set(HW_OBJECTIVES)
-        assert budget.distinct_spent == 2
+        assert objectives == problem._penalty_objectives()
+        assert budget.distinct_spent == 1
+        assert budget.refused == 1
+        verdict = problem.validate_detailed(refused)
+        assert (verdict.is_valid, verdict.failure_phase) == (False, "budget")
+        assert json_key(problem._resolved_configuration(refused)) not in problem._cache
 
 
 class TestEveryChannelThatSpendsWorkIsCharged:
@@ -688,11 +695,13 @@ class TestTheIntrospectionSeamSpendsWhatItResolves:
         budget = EvaluationBudget(limit=2)
         problem = _hw_problem(budget)
 
-        for fraction in (0.25, 0.5, 0.75):
+        for fraction in (0.25, 0.5):
             problem.candidate_layout(_configuration_at(problem, fraction))
-
-        assert budget.distinct_spent == 3, "three chips were really built"
+        assert budget.distinct_spent == 2, "two chips were really built"
         assert budget.exhausted
+        with pytest.raises(CandidateInfeasibleError, match="budget"):
+            problem.candidate_layout(_configuration_at(problem, 0.75))
+        assert budget.distinct_spent == 2, "the third was refused, not built"
 
     def test_re_introspecting_one_candidate_buys_no_new_evaluation(self):
         budget = EvaluationBudget(limit=None)
@@ -742,7 +751,8 @@ class TestABudgetBoundsASearchThatRejectsEveryCandidate:
         _, _, result = rejecting_run
 
         assert result.ledger is not None
-        assert result.ledger.evaluations_distinct == REJECTING_POP
+        assert result.ledger.evaluations_distinct == REJECTING_LIMIT
+        assert result.ledger.evaluations_refused == REJECTING_POP - REJECTING_LIMIT
         assert result.ledger.budget_limit == REJECTING_LIMIT
         assert result.ledger.stopped_at_boundary is True
 
@@ -839,15 +849,20 @@ class _ToyProblem:
     def constraint_violation(self, cfg) -> float:
         return 0.0
 
+    #: A refused ask is scored the way the joint problem scores one.
+    PENALTY = {"estimated_accuracy": 0.0, "total_params": 1e18}
+
     def evaluate(self, cfg) -> Dict[str, float]:
         key = json.dumps(cfg, sort_keys=True)
         cached = self._cache.get(key)
-        charge_evaluation(
+        admission = charge_evaluation(
             self.evaluation_budget, key,
             hit=cached is not None, channel=EVALUATE_CHANNEL,
         )
         if cached is not None:
             return cached
+        if not admission:
+            return dict(self.PENALTY)
         objectives = {
             "estimated_accuracy": 1.0 - abs(cfg["a"] - 0.7),
             "total_params": 1000.0 * cfg["b"] + 10.0,
@@ -901,11 +916,15 @@ class TestNsga2StopsAtTheFirstBoundary:
         assert generations == {1}, "an exhausted budget must not buy generation 2"
         assert [h["gen"] for h in result.history] == [1]
 
-    def test_the_stop_is_a_whole_generation_not_the_bare_limit(self, boundary_run):
-        # Boundary-stop semantics: the generation in flight finishes, and the
-        # ledger records the exact overshoot instead of hiding it.
-        budget, _, _ = boundary_run
-        assert budget.distinct_spent == POP_SIZE > BUDGET_LIMIT
+    def test_the_generation_in_flight_is_cut_at_the_bare_limit(self, boundary_run):
+        # Admission semantics: the generation in flight finishes as penalty
+        # rows once the budget is spent, and the ledger records the exact
+        # spend and the refusals — the budget is never exceeded.
+        budget, _, result = boundary_run
+        assert budget.distinct_spent == BUDGET_LIMIT < POP_SIZE
+        assert budget.refused >= POP_SIZE - BUDGET_LIMIT
+        assert result.ledger is not None
+        assert result.ledger.evaluations_refused == budget.refused
 
     def test_the_sealed_spend_is_the_accountants_exact_count(self, boundary_run):
         budget, _, result = boundary_run
@@ -937,8 +956,8 @@ class TestTheLedgerCoversTheSearchItself:
         _, _, result = boundary_run
 
         assert result.ledger is not None
-        assert result.ledger.evaluations_raw == POP_SIZE
-        assert result.ledger.evaluations_distinct == POP_SIZE
+        assert result.ledger.evaluations_raw == BUDGET_LIMIT
+        assert result.ledger.evaluations_distinct == BUDGET_LIMIT
 
     def test_a_single_channel_driver_asking_each_identity_once_seals_zero(
         self, boundary_run,
@@ -949,7 +968,7 @@ class TestTheLedgerCoversTheSearchItself:
         _, _, result = boundary_run
 
         assert result.ledger is not None
-        assert result.ledger.identities_asked == POP_SIZE
+        assert result.ledger.identities_asked == BUDGET_LIMIT
         assert result.ledger.identities_reasked == 0
         assert result.ledger.duplicate_rate == 0.0
 
@@ -962,8 +981,11 @@ class TestTheLedgerCoversTheSearchItself:
         budget, _, result = boundary_run
 
         assert result.pareto_front
-        assert budget.raw_calls == POP_SIZE + len(result.pareto_front)
-        assert budget.distinct_spent == POP_SIZE
+        admitted_front = [
+            c for c in result.pareto_front if c.objectives != _ToyProblem.PENALTY
+        ]
+        assert budget.raw_calls == BUDGET_LIMIT + len(admitted_front)
+        assert budget.distinct_spent == BUDGET_LIMIT
 
 
 class TestTheBoundaryFlagMeansTheBudgetCutTheRunShort:

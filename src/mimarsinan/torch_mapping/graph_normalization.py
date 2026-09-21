@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 from typing import Optional
 
 import torch
@@ -9,11 +10,93 @@ import torch.nn as nn
 import torch.fx as fx
 
 from mimarsinan.torch_mapping.fx_shape_utils import node_target_str
+from mimarsinan.torch_mapping.representability_analyzer import (
+    OpInfo,
+    RepresentabilityError,
+    RepresentabilityReport,
+)
 
 
 _MM_MODULES = (nn.Linear, nn.Conv1d, nn.Conv2d)
 
 _FOLDABLE_MODULES = (nn.Identity, nn.BatchNorm1d, nn.BatchNorm2d)
+
+# A write through any of these still lands on the tensor it was taken from, so the
+# mutation walk follows them back to the module attribute they alias.
+_ALIASING_METHODS = frozenset({
+    "view", "reshape", "flatten", "permute", "transpose", "t", "squeeze", "unsqueeze",
+    "contiguous", "detach", "narrow", "select", "expand", "__getitem__",
+})
+_INPLACE_DUNDER_METHODS = frozenset({
+    "__setitem__", "__iadd__", "__isub__", "__imul__", "__itruediv__", "__ifloordiv__",
+    "__imod__", "__ipow__", "__iand__", "__ior__", "__ixor__", "__ilshift__", "__irshift__",
+})
+_INPLACE_FUNCTIONS = (
+    operator.setitem, operator.iadd, operator.isub, operator.imul, operator.itruediv,
+    operator.ifloordiv, operator.imod, operator.ipow, operator.iand, operator.ior,
+    operator.ixor, operator.ilshift, operator.irshift, setattr,
+)
+
+
+def _module_state_root(arg: object) -> Optional[fx.Node]:
+    """The ``get_attr`` node (a buffer, parameter or baked constant) ``arg`` aliases, if any."""
+    node = arg
+    seen: set[fx.Node] = set()
+    while isinstance(node, fx.Node) and node not in seen:
+        seen.add(node)
+        if node.op == "get_attr":
+            return node
+        aliases = (
+            node.op == "call_function" and node.target in (getattr, operator.getitem)
+        ) or (
+            node.op == "call_method" and node_target_str(node) in _ALIASING_METHODS
+        )
+        if not aliases or not node.args:
+            return None
+        node = node.args[0]
+    return None
+
+
+def _mutated_module_state(node: fx.Node) -> Optional[fx.Node]:
+    """The module-state root ``node`` writes into, or ``None`` when it writes none."""
+    if node.op == "call_method":
+        name = node_target_str(node)
+        inplace = (name.endswith("_") and not name.endswith("__")) or name in _INPLACE_DUNDER_METHODS
+        if inplace and node.args:
+            return _module_state_root(node.args[0])
+    elif node.op == "call_function":
+        if node.target in _INPLACE_FUNCTIONS and node.args:
+            return _module_state_root(node.args[0])
+    else:
+        return None
+    return _module_state_root(node.kwargs.get("out"))
+
+
+def refuse_module_state_mutations(gm: fx.GraphModule) -> None:
+    """Refuse a forward that writes module state (a buffer, parameter or baked constant).
+
+    Such a write is hidden state carried across calls; it has no deployment semantics,
+    and dead-code elimination would otherwise drop the unused-result update and admit a
+    stateless graph silently. Raised BEFORE any normalization pass runs.
+    """
+    unsupported = [
+        OpInfo(
+            node.name, node.op, str(getattr(node.target, "__name__", node.target)),
+            reason=(
+                f"mutates module state '{root.target}' (get_attr node '{root.name}') inside "
+                f"forward; hidden state carried across calls is not admissible, and "
+                f"dead-code elimination would silently drop the update. Stage: graph "
+                f"normalization, before dead-code elimination. Keep buffers and parameters "
+                f"read-only in forward, or move the stateful section to the host caller."
+            ),
+        )
+        for node in gm.graph.nodes
+        if (root := _mutated_module_state(node)) is not None
+    ]
+    if unsupported:
+        raise RepresentabilityError(
+            RepresentabilityReport(is_representable=False, unsupported_ops=unsupported)
+        )
 
 
 def _get_sole_user_module(
@@ -126,7 +209,12 @@ def _fuse_linear_pair(
 
 
 def normalize_fx_graph(gm: fx.GraphModule) -> fx.GraphModule:
-    """Run in-place normalization passes: consecutive-Linear fusion then dead-code elimination."""
+    """Run in-place normalization passes: consecutive-Linear fusion then dead-code elimination.
+
+    A forward that writes module state is refused first (``RepresentabilityError``),
+    while the write is still in the graph.
+    """
+    refuse_module_state_mutations(gm)
     modules: dict[str, nn.Module] = dict(gm.named_modules())
     graph = gm.graph
 

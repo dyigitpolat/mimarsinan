@@ -69,8 +69,7 @@ class HwOnlyCache:
     model: Any
     total_params: float
     mapper_repr: Any = None
-    # (params, macs) OnchipFractionEstimate pair — a function of the fixed
-    # model and placement alone, so computed once like the mapper repr.
+    # (params, macs) OnchipFractionEstimate pair, computed once like the mapper repr.
     onchip_census: Any = None
 
 
@@ -80,6 +79,16 @@ class ValidationEntry:
 
     model: Any
     view: CandidateStaticView
+    replicate: int = 0
+
+
+#: Replicate identifier: a deliberate repeat is a DISTINCT, differently seeded identity.
+REPLICATE_KEY = "replicate"
+
+
+def candidate_replicate(configuration: Mapping[str, Any]) -> int:
+    """This candidate's replicate identifier — 0 unless the record carries one."""
+    return int(configuration.get(REPLICATE_KEY, 0) or 0)
 
 
 @dataclass(frozen=True)
@@ -111,17 +120,17 @@ class CandidatePlatformError(ValueError):
     """
 
 
-#: Candidate-scoped failure phases, in the order the pipeline meets them.
+#: Candidate-scoped failure phases, in the order the pipeline meets them;
+#: ``domain`` (outside the declaration) and ``budget`` (refused) are uncharged.
+DOMAIN_PHASE = "domain"
 STRUCTURAL_PHASE = "structural"
+BUDGET_PHASE = "budget"
 MODEL_BUILD_PHASE = "model_build"
 HW_CONVERSION_PHASE = "hw_conversion"
 HW_PACKING_PHASE = "hw_packing"
 
-# [TS1] The channels this problem answers about a candidate through. The
-# accountant charges per (channel, identity): a second channel's first look at
-# a candidate belongs to the proposal that opened it, and only a channel asking
-# again about the same candidate is a re-proposal. Naming them here keeps the
-# charging law readable at the seams and out of the accountant's vocabulary.
+# [TS1] The channels this problem answers through; the accountant charges per
+# (channel, identity), and only a channel asking AGAIN is a re-proposal.
 CONSTRAINT_CHANNEL = "constraint"
 EVALUATE_CHANNEL = "evaluate"
 VALIDATE_CHANNEL = "validate"
@@ -235,8 +244,10 @@ class JointHostContract:
         ) -> Tuple[Any, float]: ...
 
         def _candidate_model(
-            self, mc: Dict, pcfg: Dict, placement: str,
+            self, mc: Dict, pcfg: Dict, placement: str, replicate: int = 0,
         ) -> Tuple[Any, float]: ...
+
+        def _domain_failure(self, configuration: Dict) -> Optional["CandidateFailure"]: ...
 
         def _ensure_mapper_repr(self, model: Any, placement: str) -> Any: ...
 
@@ -284,5 +295,5 @@ class JointHostContract:
         def _onchip_census(self, model: Any, placement: str) -> Any: ...
 
         def _resolve_entry(
-            self, mc: Dict, pcfg: Dict, placement: str,
+            self, mc: Dict, pcfg: Dict, placement: str, replicate: int = 0,
         ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]: ...
