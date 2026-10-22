@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Any, Callable, Mapping, Optional, Tuple, Union
 
 from mimarsinan.config_schema.registry.relevance import Relevance
+from mimarsinan.config_schema.registry.value_schema import ValueSchema
 
 
 class FieldType(str, Enum):
@@ -152,6 +153,21 @@ class ConfigKeySchema:
     hidden: bool = False
     # Core-semantics domain membership (see DOMAINS above).
     domain: str = "universal"
+    # The value schema the one judging loop reads (registry/value_schema.py); None = the
+    # scalar schema implied by type, bounds and options.
+    value_schema: Optional[ValueSchema] = None
+    # Per-end exclusivity of ``bounds`` (False = inclusive, the historical meaning).
+    exclusive_bounds: Tuple[bool, bool] = (False, False)
+    # The resolver carries this platform key verbatim onto platform_constraints_resolved,
+    # after judging its value and domain.
+    passthrough: bool = False
+    # The consumer's own reading of this key from a config (a reference to the consumer's function,
+    # never a copy), declared where the consumer normalizes what it reads: both doors read a declared
+    # value through it before the one judging loop (registry/consumer_reading.py).
+    consumer_reading: Optional[DerivedDefaultFn] = None
+    # Injected by the registry builder from decision_classes.py, never declared by an entry.
+    decision_class: Optional[str] = None
+    decision_reason: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.section not in SECTIONS:
@@ -165,6 +181,19 @@ class ConfigKeySchema:
             raise ValueError(f"{self.flat_key!r}: enum keys must declare options")
         if self.bounds is not None and self.type not in (FieldType.INT, FieldType.FLOAT):
             raise ValueError(f"{self.flat_key!r}: bounds require a numeric type")
+        if any(self.exclusive_bounds) and self.bounds is None:
+            raise ValueError(f"{self.flat_key!r}: exclusive_bounds require bounds")
+        if self.value_schema is not None and self.value_schema.kind != self.type.value:
+            raise ValueError(f"{self.flat_key!r}: a value_schema is of its key's own type")
+        if self.value_schema is not None and self.value_schema.options is not None and (
+                self.resolved_options() != self.value_schema.options + self.value_schema.reserved):
+            raise ValueError(f"{self.flat_key!r}: the options name the value schema's legal, then "
+                             "reserved, values")
+        if self.consumer_reading is not None and self.value_schema is None:
+            raise ValueError(f"{self.flat_key!r}: a consumer reading needs the value schema both doors "
+                             "judge the read value by")
+        if self.passthrough and self.section != "platform_constraints":
+            raise ValueError(f"{self.flat_key!r}: only a platform key rides the resolved surface")
         if (self.category is Category.DERIVED) != (self.derivation == "derived"):
             raise ValueError(f"{self.flat_key!r}: DERIVED category must pair with derivation='derived'")
         if (self.category is Category.RUNTIME) != (self.derivation == "runtime"):

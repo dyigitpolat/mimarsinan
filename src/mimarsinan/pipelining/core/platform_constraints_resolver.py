@@ -2,10 +2,24 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, cast
 
+from mimarsinan.chip_simulation.core_semantics import (
+    is_mvm_core_semantics,
+    resolve_core_semantics,
+)
 from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import resolve_floorplan
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
+from mimarsinan.config_schema.registry import REGISTRY
+from mimarsinan.config_schema.registry.build import passthrough_keys
+from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
+from mimarsinan.config_schema.registry.entries_write import (
+    conflicting_platform_bias_error,
+    platform_bias_declarations,
+    platform_bias_mode,
+)
+from mimarsinan.config_schema.registry.value_schema import DeclarationValueError, judge_declaration
 from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
@@ -18,18 +32,20 @@ def build_platform_constraints_resolved(
 
     ONE function of the config, with no mode switch: a searched chip and the
     same chip declared by hand must resolve identically, and an omitted
-    permission reads as DENIED downstream (``ChipCapabilities``).
+    permission reads as DENIED downstream (``ChipCapabilities``). The config is
+    read as its consumers read it (``read_like_consumers``) before anything is
+    judged, as the document door reads a document; the caller's dict is not
+    changed.
     """
+    pipeline_config = read_like_consumers(pipeline_config)
     cores = pipeline_config.get("cores")
     if cores is None:
         cores = list(cast("list[dict[str, Any]]", DEFAULT_PLATFORM_CONSTRAINTS["cores"]))
 
-    global_has_bias = pipeline_config.get("platform_constraints", {}).get(
-        "has_bias", True
-    )
     cores = [dict(ct) for ct in cores]
+    bias_mode = _judged_platform_bias(pipeline_config)
     for ct in cores:
-        ct.setdefault("has_bias", global_has_bias)
+        ct.setdefault("has_bias", bias_mode)
 
     pcfg: dict[str, Any] = {"cores": cores}
     pcfg["allow_neuron_splitting"] = bool(
@@ -108,7 +124,64 @@ def build_platform_constraints_resolved(
     else:
         pcfg[CANONICAL_KEY] = False
     normalize_coalescing_config(pcfg)
+    pcfg.update(declared_surface(pipeline_config))
     return pcfg
+
+
+def _run_domain(pipeline_config: dict[str, Any]) -> str:
+    return "value" if is_mvm_core_semantics(pipeline_config.get("core_semantics")) else "event"
+
+
+def _judged_platform_bias(pipeline_config: dict[str, Any]) -> Any:
+    """The bias mode a core type without its own ``has_bias`` takes (``platform_bias_mode``: the flat
+    key, then the nested ``platform_constraints.has_bias``, else a bias lane), judged as the document
+    door judges it: each declaration is a boolean (the registry's BOOL schema), and a flat and a nested
+    declaration that disagree refuse by name (``conflicting_platform_bias_error``)."""
+    run_domain = _run_domain(pipeline_config)
+    for value in platform_bias_declarations(pipeline_config):
+        if value is not None:
+            judge_declaration(REGISTRY["has_bias"], value, run_domain=run_domain)
+    error = conflicting_platform_bias_error(pipeline_config)
+    if error is not None:
+        raise DeclarationValueError(error)
+    return platform_bias_mode(pipeline_config)
+
+
+def judged_passthrough(pipeline_config: dict[str, Any], run_domain: str) -> dict[str, Any]:
+    """Judge every present key the registry gives a value schema or the passthrough flag, by the
+    schema the document door judges it with (``DeclarationValueError`` names the key), and return
+    the passthrough keys verbatim (an absent key does not appear).
+
+    The domain tag judges a declaration: a key with a schema default sits in every flat config, so
+    its presence is no declaration, and only its value is judged here (its domain is the document
+    door's).
+    """
+    carried = set(passthrough_keys())
+    surface: dict[str, Any] = {}
+    for key, entry in REGISTRY.items():
+        value = pipeline_config.get(key)
+        if value is None or not (key in carried or entry.value_schema is not None):
+            continue
+        judge_declaration(entry, value, run_domain=None if entry.has_default() else run_domain)
+        if key in carried:
+            surface[key] = copy.deepcopy(value)
+    return surface
+
+
+def declared_surface(pipeline_config: dict[str, Any]) -> dict[str, Any]:
+    """The resolved surface's declaration part, judged here because a run never calls the
+    document validator (``judged_passthrough``, over the config as its consumers read it); the
+    value domain is named, with its value grid when declared, exactly for value-domain runs, so
+    every spiking surface is unchanged.
+    """
+    run_domain = _run_domain(pipeline_config)
+    value_domain = run_domain == "value"
+    surface = judged_passthrough(pipeline_config, run_domain)
+    if value_domain:
+        surface["core_semantics"] = resolve_core_semantics(pipeline_config)
+        if pipeline_config.get("activation_bits") is not None:
+            surface["activation_bits"] = pipeline_config["activation_bits"]
+    return surface
 
 
 def resolve_bias_mode(pipeline_config: dict[str, Any]) -> str:

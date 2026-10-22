@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Tuple
 
 from mimarsinan.config_schema.defaults import DEFAULT_TRAINING_RECIPE
 from mimarsinan.config_schema.registry.build import REGISTRY, section_keys
+from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
+from mimarsinan.config_schema.registry.entries_write import CORE_TYPE_SCHEMA
 from mimarsinan.config_schema.registry.retired_keys import retired_keys_in_scope
 from mimarsinan.config_schema.registry.types import FieldType
 
-CORE_FIELDS = frozenset({"max_axons", "max_neurons", "count", "has_bias"})
+CORE_FIELDS = frozenset(CORE_TYPE_SCHEMA.fields)
 RECIPE_FIELDS = frozenset(DEFAULT_TRAINING_RECIPE)
 PREPROCESSING_FIELDS = frozenset({"resize_to", "normalize", "interpolation"})
 
@@ -41,6 +44,11 @@ class ParsedDocument:
     retired_paths: Dict[str, Dict[str, List[str]]] = field(default_factory=lambda: {
         "deployment_parameters": {}, "platform_constraints": {},
     })
+    # The container path (segments under the document root) of every schema-known declaration.
+    paths: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+    # Declarations their consumer reads as another value (``read_like_consumers``): key -> the value
+    # read, which top/dp/pc already carry in place of the value as written.
+    read_as: Dict[str, Any] = field(default_factory=dict)
 
     def known_flat_keys(self) -> Dict[str, Any]:
         merged: Dict[str, Any] = {}
@@ -71,6 +79,7 @@ def _check_nested_fields(value: Any, allowed: frozenset, path: str, out: ParsedD
 
 def _check_value_shape(flat_key: str, value: Any, path: str, out: ParsedDocument) -> None:
     entry = REGISTRY[flat_key]
+    schema = entry.value_schema
     if entry.type is FieldType.CORES and isinstance(value, list):
         for i, item in enumerate(value):
             _check_nested_fields(item, CORE_FIELDS, f"{path}[{i}]", out)
@@ -78,6 +87,8 @@ def _check_value_shape(flat_key: str, value: Any, path: str, out: ParsedDocument
         _check_nested_fields(value, RECIPE_FIELDS, path, out)
     elif flat_key == "preprocessing":
         _check_nested_fields(value, PREPROCESSING_FIELDS, path, out)
+    elif schema is not None and schema.fields and schema.entries is None:
+        _check_nested_fields(value, frozenset(schema.fields), path, out)
 
 
 def _parse_section(
@@ -91,6 +102,7 @@ def _parse_section(
             out.meta[key] = value
         elif key in known:
             target[key] = value
+            out.paths[key] = tuple(container_path or (section,))
             _check_value_shape(key, value, f"{prefix}{key}", out)
         elif key in retired:
             out.retired[section][key] = value
@@ -125,7 +137,9 @@ def parse_deployment_document(config: Mapping[str, Any]) -> ParsedDocument:
     """Split a deployment JSON into known flat keys / meta keys / unknown paths.
 
     Nothing is dropped: unknown keys are reported as dotted paths so callers
-    surface them loudly instead of silently absorbing or losing them.
+    surface them loudly instead of silently absorbing or losing them. Known
+    values are read as their consumers read them (``read_as`` names each one
+    read as another value), so every judge downstream judges what a run runs.
     """
     out = ParsedDocument()
     top_known = section_keys("top")
@@ -140,6 +154,33 @@ def parse_deployment_document(config: Mapping[str, Any]) -> ParsedDocument:
                 _parse_platform(value, out)
         elif key in top_known:
             out.top[key] = value
+            out.paths[key] = ()
         else:
             out.unknown.append(key)
+    _read_like_consumers(out)
     return out
+
+
+def _read_like_consumers(out: ParsedDocument) -> None:
+    """Carry, in each section, the value every declaration's consumer reads (``read_like_consumers``)."""
+    declared = out.known_flat_keys()
+    for key, value in read_like_consumers(declared).items():
+        if type(value) is type(declared[key]) and value == declared[key]:
+            continue
+        out.read_as[key] = value
+        for section in (out.top, out.dp, out.pc):
+            if key in section:
+                section[key] = value
+
+
+def read_document_like_consumers(config: Mapping[str, Any]) -> Dict[str, Any]:
+    """A copy of the document in which every declaration its consumer reads as another value carries
+    that value, in the container that declares it (the document door's reading, before it judges)."""
+    parsed = parse_deployment_document(config)
+    document = copy.deepcopy(dict(config))
+    for key, value in parsed.read_as.items():
+        container = document
+        for segment in parsed.paths[key]:
+            container = container[segment]
+        container[key] = value
+    return document

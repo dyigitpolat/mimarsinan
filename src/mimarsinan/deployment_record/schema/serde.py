@@ -2,10 +2,26 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, TypeVar
+from dataclasses import field, fields
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, TypeVar
 
 T = TypeVar("T")
+
+#: Field metadata marking a declared-only field: ``to_dict`` emits it only when set.
+DECLARED_ONLY = "declared_only"
+
+
+def declared_only() -> Any:
+    """An optional field absent from ``to_dict`` while unset, so a record without it keeps its bytes."""
+    return field(default=None, metadata={DECLARED_ONLY: True})
+
+
+def without_unset_declared(record: Any, data: Dict[str, Any]) -> Dict[str, Any]:
+    """``data`` (the record's ``asdict``) without the record's unset declared-only fields."""
+    for f in fields(record):
+        if f.metadata.get(DECLARED_ONLY) and getattr(record, f.name) is None:
+            data.pop(f.name, None)
+    return data
 
 
 def strict_kwargs(cls: type, data: Mapping[str, Any]) -> dict[str, Any]:

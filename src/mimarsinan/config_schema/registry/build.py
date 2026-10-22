@@ -4,25 +4,35 @@ from __future__ import annotations
 
 import dataclasses
 from types import MappingProxyType
-from typing import Any, Dict, FrozenSet, Mapping, Tuple
+from typing import Any, Dict, FrozenSet, Iterable, Mapping, Tuple
 
 from mimarsinan.config_schema.defaults import (
     CONFIG_KEYS_SET,
     DEFAULT_DEPLOYMENT_PARAMETERS,
     DEFAULT_PLATFORM_CONSTRAINTS,
 )
+from mimarsinan.config_schema.registry.decision_classes import (
+    declared_paths_in, effective_class_in, with_decision_class,
+)
 from mimarsinan.config_schema.registry.entries_conversion import ENTRIES as _CONVERSION
 from mimarsinan.config_schema.registry.entries_endpoint import ENTRIES as _ENDPOINT
 from mimarsinan.config_schema.registry.entries_execution import ENTRIES as _EXECUTION
+from mimarsinan.config_schema.registry.entries_lowering import ENTRIES as _LOWERING
 from mimarsinan.config_schema.registry.entries_model import ENTRIES as _MODEL
 from mimarsinan.config_schema.registry.entries_physics import ENTRIES as _PHYSICS
 from mimarsinan.config_schema.registry.entries_platform import ENTRIES as _PLATFORM
 from mimarsinan.config_schema.registry.entries_pruning import ENTRIES as _PRUNING
+from mimarsinan.config_schema.registry.entries_readout import ENTRIES as _READOUT
+from mimarsinan.config_schema.registry.entries_residency import ENTRIES as _RESIDENCY
 from mimarsinan.config_schema.registry.entries_run import ENTRIES as _RUN
 from mimarsinan.config_schema.registry.entries_semantics import (
     ENTRIES as _SEMANTICS,
 )
+from mimarsinan.config_schema.registry.entries_target import ENTRIES as _TARGET
 from mimarsinan.config_schema.registry.entries_tuning import ENTRIES as _TUNING
+from mimarsinan.config_schema.registry.entries_write import (
+    ENTRIES as _WRITE, INJECTED_DECLARATIONS,
+)
 from mimarsinan.config_schema.registry.groups import CONCERN_GROUPS, VALID_GROUP_IDS
 from mimarsinan.config_schema.registry.relevance import Relevance
 from mimarsinan.config_schema.registry.types import Category, ConfigKeySchema
@@ -100,6 +110,12 @@ def _inject_default(entry: ConfigKeySchema) -> ConfigKeySchema:
     return dataclasses.replace(entry, default=source[entry.flat_key])
 
 
+def _inject_declarations(entry: ConfigKeySchema) -> ConfigKeySchema:
+    """Attributes declared beside the concern that extends the key (the core-type fields)."""
+    declared = INJECTED_DECLARATIONS.get(entry.flat_key)
+    return entry if declared is None else dataclasses.replace(entry, **declared)
+
+
 def validate_registry(entries: Tuple[ConfigKeySchema, ...]) -> Dict[str, ConfigKeySchema]:
     """Registry BUILD-TIME invariants (defaults already injected)."""
     table: Dict[str, ConfigKeySchema] = {}
@@ -175,8 +191,9 @@ def _assert_domain_tags(entries) -> None:
 
 _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
-        _inject_domain_relevance(_inject_default(e))
-        for e in (_RUN + _MODEL + _SEMANTICS + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM + _PHYSICS)
+        with_decision_class(_inject_domain_relevance(_inject_default(_inject_declarations(e))))
+        for e in (_RUN + _MODEL + _SEMANTICS + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM + _PHYSICS
+                  + _LOWERING + _TARGET + _WRITE + _READOUT + _RESIDENCY)
     )
 )
 _assert_domain_tags(_REGISTRY.values())
@@ -206,6 +223,21 @@ def effective_value(config: Mapping[str, Any], flat_key: str) -> Any:
     if entry.derived_default is not None:
         return entry.derived_default(config)
     return None
+
+
+def passthrough_keys() -> Tuple[str, ...]:
+    """The platform keys the resolver carries verbatim onto ``platform_constraints_resolved``."""
+    return tuple(k for k, e in REGISTRY.items() if e.passthrough)
+
+
+def effective_class(keys: Iterable[str]) -> str:
+    """The decision class of a composite value: the join over the key paths it sets."""
+    return effective_class_in(REGISTRY, keys)
+
+
+def declared_paths(values: Mapping[str, Any]) -> Tuple[str, ...]:
+    """The key paths (``key`` or ``key.field``) a mapping of declarations sets."""
+    return declared_paths_in(REGISTRY, values)
 
 
 def keys_in_category(category: Category) -> FrozenSet[str]:
@@ -247,6 +279,8 @@ def serialize_registry() -> Dict[str, Any]:
             "domain": entry.domain,
             "provenance": entry.provenance,
             "hidden": entry.hidden,
+            "exclusive_bounds": list(entry.exclusive_bounds),
+            "decision_class": entry.decision_class,
         }
         if entry.has_default():
             record["default"] = entry.default

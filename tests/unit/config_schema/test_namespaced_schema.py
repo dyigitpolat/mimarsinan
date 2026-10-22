@@ -63,6 +63,9 @@ DERIVED_NON_DEFAULT_KEYS = {
     "weight_source",
     "pretrained_weight_set",
     "pretrained_weight_sets",
+    # The target bundle's labels, written by the target expansion on flat configs only.
+    "target_claim_class",
+    "target_faithfulness_class",
 }
 RUNTIME_KEYS = {"device", "input_shape", "input_size", "num_classes"}
 

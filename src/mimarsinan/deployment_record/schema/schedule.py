@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
 
+from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.support.period_census import natural, settle_residency_segment
 from mimarsinan.mapping.support.schedule.pass_cut import TRANSFER_DISCIPLINES
 from mimarsinan.deployment_record.schema.serde import (
+    declared_only,
     require_choice,
     strict_kwargs,
     tuple_of,
+    without_unset_declared,
 )
 
 PASS_REASONS = frozenset({"initial", "capacity_overflow"})
@@ -75,10 +79,14 @@ class SegmentRecord:
     params_bytes: int
     connectivity_entries: int
     static_latency_levels: int
+    #: Hard cores of this pass an executed residency plan keeps programmed across periods.
+    resident_core_indices: Optional[Tuple[int, ...]] = declared_only()
 
     def __post_init__(self) -> None:
         require_choice("SegmentRecord", "pass_reason", self.pass_reason, PASS_REASONS)
         require_choice("SegmentRecord", "programming", self.programming, PROGRAMMING_KINDS)
+        if self.resident_core_indices is not None:
+            object.__setattr__(self, "resident_core_indices", _core_indices(self.resident_core_indices))
         if self.pass_index > 0 and self.pass_reason != "capacity_overflow":
             raise ValueError(
                 f"SegmentRecord pass_index {self.pass_index} > 0 requires "
@@ -86,7 +94,7 @@ class SegmentRecord:
             )
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return without_unset_declared(self, asdict(self))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SegmentRecord":
@@ -157,6 +165,66 @@ class PassCarryRecord:
         return cls(**strict_kwargs(cls, data))
 
 
+class ResidencyRecordError(ToolchainRefusal, ValueError):
+    """A residency record whose step rule, step index, count or core index does not describe an executed plan."""
+
+
+def _core_indices(marks: Any) -> Tuple[int, ...]:
+    """``SegmentRecord.resident_core_indices`` under the seam's one integer rule (``natural``)."""
+    what = "SegmentRecord.resident_core_indices"
+    if not isinstance(marks, (tuple, list)):
+        raise ResidencyRecordError(f"{what} must be a sequence of core indices, got {marks!r}")
+    return tuple(natural(index, what, error=ResidencyRecordError) for index in marks)
+
+
+@dataclass(frozen=True)
+class ResidencySegmentRecord:
+    """One neural segment of an executed residency plan (field for field ``ResidencySegmentPlan``)."""
+
+    segment_index: int
+    step_rule: str
+    step_index: Optional[int]
+    rotating_tiles: int
+    passes: int
+    carried_elements: int
+    written_tiles: int
+    total_tiles: int
+    core_budget: int
+
+    def __post_init__(self) -> None:
+        settle_residency_segment(self, error=ResidencyRecordError)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ResidencySegmentRecord":
+        return cls(**strict_kwargs(cls, data))
+
+
+@dataclass(frozen=True)
+class ResidencyPlanRecord:
+    """The executed residency plan, one row per neural segment."""
+
+    segments: Tuple[ResidencySegmentRecord, ...]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"segments": [segment.to_dict() for segment in self.segments]}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ResidencyPlanRecord":
+        kwargs = strict_kwargs(cls, data)
+        return cls(segments=tuple_of(ResidencySegmentRecord.from_dict, kwargs["segments"]))
+
+    @classmethod
+    def from_plan(cls, plan: Any) -> "ResidencyPlanRecord":
+        """The record of an executed plan (``ResidencySegmentPlan`` rows), copied field by field."""
+        names = [f.name for f in fields(ResidencySegmentRecord)]
+        return cls(segments=tuple(
+            ResidencySegmentRecord(**{name: getattr(row, name) for name in names}) for row in plan
+        ))
+
+
 @dataclass(frozen=True)
 class ScheduleRecord:
     """The deployed program in execution order, with the pass census."""
@@ -172,13 +240,17 @@ class ScheduleRecord:
     # with no intra-segment pass boundary carries nothing, and pre-carry records
     # load with None rather than forcing a format-version bump.
     carry: Optional["PassCarryRecord"] = None
+    #: The executed residency plan; declared-only, so a record without one keeps its bytes.
+    residency_plan: Optional[ResidencyPlanRecord] = declared_only()
 
     def segments(self) -> Tuple[SegmentRecord, ...]:
         return tuple(s for s in self.stages if isinstance(s, SegmentRecord))
 
     def to_dict(self) -> Dict[str, Any]:
-        data = asdict(self)
+        data = without_unset_declared(self, asdict(self))
         data["stages"] = [_stage_to_dict(stage) for stage in self.stages]
+        if self.residency_plan is not None:
+            data["residency_plan"] = self.residency_plan.to_dict()
         return data
 
     @classmethod
@@ -188,4 +260,7 @@ class ScheduleRecord:
         carry = kwargs.get("carry")
         if carry is not None and not isinstance(carry, PassCarryRecord):
             kwargs["carry"] = PassCarryRecord.from_dict(carry)
+        plan = kwargs.get("residency_plan")
+        if plan is not None and not isinstance(plan, ResidencyPlanRecord):
+            kwargs["residency_plan"] = ResidencyPlanRecord.from_dict(plan)
         return cls(**kwargs)

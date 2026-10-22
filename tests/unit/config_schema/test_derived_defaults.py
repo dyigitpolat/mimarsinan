@@ -166,6 +166,8 @@ class TestTheConcreteProspectiveValue:
             "tuning_step_cap_epochs", "calibration_set_policy",
             "proven_recovery_depth", "activation_analysis_batch_size",
             "eval_subsample_target",
+            # no target bundle declared, so no bundle label
+            "target_claim_class", "target_faithfulness_class",
         }, sorted(uncomputable)
 
     def test_the_derived_value_is_never_the_empty_means_prose(self):

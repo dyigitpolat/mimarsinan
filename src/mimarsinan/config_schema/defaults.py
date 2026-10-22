@@ -145,6 +145,11 @@ CONFIG_KEYS_SET: Set[str] = {
     # Keys with NO default, where absence is meaningful: workload-profile-injectable ones, and the target's declared physics (no profile => no absolute area/energy number at all, never a defaulted one).
     "input_data_scale", "eval_subsample_target", "tuning_step_cap_epochs", "calibration_set_policy", "prefix_stage_lr",
     "endpoint_floor_lr", "platform_physics_profile", "platform_physics_overrides",
+    # Wave 1 declarations (registry/entries_{lowering,target,write,readout,residency}.py): no
+    # defaults, so an absent key leaves every resolution and program byte for byte.
+    "decompose_leaf_modules", "target", "target_overrides", "target_claim_class",
+    "target_faithfulness_class", "readout_law", "inference_batch_K", "write_overlap",
+    "write_ports", "inference_rate_hz", "min_lifetime_hours", "residency_plan",
 }
 
 

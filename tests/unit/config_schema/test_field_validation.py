@@ -98,6 +98,12 @@ class TestRegistryWalkingValidator:
         rows = validate_against_registry({"nevresim_connectivity_mode": "telepathy"})
         assert [r["key"] for r in rows] == ["nevresim_connectivity_mode"]
 
+    def test_a_value_the_consumer_refuses_is_rejected(self):
+        """The registry legal set is the consumer's (connectivity.py: compile_time or runtime), so
+        codegen, which the consumer refuses at run time, is refused here by name."""
+        rows = validate_against_registry({"nevresim_connectivity_mode": "codegen"})
+        assert [r["key"] for r in rows] == ["nevresim_connectivity_mode"]
+
     def test_bool_is_not_an_int(self):
         """Python conflates bool and int; the registry declares them distinct."""
         rows = validate_against_registry({"weight_bits": True})
@@ -119,7 +125,8 @@ class TestRegistryWalkingValidator:
 
     def test_a_valid_value_passes(self):
         assert validate_against_registry({"nf_scm_parity_samples": 64}) == []
-        assert validate_against_registry({"nevresim_connectivity_mode": "codegen"}) == []
+        assert validate_against_registry({"nevresim_connectivity_mode": "compile_time"}) == []
+        assert validate_against_registry({"nevresim_connectivity_mode": "runtime"}) == []
         assert validate_against_registry({"weight_bits": 8}) == []
         assert validate_against_registry({"simulation_step_timeout_s": 300.0}) == []
 

@@ -508,8 +508,10 @@ class TestPerLayerSTemplate:
         # Byte-identical-runnable: every explicit S equals the global uniform S.
         assert all(s == pc["simulation_steps"] for s in dp["s_allocation_explicit"])
 
-    def test_template_documents_reserved_axis_but_is_not_runnable_yet(self):
-        assert any("reserved/not implemented" in e for e in validate_wizard_state(self._doc()))
+    def test_template_reads_as_the_uniform_declaration_and_is_valid(self):
+        # Every explicit S equals the global uniform S, so the consumer's allocation is uniform: both
+        # doors read the declaration as uniform (owner decision 7, S0 review) and the document is valid.
+        assert validate_wizard_state(self._doc()) == []
 
     def test_template_builds_flat_pipeline_config(self):
         doc = self._doc()
