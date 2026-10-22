@@ -14,6 +14,9 @@ from mimarsinan.config_schema.deployment_derivation import (
     derive_pipeline_runtime_parameters,
     derive_platform_constraints,
 )
+# Bound as a module (resolved from sys.modules while it initializes): target_expansion imports the registry,
+# whose package imports this module first when target_expansion is the first import.
+import mimarsinan.mapping.platform.target_expansion as target_expansion
 
 
 def build_flat_pipeline_config(
@@ -22,7 +25,11 @@ def build_flat_pipeline_config(
     *,
     pipeline_mode: str = "vanilla",
 ) -> Dict[str, object]:
-    """Merge defaults + overrides the same way ``DeploymentPipeline`` does (without device I/O)."""
+    """Merge defaults + overrides the same way ``DeploymentPipeline`` does (without device I/O); a declared
+    target expands first, with the two labels a flat config carries (``expand_target``)."""
+    deployment_parameters, platform_constraints = target_expansion.expand_target(
+        deployment_parameters or {}, platform_constraints or {}, write_derived=True
+    )
     dp = dict(get_default_deployment_parameters())
     if deployment_parameters:
         dp.update(deployment_parameters)

@@ -1,0 +1,13 @@
+{
+  "name": "hermes_core_like",
+  "display_name": "IBM HERMES core (14 nm PCM, Khaddam-Aljameh 2022): one core of 256 x 256",
+  "geometry": "hermes_core_like",
+  "keys": {},
+  "faithfulness": {
+    "class": "refused",
+    "named": [
+      "no physics profile"
+    ],
+    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+  }
+}

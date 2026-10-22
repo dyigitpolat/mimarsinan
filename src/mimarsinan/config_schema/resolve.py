@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.config_schema.deployment_derivation import (
     enforce_quantization_assembly_contract,
     legal_values_for,
@@ -26,6 +27,9 @@ from mimarsinan.config_schema.validation import (
     validate_against_registry,
     validate_deployment_config,
 )
+# Bound as a module (resolved from sys.modules while it initializes): target_expansion imports the registry,
+# whose package imports this module first when target_expansion is the first import.
+import mimarsinan.mapping.platform.target_expansion as target_expansion
 
 _SESSION_DEFAULT_PIPELINE_MODE = "phased"
 
@@ -211,6 +215,14 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     attached to their keys, and the explicit-key diff against schema defaults.
     Never raises for config mistakes — they come back as ``errors`` rows.
     """
+    # A declared target expands first, so dormant-domain stripping reads the
+    # bundle's core semantics; a refused expansion is the structural row below,
+    # and no config is derived from it (as for an illegal declaration below).
+    try:
+        draft = target_expansion.expand_target_document(draft, write_derived=False)
+        target_refused = False
+    except ToolchainRefusal:
+        target_refused = True
     # Dormant-domain keys never resolve and never error: the semantics switch
     # is zero-friction from any green state (the draft retains them).
     draft, dormant_keys = _strip_dormant_domain(draft)
@@ -231,12 +243,12 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     errors.extend(illegal)
 
     # Field-domain errors (type/bounds/options) are keyed, remediable rows too;
-    # they supersede the plain structural message for the same key, exactly like
-    # the legality rows. Legality-bearing keys are skipped inside the validator,
-    # so these key sets never overlap.
+    # each supersedes the plain structural row stating its message (another
+    # violation keyed to the same key stays). Legality-bearing keys are skipped
+    # inside the validator, so these key sets never overlap.
     field_errors = validate_against_registry(parsed.known_flat_keys())
-    field_keys = {row["key"] for row in field_errors}
-    errors = [error for error in errors if error["key"] not in field_keys]
+    stated = {(row["key"], row["message"]) for row in field_errors}
+    errors = [error for error in errors if (error["key"], error["message"]) not in stated]
     errors.extend(field_errors)
 
     # Retired keys come back as keyed rows with one-click MIGRATION remedies,
@@ -256,7 +268,7 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     pipeline_mode = str(draft.get("pipeline_mode", _SESSION_DEFAULT_PIPELINE_MODE))
     resolved: Dict[str, Any] = {}
     derived: Dict[str, Dict[str, Any]] = {}
-    if not illegal:
+    if not illegal and not target_refused:
         try:
             resolved = build_flat_pipeline_config(
                 dict(parsed.dp), dict(parsed.pc), pipeline_mode=pipeline_mode

@@ -1,0 +1,13 @@
+{
+  "name": "meng_subarray_144x32",
+  "display_name": "Meng 2021 structured-pruning RRAM subarrays: 144 x 32",
+  "geometry": "meng_subarray_144x32",
+  "keys": {},
+  "faithfulness": {
+    "class": "refused",
+    "named": [
+      "no physics profile"
+    ],
+    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+  }
+}

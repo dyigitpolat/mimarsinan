@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Mapping
 from mimarsinan.chip_simulation.activation_semantics import RETIRED_SPIKING_KEYS
 from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import floorplan_config_errors
 from mimarsinan.chip_simulation.spiking_semantics import require_known_spiking_mode
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.config_schema.deployment_derivation import (
     legal_value_error, legal_values_for, legality_bearing_keys,
 )
@@ -19,6 +20,9 @@ from mimarsinan.config_schema.registry.entries_write import platform_bias_errors
 from mimarsinan.config_schema.registry.parse import read_document_like_consumers
 from mimarsinan.config_schema.registry.value_schema import entry_value_errors
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
+# Bound as a module (resolved from sys.modules while it initializes): target_expansion imports the registry,
+# whose package imports this module first when target_expansion is the first import.
+import mimarsinan.mapping.platform.target_expansion as target_expansion
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_MODES,
     resolve_s_allocation_mode,
@@ -185,6 +189,12 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
 
     config = read_document_like_consumers(config)
     errors.extend(non_declarable_key_errors(config))
+    # A declared target expands before anything else judges the document, so the registry and domain rules
+    # judge the bundle's keys; a refused expansion is stated below, once.
+    try:
+        config, target_refusals = dict(target_expansion.expand_target_document(config, write_derived=False)), []
+    except ToolchainRefusal as refusal:
+        target_refusals = [str(refusal)]
     errors.extend(row["message"] for row in retired_key_errors(config))
     errors.extend(mvm_document_errors(config))
 
@@ -207,7 +217,7 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
     # then their agreement (a refusal the registry loop above already states is not repeated).
     stated = set(errors)
     bias_errors = platform_bias_errors(document_run_layout(config), REGISTRY["has_bias"])
-    errors.extend(message for message in bias_errors if message not in stated)
+    errors.extend(message for message in [*bias_errors, *target_refusals] if message not in stated)
 
     for key in ("data_provider_name", "experiment_name", "generated_files_path", "platform_constraints", "deployment_parameters", "start_step"):
         if key not in config:

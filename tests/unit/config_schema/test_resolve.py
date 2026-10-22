@@ -227,3 +227,28 @@ class TestDerivedCoreMaxima:
         }))
         assert res.ok, res.errors
         assert res.resolved["max_axons"] == 1024
+
+
+class TestEveryBiasViolationIsNamed:
+    """The wizard names both invalid bias declarations, as the document and the run door do: a keyed field
+    row supersedes only the structural row stating its own message (S0 amendment A review finding)."""
+
+    FLAT = "has_bias must be bool, got str ('no')"
+    NESTED = "platform_constraints.has_bias must be bool, got int (0)"
+
+    @staticmethod
+    def _draft():
+        draft = _t0_01()
+        draft["platform_constraints"]["has_bias"] = "no"
+        draft["platform_constraints"]["platform_constraints"] = {"has_bias": 0}
+        return draft
+
+    def test_both_messages_are_rows(self):
+        messages = [row["message"] for row in resolve_draft(self._draft()).errors]
+        assert self.FLAT in messages and self.NESTED in messages
+        assert messages.count(self.FLAT) == 1 and messages.count(self.NESTED) == 1
+
+    def test_the_flat_row_is_the_remediable_field_row(self):
+        rows = {row["message"]: row for row in resolve_draft(self._draft()).errors}
+        assert rows[self.FLAT]["rule_id"] == "field_domain" and rows[self.FLAT]["key"] == "has_bias"
+        assert rows[self.NESTED]["rule_id"] == "config_shape"

@@ -1,0 +1,13 @@
+{
+  "name": "dynap_se_64x256x4",
+  "display_name": "DYNAP-SE (Moradi 2017): 4 cores of 256 neurons x 64 words",
+  "geometry": "dynap_se_64x256x4",
+  "keys": {},
+  "faithfulness": {
+    "class": "refused",
+    "named": [
+      "no physics profile"
+    ],
+    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+  }
+}

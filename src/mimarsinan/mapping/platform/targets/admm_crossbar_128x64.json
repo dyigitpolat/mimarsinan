@@ -1,0 +1,13 @@
+{
+  "name": "admm_crossbar_128x64",
+  "display_name": "ADMM crossbar study (Yuan 2019, Ma 2019): 128 x 64",
+  "geometry": "admm_crossbar_128x64",
+  "keys": {},
+  "faithfulness": {
+    "class": "refused",
+    "named": [
+      "no physics profile"
+    ],
+    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+  }
+}

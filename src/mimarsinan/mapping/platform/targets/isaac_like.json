@@ -1,0 +1,16 @@
+{
+  "name": "isaac_like",
+  "display_name": "ISAAC-CE (32 nm analog ReRAM, Shafiee 2016, simulated): 16128 arrays of 128 x 128",
+  "geometry": "isaac_like",
+  "keys": {
+    "core_semantics": "mvm",
+    "platform_physics_profile": "isaac_like"
+  },
+  "faithfulness": {
+    "class": "approximate",
+    "named": [
+      "energies derived from power"
+    ],
+    "note": "A design-space study, not a fabricated chip: every energy constant multiplies a published power by the paper's 100 ns cycle (isaac_like.json validity, shafiee2016isaac Table I)."
+  }
+}

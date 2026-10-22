@@ -1,0 +1,13 @@
+{
+  "name": "ibm_analog_ai_512x512x34",
+  "display_name": "IBM analog AI chip (Ambrogio 2023): 34 tiles of 512 x 512",
+  "geometry": "ibm_analog_ai_512x512x34",
+  "keys": {},
+  "faithfulness": {
+    "class": "refused",
+    "named": [
+      "no physics profile"
+    ],
+    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+  }
+}

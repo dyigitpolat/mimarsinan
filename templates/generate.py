@@ -387,6 +387,41 @@ T0 = [
          extra_pc={"activation_bits": 8, "max_schedule_passes": 128},
          note="wsm flagship: streamed scheduled passes on a "
               "constrained pool + boundary AQ, twin certs FATAL"),
+    # [CH-B0] one cell per physics target bundle (mapping/platform/targets/):
+    # the row declares `target` instead of a platform, so the bundle sets the
+    # core grid, weight width, core semantics, physics profile and floorplan
+    # (the generator authors none of the keys a bundle sets). Each cell is the
+    # minimal pair of a shipped cell with its platform replaced by the target.
+    dict(n=61, mode="lifs", quant="wq", s=4, vehicle="simplemlp", seed=1, target="odin",
+         target_overrides={
+             "allow_coalescing": {
+                 "value": True,
+                 "note": "the MLP's fan-ins exceed one ODIN core's 128 logical axons, "
+                         "and ODIN has no inter-core partial-sum transfer: the cell "
+                         "declares coalescing, a departure from the chip"},
+             "cores": {
+                 "value": [{"max_axons": 128, "max_neurons": 256, "count": 64, "has_bias": False}],
+                 "note": "64 ODIN cores: ODIN is one core, and the MNIST cell needs a pool of them"}},
+         note="ODIN bundle (4-bit weights, 128 x 256 logical cores, no bias lane, no "
+              "coalescing or neuron splitting), the minimal pair of t0_45; the core count "
+              "and coalescing are declared overrides, so the faithfulness names both "
+              "('...; allow_coalescing declared; cores declared')"),
+    dict(n=62, mode="lifs", quant="fp", s=8, vehicle="simplemlp", target="truenorth",
+         note="TrueNorth bundle (4096 cores of 256 x 256 on a 64 x 64 mesh): a float "
+              "(vanilla) cell, because a 1-bit signed grid has no nonzero level. "
+              "Boundary: a float run never applies weight_bits, so the cell runs float "
+              "weights and does not make the 1-bit approximation its faithfulness names"),
+    dict(n=63, mode="lifsync", quant="wq", s=4, vehicle="simplemlp", seed=1, target="loihi",
+         note="Loihi bundle (dense equivalent 128 x 1024, 8-bit weights), the minimal "
+              "pair of t0_05"),
+    dict(n=64, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["pruned"],
+         target="isaac_like",
+         note="ISAAC-like bundle (16128 arrays of 128 x 128, 16-bit weights, value "
+              "domain), the minimal pair of t0_41"),
+    dict(n=65, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["pruned"],
+         target="generic_estimated_22nm",
+         note="estimated 22 nm digital SRAM bundle (1000 cores of 256 x 256, 8-bit "
+              "weights, value domain), the minimal pair of t0_41"),
 ]
 
 
@@ -550,7 +585,8 @@ def _name(tier, row, vehicles):
                     "identity", "residual", "e4", "wb8", "wb4", "floor", "aq8",
                     "search"))
     s_part = f"_s{row['s']}" if "s" in row else ""
-    return f"{prefix}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}{s_part}{tags}"
+    target = f"_{row['target']}" if "target" in row else ""
+    return f"{prefix}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}{s_part}{tags}{target}"
 
 
 def _platform(row, vehicles):
@@ -563,14 +599,28 @@ def _platform(row, vehicles):
     if "s" in row:
         plat["target_tq"] = row["s"]
         plat["simulation_steps"] = row["s"]
-    plat["weight_bits"] = row["wb"]
+    if "wb" in row:
+        plat["weight_bits"] = row["wb"]
     plat["allow_coalescing"] = row.get("coalescing", v.get("coalescing", True))
     plat["allow_neuron_splitting"] = row.get("splitting", True)
     # Row-level platform passthrough (mirror of extra_dp): proven per-cell
     # hardware declarations (activation_bits, weight-reuse, pass budgets).
     plat.update(row_config_keys(row, "platform_constraints"))
     plat.update(row.get("extra_pc", {}))
-    return plat
+    return _without_target_keys(row, plat)
+
+
+def _without_target_keys(row, plat):
+    """A target row authors no key its bundle sets, no key derived from one (the core maxima) and no
+    platform bias mode (the fallback of the cores' own has_bias): the bundle declares them."""
+    if "target" not in row:
+        return plat
+    from mimarsinan.config_schema.registry import REGISTRY
+    from mimarsinan.mapping.platform.target_bundles import target_bundles
+
+    owned = set(target_bundles()[row["target"]].values) | {"has_bias"}
+    owned |= {key for key, entry in REGISTRY.items() if set(entry.derived_from) & owned}
+    return {key: value for key, value in plat.items() if key not in owned}
 
 
 def _policy_tier(tier):
@@ -681,6 +731,7 @@ def _cell(tier, row, vehicles, dataset):
         "pruning": "pruned" if "pruned" in row else "dense",
         "encoding_placement": ("none" if "core_semantics" in MODES[row["mode"]]
                                else row.get("encoding", "subsume")),
+        **({"target": row["target"]} if "target" in row else {}),
     }
 
 

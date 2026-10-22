@@ -1,0 +1,13 @@
+{
+  "name": "xformer_pe_like",
+  "display_name": "X-Former PE crossbars (Sridharan 2023): 128 x 128",
+  "geometry": "xformer_pe_like",
+  "keys": {},
+  "faithfulness": {
+    "class": "refused",
+    "named": [
+      "no physics profile"
+    ],
+    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+  }
+}

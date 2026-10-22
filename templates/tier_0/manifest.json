@@ -799,6 +799,115 @@
       ],
       "expected_wall_min": 10,
       "note": "wsm flagship: streamed scheduled passes on a constrained pool + boundary AQ, twin certs FATAL"
+    },
+    {
+      "name": "t0_61_lifs_simplemlp_wq_s4_odin",
+      "config": "t0_61_lifs_simplemlp_wq_s4_odin.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "lif",
+        "sync": "streamed",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume",
+        "target": "odin"
+      },
+      "tags": [],
+      "expected_wall_min": 7,
+      "note": "ODIN bundle (4-bit weights, 128 x 256 logical cores, no bias lane, no coalescing or neuron splitting), the minimal pair of t0_45; the core count and coalescing are declared overrides, so the faithfulness names both ('...; allow_coalescing declared; cores declared')"
+    },
+    {
+      "name": "t0_62_lifs_simplemlp_fp_s8_truenorth",
+      "config": "t0_62_lifs_simplemlp_fp_s8_truenorth.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "lif",
+        "sync": "streamed",
+        "quantization": "none",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume",
+        "target": "truenorth"
+      },
+      "tags": [],
+      "expected_wall_min": 7,
+      "note": "TrueNorth bundle (4096 cores of 256 x 256 on a 64 x 64 mesh): a float (vanilla) cell, because a 1-bit signed grid has no nonzero level. Boundary: a float run never applies weight_bits, so the cell runs float weights and does not make the 1-bit approximation its faithfulness names"
+    },
+    {
+      "name": "t0_63_lifsync_simplemlp_wq_s4_loihi",
+      "config": "t0_63_lifsync_simplemlp_wq_s4_loihi.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume",
+        "target": "loihi"
+      },
+      "tags": [],
+      "expected_wall_min": 7,
+      "note": "Loihi bundle (dense equivalent 128 x 1024, 8-bit weights), the minimal pair of t0_05"
+    },
+    {
+      "name": "t0_64_mvm_lenet5_wq_pruned_isaac_like",
+      "config": "t0_64_mvm_lenet5_wq_pruned_isaac_like.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "none",
+        "target": "isaac_like"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 10,
+      "note": "ISAAC-like bundle (16128 arrays of 128 x 128, 16-bit weights, value domain), the minimal pair of t0_41"
+    },
+    {
+      "name": "t0_65_mvm_lenet5_wq_pruned_generic_estimated_22nm",
+      "config": "t0_65_mvm_lenet5_wq_pruned_generic_estimated_22nm.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "none",
+        "target": "generic_estimated_22nm"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 10,
+      "note": "estimated 22 nm digital SRAM bundle (1000 cores of 256 x 256, 8-bit weights, value domain), the minimal pair of t0_41"
     }
   ],
   "coverage_notes": [

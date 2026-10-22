@@ -1,0 +1,16 @@
+{
+  "name": "loihi",
+  "display_name": "Intel Loihi 1 (14 nm, Davies 2018): 128 cores, dense equivalent 128 x 1024",
+  "geometry": "loihi_dense_equiv_128x1024",
+  "keys": {
+    "core_semantics": "spiking",
+    "platform_physics_profile": "loihi"
+  },
+  "faithfulness": {
+    "class": "approximate",
+    "named": [
+      "dense-equivalent capacity"
+    ],
+    "note": "Loihi's per-core capacity is a synaptic memory (128 KB) with fan-in and fan-out list limits (davies2018loihi p89); the registered geometry is its dense equivalent until a memory-bound core type exists (CH-B2)."
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "recom_64x64_256",
+  "display_name": "ReCom (Ji 2018): 256 crossbars of 64 x 64",
+  "geometry": "recom_64x64_256",
+  "keys": {},
+  "faithfulness": {
+    "class": "refused",
+    "named": [
+      "no physics profile"
+    ],
+    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+  }
+}

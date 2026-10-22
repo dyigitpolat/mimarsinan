@@ -6,6 +6,7 @@ from typing import Any, Dict, Mapping, Tuple
 
 from mimarsinan.config_schema.registry import REGISTRY, Category, parse_deployment_document
 from mimarsinan.config_schema.registry.build import split_domain_dormant
+import mimarsinan.mapping.platform.target_expansion as target_expansion
 
 # Canonical top-level order (matches templates/generate.py output style).
 _CANONICAL_TOP_ORDER = (
@@ -77,7 +78,8 @@ def emit_deployment_config(draft: Mapping[str, Any]) -> Dict[str, Any]:
         top.setdefault(key, _top_default(key))
 
     dp_raw = dict(draft.get("deployment_parameters") or {})
-    core_semantics = str(dp_raw.get("core_semantics") or "spiking")
+    # The core semantics a run takes, a declared target's included (a read that writes nothing).
+    core_semantics = target_expansion.target_core_semantics(draft) or "spiking"
     out: Dict[str, Any] = {}
     for key in _CANONICAL_TOP_ORDER:
         if key == "platform_constraints":

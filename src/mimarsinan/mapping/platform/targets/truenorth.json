@@ -1,0 +1,19 @@
+{
+  "name": "truenorth",
+  "display_name": "IBM TrueNorth (28 nm, Merolla 2014): 4096 cores of 256 x 256 on a 64 x 64 mesh",
+  "geometry": "truenorth_like",
+  "keys": {
+    "core_semantics": "spiking",
+    "platform_physics_profile": "truenorth",
+    "cores_per_tile": 1,
+    "tile_grid_rows": 64,
+    "tile_grid_cols": 64
+  },
+  "faithfulness": {
+    "class": "approximate",
+    "named": [
+      "1-bit weights for the axon-type weight law"
+    ],
+    "note": "TrueNorth weighs a binary synapse by one of four per-neuron axon-type weights; the registered geometry declares 1-bit weights (scout_chip.md section 5.2), so a weight-quantized program on the bundle is not TrueNorth's weight law. Boundary: a signed 1-bit grid has no nonzero level (q_max 0), so weight quantization on this bundle is degenerate until both doors refuse weight_bits below 2 under signed weight quantization (key amendment filed with S0), and a float deployment never applies weight_bits, so it does not make the named approximation and runs float weights instead. The floorplan is the profile's 4096 cores on a 64 x 64 mesh, one core per tile (truenorth.json validity)."
+  }
+}

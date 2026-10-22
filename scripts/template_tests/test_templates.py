@@ -42,6 +42,21 @@ def _manifest(tier):
     return json.loads((_tier_dir(tier) / "manifest.json").read_text())
 
 
+def _declarable_platform_keys():
+    """Every platform key a template may declare: the registry's platform section (with the
+    framework defaults), less its runtime keys and its non-declarable derived keys (the
+    target expansion's two labels among them)."""
+    from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
+    from mimarsinan.config_schema.registry import REGISTRY, Category
+    from mimarsinan.config_schema.registry.build import section_keys
+
+    return set(DEFAULT_PLATFORM_CONSTRAINTS) | {
+        key for key in section_keys("platform_constraints")
+        if REGISTRY[key].category is not Category.RUNTIME
+        and not (REGISTRY[key].category is Category.DERIVED and not REGISTRY[key].declarable)
+    }
+
+
 class TestGeneratorIsTheSSOT:
     def test_generator_reproduces_committed_files(self):
         """Regenerating must be a no-op: the JSONs never drift from generate.py."""
@@ -69,16 +84,9 @@ class TestGeneratorIsTheSSOT:
 class TestConfigValidity:
     @pytest.mark.parametrize("tier", TIERS)
     def test_keys_are_known(self, tier):
-        from mimarsinan.config_schema.defaults import (
-            CONFIG_KEYS_SET,
-            DEFAULT_PLATFORM_CONSTRAINTS,
-        )
+        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
 
-        platform_keys = set(DEFAULT_PLATFORM_CONSTRAINTS) | {
-            # Defaultless platform keys: absence is meaningful (activation_bits
-            # absent = float boundary I/O on value-domain platforms).
-            "cores", "max_axons", "max_neurons", "has_bias", "activation_bits",
-        }
+        platform_keys = _declarable_platform_keys()
         for path in _tier_configs(tier):
             cfg = json.loads(path.read_text())
             assert set(cfg) == TOP_LEVEL_KEYS, path.name
@@ -86,6 +94,14 @@ class TestConfigValidity:
             assert not unknown, f"{path.name}: unknown keys {unknown}"
             unknown_pc = set(cfg["platform_constraints"]) - platform_keys
             assert not unknown_pc, f"{path.name}: unknown platform keys {unknown_pc}"
+
+    def test_the_platform_keys_are_the_declarable_ones(self):
+        """Defaultless platform keys stay declarable (activation_bits absent = float
+        boundary I/O); a key the derivation or the runtime owns never is."""
+        keys = _declarable_platform_keys()
+        assert {"cores", "max_axons", "max_neurons", "has_bias", "activation_bits",
+                "target", "target_overrides"} <= keys
+        assert not {"target_claim_class", "target_faithfulness_class"} & keys
 
     @pytest.mark.parametrize("tier", TIERS)
     def test_sim_enables_and_aq_left_to_derivation(self, tier):

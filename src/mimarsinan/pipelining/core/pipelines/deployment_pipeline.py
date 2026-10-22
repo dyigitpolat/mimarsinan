@@ -25,8 +25,10 @@ from mimarsinan.config_schema.deployment_derivation import (
     derive_deployment_parameters,
     derive_pipeline_runtime_parameters,
 )
+from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
 from mimarsinan.common.workload_profile import fold_workload_profiles
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
+import mimarsinan.mapping.platform.target_expansion as target_expansion
 from mimarsinan.pipelining.cache.legacy_placement import (
     resolve_cached_flow_placements,
 )
@@ -39,12 +41,21 @@ def merge_pipeline_config(
     deployment_parameters: dict, platform_constraints: dict
 ) -> dict:
     """The exact ``_initialize_config`` merge + derivation, sans provider facts
-    and device I/O (shared with the golden-resolution harness)."""
+    and device I/O (shared with the golden-resolution harness).
+
+    A declared target expands first (``expand_target``, with the two labels a
+    flat config carries), and the merged declarations are read as their
+    consumers read them (``read_like_consumers``) before the derivation, so the
+    flat config carries the value every consumer runs."""
+    deployment_parameters, platform_constraints = target_expansion.expand_target(
+        deployment_parameters, platform_constraints, write_derived=True
+    )
     config: dict = {}
     config.update(get_default_deployment_parameters())
     config.update(deployment_parameters)
     config.update(get_default_platform_constraints())
     config.update(platform_constraints)
+    config = read_like_consumers(config)
     derive_deployment_parameters(
         config, explicit_keys=set(deployment_parameters) | set(platform_constraints)
     )

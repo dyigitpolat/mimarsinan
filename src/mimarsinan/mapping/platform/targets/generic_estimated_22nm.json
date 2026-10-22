@@ -1,0 +1,28 @@
+{
+  "name": "generic_estimated_22nm",
+  "display_name": "Generic 22 nm digital SRAM IMC (all estimated, not a real chip): 256 x 256 cores",
+  "geometry": {
+    "name": "generic_22nm_256x256",
+    "cores": [
+      {
+        "max_axons": 256,
+        "max_neurons": 256,
+        "count": 1000
+      }
+    ],
+    "weight_bits": 8,
+    "provenance": "generic_estimated_22nm profile validity.array_size_assumed: \"256 x 256 digital SRAM crossbar cores, 8-bit weights\" (deployment_record/platform_physics/profiles/generic_estimated_22nm.json). The profile describes no real chip, so the core count is a study axis: 1000, the count of the framework default grid (config_schema/defaults.py, DEFAULT_PLATFORM_CONSTRAINTS), which every ladder and Figure 1 point declares through target_overrides with a note.",
+    "claim_class": "synthetic"
+  },
+  "keys": {
+    "core_semantics": "mvm",
+    "platform_physics_profile": "generic_estimated_22nm"
+  },
+  "faithfulness": {
+    "class": "approximate",
+    "named": [
+      "all constants estimated"
+    ],
+    "note": "Every constant of the profile is an estimate and the geometry is an assumption of the profile: the bundle exercises the estimated-evidence path and is never cited as a chip."
+  }
+}

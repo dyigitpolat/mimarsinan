@@ -22,6 +22,7 @@ from mimarsinan.config_schema.deployment_derivation import (
 from mimarsinan.data_handling.data_loader_factory import close_pipeline_loaders
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
+import mimarsinan.mapping.platform.target_expansion as target_expansion
 # The session APPLIES determinism, before any step runs (below); the contract
 # itself lives beside its counterpart `isolated_rng_stream`, so the families one
 # seeds and the other restores cannot drift apart.
@@ -49,11 +50,22 @@ class ParsedDeploymentConfig:
 def parse_deployment_config(
     deployment_config: dict, *, data_provider_factory: Any = None
 ) -> ParsedDeploymentConfig:
-    """Parse a deployment-config dict and persist it under ``_RUN_CONFIG/``."""
+    """Parse a deployment-config dict and persist it under ``_RUN_CONFIG/``.
+
+    A declared target expands into both sections first (``expand_target``, no labels: the merge writes
+    them), so every later read of the sections, the quantization assembly contract included, sees the
+    bundle's keys; the persisted document is the one declared."""
     deployment_name = deployment_config["experiment_name"]
     deployment_parameters = dict(deployment_config["deployment_parameters"])
     # The top-level seed must reach the merged pipeline config so DeploymentPlan.seed (and every config.get("seed") consumer) sees the configured value, not the fallback 0.
     deployment_parameters.setdefault("seed", int(deployment_config.get("seed", 0)))
+    platform_constraints = _resolve_platform_constraints(
+        deployment_config, deployment_parameters
+    )
+    if isinstance(platform_constraints, dict):
+        deployment_parameters, platform_constraints = target_expansion.expand_target(
+            deployment_parameters, platform_constraints, write_derived=False
+        )
 
     if data_provider_factory is None:
         data_provider_factory = BasicDataProviderFactory(
@@ -63,10 +75,6 @@ def parse_deployment_config(
             preprocessing=deployment_parameters.get("preprocessing"),
             batch_size=deployment_parameters.get("batch_size"),
         )
-
-    platform_constraints = _resolve_platform_constraints(
-        deployment_config, deployment_parameters
-    )
 
     enforce_quantization_assembly_contract(
         deployment_parameters,

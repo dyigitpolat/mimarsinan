@@ -969,10 +969,12 @@ class TestPassthrough:
 
     def test_target_keys_ride_the_passthrough(self):
         overrides = {"weight_bits": {"value": 6, "note": "the bundle's 8 bits narrowed"}}
-        pcfg = _resolve(
-            _load("sync_simplemlp.json"), target="some_bundle", target_overrides=overrides,
-            target_claim_class="headline", target_faithfulness_class="exact",
-        )
+        # The resolver alone, on a flat config past the merge: the merge expands a target (G4), which
+        # refuses any name this test could pick.
+        pcfg = build_platform_constraints_resolved({
+            **_flat(_load("sync_simplemlp.json")), "target": "some_bundle", "target_overrides": overrides,
+            "target_claim_class": "headline", "target_faithfulness_class": "exact",
+        })
         assert pcfg["target"] == "some_bundle"
         assert pcfg["target_overrides"] == overrides
         assert pcfg["target_claim_class"] == "headline"
