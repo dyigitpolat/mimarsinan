@@ -20,9 +20,10 @@ FIXTURE = os.path.join(os.path.dirname(__file__), "..", "fixtures", "integer_val
 def test_the_integer_readout_fixture_certifies_at_atol_zero(tmp_path, capsys):
     config = json.load(open(FIXTURE, encoding="utf-8"))
     config["generated_files_path"] = str(tmp_path)
+    config["device"] = "cpu"  # a top-level key: the session's run door refuses it under deployment_parameters
     config["deployment_parameters"].update({
         # Hermetic data and a short schedule; the declared program (laws, grids, passes) is the fixture's.
-        "device": "cpu", "num_workers": 0, "batch_size": 16, "training_epochs": 1, "tuning_budget_scale": 0.05,
+        "num_workers": 0, "batch_size": 16, "training_epochs": 1, "tuning_budget_scale": 0.05,
         "pretrain_floor_chance_multiple": 0, "degradation_tolerance": 0.9,
     })
     session = PipelineSession.from_config(
