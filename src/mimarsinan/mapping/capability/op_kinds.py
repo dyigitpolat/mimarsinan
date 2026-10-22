@@ -14,6 +14,7 @@ from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, NeuralCore
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter, _cat_along, cat_per_sample
 from mimarsinan.mapping.support.scale_wrapper import unwrap_scale_wrapper
 from mimarsinan.torch_mapping.converter_handlers.batchnorm_lowering import BatchNormAffine
+from mimarsinan.torch_mapping.converter_handlers.rules.method_rules import torch_function_of
 
 #: The §5.1 interface (G1's ``Contraction`` payload): ``op_type`` names it, ``operand_roles`` decides D against S.
 CONTRACTION_OP_TYPE = "Contraction"
@@ -50,8 +51,8 @@ _FUNCTION_KINDS: Mapping[Callable, str] = {
     **dict.fromkeys((F.layer_norm, F.group_norm), "norm"),
     **dict.fromkeys((torch.mean, F.adaptive_avg_pool1d, F.adaptive_avg_pool2d, F.avg_pool1d, F.avg_pool2d), "pool"),
     **dict.fromkeys((F.max_pool1d, F.max_pool2d, F.adaptive_max_pool2d), "maxp"),
-    **dict.fromkeys((operator.getitem, torch.cat, torch.stack, torch.chunk, torch.split, torch.narrow, F.pad,
-                     torch.flatten, torch.reshape, torch.permute, torch.transpose, torch.squeeze, torch.unsqueeze,
+    **dict.fromkeys((operator.getitem, torch.cat, torch.stack, torch.chunk, torch.split, torch.narrow, torch.select,
+                     F.pad, torch.flatten, torch.reshape, torch.permute, torch.transpose, torch.squeeze, torch.unsqueeze,
                      cat_per_sample, _cat_along), "wire+"),
     F.scaled_dot_product_attention: "leaf",
 }
@@ -97,11 +98,24 @@ def _contraction_kind(payload: object) -> str:
     return "dmm" if all(role == ACTIVATION_ROLE for role in roles) else "mms"
 
 
+def _function_of(fn: Callable) -> Callable:
+    """The torch function a host op computes: a tensor method (``torch.Tensor.softmax``, which G1's method rule and the
+    batch-axis push-forward emit) is the torch function of its name (``torch_function_of``, the method rule's own
+    test), so it takes that function's kind; any other callable is itself."""
+    name = getattr(fn, "__name__", None)
+    if isinstance(name, str) and getattr(torch.Tensor, name, None) is fn:
+        function = torch_function_of(name)
+        if function is not None:
+            return function
+    return fn
+
+
 def _adapter_kind(adapter: ComputeAdapter, op: ComputeOp) -> str | None:
-    binary = _BINARY_KINDS.get(adapter.fn)
+    fn = _function_of(adapter.fn)
+    binary = _BINARY_KINDS.get(fn)
     if binary is not None:
         return binary[0] if len(operand_spans(op)) >= 2 else binary[1]
-    return _FUNCTION_KINDS.get(adapter.fn)
+    return _FUNCTION_KINDS.get(fn)
 
 
 def _module_kind(module: nn.Module) -> str | None:
