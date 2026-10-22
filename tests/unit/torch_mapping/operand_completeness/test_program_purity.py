@@ -71,6 +71,7 @@ from .harness import (
     assert_impure_exact,
     assert_impure_stage_2_refused,
     convert,
+    keep_opaque,
     native,
 )
 
@@ -174,6 +175,7 @@ def rank_mix(y, b):
 
 @torch.fx.wrap
 def swish(t):
+    keep_opaque(t)  # a dataflow body: inlined otherwise (leaf-call inlining), and these witnesses are impure programs
     return t * torch.sigmoid(t)
 
 

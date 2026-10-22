@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from typing import Mapping, Optional, Tuple
 
 from mimarsinan.torch_mapping.conversion_probe import ConversionProbeError
+from mimarsinan.torch_mapping.value_parity.rounding import REFERENCE_FLOOR_MARGIN
 
 STAGE_NATIVE = "native reference"
 STAGE_CONVERTED = "converted model"
@@ -36,6 +38,23 @@ class ValueParityResult:
     reason: Optional[str] = None
     error: Optional[BaseException] = None
     wall_s: float = 0.0
+    reference_floor: Optional[float] = None  # the native program's own floor on the refused inputs (rounding.py)
+
+    @property
+    def reference_undetermined(self) -> bool:
+        """A refusal that is the reference's: the native program is not reproducible within the bound on the compared
+        inputs (``reference_floor`` above it) and the error lies within ``REFERENCE_FLOOR_MARGIN`` times that floor,
+        so the comparison cannot decide at the bound; no conversion defect is shown, none is excluded below it. The
+        floor and the error must both be finite: an infinite or undefined one bounds nothing, so the refusal is a
+        value mismatch [review round 1 of the coverage fixes: an infinite floor held every error undecidable]."""
+        floor, error = self.reference_floor, self.relative_error
+        return (not self.ok and floor is not None and error is not None and math.isfinite(floor)
+                and math.isfinite(error) and floor > self.bound and error <= REFERENCE_FLOOR_MARGIN * floor)
+
+    def _undetermined(self) -> str:
+        return (f"; the native model itself is not reproducible within the bound on these inputs: with every weight "
+                f"layer's reduction reversed it differs from itself by {self.reference_floor:.3e}, so the comparison "
+                f"cannot decide at the bound") if self.reference_undetermined else ""
 
     def _node(self) -> str:
         if not self.first_diverging_node:
@@ -58,12 +77,13 @@ class ValueParityResult:
             if self.escalated else "")
         where = f" on {self.compared_on}" if self.compared_on and not self.ok else ""
         beta = "" if self.reassociation_bound is None else f", reassociation {self.reassociation_bound:.3e}"
+        floor = "" if self.reference_floor is None else f", reference floor {self.reference_floor:.3e}"
         measured = (
             f"relative error {self.relative_error:.3e} {relation} bound {self.bound:.3e}{where} "
-            f"(D(P)={self.weight_layer_depth}{beta}; max|err|={self.max_abs_error:.3e}, "
+            f"(D(P)={self.weight_layer_depth}{beta}{floor}; max|err|={self.max_abs_error:.3e}, "
             f"max|ref|={self.reference_max:.3e}, {inputs}{randomized}, {self.wall_s:.2f} s)"
         )
-        return f"{head}: {measured}" if self.ok else f"{head}: {measured}; {self._node()}"
+        return f"{head}: {measured}" if self.ok else f"{head}: {measured}{self._undetermined()}; {self._node()}"
 
 
 def describe_failure(exc: BaseException) -> str:
@@ -100,6 +120,17 @@ class ConversionValueParityError(ConversionProbeError):
         self.first_diverging_node = result.first_diverging_node
         self.first_diverging_operator = result.first_diverging_operator
         super().__init__(result.format())
+
+    @staticmethod
+    def of(result: ValueParityResult) -> "ConversionValueParityError":
+        """The refusal of a refused result: ``ReferenceUndeterminedError`` where the reference's floor decides it."""
+        return (ReferenceUndeterminedError if result.reference_undetermined else ConversionValueParityError)(result)
+
+
+class ReferenceUndeterminedError(ConversionValueParityError):
+    """A comparison the probe cannot decide at its bound: the native model is not reproducible within the bound on the
+    compared inputs, and the error lies within a small multiple of the native model's own floor there
+    (``ValueParityResult.reference_undetermined``). Named apart from a value mismatch, which it is not shown to be."""
 
 
 ShapeLiterals = Mapping[str, Tuple[str, str]]

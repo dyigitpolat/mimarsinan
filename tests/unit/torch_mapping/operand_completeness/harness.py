@@ -25,6 +25,16 @@ BATCHES = (1, 2, 3, 5)
 INPUT_KINDS = ("normal", "wide", "uniform", "negative", "zero")
 
 
+def keep_opaque(value) -> None:
+    """Python control flow on a tensor's data: an FX leaf function (``torch.fx.wrap``) that calls this first has a
+    body no capture takes (a branch on a value only the data decides), so leaf-call inlining keeps its call opaque
+    (the premise of the opaque-helper witnesses, which a dataflow body would no longer be); natively a no-op on a
+    tensor (a branch on its first entry, the result unused) or a shape. [restated in fix round 2 of the coverage
+    fixes: a branch on the empty prefix, which FX cannot trace and Dynamo decides statically]"""
+    if bool(value.reshape(-1)[:1].any() if isinstance(value, torch.Tensor) else value):
+        pass
+
+
 def native(factory: Callable[[], nn.Module], seed: int = 0) -> nn.Module:
     torch.manual_seed(seed)
     return factory().double().eval()

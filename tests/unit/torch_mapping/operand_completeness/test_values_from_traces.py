@@ -44,6 +44,7 @@ from .harness import (
     assert_impure_exact,
     assert_impure_stage_2_refused,
     convert,
+    keep_opaque,
     native,
 )
 
@@ -53,6 +54,7 @@ EVERY_BATCH = (1, 2, 3, 6, 7, 9, 13)
 @torch.fx.wrap
 def ident(t):
     """An identity helper: the same tensor, the same per-sample shape at every batch."""
+    keep_opaque(t)  # a dataflow body: inlined otherwise (leaf-call inlining), and these witnesses are opaque helpers
     return t
 
 
@@ -81,6 +83,7 @@ def regroup(t):
 
 @torch.fx.wrap
 def swish(t):
+    keep_opaque(t)  # a dataflow body: inlined otherwise (leaf-call inlining), and these witnesses are opaque results
     return t * torch.sigmoid(t)
 
 

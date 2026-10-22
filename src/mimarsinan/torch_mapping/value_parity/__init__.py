@@ -15,6 +15,7 @@ from mimarsinan.torch_mapping.value_parity.rounding import (
     conversion_value_bound,
     declared_rounding_bound,
     lowering_value_bound,
+    reference_floor,
     weight_layer_depth,
 )
 from mimarsinan.torch_mapping.value_parity.verdict import (
@@ -22,6 +23,7 @@ from mimarsinan.torch_mapping.value_parity.verdict import (
     STAGE_NATIVE,
     STAGE_VALUE_PROGRAM,
     ConversionValueParityError,
+    ReferenceUndeterminedError,
     ValueParityResult,
 )
 from mimarsinan.torch_mapping.value_parity.witness import (
@@ -39,6 +41,7 @@ __all__ = [
     "STAGE_VALUE_PROGRAM",
     "ConversionValueParityError",
     "FunctionContract",
+    "ReferenceUndeterminedError",
     "ValueParityResult",
     "WitnessConversion",
     "conversion_value_bound",
@@ -50,6 +53,7 @@ __all__ = [
     "probe_inputs",
     "randomize_batchnorm_statistics",
     "randomize_zero_parameters",
+    "reference_floor",
     "relative_error",
     "weight_layer_depth",
 ]

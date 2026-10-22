@@ -39,7 +39,8 @@ from mimarsinan.torch_mapping.converter_handlers.symbolic.declared_operators imp
     is_tensor_operator,
 )
 
-__all__ = ["Write", "declared_aliases", "declared_writes", "observable_write", "view_aliases"]
+__all__ = ["Write", "declared_aliases", "declared_writes", "in_place_form", "observable_write",
+           "schema_declares_no_alias", "view_aliases"]
 
 _VIEW_ATTRIBUTES = frozenset({"T", "mT", "H", "mH", "data", "real", "imag"})
 
@@ -147,6 +148,31 @@ def declared_writes(node: fx.Node, modules: Mapping[str, nn.Module]) -> List[Wri
         found += [Write(node, operand, True)] if operand is not None else []
     unique = {(write.operand, write.returned): write for write in found}
     return list(unique.values())
+
+
+def in_place_form(node: fx.Node) -> Optional[fx.Node]:
+    """The operand a call writes by the name of an in-place operator (``t.__imul__(2.0)``, ``Tensor.__idiv__``: a
+    dunder ``__i<op>__`` of an operator ``__<op>__``; ``operator.iadd``: ``operator``'s in-place form), whether or not
+    an aten schema declares the write (``__imul__`` has none): its first operand; ``None`` for a call of any other
+    name."""
+    name = node.target if node.op == "call_method" else getattr(node.target, "__name__", None) \
+        if node.op == "call_function" else None
+    if not isinstance(name, str) or name[:1] != "i" and not name.startswith("__i"):
+        return None
+    if name.startswith("__") and name.endswith("__"):
+        named = any(hasattr(owner, f"__{name[3:-2]}__") for owner in (operator, torch.Tensor)) and len(name) > 5
+    else:
+        named = getattr(operator, name, None) is node.target and (
+            hasattr(operator, name[1:]) or hasattr(operator, name[1:] + "_"))
+    return _first_operand(node) if named else None
+
+
+def schema_declares_no_alias(node: fx.Node) -> bool:
+    """``node``'s call has an aten schema that applies to it, and no applicable overload annotates an argument or a
+    result with an alias set (it neither writes nor returns a view), nor is it given ``inplace=True``."""
+    applicable = [schema for schema in _schemas(node) if _applies(schema, node)]
+    return bool(applicable) and not _inplace_argument(node) and all(
+        arg.alias_info is None for schema in applicable for arg in (*schema.arguments, *schema.returns))
 
 
 def declared_aliases(node: fx.Node, modules: Mapping[str, nn.Module]) -> List[fx.Node]:

@@ -26,7 +26,11 @@ from mimarsinan.torch_mapping.value_parity.localization import (
     trace_native,
 )
 from mimarsinan.torch_mapping.value_parity.probe import Locator, ProbeWitness, judge
-from mimarsinan.torch_mapping.value_parity.rounding import lowering_value_bound, reassociation_bound
+from mimarsinan.torch_mapping.value_parity.rounding import (
+    declared_rounding_bound,
+    lowering_value_bound,
+    reassociation_bound,
+)
 from mimarsinan.torch_mapping.value_parity.verdict import STAGE_VALUE_PROGRAM, ValueParityResult, describe_failure
 
 
@@ -118,11 +122,14 @@ def _locate_in_program(lowered: LoweredProgram) -> Locator:
 
 
 def _lowering_line(contract: FunctionContract):
-    """Stage 2's line on a comparison above tau(P): tau(P) + beta(P) at its inputs, capped at the acceptance."""
+    """Stage 2's line on a comparison above tau(P): tau(P) + beta(P) at its inputs, capped at the acceptance; beta(P)
+    is visited until one output column covers the error's excess over tau(P) (the same verdict)."""
 
-    def derive(witness: ProbeWitness, inputs: torch.Tensor) -> Tuple[float, Optional[float]]:
-        beta = reassociation_bound(witness.traced, inputs, contract.select_output)
-        return lowering_value_bound(witness.weight_layer_depth or 0, beta), beta
+    def derive(witness: ProbeWitness, inputs: torch.Tensor, error: float) -> Tuple[float, Optional[float]]:
+        depth = witness.weight_layer_depth or 0
+        beta = reassociation_bound(witness.traced, inputs, contract.select_output,
+                                   enough=error - declared_rounding_bound(depth))
+        return lowering_value_bound(depth, beta), beta
 
     return derive
 

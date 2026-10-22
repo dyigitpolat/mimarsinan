@@ -29,10 +29,11 @@ class _NodeRecorder(fx.Interpreter):
 
     def run_node(self, n: fx.Node):
         out = super().run_node(n)
-        # A tuple-returning module (attention, recurrent) is compared on the element its conversion carries.
+        # A tuple-returning module (attention, recurrent) is compared on the element its conversion carries; the value
+        # is copied, so a later in-place op (``ReLU(inplace=True)``) cannot overwrite the node's own value.
         first = out[0] if isinstance(out, (tuple, list)) and out else out
         if isinstance(first, torch.Tensor):
-            self.values[n.name] = first
+            self.values[n.name] = first.clone()
         return out
 
 
@@ -91,7 +92,7 @@ def mapper_node_values(mapper_repr, x: torch.Tensor) -> List[Tuple[str, torch.Te
         values[node] = out
         label = mapper_label(node)
         if label is not None and isinstance(out, torch.Tensor):
-            labelled.append((label, out))
+            labelled.append((label, out.clone()))  # the mapper's own value: a later in-place op cannot overwrite it
     return labelled
 
 

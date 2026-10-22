@@ -25,7 +25,9 @@ tensors ``torch.Tensor`` and ``torch.nn.Parameter`` (``DECLARED_TENSOR_TYPES``: 
 Anything else (``self.k = Odd(1)``, an ``int`` subclass whose ``__rmul__`` answers a ``SymInt``; a tensor subclass
 buffer) would run its own code wherever torch reads it.
 
-Every other call is OPAQUE (``opaque_reason``): a ``torch.fx.wrap`` helper, any user function, method or module, a
+Every other call is OPAQUE (``opaque_reason``): a ``torch.fx.wrap`` helper whose body the tracer does not inline
+(``fx_rewrites/leaf_call_inlining.py``: an inlined body is TorchDynamo's capture of it, ``fx_rewrites/body_capture.py``,
+made of declared operators only; a call kept opaque has its reason appended), any user function, method or module, a
 declared function given a callable outside the set (``torch.vmap``), a module with hooks or foreign state. A program
 with one is impure (``purity.py``), and the symbolic pass never runs for it. So is a program converted while the
 declared code is not torch's own as imported (``torch_rebinding``, ``imported_code.py``: ``torch.Tensor.size = f``, a
@@ -57,10 +59,13 @@ from mimarsinan.torch_mapping.converter_handlers.symbolic.imported_code import (
 from mimarsinan.torch_mapping.converter_handlers.symbolic.module_call import HOOK_REASONS, forward_hooks
 
 __all__ = [
-    "CONVERSION_TIME_OPERATORS", "DECLARED_LITERAL_TYPES", "DECLARED_TENSOR_TYPES", "TENSOR_NAMESPACES",
+    "CONVERSION_TIME_OPERATORS", "DECLARED_LITERAL_TYPES", "DECLARED_TENSOR_TYPES", "OPAQUE_BODY", "TENSOR_NAMESPACES",
     "declare_leaf_module", "foreign_module", "foreign_value", "is_conversion_time_operator", "is_declared_module",
     "is_tensor_operator", "opaque_reason", "torch_rebinding",
 ]
+
+OPAQUE_BODY = "mimarsinan_opaque_body"
+"""Node metadata: why leaf-call inlining kept a Python function's call opaque (``fx_rewrites/leaf_call_inlining``)."""
 
 
 def _public_functions(namespace, names) -> set:
@@ -287,7 +292,8 @@ def opaque_reason(node: fx.Node, receiver_type: Optional[type], modules: Mapping
                     or not hasattr(receiver_type, name)):
                 return "an attribute of a value that is not a tensor or a shape"
         elif not _declared_function(node.target):
-            return "a call outside the declared operator set"
+            body = node.meta.get(OPAQUE_BODY)
+            return "a call outside the declared operator set" + (f"; {body}" if body else "")
     else:
         return None
     return _literal_reason(node)

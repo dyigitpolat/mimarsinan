@@ -206,7 +206,9 @@ def test_a_slice_of_the_batch_axis_by_a_helpers_value_has_no_static_proof(how):
     slice's guard, ``B < 13`` or ``B < 30``]"""
     flow = convert(native(lambda: WrapHelper(how)), (8,), "mvm")
     statement = (f"no static shape proof: impure program at {HELPER[how]} (FX node {HELPER[how]!r}) (a call outside "
-                 "the declared operator set)")
+                 "the declared operator set; its operand 's' is not a strided tensor (a value of type Size))")  # [the
+    # reason leaf-call inlining appends, restated in review round 1 of the coverage fixes (the operand is a shape)
+    # and in fix round 2 (a traced operand must be a tensor at every trace batch)]
     assert flow.shape_proof == statement and flow.conversion_certificate.shape_proof == statement
 
 

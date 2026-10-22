@@ -1,4 +1,4 @@
-"""PerceptronMapper: map a Perceptron to IR FC cores (or an encoding ComputeOp)."""
+"""PerceptronMapper: map a Perceptron to IR FC cores (or an encoding ComputeOp); a rank-k input by its positions."""
 
 from __future__ import annotations
 
@@ -18,15 +18,15 @@ from mimarsinan.transformations.perceptron.perceptron_transformer import Percept
 
 
 class PerceptronFanInError(ToolchainRefusal, ValueError):
-    """A Linear whose per-sample input neither flattens to its fan-in nor has it as an axis of a rank-2 input: the FC
-    mapping (``map_fc``) has no IR form for it (review round 13)."""
+    """A Linear whose per-sample input neither flattens to its fan-in nor has it as an axis of a rank-2 input or as the
+    last axis of a higher-rank one: the FC mapping (``map_fc``) has no IR form for it (review round 13)."""
 
     def __init__(self, node_name: str, shape: tuple, in_features: int):
         self.node_name, self.shape, self.in_features = node_name, shape, in_features
         super().__init__(
             f"Linear (FX node {node_name!r}): its per-sample input of shape {shape} does not flatten to its fan-in "
-            f"{in_features}, and the FC mapping lowers a Linear over a rank-1 or rank-2 per-sample input only (a "
-            f"Linear on the last axis of a rank-{len(shape)} input has no IR form here), so the lowering is refused"
+            f"{in_features}, and the FC mapping lowers a Linear over a rank-1 per-sample input, an axis of a rank-2 "
+            "one or the last axis of a higher-rank one only, so the lowering is refused"
         )
 
 
@@ -39,6 +39,15 @@ def fan_in_refusal(sources: Any, in_features: int, name: Optional[str]) -> Optio
     return PerceptronFanInError(name or "", tuple(reversed(shape)), in_features)
 
 
+def leading_axes(sources: Any, in_features: int) -> Optional[tuple]:
+    """The leading axes of a per-sample input of rank 3 or more whose last axis is the fan-in and which does not
+    flatten to it: the Linear is the rank-2 case over their product (``None`` for every other input)."""
+    shape = tuple(int(d) for d in sources.shape)
+    if len(shape) >= 3 and shape[-1] == in_features and int(np.prod(shape)) != in_features:
+        return shape[:-1]
+    return None
+
+
 class PerceptronMapper(Mapper):
     def __init__(self, source_mapper, perceptron):
         super(PerceptronMapper, self).__init__(source_mapper)
@@ -48,8 +57,18 @@ class PerceptronMapper(Mapper):
         layer_weights = PerceptronTransformer().get_effective_weight(self.perceptron)
         layer_biases = PerceptronTransformer().get_effective_bias(self.perceptron)
 
-        layer_sources = self.require_source_mapper().map_to_ir(ir_mapping)
-        layer_sources = layer_sources.transpose()
+        sources = self.require_source_mapper().map_to_ir(ir_mapping)
+        lead = leading_axes(sources, int(layer_weights.shape[1]))
+        if lead is None:
+            return self._map_positions(ir_mapping, sources, layer_weights, layer_biases)
+        flat = sources.reshape(int(np.prod(lead)), int(layer_weights.shape[1]))
+        mapped = self._map_positions(ir_mapping, flat, layer_weights, layer_biases)
+        return mapped.reshape(*lead, int(mapped.shape[-1]))
+
+    def _map_positions(self, ir_mapping, sources, layer_weights, layer_biases):
+        """The Linear over a per-sample input of rank 1, or of rank 2 with the fan-in as an axis (one position per
+        column)."""
+        layer_sources = sources.transpose()
 
         if getattr(self.perceptron, "is_encoding_layer", False):
             return self._map_to_ir_as_encoding_compute_op(
@@ -134,12 +153,14 @@ class PerceptronMapper(Mapper):
         in_f = int(p.layer.weight.shape[1])
         out_f = int(p.layer.weight.shape[0])
         sw_text = f"SW perceptrons=1 (in_features={in_f}, out_features={out_f})"
+        size = int(np.prod(out_shape)) if out_shape is not None else out_f
+        positions = size // out_f if size >= out_f and size % out_f == 0 else 1  # its output's leading positions
         return FlowchartNodeEstimate(
             sw_text=sw_text,
             fc_spec=FlowchartFCSpec(
                 in_features=in_f,
                 out_features=out_f,
-                instances=1,
+                instances=positions,
                 has_bias=(p.layer.bias is not None),
             ),
         )

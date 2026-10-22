@@ -1,14 +1,19 @@
-"""E270's declared rounding bound tau(P) = 64 u max(D(P), 16), and stage 2's reassociation bound beta(P)."""
+"""E270's declared rounding bound tau(P) = 64 u max(D(P), 16), stage 2's reassociation bound beta(P), and the
+reference's own reassociation floor a refusal is settled against."""
 
 from __future__ import annotations
 
+import math
 import operator
-from typing import Callable, Dict, List, Mapping, Optional
+from dataclasses import replace
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 import torch
 import torch.fx as fx
 import torch.nn as nn
 import torch.nn.functional as F
+
+from mimarsinan.torch_mapping.value_parity.comparison import relative_error
 
 UNIT_ROUNDOFF = 2.0 ** -53
 """The float64 unit roundoff u."""
@@ -74,12 +79,15 @@ def _reassociation_radius(module: nn.Module, x: torch.Tensor) -> torch.Tensor:
 
 def reassociation_bound(
     reference: nn.Module, inputs: torch.Tensor, select_output: Callable[[object], torch.Tensor],
+    enough: Optional[float] = None,
 ) -> Optional[float]:
     """beta(P): max over output elements of sum_k |d out / d h_k| 2 gamma_n (|W||x| + |b|), over max(1, max|ref|).
 
     h_k is each weight layer's output (a core of the lowering; n its fan-in plus the bias), measured on the
     witness ``inputs``: two summation orders of one dot product differ by at most 2 gamma_n sum|w_i x_i|, and
-    first-order propagation carries that to the output. ``None`` beyond the output budget.
+    first-order propagation carries that to the output. ``None`` beyond the output budget. ``enough``: the first
+    output column (one reverse pass each) whose bound reaches it ends the visit and is returned, a lower bound of
+    beta(P) that decides a line tau(P) + beta(P) as beta(P) does.
     """
     offsets: List[torch.Tensor] = []
     radii: List[torch.Tensor] = []
@@ -97,21 +105,86 @@ def reassociation_bound(
             flat = out.reshape(out.shape[0], -1)
             if not offsets or flat.shape[1] > REASSOCIATION_OUTPUT_BUDGET:
                 return None if offsets else 0.0
-            bound = torch.zeros_like(flat.detach())
+            bound, values = torch.zeros_like(flat.detach()), flat.detach()
+            known = values[torch.isfinite(values)]
+            scale = max(1.0, float(known.abs().max())) if known.numel() else math.inf
             for j in range(flat.shape[1]):
                 grads = torch.autograd.grad(flat[:, j].sum(), offsets, retain_graph=True, allow_unused=True)
                 for grad, radius in zip(grads, radii):
                     if grad is not None:
                         bound[:, j] += (grad.abs() * radius).reshape(radius.shape[0], -1).sum(1)
+                column = bound[:, j][torch.isfinite(values[:, j]) & torch.isfinite(bound[:, j])]
+                if enough is not None and column.numel() and float(column.max()) / scale >= enough:
+                    return float(column.max()) / scale
     finally:
         for handle in handles:
             handle.remove()
-    values = flat.detach()
     finite = torch.isfinite(values) & torch.isfinite(bound)
     if not bool(finite.any()):
         return None
-    reference_max = float(values[torch.isfinite(values)].abs().max())
-    return float(bound[finite].max()) / max(1.0, reference_max)
+    return float(bound[finite].max()) / scale
+
+
+REFERENCE_FLOOR_MARGIN = 4.0
+"""A declared policy constant (beside ``EXACTNESS_ACCEPTANCE``), never a tolerance: an error within this multiple of
+the reference's own floor is not shown to be the conversion's and is refused by its own name, nothing accepted (two
+legal fp64 evaluations of one program differ by a small multiple of one another, never by orders of magnitude)."""
+
+
+def _reversed_reduction(module: nn.Module, args: Tuple[Any, ...], output: torch.Tensor) -> torch.Tensor:
+    """A weight layer's output summed in the reverse order: input features reversed (within each group) and the weight
+    alike, the same function in exact arithmetic and one more fp64 summation order."""
+    x = args[0]
+    if isinstance(module, nn.Linear):
+        return F.linear(x.flip(-1), module.weight.flip(1), module.bias)
+    if not isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Conv3d)) or x.dim() != module.weight.dim():
+        return output
+    shape, groups = x.shape, module.groups
+    flipped = x.reshape(shape[0], groups, shape[1] // groups, *shape[2:]).flip(2).reshape(shape)
+    return module._conv_forward(flipped, module.weight.flip(1), module.bias)
+
+
+def reference_floor(
+    program: nn.Module, inputs: torch.Tensor, select_output: Callable[[object], torch.Tensor],
+) -> Optional[float]:
+    """The native program's own reassociation floor on ``inputs``: the probe's metric between it and its twin whose
+    every weight layer sums its reduction in the reverse order (``_reversed_reduction``); ``None`` without one.
+
+    No conversion takes part: a program whose floor exceeds a stage's line is not reproducible within that line on
+    these inputs. Weight layers called as functions are not reversed.
+    """
+    layers = [m for m in program.modules() if isinstance(m, _CORE_MODULES)]
+    if not layers:
+        return None
+    with torch.no_grad():
+        want = select_output(program(inputs))
+        handles = [m.register_forward_hook(_reversed_reduction) for m in layers]
+        try:
+            twin = select_output(program(inputs))
+        finally:
+            for handle in handles:
+                handle.remove()
+    return relative_error(twin, want).relative_error
+
+
+def settle_line(
+    result: Any, program: nn.Module, inputs: torch.Tensor, select_output: Callable[[object], torch.Tensor],
+    derive_line: Optional[Callable[[torch.Tensor, float], Tuple[float, Optional[float]]]] = None,
+) -> Any:
+    """A comparison above its stage's base line (a refused ``ValueParityResult``), settled on its ``inputs``.
+
+    ``derive_line(inputs, error)`` (stage 2: tau(P) + beta(P), capped at the acceptance) is derived only for an error
+    within the acceptance, the most the capped line reaches; a comparison still refused carries the reference's own
+    floor (``reference_floor``), which names the refusal the reference's where the floor exceeds the line
+    (``ValueParityResult.reference_undetermined``).
+    """
+    error = result.relative_error
+    if derive_line is not None and error is not None and error <= EXACTNESS_ACCEPTANCE:
+        line, beta = derive_line(inputs, error)
+        result = replace(result, ok=error <= line, bound=line, reassociation_bound=beta)
+    if result.ok:
+        return result
+    return replace(result, reference_floor=reference_floor(program, inputs, select_output))
 
 
 def _weight_layers(node: fx.Node, modules: Mapping[str, nn.Module]) -> int:

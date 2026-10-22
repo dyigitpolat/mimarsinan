@@ -217,7 +217,9 @@ def test_an_opaque_call_never_runs_on_symbolic_values():
     SEEN.clear()
     model = native(SpyModel)
     flow = convert(model, (8,), "spiking")
-    assert SEEN and set(SEEN) == {("Tensor", "int")}
+    assert SEEN and set(SEEN) == {("Tensor", "int")}, SEEN  # [review round 1 of the coverage fixes stated a trial
+    # trace on FX's proxies here, ("Proxy", "Proxy"); fix round 2: leaf-call inlining captures the body with Dynamo,
+    # which never runs it, and the seeded runs that give its operands run it natively]
     gm = trace_model(native(SpyModel), (8,))
     layouts, nodes = BatchLayouts(gm), {n.name: n for n in gm.graph.nodes}
     proof = layouts._pass()

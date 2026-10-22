@@ -27,6 +27,7 @@ from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes import 
     define_writes,
     settle_writes,
 )
+from mimarsinan.torch_mapping.fx_rewrites.leaf_call_inlining import inline_leaf_calls
 
 
 # ChannelsLastBatchNorm1d must stay a call_module node (not traced through) so
@@ -265,7 +266,7 @@ def trace_model(
                 if unread is not None:
                     raise unread
                 graph_module = fx.GraphModule(model, graph)
-                writes = define_writes(graph_module)
+                writes = define_writes(inline_leaf_calls(graph_module, tracer, input_shape, device))  # Dynamo bodies
             except TracingError:
                 raise
             except Exception as exc:

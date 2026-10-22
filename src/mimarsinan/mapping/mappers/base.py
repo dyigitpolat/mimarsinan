@@ -130,10 +130,12 @@ class Mapper(nn.Module):
         ``_map_to_ir``'s own ``source.map_to_ir`` call is a memo hit and no call
         nests, at any depth. Every ``_map_to_ir`` reads its sources before it
         emits, so the IR equals the recursive walk's, node ids and order included.
+        A source that is not a ``Mapper`` with this walk (a duck-typed
+        ``map_to_ir``) is left to its reader, as the recursive walk left it.
         """
         if not self._mapped_for(ir_mapping):
             order, _ = dependency_postorder(
-                self, lambda n: [] if n._mapped_for(ir_mapping) else n.get_source_mappers(),
+                self, lambda n: [] if n._mapped_for(ir_mapping) else [s for s in n.get_source_mappers() if _walked(s)],
             )
             for node in order:
                 if not node._mapped_for(ir_mapping):
@@ -153,3 +155,7 @@ class Mapper(nn.Module):
 
     def _forward_impl(self, x):
         raise NotImplementedError
+
+
+def _walked(source) -> bool:
+    return isinstance(source, Mapper) and type(source).map_to_ir is Mapper.map_to_ir

@@ -3,8 +3,10 @@
 A ConvNeXt block permutes to channels-last, then runs LayerNorm, Linear, GELU, Linear and a layer scale on the last
 axis of a ``(H, W, C)`` per-sample tensor. Stage 1 is exact; the IR lowering of its value program ended in an anonymous
 ``ValueError`` ("could not broadcast input array from shape (8,32) into shape (128,32)", ``ir_mapping_class_emit.py``)
-on this tree and on w0-base: the FC mapping reads a per-sample input of rank 1 or 2 only. It is refused by name now
-(``PerceptronFanInError``, ``perceptron_mapper.py``), naming the Linear's FX node and the shapes.
+on w0-base: the FC mapping reads a per-sample input of rank 1 or 2 only. Review round 13 refused it by name
+(``PerceptronFanInError``, ``perceptron_mapper.py``); the rank-k lowering (Wave 1, coverage W4) maps it as the rank-2
+case with its leading axes flattened, so its value program is exact, and the FC mapping still refuses by name a source
+it cannot lower (``fan_in_refusal``), which the mapper no longer hands it for a Linear on the last axis.
 """
 
 from __future__ import annotations
@@ -13,7 +15,6 @@ import contextlib
 import io
 
 import numpy as np
-import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -51,15 +52,15 @@ class TinyConvNeXt(nn.Module):
         return self.head(self.b(self.stem(x)).mean([-2, -1]))
 
 
-def test_the_value_program_of_a_channels_last_linear_is_refused_by_name():
+def test_the_value_program_of_a_channels_last_linear_is_certified():
+    """[changed by the rank-k lowering: refused by name (``PerceptronFanInError`` naming ``b_pw1`` and (4, 4, 8))]."""
     torch.manual_seed(0)
     model = TinyConvNeXt().double().eval()
-    with pytest.raises(ToolchainRefusal) as excinfo, contextlib.redirect_stdout(io.StringIO()):
-        convert_torch_model(model, (1, 8, 8), 10, packaging=MVM_PACKAGING, value_program_stage=True)
-    message = str(excinfo.value)
-    assert "identity value program" in message and "PerceptronFanInError" in message, message
-    assert "Linear (FX node 'b_pw1'): its per-sample input of shape (4, 4, 8) does not flatten to its fan-in 8" in (
-        message), message
+    with contextlib.redirect_stdout(io.StringIO()):
+        flow = convert_torch_model(model, (1, 8, 8), 10, packaging=MVM_PACKAGING, value_program_stage=True)
+    certificate = flow.conversion_certificate
+    assert certificate.certified and certificate.missing_stages == (), certificate
+    assert [verdict.stage for verdict in certificate.stages] == ["converted model", "identity value program"]
 
 
 def test_the_fc_mapping_refuses_a_rank_3_source_by_name_and_keeps_a_flattening_one():

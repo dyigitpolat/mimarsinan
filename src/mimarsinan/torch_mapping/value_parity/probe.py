@@ -24,7 +24,7 @@ from mimarsinan.torch_mapping.value_parity.verdict import (
 )
 from mimarsinan.torch_mapping.value_parity.contract import NATIVE_EVAL_IDENTITY, FunctionContract
 from mimarsinan.torch_mapping.value_parity.localization import DivergingNode, first_diverging_node
-from mimarsinan.torch_mapping.value_parity.rounding import conversion_value_bound, weight_layer_depth
+from mimarsinan.torch_mapping.value_parity.rounding import conversion_value_bound, settle_line, weight_layer_depth
 from mimarsinan.torch_mapping.value_parity.witness import (
     escalated_probe_inputs,
     faithful_copy,
@@ -109,8 +109,8 @@ def locate_in_converted_model(witness: ProbeWitness, candidate: nn.Module, bound
 
 
 Locator = Callable[[ProbeWitness, nn.Module, float], Optional[DivergingNode]]
-LineDeriver = Callable[[ProbeWitness, torch.Tensor], Tuple[float, Optional[float]]]
-"""``(line, beta)`` for a comparison on the given inputs that measured above the stage's base line."""
+LineDeriver = Callable[[ProbeWitness, torch.Tensor, float], Tuple[float, Optional[float]]]
+"""``(line, beta)`` for a comparison on the given inputs whose error (the third argument) exceeds the base line."""
 
 
 def _reference_output(
@@ -178,7 +178,7 @@ def judge(
                    escalated=True)
     measured: List[ValueParityResult] = []
     for comparison in comparisons:
-        result = _compare(witness, candidate, comparison, base, locate, flat_output, derive_line)
+        result = _compare(witness, candidate, comparison, base, locate, flat_output, derive_line, contract)
         if not result.ok:
             return result
         measured.append(result)
@@ -189,7 +189,7 @@ def judge(
 
 def _compare(
     witness: ProbeWitness, candidate: nn.Module, comparison: _Comparison, base: ValueParityResult,
-    locate: Optional[Locator], flat_output: bool, derive_line: Optional[LineDeriver],
+    locate: Optional[Locator], flat_output: bool, derive_line: Optional[LineDeriver], contract: FunctionContract,
 ) -> ValueParityResult:
     base = replace(base, compared_on=comparison.compared_on)
     prefix = f"on {comparison.compared_on}: " if comparison.compared_on else ""
@@ -221,9 +221,9 @@ def _compare(
         base, ok=delta.relative_error <= base.bound, max_abs_error=delta.max_abs_error,
         reference_max=delta.reference_max, relative_error=delta.relative_error,
     )
-    if not result.ok and derive_line is not None:
-        line, beta = derive_line(witness, comparison.inputs)
-        result = replace(result, ok=delta.relative_error <= line, bound=line, reassociation_bound=beta)
+    if not result.ok:  # the derived line where it can decide, then the reference's own floor on these inputs
+        result = settle_line(result, witness.traced, comparison.inputs, contract.select_output,
+                             None if derive_line is None else lambda inputs, error: derive_line(witness, inputs, error))
     return result if result.ok else located(result)
 
 
@@ -234,7 +234,7 @@ def conclude(result: ValueParityResult, *, started: float, strict: bool) -> Valu
         error = result.error if result.stage != STAGE_NATIVE else None
         if error is not None and refusal_in_chain(error) is None:
             raise error
-        raise ConversionValueParityError(result)
+        raise ConversionValueParityError.of(result)
     return result
 
 

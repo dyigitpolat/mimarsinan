@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
-CONVERTER_VERSION = "wave0-review16t"
+CONVERTER_VERSION = "wave1-cov-w2w4-r3"
 """Bumped whenever a conversion rule changes the converted function: a flow stamped otherwise is stale."""
 
 CERTIFICATE_HYPOTHESES: Tuple[str, ...] = (
@@ -16,15 +16,26 @@ CERTIFICATE_HYPOTHESES: Tuple[str, ...] = (
     "T2 nn.Module call protocol: the model is called through nn.Module's own call protocol (no class in its hierarchy "
     "redefines attribute lookup or nn.Module's private call machinery, and no user container replaces nn.Module's "
     "private tables or torch's global hook tables)",
-    "T3 opaque-helper effects: an opaque user callable (a torch.fx.wrap function or a leaf module the trace does not "
-    "enter) has the effects on its tensor arguments, writes and storage aliasing, that the probe observes, made through "
-    "torch's version-counted operations",
+    "T3 opaque-helper effects: an opaque user callable (a torch.fx.wrap function or a leaf module whose body the "
+    "trace does not enter) has the effects on its tensor arguments, writes and storage aliasing, that the probe "
+    "observes, made through torch's version-counted operations",
 )
 """The stated boundary of every certificate, not a tolerance: trace fidelity and the trust base T1, T2 and T3.
 
 T3, opaque-helper effects (the owner's decision after review round 15): an opaque user callable is a ``torch.fx.wrap``
-function or a leaf module the trace does not enter; its effects on its tensor arguments, writes and storage aliasing,
-are those the probe observes (the tracer's run at batch 1, ``symbolic/operand_writes/observed.py``), made through
+function or a leaf module whose body the trace does not enter (a ``torch.fx.wrap`` function that leaf-call inlining
+splices in, ``fx_rewrites/leaf_call_inlining.py``, is none: its body is TorchDynamo's capture of it,
+``fx_rewrites/body_capture.py``, which interprets its bytecode on stand-in operands and never runs it, spliced only
+when the capture is one graph, no guard of it on the batch fails at some batch B >= 1, the capture at batch 1 and at
+every batch where a batch symbol is 0 or 1 is the same program, the body writes nothing in place (a write torch
+declares or an in-place operator's name names), every node is a declared operator and every operand is a tensor
+computed by declared operators, its extents proved affine in the converter's batch domain and equal to the seeded runs
+at batches 1, 2 and 3, the operands that are one tensor natively one stand-in, no two distinct ones of one storage
+[restated in the targeted pass of fix round 2: the forms were the seeded runs' fit alone, and the batch-1 capture the
+only comparison]; the spliced body is root code for every rule after it, and Dynamo evaluates a type check of a tensor as for a real one,
+refuses a string form or a hash of one, and holds trace-time state, a global read included, as FX holds the root's;
+[restated in fix round 2 of the coverage fixes: round 1 traced the body once on FX's Proxies]); its effects on its
+tensor arguments, writes and storage aliasing, are those the probe observes (the tracer's run at batch 1, ``symbolic/operand_writes/observed.py``), made through
 torch's version-counted operations. Effects the probe sees are converted exactly, in the native order of reads and
 writes, or refused by name (``OperandWriteError``; ``HostOpWriteError`` in the converted forward). Effects it does not
 see are witnesses of the boundary, never claimed covered: a write that bypasses the version counter (``Tensor.data``, a
@@ -47,7 +58,9 @@ data-dependent shapes.
 Trace fidelity: FX tracing evaluates some Python operations on a Proxy before the converter runs (``x.size(0) is 2``,
 ``x.size(0) in {7, 13}``, ``isinstance(x.size(0), int)``, ``callable(x.size(0))``, ``repr(x.shape)``) and records
 their trace-time result as a constant; a program whose output depends on one converts to a program that differs from
-it at batch sizes the probe does not run, on w0-base as here. A literal operand FX would re-type (a user subclass of
+it at batch sizes the probe does not run, on w0-base as here. In an inlined helper's body Dynamo answers a type check as
+for a real tensor, guards a membership test of an extent (so the call stays opaque) and refuses a string form or a
+hash, so of these only identity (``n is 9``, ``id``), which it evaluates at trace time, stays in this class. A literal operand FX would re-type (a user subclass of
 ``tuple``, ``list`` or ``dict``, recorded as the plain container) is refused by the tracer (``TracingError``), so it is
 not in this class, and so is a model whose native call is not the traced program (``RootCallError``: a hook on the root
 or a global module hook, an instance-bound ``forward`` or a class's own ``__call__``, which FX never runs, or a forward

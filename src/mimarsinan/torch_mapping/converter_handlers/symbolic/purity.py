@@ -38,7 +38,7 @@ data flow). An IMPURE program has none of it, so its converted flow computes wha
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, FrozenSet, Optional
+from typing import Any, FrozenSet, Mapping, Optional
 
 import torch.fx as fx
 
@@ -52,7 +52,9 @@ from mimarsinan.torch_mapping.converter_handlers.symbolic.declared_operators imp
 from mimarsinan.torch_mapping.converter_handlers.symbolic.imported_code import torch_rebinding
 from mimarsinan.torch_mapping.converter_handlers.symbolic.module_call import call_code_change
 
-__all__ = ["ImpureShapeProgramError", "Impurity", "ProgramPurity", "program_purity"]
+__all__ = [
+    "ImpureShapeProgramError", "Impurity", "ProgramPurity", "declared_code_change", "node_impurity", "program_purity",
+]
 
 _CALLS = ("call_function", "call_method", "call_module")
 
@@ -96,26 +98,37 @@ def _receiver_type(node: fx.Node) -> Optional[type]:
     return receiver.meta.get("type") if receiver is not None else None
 
 
+def declared_code_change() -> Optional[str]:
+    """How torch's declared code or ``nn.Module``'s call differs from the one imported; ``None`` when neither does."""
+    return torch_rebinding() or call_code_change()
+
+
+def node_impurity(gm: fx.GraphModule, node: fx.Node, receiver_type: Optional[type], modules: Mapping[str, Any],
+                  rebound: Optional[str]) -> Optional[str]:
+    """Why ``node`` makes ``gm`` impure (P1, P2; ``receiver_type``: the run-time type of its first argument,
+    ``rebound``: ``declared_code_change()``); ``None`` when it does not."""
+    if node.op == "get_attr":
+        found = foreign_value(_attribute(gm, str(node.target)))
+        return None if found is None else f"a get_attr value that is {found}"
+    if node.op not in _CALLS:
+        return None
+    if rebound is not None:
+        return f"the declared operators are not torch's own code as imported: {rebound}"
+    return opaque_reason(node, receiver_type, modules)
+
+
 def program_purity(gm: fx.GraphModule) -> ProgramPurity:
     """P1 and P2 over every node of ``gm`` (the traced program, before graph normalization rewrites any module); a
     rebound declared operator is named at the program's first call, and makes every called module foreign."""
     modules = dict(gm.named_modules())
-    rebound = torch_rebinding() or call_code_change()
+    rebound = declared_code_change()
     first: Optional[Impurity] = None
     foreign_modules = set()
     for node in gm.graph.nodes:
-        if node.op == "get_attr":
-            found = foreign_value(_attribute(gm, str(node.target)))
-            reason = None if found is None else f"a get_attr value that is {found}"
-        elif node.op in _CALLS:
-            reason = opaque_reason(node, _receiver_type(node), modules)
-            if rebound is not None:
-                reason = f"the declared operators are not torch's own code as imported: {rebound}"
-            module = modules.get(str(node.target)) if node.op == "call_module" else None
-            if module is not None and (rebound is not None or foreign_module(module) is not None):
-                foreign_modules.add(str(node.target))
-        else:
-            continue
+        reason = node_impurity(gm, node, _receiver_type(node), modules, rebound)
+        module = modules.get(str(node.target)) if node.op == "call_module" else None
+        if module is not None and (rebound is not None or foreign_module(module) is not None):
+            foreign_modules.add(str(node.target))
         if reason is not None and first is None:
             first = Impurity(node.name, node_operator(node, modules), reason)
     return ProgramPurity(first, frozenset(foreign_modules))

@@ -149,10 +149,11 @@ class TestStamp:
             "T2 nn.Module call protocol: the model is called through nn.Module's own call protocol (no class in its "
             "hierarchy redefines attribute lookup or nn.Module's private call machinery, and no user container "
             "replaces nn.Module's private tables or torch's global hook tables)",
-            "T3 opaque-helper effects: an opaque user callable (a torch.fx.wrap function or a leaf module the trace "
-            "does not enter) has the effects on its tensor arguments, writes and storage aliasing, that the probe "
-            "observes, made through torch's version-counted operations",
-        )  # [extended in review round 16: the owner's T3 beside T1 and T2]
+            "T3 opaque-helper effects: an opaque user callable (a torch.fx.wrap function or a leaf module whose body "
+            "the trace does not enter) has the effects on its tensor arguments, writes and storage aliasing, that the "
+            "probe observes, made through torch's version-counted operations",
+        )  # [extended in review round 16: the owner's T3 beside T1 and T2] [restated by leaf-call inlining (Wave 1,
+        # coverage W2): a torch.fx.wrap function whose body FX traces is inlined, so it is no opaque callable]
         certificate = _convert(value_program_stage=True).conversion_certificate
         assert certificate.hypotheses == CERTIFICATE_HYPOTHESES
         assert pickle.loads(pickle.dumps(certificate)).hypotheses == CERTIFICATE_HYPOTHESES

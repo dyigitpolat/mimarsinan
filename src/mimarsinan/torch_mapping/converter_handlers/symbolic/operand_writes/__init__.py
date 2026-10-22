@@ -82,7 +82,9 @@ from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes.declare
     Write,
     declared_aliases,
     declared_writes,
+    in_place_form,
     observable_write,
+    schema_declares_no_alias,
 )
 from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes.observed import WriteRecord, WriteRecorder
 from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes.rewrite import (
@@ -97,5 +99,6 @@ from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes.rewrite
 
 __all__ = [
     "COPY_GUARD", "KEPT_OPERANDS", "RUN_AFTER", "OperandWriteError", "Write", "WriteRecord", "WriteRecorder",
-    "check_record", "declared_aliases", "declared_writes", "define_writes", "observable_write", "settle_writes",
+    "check_record", "declared_aliases", "declared_writes", "define_writes", "in_place_form", "observable_write",
+    "schema_declares_no_alias", "settle_writes",
 ]
