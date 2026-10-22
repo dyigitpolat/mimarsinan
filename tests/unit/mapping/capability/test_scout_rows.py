@@ -45,7 +45,10 @@ CONVERTING = (
     "vit_lite_7_4_softmax_ln_gelu", "unet_level_convtranspose",
 )
 #: Refused on the Wave 0 base; asserted generically (a ToolchainRefusal subclass), re-pinned at CL4 (§13 rule 6).
-REFUSED_MEMBERS = ("mobilenetv2_small_relu6", "efficientnet_mbconv_se", "vit_lite_7_4_bn_relu_reluattn")
+REFUSED_MEMBERS = ("mobilenetv2_small_relu6", "efficientnet_mbconv_se")
+#: Refused on the Wave 0 round 4 base (a lowering refusal, NonTensorHostValueError) and converting on Wave 0
+#: frozen at round 16t, with its stage-2 identity value program: re-pinned at integration (§13 rule 6).
+CONVERTING_ON_WAVE0_FROZEN = ("vit_lite_7_4_bn_relu_reluattn",)
 #: Rows whose IR holds a multi-input ComputeOp: both MAC counters printed, equality asserted elsewhere (CL4: all).
 MULTI_INPUT_ROWS = frozenset({
     "resnet18_cifar_w1/4", "mobilenetv2_small_relu6_dense_twin", "efficientnet_mbconv_se_dense_twin",
@@ -94,7 +97,7 @@ def _deltas():
 def test_the_pinned_rows_are_the_oracle_output():
     doc = json.loads((FIXTURES / "base_rows.json").read_text())
     assert doc["script_sha256_16"] == "296ff421dcc7088b"
-    assert set(CONVERTING) | set(REFUSED_MEMBERS) <= set(doc["members"])
+    assert set(CONVERTING) | set(REFUSED_MEMBERS) | set(CONVERTING_ON_WAVE0_FROZEN) <= set(doc["members"])
 
 
 def test_every_reviewed_delta_names_a_cause():
@@ -153,7 +156,7 @@ def test_the_mac_counters_agree_on_rows_without_a_multi_input_op(key):
             "multi-input op counted by the forward estimator only until G1's input_shapes rule")
 
 
-@pytest.mark.parametrize("key", ("unet_level_convtranspose",))
+@pytest.mark.parametrize("key", ("unet_level_convtranspose", *CONVERTING_ON_WAVE0_FROZEN))
 def test_a_converting_member_carries_its_stage_two_agreement(key):
     model, shape = _model(key)
     census = member_census(model, shape, NC, packaging=MVM_PACKAGING, value_bits=BITS)
