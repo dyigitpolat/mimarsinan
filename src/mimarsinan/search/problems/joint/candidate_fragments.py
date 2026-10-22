@@ -11,11 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
-from mimarsinan.deployment_record.build.payload_sizes import params_bytes
-from mimarsinan.mapping.support.schedule.pass_carry import (
-    carried_softcore_spans,
-    carry_census_from_spans,
+from mimarsinan.deployment_record.build.program_census import (
+    CandidateProgramming, candidate_carry_census, candidate_programming_census,
 )
+from mimarsinan.deployment_record.build.program_census import candidate_program_passes
 from mimarsinan.deployment_record.objectives import (
     candidate_context_from_platform,
 )
@@ -74,60 +73,6 @@ def candidate_latency_steps(
     )
 
 
-def candidate_programming_census(
-    noc: Optional[LayoutNocFragments], *, weight_bits: Any,
-) -> "CandidateProgramming":
-    """[E2] The programming multiplicands of this candidate's pass structure.
-
-    A resident pass contributes its cores to core INIT and nothing else — the
-    weights it runs on are already installed (owner: "no we cannot charge
-    every pass as reprogram").
-
-    An undeclared ``weight_bits`` cannot size a payload, so the BYTES stay
-    absent (the DMA term then refuses by name) while the core counts, which
-    need no width, still count. Deployment fails loud on the same declaration
-    because a sealed record must state exact bytes; a search candidate need
-    not lose every programming term over one missing width.
-    """
-    programs = () if noc is None else noc.pass_programs
-    reprogrammed = tuple(
-        cells
-        for program in programs if not program.resident
-        for cells in program.core_cells
-    )
-    return CandidateProgramming(
-        segment_cores=sum(program.cores for program in programs),
-        committed_cells=sum(
-            sum(program.core_cells) for program in programs
-        ),
-        reprogrammed_cores=len(reprogrammed),
-        reprogrammed_bytes=None if weight_bits is None else sum(
-            params_bytes(cells, weight_bits) for cells in reprogrammed
-        ),
-        reprogram_passes=sum(1 for p in programs if not p.resident),
-        pass_cores=tuple(program.cores for program in programs),
-        reprogrammed_cells=reprogrammed,
-    )
-
-
-@dataclass(frozen=True)
-class CandidateProgramming:
-    """The programming census as the quantity surface consumes it."""
-
-    segment_cores: int
-    #: [R1] Σ over EVERY pass of the occupied used-rows x used-columns cells —
-    #: the AS-MAPPED figure (replicas count once per replica, because replicas
-    #: really fire): the catalog's ``macs``/``cells_used`` at candidate
-    #: completeness, and the event model's multiplicand.
-    committed_cells: int
-    reprogrammed_cores: int
-    #: None when the platform declares no weight width — absent, never zero.
-    reprogrammed_bytes: Optional[int]
-    reprogram_passes: int
-    pass_cores: Tuple[int, ...]
-    reprogrammed_cells: Tuple[int, ...]
-
-
 @dataclass(frozen=True)
 class ProgramFacts:
     """What this candidate's pass structure implies for cost, or nothing.
@@ -142,6 +87,8 @@ class ProgramFacts:
     latency_steps: Optional[int] = None
     programming: Optional[CandidateProgramming] = None
     carry: Optional[Dict[str, int]] = None
+    #: Per (pass, segment): cells, residency marks and stage latencies (the period census's rows).
+    passes: Optional[Any] = None
 
 
 def with_stage_placements(
@@ -169,26 +116,14 @@ def candidate_program_facts(
     programming census (E2), and the carry census (H2)."""
     if noc is None:
         return ProgramFacts()
-    carry = None
-    if (noc.census is not None and pass_transfer is not None
-            and timesteps is not None):
-        # A sealed pass structure with no crossing wire is a KNOWN zero, not
-        # an unknown: an optimizer minimizing carry must see single-pass
-        # programs at 0, never refuse them. Unknown stays None (no census /
-        # no discipline), the E-series law.
-        carry = carry_census_from_spans(
-            carried_softcore_spans(
-                softcores, noc.pass_placements, noc.census.pair_wires,
-            ),
-            boundary_count=len(noc.pass_placements),
-            timesteps=int(timesteps), transfer=str(pass_transfer),
-        )
+    carry = candidate_carry_census(softcores, noc, timesteps=timesteps, pass_transfer=pass_transfer)
     return ProgramFacts(
         latency_steps=candidate_latency_steps(
             softcores, noc, semantics, timesteps,
         ),
         programming=candidate_programming_census(noc, weight_bits=weight_bits),
         carry=carry,
+        passes=candidate_program_passes(softcores, noc, semantics=semantics, timesteps=timesteps),
     )
 
 
@@ -236,6 +171,7 @@ def candidate_fragments(
         latency_steps=program.latency_steps,
         programming=program.programming,
         carry=program.carry,
+        passes=program.passes,
     )
     return physics, context
 

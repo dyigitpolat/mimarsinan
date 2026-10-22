@@ -312,6 +312,20 @@ class TestTheProgrammingTermsAppear:
         assert "energy_programming_mj" not in terms
         assert "latency_programming_s" not in terms
 
+    def test_an_undeclared_row_of_a_positive_payload_is_named(self):
+        """Targeted pass, named change (i): the per-load term names every component of its own sum it
+        cannot price, as the per-inference terms do. Loihi prices the commit but declares no DMA row."""
+        source = self._terms(_physics("loihi"))["energy_programming_mj"].source
+        assert source.endswith("; unpriced: e_dma_per_byte(dma)")
+        generic = self._terms(_physics("generic_estimated_22nm"))["energy_programming_mj"].source
+        assert "unpriced" not in generic
+
+    def test_an_undeclared_core_program_row_of_reprogrammed_cores_is_named(self):
+        physics = _physics("loihi")
+        without = replace(physics, constants={k: v for k, v in physics.constants.items() if k != "e_core_program"})
+        source = self._terms(without)["energy_programming_mj"].source
+        assert "e_core_program(core_program)" in source.split("; unpriced: ")[1]
+
     def test_nothing_but_the_program_load_moved(self):
         """The new constants price a per-LOAD overhead. Every per-inference term
         must be identical to what the profile priced before they existed."""

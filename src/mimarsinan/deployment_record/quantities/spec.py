@@ -9,7 +9,7 @@ view cannot answer is missing, never zero.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, Mapping, Tuple
+from typing import Dict, Iterable, Iterator, Mapping, Optional, Tuple
 
 from mimarsinan.deployment_record.units import (
     DATA,
@@ -84,6 +84,25 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
      "Payload the host RE-INJECTS across the same boundaries per inference. The "
      "chip's input interface takes spike trains, so this direction is dense too — "
      "and it rides the DMA channel that programming payloads ride."),
+    # --- the write law (E49 period census at the declared batch K) ---------------------
+    ("period_rewrite_bytes", (DATA, "B"),
+     "Payload rewritten once per schedule period (K inferences): 0 when the programmed tiles "
+     "fit the declared cores of their core type or every pass stays resident, else the payload "
+     "of the cores the residency plan does not keep. Present only when inference_batch_K is declared."),
+    ("runtime_written_cells", _COUNT,
+     "Cells written per inference during deployment: backing-store writes / K plus "
+     "producer-sourced writes."),
+    ("written_units", _COUNT,
+     "Write units per inference at the declared write granularity (cells, rows, columns or "
+     "cores)."),
+    ("write_events", _COUNT,
+     "Write steps per inference: per pass, ceil(units / (write_units_in_parallel x "
+     "write_ports))."),
+    ("max_writes_per_cell_per_inference", _COUNT,
+     "The most-written cell's writes per inference: its physical core's writes per period / K "
+     "(every pass that rewrites the core writes it), plus one per inference where a producer "
+     "writes cells (the high-wear end: the census places producer cells on no core): the endurance "
+     "multiplicand. Absent where the plane places no rewritten core."),
     ("carry_peak_live_bytes", (DATA, "B"),
      "Peak concurrently-live carried payload over the segment's boundaries — the "
      "buffer a scheduled chip must provision. Wires with disjoint live ranges "
@@ -110,6 +129,12 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
      "Total link traversals: the sum of per-link packet counts over the NoC "
      "(derived from the sealed link loads; one packet crossing three links is "
      "three hops)."),
+    ("noc_value_bytes", (DATA, "B"),
+     "Value-domain NoC traffic per inference, in byte-hops: every inter-core wire of an "
+     "execution stage carries one value of activation_bits / 8 bytes over its XY hops."),
+    # --- compute lanes: produced by a capability census (none by default) ---------------
+    ("lane_ops", _COUNT, "Element operations a program runs on arithmetic lanes per inference."),
+    ("lanes_per_tile", _COUNT, "Output arithmetic lanes per tile at the program's capability level."),
     # --- periphery: producers land with the conversion models (C6) ----------------
     ("adc_conversions", _COUNT,
      "Analog-to-digital conversions of the execution, produced by the target's "
@@ -187,14 +212,28 @@ class QuantityValue:
 
 
 class Quantities:
-    """A view's produced quantities. Absence is meaningful — there is no default."""
+    """A view's produced quantities. Absence is meaningful — there is no default.
 
-    def __init__(self, values: Mapping[str, QuantityValue]) -> None:
+    A WITHHELD quantity is absent with a reason: the view knows work may exist but cannot size it
+    (a value carry without the declared value grid), so every term it multiplies is named unpriced
+    with that reason rather than silently dropped.
+    """
+
+    def __init__(self, values: Mapping[str, QuantityValue],
+                 withheld: Optional[Mapping[str, str]] = None) -> None:
         for key in values:
             quantity_spec(key)
         # Catalog order, so reports and comparisons are stable.
         self._values: Dict[str, QuantityValue] = {
             key: values[key] for key in QUANTITY_SPECS if key in values
+        }
+        withheld = dict(withheld or {})
+        for key in withheld:
+            quantity_spec(key)
+            if key in self._values:
+                raise ValueError(f"{key!r} is both produced and withheld")
+        self._withheld: Dict[str, str] = {
+            key: str(withheld[key]) for key in QUANTITY_SPECS if key in withheld
         }
 
     def has(self, key: str) -> bool:
@@ -216,8 +255,18 @@ class Quantities:
     def keys(self) -> Iterator[str]:
         return iter(self._values)
 
+    def withheld_reason(self, key: str) -> Optional[str]:
+        """Why ``key`` is absent although its work may exist, or None."""
+        quantity_spec(key)
+        return self._withheld.get(key)
+
+    @property
+    def withheld(self) -> Dict[str, str]:
+        return dict(self._withheld)
+
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, Quantities) and self._values == other._values
+        return (isinstance(other, Quantities) and self._values == other._values
+                and self._withheld == other._withheld)
 
     def __repr__(self) -> str:
         return f"Quantities({sorted(self._values)})"

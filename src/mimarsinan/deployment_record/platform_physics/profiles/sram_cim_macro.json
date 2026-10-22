@@ -1,0 +1,65 @@
+{
+  "format_version": 1,
+  "name": "sram_cim_macro",
+  "display_name": "Digital SRAM-CIM macro (16 nm, 128 kB, jiang2023a; macro-level constants only)",
+  "description_file": "sram_cim_macro.md",
+  "validity": {
+    "measurement_kind": "silicon",
+    "technology_node_nm": 16.0,
+    "supply_v": 0.58,
+    "temperature_c": null,
+    "array_size_assumed": "128 kB of 6T in 1 kB blocks of 64 x 128 b; 8-bit weights x 4-bit inputs, 32-bit partial sums, exact digital accumulation (jiang2023a p.2-3)",
+    "notes": "MACRO-LEVEL constants only, measured at 20 MHz and 0.58 V (jiang2023a p.4). Chip-level rows (periphery, NoC, host, static power, the cycle time of a whole evaluation) are absent and refuse by name; the backing store is declared by a backing-store override block (CL5, CL7), so an SRAM point is never read without it.",
+    "geometry": {
+      "axons": 64,
+      "neurons": 16,
+      "cell_bits": 8,
+      "core_count": [
+        1,
+        128
+      ],
+      "scaling": null
+    }
+  },
+  "constants": {
+    "e_mac": {
+      "low": 84.0,
+      "nominal": 158.7302,
+      "high": 158.7302,
+      "unit": "fJ",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.4 via constants.md sec. 4",
+      "derivation": "12.6 TOPS/W non-weight-stationary at 8b W x 4b A, 20 MHz: 2 / 12.6e12 J = 158.7 fJ per MAC (1 MAC = 2 OPs); weight-stationary with 20x reuse 23.8 TOPS/W = 84.0 fJ (the band's low end). The non-WS anchor is the one a CIM activation reads."
+    },
+    "e_write_per_cell": {
+      "low": 76.0,
+      "nominal": 161.2203,
+      "high": 342.0,
+      "unit": "fJ",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.4 via constants.md sec. 5",
+      "derivation": "An 8-bit weight cell is one byte; the array write per byte is bracketed between 1x the measured local-block read byte energy (76 fJ at 20 MHz) and 2x the 91 MHz value (342 fJ), a write being full swing where the read is half swing. Nominal at the log-space centre.",
+      "note": "houshmand2023benchmarking Table II and Fig. 7 p.6 carry an analytical weight-write term that was not read in this round; it is the cross-check this bracket waits on."
+    },
+    "write_verify_iterations": {
+      "nominal": 1.0,
+      "unit": "iterations",
+      "evidence_kind": "derived",
+      "derivation": "A digital SRAM write is one full-swing write with no verify loop."
+    },
+    "endurance_cycles": {
+      "nominal": 1e+16,
+      "unit": "cycles",
+      "evidence_kind": "published",
+      "citation": "ielmini2018inmemory p.7",
+      "note": "'about 1e16 cycles over the expected lifetime of embedded SRAM' (scout_chip.md sec. 4.3, SOURCED)."
+    },
+    "conductance_levels": {
+      "nominal": 256.0,
+      "unit": "levels",
+      "evidence_kind": "published",
+      "citation": "jiang2023a p.2-3",
+      "note": "8-bit weights."
+    }
+  }
+}

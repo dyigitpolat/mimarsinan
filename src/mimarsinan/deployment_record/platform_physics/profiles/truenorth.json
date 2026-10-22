@@ -9,7 +9,17 @@
     "supply_v": 0.8,
     "temperature_c": null,
     "array_size_assumed": "256 axons x 256 neurons per core, 4096 cores, 64x64 mesh",
-    "notes": "Characterized at the 0.8 V corner, where akopyan2015truenorth Fig. 17 publishes a THREE-POINT firing-rate sweep at fixed synaptic density -- the only published TrueNorth data that separates marginal switching energy from static power. The chip operates over 0.70-1.05 V with a 42-323 mW envelope; points at other voltages are outside this corner because no voltage-scaling model is published. Temperature is not stated by either paper."
+    "notes": "Characterized at the 0.8 V corner, where akopyan2015truenorth Fig. 17 publishes a THREE-POINT firing-rate sweep at fixed synaptic density -- the only published TrueNorth data that separates marginal switching energy from static power. The chip operates over 0.70-1.05 V with a 42-323 mW envelope; points at other voltages are outside this corner because no voltage-scaling model is published. Temperature is not stated by either paper.",
+    "geometry": {
+      "axons": 256,
+      "neurons": 256,
+      "cell_bits": 9,
+      "core_count": [
+        1,
+        4096
+      ],
+      "scaling": null
+    }
   },
   "constants": {
     "area_per_cell": {

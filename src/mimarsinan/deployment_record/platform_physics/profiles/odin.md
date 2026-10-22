@@ -90,3 +90,11 @@ ODIN is a **single 256-neuron core**. It is in the library as a correlation anch
 as a small-edge design point, not as a target for large workloads: a mapping that needs
 more than 256 neurons or 64k synapses does not fit one ODIN, and the capacity
 constraint — not this profile — is what must say so.
+
+## Wave 1 rows: validity and endurance (G3)
+
+- **Validity geometry.** One 256 x 256 core of 3-bit weights (the fourth synapse bit maps, it does not weigh):
+  the per-core footprint `area_per_core_total` holds at that core only, so a chip declaring another core
+  geometry, more cores, or weights wider than 3 bits refuses `chip_area_mm2` by name (E190).
+- **`endurance_cycles` = 1e16** (published, ielmini2018inmemory p.7): ODIN's synapses are SRAM, so its lifetime is
+  priced on the embedded-SRAM row.

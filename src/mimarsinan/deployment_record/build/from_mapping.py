@@ -2,16 +2,19 @@
 
 Every converter is a pure read that REUSES the existing measurement code
 (``weight_programming_report``, ``CoreOccupancy``, the layout stats engine,
-the span SSOT) — it mirrors, never re-derives.
+the span SSOT) — it mirrors, never re-derives. The per-segment programming
+census lives in ``program_census``.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from mimarsinan.deployment_record.build.payload_sizes import (
-    core_connectivity_entries, params_bytes, require_weight_bits)
 from mimarsinan.deployment_record.build.pass_carry import carry_record_from_mapping
+from mimarsinan.deployment_record.build.payload_sizes import require_weight_bits
+from mimarsinan.deployment_record.build.program_census import (
+    residency_plan_record, segment_record,
+)
 from mimarsinan.deployment_record.schema import (
     BankRecord,
     ComputeOpRecord,
@@ -20,26 +23,14 @@ from mimarsinan.deployment_record.schema import (
     LayoutStatsRecord,
     PlacementRecord,
     ScheduleRecord,
-    SegmentCoreRecord,
     SegmentRecord,
     SoftcorePlacementRecord,
     UtilizationRecord,
 )
-from mimarsinan.mapping.crossbar_utilization import (
-    CoreOccupancy,
-    CrossbarUtilizationReport,
-)
+from mimarsinan.mapping.crossbar_utilization import CrossbarUtilizationReport
 from mimarsinan.mapping.verification.layout_verification_hybrid import (
     stats_dict_from_hybrid_mapping,
 )
-from mimarsinan.mapping.weight_programming import weight_programming_report
-
-
-class _SingleStageProgram:
-    """One-stage view so per-segment programming calls the report verbatim."""
-
-    def __init__(self, stage: Any) -> None:
-        self.stages = [stage]
 
 
 def _opt_int(value: Any) -> Optional[int]:
@@ -98,67 +89,6 @@ def _pass_census(hybrid_mapping: Any) -> Tuple[int, int]:
     return pass_count, max(0, pass_count - len(max_pass_by_segment))
 
 
-def _core_record(
-    core_index: int, core: Any, *, weight_bits: int, resident: bool
-) -> SegmentCoreRecord:
-    occupancy = CoreOccupancy.from_hard_core(core)
-    latency = getattr(core, "latency", None)
-    return SegmentCoreRecord(
-        core_index=int(core_index),
-        axons=int(occupancy.axons_physical),
-        neurons=int(occupancy.neurons_physical),
-        axons_used=int(occupancy.axons_used),
-        neurons_used=int(occupancy.neurons_used),
-        cells_used=int(occupancy.cells_used),
-        # A resident pass sends no weight payload (schema §2.1: 0 when resident).
-        params_bytes=0 if resident else params_bytes(occupancy.cells_used, weight_bits),
-        connectivity_entries=core_connectivity_entries(core),
-        static_delay_levels=None if latency is None else int(latency),
-    )
-
-
-def _segment_record(
-    stage_index: int,
-    segment_index: int,
-    pass_index: int,
-    stage: Any,
-    *,
-    weight_bits: int,
-) -> SegmentRecord:
-    segment = stage.hard_core_mapping
-    resident = bool(getattr(stage, "schedule_weights_resident", False))
-    programming = weight_programming_report(_SingleStageProgram(stage))
-    cores = tuple(
-        _core_record(index, core, weight_bits=weight_bits, resident=resident)
-        for index, core in enumerate(segment.cores)
-    )
-    bank_ids = sorted({
-        int(placement["weight_bank_id"])
-        for placements in segment.soft_core_placements_per_hard_core
-        for placement in placements
-        if placement.get("weight_bank_id") is not None
-    })
-    return SegmentRecord(
-        stage_index=int(stage_index),
-        segment_index=int(segment_index),
-        pass_index=int(pass_index),
-        pass_reason="initial" if pass_index == 0 else "capacity_overflow",
-        programming="resident" if resident else "reprogram",
-        bank_ids=tuple(bank_ids),
-        cores=cores,
-        params_programmed=int(programming.params_programmed),
-        params_unique=int(programming.params_unique),
-        params_bytes=sum(core.params_bytes for core in cores),
-        connectivity_entries=sum(core.connectivity_entries for core in cores),
-        # The dependence-level currency: distinct latency tiers in the segment.
-        static_latency_levels=len({
-            int(core.latency)
-            for core in segment.cores
-            if getattr(core, "latency", None) is not None
-        }),
-    )
-
-
 def _compute_op_record(stage_index: int, stage: Any) -> ComputeOpRecord:
     op = stage.compute_op
     if op is None:
@@ -195,7 +125,7 @@ def schedule_record_from_mapping(
             stages_out.append(_compute_op_record(stage_index, stage))
         elif stage.kind == "neural":
             segment_index, pass_index, _ = neural[stage_index]
-            stages_out.append(_segment_record(
+            stages_out.append(segment_record(
                 stage_index, segment_index, pass_index, stage, weight_bits=bits,
             ))
         else:
@@ -213,6 +143,7 @@ def schedule_record_from_mapping(
         params_reloaded=int(params_reloaded),
         compute_op_count=len(stages_out) - len(segments),
         carry=carry_record_from_mapping(hybrid_mapping, timesteps, pass_transfer),
+        residency_plan=residency_plan_record(hybrid_mapping),
     )
 
 

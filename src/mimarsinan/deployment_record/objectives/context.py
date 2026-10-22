@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Mapping, Optional
 
+from mimarsinan.deployment_record.cost.absolute.validity import declared_geometry
 from mimarsinan.deployment_record.quantities.from_candidate import (
     CandidateQuantityContext,
 )
+from mimarsinan.deployment_record.quantities.value_domain import (
+    ValueDomainFacts,
+    names_value_domain,
+    refuse_spiking_activity,
+    value_bits,
+    value_carry,
+    value_window,
+)
+from mimarsinan.deployment_record.quantities.write_law import plane_writes
 
 
 def candidate_context_from_platform(
@@ -20,14 +31,49 @@ def candidate_context_from_platform(
     compute_op_count: Optional[int] = None,
     programming: Optional[Any] = None,
     carry: Optional[Any] = None,
+    passes: Optional[Any] = None,
 ) -> CandidateQuantityContext:
     """The declarations a candidate's platform carries, as quantity context.
 
     Every field comes off the RESOLVED platform dict the candidate decodes to
     (the same surface the deployment resolves), so the gate that admits an
     objective and the view that extracts it read one source. Absent or
-    sentinel-zero declarations stay ``None`` — no quantity claims them.
+    sentinel-zero declarations stay ``None`` — no quantity claims them. A
+    platform naming the value domain reads the value rule instead of the
+    spiking one (``quantities.value_domain``). ``passes`` (the candidate's
+    per-(pass, segment) rows, ``ProgramPasses``) feed the value window and,
+    when ``inference_batch_K`` is declared, the period census of the write law.
     """
+    context = _spiking_rule_context(
+        pcfg, host_macs=host_macs, onchip_macs=onchip_macs, host_params=host_params,
+        onchip_params=onchip_params, latency_steps=latency_steps,
+        compute_op_count=compute_op_count, programming=programming, carry=carry,
+    )
+    context = replace(context, core_geometry=declared_geometry(list(pcfg.get("cores") or ())),
+                      writes=plane_writes(passes, pcfg, weight_bits=pcfg.get("weight_bits"),
+                                          timesteps=context.timesteps, label="candidate", carry=carry))
+    if not names_value_domain(pcfg):
+        return context
+    refuse_spiking_activity(pcfg)
+    sized, withheld = value_carry(carry, context.timesteps, value_bits(pcfg))
+    rule = ValueDomainFacts(
+        mac_events=context.cells_committed,
+        latency_steps=None if passes is None else value_window(
+            [latency for row in passes.rows for latency in row.stage_latencies or ()]),
+        carry_out_bytes=sized.get("carry_out_bytes"), carry_in_bytes=sized.get("carry_in_bytes"),
+        withheld=tuple(sorted(withheld.items())),
+    )
+    return replace(
+        context, timesteps=1, activity_factor=None, carried_raster_bytes=None,
+        latency_steps=rule.latency_steps, mac_events=rule.mac_events, carry_out_bytes=rule.carry_out_bytes,
+        carry_in_bytes=rule.carry_in_bytes, value_bits=value_bits(pcfg), value_rule=rule,
+    )
+
+
+def _spiking_rule_context(
+    pcfg: Mapping[str, Any], *, host_macs, onchip_macs, host_params, onchip_params,
+    latency_steps, compute_op_count, programming, carry,
+) -> CandidateQuantityContext:
     cores = [dict(ct) for ct in (pcfg.get("cores") or ())]
 
     def _capacity(field: str) -> Optional[int]:

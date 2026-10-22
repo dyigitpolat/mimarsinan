@@ -5,15 +5,18 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.context import AbsolutePricing
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
+from mimarsinan.deployment_record.cost.absolute.validity import UNJUDGED, declared_geometry
+from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
 from mimarsinan.deployment_record.cost.terms import CostTerm, DeploymentCostReport
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.from_record import from_record
 from mimarsinan.deployment_record.quantities.spec import Quantities
+from mimarsinan.deployment_record.quantities.write_law import record_write_census
 from mimarsinan.deployment_record.schema import DeploymentRecord
 
 #: The headline axes the fidelity contract zips predicted-vs-measured over.
@@ -41,12 +44,14 @@ def _group_of(term: CostTerm) -> str:
         return "latency"
     if term.unit == "inferences/s":
         return "throughput"
+    if term.unit in ("inferences", "h"):
+        return "lifetime"
     raise ValueError(f"absolute term {term.name!r} has unrouted unit {term.unit!r}")
 
 
 def _grouped(pricing: AbsolutePricing) -> Dict[str, List[CostTerm]]:
     groups: Dict[str, List[CostTerm]] = {
-        "area": [], "energy": [], "latency": [], "throughput": [],
+        "area": [], "energy": [], "latency": [], "throughput": [], "lifetime": [],
     }
     for term in pricing.terms:
         groups[_group_of(term)].append(term)
@@ -57,7 +62,11 @@ def _notes(pricing: AbsolutePricing) -> Tuple[str, ...]:
     refusal_notes = tuple(
         f"refused {refusal.name}: {refusal.reason}" for refusal in pricing.refusals
     )
-    return (_PARALLEL_NOTE,) + refusal_notes
+    verdict_notes = tuple(
+        f"admissibility {verdict.name}: {verdict.verdict} ({verdict.reason}; {verdict.evidence})"
+        for verdict in pricing.verdicts
+    )
+    return (_PARALLEL_NOTE,) + refusal_notes + verdict_notes
 
 
 def report_with_absolute_terms(
@@ -76,14 +85,18 @@ def report_with_absolute_terms(
         area=report.area + tuple(groups["area"]),
         throughput=report.throughput + tuple(groups["throughput"]),
         notes=report.notes + _notes(pricing),
+        lifetime=report.lifetime + tuple(groups["lifetime"]),
     )
 
 
 def candidate_cost_report(
-    quantities: Quantities, physics: PlatformPhysics
+    quantities: Quantities, physics: PlatformPhysics, *,
+    writes: Optional[WriteInputs] = None, geometry: Optional[Tuple[Any, ...]] = None,
 ) -> DeploymentCostReport:
-    """A candidate's report: priced terms only — no segments, no measured plane."""
-    pricing = price_absolute(quantities, physics)
+    """A candidate's report: priced terms only — no segments, no measured plane. A candidate that
+    declares no complete core geometry prices the aggregates as declared (``UNJUDGED``)."""
+    pricing = price_absolute(quantities, physics, writes=writes,
+                             geometry=UNJUDGED if geometry is None else geometry)
     groups = _grouped(pricing)
     return DeploymentCostReport(
         segments=(),
@@ -92,6 +105,7 @@ def candidate_cost_report(
         area=tuple(groups["area"]),
         throughput=tuple(groups["throughput"]),
         notes=_notes(pricing),
+        lifetime=tuple(groups["lifetime"]),
     )
 
 
@@ -110,7 +124,20 @@ def absolute_pricing_for_record(
     physics = declared_physics_of(record)
     if physics is None:
         return None
-    return price_absolute(from_record(record), physics)
+    geometry = record_geometry(record)
+    return price_absolute(from_record(record), physics, writes=record_write_inputs(record),
+                          geometry=UNJUDGED if geometry is None else geometry)
+
+
+def record_geometry(record: DeploymentRecord) -> Optional[Tuple[Any, ...]]:
+    """The sealed chip's declared core types, or None when the identity declares none."""
+    return declared_geometry(list(record.identity.platform.get("cores") or ()))
+
+
+def record_write_inputs(record: DeploymentRecord) -> Optional[WriteInputs]:
+    """The sealed record's write-law inputs, present only when it declares ``inference_batch_K``."""
+    writes = record_write_census(record)
+    return None if writes is None else WriteInputs.of(writes)
 
 
 def emit_physics_report(record: DeploymentRecord, run_dir: str) -> Optional[str]:

@@ -25,6 +25,7 @@ from mimarsinan.deployment_record.units import (
 ARRAY = "array"
 PERIPHERY = "periphery"
 NEURON = "neuron"
+COMPUTE = "compute"
 INTERCONNECT = "interconnect"
 PROGRAMMING = "programming"
 SYNC = "sync"
@@ -37,6 +38,7 @@ GROUPS: Tuple[str, ...] = (
     ARRAY,
     PERIPHERY,
     NEURON,
+    COMPUTE,
     INTERCONNECT,
     PROGRAMMING,
     SYNC,
@@ -92,6 +94,14 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Energy of one neuron state update at one timestep."),
     ("e_leak_per_neuron_step", NEURON, ENERGY, "pJ", "neurons_used x timesteps",
      "Energy of one leak application per neuron per timestep, where leak is separable."),
+    # --- compute: arithmetic lanes beside the array (on-chip capability levels) ---------
+    ("area_per_lane", COMPUTE, AREA, "um^2", "lanes_per_tile x tiles",
+     "Silicon area of one output arithmetic lane of a tile at the program's capability level."),
+    ("e_lane_op", COMPUTE, ENERGY, "pJ", "lane_ops",
+     "Energy of one element operation on an arithmetic lane."),
+    ("t_lane_op", COMPUTE, TIME, "ns", "lane_ops",
+     "Standalone wall of one element operation on one lane; a tile's lanes run in parallel, "
+     "so the lane pass takes t_lane_op x lane_ops / (lanes_per_tile x tiles)."),
     # --- interconnect: routers, tiles, hops -------------------------------------------
     ("area_per_router", INTERCONNECT, AREA, "um^2", "tiles",
      "Silicon area of one NoC router."),
@@ -103,6 +113,9 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Energy of one packet traversal of one inter-tile link."),
     ("t_hop", INTERCONNECT, TIME, "ns", "noc_total_hops",
      "Wall time of one packet traversal of one inter-tile link."),
+    ("e_noc_value_per_byte_hop", INTERCONNECT, ENERGY, "pJ", "noc_value_bytes",
+     "Energy to move one byte of a value-domain activation across one inter-tile link: the "
+     "value-domain twin of the spike-packet hop, priced on byte-hops rather than packets."),
     # --- programming: getting weights and connectivity onto the chip ------------------
     ("e_dma_per_byte", PROGRAMMING, ENERGY, "pJ",
      "reprogrammed_bytes | carry_in_bytes",
@@ -135,6 +148,25 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "rather than as a bandwidth so the band stays monotone under multiplication."),
     ("t_core_init", PROGRAMMING, TIME, "ns", "segment_cores",
      "Wall time to reset one core's neuron state at the start of a pass."),
+    # [CH-A1] The write law: what committing a cell during an inference costs and wears.
+    ("e_write_per_cell", PROGRAMMING, ENERGY, "pJ", "runtime_written_cells x write_verify_iterations",
+     "Energy of one write pulse into one weight cell (one program-verify iteration's write), "
+     "for cells written during deployment: per period from the backing store, per inference "
+     "from a producer."),
+    ("e_verify_read_per_cell", PROGRAMMING, ENERGY, "pJ",
+     "runtime_written_cells x write_verify_iterations",
+     "Energy of the verify read after one write pulse into one cell."),
+    ("write_verify_iterations", PROGRAMMING, DIMENSIONLESS, "iterations", "declared, not multiplied",
+     "Mean write-verify iterations per written cell (1 for a write that needs no verify); a "
+     "factor of the write energy and write time formulas."),
+    ("t_write_per_unit", PROGRAMMING, TIME, "ns", "write_events x write_verify_iterations",
+     "Wall time of one write step of the declared granularity (a cell, a row, a column or a "
+     "core), per write-verify iteration."),
+    ("t_write_setup_per_event", PROGRAMMING, TIME, "ns", "write_events",
+     "Fixed wall time to open one write step (addressing, mode switch), beside its pulses."),
+    ("endurance_cycles", PROGRAMMING, DIMENSIONLESS, "cycles", "declared, not multiplied",
+     "Write cycles a cell sustains over its life; lifetime in inferences is endurance_cycles / "
+     "max_writes_per_cell_per_inference (divided, not multiplied)."),
     # --- sync: barriers between passes -------------------------------------------------
     ("e_sync_barrier", SYNC, ENERGY, "pJ", "sync_count",
      "Energy of one chip-wide synchronization barrier."),
@@ -201,6 +233,7 @@ SUPERSEDES: Mapping[str, Tuple[str, ...]] = {
         "e_leak_per_neuron_step",
         "e_intra_tile_packet",
         "e_inter_tile_hop",
+        "e_noc_value_per_byte_hop",
         "p_static_per_core",
         "p_static_global",
     ),

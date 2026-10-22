@@ -9,7 +9,17 @@
     "supply_v": 0.55,
     "temperature_c": 24.0,
     "array_size_assumed": "one 256-neuron, 64k-synapse crossbar core; 4-bit synapses (3-bit weight + 1 mapping bit); 320 um x 270 um",
-    "notes": "Measured on silicon, averaged over 9 test chips at 24 C (Fig. 8b). The declared corner is 0.55 V at f_clk = 75 MHz, the maximum frequency at that supply. ODIN's published power model is P = P_leak + P_idle x f_clk + E_SOP x r_SOP (Eq. 2), so the clock-proportional idle term is folded into p_static_per_core AT THE DECLARED CLOCK; a run at another clock must restate it and say so."
+    "notes": "Measured on silicon, averaged over 9 test chips at 24 C (Fig. 8b). The declared corner is 0.55 V at f_clk = 75 MHz, the maximum frequency at that supply. ODIN's published power model is P = P_leak + P_idle x f_clk + E_SOP x r_SOP (Eq. 2), so the clock-proportional idle term is folded into p_static_per_core AT THE DECLARED CLOCK; a run at another clock must restate it and say so.",
+    "geometry": {
+      "axons": 256,
+      "neurons": 256,
+      "cell_bits": 3,
+      "core_count": [
+        1,
+        1
+      ],
+      "scaling": null
+    }
   },
   "constants": {
     "area_per_core_total": {
@@ -133,6 +143,13 @@
       "evidence_kind": "derived",
       "citation": "frenkel2019odin Section II, p.3",
       "derivation": "No ADC exists in ODIN; see area_per_adc."
+    },
+    "endurance_cycles": {
+      "nominal": 1e+16,
+      "unit": "cycles",
+      "evidence_kind": "published",
+      "citation": "ielmini2018inmemory p.7",
+      "note": "[CH-A1] 'about 1e16 cycles over the expected lifetime of embedded SRAM' (scout_chip.md sec. 4.3, SOURCED). A point, as the source states one figure; lifetime = endurance_cycles / max_writes_per_cell_per_inference. ODIN's synapses are SRAM (frenkel2019odin), so the SRAM row prices its lifetime."
     }
   }
 }

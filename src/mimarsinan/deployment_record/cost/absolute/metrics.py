@@ -8,7 +8,7 @@ reason, never approximated silently.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.context import (
     AbsolutePricing,
@@ -17,11 +17,23 @@ from mimarsinan.deployment_record.cost.absolute.context import (
 from mimarsinan.deployment_record.cost.absolute.energy import price_energy
 from mimarsinan.deployment_record.cost.absolute.formulas import (
     AREA_COMPONENTS,
+    CHIP_AREA_ADDERS,
     LATENCY_COMPONENTS,
     add_bands,
     invert_band,
     programming_payload_bytes,
     scale_band,
+)
+from mimarsinan.deployment_record.cost.absolute.validity import (
+    aggregate_scales,
+    footprint_cores,
+    judged_geometry,
+    mean_core_note,
+)
+from mimarsinan.deployment_record.cost.absolute.writes import (
+    WriteInputs,
+    WritePricing,
+    price_write_inputs,
 )
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
@@ -49,6 +61,26 @@ def _state_area_band(ctx: PricingContext) -> Optional[Band]:
     )
 
 
+def _aggregate_footprint(ctx: PricingContext) -> Optional[Tuple[Band, bool]]:
+    """[E190] (the per-core footprint over the declared cores, whether it was scaled), or None
+    with the area refused by name outside the footprint's validity."""
+    value = ctx.physics.band("area_per_core_total")
+    cores = ctx.quantities.get("cores_physical").value
+    inside = (scale_band(value, cores * _M2_TO_MM2, "area_per_core_total x cores_physical"), False)
+    if ctx.geometry is None:
+        return inside
+    bits = ctx.quantities.get("weight_bits").value if ctx.quantities.has("weight_bits") else None
+    scales, reason = aggregate_scales(ctx.physics, ctx.geometry, None if bits is None else int(bits))
+    if scales is None:
+        ctx.refuse(AREA_HEADLINE, f"area_per_core_total lies outside its validity: {reason}")
+        return None
+    if all(scale == 1.0 for scale in scales):
+        return inside
+    cells = footprint_cores(ctx.geometry, scales)
+    return scale_band(value, cells * _M2_TO_MM2,
+                      "area_per_core_total x cores_physical, scaled by core cells (declared scaling rule)"), True
+
+
 def price_area(ctx: PricingContext) -> None:
     """Chip area: the published per-core footprint if there is one, else components."""
     components: List[Band] = []
@@ -59,11 +91,14 @@ def price_area(ctx: PricingContext) -> None:
             ctx.refuse(AREA_HEADLINE, "area_per_core_total is declared but the "
                                       "cores_physical census is absent")
             return
-        value = ctx.physics.band("area_per_core_total")
-        cores = ctx.quantities.get("cores_physical").value
-        components.append(scale_band(
-            value, cores * _M2_TO_MM2, "area_per_core_total x cores_physical"))
-        evidence.append(f"cores: area_per_core_total [{value.basis}]")
+        footprint = _aggregate_footprint(ctx)
+        if footprint is None:
+            return
+        band, scaled = footprint
+        components.append(band)
+        evidence.append(f"cores: area_per_core_total [{ctx.physics.band('area_per_core_total').basis}]"
+                        + (" scaled by core cells (declared scaling rule)" if scaled else "")
+                        + mean_core_note(ctx.physics, ctx.geometry))
     elif ctx.priced("area_per_cell"):
         bands, notes, missing = ctx.component_bands(AREA_COMPONENTS, _M2_TO_MM2)
         if not bands:
@@ -81,6 +116,11 @@ def price_area(ctx: PricingContext) -> None:
                                   "declares neither area_per_core_total nor "
                                   "area_per_cell")
         return
+    # Beside the footprint on either path, and named unpriced where a census shows the work.
+    bands, notes, missing = ctx.component_bands(CHIP_AREA_ADDERS, _M2_TO_MM2)
+    components.extend(bands)
+    evidence.extend(notes)
+    unpriced.extend(missing)
     if ctx.physics.has("area_global_fixed"):
         value = ctx.physics.band("area_global_fixed")
         components.append(scale_band(value, _M2_TO_MM2, "area_global_fixed"))
@@ -105,7 +145,11 @@ def _programming_latency(ctx: PricingContext) -> None:
              scale_band(value, payload_bytes, source), source)
 
 
-def price_latency(ctx: PricingContext) -> Optional[Band]:
+def _host_unpriced(host) -> List[str]:
+    return list(getattr(host, "unpriced", ()))
+
+
+def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) -> Optional[Band]:
     """Steady-state end-to-end latency per sample; returns the band energy reuses.
 
     ``t_hop`` is deliberately NOT added: execution is timestep-synchronous, so hop
@@ -140,6 +184,15 @@ def price_latency(ctx: PricingContext) -> Optional[Band]:
         ctx.term("latency_host_s", "s", host.band, host.band.basis)
         components.append(host.band)
         evidence.append("host: " + host.band.basis)
+    unpriced.extend(_host_unpriced(host))
+    if writes is not None:
+        if writes.exposed is None:
+            reason = next(r.reason for r in writes.refusals if r.name == "latency_write_exposed_s")
+            ctx.refuse(LATENCY_HEADLINE, f"the exposed write time is refused: {reason}")
+            _programming_latency(ctx)
+            return None
+        components.append(writes.exposed)
+        evidence.append("writes: " + writes.exposed.basis)
 
     source = "; ".join(evidence) + (
         "; steady-state per sample: resident weights, programming amortized in "
@@ -163,11 +216,29 @@ def price_throughput(ctx: PricingContext, e2e: Optional[Band]) -> None:
     ctx.term(THROUGHPUT_HEADLINE, "inferences/s", invert_band(e2e, source), source)
 
 
-def price_absolute(quantities: Quantities, physics: PlatformPhysics) -> AbsolutePricing:
-    """Every absolute term the declared physics can honestly back, plus refusals."""
-    ctx = PricingContext.create(quantities, physics)
+def price_absolute(
+    quantities: Quantities, physics: PlatformPhysics, *,
+    writes: Optional[WriteInputs] = None, geometry: Any = None,
+) -> AbsolutePricing:
+    """Every absolute term the declared physics can honestly back, plus refusals.
+
+    ``writes`` (a period census with the declared write policy, present only when the run declares
+    ``inference_batch_K``) adds the write law's terms to the steady-state headlines; ``geometry``
+    (the declared core types) judges the aggregate constants against the profile's validity. A
+    caller that states none is judged by what the census proves (``validity.census_geometry``): a single
+    core's type, or its cell count, which a declared 'cells' scaling rule reads exactly; at a point
+    validity a mean core at the point is judged there with that basis stated in the term, and refused
+    by name under ``validity.CENSUS_PROVED``. ``validity.UNJUDGED`` reads the aggregates as declared.
+    """
+    ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities))
+    priced_writes = None if writes is None else price_write_inputs(writes, physics)
     price_area(ctx)
-    e2e = price_latency(ctx)
-    price_energy(ctx, e2e)
+    e2e = price_latency(ctx, priced_writes)
+    price_energy(ctx, e2e, priced_writes)
     price_throughput(ctx, e2e)
-    return AbsolutePricing(terms=tuple(ctx.terms), refusals=tuple(ctx.refusals))
+    terms, refusals = list(ctx.terms), list(ctx.refusals)
+    if priced_writes is not None:
+        terms += priced_writes.terms
+        refusals += priced_writes.refusals
+    return AbsolutePricing(terms=tuple(terms), refusals=tuple(refusals),
+                           verdicts=() if priced_writes is None else tuple(priced_writes.verdicts))

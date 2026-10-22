@@ -155,3 +155,10 @@ Those are simulator inputs, and changing them changes SANA-FE results, so they a
 reported rather than edited by this profile. It is also why this profile declares its
 published numbers **directly** instead of referencing the presets through `source_ref`:
 a reference would inherit the preset's provenance, and the preset does not have any.
+
+## Wave 1 rows: validity (G3)
+
+- **Validity geometry.** 256 x 256 cores on chips of 1 - 4096 cores. Each neuron weighs its inputs by four
+  signed 9-bit integers, one per axon type, while the crossbar bit selects the connection (merolla2014a), so
+  weights up to 9 bits lie inside. The published per-core footprint `area_per_core_total` holds at that core:
+  another geometry refuses `chip_area_mm2` by name (E190); TrueNorth's own core prices exactly as before.

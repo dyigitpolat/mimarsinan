@@ -134,6 +134,9 @@ class DeploymentCostReport:
     throughput: Tuple[CostTerm, ...]
     notes: Tuple[str, ...]
     format_version: int = COST_REPORT_FORMAT_VERSION
+    #: [CH-A1] Lifetime against endurance; emitted only when priced, so a report without it keeps
+    #: its bytes.
+    lifetime: Tuple[CostTerm, ...] = ()
 
     def __post_init__(self) -> None:
         if int(self.format_version) != COST_REPORT_FORMAT_VERSION:
@@ -148,10 +151,11 @@ class DeploymentCostReport:
         segment_terms = tuple(
             term for segment in self.segments for term in segment.terms
         )
-        return segment_terms + self.energy + self.latency + self.area + self.throughput
+        return (segment_terms + self.energy + self.latency + self.area + self.throughput
+                + self.lifetime)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data = {
             "segments": [segment.to_dict() for segment in self.segments],
             "energy": [term.to_dict() for term in self.energy],
             "latency": [term.to_dict() for term in self.latency],
@@ -160,6 +164,9 @@ class DeploymentCostReport:
             "notes": list(self.notes),
             "format_version": self.format_version,
         }
+        if self.lifetime:
+            data["lifetime"] = [term.to_dict() for term in self.lifetime]
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "DeploymentCostReport":
@@ -167,6 +174,7 @@ class DeploymentCostReport:
         kwargs["segments"] = tuple_of(SegmentInitCost.from_dict, kwargs["segments"])
         for group in ("energy", "latency", "area", "throughput"):
             kwargs[group] = tuple_of(CostTerm.from_dict, kwargs[group])
+        kwargs["lifetime"] = tuple_of(CostTerm.from_dict, kwargs.get("lifetime"))
         kwargs["notes"] = tuple(str(note) for note in kwargs["notes"])
         return cls(**kwargs)
 

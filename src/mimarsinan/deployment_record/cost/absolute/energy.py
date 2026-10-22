@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.context import (
     HostTime,
@@ -14,6 +14,11 @@ from mimarsinan.deployment_record.cost.absolute.formulas import (
     add_bands,
     programming_payload_bytes,
     scale_band,
+)
+from mimarsinan.deployment_record.cost.absolute.validity import (
+    CensusCells,
+    aggregate_scales,
+    mean_core_note,
 )
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -56,6 +61,30 @@ def _static_band(
                 total.high * e2e.high * _J_TO_MJ, basis), False
 
 
+def _aggregate_outside(ctx: PricingContext, compute: str) -> Optional[str]:
+    """[E190] Why the per-event aggregate does not hold for this chip, or None. It is a point model: judged
+    at each declared core type (or the census's mean core), never through a cells rule, whose scale can be
+    1 off the point (two 128 x 512 cores hold two 256 x 256 cores' cells)."""
+    if compute != "e_synaptic_event_total" or ctx.geometry is None:
+        return None
+    bits = ctx.quantities.get("weight_bits").value if ctx.quantities.has("weight_bits") else None
+    scales, reason = aggregate_scales(ctx.physics, ctx.geometry, None if bits is None else int(bits))
+    point = ctx.physics.validity.geometry
+    if scales is None or point is None:
+        return reason
+    chip = ctx.geometry
+    if isinstance(chip, CensusCells):
+        if chip.mean is None or chip.strict:
+            return (f"a per-event aggregate is a point model, and the census does not prove one core type "
+                    f"({chip.reason}): pass the declared core types")
+        cores = [chip.mean]
+    else:
+        cores = [(core.axons, core.neurons) for core in chip]
+    if any(core != (point.axons, point.neurons) for core in cores):
+        return "a per-event aggregate is a point model; no scaling rule reads it at another core"
+    return None
+
+
 def _host_band(ctx: PricingContext) -> Tuple[Optional[Band], Optional[str]]:
     """(host energy, refusal reason) — p_host over the host wall."""
     host = ctx.host_time()
@@ -75,14 +104,19 @@ def _host_band(ctx: PricingContext) -> Tuple[Optional[Band], Optional[str]]:
 
 
 def _programming_energy(ctx: PricingContext) -> None:
-    """Per program LOAD, amortized separately from the per-inference headline."""
+    """Per program LOAD, amortized separately from the per-inference headline. Like the per-inference
+    terms it names every component of its own sum it cannot price: a row the target never declares
+    while its census is positive (a payload, reprogrammed cores)."""
     components: List[Band] = []
     evidence: List[str] = []
+    unpriced: List[str] = []
     payload = programming_payload_bytes(ctx.quantities, ctx.physics)
     if payload is not None:
         payload_bytes, note = payload
         for constant, label in PROGRAMMING_BYTE_ENERGIES:
             if not ctx.priced(constant):
+                if payload_bytes and not ctx.physics.has(constant):
+                    unpriced.append(f"{constant}({label})")
                 continue
             value = ctx.physics.band(constant)
             components.append(scale_band(
@@ -98,20 +132,27 @@ def _programming_energy(ctx: PricingContext) -> None:
             value, ctx.quantities.get(quantity).value * _J_TO_MJ,
             f"{constant} x {quantity}"))
         evidence.append(f"{constant} [{value.basis}]")
+    elif not ctx.physics.has(constant) and ctx.quantities.has(quantity) and ctx.quantities.get(quantity).value:
+        unpriced.append(f"{constant}(core_program)")
     if components:
         source = "; ".join(evidence) + (
             "; per program load, amortized separately from the per-inference headline"
-        )
+        ) + (f"; unpriced: {', '.join(unpriced)}" if unpriced else "")
         ctx.term("energy_programming_mj", "mJ", add_bands(components, source), source)
 
 
-def price_energy(ctx: PricingContext, e2e: Optional[Band]) -> None:
+def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any] = None) -> None:
     """Energy per inference, or a refusal naming the missing constant or census."""
     compute = _compute_constant(ctx)
     if compute is None:
         ctx.refuse(ENERGY_HEADLINE, "no compute-energy source is declared: the "
                                     "target declares neither e_synaptic_event_total "
                                     "nor e_mac")
+        _programming_energy(ctx)
+        return
+    outside = _aggregate_outside(ctx, compute)
+    if outside is not None:
+        ctx.refuse(ENERGY_HEADLINE, f"e_synaptic_event_total lies outside its validity: {outside}")
         _programming_energy(ctx)
         return
     if not ctx.quantities.has("synaptic_events"):
@@ -124,17 +165,21 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band]) -> None:
     value = ctx.physics.band(compute)
     events = ctx.quantities.get("synaptic_events").value
     components = [scale_band(value, events * _J_TO_MJ, f"{compute} x synaptic_events")]
-    evidence = [f"compute: {compute} [{value.basis}]"]
+    evidence = [f"compute: {compute} [{value.basis}]" + (
+        mean_core_note(ctx.physics, ctx.geometry, point_model=True) if compute == "e_synaptic_event_total" else "")]
 
     bands, notes, unpriced = ctx.component_bands(ENERGY_COMPONENTS, _J_TO_MJ)
     components.extend(bands)
     evidence.extend(notes)
 
     # Switching energy stands on its own: it needs no latency, so a target that
-    # cannot price static power still answers the number chip papers report.
+    # cannot price static power still answers the number chip papers report. It
+    # names every component of its own sum it cannot price, as the headline does.
     dynamic_source = "; ".join(evidence) + (
         "; DYNAMIC only — excludes static power and the host share"
     )
+    if unpriced:
+        dynamic_source += f"; unpriced: {', '.join(unpriced)}"
     ctx.term(ENERGY_DYNAMIC, "mJ", add_bands(components, dynamic_source),
              dynamic_source)
 
@@ -159,6 +204,15 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band]) -> None:
         ctx.term("energy_host_mj", "mJ", host, host.basis)
         components.append(host)
         evidence.append("host: " + host.basis)
+    unpriced.extend(f"p_host x {item}" for item in ctx.host_time().unpriced)
+    if writes is not None:
+        if writes.energy is None:
+            reason = next(r.reason for r in writes.refusals if r.name == "energy_write_mj")
+            ctx.refuse(ENERGY_HEADLINE, f"the write energy is refused: {reason}")
+            _programming_energy(ctx)
+            return
+        components.append(writes.energy)
+        evidence.append("writes: " + writes.energy.basis)
 
     source = "; ".join(evidence)
     if unpriced:

@@ -19,6 +19,8 @@ from mimarsinan.deployment_record.cost.absolute import (
     report_with_absolute_terms,
 )
 from mimarsinan.chip_simulation.sanafe.noc_estimate import estimate_noc
+from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
+from mimarsinan.mapping.noc.value_traffic import value_noc_wire_hops
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
 from mimarsinan.deployment_record.cost.terms import DeploymentCostReport
 from mimarsinan.deployment_record.objectives.spec import LayoutStatsView, RecordView
@@ -29,6 +31,7 @@ from mimarsinan.deployment_record.quantities import (
     from_candidate,
     from_record,
 )
+from mimarsinan.deployment_record.quantities.value_domain import NO_VALUE_NOC_GRID
 from mimarsinan.deployment_record.schema import DeploymentRecord
 
 CORE_CAPACITY_KEYS = ("max_axons", "max_neurons", "count")
@@ -111,7 +114,46 @@ class CandidateStaticView:
             host_side_segment_count=self.host_side_segment_count,
             context=self.quantity_context or CandidateQuantityContext(),
             noc=self._noc_estimate(),
+            noc_value_bytes=self._noc_value_bytes(),
+            withheld=self._noc_value_withheld(),
         )
+
+    def _noc_value_withheld(self) -> Dict[str, str]:
+        """The value NoC census withheld by name (traffic crosses tiles, no grid is declared)."""
+        self._noc_value_bytes()
+        reason = self._derived.get("noc_value_withheld")
+        return {} if reason is None else {"noc_value_bytes": reason}
+
+    def _noc_value_bytes(self) -> Optional[float]:
+        """[CH-D2] The value-domain byte-hops of the executed stage placements, when the run names
+        the value domain and the fragments carry the wire census; traffic that crosses a tile needs
+        the declared grid, and without it is withheld by name (``_noc_value_withheld``)."""
+        if "noc_value" in self._derived:
+            return self._derived["noc_value"]
+        context = self.quantity_context
+        fragments = self.noc_fragments
+        value = None
+        if (context is not None and (context.value_rule is not None or context.value_bits) and fragments is not None
+                and getattr(fragments, "census", None) is not None
+                and context.cores_per_tile and context.tile_mesh_height):
+            hops = value_noc_wire_hops(
+                pair_wires=fragments.census.pair_wires,
+                stage_placements=getattr(fragments, "stage_placements", None) or fragments.pass_placements,
+                cores_per_tile=int(context.cores_per_tile), mesh_height=int(context.tile_mesh_height),
+            )
+            if context.value_bits:
+                value = hops * int(context.value_bits) / 8.0
+            elif hops == 0:
+                value = 0.0
+            else:
+                self._derived["noc_value_withheld"] = NO_VALUE_NOC_GRID
+        self._derived["noc_value"] = value
+        return value
+
+    def _write_inputs(self) -> Optional[WriteInputs]:
+        """The write law's inputs, present only when the run declares ``inference_batch_K``."""
+        context = self.quantity_context
+        return None if context is None or context.writes is None else WriteInputs.of(context.writes)
 
     def _noc_estimate(self):
         """The wireload-model NoC census, when the fragments and declarations
@@ -146,8 +188,12 @@ class CandidateStaticView:
     def cost_report(self) -> Optional[DeploymentCostReport]:
         """The vendor-priced report, or None when this run declared no physics."""
         if "report" not in self._priced:
+            context = self.quantity_context
             self._priced["report"] = (
-                candidate_cost_report(self.quantities, self.physics)
+                candidate_cost_report(
+                    self.quantities, self.physics, writes=self._write_inputs(),
+                    geometry=None if context is None else context.core_geometry,
+                )
                 if self.physics is not None
                 else None
             )

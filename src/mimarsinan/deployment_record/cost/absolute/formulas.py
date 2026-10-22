@@ -7,7 +7,8 @@ dividing-coefficient discipline).
 
 from __future__ import annotations
 
-from typing import Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Optional, Sequence, Tuple, Union
 
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
@@ -49,10 +50,53 @@ def div_band(a: Band, b: Band, basis: str) -> Band:
     return mul_bands(a, invert_band(b, basis), basis)
 
 
+@dataclass(frozen=True)
+class DerivedFactor:
+    """A component factor read off several census quantities: ``prod(over) / prod(per)``.
+
+    ``over[0]`` is the census that carries the work: absent, there is no work to name. Present and
+    positive while another input is absent (or the divisor is 0), the factor is WITHHELD with the
+    reason, so its component is named unpriced on its headline, never dropped.
+    """
+
+    label: str
+    over: Tuple[str, ...]
+    per: Tuple[str, ...] = ()
+
+    def __str__(self) -> str:
+        return self.label
+
+    def value(self, quantities: Quantities) -> Optional[float]:
+        work, per = quantity_product(quantities, self.over), quantity_product(quantities, self.per)
+        if work is None or per is None or (per == 0 and work):
+            return None
+        return work / per if per else 0.0
+
+    def withheld(self, quantities: Quantities) -> Optional[str]:
+        lead = self.over[0]
+        if not quantities.has(lead):
+            return quantities.withheld_reason(lead)
+        if quantities.get(lead).value == 0:
+            return None
+        for key in self.over[1:] + self.per:
+            if not quantities.has(key):
+                return quantities.withheld_reason(key) or f"the {lead} census states no {key}"
+        if quantity_product(quantities, self.per) == 0:
+            return f"{lead} > 0 on {' x '.join(self.per)} = 0"
+        return None
+
+
+Factor = Union[str, DerivedFactor]
+
+#: [Lanes] The lane block's factors, read only from a capability census (none by default).
+LANES = DerivedFactor("lanes_per_tile x tiles", over=("lanes_per_tile", "tiles"))
+LANE_OPS_PER_LANE = DerivedFactor("lane_ops / (lanes_per_tile x tiles)", over=("lane_ops",),
+                                  per=("lanes_per_tile", "tiles"))
+
 #: Optional energy components: (constant, quantity factors, component label).
 #: Priced when the constant survives supersession AND every factor is present;
 #: quantity-present-but-constant-undeclared components are NAMED on the headline.
-ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
+ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[Factor, ...], str], ...] = (
     ("e_adc_conversion", ("adc_conversions",), "adc"),
     ("e_row_drive", ("boundary_events",), "row_drive"),
     ("e_neuron_update", ("neurons_used", "timesteps"), "neuron_update"),
@@ -70,6 +114,10 @@ ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
     # figure (carried_raster_bytes), which sizes what is HELD in between.
     ("e_dma_per_byte", ("carry_in_bytes",), "carry_inject"),
     ("e_readout_per_byte", ("carry_out_bytes",), "carry_readout"),
+    # [CH-D2] A value-domain program's inter-core values, per byte-hop.
+    ("e_noc_value_per_byte_hop", ("noc_value_bytes",), "noc_value"),
+    # Element operations on arithmetic lanes (present only when a capability census supplies them).
+    ("e_lane_op", ("lane_ops",), "lane"),
 )
 
 #: [TS6] The per-byte program-load energies, in the order a byte incurs them:
@@ -93,21 +141,41 @@ AREA_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
     ("area_per_tile_fixed", ("tiles",), "tile_fixed"),
 )
 
+#: Area beside the compute footprint, on EITHER area path (an aggregate supersedes none of it).
+CHIP_AREA_ADDERS: Tuple[Tuple[str, Tuple[Factor, ...], str], ...] = (
+    ("area_per_lane", (LANES,), "lanes"),
+)
+
 #: Steady-state latency adders beyond t_cycle × latency_steps.
-LATENCY_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
+LATENCY_COMPONENTS: Tuple[Tuple[str, Tuple[Factor, ...], str], ...] = (
     ("t_sync_barrier", ("sync_count",), "sync"),
     ("t_core_init", ("segment_cores",), "core_init"),
+    # The standalone lane pass: a tile's lanes run in parallel.
+    ("t_lane_op", (LANE_OPS_PER_LANE,), "lanes"),
 )
 
 
-def quantity_product(quantities: Quantities, keys: Sequence[str]) -> Optional[float]:
-    """The product of the named quantities, or None when any is absent."""
+def quantity_product(quantities: Quantities, keys: Sequence[Factor]) -> Optional[float]:
+    """The product of the named quantities (or derived factors), or None when any is absent."""
     product = 1.0
     for key in keys:
+        if isinstance(key, DerivedFactor):
+            value = key.value(quantities)
+            if value is None:
+                return None
+            product *= value
+            continue
         if not quantities.has(key):
             return None
         product *= quantities.get(key).value
     return product
+
+
+def factor_withheld(quantities: Quantities, factor: Factor) -> Optional[str]:
+    """Why ``factor``'s work may exist although the view cannot size it, or None."""
+    if isinstance(factor, DerivedFactor):
+        return factor.withheld(quantities)
+    return quantities.withheld_reason(factor)
 
 
 def programming_payload_bytes(

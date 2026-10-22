@@ -9,7 +9,14 @@
     "supply_v": 0.8,
     "temperature_c": null,
     "array_size_assumed": "256 x 256 digital SRAM crossbar cores, 8-bit weights",
-    "notes": "EVERY constant in this profile is an ESTIMATE. It describes no real chip and must never be cited as one. It exists so a first-cut co-optimization study can run before a vendor profile is available, and so the estimated-evidence path is exercised end to end by something a reader cannot mistake for a measurement."
+    "notes": "EVERY constant in this profile is an ESTIMATE. It describes no real chip and must never be cited as one. It exists so a first-cut co-optimization study can run before a vendor profile is available, and so the estimated-evidence path is exercised end to end by something a reader cannot mistake for a measurement.",
+    "geometry": {
+      "axons": 256,
+      "neurons": 256,
+      "cell_bits": 8,
+      "core_count": null,
+      "scaling": null
+    }
   },
   "constants": {
     "area_per_cell": {
@@ -139,20 +146,20 @@
       "note": "Whole-chip area scaling with neither cores nor tiles: pads, PLLs, host interface. Anchored on TrueNorth's derived 46.6 mm^2 periphery at 28 nm for a 4.3 cm^2 die, scaled down for a smaller die at 22 nm. Expected error: a factor of ~4."
     },
     "e_dma_per_byte": {
-      "low": 0.03,
-      "nominal": 0.16,
-      "high": 0.32,
+      "low": 31.0,
+      "nominal": 160.0,
+      "high": 320.0,
       "unit": "pJ",
       "evidence_kind": "estimated",
-      "note": "Moving one byte of programming payload onto the chip. This is the framework's own long-standing DMA band (HBM2 ~3.9 pJ/bit, DDR3 ~20 pJ/bit per Horowitz 2014, off-chip worst case) restated per byte, so this profile and the default-band cost model agree on the one coefficient they share."
+      "note": "Moving one byte of programming payload onto the chip. This is the framework's own long-standing DMA band (HBM2 ~3.9 pJ/bit, DDR3 ~20 pJ/bit per Horowitz 2014, off-chip worst case) restated per byte, so this profile and the default-band cost model agree on the one coefficient they share. [G3 unit fix] Restated per byte: the framework band is 31e-9 / 160e-9 / 320e-9 mJ per byte (chip_simulation/weight_reuse_cost_model.py DEFAULT_COEFFICIENT_BAND), i.e. 31 / 160 / 320 pJ; the earlier 0.03 / 0.16 / 0.32 pJ wrote the nJ values under the unit pJ (1000x low)."
     },
     "e_readout_per_byte": {
-      "low": 0.03,
-      "nominal": 0.16,
-      "high": 0.32,
+      "low": 31.0,
+      "nominal": 160.0,
+      "high": 320.0,
       "unit": "pJ",
       "evidence_kind": "estimated",
-      "note": "Moving one byte of pass-boundary emissions OFF the chip. Same off-chip transfer band as e_dma_per_byte (Horowitz 2014 memory-access energy is stated per access, not per direction), restated here so the readout direction is charged explicitly rather than borrowing the inbound constant by omission. A target whose readout path genuinely differs should override this."
+      "note": "Moving one byte of pass-boundary emissions OFF the chip. Same off-chip transfer band as e_dma_per_byte (Horowitz 2014 memory-access energy is stated per access, not per direction), restated here so the readout direction is charged explicitly rather than borrowing the inbound constant by omission. A target whose readout path genuinely differs should override this. [G3 unit fix] Restated per byte: the framework band is 31e-9 / 160e-9 / 320e-9 mJ per byte (chip_simulation/weight_reuse_cost_model.py DEFAULT_COEFFICIENT_BAND), i.e. 31 / 160 / 320 pJ; the earlier 0.03 / 0.16 / 0.32 pJ wrote the nJ values under the unit pJ (1000x low)."
     },
     "bytes_per_connectivity_entry": {
       "low": 4.0,
@@ -263,6 +270,36 @@
       "evidence_kind": "derived",
       "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
       "note": "The derate a MEASURED host wall is divided by. Identity by definition: this framework measures its host ComputeOp walls end-to-end on the deployment host (StageTimer), and derating a measurement would invent headroom. [H5] Declared here after the loihi precedent because its absence refused the record-plane e2e/energy headlines BY NAME on runs whose host wall was in fact measured."
+    },
+    "endurance_cycles": {
+      "nominal": 1e+16,
+      "unit": "cycles",
+      "evidence_kind": "published",
+      "citation": "ielmini2018inmemory p.7",
+      "note": "[CH-A1] 'about 1e16 cycles over the expected lifetime of embedded SRAM' (scout_chip.md sec. 4.3, SOURCED). A point, as the source states one figure; lifetime = endurance_cycles / max_writes_per_cell_per_inference."
+    },
+    "e_write_per_cell": {
+      "low": 76.0,
+      "nominal": 161.2203,
+      "high": 342.0,
+      "unit": "fJ",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.4 via constants.md sec. 5",
+      "derivation": "[CH-A1] An 8-bit weight cell is one byte. The array write per byte is bracketed between 1x the measured DIMC local-block read byte energy (76 fJ at 20 MHz) and 2x the 91 MHz value (2 x 171 = 342 fJ): the reverse pre-charge halves the read swing while a write is full swing (jiang2023a p.4, constants.md sec. 5). Nominal at the log-space centre sqrt(76 x 342) = 161.2 fJ."
+    },
+    "write_verify_iterations": {
+      "nominal": 1.0,
+      "unit": "iterations",
+      "evidence_kind": "derived",
+      "derivation": "[CH-A1] A digital SRAM write is one full-swing write with no program-verify loop (constants.md sec. 5), so one iteration per written cell."
+    },
+    "e_noc_value_per_byte_hop": {
+      "low": 0.5,
+      "nominal": 1.0,
+      "high": 4.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "[CH-D2] One byte of a value-domain activation over one inter-tile link: Horowitz-scale on-chip wire energy (about 0.1-0.2 pJ per bit per mm at this node, a link of about 1 mm, so 0.8-1.6 pJ per byte) plus the router traversal; banded on this profile's own e_inter_tile_hop envelope (0.5 - 4.0 pJ) because a value byte and a spike flit cross the same link."
     }
   }
 }

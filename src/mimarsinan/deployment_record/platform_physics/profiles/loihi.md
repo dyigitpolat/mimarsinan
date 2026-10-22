@@ -163,3 +163,10 @@ physics): `imc_platforms_literature.py::loihi_dense_equiv_128x1024` declares
 1024 neurons and 4096 axons. It looks like the *kilobyte* count of synaptic memory
 reused as an axon count. It also sets `has_bias=False`, contradicting Davies 2018
 Eq. (1) (*"b_i is a constant bias current"*).
+
+## Wave 1 rows: validity (G3)
+
+- **Validity geometry.** The dense equivalent of one core's 128 kB synaptic memory, 128 axons x 1024 neurons of
+  8-bit weights (the repository's `loihi_dense_equiv_128x1024`), on chips of 1 - 128 cores. The derived
+  `area_per_core_total` (the chip over its 128 cores) holds at that core only: another searched geometry
+  refuses `chip_area_mm2` by name (E190) until a decomposition or a scaling rule is declared.

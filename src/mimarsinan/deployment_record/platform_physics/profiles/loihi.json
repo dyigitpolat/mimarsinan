@@ -9,7 +9,17 @@
     "supply_v": 0.75,
     "temperature_c": null,
     "array_size_assumed": "128 neuromorphic cores, 1024 neurons and 4096 in/out axons per core, 16 MB synaptic memory",
-    "notes": "Davies 2018 Table 2 is titled 'Loihi PRE-SILICON performance and energy measurements' and the text calls it SDF+SPICE simulation 'consistent with early post-silicon characterization'. Every per-event constant here is therefore a design-intent number, not a silicon measurement \u2014 which is exactly why measurement_kind is 'simulation' and a cross-platform comparison against TrueNorth (silicon) must disclose the difference. The static-power constant is the exception: it is derived from measured board-level data (Frady 2020)."
+    "notes": "Davies 2018 Table 2 is titled 'Loihi PRE-SILICON performance and energy measurements' and the text calls it SDF+SPICE simulation 'consistent with early post-silicon characterization'. Every per-event constant here is therefore a design-intent number, not a silicon measurement \u2014 which is exactly why measurement_kind is 'simulation' and a cross-platform comparison against TrueNorth (silicon) must disclose the difference. The static-power constant is the exception: it is derived from measured board-level data (Frady 2020).",
+    "geometry": {
+      "axons": 128,
+      "neurons": 1024,
+      "cell_bits": 8,
+      "core_count": [
+        1,
+        128
+      ],
+      "scaling": null
+    }
   },
   "constants": {
     "e_neuron_update": {

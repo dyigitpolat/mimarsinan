@@ -124,3 +124,17 @@ ADCs per IMA, and 12 IMAs per tile"* — and it **agrees** with the paper. Its
 `claim_eligibility` is already `curve-only`, which is the right classification for a
 simulated design point, and this profile's `simulation` measurement kind says the
 same thing in the physics layer.
+
+## Wave 1 rows: validity, the write law and the value NoC (G3)
+
+- **Validity geometry.** 128 x 128 arrays of 2-bit cells; no aggregate constant is declared.
+- **`endurance_cycles` = 1e6 - 1e9** (published, SECONDARY): the NVM band of sridharan2023xformer p.1, until the
+  owner's fetch of an RRAM endurance source lands. ENDURANCE IS NOW COUNTED: with a declared batch K the write
+  law prices the lifetime against it, and a declared lifetime floor judges admissibility.
+- **`write_verify_iterations` = 8.52** (published, wan2021edge p.9) and **`t_write_per_unit` = 2 - 11 us**
+  (derived from the 1 us pulse and the 1-10 us verify read): a **same-technology transfer from NeuRRAM**. ISAAC
+  publishes no write; its cells are RRAM, so NeuRRAM's write-verify statistics stand in, labelled as such.
+- **`e_noc_value_per_byte_hop` = 1.09 - 1.31 pJ** (derived, Table I router row): the e_dma_per_byte pattern
+  (power over bytes moved per unit time): 42 mW over 8 ports of 32-bit flits at the paper's conservative 1 GHz
+  link (1.2 GHz for the low end). It assumes the router draws its published power with every port busy; it is
+  a value-domain byte-hop, which the per-flit spiking hop above deliberately leaves undeclared.

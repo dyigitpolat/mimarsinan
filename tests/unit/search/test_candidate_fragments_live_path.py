@@ -31,8 +31,10 @@ _HOST_RATES = {
 
 
 def _physics_cfg(**extra):
+    # [E190] A decomposed-area profile: the searched core geometry (64-256 per side) lies outside
+    # an aggregate per-core footprint's validity core, which refuses the area axis by name per candidate.
     return _cfg(
-        platform_physics_profile="truenorth",
+        platform_physics_profile="generic_estimated_22nm",
         platform_physics_overrides=dict(_HOST_RATES),
         activity_factor=0.05,
         **extra,

@@ -69,6 +69,45 @@ class TestTheComposition:
         assert "t_host_op_overhead" not in term.source
 
 
+_NO_HOST_MACS = dict(_BASE, host_macs=0)
+
+
+class TestDispatchWithoutHostMacs:
+    """Host ReLU, add, pool, softmax and LayerNorm ops carry no MACs but still dispatch."""
+
+    def test_a_declared_overhead_prices_the_dispatch(self):
+        physics = _physics(t_host_op_overhead={
+            "nominal": 500.0, "unit": "us", "evidence_kind": "measured", "note": "n"})
+        pricing = price_absolute(_quantities(**_NO_HOST_MACS, compute_op_count=3), physics)
+        term = {t.name: t for t in pricing.terms}["latency_host_s"]
+        assert term.value == pytest.approx(3 * 500e-6, rel=1e-12)
+        assert "t_host_op_overhead x compute_op_count" in term.source
+
+    def test_an_undeclared_overhead_is_named_unpriced(self):
+        pricing = price_absolute(_quantities(**_NO_HOST_MACS, compute_op_count=3), _physics())
+        terms = {t.name: t for t in pricing.terms}
+        assert "latency_host_s" not in terms
+        assert "unpriced: t_host_op_overhead(per-invocation dispatch)" in terms["e2e_latency_s"].source
+        assert "p_host x t_host_op_overhead(per-invocation dispatch)" in terms["energy_per_inference_mj"].source
+
+    def test_host_macs_keep_their_behaviour(self):
+        pricing = price_absolute(_quantities(**_BASE, compute_op_count=3), _physics())
+        assert {t.name: t for t in pricing.terms}["latency_host_s"].value == pytest.approx(100e-6, rel=1e-6)
+
+    def test_a_measured_wall_without_host_macs_keeps_an_empty_host_time(self):
+        """ODIN declares no host_compute_rate: a record's measured wall must not turn into a refusal."""
+        odin = get_platform_physics("odin")
+        pricing = price_absolute(
+            _quantities(**_NO_HOST_MACS, compute_op_count=3, host_ops_s=0.002), odin)
+        assert "latency_host_s" not in {t.name for t in pricing.terms}
+        assert not any("host" in r.reason for r in pricing.refusals)
+        assert "t_host_op_overhead" not in {t.name: t for t in pricing.terms}["e2e_latency_s"].source
+
+    def test_no_dispatch_no_host_term(self):
+        pricing = price_absolute(_quantities(**_NO_HOST_MACS, compute_op_count=0), _physics())
+        assert "unpriced: t_host_op_overhead" not in {t.name: t for t in pricing.terms}["e2e_latency_s"].source
+
+
 class TestTheCandidateCountsItsOps:
     def test_the_flow_walk_counts_host_invocations(self):
         from unit.search.test_candidate_fragments_live_path import (

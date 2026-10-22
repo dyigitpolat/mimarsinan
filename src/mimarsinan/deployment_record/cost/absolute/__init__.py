@@ -2,10 +2,16 @@
 
 from mimarsinan.deployment_record.cost.absolute.context import (
     AbsolutePricing,
+    AdmissibilityVerdict,
     PricingContext,
     PricingRefusal,
 )
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
+from mimarsinan.deployment_record.cost.absolute.validity import CENSUS_PROVED, UNJUDGED, validity_refusals
+from mimarsinan.deployment_record.cost.absolute.writes import (
+    WriteInputs,
+    price_write_terms,
+)
 from mimarsinan.deployment_record.cost.absolute.report import (
     ABSOLUTE_TERM_NAMES,
     DEPLOYMENT_COST_REPORT_FILENAME,
@@ -17,8 +23,11 @@ from mimarsinan.deployment_record.cost.absolute.report import (
 )
 
 __all__ = [
+    "CENSUS_PROVED",
+    "UNJUDGED",
     "ABSOLUTE_TERM_NAMES",
     "AbsolutePricing",
+    "AdmissibilityVerdict",
     "DEPLOYMENT_COST_REPORT_FILENAME",
     "PricingContext",
     "PricingRefusal",
@@ -27,5 +36,8 @@ __all__ = [
     "declared_physics_of",
     "emit_physics_report",
     "price_absolute",
+    "price_write_terms",
     "report_with_absolute_terms",
+    "validity_refusals",
+    "WriteInputs",
 ]

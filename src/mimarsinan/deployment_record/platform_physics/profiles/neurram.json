@@ -1,0 +1,72 @@
+{
+  "format_version": 1,
+  "name": "neurram",
+  "display_name": "NeuRRAM (130 nm RRAM, 48 cores of 256 x 256; wan2021edge)",
+  "description_file": "neurram.md",
+  "validity": {
+    "measurement_kind": "silicon",
+    "technology_node_nm": 130.0,
+    "supply_v": null,
+    "temperature_c": null,
+    "array_size_assumed": "48 cores of 256 x 256 1T1R RRAM, a weight a differential pair of cells (wan2021edge p.2-3; wan2022a p.10); 4-bit output",
+    "notes": "Write-verify parameters and the MVM time are page-sourced (wan2021edge p.9, p.17); the MVM energy is SECONDARY (gallo2022a Extended Data Table II); the write energy is not stated and refuses by name; the endurance is the NVM band of the X-Former paper (SECONDARY) until the fetch lands.",
+    "geometry": {
+      "axons": 256,
+      "neurons": 256,
+      "cell_bits": 4,
+      "core_count": [
+        1,
+        48
+      ],
+      "scaling": null
+    }
+  },
+  "constants": {
+    "e_mac": {
+      "nominal": 125.0,
+      "unit": "fJ",
+      "evidence_kind": "published",
+      "citation": "gallo2022a Extended Data Table II p.25",
+      "note": "SECONDARY: 16 TOPS/W at 4-bit input, analog weight, 6-bit output, read in the HERMES paper's comparison table (secondary source); the primary is NeuRRAM's own efficiency figures (wan2022a Fig. 1d, Extended Data Fig. 12), not extracted. 2 / 16e12 J = 125 fJ per MAC."
+    },
+    "t_cycle": {
+      "nominal": 2.1,
+      "unit": "us",
+      "evidence_kind": "published",
+      "citation": "wan2021edge p.17",
+      "note": "'2.1 [u]s' per 256 x 256 MVM with 4-bit output on the current chip (the u is lost in extraction; 95 x 22 ns = 2.09 us). One MVM is one step of the value window."
+    },
+    "write_verify_iterations": {
+      "nominal": 8.52,
+      "unit": "iterations",
+      "evidence_kind": "published",
+      "citation": "wan2021edge p.9",
+      "note": "'99% of cells converge; on average 8.52 set/reset pulses per cell'."
+    },
+    "t_write_per_unit": {
+      "low": 2.0,
+      "nominal": 6.5728,
+      "high": 11.0,
+      "unit": "us",
+      "evidence_kind": "derived",
+      "citation": "wan2021edge p.9; wan2022a p.10 via constants.md sec. 6",
+      "derivation": "One write-verify iteration of one cell = a 1 us pulse plus a 1-10 us verify read, so 2 - 11 us; nominal from 56 us per cell over 8.52 pulses."
+    },
+    "endurance_cycles": {
+      "low": 1000000.0,
+      "nominal": 31622776.6,
+      "high": 1000000000.0,
+      "unit": "cycles",
+      "evidence_kind": "published",
+      "citation": "sridharan2023xformer p.1",
+      "note": "SECONDARY: 'about 1e6 to 1e9 conservative writes' for NVM in general, read in the X-Former paper (secondary source); the primary device citations it rests on were not read in this round (the owner's fetch list holds lee2011a for TaOx RRAM and gallo2020an for PCM, which replace this band when they land). Nominal at the band's log-space centre."
+    },
+    "conductance_levels": {
+      "nominal": 16.0,
+      "unit": "levels",
+      "evidence_kind": "published",
+      "citation": "wan2021edge p.2-3",
+      "note": "4-bit weights (the neurram_like geometry)."
+    }
+  }
+}

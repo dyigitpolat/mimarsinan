@@ -19,6 +19,7 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.absolute.report import ABSOLUTE_TERM_NAMES
+from mimarsinan.deployment_record.cost.absolute.validity import CENSUS_PROVED
 from mimarsinan.deployment_record.platform_physics import get_platform_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.serde import strict_kwargs, tuple_of
@@ -86,9 +87,16 @@ class CrossPlatformComparison:
 
 
 def compare_platforms(
-    census: Quantities, profiles: Sequence[str]
+    census: Quantities, profiles: Sequence[str], *, geometry: Any = None,
 ) -> CrossPlatformComparison:
-    """Price one census with each named target."""
+    """Price one census with each named target.
+
+    ``geometry`` (the census's declared core types, ``cost.absolute.validity.CoreGeometry``) judges each
+    target's aggregate constants against its validity. A caller that states none is judged under
+    ``CENSUS_PROVED``: the table reports values without their sources, so an aggregate whose verdict
+    would rest on the census's mean core refuses by name (pass the declared core types;
+    ``UNJUDGED`` reads them as declared).
+    """
     if not profiles:
         raise ValueError(
             "a comparison needs at least one target profile; comparing nothing "
@@ -97,7 +105,7 @@ def compare_platforms(
     rows = []
     for name in profiles:
         physics = get_platform_physics(name)
-        pricing = price_absolute(census, physics)
+        pricing = price_absolute(census, physics, geometry=CENSUS_PROVED if geometry is None else geometry)
         terms = {term.name: term for term in pricing.terms}
         evidence: Dict[str, int] = {}
         for value in physics.constants.values():

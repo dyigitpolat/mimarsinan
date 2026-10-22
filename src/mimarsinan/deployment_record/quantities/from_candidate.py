@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Protocol
+from typing import Any, Dict, Mapping, Optional, Protocol
 
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
+from mimarsinan.deployment_record.quantities.write_law import write_quantities
 
 
 class _NocEstimateView(Protocol):
@@ -93,6 +94,20 @@ class CandidateQuantityContext:
     #: [R2] Host ComputeOp invocations of the flow — the per-invocation
     #: overhead multiplicand; from the same walk as the host MAC census.
     compute_op_count: Optional[int] = None
+    #: The value-domain rule's event census (every committed cell computes once
+    #: per inference): ``synaptic_events`` as a static fact, never the activity model.
+    mac_events: Optional[int] = None
+    #: The value grid of a value-domain run (``activation_bits``), for the value NoC bytes.
+    value_bits: Optional[int] = None
+    #: The value rule's answers (``value_domain.ValueDomainFacts``) when the run names the value
+    #: domain, else None; its ``withheld`` pairs name the quantities the candidate cannot size, so
+    #: the terms that multiply them are named unpriced (``Quantities(withheld=)``).
+    value_rule: Optional[Any] = None
+    #: The declared core types (``validity.CoreGeometry``), for the aggregates' validity.
+    core_geometry: Optional[Any] = None
+    #: The write law's inputs (``write_law.PlaneWrites``), present only when
+    #: ``inference_batch_K`` is declared.
+    writes: Optional[Any] = None
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
@@ -110,6 +125,8 @@ def from_candidate(
     host_side_segment_count: Optional[int],
     context: CandidateQuantityContext,
     noc: Optional[_NocEstimateView] = None,
+    noc_value_bytes: Optional[float] = None,
+    withheld: Optional[Mapping[str, str]] = None,
 ) -> Quantities:
     """The static quantities a candidate can honestly answer.
 
@@ -169,6 +186,14 @@ def from_candidate(
     if context.host_macs is not None and context.onchip_macs is not None:
         _put(values, "total_macs", context.host_macs + context.onchip_macs)
 
+    _put(values, "noc_value_bytes", noc_value_bytes)
+    writes = context.writes
+    if writes is not None and writes.census is not None:
+        values.update(write_quantities(
+            writes.census.census, writes.policy, written_extents=writes.census.written_extents,
+            most_written=writes.census.most_written_core,
+        ))
+
     if noc is not None:
         for key, value in (
             ("noc_total_packets", noc.total_packets),
@@ -185,8 +210,10 @@ def from_candidate(
     # census: a replicated bank's copies really fire (measured ~108x apart on
     # the offload LeNet5). Absent without a pass structure — an energy claim
     # about an unmapped shape would be the silent-zero's mirror image.
+    _put(values, "synaptic_events", context.mac_events)
     if (
-        context.cells_committed is not None
+        context.mac_events is None
+        and context.cells_committed is not None
         and context.timesteps is not None
         and context.activity_factor is not None
     ):
@@ -197,4 +224,5 @@ def from_candidate(
             provenance="modeled",
         )
 
-    return Quantities(values)
+    held = {**dict(getattr(context.value_rule, "withheld", ()) or ()), **dict(withheld or {})}
+    return Quantities(values, withheld={key: reason for key, reason in held.items() if key not in values})

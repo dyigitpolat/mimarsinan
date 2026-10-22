@@ -5,6 +5,16 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
+from mimarsinan.deployment_record.quantities.value_domain import (
+    apply_value_rule,
+    names_value_domain,
+    record_value_facts,
+    refuse_spiking_activity,
+)
+from mimarsinan.deployment_record.quantities.write_law import (
+    record_write_census,
+    write_quantities,
+)
 from mimarsinan.deployment_record.schema import DeploymentRecord
 
 
@@ -128,4 +138,13 @@ def from_record(record: DeploymentRecord) -> Quantities:
             sum(link.packet_count for link in noc.link_loads)
         )
 
-    return Quantities(values)
+    withheld: Dict[str, str] = {}
+    if names_value_domain(platform):
+        refuse_spiking_activity(platform)
+        withheld = apply_value_rule(values, record_value_facts(record))
+    writes = record_write_census(record)
+    if writes is not None and writes.census is not None:
+        values.update(write_quantities(writes.census.census, writes.policy,
+                                       written_extents=writes.census.written_extents,
+                                       most_written=writes.census.most_written_core))
+    return Quantities(values, withheld=withheld)

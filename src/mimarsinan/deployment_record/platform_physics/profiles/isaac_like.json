@@ -9,7 +9,14 @@
     "supply_v": null,
     "temperature_c": null,
     "array_size_assumed": "ISAAC-CE: 8 arrays of 128x128 2-bit cells per IMA, 8 ADCs per IMA, 12 IMAs per tile, 168 tiles",
-    "notes": "A DESIGN-SPACE STUDY, not a fabricated chip: areas and powers come from CACTI 6.5 at 32 nm plus published component models, and Table I reports POWER only \u2014 every energy constant here is derived by multiplying a published power by the paper's own 100 ns cycle and dividing by the printed instance count. The supply voltage is never stated. Treat this as a modelled design point."
+    "notes": "A DESIGN-SPACE STUDY, not a fabricated chip: areas and powers come from CACTI 6.5 at 32 nm plus published component models, and Table I reports POWER only \u2014 every energy constant here is derived by multiplying a published power by the paper's own 100 ns cycle and dividing by the printed instance count. The supply voltage is never stated. Treat this as a modelled design point.",
+    "geometry": {
+      "axons": 128,
+      "neurons": 128,
+      "cell_bits": 2,
+      "core_count": null,
+      "scaling": null
+    }
   },
   "conversion_model": {
     "model": "bit_sliced_crossbar",
@@ -194,6 +201,42 @@
       "evidence_kind": "derived",
       "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
       "note": "The derate a MEASURED host wall is divided by. Identity by definition: this framework measures its host ComputeOp walls end-to-end on the deployment host (StageTimer), and derating a measurement would invent headroom. [H5] Declared here after the loihi precedent because its absence refused the record-plane e2e/energy headlines BY NAME on runs whose host wall was in fact measured."
+    },
+    "endurance_cycles": {
+      "low": 1000000.0,
+      "nominal": 31622776.6,
+      "high": 1000000000.0,
+      "unit": "cycles",
+      "evidence_kind": "published",
+      "citation": "sridharan2023xformer p.1",
+      "note": "[CH-A1] SECONDARY: 'about 1e6 to 1e9 conservative writes' for NVM in general, read in the X-Former paper (secondary source); the primary device citations it rests on were not read in this round (the owner's fetch list holds lee2011a for TaOx RRAM and gallo2020an for PCM, which replace this band when they land). Nominal at the band's log-space centre sqrt(1e6 x 1e9)."
+    },
+    "write_verify_iterations": {
+      "nominal": 8.52,
+      "unit": "iterations",
+      "evidence_kind": "published",
+      "citation": "wan2021edge p.9",
+      "note": "[CH-A1] A same-technology transfer from NeuRRAM: ISAAC publishes no write, and its cells are RRAM, so NeuRRAM's write-verify statistics stand in: '99% of cells converge; on average 8.52 set/reset pulses per cell'."
+    },
+    "t_write_per_unit": {
+      "low": 2.0,
+      "nominal": 6.5728,
+      "high": 11.0,
+      "unit": "us",
+      "evidence_kind": "derived",
+      "citation": "wan2021edge p.9; wan2022a p.10 via constants.md sec. 6",
+      "derivation": "[CH-A1] One write-verify iteration of one cell = a 1 us programming pulse plus a 1-10 us verify read (wan2021edge p.9), so 2 - 11 us; nominal from 'such write-verify will take on average 56 us per cell' over 8.52 pulses = 6.57 us (wan2022a p.10).",
+      "note": "A same-technology transfer from NeuRRAM, as write_verify_iterations; per cell (write granularity cell)."
+    },
+    "e_noc_value_per_byte_hop": {
+      "low": 1.09375,
+      "nominal": 1.3125,
+      "high": 1.3125,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I router row, p.8",
+      "derivation": "[CH-D2] The pattern of this profile's e_dma_per_byte (a row's power over the bytes it moves per unit time): router 42 mW, 8 ports, 32-bit flits; at the paper's conservative 32-bit link at 1 GHz a router moves 8 x 4 B per ns, so 42 mW / 32 GB/s = 1.3125 pJ per byte-hop; at the 1.2 GHz clock 1.09375 pJ.",
+      "note": "Assumes the published router power is drawn with every port moving a flit each link cycle; a router that idles part of the time costs less per byte, so the band is the full-rate figure. The c-mesh shares one router among 4 tiles, which the XY hop count of the declared floorplan does not model."
     }
   }
 }

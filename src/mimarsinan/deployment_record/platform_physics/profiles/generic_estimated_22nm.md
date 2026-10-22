@@ -89,3 +89,19 @@ facts about the *deployment host machine*, not about a chip, so no chip profile 
 state them. Until they are supplied as overrides, energy and end-to-end latency
 cannot price the host side of the NeuralOps/ComputeOps boundary — which matters,
 because unpriced host work makes moving a layer host-side look free.
+
+## Wave 1 rows: validity, the write law and the value NoC (G3)
+
+- **Validity geometry.** 256 x 256 cores of 8-bit cells. The profile declares no aggregate constant, so the
+  geometry bounds nothing priced; it is stated so a target bundle can be checked against it.
+- **`e_dma_per_byte` and `e_readout_per_byte` corrected to 31 / 160 / 320 pJ.** Both restate the framework DMA
+  band (`chip_simulation/weight_reuse_cost_model.py`, `DEFAULT_COEFFICIENT_BAND`: 31e-9 / 160e-9 / 320e-9 mJ
+  per byte). The earlier 0.03 / 0.16 / 0.32 pJ wrote those nJ values under the unit pJ, 1000x low; a test now
+  ties the profile to the band so the unit cannot drift again.
+- **`endurance_cycles` = 1e16** (published, ielmini2018inmemory p.7): embedded SRAM over its expected lifetime.
+- **`e_write_per_cell` = 76 - 342 fJ** (derived, jiang2023a p.4 via constants.md sec. 5): one 8-bit cell is a
+  byte, bracketed by 1x the measured read byte energy and 2x the 91 MHz one; nominal at the log-space centre.
+- **`write_verify_iterations` = 1** (derived): an SRAM write has no verify loop.
+- **`e_noc_value_per_byte_hop` = 0.5 / 1.0 / 4.0 pJ** (estimated): one value byte over one inter-tile link,
+  Horowitz-scale on-chip wire energy (about 0.1 - 0.2 pJ per bit per mm, a 1 mm link) plus the router, banded on
+  this profile's own `e_inter_tile_hop` envelope because a value byte and a spike flit cross the same link.

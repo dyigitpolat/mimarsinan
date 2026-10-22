@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.formulas import (
+    Factor,
     div_band,
+    factor_withheld,
     quantity_product,
     add_bands,
     scale_band,
@@ -22,7 +24,7 @@ from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysic
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.provenance import Band
 
-ComponentTable = Sequence[Tuple[str, Tuple[str, ...], str]]
+ComponentTable = Sequence[Tuple[str, Tuple[Factor, ...], str]]
 
 
 @dataclass(frozen=True)
@@ -34,11 +36,23 @@ class PricingRefusal:
 
 
 @dataclass(frozen=True)
+class AdmissibilityVerdict:
+    """Whether a priced program is admitted, by name; it never suppresses a priced term."""
+
+    name: str
+    #: ``admitted``, ``inadmissible`` or ``straddles`` (the band crosses the floor).
+    verdict: str
+    reason: str
+    evidence: str
+
+
+@dataclass(frozen=True)
 class AbsolutePricing:
-    """What the physics could price, and what it refused by name."""
+    """What the physics could price, what it refused by name, and what it judged inadmissible."""
 
     terms: Tuple[CostTerm, ...]
     refusals: Tuple[PricingRefusal, ...]
+    verdicts: Tuple[AdmissibilityVerdict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -54,6 +68,8 @@ class HostTime:
     band: Optional[Band] = None
     blocked: Optional[str] = None
     missing: Tuple[str, ...] = ()
+    #: Host work the target never priced but that does not block the headline (named in it).
+    unpriced: Tuple[str, ...] = ()
 
     @property
     def unpriceable(self) -> bool:
@@ -69,10 +85,15 @@ class PricingContext:
     priceable: frozenset
     terms: List[CostTerm] = field(default_factory=list)
     refusals: List[PricingRefusal] = field(default_factory=list)
+    #: [E190] The priced chip's core types (``validity.CoreGeometry``), declared or proved by the
+    #: census, or ``validity.CensusCells`` where the census proves only its cell count; the aggregate
+    #: constants are judged against the profile's validity geometry.
+    geometry: Optional[Any] = None
 
     @classmethod
     def create(
-        cls, quantities: Quantities, physics: PlatformPhysics
+        cls, quantities: Quantities, physics: PlatformPhysics,
+        geometry: Optional[Any] = None,
     ) -> "PricingContext":
         """Supersession is resolved ONCE here: an aggregate absorbs its components.
 
@@ -86,11 +107,13 @@ class PricingContext:
             merged = {key: quantities.get(key) for key in quantities.keys()}
             for key, value in derived.items():
                 merged.setdefault(key, value)
-            quantities = Quantities(merged)
+            withheld = {k: r for k, r in quantities.withheld.items() if k not in merged}
+            quantities = Quantities(merged, withheld=withheld)
         return cls(
             quantities=quantities,
             physics=physics,
             priceable=frozenset(resolve_supersessions(physics.constants)),
+            geometry=geometry,
         )
 
     def term(self, name: str, unit: str, band: Band, source: str) -> CostTerm:
@@ -122,16 +145,21 @@ class PricingContext:
         unpriced: List[str] = []
         for constant, factors, label in table:
             product = quantity_product(self.quantities, factors)
+            # A factor the view withholds: its work may exist, so the component is named, never dropped.
+            withheld = next((reason for reason in (factor_withheld(self.quantities, f) for f in factors)
+                             if reason is not None), None)
             if self.priced(constant):
                 if product is not None:
                     value = self.physics.band(constant)
                     bands.append(scale_band(
                         value, product * scale,
-                        f"{constant} x {' x '.join(factors)}"))
+                        f"{constant} x {' x '.join(map(str, factors))}"))
                     evidence.append(f"{label}: {constant} [{value.basis}]")
-            elif not self.physics.has(constant) and product:
+                elif withheld is not None:
+                    unpriced.append(f"{constant}({label}; {withheld})")
+            elif not self.physics.has(constant) and (product or withheld is not None):
                 # Work exists (a positive census) but the target never priced it.
-                unpriced.append(f"{constant}({label})")
+                unpriced.append(f"{constant}({label})" if withheld is None else f"{constant}({label}; {withheld})")
         return bands, evidence, unpriced
 
     def host_time(self) -> HostTime:
@@ -141,7 +169,7 @@ class PricingContext:
                 "the host share is unknown (no partition census), so a "
                 "host-inclusive number cannot be certified"))
         if self.quantities.get("host_macs").value == 0:
-            return HostTime()
+            return self._dispatch_only_host_time()
         if self.quantities.has("host_ops_s"):
             if not self.physics.has("host_compute_rate"):
                 return HostTime(missing=("host_compute_rate",))
@@ -181,6 +209,24 @@ class PricingContext:
                 ))
             return HostTime(band=work)
         return HostTime(missing=("host_ops_s (measured)", "host_macs_per_s"))
+
+    def _dispatch_only_host_time(self) -> HostTime:
+        """No host MACs: the host still dispatches every ComputeOp (ReLU, add, pool, softmax).
+
+        A measured wall keeps today's empty host time (that path is the measured host repair's);
+        otherwise dispatch is priced through the declared per-op overhead, or named unpriced.
+        """
+        if self.quantities.has("host_ops_s") or not self.quantities.has("compute_op_count"):
+            return HostTime()
+        ops = self.quantities.get("compute_op_count").value
+        if ops == 0:
+            return HostTime()
+        if self.physics.has("t_host_op_overhead"):
+            return HostTime(band=scale_band(
+                self.physics.band("t_host_op_overhead"), ops,
+                "t_host_op_overhead x compute_op_count (host_macs = 0: dispatch only)",
+            ))
+        return HostTime(unpriced=("t_host_op_overhead(per-invocation dispatch)",))
 
     def host_refusal(self, host: HostTime) -> str:
         """Why a host-inclusive headline cannot be certified."""

@@ -105,6 +105,45 @@ class PhysicsConstantValue:
         return cls(**strict_kwargs(cls, data))
 
 
+#: How an aggregate constant may be read outside its measured core: ``cells`` scales it by the
+#: core's cell count relative to the validity core's.
+SCALING_RULES = frozenset({"cells"})
+
+
+@dataclass(frozen=True)
+class ValidityGeometry:
+    """[E190] The core the aggregate constants were measured on: geometry, cell bits, core counts."""
+
+    axons: int
+    neurons: int
+    #: Weight bits one cell of that core holds; a program with wider weights lies outside it.
+    cell_bits: Optional[int] = None
+    #: ``(min, max)`` cores of the measured chip, where the source bounds it.
+    core_count: Optional[Tuple[int, int]] = None
+    scaling: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.scaling is not None:
+            require_choice("ValidityGeometry", "scaling", self.scaling, SCALING_RULES)
+        if self.core_count is not None:
+            low, high = (int(v) for v in self.core_count)
+            if not 1 <= low <= high:
+                raise ValueError(f"ValidityGeometry.core_count must be 1 <= min <= max, got {self.core_count}")
+            object.__setattr__(self, "core_count", (low, high))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"axons": self.axons, "neurons": self.neurons, "cell_bits": self.cell_bits,
+                "core_count": None if self.core_count is None else list(self.core_count),
+                "scaling": self.scaling}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ValidityGeometry":
+        kwargs = strict_kwargs(cls, data)
+        if kwargs.get("core_count") is not None:
+            kwargs["core_count"] = tuple(kwargs["core_count"])
+        return cls(**kwargs)
+
+
 @dataclass(frozen=True)
 class PlatformPhysicsValidity:
     """The operating point the declared numbers hold at."""
@@ -115,13 +154,15 @@ class PlatformPhysicsValidity:
     temperature_c: Optional[float] = None
     array_size_assumed: str = ""
     notes: str = ""
+    #: The structured validity of the aggregate constants (absent on physics that predates it).
+    geometry: Optional[ValidityGeometry] = None
 
     def __post_init__(self) -> None:
         require_choice("PlatformPhysicsValidity", "measurement_kind",
                        self.measurement_kind, MEASUREMENT_KINDS)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "measurement_kind": self.measurement_kind,
             "technology_node_nm": self.technology_node_nm,
             "supply_v": self.supply_v,
@@ -129,10 +170,16 @@ class PlatformPhysicsValidity:
             "array_size_assumed": self.array_size_assumed,
             "notes": self.notes,
         }
+        if self.geometry is not None:
+            data["geometry"] = self.geometry.to_dict()
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "PlatformPhysicsValidity":
-        return cls(**strict_kwargs(cls, data))
+        kwargs = strict_kwargs(cls, data)
+        if kwargs.get("geometry") is not None:
+            kwargs["geometry"] = ValidityGeometry.from_dict(kwargs["geometry"])
+        return cls(**kwargs)
 
 
 @dataclass(frozen=True)

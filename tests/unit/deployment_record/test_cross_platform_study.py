@@ -10,6 +10,7 @@ from mimarsinan.deployment_record.study import (
     compare_platforms,
     render_comparison,
 )
+from mimarsinan.deployment_record.cost.absolute.validity import CoreGeometry
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 
 _CENSUS = {
@@ -19,6 +20,8 @@ _CENSUS = {
     "sync_count": 8, "segment_cores": 100, "tiles": 25, "host_macs": 0,
     "noc_total_hops": 1e5, "noc_intra_tile_packets": 1e5, "boundary_events": 1e5,
 }
+#: The census's declared core types: a census alone proves only its cell count (validity.census_geometry).
+_GEOMETRY = (CoreGeometry(256, 256, 100),)
 
 
 def _census(**over):
@@ -34,7 +37,7 @@ def _census_of(values):
 
 class TestTheComparison:
     def _compare(self, profiles=("truenorth", "loihi"), **over):
-        return compare_platforms(_census(**over), profiles)
+        return compare_platforms(_census(**over), profiles, geometry=_GEOMETRY)
 
     def test_it_prices_one_census_with_every_named_target(self):
         comparison = self._compare()
@@ -58,20 +61,20 @@ class TestTheComparison:
         reported as a latency of zero, the best possible."""
         census = {**_CENSUS}
         census.pop("latency_steps")
-        row = compare_platforms(_census_of(census), ("truenorth",)).rows[0]
+        row = compare_platforms(_census_of(census), ("truenorth",), geometry=_GEOMETRY).rows[0]
         assert "e2e_latency_s" not in row.values
         assert "e2e_latency_s" in row.unavailable
 
     def test_the_reason_travels_with_the_absence(self):
         census = {**_CENSUS}
         census.pop("latency_steps")
-        row = compare_platforms(_census_of(census), ("truenorth",)).rows[0]
+        row = compare_platforms(_census_of(census), ("truenorth",), geometry=_GEOMETRY).rows[0]
         assert "latency_steps" in row.unavailable["e2e_latency_s"]
 
 
 class TestEvidenceIsDisclosed:
     def test_each_row_states_its_measurement_kind(self):
-        rows = {r.profile: r for r in compare_platforms(_census(), ("truenorth", "loihi"))
+        rows = {r.profile: r for r in compare_platforms(_census(), ("truenorth", "loihi"), geometry=_GEOMETRY)
                 .rows}
         assert rows["truenorth"].measurement_kind == "silicon"
         assert rows["loihi"].measurement_kind == "simulation"
@@ -80,41 +83,41 @@ class TestEvidenceIsDisclosed:
         """A comparison where one side is estimated must SAY so, per the standing
         discipline — a count, not a footnote."""
         rows = {r.profile: r for r in compare_platforms(
-            _census(), ("truenorth", "generic_estimated_22nm")).rows}
+            _census(), ("truenorth", "generic_estimated_22nm"), geometry=_GEOMETRY).rows}
         assert rows["truenorth"].evidence_counts.get("estimated", 0) == 0
         assert rows["generic_estimated_22nm"].evidence_counts["estimated"] > 0
 
     def test_a_comparison_mixing_bases_is_flagged(self):
-        comparison = compare_platforms(_census(), ("truenorth", "loihi"))
+        comparison = compare_platforms(_census(), ("truenorth", "loihi"), geometry=_GEOMETRY)
         assert comparison.mixes_measurement_kinds is True
 
     def test_a_single_basis_comparison_is_not_flagged(self):
-        comparison = compare_platforms(_census(), ("truenorth",))
+        comparison = compare_platforms(_census(), ("truenorth",), geometry=_GEOMETRY)
         assert comparison.mixes_measurement_kinds is False
 
 
 class TestTheArtifact:
     def test_it_round_trips(self):
-        comparison = compare_platforms(_census(), ("truenorth", "loihi"))
+        comparison = compare_platforms(_census(), ("truenorth", "loihi"), geometry=_GEOMETRY)
         restored = CrossPlatformComparison.from_dict(
             json.loads(json.dumps(comparison.to_dict()))
         )
         assert restored == comparison
 
     def test_an_unknown_field_is_rejected(self):
-        payload = compare_platforms(_census(), ("truenorth",)).to_dict()
+        payload = compare_platforms(_census(), ("truenorth",), geometry=_GEOMETRY).to_dict()
         payload["surprise"] = 1
         with pytest.raises(ValueError, match="unknown fields"):
             CrossPlatformComparison.from_dict(payload)
 
     def test_the_rendering_names_every_target_and_axis(self):
-        text = render_comparison(compare_platforms(_census(), ("truenorth", "loihi")))
+        text = render_comparison(compare_platforms(_census(), ("truenorth", "loihi"), geometry=_GEOMETRY))
         assert "truenorth" in text and "loihi" in text
         assert "chip_area_mm2" in text
 
     def test_the_rendering_discloses_the_evidence(self):
         text = render_comparison(compare_platforms(
-            _census(), ("truenorth", "generic_estimated_22nm")))
+            _census(), ("truenorth", "generic_estimated_22nm"), geometry=_GEOMETRY))
         assert "estimated" in text
         assert "silicon" in text
 
@@ -126,7 +129,7 @@ class TestTheArtifact:
         energy over that wall, and no inverse throughput. Only area survives."""
         census = {**_CENSUS}
         census.pop("latency_steps")
-        comparison = compare_platforms(_census_of(census), ("truenorth",))
+        comparison = compare_platforms(_census_of(census), ("truenorth",), geometry=_GEOMETRY)
         text = render_comparison(comparison)
         row = [line for line in text.splitlines() if line.startswith("truenorth")][0]
         assert row.count("—") == 3, row
@@ -135,13 +138,21 @@ class TestTheArtifact:
 
 
 class TestRefusals:
+    def test_a_census_without_its_declared_core_types_refuses_the_point_aggregates_by_name(self):
+        """100 cores averaging 256 x 256 may pool types that share a dimension: TrueNorth's per-core
+        footprint refuses by name until the caller passes the declared core types."""
+        row = compare_platforms(_census(), ("truenorth",)).rows[0]
+        assert "chip_area_mm2" not in row.values
+        assert "pass the declared core types" in row.unavailable["chip_area_mm2"]
+        assert row.values["e2e_latency_s"] > 0
+
     def test_an_unknown_profile_fails_loud(self):
         with pytest.raises(KeyError, match="nosuchchip"):
-            compare_platforms(_census(), ("nosuchchip",))
+            compare_platforms(_census(), ("nosuchchip",), geometry=_GEOMETRY)
 
     def test_comparing_nothing_fails_loud(self):
         with pytest.raises(ValueError, match="at least one"):
-            compare_platforms(_census(), ())
+            compare_platforms(_census(), (), geometry=_GEOMETRY)
 
 
 class TestTheRowIsSelfDescribing:
