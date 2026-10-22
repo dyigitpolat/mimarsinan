@@ -15,7 +15,7 @@ from mimarsinan.config_schema.registry import (
     mvm_document_errors, parse_deployment_document, retired_key_errors,
 )
 from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
-from mimarsinan.config_schema.registry.entries_write import conflicting_platform_bias_error
+from mimarsinan.config_schema.registry.entries_write import platform_bias_errors
 from mimarsinan.config_schema.registry.parse import read_document_like_consumers
 from mimarsinan.config_schema.registry.value_schema import entry_value_errors
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
@@ -162,6 +162,15 @@ def non_declarable_key_errors(config: Mapping[str, Any]) -> List[str]:
     return errors
 
 
+def document_run_layout(config: Mapping[str, Any]) -> Dict[str, Any]:
+    """The flat layout a run gives a document's two sections (``merge_pipeline_config``: the deployment
+    parameters, then the platform constraints), where a ``platform_constraints`` object nested in either
+    section, an unknown key to the parser, is the nested bias declaration the run door reads. The run's
+    default layers beneath hold neither bias form; a parity test against ``merge_pipeline_config`` pins it."""
+    sections = (config.get("deployment_parameters"), config.get("platform_constraints"))
+    return {k: v for section in sections if isinstance(section, Mapping) for k, v in section.items()}
+
+
 def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
     """Validate the deployment config JSON shape main.py expects; return error messages (empty if valid).
 
@@ -194,15 +203,11 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
 
     flat_view = parse_deployment_document(config).known_flat_keys()
     errors.extend(row["message"] for row in validate_against_registry(flat_view))
-    # The run door's bias rule (platform_constraints_resolver) over the layout a run gives the two sections
-    # (merge_pipeline_config: the deployment parameters, then the platform constraints, flat), where a
-    # platform_constraints object nested in either section, an unknown key to the parser, is the nested
-    # bias declaration the run door reads.
-    sections = (config.get("deployment_parameters"), pc)
-    run_layout = {k: v for section in sections if isinstance(section, Mapping) for k, v in section.items()}
-    conflicting_bias = conflicting_platform_bias_error(run_layout)
-    if conflicting_bias is not None:
-        errors.append(conflicting_bias)
+    # The run door's bias rule over the run layout of the two sections: each declaration by the BOOL schema,
+    # then their agreement (a refusal the registry loop above already states is not repeated).
+    stated = set(errors)
+    bias_errors = platform_bias_errors(document_run_layout(config), REGISTRY["has_bias"])
+    errors.extend(message for message in bias_errors if message not in stated)
 
     for key in ("data_provider_name", "experiment_name", "generated_files_path", "platform_constraints", "deployment_parameters", "start_step"):
         if key not in config:

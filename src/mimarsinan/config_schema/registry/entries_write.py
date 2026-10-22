@@ -4,7 +4,7 @@ included), and the platform bias rule both doors apply."""
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional, Tuple, get_args
+from typing import Any, List, Mapping, Optional, Tuple, get_args
 
 from mimarsinan.chip_simulation.nevresim.connectivity import (
     ConnectivityMode,
@@ -16,7 +16,7 @@ from mimarsinan.config_schema.registry.types import (
     ConfigKeySchema as _E,
     FieldType as T,
 )
-from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set
+from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set, schema_of, value_errors
 from mimarsinan.mapping.support.period_census import WRITE_GRANULARITIES, WRITE_OVERLAP_MODES
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_EXPLICIT,
@@ -65,7 +65,8 @@ def s_allocation_as_read(config: Mapping[str, Any]) -> str:
     entry equals simulation_steps) is the uniform declaration it states. No door knows the cascade depth, so
     the map is read at its own length; a map the consumer cannot read leaves the explicit mode. The consumer
     casts each entry with int(); the map's own value schema (``INJECTED_DECLARATIONS``) refuses at both doors
-    every map that cast would change, so no admitted document is read through it."""
+    every map that is no non-empty list of JSON ints >= 1 (the registry's INT rule, as for simulation_steps), and
+    so every map the cast would change: no admitted document is read through the cast."""
     mode = resolve_s_allocation_mode(config)
     if mode != S_ALLOCATION_EXPLICIT:
         return mode
@@ -105,10 +106,15 @@ INJECTED_DECLARATIONS: Mapping[str, Mapping[str, Any]] = {
         mode for mode in S_ALLOCATION_MODES if mode not in S_ALLOCATION_SUPPORTED_MODES)),
         "consumer_reading": s_allocation_as_read},
     # temporal_allocation._parse_explicit: a non-empty per-depth list of positive ints, judged as written
-    # (the consumer's int() cast reads 32.9 and "32" as 32).
+    # (the consumer's int() cast reads 32.9 and "32" as 32; 32.0, equal in value, is refused by the INT rule,
+    # as simulation_steps: 32.0 is).
     "s_allocation_explicit": {"value_schema": ValueSchema(
         kind=T.INT_LIST, item=ValueSchema(kind=T.INT, low=1), min_length=1)},
 }
+
+
+#: Where a flat config declares the platform bias mode: the flat key, then the nested object's field.
+PLATFORM_BIAS_PATHS = ("has_bias", "platform_constraints.has_bias")
 
 
 def platform_bias_declarations(config: Mapping[str, Any]) -> Tuple[Any, Any]:
@@ -126,13 +132,25 @@ def platform_bias_mode(config: Mapping[str, Any]) -> Any:
 
 
 def conflicting_platform_bias_error(config: Mapping[str, Any]) -> Optional[str]:
-    """Why the platform bias mode is ambiguous, or None (one rule for both doors): a flat and a nested
-    boolean that disagree. A non-boolean is the BOOL schema's to refuse, so it is left to that judge."""
+    """Why the platform bias mode is ambiguous, or None: a flat and a nested boolean that disagree. A
+    non-boolean is the BOOL schema's to refuse (``platform_bias_errors`` judges it first)."""
     flat, nested = platform_bias_declarations(config)
     if not (isinstance(flat, bool) and isinstance(nested, bool)) or flat == nested:
         return None
     return (f"has_bias={flat!r} and platform_constraints.has_bias={nested!r} declare the platform bias "
             f"mode twice and disagree: declare it once")
+
+
+def platform_bias_errors(config: Mapping[str, Any], bias_entry: _E) -> List[str]:
+    """Why the platform bias declarations of ``config`` refuse, else [] (the one rule both doors call: the run
+    door over its flat config, the document door over the layout a run gives its two sections): each
+    declaration, flat and nested, judged by ``bias_entry``'s value schema (the registry's BOOL) at its own
+    path, then a flat and a nested boolean that disagree (``conflicting_platform_bias_error``)."""
+    schema = schema_of(bias_entry)
+    errors = [message for path, value in zip(PLATFORM_BIAS_PATHS, platform_bias_declarations(config))
+              if value is not None and schema is not None for message in value_errors(schema, value, path)]
+    conflict = conflicting_platform_bias_error(config)
+    return errors if conflict is None else [*errors, conflict]
 
 
 WRITE_OVERLAP_SCHEMA = ValueSchema(

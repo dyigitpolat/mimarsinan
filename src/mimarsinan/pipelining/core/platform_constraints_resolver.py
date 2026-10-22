@@ -14,11 +14,7 @@ from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
 from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.config_schema.registry.build import passthrough_keys
 from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
-from mimarsinan.config_schema.registry.entries_write import (
-    conflicting_platform_bias_error,
-    platform_bias_declarations,
-    platform_bias_mode,
-)
+from mimarsinan.config_schema.registry.entries_write import platform_bias_errors, platform_bias_mode
 from mimarsinan.config_schema.registry.value_schema import DeclarationValueError, judge_declaration
 from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
@@ -134,16 +130,12 @@ def _run_domain(pipeline_config: dict[str, Any]) -> str:
 
 def _judged_platform_bias(pipeline_config: dict[str, Any]) -> Any:
     """The bias mode a core type without its own ``has_bias`` takes (``platform_bias_mode``: the flat
-    key, then the nested ``platform_constraints.has_bias``, else a bias lane), judged as the document
-    door judges it: each declaration is a boolean (the registry's BOOL schema), and a flat and a nested
-    declaration that disagree refuse by name (``conflicting_platform_bias_error``)."""
-    run_domain = _run_domain(pipeline_config)
-    for value in platform_bias_declarations(pipeline_config):
-        if value is not None:
-            judge_declaration(REGISTRY["has_bias"], value, run_domain=run_domain)
-    error = conflicting_platform_bias_error(pipeline_config)
-    if error is not None:
-        raise DeclarationValueError(error)
+    key, then the nested ``platform_constraints.has_bias``, else a bias lane), judged by the one rule the
+    document door applies (``platform_bias_errors``): each declaration is a boolean (the registry's BOOL
+    schema), and a flat and a nested declaration that disagree refuse by name."""
+    errors = platform_bias_errors(pipeline_config, REGISTRY["has_bias"])
+    if errors:
+        raise DeclarationValueError("; ".join(errors))
     return platform_bias_mode(pipeline_config)
 
 
