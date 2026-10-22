@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.common.env import cuda_debug_enabled
+from mimarsinan.mapping.mappers.base import dependency_postorder
 
 
 class ModelRepresentation:
@@ -24,7 +25,11 @@ class ModelRepresentation:
         self.encoding_placement: str | None = None
 
     def map_to_ir(self, ir_mapping):
-        """Map this model representation to a unified IRGraph (NeuralCore + ComputeOp nodes)."""
+        """Map this model representation to a unified IRGraph (NeuralCore + ComputeOp nodes).
+
+        The output mapper's walk is iterative (``Mapper.map_to_ir``, E276), so
+        the mapped depth is not bounded by the interpreter's recursion limit.
+        """
         return self.output_layer_mapper.map_to_ir(ir_mapping)
 
     def clear_ir_caches(self) -> None:
@@ -59,28 +64,8 @@ class ModelRepresentation:
         ):
             return self._exec_order, self._deps, self._consumer_count
 
-        deps_map = {}
-        order = []
-        visited = set()
-        stack = [(self.output_layer_mapper, False)]
-
-        while stack:
-            node, expanded = stack.pop()
-            if node is None:
-                continue
-            if expanded:
-                order.append(node)
-                continue
-            if node in visited:
-                continue
-            visited.add(node)
-            stack.append((node, True))
-            d = deps_of(node)
-            deps_map[node] = d
-            for dep in reversed([*d, *getattr(node, "run_after", ())]):
-                if dep is not None and dep not in visited:
-                    stack.append((dep, False))
-
+        order, deps_map = dependency_postorder(
+            self.output_layer_mapper, deps_of, after_of=lambda node: getattr(node, "run_after", ()))
         self._exec_order = order
         self._deps = deps_map
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch.nn as nn
 
 from mimarsinan.mapping.mappers.flowchart import FlowchartNodeEstimate
@@ -31,6 +33,40 @@ def resolve_activation_type(perceptron) -> str | None:
     return activation_type
 
 
+def dependency_postorder(root, deps_of, after_of=None) -> tuple[list, dict]:
+    """Deps-first postorder of the DAG reachable from ``root``, and the deps read per node.
+
+    An explicit stack, so depth is unbounded. It visits exactly as a recursive
+    depth-first walk over ``deps_of`` in its order would (each node once, a dep
+    re-reached through a later edge skipped), so a walk that maps nodes in this
+    order emits them in the order the recursion did. ``after_of(node)``, when
+    given, names ordering edges the walk visits after the node's deps without
+    recording them as read (``Mapper.run_after``: mappers a node runs after in
+    the forward without reading them).
+    """
+    deps_map: dict = {}
+    order: list = []
+    visited: set = set()
+    stack = [(root, False)]
+    while stack:
+        node, expanded = stack.pop()
+        if node is None:
+            continue
+        if expanded:
+            order.append(node)
+            continue
+        if node in visited:
+            continue
+        visited.add(node)
+        stack.append((node, True))
+        deps = deps_of(node)
+        deps_map[node] = deps
+        for dep in reversed(deps if after_of is None else [*deps, *after_of(node)]):
+            if dep is not None and dep not in visited:
+                stack.append((dep, False))
+    return order, deps_map
+
+
 class Mapper(nn.Module):
     # Ordering edges (review round 16, targeted pass): mappers this one runs after in the forward without reading them
     # (a write in place runs after every earlier reader of its storage); a class default for pickled mappers.
@@ -39,7 +75,7 @@ class Mapper(nn.Module):
     def __init__(self, source_mapper: "Mapper | None" = None):
         super(Mapper, self).__init__()
         self._source_mapper_container: list[Mapper | None] = [source_mapper]
-        self._ir_sources = None
+        self._ir_sources: Any = None
         self._cached_ir_mapping = None
 
     def get_source_mappers(self):
@@ -84,11 +120,25 @@ class Mapper(nn.Module):
         self._ir_sources = None
         self._cached_ir_mapping = None
 
-    def map_to_ir(self, ir_mapping):
-        if self._ir_sources is not None and self._cached_ir_mapping is ir_mapping:
-            return self._ir_sources
-        self._ir_sources = self._map_to_ir(ir_mapping)
-        self._cached_ir_mapping = ir_mapping
+    def _mapped_for(self, ir_mapping) -> bool:
+        return self._ir_sources is not None and self._cached_ir_mapping is ir_mapping
+
+    def map_to_ir(self, ir_mapping) -> Any:
+        """This node's IR sources, every unmapped node it depends on mapped first (E276).
+
+        The walk is iterative: the unmapped sub-DAG is mapped deps-first, so each
+        ``_map_to_ir``'s own ``source.map_to_ir`` call is a memo hit and no call
+        nests, at any depth. Every ``_map_to_ir`` reads its sources before it
+        emits, so the IR equals the recursive walk's, node ids and order included.
+        """
+        if not self._mapped_for(ir_mapping):
+            order, _ = dependency_postorder(
+                self, lambda n: [] if n._mapped_for(ir_mapping) else n.get_source_mappers(),
+            )
+            for node in order:
+                if not node._mapped_for(ir_mapping):
+                    node._ir_sources = node._map_to_ir(ir_mapping)
+                    node._cached_ir_mapping = ir_mapping
         return self._ir_sources
 
     def _map_to_ir(self, ir_mapping):

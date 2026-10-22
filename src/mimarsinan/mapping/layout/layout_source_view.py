@@ -116,12 +116,18 @@ class LayoutSourceView:
             lambda: parent().transpose(axes_t),
         )
 
-    def __getitem__(self, idx) -> "LayoutSourceView | IRSource":
+    def __getitem__(self, idx) -> "LayoutSourceView | IRSource | np.ndarray":
         if isinstance(idx, int) and self.ndim == 1:
             return self._materialise_cell((idx,))
         if isinstance(idx, tuple) and all(isinstance(i, int) for i in idx) \
                 and len(idx) == self.ndim:
             return self._materialise_cell(idx)
+        items = idx if isinstance(idx, tuple) else (idx,)
+        if not all(i is None or isinstance(i, (int, slice)) for i in items):
+            # Integer-array (advanced) indexing, e.g. an unpadded conv's patch
+            # gather: materialised under numpy's rule, as ``np.pad`` already
+            # materialises the view a padded conv gathers from.
+            return self._materialiser()[idx]
 
         new_shape = self._resolve_getitem_shape(idx)
         parent = self._materialiser

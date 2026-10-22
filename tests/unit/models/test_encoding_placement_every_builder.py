@@ -66,6 +66,11 @@ BUILD_SPECS: dict[str, tuple] = {
         (3, 32, 32), 10, {"depth": 10, "growth_rate": 4, "layer_order": "post_activation"}, {},
     ),
     "cifar_pyramidnet": ((3, 32, 32), 10, {"depth": 8, "alpha": 8}, {}),
+    "cifar_resnet_family": (
+        (3, 8, 8), 10,
+        {"blocks_per_stage": 1, "base_width": 4, "block_kind": "bottleneck", "block_order": "pre_activation"},
+        {},
+    ),
     # Heavy fixed architectures: same question, minutes of tracing.
     "cifar_resnet20": ((3, 32, 32), 10, {}, {}),
     "cifar_vit_leaf": ((3, 32, 32), 10, {}, {}),
