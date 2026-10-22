@@ -1,7 +1,9 @@
-"""The four deployed runs a U1 program is checked under, and the identity-equality check every pass projection test uses.
+"""The runs a U1 program is checked under, and the identity-equality check every pass projection test uses.
 
 Streamed LIF (VERBATIM boundaries), windowed LIF (per-hop re-timed level stages, COLLAPSE: the deployed lifsync),
-cascaded TTFS (COLLAPSE, the transfer every non-streamed run takes, ``run_pass_transfer``) and analytical TTFS."""
+cascaded TTFS (COLLAPSE, the transfer every non-streamed run takes, ``run_pass_transfer``), analytical TTFS, and the
+synchronized count executor (``lif_execution_synchronized``, COLLAPSE: no deployed run reads it, but the X3a screen
+runs it as ``synchronized_lif``, one of the semantics the theorem box covers)."""
 
 from __future__ import annotations
 
@@ -20,8 +22,10 @@ WINDOWED_LIF = dict(spiking_mode="lif", cycle_accurate_lif_forward=True, pass_tr
 CASCADED_TTFS = dict(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded", firing_mode="TTFS",
                      spike_mode="TTFS", pass_transfer=COLLAPSE)
 ANALYTICAL_TTFS = dict(spiking_mode="ttfs", firing_mode="TTFS", spike_mode="TTFS", pass_transfer=COLLAPSE)
-ALL_RUNS = (STREAMED_LIF, WINDOWED_LIF, CASCADED_TTFS, ANALYTICAL_TTFS)
-RUN_IDS = ("streamed_lif", "windowed_lif", "cascaded_ttfs", "analytical_ttfs")
+SYNCHRONIZED_LIF = dict(spiking_mode="lif", cycle_accurate_lif_forward=True, lif_execution_synchronized=True,
+                        pass_transfer=COLLAPSE)
+ALL_RUNS = (STREAMED_LIF, WINDOWED_LIF, CASCADED_TTFS, ANALYTICAL_TTFS, SYNCHRONIZED_LIF)
+RUN_IDS = ("streamed_lif", "windowed_lif", "cascaded_ttfs", "analytical_ttfs", "synchronized_lif")
 
 
 def flow(mapping, **semantics) -> SpikingHybridCoreFlow:

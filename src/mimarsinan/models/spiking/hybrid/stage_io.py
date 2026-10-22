@@ -43,15 +43,17 @@ class HybridStageIOMixin(HybridFlowHost):
         batch_size: int,
         device: torch.device,
         carried: Dict[int, torch.Tensor] | None = None,
+        reads_counts: bool = False,
     ) -> torch.Tensor:
         """Build ``(T, B, in_size)`` spike train slice by slice: cached LIF trains, uniform encodes, and the
-        ``carried`` rasters of the stage's own segment replayed at their delivery delays."""
+        ``carried`` rasters of the stage's own segment replayed at their delivery delays, unless the segment's
+        executor reads window counts (``reads_counts``, ``replay_carried_slices``)."""
         train = encode_segment_input(
             stage, seg_input_rates_clamped, state_buffer_spikes,
             config=self._boundary_config, hybrid_mapping=self.hybrid_mapping,
             T=T, batch_size=batch_size, device=device,
         )
-        replay_carried_slices(train, stage, carried or {})
+        replay_carried_slices(train, stage, carried or {}, reads_counts=reads_counts)
         return train
 
     def _carried_output_ids(self) -> Dict[int, tuple]:

@@ -14,7 +14,7 @@ from mimarsinan.models.spiking.hybrid.executors.carry_record import (
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
 from mimarsinan.models.spiking.hybrid.executors import (
-    run_neural_segment_counts, run_neural_segment_packed,)
+    run_neural_segment_counts, run_neural_segment_packed, runs_synchronized_counts)
 from mimarsinan.models.spiking.hybrid.executors.single_spike import (
     single_spike_output_step)
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
@@ -103,9 +103,7 @@ class HybridLifStepMixin(HybridFlowHost):
         latency_gated = policy.latency_gated
         single_spike = getattr(policy, "single_spike_io", False)
 
-        synchronized_path = (
-            getattr(self, "lif_execution_synchronized", False)
-            and self.spiking_mode == "lif" and not single_spike and not recording)
+        synchronized_path = runs_synchronized_counts(self, recording=recording)
         if output_train is not None:
             # capable= must describe the EXECUTED path: the synchronized early-
             # return records no raster; the packed executor AND the reference

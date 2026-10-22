@@ -122,6 +122,7 @@ if TYPE_CHECKING:
             batch_size: int,
             device: torch.device,
             carried: Dict[int, torch.Tensor] | None = None,
+            reads_counts: bool = False,
         ) -> torch.Tensor: ...
 
         def _apply_input_shifts(

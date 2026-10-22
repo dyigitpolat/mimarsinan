@@ -24,6 +24,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     requires_ttfs_firing,
 )
 from mimarsinan.models.spiking.hybrid.carry import carry_scope
+from mimarsinan.models.spiking.hybrid.executors import runs_synchronized_counts
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.membrane_readout import (
     apply_membrane_corrections_to_logits,
@@ -98,6 +99,7 @@ class HybridRateForwardMixin(HybridFlowHost):
                 batch_size=batch_size,
                 device=device,
                 carried=carry_scope(carry_store, stage),
+                reads_counts=runs_synchronized_counts(self, recording=ctx.recorder is not None),
             )
 
             recorder_seg: SegmentSpikeRecord | None = None

@@ -64,12 +64,16 @@ def replay_raster(raster, delay: int, *, time_axis: int):
     return out
 
 
-def replay_carried_slices(train, stage, carried: Dict[int, Any]) -> None:
+def replay_carried_slices(train, stage, carried: Dict[int, Any], *, reads_counts: bool = False) -> None:
     """Every carried slice of a ``(T, B, size)`` input train replayed in place from its producer's raster, every
-    delayed slice shifted (a count's single-spike re-encode under COLLAPSE is the lossless codec)."""
-    delays = {} if getattr(stage, "is_retimed_level", False) else replay_delays(stage)
+    delayed slice shifted (a count's single-spike re-encode under COLLAPSE is the lossless codec). A reader of window
+    counts (a retimed level stage, or the synchronized count executor: ``reads_counts``) reads each slice's count as
+    the fused segment hands it, so no raster and no delivery delay, a shift in time, applies to it."""
+    if reads_counts or getattr(stage, "is_retimed_level", False):
+        return
+    delays = replay_delays(stage)
     for k, s in enumerate(stage.input_map):
-        raster = None if getattr(stage, "is_retimed_level", False) else carried.get(int(s.node_id))
+        raster = carried.get(int(s.node_id))
         if raster is None and not delays.get(k):
             continue
         source = train[:, :, s.offset:s.offset + s.size] if raster is None else raster[:, :, :s.size].to(train.dtype)

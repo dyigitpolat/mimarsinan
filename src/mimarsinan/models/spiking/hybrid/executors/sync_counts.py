@@ -4,8 +4,20 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.chip_simulation.value_run.value_execution import dependency_order
+from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
+
+
+def runs_synchronized_counts(flow, *, recording: bool) -> bool:
+    """Whether ``run_neural_segment_counts`` executes a neural segment of ``flow``: the synchronized LIF twin, unless a
+    spike record is asked for (the per-core reference loop records one). One predicate for the executed path
+    (``_run_neural_segment_rate``) and for the input it reads (``_encode_segment_input``): the count executor reads
+    each slice's window count, so a pass's delivery delay, a shift in time, does not apply to its input."""
+    policy = cycle_neuron_policy(flow.spiking_mode, flow.ttfs_cycle_schedule, flow.firing_mode)
+    return (bool(getattr(flow, "lif_execution_synchronized", False)) and flow.spiking_mode == "lif"
+            and not policy.single_spike_io and not recording)
 
 
 def run_neural_segment_counts(
@@ -33,10 +45,10 @@ def run_neural_segment_counts(
         for c in cores
     ]
     v0 = float(getattr(flow, "lif_membrane_init", 0.0))
-    order = sorted(
-        (i for i, c in enumerate(cores) if c.latency is not None),
-        key=lambda i: int(cores[i].latency or 0),
-    )
+    # [U1 R6] Dependency order, ties by stored latency then index: a pass pinned at the fused latencies can give a
+    # producer the latency of the consumer that reads it, so the latency order alone may walk the reader first.
+    reads = [{int(sp.src_core) for sp in spans if sp.kind == "core"} for spans in seg["axon_spans"]]
+    order = [i for i in dependency_order(reads, [int(c.latency or 0) for c in cores]) if cores[i].latency is not None]
     for i in order:
         # Always-on axons deliver one spike per cycle => count T.
         seg["axon_fill_plans"][i].apply(
