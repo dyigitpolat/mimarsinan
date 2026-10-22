@@ -127,6 +127,8 @@ CLASSIFIED = {
     ("gui/templates.py", "name_and_deployment_from_post_body"): (OTHER, {"strip": 1}),
     ("gui/templates.py", "save_template"): (OTHER, {"strip": 1}),
     ("gui/viewmodel/step_metrics_vm.py", "metric_category"): (OTHER, {"lower": 1}),
+    # G7: a refusal's message text, its first line kept as the census verdict's reason.
+    ("mapping/capability/member.py", "_refused"): (OTHER, {"strip": 1}),
     ("mapping/verification/suggester/hw_config_suggester_scheduled.py", "suggest_hardware_config_scheduled"):
         (OTHER, {"rstrip": 1}),
     ("pipelining/core/simulation_factory.py", "run_hcm_mapping_metric"): (OTHER, {"lower": 1}),
