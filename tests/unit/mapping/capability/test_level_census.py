@@ -145,8 +145,9 @@ def test_the_field_map_names_every_field_of_the_plan():
         "host_macs", "onchip_macs", "compute_op_count", "macs", "cells_used", "synaptic_events",
         "latency_steps", "segment_cores", "pass_count", "sync_count", "carry_in_bytes", "carry_out_bytes",
         "lane_ops", "lanes_per_tile"}
-    assert set(FIELD_MAP_FIELDS) - set(QUANTITY_SPECS) == set(PENDING_CATALOG_FIELDS) == {
-        "lane_ops", "lanes_per_tile"}, "G3's lane rows join the catalog (CL4)"
+    assert set(FIELD_MAP_FIELDS) - set(QUANTITY_SPECS) == set(PENDING_CATALOG_FIELDS) == set(), (
+        "every field-map name is a catalog key since G3's lane rows joined the catalog at integration")
+    assert {"lane_ops", "lanes_per_tile"} <= set(QUANTITY_SPECS)
 
 
 def test_quantities_are_absent_unless_produced():

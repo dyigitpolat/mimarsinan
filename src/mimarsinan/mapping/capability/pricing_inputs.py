@@ -16,8 +16,9 @@ FIELD_MAP_FIELDS: Tuple[str, ...] = (
     "host_macs", "onchip_macs", "compute_op_count", "macs", "cells_used", "synaptic_events", "latency_steps",
     "segment_cores", "pass_count", "sync_count", "carry_in_bytes", "carry_out_bytes", "lane_ops", "lanes_per_tile",
 )
-#: Field-map names G3's lane rows add to the catalog (plan §7.1); the census supplies them once CL4 prices them.
-PENDING_CATALOG_FIELDS: Tuple[str, ...] = ("lane_ops", "lanes_per_tile")
+#: Field-map names not yet in the catalog: none since integration, where G3's lane rows (plan §7.1) added
+#: ``lane_ops`` and ``lanes_per_tile``; CL4 prices them.
+PENDING_CATALOG_FIELDS: Tuple[str, ...] = ()
 
 
 def _bytes(row: LevelCensus, elements: int) -> int:
