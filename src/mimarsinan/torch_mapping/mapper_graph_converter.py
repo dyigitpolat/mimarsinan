@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-import copy
 import operator
-from typing import Any, Dict, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 
 import torch
 import torch.nn as nn
 import torch.fx as fx
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.mapping_utils import (
-    ComputeOpMapper,
     InputMapper,
     ModelRepresentation,
     PermuteMapper,
     ReshapeMapper,
 )
+from mimarsinan.mapping.support.compute_modules import read_after
 from mimarsinan.mapping.platform.packaging_contract import (
     SPIKING_PACKAGING,
     PackagingContract,
@@ -32,15 +32,20 @@ from mimarsinan.torch_mapping.converter_handlers import (
     StructuralConvertMixin,
 )
 from mimarsinan.torch_mapping.mapper_graph_fx import MapperGraphFxMixin
-from mimarsinan.torch_mapping.fx_shape_utils import (
-    fx_literal_int,
-    node_output_shape,
-    node_target_str,
-    strip_batch,
-)
+from mimarsinan.torch_mapping.converter_handlers.batch_layout import BatchLayouts
+from mimarsinan.torch_mapping.converter_handlers.layout_mixin import LayoutMixin
+from mimarsinan.torch_mapping.converter_handlers.module_call_mixin import ModuleCallMixin
+from mimarsinan.torch_mapping.converter_handlers.refusals import BatchAxisLayoutError
+from mimarsinan.torch_mapping.converter_handlers.shape_value_mixin import ShapeValueMixin
+from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import ProgramPurity
+from mimarsinan.torch_mapping.fx_shape_utils import fx_literal_int
+
+# Methods that map one sample's layout to another's (a per-sample ReshapeMapper, PermuteMapper or identity).
+LAYOUT_METHODS = frozenset({"view", "reshape", "flatten", "permute", "transpose", "unsqueeze", "squeeze", "expand"})
+_ALIAS_METHODS = frozenset({"unsqueeze", "squeeze", "expand"})  # carried as their source's value (``_lower_layout``)
 
 
-class UnsupportedCallMethodError(RuntimeError):
+class UnsupportedCallMethodError(ToolchainRefusal, RuntimeError):
     """A tensor call_method with no conversion rule reached the converter.
 
     Silently mapping it to identity would DROP the op (the ``.softmax(dim=-1)``
@@ -59,17 +64,22 @@ class UnsupportedCallMethodError(RuntimeError):
 
 class MapperGraphConverter(
     MapperGraphFxMixin,
+    LayoutMixin,
+    ModuleCallMixin,
+    ShapeValueMixin,
     LinearConvertMixin,
     ConvConvertMixin,
     StructuralConvertMixin,
 ):
-    """Convert a traced ``GraphModule`` into a mimarsinan ``ModelRepresentation``."""
+    """Convert a traced ``GraphModule`` into a mimarsinan ``ModelRepresentation``; ``purity``: the traced program's,
+    before graph normalization (``trace_and_convert``), else computed from ``graph_module``."""
 
     def __init__(
         self,
         graph_module: fx.GraphModule,
         input_shape: Tuple[int, ...],
         packaging: "PackagingContract" = SPIKING_PACKAGING,
+        purity: Optional[ProgramPurity] = None,
     ):
         self.gm = graph_module
         self.input_shape = input_shape
@@ -77,6 +87,8 @@ class MapperGraphConverter(
         self._modules: Dict[str, nn.Module] = dict(graph_module.named_modules())
         self._node_to_mapper: Dict[fx.Node, Any] = {}
         self._node_to_attr: Dict[fx.Node, Any] = {}
+        self._shape_values: Dict[fx.Node, Any] = {}
+        self._batch_layouts = BatchLayouts(graph_module, purity)
         self._absorbed: Set[str] = set()
 
     def convert(self, report: RepresentabilityReport) -> ModelRepresentation:
@@ -89,7 +101,9 @@ class MapperGraphConverter(
 
         output_mapper = None
         for node in self.gm.graph.nodes:
-            if node.op == "placeholder":
+            if self._guarded_copy(node):
+                pass  # a copy the rule of a write relies on: a host op checking it (review round 16)
+            elif node.op == "placeholder":
                 self._handle_placeholder(node)
             elif node.op == "get_attr":
                 self._handle_get_attr(node)
@@ -101,9 +115,13 @@ class MapperGraphConverter(
                 self._handle_call_method(node)
             elif node.op == "output":
                 output_mapper = self._handle_output(node)
+            self._mark_host_value_layout(node)
+            self._mark_kept_inputs(node)
 
         if output_mapper is None:
             raise RuntimeError("FX graph has no output node")
+        self._require_static_reads()
+        self._order_runs(output_mapper)
 
         return ModelRepresentation(output_mapper)
 
@@ -119,72 +137,60 @@ class MapperGraphConverter(
 
     def _handle_output(self, node: fx.Node):
         args = node.args[0]
-        if isinstance(args, fx.Node):
-            return self._get_mapper(args)
-        if isinstance(args, (tuple, list)) and args and isinstance(args[0], fx.Node):
-            return self._get_mapper(args[0])
-        return None
-
-    _PASSTHROUGH_MODULES = (nn.Identity, nn.Dropout, nn.Dropout2d,
-                            nn.BatchNorm1d, nn.BatchNorm2d)
-
-    def _handle_call_module(
-        self, node: fx.Node, report: RepresentabilityReport
-    ) -> None:
-        if node.name in self._absorbed:
-            self._propagate_absorbed(node)
-            return
-
-        mod = self._modules.get(node_target_str(node))
-        if mod is None:
-            return
-
-        source = self._get_source_mapper(node)
-
-        if isinstance(mod, nn.Linear):
-            self._convert_linear(node, mod, source, report)
-        elif isinstance(mod, nn.Conv2d):
-            self._convert_conv2d(node, mod, source, report)
-        elif isinstance(mod, nn.Conv1d):
-            self._convert_conv1d(node, mod, source, report)
-        elif isinstance(mod, nn.LayerNorm):
-            self._node_to_mapper[node] = ComputeOpMapper(
-                source, copy.deepcopy(mod), name=node.name,
-            )
-        elif isinstance(mod, nn.MultiheadAttention):
-            self._convert_multihead_attention(node, mod)
-        elif isinstance(mod, self._PASSTHROUGH_MODULES):
-            self._node_to_mapper[node] = source
-        elif isinstance(mod, nn.Flatten):
-            self._convert_flatten_module(node, source)
-        else:
-            input_shape = strip_batch(self._get_input_shape(node))
-            output_shape = strip_batch(node_output_shape(node))
-            mapper = ComputeOpMapper(
-                source, mod, input_shapes=input_shape,
-                output_shape=output_shape, name=node.name,
-            )
-            self._node_to_mapper[node] = mapper
+        returned = args if isinstance(args, fx.Node) else args[0] if (
+            isinstance(args, (tuple, list)) and args and isinstance(args[0], fx.Node)) else None
+        if returned is None:
+            return None
+        self._native_operands(node, [returned])
+        return self._get_mapper(returned)
 
     def _handle_call_function(self, node: fx.Node) -> None:
         fn = node.target
-        if fn is torch.cat:
+        if self._record_shape_value(node):
+            return
+        if fn is read_after:  # its other operands order it, they are not values it reads (``operand_writes``)
+            self._emit_generic_compute_op(node, fn)
+            self._node_to_mapper[node].elementwise_inputs = False
+        elif fn is torch.cat:
             self._convert_cat(node)
         elif fn is torch.flatten:
             self._convert_flatten_func(node)
         elif fn is operator.getitem and not self._getitem_looks_like_real_slice(node):
-            source_mapper = self._get_source_mapper(node)
-            if getattr(source_mapper, "output_index", None) is not None:
-                self._node_to_mapper[node] = source_mapper
-            else:
+            if not self._carried_tuple_output(node, self._get_source_mapper(node)):
                 self._emit_generic_compute_op(node, fn)
         else:
             self._emit_generic_compute_op(node, fn)
 
     def _handle_call_method(self, node: fx.Node) -> None:
         method = node.target
+        if method in LAYOUT_METHODS and method not in _ALIAS_METHODS:
+            self._native_static_operand(node)  # an alias of another shape read as natively (review round 15)
         source = self._get_source_mapper(node)
+        if method in LAYOUT_METHODS:
+            self._require_batch_leading(node)
+            self._require_restored(node)
+            if not self._native_layout(node, getattr(torch.Tensor, str(method))):
+                self._lower_layout(node, str(method), source)
+            return
 
+        if method == "contiguous":
+            self._node_to_mapper[node] = source
+
+        elif method in ("mean",):
+            self._emit_generic_compute_op(node, torch.mean)
+
+        elif method in ("size", "dim"):
+            if not self._record_shape_value(node):
+                self._emit_generic_compute_op(node, getattr(torch.Tensor, str(method)))
+
+        elif method in ("add", "__add__"):
+            self._emit_generic_compute_op(node, operator.add)
+
+        else:
+            raise UnsupportedCallMethodError(str(method), node)
+
+    def _lower_layout(self, node: fx.Node, method: str, source) -> None:
+        """A layout method with the per-sample shape fixed at conversion (the traced one)."""
         if method in ("view", "reshape"):
             shape_args = node.args[1:]
             if len(shape_args) == 1 and isinstance(shape_args[0], (tuple, list)):
@@ -217,20 +223,15 @@ class MapperGraphConverter(
             else:
                 self._node_to_mapper[node] = source
 
-        elif method == "contiguous":
-            self._node_to_mapper[node] = source
-
         elif method in ("permute", "transpose"):
             in_shape = self._get_input_shape(node)
+            raw = [self._static_dim(node, d, BatchAxisLayoutError) for d in node.args[1:]]
             if method == "permute":
-                raw = node.args[1:]
-                if len(raw) == 1 and isinstance(raw[0], (tuple, list)):
-                    dims = tuple(fx_literal_int(d) for d in raw[0])
-                else:
-                    dims = tuple(fx_literal_int(d) for d in raw)
+                dims = tuple(raw[0]) if len(raw) == 1 and isinstance(raw[0], (tuple, list)) else tuple(raw)
+                dims = tuple(fx_literal_int(d) for d in dims)
             else:
-                d0 = fx_literal_int(node.args[1]) if len(node.args) > 1 else 0
-                d1 = fx_literal_int(node.args[2]) if len(node.args) > 2 else 1
+                d0 = fx_literal_int(raw[0]) if len(raw) > 0 else 0
+                d1 = fx_literal_int(raw[1]) if len(raw) > 1 else 1
                 ndim = len(in_shape) if in_shape else 3
                 dims = list(range(ndim))
                 dims[d0], dims[d1] = dims[d1], dims[d0]
@@ -244,20 +245,8 @@ class MapperGraphConverter(
                 else:
                     self._node_to_mapper[node] = source
 
-        elif method in ("mean",):
-            self._emit_generic_compute_op(node, torch.mean)
-
-        elif method in ("size", "dim"):
+        else:  # unsqueeze, squeeze, expand: the source carried as an alias
             self._node_to_mapper[node] = source
-
-        elif method in ("unsqueeze", "squeeze", "expand"):
-            self._node_to_mapper[node] = source
-
-        elif method in ("add", "__add__"):
-            self._emit_generic_compute_op(node, operator.add)
-
-        else:
-            raise UnsupportedCallMethodError(str(method), node)
 
     def _get_mapper(self, node: fx.Node):
         if node in self._node_to_mapper:
@@ -268,26 +257,6 @@ class MapperGraphConverter(
 
     def _get_attr_value(self, node: fx.Node):
         return self._node_to_attr.get(node)
-
-    def _convert_multihead_attention(self, node: fx.Node, mod: nn.MultiheadAttention) -> None:
-        source_nodes = [
-            arg for arg in node.args[:3] if isinstance(arg, fx.Node)
-        ]
-        source_mappers = [self._get_mapper(arg) for arg in source_nodes]
-        if not source_mappers:
-            self._node_to_mapper[node] = None
-            return
-        input_shapes = [strip_batch(node_output_shape(arg)) for arg in source_nodes]
-        output_shape = strip_batch(node_output_shape(source_nodes[0]))
-        self._node_to_mapper[node] = ComputeOpMapper(
-            source_mappers,
-            copy.deepcopy(mod),
-            input_shapes=input_shapes,
-            output_shape=output_shape,
-            name=node.name,
-            module_kwargs={"need_weights": False},
-            output_index=0,
-        )
 
     def _get_source_mapper(self, node: fx.Node):
         if len(node.args) >= 1 and isinstance(node.args[0], fx.Node):

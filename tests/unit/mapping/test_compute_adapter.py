@@ -1,5 +1,5 @@
 """Unit tests for :class:`ComputeAdapter` — display_name, from_fx_node, pickling,
-batch-expanding bound tensors, extra args / kwargs routing.
+broadcasting bound tensors, argument templates, extra args / kwargs routing.
 """
 
 from __future__ import annotations
@@ -12,7 +12,14 @@ import pytest
 import torch
 import torch.fx as fx
 import torch.nn as nn
+import torch.nn.functional as F
 
+from mimarsinan.mapping.support.call_template import (
+    ArgTemplate,
+    BoundSlot,
+    LiteralSlot,
+    SourceSlot,
+)
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter, _cat_along
 
 
@@ -76,6 +83,19 @@ class TestFromFxNode:
         )
         adapter = ComputeAdapter.from_fx_node(add_node, operator.add)
         assert adapter.extra_args == ()
+
+
+class TestFromFxNodeKeepsOperandOrder:
+    def test_literal_left_operand(self):
+        class _Mod(nn.Module):
+            def forward(self, x):
+                return 2.0 - x
+
+        gm = fx.symbolic_trace(_Mod())
+        sub_node = next(n for n in gm.graph.nodes if n.target is operator.sub)
+        adapter = ComputeAdapter.from_fx_node(sub_node, operator.sub)
+        x = torch.tensor([[1.0, 4.0]])
+        assert torch.equal(adapter(x), 2.0 - x)
 
 
 class TestBatchExpansion:
@@ -174,3 +194,126 @@ class TestZeroInputDegenerate:
         # bound expanded with batch=1 → shape (1, 1)
         assert out.shape == (1, 1)
         assert out.item() == 5.0
+
+
+# ── D12: bound tensors broadcast against the inputs by trailing alignment ──
+
+def _seeded(*shape):
+    return torch.randn(*shape, dtype=torch.float64, generator=torch.Generator().manual_seed(len(shape)))
+
+
+class TestTrailingBroadcast:
+    """A bound tensor is never given a forced leading batch axis (D12)."""
+
+    @pytest.mark.parametrize("batch", [1, 3])
+    def test_rank_one_bound_over_tokens(self, batch):
+        gamma = _seeded(6)
+        x = _seeded(batch, 5, 6)
+        adapter = ComputeAdapter(operator.mul, bound_tensors=[gamma])
+        assert torch.equal(adapter(x), x * gamma)
+
+    def test_rank_one_bound_when_the_batch_equals_the_token_count(self):
+        gamma = _seeded(6)
+        x = _seeded(3, 3, 6)
+        assert torch.equal(ComputeAdapter(operator.mul, bound_tensors=[gamma])(x), x * gamma)
+
+    @pytest.mark.parametrize("batch", [1, 3])
+    def test_rank_zero_bound(self, batch):
+        scale = torch.tensor(1.5, dtype=torch.float64)
+        x = _seeded(batch, 4)
+        assert torch.equal(ComputeAdapter(operator.mul, bound_tensors=[scale])(x), x * scale)
+
+    def test_matrix_operand_of_a_functional_op(self):
+        weight = _seeded(4, 6)
+        x = _seeded(3, 5, 6)
+        adapter = ComputeAdapter(F.linear, bound_tensors=[weight])
+        assert torch.equal(adapter(x), F.linear(x, weight))
+
+
+class TestArgTemplateEvaluation:
+    """A template evaluates the payload callable in the traced argument order (D11)."""
+
+    def test_bound_left_operand(self):
+        c = _seeded(6)
+        x = _seeded(3, 6)
+        adapter = ComputeAdapter(
+            operator.sub, bound_tensors=[c],
+            arg_template=ArgTemplate((BoundSlot(0), SourceSlot(0))),
+        )
+        assert torch.equal(adapter(x), c - x)
+
+    def test_literal_left_operand(self):
+        x = _seeded(3, 6)
+        adapter = ComputeAdapter(
+            operator.truediv, extra_args=(2.0,),
+            arg_template=ArgTemplate((LiteralSlot(0), SourceSlot(0))),
+        )
+        assert torch.equal(adapter(x), 2.0 / x)
+
+    def test_keyword_literals_join_the_template(self):
+        c = _seeded(6)
+        x = _seeded(3, 6)
+        adapter = ComputeAdapter(
+            torch.sub, bound_tensors=[c], kwargs={"alpha": 2},
+            arg_template=ArgTemplate((BoundSlot(0), SourceSlot(0))),
+        )
+        assert torch.equal(adapter(x), torch.sub(c, x, alpha=2))
+
+    def test_keyword_bound_tensors(self):
+        w, b = _seeded(6) + 2.0, _seeded(6)
+        x = _seeded(3, 5, 6)
+        adapter = ComputeAdapter(
+            F.layer_norm, bound_tensors=[w, b], extra_args=((6,),),
+            arg_template=ArgTemplate(
+                (SourceSlot(0), LiteralSlot(0)), (("weight", BoundSlot(0)), ("bias", BoundSlot(1))),
+            ),
+        )
+        assert torch.equal(adapter(x), F.layer_norm(x, (6,), weight=w, bias=b))
+
+    def test_bound_slot_restores_a_stripped_leading_axis(self):
+        row = _seeded(1, 6)
+        x = _seeded(3, 6)
+        adapter = ComputeAdapter(
+            F.linear, bound_tensors=[row.squeeze(0)],
+            arg_template=ArgTemplate((SourceSlot(0), BoundSlot(0, (1, 6)))),
+        )
+        assert torch.equal(adapter(x), F.linear(x, row))
+
+    def test_template_survives_pickle(self):
+        c = _seeded(6)
+        adapter = ComputeAdapter(
+            operator.sub, bound_tensors=[c],
+            arg_template=ArgTemplate((BoundSlot(0), SourceSlot(0))),
+        )
+        loaded = pickle.loads(pickle.dumps(adapter))
+        x = _seeded(2, 6)
+        assert torch.equal(loaded(x), c - x)
+        assert loaded.arg_template == adapter.arg_template
+
+
+class TestCanonicalAdapterState:
+    """Adapters in the canonical layout carry no template, so their state is the pre-template state."""
+
+    def test_canonical_adapter_has_no_template_attribute(self):
+        adapter = ComputeAdapter(operator.add, bound_tensors=[torch.ones(3)])
+        assert "arg_template" not in adapter.__dict__
+        assert adapter.arg_template is None
+
+    def test_explicit_none_template_is_not_stored(self):
+        adapter = ComputeAdapter(operator.add, arg_template=None)
+        assert "arg_template" not in adapter.__dict__
+
+    def test_templated_adapter_stores_its_template(self):
+        template = ArgTemplate((BoundSlot(0), SourceSlot(0)))
+        adapter = ComputeAdapter(operator.sub, bound_tensors=[torch.ones(3)], arg_template=template)
+        assert adapter.__dict__["arg_template"] == template
+
+
+class TestCatAlongReplicatesThePrefix:
+    def test_batch_stripped_prefix_is_replicated_per_sample(self):
+        prefix = _seeded(1, 4)
+        x = _seeded(7, 3, 4)
+        out = _cat_along(x, prefix, dim=1)
+        assert out.shape == (7, 4, 4)
+        assert torch.equal(out[:, :1], prefix.expand(7, 1, 4))
+        assert torch.equal(out[:, 1:], x)

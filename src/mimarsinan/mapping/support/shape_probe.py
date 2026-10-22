@@ -8,6 +8,40 @@ from typing import Any, Mapping, Tuple
 import torch
 import torch.nn as nn
 
+from mimarsinan.common.refusal import ToolchainRefusal
+
+
+class NonTensorHostValueError(ToolchainRefusal, TypeError):
+    """A host op whose value is not a tensor (a run-time shape value): the IR carries tensor values only."""
+
+    def __init__(self, owner: str | None, module: nn.Module, value: object, operator: str | None = None):
+        self.owner = owner
+        self.operator = operator
+        self.value_type = type(value).__name__
+        if operator:
+            where = f"host op {operator} (FX node {owner!r})"
+        else:
+            where = f"host op {owner!r} ({type(module).__name__})" if owner else f"module {type(module).__name__}"
+        super().__init__(
+            f"probe_module_io_shapes: {where} returned {self.value_type}, expected torch.Tensor; the IR carries "
+            "tensor values only, so a value computed at run time from the batch size has no IR form and the "
+            "lowering is refused. Pass output_index if the module returns a tuple."
+        )
+
+
+class HostValueBatchLayoutError(ToolchainRefusal, ValueError):
+    """A host op whose value does not carry the batch on axis 0 alone: an IR buffer holds one row per sample."""
+
+    def __init__(self, owner: str | None, violation: str, operator: str | None = None):
+        self.owner = owner
+        self.operator = operator
+        self.violation = violation
+        named = f"{operator} " if operator else ""
+        super().__init__(
+            f"host op {named}(FX node {owner!r}): in its value, {violation}; a value program's buffer holds one row "
+            "per sample, so the value has no buffer form and the lowering is refused"
+        )
+
 
 @dataclass(frozen=True)
 class ProbedShapes:
@@ -41,8 +75,11 @@ def probe_module_io_shapes(
     *,
     module_kwargs: Mapping[str, Any] | None = None,
     output_index: int | None = None,
+    owner: str | None = None,
+    operator: str | None = None,
 ) -> ProbedShapes:
-    """Run one zeros-tensor forward pass through ``module``; return batch-stripped IO shapes."""
+    """Run one zeros-tensor forward pass through ``module``; return batch-stripped IO shapes (``owner`` names its FX
+    node and ``operator`` the operator it applies, in a refusal)."""
     input_shapes = _normalize_input_shapes(input_shape)
 
     try:
@@ -72,11 +109,7 @@ def probe_module_io_shapes(
             module.train()
 
     if not isinstance(out, torch.Tensor):
-        raise TypeError(
-            f"probe_module_io_shapes: module {type(module).__name__} returned "
-            f"{type(out).__name__}, expected torch.Tensor.  Pass output_index "
-            "if the module returns a tuple."
-        )
+        raise NonTensorHostValueError(owner, module, out, operator)
 
     output_shape = tuple(int(d) for d in out.shape[1:])
     return ProbedShapes(input_shapes=input_shapes, output_shape=output_shape)

@@ -8,12 +8,12 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
-from mimarsinan.torch_mapping.fx_shape_utils import node_target_str
+from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes import RUN_AFTER, observable_write
+from mimarsinan.torch_mapping.fx_shape_utils import node_output_shape, node_target_str, shared_state_sites
+from mimarsinan.torch_mapping.representability_analyzer import BATCHNORM_TYPES, batchnorm_folds_into
 
 
 _MM_MODULES = (nn.Linear, nn.Conv1d, nn.Conv2d)
-
-_FOLDABLE_MODULES = (nn.Identity, nn.BatchNorm1d, nn.BatchNorm2d)
 
 
 def _get_sole_user_module(
@@ -35,11 +35,14 @@ def _find_next_linear_through_foldables(
     node: fx.Node,
     modules: dict[str, nn.Module],
 ) -> tuple[Optional[fx.Node], list[tuple[fx.Node, nn.Module]]]:
-    """Walk forward through foldable modules to the next Linear.
+    """Walk forward through Identity and exactly-foldable BatchNorm modules to the next Linear.
 
     Returns ``(next_linear_node, chain)`` where *chain* lists the intermediate
     ``(node, module)`` pairs; ``(None, [])`` if no fusable Linear is reachable.
     """
+    linear = modules[node_target_str(node)]
+    shape = node_output_shape(node)
+    rank = len(shape) if shape is not None else None
     chain: list[tuple[fx.Node, nn.Module]] = []
     current = node
     while True:
@@ -48,92 +51,100 @@ def _find_next_linear_through_foldables(
             return None, []
         if isinstance(user_mod, nn.Linear):
             return user_node, chain
-        if isinstance(user_mod, _FOLDABLE_MODULES):
-            chain.append((user_node, user_mod))
-            current = user_node
-        else:
+        foldable = isinstance(user_mod, nn.Identity) or (
+            isinstance(user_mod, BATCHNORM_TYPES) and batchnorm_folds_into(user_mod, linear, rank)
+        )
+        if not foldable:
             return None, []
+        chain.append((user_node, user_mod))
+        current = user_node
 
 
-def _fold_bn_into_linear(linear_mod: nn.Linear, bn_mod: nn.Module) -> None:
-    """Fold BatchNorm parameters into a preceding Linear in-place.
+def _fold_bn_into_affine(
+    weight: torch.Tensor, bias: torch.Tensor, bn_mod: nn.BatchNorm1d | nn.BatchNorm2d,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """``BN(W@x+b) = (diag(γ/σ)@W)@x + (γ/σ*(b−μ)+β)``, as new tensors (the source Linear is never written)."""
+    mean, var = bn_mod.running_mean, bn_mod.running_var
+    if mean is None or var is None:
+        raise ValueError(f"cannot fold a BatchNorm without running statistics: {bn_mod}")
+    gamma = (
+        bn_mod.weight.detach()
+        if bn_mod.weight is not None
+        else torch.ones(weight.shape[0], device=weight.device, dtype=weight.dtype)
+    )
+    beta = (
+        bn_mod.bias.detach()
+        if bn_mod.bias is not None
+        else torch.zeros(weight.shape[0], device=weight.device, dtype=weight.dtype)
+    )
+    scale = gamma / torch.sqrt(var + bn_mod.eps)
+    return scale.unsqueeze(1) * weight, scale * (bias - mean) + beta
 
-    ``BN(W@x+b) = (diag(γ/σ)@W)@x + (γ/σ*(b−μ)+β)``.
-    """
-    if not isinstance(bn_mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
-        return
-    if bn_mod.running_mean is None or bn_mod.running_var is None:
-        return
 
-    with torch.no_grad():
-        W = linear_mod.weight.data
-        b = (
-            linear_mod.bias.data
-            if linear_mod.bias is not None
-            else torch.zeros(W.shape[0], device=W.device, dtype=W.dtype)
-        )
-
-        gamma = (
-            bn_mod.weight.data
-            if bn_mod.weight is not None
-            else torch.ones(W.shape[0], device=W.device, dtype=W.dtype)
-        )
-        beta = (
-            bn_mod.bias.data
-            if bn_mod.bias is not None
-            else torch.zeros(W.shape[0], device=W.device, dtype=W.dtype)
-        )
-        mean = bn_mod.running_mean
-        var = bn_mod.running_var
-        eps = bn_mod.eps
-
-        scale = gamma / torch.sqrt(var + eps)
-
-        linear_mod.weight.data = scale.unsqueeze(1) * W
-        new_bias = scale * (b - mean) + beta
-        if linear_mod.bias is not None:
-            linear_mod.bias.data = new_bias
-        else:
-            linear_mod.bias = nn.Parameter(new_bias)
+def _weight_and_bias(linear: nn.Linear) -> tuple[torch.Tensor, torch.Tensor]:
+    weight = linear.weight.detach()
+    if linear.bias is not None:
+        return weight, linear.bias.detach()
+    return weight, torch.zeros(weight.shape[0], device=weight.device, dtype=weight.dtype)
 
 
 def _fuse_linear_pair(
     gm: fx.GraphModule,
     node1: fx.Node,
     mod1: nn.Linear,
+    chain_bns: list[nn.BatchNorm1d | nn.BatchNorm2d],
     node2: fx.Node,
     mod2: nn.Linear,
 ) -> None:
-    """Fuse two consecutive Linear layers: W_fused = W2 @ W1, b_fused = W2 @ b1 + b2."""
+    """Fuse ``mod2 ∘ BN* ∘ mod1`` into one new Linear at ``node2``: W = W2 @ W1', b = W2 @ b1' + b2."""
     with torch.no_grad():
-        W1 = mod1.weight.data
-        W2 = mod2.weight.data
-        b1 = mod1.bias.data if mod1.bias is not None else torch.zeros(W1.shape[0])
-        b2 = mod2.bias.data if mod2.bias is not None else torch.zeros(W2.shape[0])
+        W1, b1 = _weight_and_bias(mod1)
+        for bn_mod in chain_bns:
+            W1, b1 = _fold_bn_into_affine(W1, b1, bn_mod)
+        W2, b2 = _weight_and_bias(mod2)
 
         W_fused = W2 @ W1
         b_fused = W2 @ b1 + b2
 
-    fused = nn.Linear(W_fused.shape[1], W_fused.shape[0], bias=True)
+    fused = nn.Linear(W_fused.shape[1], W_fused.shape[0], bias=True, device=W_fused.device, dtype=W_fused.dtype)
     with torch.no_grad():
         fused.weight.copy_(W_fused)
         fused.bias.copy_(b_fused)
 
-    fused_target = node_target_str(node2)
+    # A fresh target: node2's module may be called at other sites, which must keep their own weights.
+    fused_target = _fresh_target(gm, f"{node2.name}_fused")
     gm.add_submodule(fused_target, fused)
+    node2.target = fused_target
 
     node2.args = node1.args
 
 
-def normalize_fx_graph(gm: fx.GraphModule) -> fx.GraphModule:
-    """Run in-place normalization passes: consecutive-Linear fusion then dead-code elimination."""
+def _fresh_target(gm: fx.GraphModule, base: str) -> str:
+    taken = dict(gm.named_modules())
+    target, k = base, 0
+    while target in taken or hasattr(gm, target):
+        k += 1
+        target = f"{base}_{k}"
+    return target
+
+
+def normalize_fx_graph(gm: fx.GraphModule, foreign_modules: frozenset[str] = frozenset()) -> fx.GraphModule:
+    """Run in-place normalization passes: consecutive-Linear fusion then dead-code elimination, which keeps an
+    observable write in place (``operand_writes``). A module of ``foreign_modules`` (outside the declared operator set,
+    ``symbolic.purity``) is never fused: fusion computes with its state at conversion."""
     modules: dict[str, nn.Module] = dict(gm.named_modules())
     graph = gm.graph
 
+    # A node ordered against a write in place (``operand_writes.RUN_AFTER``) keeps its own call: a fusion would read the
+    # first Linear's operand at the second's place, which may come after the write (review round 16, targeted pass).
+    ordered = {name for node in graph.nodes for name in (node.name, *node.meta.get(RUN_AFTER, ()))
+               if node.meta.get(RUN_AFTER)}
     fused = True
     while fused:
         fused = False
         modules = dict(gm.named_modules())
+        # A fusion would consume one call site of shared state and hide the share from the D13 census.
+        shared_sites = {site for _node, sites in shared_state_sites(gm, modules) for site in sites}
         for node in list(graph.nodes):
             if node.op != "call_module":
                 continue
@@ -150,16 +161,23 @@ def normalize_fx_graph(gm: fx.GraphModule) -> fx.GraphModule:
 
             if mod.out_features != next_mod.in_features:
                 continue
+            if shared_sites.intersection([node.name, next_node.name, *(n.name for n, _m in chain)]):
+                continue
+            if foreign_modules.intersection(str(n.target) for n in (node, next_node, *(n for n, _m in chain))):
+                continue
+            if ordered.intersection(n.name for n in (node, next_node, *(n for n, _m in chain))):
+                continue
 
-            for _chain_node, chain_mod in chain:
-                if isinstance(chain_mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                    _fold_bn_into_linear(mod, chain_mod)
-
-            _fuse_linear_pair(gm, node, mod, next_node, next_mod)
+            chain_bns = [m for _chain_node, m in chain if isinstance(m, BATCHNORM_TYPES)]
+            _fuse_linear_pair(gm, node, mod, chain_bns, next_node, next_mod)
             fused = True
             break
 
-    graph.eliminate_dead_code()
+    # A write in place whose operand a later node reads is kept (``operand_writes``; FX's own rule keeps an aten
+    # operator's but drops ``torch.resize_as_(z, y)``); after the tracer's rewrite none is left but through its result.
+    order = {node: index for index, node in enumerate(graph.nodes)}
+    modules = dict(gm.named_modules())
+    graph.eliminate_dead_code(is_impure_node=lambda node: node.is_impure() or observable_write(node, modules, order))
     gm.recompile()
 
     return gm

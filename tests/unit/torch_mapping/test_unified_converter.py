@@ -132,7 +132,8 @@ class TestPartitionFxArgs:
             n for n in gm.graph.nodes
             if n.op == "call_function" and n.target is operator.add
         )
-        sources, bound, extra, kwargs = converter._partition_fx_args(add_node)
+        part = converter._partition_fx_args(add_node)
+        sources, bound, extra, kwargs = part.sources, part.bound, part.literals, part.literal_kwargs
         assert len(sources) == 2
         assert bound == []
         assert extra == ()
@@ -153,7 +154,8 @@ class TestPartitionFxArgs:
             n for n in gm.graph.nodes
             if n.op == "call_function" and n.target is operator.add
         )
-        sources, bound, extra, kwargs = converter._partition_fx_args(add_node)
+        part = converter._partition_fx_args(add_node)
+        sources, bound, extra, kwargs = part.sources, part.bound, part.literals, part.literal_kwargs
         assert len(sources) == 1
         assert len(bound) == 1
         assert isinstance(bound[0], (nn.Parameter, torch.Tensor))

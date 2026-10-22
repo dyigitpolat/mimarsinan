@@ -7,9 +7,10 @@ import torch.fx as fx
 
 from mimarsinan.torch_mapping.fx_shape_utils import fx_literal_int, node_target_str
 from mimarsinan.torch_mapping.converter import convert_torch_model
+from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import ProgramPurity, program_purity
 from mimarsinan.torch_mapping.mapper_graph_converter import MapperGraphConverter
-from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
-from mimarsinan.torch_mapping.converter_handlers.conv_mixin import ConvConvertMixin
+from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityError, RepresentabilityReport
+from mimarsinan.torch_mapping.converter_handlers.batchnorm_lowering import copy_batchnorm_state
 
 
 def _graph_with(builder):
@@ -60,6 +61,9 @@ def test_node_target_str_rejects_function_target():
 
 
 def test_view_with_dynamic_dim_literal_falls_back_to_source():
+    """Review round 9: the hand-built graph carries no shape metadata, so its receivers' run-time types are unknown and
+    the program is impure by default (its view the host op of ``Tensor.view``); declared pure, the view keeps the
+    per-sample fallback this test pins."""
     g = fx.Graph()
     x = g.placeholder("x")
     s = g.call_method("size", (x, 0))
@@ -67,12 +71,13 @@ def test_view_with_dynamic_dim_literal_falls_back_to_source():
     g.output(v)
     gm = fx.GraphModule(nn.Module(), g)
 
-    converter = MapperGraphConverter(gm, (4,))
+    converter = MapperGraphConverter(gm, (4,), purity=ProgramPurity())
     converter._handle_placeholder(x)
     converter._handle_call_method(s)
     converter._handle_call_method(v)
 
     assert converter._node_to_mapper[v] is converter._node_to_mapper[x]
+    assert program_purity(gm).impurity.node == "size"
 
 
 # ── output node that does not resolve to a mapper ──────────────────────
@@ -91,12 +96,15 @@ def test_output_resolving_to_non_node_raises_runtime_error():
 
 
 # ── string padding on perceptron-converted convolutions ────────────────
+# 'same' with an odd kernel is symmetric zero padding (converted exactly); an
+# even kernel needs asymmetric padding, which the perceptron conv gather cannot
+# express, so representability refuses it by name.
 
 
 class _Conv2dSamePadReLU(nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size=3):
         super().__init__()
-        self.conv = nn.Conv2d(1, 4, kernel_size=3, padding="same")
+        self.conv = nn.Conv2d(1, 4, kernel_size=kernel_size, padding="same")
         self.relu = nn.ReLU()
         self.fc = nn.Linear(4 * 8 * 8, 4)
 
@@ -107,9 +115,9 @@ class _Conv2dSamePadReLU(nn.Module):
 
 
 class _Conv1dSamePadReLU(nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size=3):
         super().__init__()
-        self.conv = nn.Conv1d(2, 4, kernel_size=3, padding="same")
+        self.conv = nn.Conv1d(2, 4, kernel_size=kernel_size, padding="same")
         self.relu = nn.ReLU()
         self.fc = nn.Linear(4 * 16, 4)
 
@@ -131,14 +139,23 @@ class _Conv2dSamePadNoAct(nn.Module):
         return self.fc(x)
 
 
-def test_conv2d_string_padding_with_activation_raises_not_implemented():
-    with pytest.raises(NotImplementedError, match="padding"):
-        convert_torch_model(_Conv2dSamePadReLU().eval(), (1, 8, 8), 4)
+def test_conv2d_asymmetric_string_padding_with_activation_is_refused():
+    with pytest.raises(RepresentabilityError, match="padding 'same'"):
+        convert_torch_model(_Conv2dSamePadReLU(kernel_size=4).eval(), (1, 8, 8), 4)
 
 
-def test_conv1d_string_padding_with_activation_raises_not_implemented():
-    with pytest.raises(NotImplementedError, match="padding"):
-        convert_torch_model(_Conv1dSamePadReLU().eval(), (2, 16), 4)
+def test_conv1d_asymmetric_string_padding_with_activation_is_refused():
+    with pytest.raises(RepresentabilityError, match="padding 'same'"):
+        convert_torch_model(_Conv1dSamePadReLU(kernel_size=4).eval(), (2, 16), 4)
+
+
+@pytest.mark.parametrize("model,shape", [(_Conv2dSamePadReLU, (1, 8, 8)), (_Conv1dSamePadReLU, (2, 16))])
+def test_symmetric_string_padding_with_activation_converts_exactly(model, shape):
+    native = model().double().eval()
+    flow = convert_torch_model(native, shape, 4)
+    x = torch.randn(3, *shape, dtype=torch.float64)
+    with torch.no_grad():
+        assert float((flow(x) - native(x)).abs().max()) <= 1e-12
 
 
 def test_conv2d_string_padding_without_activation_still_converts():
@@ -151,7 +168,7 @@ def test_conv2d_string_padding_without_activation_still_converts():
     assert torch.allclose(expected, actual, atol=1e-5)
 
 
-# ── _copy_bn_params ────────────────────────────────────────────────────
+# ── copy_batchnorm_state ────────────────────────────────────────────────────
 
 
 def _filled_bn(bn_cls, n):
@@ -168,7 +185,7 @@ def _filled_bn(bn_cls, n):
 def test_copy_bn_params_copies_affine_and_running_stats():
     src = _filled_bn(nn.BatchNorm2d, 4)
     dst = nn.BatchNorm1d(4)
-    ConvConvertMixin._copy_bn_params(dst, src)
+    copy_batchnorm_state(dst, src)
     assert torch.equal(dst.weight, src.weight)
     assert torch.equal(dst.bias, src.bias)
     assert torch.equal(dst.running_mean, src.running_mean)
@@ -178,4 +195,4 @@ def test_copy_bn_params_copies_affine_and_running_stats():
 
 def test_copy_bn_params_ignores_identity_destination():
     src = _filled_bn(nn.BatchNorm1d, 4)
-    ConvConvertMixin._copy_bn_params(nn.Identity(), src)
+    copy_batchnorm_state(nn.Identity(), src)

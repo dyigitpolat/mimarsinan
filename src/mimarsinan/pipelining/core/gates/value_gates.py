@@ -23,6 +23,7 @@ from mimarsinan.pipelining.core.simulation_factory import (
     run_hcm_spiking_test,
 )
 from mimarsinan.pipelining.core.spike_count_gate import _certificate_samples
+from mimarsinan.torch_mapping.value_parity.value_program import fp64_identity_program
 
 
 def value_certificate_gate_armed(pipeline) -> bool:
@@ -70,11 +71,6 @@ def _assert_aq_grid_parity(got, want, max_abs_delta, lsb, n_samples) -> None:
     )
 
 
-def _fp64_identity_flow(pipeline, ir_graph) -> ValueHybridCoreFlow:
-    identity = build_identity_hybrid_mapping(ir_graph=ir_graph)
-    return ValueHybridCoreFlow(identity, device="cpu", dtype=torch.float64)
-
-
 def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     """[mvm R-edge, FATAL] model forward ≡ identity value program (fp64).
 
@@ -95,7 +91,7 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     atol = VALUE_R_EDGE_WQ_ATOL if quantized else VALUE_TWIN_FP64_ATOL
     samples = samples.detach().to("cpu", torch.float64)
     reference = copy.deepcopy(model).to("cpu").double().eval()
-    identity_flow = _fp64_identity_flow(pipeline, ir_graph)
+    identity_flow = fp64_identity_program(ir_graph)
     with torch.no_grad():
         want = reference(samples)
         got = identity_flow(samples)
@@ -139,7 +135,7 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
         print("[ValueTwinCertificate] SKIP (no validation batch available)")
         return None
     samples = samples.detach().to("cpu", torch.float64)
-    reference_flow = _fp64_identity_flow(pipeline, ir_graph)
+    reference_flow = fp64_identity_program(ir_graph)
     backend_flow = ValueHybridCoreFlow(
         hybrid_mapping, device="cpu", dtype=torch.float64
     )

@@ -68,15 +68,18 @@ class TestCertificate:
         assert cert.passed
 
     def test_mismatch_fails_with_measured_delta(self):
-        base = torch.randn(2, 3, dtype=torch.float64)
+        # Seeded base and a dyadic step: b + 2**-10 - b is exactly 2**-10 here, whatever ran before.
+        base = torch.randn(2, 3, dtype=torch.float64, generator=torch.Generator().manual_seed(0))
+        step = 2.0 ** -10
         got = base.clone()
-        got[0, 0] += 1e-3
+        got[0, 0] += step
+        assert float(got[0, 0] - base[0, 0]) == step
         cert, _ = certify_twin_flow_values(
             _FakeFlow(_payloads(n1=base)), _FakeFlow(_payloads(n1=got)),
             torch.zeros(2, 1),
         )
         assert not cert.passed
-        assert cert.max_abs_delta >= 1e-3
+        assert cert.max_abs_delta == step
         assert cert.within_atol_fraction < 1.0
 
     def test_node_set_mismatch_fails(self):

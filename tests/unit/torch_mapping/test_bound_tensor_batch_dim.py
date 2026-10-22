@@ -40,7 +40,7 @@ class TestPartitionFxArgsStripsLeadingSingleton:
             n for n in gm.graph.nodes
             if n.op == "call_function" and n.target is operator.add
         )
-        _, bound, _, _ = converter._partition_fx_args(add_node)
+        bound = converter._partition_fx_args(add_node).bound
         assert len(bound) == 1
         assert bound[0].shape == (6, 4), (
             f"bound pos param must be batch-stripped to (N, D); got {tuple(bound[0].shape)}"
@@ -83,7 +83,7 @@ class TestPlainParamUnchanged:
             n for n in gm.graph.nodes
             if n.op == "call_function" and n.target is operator.add
         )
-        _, bound, _, _ = converter._partition_fx_args(add_node)
+        bound = converter._partition_fx_args(add_node).bound
         assert len(bound) == 1
         assert bound[0].shape == (4,), (
             f"1-D param must not be modified; got {tuple(bound[0].shape)}"

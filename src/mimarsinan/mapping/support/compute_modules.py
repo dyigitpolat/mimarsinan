@@ -2,25 +2,124 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import torch
 import torch.fx as fx
 import torch.nn as nn
 
+from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.support.call_template import (
+    ArgTemplate,
+    CallPartition,
+    SourceArg,
+    partition_call,
+)
 from mimarsinan.mapping.support.scale_broadcast import broadcast_scale_to_dim
 
 
 def _cat_along(x: torch.Tensor, prefix: torch.Tensor, *, dim: int) -> torch.Tensor:
-    return torch.cat([prefix, x], dim=dim)
+    """Concatenate a batch-stripped ``prefix`` before ``x``, replicated per sample (cat never broadcasts)."""
+    batched = prefix.unsqueeze(0).expand(x.shape[0], *prefix.shape)
+    return torch.cat([batched, x], dim=dim)
+
+
+def cat_per_sample(tensors: Sequence[torch.Tensor], *, dim: int) -> torch.Tensor:
+    """``torch.cat`` of batched activations and batch-stripped bound tensors (one rank lower, replicated per sample)."""
+    rank = max(t.dim() for t in tensors)
+    batch = next(t.shape[0] for t in tensors if t.dim() == rank)
+    return torch.cat([t.unsqueeze(0).expand(batch, *t.shape) if t.dim() < rank else t for t in tensors], dim=dim)
+
+
+class HostOpWriteError(ToolchainRefusal, RuntimeError):
+    """A host op of a call outside the declared operator set wrote in place an input that another node of the program
+    reads (review round 15, ``operand_writes``): the converted model computes every value once, at its own node, so
+    the other reader would see the value at another moment than natively; the converted forward refuses the input."""
+
+    def __init__(self, operator: str, node_name: str, index: int):
+        self.operator, self.node_name, self.index = operator, node_name, index
+        super().__init__(f"{operator} (FX node {node_name!r}): it wrote its input {index} in place at run time, and "
+                         "another node of the program reads that input; the conversion computes every value once, at "
+                         "its own node, so the converted model refuses this input")
+
+
+class HostOpAliasError(ToolchainRefusal, RuntimeError):
+    """A host op of a call torch's schema lets share its operand's storage, which the traced program's run showed
+    copying and on which the rule of a write relies (review round 16, ``operand_writes.COPY_GUARD``), met at run time
+    an operand of another layout than the run's, or returned a value sharing its operand's storage: the conversion took
+    the call as a copy, so the converted forward refuses the input."""
+
+    def __init__(self, operator: str, node_name: str, reason: str):
+        self.operator, self.node_name, self.reason = operator, node_name, reason
+        super().__init__(f"{operator} (FX node {node_name!r}): {reason}; the conversion takes this call as a copy, as "
+                         "the traced program's run at batch 1 showed it, so the converted model refuses this input")
+
+
+_IS_ALIAS_OF = getattr(torch._C, "_is_alias_of")
+
+
+def checked_copy(out: Any, inputs: Sequence[Any], guard: tuple, node_name: str) -> None:
+    """``out`` of a host op guarded as a copy (``guard``: the operand's input index, its strides in the traced
+    program's run at batch 1, the operator): its operand has those strides on every axis of extent above 1, and
+    ``out`` shares no storage with it; else ``HostOpAliasError``."""
+    index, strides, operator = guard
+    operand = inputs[index]
+    if not isinstance(out, torch.Tensor) or not isinstance(operand, torch.Tensor):
+        return
+    found = tuple(operand.stride())
+    if len(found) != len(strides) or any(a != b for a, b, n in zip(found, strides, operand.shape) if n != 1):
+        raise HostOpAliasError(operator, node_name, f"its input {index} has the strides {found} at run time, and the "
+                                                    f"traced program's run at batch 1 showed {tuple(strides)}")
+    if out is operand or bool(_IS_ALIAS_OF(out, operand)):
+        raise HostOpAliasError(operator, node_name, f"it returned a value sharing the storage of its input {index}")
+
+
+def write_counter(tensor: torch.Tensor) -> Any:
+    """What a write in place of ``tensor`` changes: its version counter, or, for an inference tensor (created under
+    ``torch.inference_mode()``, which keeps no version counter), its bytes (review round 16: reading ``_version`` of an
+    inference tensor raised)."""
+    if not tensor.is_inference():
+        return tensor._version
+    flat = tensor.detach().reshape(-1).contiguous()
+    return bytes(flat.view(torch.uint8).cpu().numpy()) if flat.numel() else b""
+
+
+def _state(value: Any) -> Any:
+    return (write_counter(value), tuple(value.shape), tuple(value.stride())) if isinstance(value, torch.Tensor) else None
+
+
+def unwritten_call(call: Callable[[Sequence[Any]], Any], inputs: Sequence[Any], kept: Sequence[int], operator: str,
+                   node_name: str) -> Any:
+    """``call(inputs)`` on the inputs themselves, refused by name (``HostOpWriteError``) when it wrote one of the
+    ``kept`` inputs in place. [changed in review round 16, targeted pass: an input every other reader reads before the
+    call was given as a copy, ``Tensor.clone``, which keeps the values and not the layout; the call now runs after
+    those readers, ``Mapper.run_after``]"""
+    before = [_state(inputs[i]) for i in kept]
+    out = call(inputs)
+    changed = [i for i, state in zip(kept, before) if _state(inputs[i]) != state]
+    if changed:
+        raise HostOpWriteError(operator, node_name, changed[0])
+    return out
+
+
+def read_after(value: Any, *calls: Any) -> Any:
+    """``value`` itself, read after ``calls`` ran (review round 16, targeted pass): the host op through which every
+    reader of an operand after a call whose write the traced run observed reads it (``operand_writes``), so the
+    converted model runs it after the call, on the written operand, as natively."""
+    return value
 
 
 class ComputeAdapter(nn.Module):
     """Generic host-side ComputeOp payload wrapping a picklable callable.
 
-    Bound tensors are stored batch-stripped; ``forward`` expands them to the
-    input batch size, so IR-time shape inference always probes at batch=1.
+    Bound tensors are stored batch-stripped and broadcast against the inputs by
+    trailing alignment. ``arg_template`` keeps the traced argument order; without
+    one the call is ``fn(*inputs, *bound, *extra_args, **kwargs)``.
     """
+
+    # Class-level default: an adapter in the canonical layout stores no template,
+    # so its pickled state is the state adapters had before templates existed.
+    arg_template: ArgTemplate | None = None
 
     def __init__(
         self,
@@ -29,6 +128,7 @@ class ComputeAdapter(nn.Module):
         bound_tensors: Sequence[torch.Tensor] = (),
         extra_args: Sequence[Any] = (),
         kwargs: Mapping[str, Any] | None = None,
+        arg_template: ArgTemplate | None = None,
     ) -> None:
         super().__init__()
         self.fn = fn
@@ -40,6 +140,24 @@ class ComputeAdapter(nn.Module):
                 f"bound_{i}",
                 nn.Parameter(tensor.detach().clone(), requires_grad=False),
             )
+        if arg_template is not None:
+            self.arg_template = arg_template
+
+    @classmethod
+    def from_partition(
+        cls, fn, partition: CallPartition, *, restore_native_shapes: bool = False,
+    ) -> "ComputeAdapter":
+        """The adapter evaluating ``partition`` in its traced order (native bound shapes on request)."""
+        template = partition.template
+        if restore_native_shapes and partition.strips_bound_shapes:
+            template = partition.explicit_template(restore_native_shapes=True)
+        return cls(
+            fn,
+            bound_tensors=partition.bound,
+            extra_args=partition.literals,
+            kwargs=partition.literal_kwargs,
+            arg_template=template,
+        )
 
     @property
     def display_name(self) -> str:
@@ -64,21 +182,25 @@ class ComputeAdapter(nn.Module):
                     return found
         return None
 
+    def _bound_values(self, inputs) -> list[torch.Tensor]:
+        bound = self._bound_tensors()
+        if self._leading_tensor(inputs) is None:
+            # No input to broadcast against: the batch axis is a single sample.
+            return [t.unsqueeze(0) for t in bound]
+        return bound
+
     def forward(self, *inputs) -> torch.Tensor:
-        lead = self._leading_tensor(inputs)
-        batch_size = lead.shape[0] if lead is not None else 1
-        expanded_bound = [
-            t.unsqueeze(0).expand(batch_size, *t.shape) for t in self._bound_tensors()
-        ]
-        return self.fn(
-            *inputs, *expanded_bound, *self.extra_args, **self.kwargs,
-        )
+        bound = self._bound_values(inputs)
+        if self.arg_template is None:
+            return self.fn(*inputs, *bound, *self.extra_args, **self.kwargs)
+        args, slot_kwargs = self.arg_template.resolve(inputs, bound, self.extra_args)
+        return self.fn(*args, **self.kwargs, **slot_kwargs)
 
     @classmethod
-    def from_fx_node(cls, node, fn) -> "ComputeAdapter":
-        extra_args = tuple(a for a in node.args[1:] if not isinstance(a, fx.Node))
-        kwargs = {k: v for k, v in node.kwargs.items() if not isinstance(v, fx.Node)}
-        return cls(fn, extra_args=extra_args, kwargs=kwargs)
+    def from_fx_node(cls, node: fx.Node, fn) -> "ComputeAdapter":
+        """Every FX-node argument becomes an input, in traced order."""
+        partition = partition_call(fn, node.args, node.kwargs, SourceArg)
+        return cls.from_partition(fn, partition)
 
 
 class ScaleNormalizingWrapper(nn.Module):

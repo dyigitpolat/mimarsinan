@@ -22,12 +22,15 @@ from mimarsinan.mapping.mappers.scale_propagation import (
 from mimarsinan.mapping.support.compute_modules import (
     ComputeAdapter,
     ScaleNormalizingWrapper,
+    checked_copy,
+    unwritten_call,
 )
 from mimarsinan.mapping.support.shape_probe import probe_module_io_shapes
 
 
 class ShapeMismatchError(RuntimeError):
     """Multi-input ComputeOpMapper received broadcast-incompatible inputs."""
+
 
 class ComputeOpMapper(Mapper):
     """Unified host-side ComputeOp mapper for any nn.Module; branches on source count and ndim.
@@ -39,6 +42,19 @@ class ComputeOpMapper(Mapper):
     # resolve them on unpickle (instance assignment shadows).
     is_wire_value_op: bool = False
     output_value_offset: torch.Tensor | None = None
+    # Multi-source inputs of an elementwise op must broadcast; a module call's operands need not.
+    elementwise_inputs: bool = True
+    # Set by the converter: a traced value not carrying the batch on axis 0 alone (``HostValueBatchLayoutError``),
+    # and the operator a refusal names wherever one can arise (that violation, or a value that is not a tensor).
+    batch_layout_violation: str | None = None
+    host_operator: str | None = None
+    # Set by the converter for a call outside the declared operator set (named ``kept_operator``): the inputs another
+    # node reads after it, which the call must not write in place at run time (``HostOpWriteError``, review round 15).
+    kept_inputs: tuple = ()
+    kept_operator: str | None = None
+    # Set by the converter for a call the rule of a write takes as a copy (``operand_writes.COPY_GUARD``, review round
+    # 16): ``(input index, its strides in the traced run, operator)``, checked at run time (``HostOpAliasError``).
+    copy_guard: tuple | None = None
 
     def __init__(
         self,
@@ -51,6 +67,7 @@ class ComputeOpMapper(Mapper):
         module_kwargs: dict | None = None,
         output_index: int | None = None,
         name: str | None = None,
+        elementwise_inputs: bool = True,
     ) -> None:
         super().__init__()
         if isinstance(sources, Mapper):
@@ -67,6 +84,8 @@ class ComputeOpMapper(Mapper):
         self.module_kwargs = dict(module_kwargs) if module_kwargs else {}
         self.output_index = output_index
         self.name = name
+        if not elementwise_inputs:
+            self.elementwise_inputs = False
 
         self.per_source_scales: list[torch.Tensor] | None = None
         self.output_scale: torch.Tensor | None = None
@@ -158,11 +177,16 @@ class ComputeOpMapper(Mapper):
         if len(self._sources_list) == 1:
             return (x,)
         inputs = tuple(x) if isinstance(x, (tuple, list)) else (x,)
-        self._check_broadcastable(inputs)
+        if self.elementwise_inputs:
+            self._check_broadcastable(inputs)
         return inputs
 
     def _forward_with_module(self, module: nn.Module, x):
-        out = module(*self._prepare_inputs(x), **self.module_kwargs)
+        inputs = self._prepare_inputs(x)
+        out = unwritten_call(lambda given: module(*given, **self.module_kwargs), inputs, self.kept_inputs,
+                             self.kept_operator or type(module).__name__, str(self.name))
+        if self.copy_guard is not None:
+            checked_copy(out, inputs, self.copy_guard, str(self.name))
         if self.output_index is not None:
             out = out[self.output_index]
         return out
@@ -310,7 +334,7 @@ class ComputeOpMapper(Mapper):
             self.module,
             input_shape,
             module_kwargs=self.module_kwargs or None,
-            output_index=self.output_index,
+            output_index=self.output_index, owner=self.name, operator=self.host_operator,
         )
         return input_shape, probed.output_shape
 
@@ -337,7 +361,7 @@ class ComputeOpMapper(Mapper):
             self.module,
             input_shapes,
             module_kwargs=self.module_kwargs or None,
-            output_index=self.output_index,
+            output_index=self.output_index, owner=self.name, operator=self.host_operator,
         )
         return probed.output_shape
 

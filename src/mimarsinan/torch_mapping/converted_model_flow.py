@@ -2,16 +2,34 @@
 
 from __future__ import annotations
 
+from types import MappingProxyType
+from typing import Mapping, Optional, Tuple
+
 import torch
 import torch.nn as nn
 
 from mimarsinan.models.nn.adaptive_chunks import forward_adaptive_chunks
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
 from mimarsinan.mapping.mapping_utils import ModelRepresentation
+from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import Impurity
+from mimarsinan.torch_mapping.value_parity.certificate import ConversionCertificate, certificate_problem
 
 
 class ConvertedModelFlow(PerceptronFlow):
     """PerceptronFlow wrapping a Mapper DAG converted from a native PyTorch model."""
+
+    # Stamped by convert_torch_model at flow birth; flows pickled before the stamp existed read None.
+    conversion_certificate: ConversionCertificate | None = None
+    # The shape values folded into conversion-time literals (FX node -> operator, literal), set at conversion.
+    shape_literals: Mapping[str, Tuple[str, str]] = MappingProxyType({})
+    # What those literals are proved by (``ShapeValueMixin.shape_proof``), set at conversion; None before.
+    shape_proof: Optional[str] = None
+    # The first node that makes the traced program impure (``symbolic/purity.py``), set at conversion; None for a pure
+    # program (and before the field): stage 2 refuses an impure program's value program by name.
+    shape_impurity: Optional[Impurity] = None
+    # The first opaque batch value of a pure program (FX node, operator, why; review round 14), set at conversion; None
+    # when every batch-dependent value is in the affine batch domain: stage 2 refuses the value program by name.
+    shape_opaque: Optional[Tuple[str, str, str]] = None
 
     def __init__(self, device, mapper_repr: ModelRepresentation):
         super().__init__(device)
@@ -39,6 +57,10 @@ class ConvertedModelFlow(PerceptronFlow):
                 self.add_module(f"graph_node_{idx}", node)
                 registered_ids.add(id(node))
                 idx += 1
+
+    def conversion_certificate_problem(self) -> str | None:
+        """Why this flow may not be used as a certified conversion (``None``: current and certified)."""
+        return certificate_problem(self.conversion_certificate)
 
     def get_perceptrons(self):
         return self._mapper_repr.get_perceptrons()

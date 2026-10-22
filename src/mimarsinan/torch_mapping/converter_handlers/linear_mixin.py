@@ -12,24 +12,17 @@ import torch.fx as fx
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper, Ensure2DMapper, PerceptronMapper
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron, as_affine_package
 from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
+from mimarsinan.torch_mapping.representability_analyzer import (
+    ABSORBABLE_ACTIVATIONS,
+    absorbed_activation_name,
+    lowers_to_perceptron,
+)
 
 if TYPE_CHECKING:
     from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
 
 
 class LinearConvertMixin(ConverterContract):
-    @staticmethod
-    def _activation_to_name(act_mod) -> str | None:
-        if act_mod is None:
-            return None
-        if isinstance(act_mod, nn.ReLU):
-            return "ReLU"
-        if isinstance(act_mod, nn.LeakyReLU):
-            return "LeakyReLU"
-        if isinstance(act_mod, nn.GELU):
-            return "GELU"
-        return None
-
     def _convert_linear(
         self,
         node: fx.Node,
@@ -39,13 +32,13 @@ class LinearConvertMixin(ConverterContract):
     ) -> None:
         bn_mod = self._find_absorbed_follower(node, (nn.BatchNorm1d,), report)
         act_mod = self._find_absorbed_follower(
-            node, (nn.ReLU, nn.LeakyReLU, nn.GELU), report, skip_bn=True
+            node, ABSORBABLE_ACTIVATIONS, report, skip_bn=True
         )
-        act_name = self._activation_to_name(act_mod)
+        act_name = absorbed_activation_name(act_mod)
 
         source = Ensure2DMapper(source)
 
-        if act_name is None and self._packaging.require_activation:
+        if not lowers_to_perceptron(act_name is not None, self._packaging):
             linear = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
@@ -58,7 +51,7 @@ class LinearConvertMixin(ConverterContract):
                 name=node.name,
             )
         else:
-            normalization = copy.deepcopy(bn_mod) if bn_mod is not None else nn.Identity()
+            normalization = self._perceptron_normalization(bn_mod) if bn_mod is not None else nn.Identity()
             perceptron = Perceptron(
                 output_channels=mod.out_features,
                 input_features=mod.in_features,
@@ -75,8 +68,6 @@ class LinearConvertMixin(ConverterContract):
                 perceptron.layer.weight.copy_(mod.weight.data)
                 if mod.bias is not None:
                     perceptron.layer.bias.copy_(mod.bias.data)
-                if bn_mod is not None and not isinstance(normalization, nn.Identity):
-                    self._copy_bn_params(normalization, bn_mod)
             mapper = PerceptronMapper(source, perceptron)
 
         self._node_to_mapper[node] = mapper

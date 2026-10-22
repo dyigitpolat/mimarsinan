@@ -115,18 +115,41 @@ class StackMapper(Mapper):
 
 
 class ConcatMapper(Mapper):
-    def __init__(self, source_mappers, dim: int = 1, name: str = "Concat"):
+    """``torch.cat`` of activations along ``dim`` of a ``rank``-dimensional batched tensor.
+
+    An IR source array holds one sample, its trailing axes the sample's axes (a vector of F features is (1, F)
+    or (F,)), so the IR concatenates along ``dim`` counted from the end, after giving every operand the same rank
+    with leading unit axes (which keeps each operand's source order).
+    """
+
+    # Pickles from before ``rank`` concatenate along IR axis 0 (the leading per-sample axis) for every ``dim``.
+    rank: int | None = None
+
+    def __init__(self, source_mappers, dim: int = 1, name: str = "Concat", rank: int | None = None):
         super().__init__()
         self._source_mappers_list = list(source_mappers)
         self.dim = dim
         self._name = name
+        if rank is not None:
+            self.rank = int(rank)
 
     def get_source_mappers(self):
         return [m for m in self._source_mappers_list if m is not None]
 
+    def ir_axis(self) -> int:
+        """The IR axis of ``dim``: counted from the end, or 0 for a pickle without ``rank`` (whatever ``dim``)."""
+        if self.rank is None:
+            return 0
+        return self.dim if self.dim < 0 else self.dim - self.rank
+
     def _map_to_ir(self, ir_mapping):
         layer_sources_list = [mapper.map_to_ir(ir_mapping) for mapper in self.get_source_mappers()]
-        return np.concatenate(layer_sources_list, axis=0)
+        axis = self.ir_axis()
+        if axis >= 0:
+            return np.concatenate(layer_sources_list, axis=axis)
+        rank = max(arr.ndim for arr in layer_sources_list)
+        aligned = [arr.reshape((1,) * (rank - arr.ndim) + arr.shape) for arr in layer_sources_list]
+        return np.concatenate(aligned, axis=axis)
 
     def _forward_impl(self, x):
         return torch.cat(tuple(x), dim=self.dim)

@@ -9,41 +9,51 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper, Conv2DPerceptronMapper
 from mimarsinan.models.perceptron_mixer.perceptron import as_affine_package
 from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
+from mimarsinan.mapping.mappers.conv_helpers import perceptron_conv_padding
+from mimarsinan.torch_mapping.representability_analyzer import (
+    ABSORBABLE_ACTIVATIONS,
+    absorbed_activation_name,
+    lowers_to_perceptron,
+)
+from mimarsinan.torch_mapping.fx_shape_utils import strip_batch
 
 if TYPE_CHECKING:
     from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
 
 
-_BN_TYPES = (nn.BatchNorm1d, nn.BatchNorm2d)
+class UnsupportedConvPaddingError(ToolchainRefusal, NotImplementedError):
+    """A conv bound for a perceptron mapper whose padding the patch gather cannot express."""
+
+    def __init__(self, node: fx.Node, mod: nn.Conv1d | nn.Conv2d, reason: str):
+        self.node_name = node.name
+        self.operator = type(mod).__name__
+        self.padding_mode = str(mod.padding_mode)
+        super().__init__(
+            f"{self.operator} (FX node {node.name!r}): {reason}; the perceptron conv "
+            "mapping implements numeric zero padding only"
+        )
 
 
 class ConvConvertMixin(ConverterContract):
     @staticmethod
-    def _require_int_padding(
-        node: fx.Node, padding: str | tuple[int, ...],
+    def _require_zero_padding(
+        node: fx.Node, mod: nn.Conv1d | nn.Conv2d,
     ) -> tuple[int, ...]:
-        """Perceptron conv mappers need numeric padding; reject 'same'/'valid' explicitly."""
-        if isinstance(padding, str):
-            raise NotImplementedError(
-                f"String padding {padding!r} is not supported for perceptron conv "
-                f"conversion (node {node.name})"
-            )
+        """Numeric zero padding of a conv bound for a perceptron mapper (representability refused the rest)."""
+        padding, reason = perceptron_conv_padding(mod)
+        if padding is None:
+            raise UnsupportedConvPaddingError(node, mod, str(reason))
         return padding
 
-    @staticmethod
-    def _conv_activation_to_name(act_mod) -> str | None:
-        if act_mod is None:
-            return None
-        if isinstance(act_mod, nn.ReLU):
-            return "ReLU"
-        if isinstance(act_mod, nn.LeakyReLU):
-            return "LeakyReLU"
-        if isinstance(act_mod, nn.GELU):
-            return "GELU"
-        return None
+    def _host_conv_shapes(
+        self, node: fx.Node,
+    ) -> tuple[tuple[int, ...] | None, tuple[int, ...] | None]:
+        """Batch-stripped FX shapes: a host conv op runs on the whole (C, *spatial) grid, never per column."""
+        return strip_batch(self._get_input_shape(node)), strip_batch(self._get_output_shape(node))
 
     def _convert_conv2d(
         self,
@@ -54,21 +64,18 @@ class ConvConvertMixin(ConverterContract):
     ) -> None:
         bn_mod = self._find_absorbed_follower(node, (nn.BatchNorm2d,), report)
         act_mod = self._find_absorbed_follower(
-            node, (nn.ReLU, nn.LeakyReLU, nn.GELU), report, skip_bn=True
+            node, ABSORBABLE_ACTIVATIONS, report, skip_bn=True
         )
-        act_name = self._conv_activation_to_name(act_mod)
+        act_name = absorbed_activation_name(act_mod)
 
-        if act_name is None and self._packaging.require_activation:
+        if not lowers_to_perceptron(act_name is not None, self._packaging):
             conv_copy = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
                 module = nn.Sequential(conv_copy, bn_copy)
             else:
                 module = conv_copy
-            out_shape_with_batch = self._get_output_shape(node)
-            output_shape = tuple(out_shape_with_batch[1:]) if out_shape_with_batch else None
-            input_shape_with_batch = self._get_input_shape(node)
-            input_shape = tuple(input_shape_with_batch[1:]) if input_shape_with_batch else None
+            input_shape, output_shape = self._host_conv_shapes(node)
             mapper = ComputeOpMapper(
                 source, module, input_shape=input_shape,
                 output_shape=output_shape, name=node.name,
@@ -80,7 +87,7 @@ class ConvConvertMixin(ConverterContract):
                 out_channels=mod.out_channels,
                 kernel_size=mod.kernel_size,
                 stride=mod.stride,
-                padding=self._require_int_padding(node, mod.padding),
+                padding=self._require_zero_padding(node, mod),
                 dilation=mod.dilation,
                 bias=mod.bias is not None,
                 use_batchnorm=bn_mod is not None,
@@ -97,9 +104,7 @@ class ConvConvertMixin(ConverterContract):
                 if mod.bias is not None:
                     conv_mapper.perceptron.layer.bias.copy_(mod.bias.data)
                 if bn_mod is not None:
-                    concrete_bn = nn.BatchNorm1d(mod.out_channels)
-                    self._copy_bn_params(concrete_bn, bn_mod)
-                    conv_mapper.perceptron.normalization = concrete_bn
+                    conv_mapper.perceptron.normalization = self._perceptron_normalization(bn_mod)
             mapper = conv_mapper
 
         self._node_to_mapper[node] = mapper
@@ -115,18 +120,22 @@ class ConvConvertMixin(ConverterContract):
 
         bn_mod = self._find_absorbed_follower(node, (nn.BatchNorm1d,), report)
         act_mod = self._find_absorbed_follower(
-            node, (nn.ReLU, nn.LeakyReLU, nn.GELU), report, skip_bn=True
+            node, ABSORBABLE_ACTIVATIONS, report, skip_bn=True
         )
-        act_name = self._conv_activation_to_name(act_mod)
+        act_name = absorbed_activation_name(act_mod)
 
-        if act_name is None and self._packaging.require_activation:
+        if not lowers_to_perceptron(act_name is not None, self._packaging):
             conv_copy = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
                 module = nn.Sequential(conv_copy, bn_copy)
             else:
                 module = conv_copy
-            mapper = ComputeOpMapper(source, module, name=node.name)
+            input_shape, output_shape = self._host_conv_shapes(node)
+            mapper = ComputeOpMapper(
+                source, module, input_shape=input_shape,
+                output_shape=output_shape, name=node.name,
+            )
         else:
             conv_mapper = Conv1DPerceptronMapper(
                 source,
@@ -134,7 +143,7 @@ class ConvConvertMixin(ConverterContract):
                 out_channels=mod.out_channels,
                 kernel_size=mod.kernel_size[0],
                 stride=mod.stride[0],
-                padding=self._require_int_padding(node, mod.padding)[0],
+                padding=self._require_zero_padding(node, mod)[0],
                 dilation=mod.dilation[0],
                 bias=mod.bias is not None,
                 use_batchnorm=bn_mod is not None,
@@ -151,33 +160,7 @@ class ConvConvertMixin(ConverterContract):
                 if mod.bias is not None:
                     conv_mapper.perceptron.layer.bias.copy_(mod.bias.data)
                 if bn_mod is not None:
-                    concrete_bn = nn.BatchNorm1d(mod.out_channels)
-                    self._copy_bn_params(concrete_bn, bn_mod)
-                    conv_mapper.perceptron.normalization = concrete_bn
+                    conv_mapper.perceptron.normalization = self._perceptron_normalization(bn_mod)
             mapper = conv_mapper
 
         self._node_to_mapper[node] = mapper
-
-    @staticmethod
-    def _copy_bn_params(dst_bn: nn.Module, src_bn: nn.Module) -> None:
-        """Copy affine params and running stats between BatchNorms (possibly 2d src → 1d dst).
-
-        The destination follows the source's dtype first, so converting an
-        fp64 (or fp16) model never silently downcasts through a fresh fp32
-        module — dtype is the source model's property, not the converter's.
-        """
-        if not isinstance(dst_bn, _BN_TYPES) or not isinstance(src_bn, _BN_TYPES):
-            return
-        if src_bn.running_mean is not None:
-            dst_bn.to(src_bn.running_mean.dtype)
-
-        if src_bn.weight is not None and dst_bn.weight is not None:
-            dst_bn.weight.data.copy_(src_bn.weight.data)
-        if src_bn.bias is not None and dst_bn.bias is not None:
-            dst_bn.bias.data.copy_(src_bn.bias.data)
-        if src_bn.running_mean is not None and dst_bn.running_mean is not None:
-            dst_bn.running_mean.copy_(src_bn.running_mean)
-        if src_bn.running_var is not None and dst_bn.running_var is not None:
-            dst_bn.running_var.copy_(src_bn.running_var)
-        if src_bn.num_batches_tracked is not None and dst_bn.num_batches_tracked is not None:
-            dst_bn.num_batches_tracked.copy_(src_bn.num_batches_tracked)

@@ -1,10 +1,12 @@
-"""Shared FX shape-metadata extraction and literal-argument coercion helpers."""
+"""Shared FX shape-metadata extraction, literal-argument coercion and call-site state helpers."""
 
 from __future__ import annotations
 
-from typing import List, Optional, SupportsInt, Tuple, cast
+from typing import Dict, List, Optional, SupportsInt, Tuple, cast
 
+import torch
 import torch.fx as fx
+import torch.nn as nn
 
 
 def fx_literal_int(value: object) -> int:
@@ -50,3 +52,41 @@ def _meta_shape(node: fx.Node) -> Optional[Tuple[int, ...]]:
     if meta is None or not hasattr(meta, "shape"):
         return None
     return tuple(meta.shape)
+
+
+def node_state(node: fx.Node, gm: fx.GraphModule, modules: Dict[str, nn.Module]) -> List[torch.Tensor]:
+    """Parameters a call_module or get_attr node reads: the state whose per-site copy would untie a weight.
+
+    Buffers are constants at inference (a copy per site loses no tie), so they are not call-site state.
+    """
+    if node.op == "call_module":
+        mod = modules.get(node_target_str(node))
+        return [] if mod is None else list(mod.parameters())
+    if node.op == "get_attr":
+        obj: object = gm
+        for part in node_target_str(node).split("."):
+            obj = getattr(obj, part, None)
+        return [obj] if isinstance(obj, nn.Parameter) else []
+    return []
+
+
+def shared_state_sites(
+    gm: fx.GraphModule, modules: Dict[str, nn.Module],
+) -> List[Tuple[fx.Node, List[str]]]:
+    """``(first node, call sites)`` per target whose state another FX call site also reads, in graph order."""
+    nodes = list(gm.graph.nodes)
+    order = {node.name: i for i, node in enumerate(nodes)}
+    sites: Dict[int, List[str]] = {}
+    for node in nodes:
+        for tensor in node_state(node, gm, modules):
+            names = sites.setdefault(id(tensor), [])
+            if node.name not in names:
+                names.append(node.name)
+    shared: List[Tuple[fx.Node, List[str]]] = []
+    seen: set[str] = set()
+    for node in nodes:
+        reached = {n for t in node_state(node, gm, modules) if len(sites[id(t)]) > 1 for n in sites[id(t)]}
+        if reached and str(node.target) not in seen:
+            seen.add(str(node.target))
+            shared.append((node, sorted(reached, key=order.__getitem__)))
+    return shared

@@ -14,8 +14,21 @@ from mimarsinan.tuning.orchestration.install_resolution.capture import (
     capture_install_stats,
 )
 from mimarsinan.torch_mapping.converter import convert_torch_model
-from mimarsinan.torch_mapping.conversion_probe import ConversionProbeError
 import torch
+
+
+def convert_pipeline_model(native_model, config, packaging):
+    """The pipeline's conversion: it runs every probe stage the packaging requires (stage 2 for value targets)."""
+    return convert_torch_model(
+        native_model,
+        input_shape=tuple(config["input_shape"]),
+        num_classes=config["num_classes"],
+        device=config["device"],
+        Tq=config["target_tq"],
+        encoding_layer_placement=str(config.get("encoding_layer_placement", "subsume")),
+        packaging=packaging,
+        value_program_stage=packaging.is_value_domain,
+    )
 
 
 class TorchMappingStep(TrainerPipelineStep):
@@ -40,16 +53,9 @@ class TorchMappingStep(TrainerPipelineStep):
         native_model = self.get_entry("model")
 
         with phase_profiler(tag, "convert_torch_model"):
-            flow = convert_torch_model(
-                native_model,
-                input_shape=tuple(self.pipeline.config["input_shape"]),
-                num_classes=self.pipeline.config["num_classes"],
-                device=self.pipeline.config["device"],
-                Tq=self.pipeline.config["target_tq"],
-                encoding_layer_placement=str(
-                    self.pipeline.config.get("encoding_layer_placement", "subsume")
-                ),
-                packaging=packaging_contract_for(DeploymentPlan.of(self.pipeline)),
+            flow = convert_pipeline_model(
+                native_model, self.pipeline.config,
+                packaging_contract_for(DeploymentPlan.of(self.pipeline)),
             )
 
         adaptation_manager = create_adaptation_manager_for_model(
@@ -127,7 +133,8 @@ class TorchMappingStep(TrainerPipelineStep):
             with torch.no_grad():
                 converted_out = flow(dummy).detach().cpu()
         except Exception as exc:
-            raise ConversionProbeError(
+            # A crash, not a refusal: it stays a builtin type so a census never reads it as refused by name.
+            raise RuntimeError(
                 "[TorchMappingStep] Converted-flow forward failed during "
                 "equivalence check; the converted model is structurally broken."
             ) from exc

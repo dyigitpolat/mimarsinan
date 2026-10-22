@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch.nn as nn
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.platform.packaging_contract import (
     SPIKING_PACKAGING,
@@ -79,7 +80,7 @@ def encoder_deploys_as_staircase_hop(placement: str) -> bool:
     return placement == "subsume"
 
 
-class UnresolvedEncodingPlacementError(ValueError):
+class UnresolvedEncodingPlacementError(ToolchainRefusal, ValueError):
     """A flow reached a placement-sensitive consumer without a resolved placement.
 
     Either nothing ever applied ``encoding_layer_placement`` to it (the marking

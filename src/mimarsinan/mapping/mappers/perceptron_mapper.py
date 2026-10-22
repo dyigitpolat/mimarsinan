@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 import numpy as np
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.layout.layout_source_view_ops import stack_source_views
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
 from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
@@ -12,6 +15,28 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_per_source_scale,
 )
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+
+
+class PerceptronFanInError(ToolchainRefusal, ValueError):
+    """A Linear whose per-sample input neither flattens to its fan-in nor has it as an axis of a rank-2 input: the FC
+    mapping (``map_fc``) has no IR form for it (review round 13)."""
+
+    def __init__(self, node_name: str, shape: tuple, in_features: int):
+        self.node_name, self.shape, self.in_features = node_name, shape, in_features
+        super().__init__(
+            f"Linear (FX node {node_name!r}): its per-sample input of shape {shape} does not flatten to its fan-in "
+            f"{in_features}, and the FC mapping lowers a Linear over a rank-1 or rank-2 per-sample input only (a "
+            f"Linear on the last axis of a rank-{len(shape)} input has no IR form here), so the lowering is refused"
+        )
+
+
+def fan_in_refusal(sources: Any, in_features: int, name: Optional[str]) -> Optional[PerceptronFanInError]:
+    """The refusal of a Linear's input sources (its per-sample input transposed) that ``map_fc`` cannot lower: neither
+    of ``in_features`` entries nor of rank 2 with an axis of that size."""
+    shape = tuple(sources.shape)
+    if len(shape) == 2 and in_features in shape or len(shape) != 2 and int(np.prod(shape)) == in_features:
+        return None
+    return PerceptronFanInError(name or "", tuple(reversed(shape)), in_features)
 
 
 class PerceptronMapper(Mapper):
@@ -35,6 +60,9 @@ class PerceptronMapper(Mapper):
         normalization_type = type(normalization).__name__ if normalization is not None else None
         activation_type = resolve_activation_type(self.perceptron)
 
+        refusal = fan_in_refusal(layer_sources, int(layer_weights.shape[1]), getattr(self.perceptron, "name", None))
+        if refusal is not None:
+            raise refusal
         output_shape = np.array([layer_weights.shape[0], layer_sources.shape[-1]])
         layer_sources = ir_mapping.map_fc(
             layer_sources,

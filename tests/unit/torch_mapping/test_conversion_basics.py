@@ -4,6 +4,8 @@ Covers tracing, representability analysis, Mapper DAG conversion,
 and the public converter facade.
 """
 
+import copy
+
 import pytest
 import torch
 import torch.nn as nn
@@ -224,14 +226,19 @@ class TestConversion:
             out = supermodel(dummy)
         assert out.shape == (4, 10)
 
-    def test_convert_lstm_fails_loud_with_node_context(self):
-        """Unsupported models (LSTM sequence slicing) must fail the conversion
-        probe with a clean error naming the failing node — never mis-convert."""
-        from mimarsinan.torch_mapping.conversion_probe import ConversionProbeError
-
-        model = UnsupportedModel()
-        with pytest.raises(ConversionProbeError, match="getitem"):
-            convert_torch_model(model, input_shape=(16,), num_classes=10)
+    def test_an_lstm_over_an_unsqueezed_input_converts_exactly(self):
+        """Never mis-convert. [restated in review round 14: the LSTM read ``x.unsqueeze(1)`` carried as ``x``, a
+        sequence of length B, so ``out[:, -1, :]`` crashed in the probe's forward (an IndexError reaching the caller as
+        itself, review round 2). The host op reads its operand's native value now (``LayoutMixin._native_operands``):
+        the conversion is certified and equals the model at batches 1 to 13]"""
+        torch.manual_seed(0)
+        model = UnsupportedModel().double().eval()
+        flow = convert_torch_model(copy.deepcopy(model), input_shape=(16,), num_classes=10).eval()
+        assert flow.conversion_certificate.certified
+        for batch in range(1, 14):
+            x = torch.randn(batch, 16, dtype=torch.float64, generator=torch.Generator().manual_seed(batch))
+            with torch.no_grad():
+                assert torch.allclose(flow(x), model(x), rtol=0, atol=1e-12)
 
     def test_mapper_repr_exists(self):
         model = SimpleMLP(in_features=16, hidden=32, out_features=10)

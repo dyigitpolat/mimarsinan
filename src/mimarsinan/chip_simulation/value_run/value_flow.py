@@ -99,12 +99,19 @@ class ValueHybridCoreFlow(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self._execute(x, retain_state=False)[0]
+
+    def run_retaining_state(self, x: torch.Tensor):
+        """``(output, state buffer of every node, flat input)``: the forward without state-buffer pruning."""
+        return self._execute(x, retain_state=True)
+
+    def _execute(self, x: torch.Tensor, *, retain_state: bool):
         batch = x.shape[0]
         x_flat = x.reshape(batch, -1).to(self.execution_device, self.value_dtype)
         state_buffer: Dict[int, torch.Tensor] = {_RAW_INPUT_NODE_ID: x_flat}
         # [F1] refcounted state-buffer pruning (the spiking flows' discipline):
         # without it every node's activations live until the forward ends.
-        remaining = dict(_consumer_counts(self.hybrid_mapping))
+        remaining = {} if retain_state else dict(_consumer_counts(self.hybrid_mapping))
         # [wsm V3] forward-local scope: weight tensors live per residency
         # chain — a non-resident stage heads a new chain (freeing the previous
         # one) and resident passes alias the head's uploaded tensors.
@@ -158,7 +165,8 @@ class ValueHybridCoreFlow(nn.Module):
                   f"assemble={spent['assemble']:.1f}s neural={spent['neural']:.1f}s "
                   f"store={spent['store']:.1f}s compute={spent['compute']:.1f}s",
                   flush=True)
-        return gather_final_output_torch(
+        output = gather_final_output_torch(
             self.hybrid_mapping.output_sources, state_buffer, x_flat,
             batch, self.execution_device, self.value_dtype,
         )
+        return output, state_buffer, x_flat

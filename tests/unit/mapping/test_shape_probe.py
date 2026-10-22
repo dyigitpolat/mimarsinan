@@ -110,3 +110,20 @@ class TestDtypeFollowsModule:
     def test_parameterless_module_defaults_to_float32(self):
         out = probe_module_io_shapes(nn.MaxPool2d(kernel_size=2), (3, 8, 8))
         assert out.output_shape == (3, 4, 4)
+
+
+class TestNonTensorValue:
+    """A host op returning a non-tensor (a run-time shape value) has no IR form: refused by name, still a TypeError."""
+
+    class _Size(nn.Module):
+        def forward(self, x):
+            return x.size(0)
+
+    def test_a_non_tensor_value_is_refused_by_name(self):
+        from mimarsinan.common.refusal import is_toolchain_refusal
+        from mimarsinan.mapping.support.shape_probe import NonTensorHostValueError
+
+        with pytest.raises(NonTensorHostValueError, match="'size'.*returned int") as excinfo:
+            probe_module_io_shapes(self._Size(), (4,), owner="size")
+        assert isinstance(excinfo.value, TypeError) and is_toolchain_refusal(excinfo.value)
+        assert excinfo.value.owner == "size" and excinfo.value.value_type == "int"

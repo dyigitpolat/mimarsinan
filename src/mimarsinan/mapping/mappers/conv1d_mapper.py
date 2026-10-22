@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes, pad_source_grid
+from mimarsinan.mapping.mappers.base import Mapper
+from mimarsinan.mapping.mappers.conv_helpers import map_shared_weight_conv
 from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
 from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_boundary_scale,
     perceptron_per_source_scale,
 )
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.transformations.pruning.committed_masks import commit_layer_pruning
 
 
@@ -137,94 +135,8 @@ class Conv1DPerceptronMapper(Mapper):
 
     def _map_to_ir(self, ir_mapping):
         input_sources = self.require_source_mapper().map_to_ir(ir_mapping)
-        if len(input_sources.shape) != 2:
-            raise ValueError(
-                f"{self.name}: expects 2D input sources (C,L), got {input_sources.shape}"
-            )
-
-        c_in, l_in = input_sources.shape
-        if int(c_in) != self.in_channels:
-            raise ValueError(
-                f"{self.name}: expected in_channels={self.in_channels}, got {c_in}"
-            )
-
-        k = self.kernel_size
-        s = self.stride
-        p = self.padding
-        d = self.dilation
-        l_out = (l_in + 2 * p - d * (k - 1) - 1) // s + 1
-
-        if getattr(self.perceptron, "is_encoding_layer", False):
-            flat_in = np.array(input_sources, dtype=object).flatten()
-            out = ir_mapping.add_compute_op(
-                input_sources=flat_in,
-                op_type="module",
-                params={"module": self, "input_shape": (c_in, l_in)},
-                input_shape=(c_in, l_in),
-                output_shape=(self.out_channels, l_out),
-                name=self.name,
-            )
-            return out.reshape(self.out_channels, l_out)
-
-        if p > 0:
-            input_sources = pad_source_grid(input_sources, ((0, 0), (p, p)))
-
-        full_w = PerceptronTransformer().get_effective_weight(self.perceptron)
-        full_b = PerceptronTransformer().get_effective_bias(self.perceptron)
-        has_bias = full_b is not None
-        activation_type = resolve_activation_type(self.perceptron)
-
-        if self.max_neurons is None:
-            group_sizes = [self.out_channels]
-        else:
-            group_sizes = _chunk_sizes(self.out_channels, int(self.max_neurons))
-
-        bank_ids: list[int] = []
-        bank_channel_ranges: list[tuple[int, int]] = []
-        start_idx = 0
-        for g in group_sizes:
-            end_idx = start_idx + g
-            w_slice = full_w[start_idx:end_idx, :]
-            b_slice = full_b[start_idx:end_idx] if has_bias else None
-            bank_id = ir_mapping.register_weight_bank(
-                weights=w_slice,
-                biases=b_slice,
-                activation_scale=self.perceptron.activation_scale,
-                parameter_scale=self.perceptron.parameter_scale,
-                input_activation_scale=self.perceptron.input_activation_scale,
-                perceptron_index=getattr(self, "perceptron_index", None),
-                bias_scale=getattr(self.perceptron, "bias_scale", None),
-            )
-            bank_ids.append(bank_id)
-            bank_channel_ranges.append((start_idx, end_idx))
-            start_idx = end_idx
-
-        l_base = np.arange(l_out) * s
-        k_off = np.arange(k) * d
-        l_idx = l_base[:, None] + k_off[None, :]
-        c_idx = np.arange(self.in_channels)[:, None, None]
-        l_idx_b, c_idx_b = np.broadcast_arrays(l_idx[None, :, :], c_idx)
-        patches = input_sources[c_idx_b, l_idx_b]
-        patch_size = self.in_channels * k
-        patches_flat = patches.reshape(l_out, patch_size)
-
-        all_output_sources = []
-        for pos in range(l_out):
-            patch_sources = patches_flat[pos]
-            position_outputs = []
-            for g_idx, bank_id in enumerate(bank_ids):
-                core_outputs = ir_mapping.add_shared_neural_core(
-                    input_sources=patch_sources,
-                    weight_bank_id=bank_id,
-                    has_bias=has_bias,
-                    perceptron_output_slice=bank_channel_ranges[g_idx],
-                    perceptron_output_column=pos,
-                    name=f"{self.name}_pos{pos}_g{g_idx}",
-                    activation_type=activation_type,
-                    perceptron_index=getattr(self, "perceptron_index", None),
-                )
-                position_outputs.append(core_outputs)
-            all_output_sources.append(np.concatenate(position_outputs))
-
-        output_array = np.stack(all_output_sources, axis=0).T
-        return output_array.reshape(self.out_channels, l_out)
+        return map_shared_weight_conv(
+            self, ir_mapping, input_sources,
+            kernel_size=(self.kernel_size,), stride=(self.stride,),
+            padding=(self.padding,), dilation=(self.dilation,), layout="(C,L)",
+        )

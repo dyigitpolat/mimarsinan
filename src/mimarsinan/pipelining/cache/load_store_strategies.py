@@ -5,6 +5,7 @@ import logging
 import os
 import pickle
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.transformations.pruning.committed_masks import (
     commit_model_pruning,
     verify_model_pruning,
@@ -32,6 +33,33 @@ class CorruptCacheEntryError(RuntimeError):
         )
         self.entry_name = name
         self.directory = directory
+
+
+class UncertifiedCachedFlowError(ToolchainRefusal):
+    """A cached converted flow without a current conversion certificate; resuming would skip the probe.
+
+    Deliberately not an ``ENTRY_LOAD_FAILURES`` type: the payload is readable, it is not trusted.
+    """
+
+    def __init__(self, name: str, reason: str):
+        super().__init__(
+            f"cache entry {name!r} holds a converted flow that cannot be resumed: {reason}. A run "
+            f"resumed from it would carry its conversion forward unprobed. Quarantine the entry "
+            f"(PipelineCache.quarantine_entry(<run dir>, {name!r})) so the conversion step re-runs "
+            "and stamps a current certificate."
+        )
+        self.entry_name = name
+        self.reason = reason
+
+
+def require_certified_conversion(obj, *, name: str) -> None:
+    """Refuse a converted flow (any object answering ``conversion_certificate_problem``) that is not certified."""
+    check = getattr(obj, "conversion_certificate_problem", None)
+    if not callable(check):
+        return
+    problem = check()
+    if problem is not None:
+        raise UncertifiedCachedFlowError(name, str(problem))
 
 
 def write_atomically(final_path, write_payload) -> None:
@@ -108,6 +136,7 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
             # params violate its committed masks must fail loud, never silently
             # reproduce different metrics than the live run (theory §5g-v (i)).
             verify_model_pruning(object, where=f"cache-load:{self.filename}")
+            require_certified_conversion(object, name=self.filename)
         return object  # stay on CPU; consumers move to device as needed
 
     def store(self, cache_directory, object):

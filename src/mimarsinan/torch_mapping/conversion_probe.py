@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Callable, Optional, Tuple, TypeVar, Union
 
 import torch
 import torch.nn as nn
+
+from mimarsinan.common.refusal import ToolchainRefusal, refusal_in_chain
 
 
 _NODE_NAME_RE = re.compile(
@@ -16,8 +18,11 @@ _NODE_NAME_RE = re.compile(
 )
 
 
-class ConversionProbeError(RuntimeError):
-    pass
+_T = TypeVar("_T")
+
+
+class ConversionProbeError(ToolchainRefusal, RuntimeError):
+    """A conversion a probe refuses by name (the base of the value-parity refusal)."""
 
 
 @dataclass
@@ -51,36 +56,53 @@ def probe_forward(
     context: str = "probe_forward",
     dtype: Optional[torch.dtype] = None,
 ) -> ProbeResult:
-    """Run one zeros-tensor forward; ``strict=True`` re-raises as ``ConversionProbeError``.
+    """Run one zeros-tensor forward; ``strict=True`` re-raises the failure.
 
-    ``dtype`` sets the probe input's dtype (a converted fp64/fp16 model needs a
-    matching probe input); ``None`` keeps the torch default.
+    A named refusal raised inside the forward reaches the caller as that refusal; an
+    anonymous crash as itself (loud), never wrapped in a refusal type. ``dtype`` sets the
+    probe input's dtype (a converted fp64/fp16 model needs a matching probe input);
+    ``None`` keeps the torch default.
     """
-    device = torch.device(device)
-    was_training = flow.training
-    flow.eval()
+    dummy = torch.zeros(
+        (batch, *tuple(input_shape)), device=torch.device(device),
+        dtype=dtype if dtype is not None else torch.get_default_dtype(),
+    )
+    _, exc = guarded_forward(flow, dummy)
+    if exc is None:
+        return ProbeResult(ok=True, context=context)
+    result = ProbeResult(
+        ok=False, error=exc, failing_node_name=extract_failing_node_name(exc),
+        context=context,
+    )
+    if strict:
+        raise refusal_in_chain(exc) or exc
+    return result
+
+
+def guarded(call: Callable[[], _T]) -> Tuple[Optional[_T], Optional[Exception]]:
+    """``(result, None)`` or ``(None, exc)``: the one place a probe captures a failure, so
+    every probe stage decides in one place (a refusal passes on by name, a crash as itself)."""
     try:
-        dummy = torch.zeros(
-            (batch, *tuple(input_shape)), device=device,
-            dtype=dtype if dtype is not None else torch.get_default_dtype(),
-        )
-        with torch.no_grad():
-            flow(dummy)
+        return call(), None
     except Exception as exc:
-        failing = _extract_failing_node_name(exc)
-        result = ProbeResult(
-            ok=False, error=exc, failing_node_name=failing, context=context,
-        )
-        if strict:
-            raise ConversionProbeError(result.format()) from exc
-        return result
+        return None, exc
+
+
+def guarded_forward(
+    module: nn.Module, x: torch.Tensor,
+) -> Tuple[Optional[object], Optional[Exception]]:
+    """``guarded`` eval-mode, grad-free forward of ``module`` on ``x``; restores the train flag."""
+    was_training = module.training
+    module.eval()
+    try:
+        with torch.no_grad():
+            return guarded(lambda: module(x))
     finally:
         if was_training:
-            flow.train()
-    return ProbeResult(ok=True, context=context)
+            module.train()
 
 
-def _extract_failing_node_name(exc: BaseException) -> Optional[str]:
+def extract_failing_node_name(exc: BaseException) -> Optional[str]:
     seen: set[int] = set()
     cur: Optional[BaseException] = exc
     while cur is not None and id(cur) not in seen:

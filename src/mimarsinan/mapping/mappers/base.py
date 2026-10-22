@@ -32,6 +32,10 @@ def resolve_activation_type(perceptron) -> str | None:
 
 
 class Mapper(nn.Module):
+    # Ordering edges (review round 16, targeted pass): mappers this one runs after in the forward without reading them
+    # (a write in place runs after every earlier reader of its storage); a class default for pickled mappers.
+    run_after: tuple = ()
+
     def __init__(self, source_mapper: "Mapper | None" = None):
         super(Mapper, self).__init__()
         self._source_mapper_container: list[Mapper | None] = [source_mapper]

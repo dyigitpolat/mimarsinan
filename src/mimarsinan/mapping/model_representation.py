@@ -43,7 +43,8 @@ class ModelRepresentation:
         return self.output_layer_mapper.construct_pytorch_module(self.pytorch_module)
 
     def _ensure_exec_graph(self) -> tuple[list, dict, dict]:
-        """Build a reusable postorder execution order once (deps first); also drives perceptron enumeration for consistent ordering."""
+        """Build a reusable postorder execution order once (deps first, then each mapper's ``run_after`` ordering
+        edges, which it does not read); also drives perceptron enumeration for consistent ordering."""
         def deps_of(node):
             if hasattr(node, "get_source_mappers"):
                 return node.get_source_mappers()
@@ -76,7 +77,7 @@ class ModelRepresentation:
             stack.append((node, True))
             d = deps_of(node)
             deps_map[node] = d
-            for dep in reversed(d):
+            for dep in reversed([*d, *getattr(node, "run_after", ())]):
                 if dep is not None and dep not in visited:
                     stack.append((dep, False))
 

@@ -27,10 +27,12 @@ class _AlwaysRaisingFlow(nn.Module):
 
 class TestStrictProbe:
     def test_strict_reraises_with_failing_node_name(self):
+        """Review round 2 (E1): the anonymous crash is re-raised as itself, never as a named refusal."""
         flow = _AlwaysRaisingFlow()
-        with pytest.raises(ConversionProbeError) as excinfo:
+        with pytest.raises(RuntimeError) as excinfo:
             probe_forward(flow, (4,), device="cpu", batch=1, strict=True)
         assert "fake_add" in str(excinfo.value)
+        assert type(excinfo.value) is RuntimeError and not isinstance(excinfo.value, ConversionProbeError)
 
     def test_permissive_returns_diagnostic(self):
         flow = _AlwaysRaisingFlow()
