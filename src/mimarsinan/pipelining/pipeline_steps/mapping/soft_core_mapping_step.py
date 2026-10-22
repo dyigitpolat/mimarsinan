@@ -15,6 +15,7 @@ from mimarsinan.mapping.latency.depth_balancing import (
 )
 from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
+from mimarsinan.mapping.export.law_solver import install_readout_laws
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.support.bias_compensation import (
     apply_ttfs_quantization_bias_compensation,
@@ -268,6 +269,9 @@ class SoftCoreMappingStep(PipelineStep):
         print(f"[SoftCoreMappingStep] IR Graph max latency: {max_latency}")
 
         ir_graph = apply_ir_pruning_if_enabled(self, model, ir_graph, _PHASE_TAG)
+        install_readout_laws(  # [E282.S] declared-only: absent readout_law is a no-op
+            ir_graph, model, platform_constraints, weight_quantization=plan.weight_quantization, weight_bits=bits,
+        )
 
         with _phase("onchip_validity_gate"):
             self._run_onchip_validity_gate(model, ir_graph)

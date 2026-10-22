@@ -33,6 +33,34 @@ def install_boundary_quantizers(
     return quantizers
 
 
+def measure_seam_quantiles(
+    model: torch.nn.Module,
+    seams: list,
+    batches: Iterable[torch.Tensor],
+    quantile: float = CALIBRATION_QUANTILE,
+) -> list[float]:
+    """The largest per-batch quantile of each seam module's input magnitude.
+
+    Hooking the installed module (not the perceptron) makes the measurement
+    fire on every execution path — the conv mappers invoke their perceptron's
+    slots functionally, bypassing ``Perceptron.__call__``."""
+    maxima = {id(q): 0.0 for q in seams}
+    handles = []
+    for seam in seams:
+        def hook(module, args, q=seam):
+            value = safe_quantile(args[0].detach().abs(), quantile).item()
+            maxima[id(q)] = max(maxima[id(q)], value)
+        handles.append(seam.register_forward_pre_hook(hook))
+    try:
+        with torch.no_grad():
+            for x in batches:
+                model(x)
+    finally:
+        for handle in handles:
+            handle.remove()
+    return [maxima[id(q)] for q in seams]
+
+
 def calibrate_boundary_scales(
     model: torch.nn.Module,
     entries: list,
@@ -41,24 +69,9 @@ def calibrate_boundary_scales(
     quantile: float = CALIBRATION_QUANTILE,
 ) -> None:
     """Measure the input-magnitude quantile AT the quantizer seam itself and
-    write the scales. Hooking the installed module (not the perceptron) makes
-    the measurement fire on every execution path — the conv mappers invoke
-    ``input_activation`` functionally, bypassing ``Perceptron.__call__``."""
-    maxima = {id(q): 0.0 for q in quantizers}
-    handles = []
-    for quantizer in quantizers:
-        def hook(module, args, q=quantizer):
-            value = safe_quantile(args[0].detach().abs(), quantile).item()
-            maxima[id(q)] = max(maxima[id(q)], value)
-        handles.append(quantizer.register_forward_pre_hook(hook))
-    try:
-        with torch.no_grad():
-            for x in batches:
-                model(x)
-    finally:
-        for handle in handles:
-            handle.remove()
-    unseen = [i for i, q in enumerate(quantizers) if maxima[id(q)] == 0.0]
+    write the scales (``measure_seam_quantiles``)."""
+    maxima = measure_seam_quantiles(model, quantizers, batches, quantile)
+    unseen = [i for i, value in enumerate(maxima) if value == 0.0]
     if unseen:
         raise RuntimeError(
             f"Boundary Quantization calibration never reached entry "
@@ -66,8 +79,8 @@ def calibrate_boundary_scales(
             f"every host→chip boundary must be exercised by the calibration "
             f"batches — a silent floor scale would saturate the boundary."
         )
-    for quantizer in quantizers:
-        quantizer.calibrate(max(maxima[id(quantizer)], MIN_BOUNDARY_SCALE))
+    for quantizer, value in zip(quantizers, maxima):
+        quantizer.calibrate(max(value, MIN_BOUNDARY_SCALE))
 
 
 class BoundaryQuantizationStep(PipelineStep):

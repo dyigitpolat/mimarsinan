@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import torch
 
@@ -9,8 +11,14 @@ from mimarsinan.mapping.packing.softcore.matrix_placement import (
     materialize_compacted,
 )
 
+if TYPE_CHECKING:
+    from mimarsinan.mapping.ir.core_law import CoreLaw
+
 
 class SoftCore:
+    #: Declared-only: set only when the platform declares a readout law (pickles stay unchanged otherwise).
+    readout_law: "CoreLaw"
+
     def __init__(
         self,
         core_matrix,

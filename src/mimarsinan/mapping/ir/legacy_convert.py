@@ -172,6 +172,9 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
                 f"hardware_bias must be pruned alongside core_matrix columns in ir_pruning."
             )
         soft.hardware_bias = neural_core.hardware_bias.copy()
+    law = getattr(neural_core, "readout_law", None)
+    if law is not None:
+        soft.readout_law = law
     return soft
 
 

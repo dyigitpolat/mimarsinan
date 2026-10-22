@@ -4,6 +4,7 @@ from typing import Any
 
 import numpy as np
 
+from mimarsinan.mapping.ir.core_law import CoreLaw, merge_core_law
 from mimarsinan.mapping.packing.placement_cost import note_resident_bank
 from mimarsinan.mapping.packing.softcore.matrix_memo import (
     memoized_resolve_core_matrix,
@@ -22,6 +23,9 @@ from mimarsinan.mapping.platform.core_residency import (
 
 
 class HardCore:
+    #: Declared-only: the per-column readout law, set only when a law-carrying soft core is placed.
+    readout_law: CoreLaw
+
     def __init__(self, axons_per_core, neurons_per_core, has_bias_capability=True):
         self.axons_per_core = axons_per_core
         self.neurons_per_core = neurons_per_core
@@ -100,6 +104,7 @@ class HardCore:
             if self.hardware_bias is None:
                 self.hardware_bias = np.zeros(self.neurons_per_core)
             self.hardware_bias[neuron_offset:neuron_offset + softcore.get_output_count()] = softcore.hardware_bias
+        merge_core_law(self, softcore, axon_offset=axon_offset, neuron_offset=neuron_offset)
 
         self.unusable_space += \
             (neuron_offset * softcore.get_input_count()) + \

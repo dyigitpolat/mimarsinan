@@ -7,10 +7,12 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from mimarsinan.models.nn.activations.integer_law import grid_levels, round_half_away
+
 
 def value_grid_levels(activation_bits: int) -> int:
     """Positive levels of the symmetric signed grid: 2^(b-1) - 1."""
-    return (1 << (int(activation_bits) - 1)) - 1
+    return grid_levels(activation_bits)
 
 
 @dataclass(frozen=True)
@@ -45,14 +47,15 @@ def quantize_to_value_grid(
     x: torch.Tensor, scale: torch.Tensor, activation_bits: int
 ) -> torch.Tensor:
     """Round ``x`` onto the signed grid ``±scale`` with ``2^(b-1)-1`` positive
-    levels (saturating). ``scale <= 0`` is the unarmed identity. One formula
-    for the model-side module and the value executor — the boundary SSOT."""
+    levels (saturating), ties away from zero (the integer law's rounding).
+    ``scale <= 0`` is the unarmed identity. One formula for the model-side
+    module and the value executor — the boundary SSOT."""
     levels = value_grid_levels(activation_bits)
     scale = torch.as_tensor(scale, dtype=x.dtype, device=x.device)
     if levels <= 0 or float(scale.max()) <= 0.0:
         return x
     step = scale / levels
-    return torch.clamp(torch.round(x / step), -levels, levels) * step
+    return torch.clamp(round_half_away(x / step), -levels, levels) * step
 
 
 class ValueGridQuantizer(nn.Module):

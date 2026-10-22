@@ -17,6 +17,7 @@ from .adaptation.ttfs_cycle_adaptation_step import TTFSCycleAdaptationStep as TT
 from .adaptation.noise_adaptation_step import NoiseAdaptationStep as NoiseAdaptationStep
 from .quantization.activation_quantization_step import ActivationQuantizationStep as ActivationQuantizationStep
 from .quantization.boundary_quantization_step import BoundaryQuantizationStep as BoundaryQuantizationStep
+from .quantization.readout_law_step import ReadoutLawStep as ReadoutLawStep
 from .quantization.weight_quantization_step import WeightQuantizationStep as WeightQuantizationStep
 from .quantization.quantization_verification_step import QuantizationVerificationStep as QuantizationVerificationStep
 from .quantization.normalization_fusion_step import NormalizationFusionStep as NormalizationFusionStep

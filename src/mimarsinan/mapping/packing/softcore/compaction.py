@@ -109,6 +109,13 @@ def _memoized_keep_arrays(memo: dict, keep_rows, keep_cols):
     return hit
 
 
+def _compact_readout_law(core, keep_cols) -> None:
+    """Slice a law beside its bias: one memoized ``take_columns`` per distinct ``keep_cols``."""
+    law = getattr(core, "readout_law", None)
+    if law is not None:
+        core.readout_law = law.take_columns(keep_cols)
+
+
 def compact_soft_core_mapping(cores, output_sources):
     """Compact soft cores from IR pruning masks; return core_id → neuron reindex maps.
 
@@ -156,6 +163,7 @@ def compact_soft_core_mapping(cores, output_sources):
                 core.hardware_bias = compact_hardware_bias_columns(
                     core.hardware_bias, keep_cols
                 )
+                _compact_readout_law(core, cols_arr)
             elif keep_cols:
                 # BIAS_ONLY core: collapse to a single OFF-source axon but keep the live bias-driven columns; collapsing to (1,1) would silently delete live neurons still referenced downstream.
                 core.core_matrix = np.zeros((1, len(keep_cols)), dtype=np.float64)
@@ -163,6 +171,7 @@ def compact_soft_core_mapping(cores, output_sources):
                 core.hardware_bias = compact_hardware_bias_columns(
                     core.hardware_bias, keep_cols
                 )
+                _compact_readout_law(core, keep_cols)
             else:
                 raise AssertionError(
                     f"compact_soft_core_mapping: SoftCore id={core.id} has "

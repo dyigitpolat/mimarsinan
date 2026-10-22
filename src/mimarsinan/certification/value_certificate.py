@@ -39,6 +39,18 @@ parity, which is what a deployed classifier actually promises. Both remain
 FATAL; only the unit changed."""
 
 
+VALUE_LAW_ATOL = 0.0
+"""[E283] the twin edges of a program whose cores carry readout laws: every value
+is an integer code on its grid computed by one law on both sides (fp64 exact
+under the solver's 2^53 bound), so the edges are exact. Float programs keep
+VALUE_TWIN_FP64_ATOL."""
+
+
+def value_edge_atol(carries_laws: bool) -> float:
+    """The twin-edge tolerance of a value program: 0 with readout laws, the fp64 seam bound without."""
+    return VALUE_LAW_ATOL if carries_laws else VALUE_TWIN_FP64_ATOL
+
+
 @dataclass(frozen=True)
 class ValueWindowCertificate:
     """Per-neuron-window value agreement between two value-domain programs."""

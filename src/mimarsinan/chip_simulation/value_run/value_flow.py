@@ -52,6 +52,28 @@ def _consumer_counts(hybrid_mapping) -> Dict[int, int]:
 _RAW_INPUT_NODE_ID = -2
 
 
+def execute_host_op(op, x_flat, state_buffer, *, dtype: torch.dtype, twins: Dict[int, nn.Module]):
+    """One host ComputeOp in ``dtype``; an fp64 run executes a double twin of the stored fp32 module."""
+    original = op.params.get("module")
+    if dtype == torch.float64 and original is not None:
+        double = twins.get(int(op.id))
+        if double is None:
+            double = copy.deepcopy(original).double()
+            twins[int(op.id)] = double
+        op.params["module"] = double
+        try:
+            return execute_compute_op_torch(
+                op, x_flat, state_buffer,
+                in_scale=1.0, out_scale=1.0, output_dtype=dtype, gather_dtype=dtype,
+            )
+        finally:
+            op.params["module"] = original
+    return execute_compute_op_torch(
+        op, x_flat, state_buffer,
+        in_scale=1.0, out_scale=1.0, output_dtype=dtype, gather_dtype=dtype,
+    )
+
+
 class ValueHybridCoreFlow(nn.Module):
     """The value-domain deployed program: affine core segments + host ComputeOps.
 
@@ -75,27 +97,10 @@ class ValueHybridCoreFlow(nn.Module):
         self._plan_cache: Dict = {}
 
     def _run_compute_stage(self, op, x_flat, state_buffer):
-        original = op.params.get("module")
-        if self.value_dtype == torch.float64 and original is not None:
-            # Host modules are stored fp32; certification runs need the whole
-            # program in fp64, so the op briefly executes a double twin.
-            double = self._fp64_ops.get(int(op.id))
-            if double is None:
-                double = copy.deepcopy(original).double()
-                self._fp64_ops[int(op.id)] = double
-            op.params["module"] = double
-            try:
-                return execute_compute_op_torch(
-                    op, x_flat, state_buffer,
-                    in_scale=1.0, out_scale=1.0, output_dtype=self.value_dtype,
-                    gather_dtype=self.value_dtype,
-                )
-            finally:
-                op.params["module"] = original
-        return execute_compute_op_torch(
-            op, x_flat, state_buffer,
-            in_scale=1.0, out_scale=1.0, output_dtype=self.value_dtype,
-            gather_dtype=self.value_dtype,
+        # Host modules are stored fp32; certification runs need the whole
+        # program in fp64, so the op briefly executes a double twin.
+        return execute_host_op(
+            op, x_flat, state_buffer, dtype=self.value_dtype, twins=self._fp64_ops,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

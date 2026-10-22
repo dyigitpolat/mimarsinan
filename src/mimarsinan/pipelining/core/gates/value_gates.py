@@ -7,12 +7,15 @@ import copy
 import torch
 
 from mimarsinan.certification.value_certificate import (
+    VALUE_LAW_ATOL,
     VALUE_R_EDGE_AQ_LSB_BOUND,
     VALUE_R_EDGE_WQ_ATOL,
     VALUE_TWIN_FP64_ATOL,
     certify_twin_flow_values,
+    value_edge_atol,
 )
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
+from mimarsinan.mapping.ir.core_law import graph_carries_laws
 from mimarsinan.mapping.support.boundary_grids import widest_boundary_step
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
@@ -98,7 +101,10 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     max_abs_delta = float((got - want).abs().max().item()) if want.numel() else 0.0
 
     # The CONTRACT names the certificate class; the gate never re-derives it.
-    if packaging_contract_for(DeploymentPlan.of(pipeline)).boundary_is_gridded:
+    # [E284] NF and the identity program of a law-carrying program read one integer law: exact.
+    if graph_carries_laws(ir_graph):
+        atol = VALUE_LAW_ATOL
+    elif packaging_contract_for(DeploymentPlan.of(pipeline)).boundary_is_gridded:
         lsb = widest_boundary_step(ir_graph)
         if lsb is None:
             raise RuntimeError(
@@ -140,7 +146,8 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
         hybrid_mapping, device="cpu", dtype=torch.float64
     )
     certificate, detail = certify_twin_flow_values(
-        reference_flow, backend_flow, samples
+        reference_flow, backend_flow, samples,
+        atol=value_edge_atol(graph_carries_laws(ir_graph)),
     )
     if not certificate.passed:
         raise RuntimeError(
