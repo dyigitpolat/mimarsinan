@@ -1,7 +1,10 @@
 from contextlib import contextmanager
 from typing import Any
 
-from mimarsinan.model_training.training_utilities import AccuracyTracker
+from mimarsinan.model_training.training_utilities import (
+    AccuracyTracker,
+    apply_recipe_label_smoothing,
+)
 from mimarsinan.models.nn.layers import freeze_batchnorm_running_stats
 from mimarsinan.data_handling.data_loader_factory import shutdown_data_loader
 from mimarsinan.model_training.training_recipe import (
@@ -24,7 +27,8 @@ class BasicTrainer:
     def __init__(
             self, model, device, data_loader_factory, loss_function,
             recipe: TrainingRecipe | None = None, *,
-            tuning_recipe_recovery: bool = False):
+            tuning_recipe_recovery: bool = False,
+            honor_recipe_label_smoothing: bool = False):
         self.model = model.to(device)
         self.device = device
         self.recipe = recipe
@@ -46,7 +50,11 @@ class BasicTrainer:
             self.test_batch_size, self.data_provider)
 
         self.report_function = None
-        self.loss_function = loss_function
+        # Opt-in: tracked configs declare a never-read label_smoothing 0 and train at the loss's 0.1 (test_effective_label_smoothing.py).
+        self.honor_recipe_label_smoothing = bool(honor_recipe_label_smoothing)
+        self.loss_function = (
+            apply_recipe_label_smoothing(loss_function, recipe)
+            if self.honor_recipe_label_smoothing else loss_function)
 
         # [P2] frozen-BN-stats contract: tuner-owned trainers set this so
         # recovery/probe training cannot drift BN running statistics.

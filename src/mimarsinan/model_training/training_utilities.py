@@ -21,18 +21,63 @@ class AccuracyTracker:
         self.total = 0
 
 import torch.nn as nn
+
+LEGACY_LABEL_SMOOTHING = 0.1
+"""The label smoothing every classification loss trained with before the
+recipe field reached the loss (it was hardcoded here). ``None`` in a recipe
+resolves to it, so configs that never set the field stay byte-identical."""
+
+
+def resolve_label_smoothing(label_smoothing) -> float:
+    """``None`` -> the legacy 0.1; anything else -> its float value in [0, 1)."""
+    if label_smoothing is None:
+        return LEGACY_LABEL_SMOOTHING
+    value = float(label_smoothing)
+    if not 0.0 <= value < 1.0:
+        raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing!r}")
+    return value
+
+
+def apply_recipe_label_smoothing(loss_function, recipe):
+    """The loss a trainer uses under ``recipe``: a copy of ``loss_function`` with
+    ``recipe.label_smoothing`` when the recipe declares one and the loss is a
+    label-smoothed classification loss (it exposes ``with_label_smoothing``).
+
+    The caller's loss object is never mutated (pipelines share one loss across
+    trainers built with different recipes). Losses without a label-smoothing
+    term (regression, KD wrappers) are returned unchanged.
+    """
+    if recipe is None or getattr(recipe, "label_smoothing", None) is None:
+        return loss_function
+    rebind = getattr(loss_function, "with_label_smoothing", None)
+    if rebind is None:
+        return loss_function
+    return rebind(recipe.label_smoothing)
+
+
 class BasicClassificationLoss:
+    def __init__(self, label_smoothing=None):
+        self.label_smoothing = resolve_label_smoothing(label_smoothing)
+
+    def with_label_smoothing(self, label_smoothing):
+        return type(self)(label_smoothing)
+
     def __call__(self, model, x, y):
-        return nn.CrossEntropyLoss(label_smoothing=0.1)(model(x), y)
-    
+        return nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)(model(x), y)
+
+
 import torch
 
 from mimarsinan.models.nn.layers import SavedTensorDecorator
 
 class CustomClassificationLoss:
-    def __init__(self):
+    def __init__(self, label_smoothing=None):
+        self.label_smoothing = resolve_label_smoothing(label_smoothing)
         self.main_loss_avg = None
         self.act_loss_avg = None
+
+    def with_label_smoothing(self, label_smoothing):
+        return type(self)(label_smoothing)
 
     def __call__(self, model, x, y):
 
@@ -40,7 +85,7 @@ class CustomClassificationLoss:
             perceptron.activation.decorate(SavedTensorDecorator())
 
         model_out = model(x)
-        classification_loss = nn.CrossEntropyLoss(label_smoothing=0.1)(model_out, y)
+        classification_loss = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)(model_out, y)
 
         act_losses = torch.zeros(len(model.get_perceptrons()), device=model_out.device)
 

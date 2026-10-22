@@ -62,6 +62,10 @@ BUILD_SPECS: dict[str, tuple] = {
     "torch_vit_leaf": ((1, 32, 32), 10, {}, {}),
     "torch_squeezenet11": ((1, 28, 28), 10, {}, {}),
     "cifar_vgg8": ((3, 32, 32), 10, {}, {}),
+    "cifar_densenet_bc": (
+        (3, 32, 32), 10, {"depth": 10, "growth_rate": 4, "layer_order": "post_activation"}, {},
+    ),
+    "cifar_pyramidnet": ((3, 32, 32), 10, {"depth": 8, "alpha": 8}, {}),
     # Heavy fixed architectures: same question, minutes of tracing.
     "cifar_resnet20": ((3, 32, 32), 10, {}, {}),
     "cifar_vit_leaf": ((3, 32, 32), 10, {}, {}),

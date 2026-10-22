@@ -9,6 +9,8 @@ from .torch.torch_vit_leaf_builder import TorchViTLeafBuilder as TorchViTLeafBui
 from .torch.cifar_resnet20_builder import CifarResNet20Builder as CifarResNet20Builder
 from .torch.cifar_vgg8_builder import CifarVGG8Builder as CifarVGG8Builder
 from .torch.cifar_vit_leaf_builder import CifarViTLeafBuilder as CifarViTLeafBuilder
+from .torch.families.cifar_densenet_bc_builder import CifarDenseNetBCBuilder as CifarDenseNetBCBuilder
+from .torch.families.cifar_pyramidnet_builder import CifarPyramidNetBuilder as CifarPyramidNetBuilder
 from .torch_custom_builder import TorchCustomBuilder as TorchCustomBuilder
 from .torch_sequential_linear_builder import TorchSequentialLinearBuilder as TorchSequentialLinearBuilder
 from .torch_sequential_conv_builder import TorchSequentialConvBuilder as TorchSequentialConvBuilder

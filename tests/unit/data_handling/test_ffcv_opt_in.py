@@ -101,14 +101,15 @@ class TestProvidersOptInExplicitly:
         stub = SimpleNamespace(ffcv_transforms=lambda: cfg)
         assert DataProvider.enable_ffcv(stub) is True
 
-    def test_cifar100_declares_strong_augmentation_no_flip(self):
+    def test_cifar100_declares_strong_augmentation_with_flip(self):
+        """CIFAR-100 flips like CIFAR-10 (the missing flip was a loader defect)."""
         from mimarsinan.data_handling.data_providers.cifar100_data_provider import (
             CIFAR100_DataProvider,
         )
         train_ops = CIFAR100_DataProvider.ffcv_transforms(SimpleNamespace())["splits"]["train"]
         train_names = [op[0] for op in train_ops]
         assert train_names[0] == "SimpleRGBImageDecoder"
-        assert "RandomHorizontalFlip" not in train_names
+        assert train_names[1] == "RandomHorizontalFlip"
         assert "RandomTranslate" in train_names
         assert "Cutout" in train_names
         assert "NormalizeImage" not in train_names

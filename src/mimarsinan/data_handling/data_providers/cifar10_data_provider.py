@@ -43,6 +43,7 @@ class CIFAR10_DataProvider(DataProvider):
     def torch_transforms(self) -> dict:
         return {
             "train": [
+                transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
                 transforms.ToTensor(),

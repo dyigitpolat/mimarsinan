@@ -43,6 +43,8 @@ class CIFAR100_DataProvider(DataProvider):
     def torch_transforms(self) -> dict:
         return {
             "train": [
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
                 transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
                 transforms.ToTensor(),
             ],
@@ -55,6 +57,7 @@ class CIFAR100_DataProvider(DataProvider):
             "splits": {
                 "train": [
                     ("SimpleRGBImageDecoder", {}),
+                    ("RandomHorizontalFlip", {}),
                     ("RandomTranslate", {"padding": 4}),
                     ("Cutout", {"crop_size": 16}),
                     ("RandomBrightness", {"magnitude": 0.3}),
