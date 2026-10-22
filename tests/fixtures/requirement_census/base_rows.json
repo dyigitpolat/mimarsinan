@@ -1,0 +1,1194 @@
+{
+ "ladder": [
+  "C0 today (MVM contract)",
+  "C1 = C0 + L A E P C W (arith toggle)",
+  "C2 = C1 + G S (grouped conv, static-linear lowerings)",
+  "C3 = C2 + D (dynamic-operand MM)",
+  "C4 = C3 + X (operand product)",
+  "C5 = C4 + T (table law)",
+  "C6 = C5 + R (row reductions: softmax, norms)"
+ ],
+ "members": {
+  "convnext_small": {
+   "note": null,
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 46122,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 2,
+      "affine": 2,
+      "mmg": 2,
+      "norm": 2,
+      "pool": 1,
+      "smooth": 2
+     },
+     "host_ops": 11,
+     "host_segments": 11,
+     "macs_dynamic": 0,
+     "macs_static": 1347904,
+     "neural_segments": 6,
+     "onchip_mac_fraction": 0.8511
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 44042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "mmg": 2,
+      "norm": 2,
+      "smooth": 2
+     },
+     "host_ops": 6,
+     "host_segments": 6,
+     "macs_dynamic": 0,
+     "macs_static": 1347904,
+     "neural_segments": 5,
+     "onchip_mac_fraction": 0.8511
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 44042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "norm": 2,
+      "smooth": 2
+     },
+     "host_ops": 4,
+     "host_segments": 4,
+     "macs_dynamic": 0,
+     "macs_static": 1347904,
+     "neural_segments": 5,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 44042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "norm": 2,
+      "smooth": 2
+     },
+     "host_ops": 4,
+     "host_segments": 4,
+     "macs_dynamic": 0,
+     "macs_static": 1347904,
+     "neural_segments": 5,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 44042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "norm": 2,
+      "smooth": 2
+     },
+     "host_ops": 4,
+     "host_segments": 4,
+     "macs_dynamic": 0,
+     "macs_static": 1347904,
+     "neural_segments": 5,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 11274,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "norm": 2
+     },
+     "host_ops": 2,
+     "host_segments": 2,
+     "macs_dynamic": 0,
+     "macs_static": 1347904,
+     "neural_segments": 3,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 1347904,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "efficientnet_mbconv_se": {
+   "note": null,
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 212282,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 2,
+      "affine": 3,
+      "mmg": 3,
+      "pool": 4,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 28,
+     "host_segments": 28,
+     "macs_dynamic": 0,
+     "macs_static": 3283312,
+     "neural_segments": 13,
+     "onchip_mac_fraction": 0.854
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 199970,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 1,
+      "affine": 3,
+      "mmg": 3,
+      "pool": 3,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 26,
+     "host_segments": 26,
+     "macs_dynamic": 0,
+     "macs_static": 3283312,
+     "neural_segments": 12,
+     "onchip_mac_fraction": 0.854
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 331042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 1,
+      "pool": 3,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 20,
+     "host_segments": 20,
+     "macs_dynamic": 0,
+     "macs_static": 3283312,
+     "neural_segments": 15,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 331042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 1,
+      "pool": 3,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 20,
+     "host_segments": 20,
+     "macs_dynamic": 0,
+     "macs_static": 3283312,
+     "neural_segments": 15,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 331042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 1,
+      "pool": 3,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 20,
+     "host_segments": 20,
+     "macs_dynamic": 0,
+     "macs_static": 3283312,
+     "neural_segments": 15,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 3283312,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 3283312,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "efficientnet_mbconv_se_dense_twin": {
+   "note": "measured here: MVM 16/22",
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 343354,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 2,
+      "pool": 4,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 22,
+     "host_segments": 22,
+     "macs_dynamic": 0,
+     "macs_static": 19908976,
+     "neural_segments": 16,
+     "onchip_mac_fraction": 1.0
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 331042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 1,
+      "pool": 3,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 20,
+     "host_segments": 20,
+     "macs_dynamic": 0,
+     "macs_static": 19908976,
+     "neural_segments": 15,
+     "onchip_mac_fraction": 1.0
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 331042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 1,
+      "pool": 3,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 20,
+     "host_segments": 20,
+     "macs_dynamic": 0,
+     "macs_static": 19908976,
+     "neural_segments": 15,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 331042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 1,
+      "pool": 3,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 20,
+     "host_segments": 20,
+     "macs_dynamic": 0,
+     "macs_static": 19908976,
+     "neural_segments": 15,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 331042,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 1,
+      "pool": 3,
+      "prod": 3,
+      "smooth": 13
+     },
+     "host_ops": 20,
+     "host_segments": 20,
+     "macs_dynamic": 0,
+     "macs_static": 19908976,
+     "neural_segments": 15,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 19908976,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 19908976,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "elman_unrolled_relu": {
+   "note": "measured here: MVM 32/47",
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 2026,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 15,
+      "clamp": 16,
+      "wire+": 16
+     },
+     "host_ops": 47,
+     "host_segments": 47,
+     "macs_dynamic": 0,
+     "macs_static": 32064,
+     "neural_segments": 17,
+     "onchip_mac_fraction": 1.0
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 32064,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 32064,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 32064,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 32064,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 32064,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 32064,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "lstm_unrolled_h64": {
+   "note": null,
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 9482,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 30,
+      "prod": 47,
+      "smooth": 79,
+      "wire+": 79
+     },
+     "host_ops": 235,
+     "host_segments": 235,
+     "macs_dynamic": 0,
+     "macs_static": 377472,
+     "neural_segments": 17,
+     "onchip_mac_fraction": 1.0
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 5642,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 15,
+      "prod": 47,
+      "smooth": 79
+     },
+     "host_ops": 141,
+     "host_segments": 141,
+     "macs_dynamic": 0,
+     "macs_static": 377472,
+     "neural_segments": 64,
+     "onchip_mac_fraction": 1.0
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 5642,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 15,
+      "prod": 47,
+      "smooth": 79
+     },
+     "host_ops": 141,
+     "host_segments": 141,
+     "macs_dynamic": 0,
+     "macs_static": 377472,
+     "neural_segments": 64,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 5642,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 15,
+      "prod": 47,
+      "smooth": 79
+     },
+     "host_ops": 141,
+     "host_segments": 141,
+     "macs_dynamic": 0,
+     "macs_static": 377472,
+     "neural_segments": 64,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 5642,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 15,
+      "prod": 47,
+      "smooth": 79
+     },
+     "host_ops": 141,
+     "host_segments": 141,
+     "macs_dynamic": 0,
+     "macs_static": 377472,
+     "neural_segments": 64,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 377472,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 377472,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "mamba_like_block": {
+   "note": null,
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 6698,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 15,
+      "affine": 15,
+      "mmg": 1,
+      "pool": 1,
+      "prod": 1,
+      "smooth": 2,
+      "wire+": 20
+     },
+     "host_ops": 55,
+     "host_segments": 55,
+     "macs_dynamic": 0,
+     "macs_static": 136256,
+     "neural_segments": 20,
+     "onchip_mac_fraction": 0.9643
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 5642,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "mmg": 1,
+      "prod": 1,
+      "smooth": 2
+     },
+     "host_ops": 4,
+     "host_segments": 4,
+     "macs_dynamic": 0,
+     "macs_static": 136256,
+     "neural_segments": 3,
+     "onchip_mac_fraction": 0.9643
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 6858,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "prod": 1,
+      "smooth": 2
+     },
+     "host_ops": 3,
+     "host_segments": 3,
+     "macs_dynamic": 0,
+     "macs_static": 136256,
+     "neural_segments": 3,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 6858,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "prod": 1,
+      "smooth": 2
+     },
+     "host_ops": 3,
+     "host_segments": 3,
+     "macs_dynamic": 0,
+     "macs_static": 136256,
+     "neural_segments": 3,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 6858,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "prod": 1,
+      "smooth": 2
+     },
+     "host_ops": 3,
+     "host_segments": 3,
+     "macs_dynamic": 0,
+     "macs_static": 136256,
+     "neural_segments": 3,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 136256,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 522,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 136256,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "mobilenetv2_small_relu6": {
+   "note": null,
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 212002,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 2,
+      "affine": 3,
+      "clamp": 7,
+      "mmg": 3,
+      "pool": 1
+     },
+     "host_ops": 16,
+     "host_segments": 16,
+     "macs_dynamic": 0,
+     "macs_static": 3281136,
+     "neural_segments": 7,
+     "onchip_mac_fraction": 0.8539
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 134154,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "affine": 3,
+      "clamp": 3,
+      "mmg": 3
+     },
+     "host_ops": 9,
+     "host_segments": 9,
+     "macs_dynamic": 0,
+     "macs_static": 3281136,
+     "neural_segments": 4,
+     "onchip_mac_fraction": 0.8539
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 3281136,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 3281136,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 3281136,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 3281136,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 3281136,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "mobilenetv2_small_relu6_dense_twin": {
+   "note": "measured here: MVM 10/10",
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 343074,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 2,
+      "clamp": 7,
+      "pool": 1
+     },
+     "host_ops": 10,
+     "host_segments": 10,
+     "macs_dynamic": 0,
+     "macs_static": 19906800,
+     "neural_segments": 10,
+     "onchip_mac_fraction": 1.0
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 19906800,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 19906800,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 19906800,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 19906800,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 19906800,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 19906800,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "resnet18_cifar_w1/4": {
+   "note": "R18 w1/4: measured MVM 18/26 (mapping audit)",
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 294116,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 8,
+      "clamp": 17,
+      "pool": 1
+     },
+     "host_ops": 26,
+     "host_segments": 26,
+     "macs_dynamic": 0,
+     "macs_static": 35058176,
+     "neural_segments": 18,
+     "onchip_mac_fraction": 1.0
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 3172,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 35058176,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 3172,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 35058176,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 3172,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 35058176,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 3172,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 35058176,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 3172,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 35058176,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3172,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 35058176,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "unet_level_convtranspose": {
+   "note": "measured here: MVM 6/7",
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 146442,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "clamp": 5,
+      "maxp": 1,
+      "mms": 1
+     },
+     "host_ops": 7,
+     "host_segments": 7,
+     "macs_dynamic": 0,
+     "macs_static": 11689984,
+     "neural_segments": 6,
+     "onchip_mac_fraction": 0.9552
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 27658,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "mms": 1
+     },
+     "host_ops": 1,
+     "host_segments": 1,
+     "macs_dynamic": 0,
+     "macs_static": 11689984,
+     "neural_segments": 2,
+     "onchip_mac_fraction": 0.9552
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 11689984,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 11689984,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 11689984,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 11689984,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 0,
+     "macs_static": 11689984,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "vit_lite_7_4_bn_relu_reluattn": {
+   "note": null,
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 1395978,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 14,
+      "affine": 29,
+      "clamp": 14,
+      "dmm": 14,
+      "pool": 1
+     },
+     "host_ops": 72,
+     "host_segments": 72,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 30,
+     "onchip_mac_fraction": 0.9414
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 461834,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "affine": 14,
+      "clamp": 7,
+      "dmm": 14
+     },
+     "host_ops": 35,
+     "host_segments": 35,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 8,
+     "onchip_mac_fraction": 0.9414
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 461834,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "affine": 14,
+      "clamp": 7,
+      "dmm": 14
+     },
+     "host_ops": 35,
+     "host_segments": 35,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 8,
+     "onchip_mac_fraction": 0.9414
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 229376,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 229376,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 229376,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 229376,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  },
+  "vit_lite_7_4_softmax_ln_gelu": {
+   "note": null,
+   "rows": {
+    "C0 today (MVM contract)": {
+     "boundary_bytes_8bit": 1395978,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "add": 14,
+      "affine": 8,
+      "dmm": 14,
+      "norm": 15,
+      "pool": 1,
+      "smooth": 7,
+      "softmax": 7
+     },
+     "host_ops": 66,
+     "host_segments": 66,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 30,
+     "onchip_mac_fraction": 0.9414
+    },
+    "C1 = C0 + L A E P C W (arith toggle)": {
+     "boundary_bytes_8bit": 1395978,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "affine": 7,
+      "dmm": 14,
+      "norm": 15,
+      "pool": 1,
+      "smooth": 7,
+      "softmax": 7
+     },
+     "host_ops": 51,
+     "host_segments": 51,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 30,
+     "onchip_mac_fraction": 0.9414
+    },
+    "C2 = C1 + G S (grouped conv, static-linear lowerings)": {
+     "boundary_bytes_8bit": 1395978,
+     "dynamic_payload_bytes_8bit": 0,
+     "host_kinds": {
+      "affine": 7,
+      "dmm": 14,
+      "norm": 15,
+      "pool": 1,
+      "smooth": 7,
+      "softmax": 7
+     },
+     "host_ops": 51,
+     "host_segments": 51,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 30,
+     "onchip_mac_fraction": 0.9414
+    },
+    "C3 = C2 + D (dynamic-operand MM)": {
+     "boundary_bytes_8bit": 1166602,
+     "dynamic_payload_bytes_8bit": 229376,
+     "host_kinds": {
+      "norm": 15,
+      "pool": 1,
+      "smooth": 7,
+      "softmax": 7
+     },
+     "host_ops": 30,
+     "host_segments": 30,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 30,
+     "onchip_mac_fraction": 1.0
+    },
+    "C4 = C3 + X (operand product)": {
+     "boundary_bytes_8bit": 1166602,
+     "dynamic_payload_bytes_8bit": 229376,
+     "host_kinds": {
+      "norm": 15,
+      "pool": 1,
+      "smooth": 7,
+      "softmax": 7
+     },
+     "host_ops": 30,
+     "host_segments": 30,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 30,
+     "onchip_mac_fraction": 1.0
+    },
+    "C5 = C4 + T (table law)": {
+     "boundary_bytes_8bit": 707850,
+     "dynamic_payload_bytes_8bit": 229376,
+     "host_kinds": {
+      "norm": 15,
+      "pool": 1,
+      "softmax": 7
+     },
+     "host_ops": 23,
+     "host_segments": 23,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 23,
+     "onchip_mac_fraction": 1.0
+    },
+    "C6 = C5 + R (row reductions: softmax, norms)": {
+     "boundary_bytes_8bit": 3082,
+     "dynamic_payload_bytes_8bit": 229376,
+     "host_kinds": {},
+     "host_ops": 0,
+     "host_segments": 0,
+     "macs_dynamic": 14680064,
+     "macs_static": 235670016,
+     "neural_segments": 1,
+     "onchip_mac_fraction": 1.0
+    }
+   }
+  }
+ },
+ "script_sha256_16": "296ff421dcc7088b"
+}
