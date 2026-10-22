@@ -420,6 +420,8 @@ WEIGHT_BITS_READERS = {
     "pipelining/pipeline_steps/verification/fidelity_emission.py": "every run",
     "deployment_record/objectives/context.py": "every run",
     "deployment_record/introspection/scaling_ladder.py": "every run",
+    "deployment_record/cost/absolute/energy.py": "every run",
+    "deployment_record/cost/absolute/metrics.py": "every run",
     "tuning/tuners/ttfs_cycle_adaptation_tuner.py": "every run",
     "tuning/tuners/pruning/pruning_tuner_masks.py": "every run",
     "search/problems/joint/model_build.py": "every run",
