@@ -130,8 +130,10 @@ class TestCountHostOps:
         )
         assert count_host_ops(graph) == 96
 
-    def test_dedups_shared_module_instance(self):
-        shared = nn.Linear(10, 4)  # 40 single-position MACs
+    def test_a_module_in_two_ops_counts_each_invocation(self):
+        # [changed in Wave 1 G1: two ops of one module are two invocations (a host Linear split per column), so
+        # both count; the dedup counted one column of a split op, 40]
+        shared = nn.Linear(10, 4)  # 40 single-position MACs per op
         graph = _graph(
             [
                 _compute_op(0, shared, 10, in_shape=(10,)),
@@ -139,7 +141,7 @@ class TestCountHostOps:
                 _neural_core(2, 4, 4),
             ]
         )
-        assert count_host_ops(graph) == 40
+        assert count_host_ops(graph) == 80
 
 
 class TestComputeOnchipOpsFraction:

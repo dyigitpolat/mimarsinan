@@ -59,15 +59,17 @@ class TestAbsorptionPlanPins:
         report = check_representability(model.eval(), (8,))
         assert dict(report.absorption_plan) == {"_3": "absorbed_into:_2"}
 
-    def test_grouped_conv_is_unsupported(self):
+    def test_grouped_conv_is_a_host_op_with_its_named_reason(self):
+        """[changed in Wave 1 G1 (owner decision 4): unsupported on the base; now the exact host op of its module,
+        nothing absorbed into it, its reason the stated boundary]"""
         model = nn.Sequential(
             nn.Conv2d(4, 4, 3, groups=2, padding=1), nn.ReLU(), nn.Flatten(),
             nn.Linear(4 * 6 * 6, 4), nn.ReLU(),
         )
         report = check_representability(model.eval(), (4, 6, 6))
-        assert not report.is_representable
-        assert any("Grouped convolution" in (op.reason or "")
-                   for op in report.unsupported_ops)
+        assert report.is_representable
+        assert any("grouped convolution (groups=2)" in (op.reason or "") for op in report.supported_ops)
+        assert "_1" not in report.absorption_plan
 
 
 class TestConvertedStructurePins:

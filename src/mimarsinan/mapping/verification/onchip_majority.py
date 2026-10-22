@@ -1,15 +1,15 @@
-"""On-chip validity gate for a mapped IR graph + shared forward-MAC SSOT."""
+"""On-chip validity gate for a mapped IR graph; host MACs counted through the forward-MAC SSOT (``module_macs``)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
 
 import numpy as np
 import torch
-import torch.nn as nn
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import IRGraph
+from mimarsinan.mapping.support.module_macs import module_macs as module_macs
 from mimarsinan.mapping.support.host_contributors import (
     describe_host_holders,
     host_contributors_from_ir,
@@ -29,8 +29,8 @@ DEFAULT_ONCHIP_FLOOR = 0.20
 DEFAULT_ONCHIP_MAJORITY = 0.50
 
 
-class OnchipMajorityError(ValueError):
-    """A deployment maps the parameter MINORITY to chip cores (host-majority)."""
+class OnchipMajorityError(ToolchainRefusal, ValueError):
+    """A deployment maps the parameter MINORITY to chip cores (host-majority); a refusal by name."""
 
 
 @dataclass(frozen=True)
@@ -71,77 +71,6 @@ def _numel(value) -> int:
     return 0
 
 
-def _linear_macs(in_features: int, out_features: int, n_positions: int) -> int:
-    return int(in_features) * int(out_features) * int(n_positions)
-
-
-def _num_positions(in_shape, in_features) -> int:
-    if in_shape is None:
-        return 1
-    numel = 1
-    for d in in_shape:
-        numel *= int(d)
-    if in_features and in_features > 0 and numel % in_features == 0:
-        return max(1, numel // int(in_features))
-    return 1
-
-
-def _conv_macs(module, out_shape) -> int:
-    if out_shape is None:
-        return 0
-    out_spatial = 1
-    for d in out_shape[2:]:
-        out_spatial *= int(d)
-    k = 1
-    for d in module.kernel_size:
-        k *= int(d)
-    in_per_group = int(module.in_channels) // int(module.groups)
-    return int(module.out_channels) * out_spatial * in_per_group * k
-
-
-def _attention_macs(module: nn.MultiheadAttention, in_shape) -> int:
-    """QKV + output projections (3·E·E + E·E per position) plus the
-    scores·values double matmul (2·L·E per position) for self-attention."""
-    if in_shape is None:
-        return 0
-    e = int(module.embed_dim)
-    numel = 1
-    for d in in_shape:
-        numel *= int(d)
-    seq = max(1, numel // e) if e > 0 else 1
-    proj_macs = 4 * e * e * seq
-    score_macs = 2 * seq * seq * e
-    return int(proj_macs + score_macs)
-
-
-def module_macs(module: nn.Module, in_shape, out_shape) -> int:
-    """Estimate forward MACs for a host/on-chip unit from its full I/O tensor shapes.
-
-    Covers Linear, Conv1d/2d, MultiheadAttention and a Perceptron's linear layer;
-    pure element-wise/shape ops carry no MACs. The shared MAC SSOT for both the
-    IR-graph host-op count and the static forward estimator.
-    """
-    if is_scale_wrapper(module):
-        return module_macs(cast(nn.Module, module.module), in_shape, out_shape)
-
-    layer = getattr(module, "layer", None)
-    if isinstance(layer, nn.Linear):
-        n_positions = _num_positions(in_shape, layer.in_features)
-        return _linear_macs(layer.in_features, layer.out_features, n_positions)
-
-    if isinstance(module, nn.Linear):
-        n_positions = _num_positions(in_shape, module.in_features)
-        return _linear_macs(module.in_features, module.out_features, n_positions)
-
-    if isinstance(module, (nn.Conv1d, nn.Conv2d)):
-        return _conv_macs(module, out_shape)
-
-    if isinstance(module, nn.MultiheadAttention):
-        return _attention_macs(module, in_shape)
-
-    return 0
-
-
 def count_host_params(ir_graph: IRGraph) -> int:
     """Sum of unique host-side ComputeOp parameters (modules deduped by identity).
 
@@ -163,20 +92,15 @@ def count_host_params(ir_graph: IRGraph) -> int:
     return total
 
 
-def count_host_ops(ir_graph: IRGraph) -> int:
-    """Sum of forward MACs of unique host-side ComputeOps (deduped by identity).
+def _batched(shape):
+    return (1, *shape) if shape is not None else None
 
-    The ops sibling of :func:`count_host_params`. A subsumed encoding perceptron
-    is counted at its wrapped perceptron with a single position (matching the
-    static estimator, whose forward hook does not fire on subsumed encoders); a
-    plain compute module (readout Linear, pooling) is counted from the
-    ComputeOp's declared per-invocation shapes. Reproduces
-    ``estimate_onchip_fraction(metric='macs')``'s host decomposition for
-    feed-forward host ops; multi-input/attention research-gap ops (whose gather
-    triples the sequence) fall outside this structural count and use the
-    forward-based estimator directly.
-    """
-    seen: set[int] = set()
+
+def count_host_ops(ir_graph: IRGraph) -> int:
+    """Sum of forward MACs of the host-side ComputeOps, each one invocation at its declared per-sample shapes
+    (``support/module_macs.py``, every output position): a split op (a host Linear or an encoding perceptron per
+    column) counts every slice, a subsumed encoding perceptron counts at its op's shapes, and a multi-input op reads
+    ``params['input_shapes']``. Reproduces ``estimate_onchip_fraction(metric='macs')``'s host total."""
     total = 0
     for op in ir_graph.get_compute_ops():
         module = op.params.get("module")
@@ -184,15 +108,8 @@ def count_host_ops(ir_graph: IRGraph) -> int:
             continue
         perceptron = getattr(module, "perceptron", None)
         unit = perceptron if perceptron is not None else module
-        if id(unit) in seen:
-            continue
-        seen.add(id(unit))
-        if perceptron is not None:
-            in_shape = out_shape = None
-        else:
-            in_shape = (1, *op.input_shape) if op.input_shape is not None else None
-            out_shape = (1, *op.output_shape) if op.output_shape is not None else None
-        total += module_macs(unit, in_shape, out_shape)
+        shapes = [_batched(tuple(shape)) for shape in op.params.get("input_shapes") or ()]
+        total += module_macs(unit, _batched(op.input_shape), _batched(op.output_shape), shapes)
     return total
 
 

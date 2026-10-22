@@ -77,13 +77,17 @@ class TestMvmDetection:
         assert len(_perceptrons(flow)) == 2
         assert len(_host_ops(flow)) == 1  # LayerNorm
 
-    def test_grouped_conv_is_still_rejected(self):
+    def test_grouped_conv_is_placed_on_the_host(self):
+        """[changed in Wave 1 G1 (owner decision 4): refused on the base; now the exact host op of its module, with the
+        stated boundary as its reason]"""
         model = nn.Sequential(
             nn.Conv2d(4, 4, 3, groups=2, padding=1), nn.Flatten(),
             nn.Linear(4 * 6 * 6, 4),
         )
         report = check_representability(model.eval(), (4, 6, 6), packaging=MVM_PACKAGING)
-        assert not report.is_representable
+        assert report.is_representable
+        reasons = [op.reason for op in report.supported_ops if op.node_name == "_0"]
+        assert reasons and "grouped convolution on the host until N5" in reasons[0]
 
 
 class TestMvmBoundaries:

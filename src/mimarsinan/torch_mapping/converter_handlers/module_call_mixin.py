@@ -14,13 +14,28 @@ from mimarsinan.mapping.support.call_template import CallPartition
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 from mimarsinan.torch_mapping.converter_handlers.batchnorm_lowering import batchnorm_host_op
 from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
-from mimarsinan.torch_mapping.fx_shape_utils import node_output_shape, node_target_str, strip_batch
+from mimarsinan.torch_mapping.fx_shape_utils import (
+    broadcasts_to,
+    carried_tuple_index,
+    node_output_shape,
+    node_target_str,
+    strip_batch,
+    traced_tuple,
+    tuple_element_shape,
+)
+from mimarsinan.torch_mapping.leaf_decomposition.recurrence import Recurrence, input_projection
+from mimarsinan.torch_mapping.leaf_decomposition.registry import lowered_at_conversion
 from mimarsinan.torch_mapping.converter_handlers.refusals import (
     GenericOpArgumentError,
     ModuleCallArgumentError,
     TupleOutputIndexError,
+    node_operator,
 )
-from mimarsinan.torch_mapping.representability_analyzer import BATCHNORM_TYPES, RepresentabilityReport
+from mimarsinan.torch_mapping.representability_analyzer import (
+    BATCHNORM_TYPES,
+    RepresentabilityReport,
+    core_lowering_requirement,
+)
 
 
 def _operand_label(partition: CallPartition, index: int, node: fx.Node) -> str:
@@ -40,6 +55,8 @@ class ModuleCallMixin(ConverterContract):
     )
     _HOST_OP_MODULES = (nn.LayerNorm, *BATCHNORM_TYPES)
     """Single-input modules converted as a host op of the module (review round 15: their operands' native values)."""
+    _decompose_leaves = False
+    """``decompose_leaf_modules``: a recurrent leaf is lowered to its input projections and recurrence."""
 
     def _handle_call_module(self, node: fx.Node, report: RepresentabilityReport) -> None:
         if node.name in self._absorbed:
@@ -49,14 +66,17 @@ class ModuleCallMixin(ConverterContract):
         if mod is None:
             return
         foreign = node_target_str(node) in self._batch_layouts.purity.foreign_modules
-        if foreign or not isinstance(mod, self._SINGLE_INPUT_MODULES) or isinstance(mod, self._HOST_OP_MODULES):
+        # Outside the declared set (a user class, a hook, a parameter of a tensor subclass), or needing a capability
+        # the cores do not declare (``core_lowering_requirement``): the host op is the module's own call, as natively.
+        own_call = foreign or core_lowering_requirement(mod) is not None
+        if own_call or not isinstance(mod, self._SINGLE_INPUT_MODULES) or isinstance(mod, self._HOST_OP_MODULES):
             self._native_operands(node)  # a host op (its own call, a LayerNorm, a BatchNorm) reads native values
         else:
             self._native_static_operand(node)  # a perceptron, a convolution, a Flatten (review round 15)
         partition = self._partition_fx_args(node, mod)
-        if foreign:
-            # Outside the declared set (a user class, a hook, a parameter of a tensor subclass): no conversion rule
-            # computes with its state; the host op is its own call, as natively.
+        if self._decompose_leaves and not own_call and self._lower_recurrent(node, mod, partition, report):
+            return
+        if own_call:
             self._convert_module_call(node, mod, partition)
         elif isinstance(mod, nn.MultiheadAttention):
             self._convert_multihead_attention(node, mod, partition)
@@ -126,19 +146,23 @@ class ModuleCallMixin(ConverterContract):
         return [strip_batch(node_output_shape(arg)) for _, arg in partition.sources]
 
     def _convert_module_call(self, node: fx.Node, mod: nn.Module, partition: CallPartition) -> None:
+        """The host op of the module's own call; a tuple output carries the one element its users read (the
+        attention leaf's ``output_index``, generalized: an LSTM's sequence output)."""
         self._refuse_unresolved(node, mod, partition)
         if not partition.sources:
             self._node_to_mapper[node] = None
             return
+        index = carried_tuple_index(node)
+        output_shape = strip_batch(node_output_shape(node) if index is None else tuple_element_shape(node, index))
         if self._is_plain_call(partition):
             self._node_to_mapper[node] = ComputeOpMapper(
                 partition.sources[0][0], mod, input_shapes=strip_batch(self._get_input_shape(node)),
-                output_shape=strip_batch(node_output_shape(node)), name=node.name,
+                output_shape=output_shape, name=node.name, output_index=index,
             )
             return
         self._refuse_non_floating_activations(node, mod, partition)
         self._node_to_mapper[node] = self._templated_call_mapper(
-            node, copy.deepcopy(mod), partition, output_shape=strip_batch(node_output_shape(node)),
+            node, copy.deepcopy(mod), partition, output_shape=output_shape, output_index=index,
         )
 
     def _templated_call_mapper(self, node: fx.Node, fn: nn.Module, partition: CallPartition, *,
@@ -166,11 +190,13 @@ class ModuleCallMixin(ConverterContract):
             1 <= len(partition.sources) <= 3 and partition.template is None and not partition.bound
             and not partition.literals and set(partition.literal_kwargs) <= {"need_weights"}
         ):
-            # q, k, v only: the pre-template form, byte for byte.
+            # q, k, v only: the pre-template form, byte for byte; a key/value of another length than the query is
+            # no elementwise operand (cross-attention, memory tokens).
             self._node_to_mapper[node] = ComputeOpMapper(
                 [mapper for mapper, _ in partition.sources], copy.deepcopy(mod),
                 input_shapes=self._source_shapes(partition), output_shape=output_shape, name=node.name,
                 module_kwargs={"need_weights": False}, output_index=0,
+                elementwise_inputs=broadcasts_to([arg for _, arg in partition.sources], query),
             )
             return
         self._refuse_non_floating_activations(node, mod, partition)
@@ -179,17 +205,46 @@ class ModuleCallMixin(ConverterContract):
             extra_kwargs={"need_weights": False}, output_index=0,
         )
 
-    def _carried_tuple_output(self, node: fx.Node, source_mapper) -> bool:
-        """``getitem`` of a module whose conversion carries one tuple element: alias it, or refuse another index."""
-        carried = getattr(source_mapper, "output_index", None)
-        if carried is None:
+    def _lower_recurrent(self, node: fx.Node, mod: nn.Module, partition: CallPartition, report) -> bool:
+        """A recurrent leaf (``leaf_decomposition/recurrence.py``): per layer, its input projection by the Linear rule,
+        then its ``Recurrence`` host op; False for a call the lowering does not take."""
+        if not lowered_at_conversion(mod, self._is_plain_call(partition), carried_tuple_index(node)):
             return False
+        assert isinstance(mod, nn.RNNBase)  # the one lowering ``CONVERSION_LOWERINGS`` registers
+        source, shape = partition.sources[0][0], node_output_shape(partition.sources[0][1])
+        steps = int(shape[1]) if shape is not None and len(shape) == 3 else 0
+        for layer in range(int(mod.num_layers)):
+            self._convert_linear(node, input_projection(mod, layer), source, report)
+            projection = self._node_to_mapper[node]
+            for named in (projection, getattr(projection, "perceptron", None)):
+                if named is not None:
+                    named.name = f"{node.name}_ih_l{layer}"
+            recurrence = Recurrence(mod, layer, steps)
+            last = layer == int(mod.num_layers) - 1
+            source = ComputeOpMapper(projection, recurrence, input_shape=(steps, recurrence.input_width),
+                                     output_shape=(steps, recurrence.output_width), output_index=0,
+                                     name=node.name if last else f"{node.name}_l{layer}")
+        self._node_to_mapper[node] = source
+        return True
+
+    def _carried_tuple_output(self, node: fx.Node, source_mapper) -> bool:
+        """``getitem`` of a module whose conversion carries one tuple element: alias it, or refuse another index. Only
+        a read of the tuple itself (its producer's traced value a tuple) is an element read; an index into the carried
+        tensor (``h[-1]`` on a GRU's ``h_n``, ``o[0]`` on an attention output) is an ordinary tensor index."""
+        carried = getattr(source_mapper, "output_index", None)
         producer, index = (tuple(node.args) + (None, None))[:2]
+        if carried is None or not isinstance(producer, fx.Node) or traced_tuple(producer) is None:
+            return False
         if index != carried:
             if node.users:
-                assert isinstance(producer, fx.Node)
                 raise TupleOutputIndexError(node, producer, index, carried)
             self._node_to_mapper[node] = None
             return True
         self._node_to_mapper[node] = source_mapper
+        # The host op's value is this element: its batch layout is the element's (``h_n`` carries the batch on axis 1),
+        # so stage 2 refuses it by name as it refuses any host value without the batch on axis 0 alone.
+        violation = self._layout_violation(node)
+        if violation is not None and isinstance(source_mapper, ComputeOpMapper):
+            source_mapper.batch_layout_violation = violation
+            source_mapper.host_operator = node_operator(producer, self._modules)
         return True

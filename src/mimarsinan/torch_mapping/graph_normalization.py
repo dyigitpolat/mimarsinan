@@ -9,6 +9,10 @@ import torch.nn as nn
 import torch.fx as fx
 
 from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes import RUN_AFTER, observable_write
+from mimarsinan.torch_mapping.fx_rewrites.batch_axis_push_forward import push_batch_axis_forward
+from mimarsinan.torch_mapping.fx_rewrites.chunk_to_narrow import split_chunks
+from mimarsinan.torch_mapping.fx_rewrites.rewrite_support import write_ordered
+from mimarsinan.torch_mapping.fx_rewrites.sdpa_decomposition import decompose_sdpa
 from mimarsinan.torch_mapping.fx_shape_utils import node_output_shape, node_target_str, shared_state_sites
 from mimarsinan.torch_mapping.representability_analyzer import BATCHNORM_TYPES, batchnorm_folds_into
 
@@ -128,10 +132,18 @@ def _fresh_target(gm: fx.GraphModule, base: str) -> str:
     return target
 
 
-def normalize_fx_graph(gm: fx.GraphModule, foreign_modules: frozenset[str] = frozenset()) -> fx.GraphModule:
-    """Run in-place normalization passes: consecutive-Linear fusion then dead-code elimination, which keeps an
-    observable write in place (``operand_writes``). A module of ``foreign_modules`` (outside the declared operator set,
-    ``symbolic.purity``) is never fused: fusion computes with its state at conversion."""
+def normalize_fx_graph(gm: fx.GraphModule, foreign_modules: frozenset[str] = frozenset(),
+                       decompose_leaf_modules: bool = False) -> fx.GraphModule:
+    """Run in-place normalization passes: the FX rewrites (``fx_rewrites/``; the attention one under
+    ``decompose_leaf_modules``, first: its call has no declared batch rule, so what it feeds is provable only once it is
+    rewritten), consecutive-Linear fusion, then dead-code elimination, which keeps an observable write in place
+    (``operand_writes``). A module of ``foreign_modules`` (outside the declared operator set, ``symbolic.purity``) is
+    never fused: fusion computes with its state at conversion."""
+    writes = write_ordered(gm)
+    if decompose_leaf_modules:
+        decompose_sdpa(gm, writes)
+    split_chunks(gm, writes)
+    push_batch_axis_forward(gm, writes)
     modules: dict[str, nn.Module] = dict(gm.named_modules())
     graph = gm.graph
 

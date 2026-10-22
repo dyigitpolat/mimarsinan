@@ -120,6 +120,12 @@ class ComputeAdapter(nn.Module):
     # Class-level default: an adapter in the canonical layout stores no template,
     # so its pickled state is the state adapters had before templates existed.
     arg_template: ArgTemplate | None = None
+    # Per input, the traced dtype of a non-floating activation operand (a boolean mask, an index), else None: a value
+    # program carries every value in a floating buffer, so the call reads such an operand back in its traced dtype; a
+    # no-op where the operand has that dtype (Wave 1 G1). The round trip is exact for a boolean, and for an integer of
+    # magnitude at most 2**24 in a float32 buffer, 2**53 in a float64 one (the significand); the fp64 probe certifies
+    # the fp64 value run, so an fp32 run of an integer operand above 2**24 is outside what it shows.
+    operand_dtypes: tuple | None = None
 
     def __init__(
         self,
@@ -190,6 +196,9 @@ class ComputeAdapter(nn.Module):
         return bound
 
     def forward(self, *inputs) -> torch.Tensor:
+        if self.operand_dtypes is not None:
+            inputs = tuple(x.to(dtype) if dtype is not None and isinstance(x, torch.Tensor) else x
+                           for x, dtype in zip(inputs, self.operand_dtypes))
         bound = self._bound_values(inputs)
         if self.arg_template is None:
             return self.fn(*inputs, *bound, *self.extra_args, **self.kwargs)

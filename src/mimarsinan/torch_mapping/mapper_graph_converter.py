@@ -17,6 +17,7 @@ from mimarsinan.mapping.mapping_utils import (
     ReshapeMapper,
 )
 from mimarsinan.mapping.support.compute_modules import read_after
+from mimarsinan.mapping.support.contraction import PRODUCT_FUNCTIONS
 from mimarsinan.mapping.platform.packaging_contract import (
     SPIKING_PACKAGING,
     PackagingContract,
@@ -36,6 +37,7 @@ from mimarsinan.torch_mapping.converter_handlers.batch_layout import BatchLayout
 from mimarsinan.torch_mapping.converter_handlers.layout_mixin import LayoutMixin
 from mimarsinan.torch_mapping.converter_handlers.module_call_mixin import ModuleCallMixin
 from mimarsinan.torch_mapping.converter_handlers.refusals import BatchAxisLayoutError
+from mimarsinan.torch_mapping.converter_handlers.rules.method_rule_mixin import MethodRuleMixin
 from mimarsinan.torch_mapping.converter_handlers.shape_value_mixin import ShapeValueMixin
 from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import ProgramPurity
 from mimarsinan.torch_mapping.fx_shape_utils import fx_literal_int
@@ -64,6 +66,7 @@ class UnsupportedCallMethodError(ToolchainRefusal, RuntimeError):
 
 class MapperGraphConverter(
     MapperGraphFxMixin,
+    MethodRuleMixin,
     LayoutMixin,
     ModuleCallMixin,
     ShapeValueMixin,
@@ -72,7 +75,8 @@ class MapperGraphConverter(
     StructuralConvertMixin,
 ):
     """Convert a traced ``GraphModule`` into a mimarsinan ``ModelRepresentation``; ``purity``: the traced program's,
-    before graph normalization (``trace_and_convert``), else computed from ``graph_module``."""
+    before graph normalization (``trace_and_convert``), else computed from ``graph_module``;
+    ``decompose_leaf_modules``: lower the recurrent leaves (``leaf_decomposition/recurrence.py``)."""
 
     def __init__(
         self,
@@ -80,7 +84,9 @@ class MapperGraphConverter(
         input_shape: Tuple[int, ...],
         packaging: "PackagingContract" = SPIKING_PACKAGING,
         purity: Optional[ProgramPurity] = None,
+        decompose_leaf_modules: bool = False,
     ):
+        self._decompose_leaves = bool(decompose_leaf_modules)
         self.gm = graph_module
         self.input_shape = input_shape
         self._packaging = packaging
@@ -151,6 +157,8 @@ class MapperGraphConverter(
         if fn is read_after:  # its other operands order it, they are not values it reads (``operand_writes``)
             self._emit_generic_compute_op(node, fn)
             self._node_to_mapper[node].elementwise_inputs = False
+        elif fn in PRODUCT_FUNCTIONS:
+            self._convert_product(node, fn)
         elif fn is torch.cat:
             self._convert_cat(node)
         elif fn is torch.flatten:
@@ -186,7 +194,7 @@ class MapperGraphConverter(
         elif method in ("add", "__add__"):
             self._emit_generic_compute_op(node, operator.add)
 
-        else:
+        elif not self._convert_method(node):
             raise UnsupportedCallMethodError(str(method), node)
 
     def _lower_layout(self, node: fx.Node, method: str, source) -> None:
@@ -236,14 +244,10 @@ class MapperGraphConverter(
                 dims = list(range(ndim))
                 dims[d0], dims[d1] = dims[d1], dims[d0]
                 dims = tuple(dims)
-            if dims and dims[0] == 0:
-                self._node_to_mapper[node] = PermuteMapper(source, dims)
-            else:
-                out_shape = self._get_output_shape(node)
-                if out_shape is not None and len(out_shape) >= 2:
-                    self._node_to_mapper[node] = ReshapeMapper(source, out_shape[1:])
-                else:
-                    self._node_to_mapper[node] = source
+            if not dims or dims[0] != 0:  # an activation's refused before (``_require_batch_leading``)
+                raise BatchAxisLayoutError(node, "it moves axis 0 of a value that is not an activation (a parameter "
+                                                 "or buffer), which has no per-sample layout")
+            self._node_to_mapper[node] = PermuteMapper(source, dims)
 
         else:  # unsqueeze, squeeze, expand: the source carried as an alias
             self._node_to_mapper[node] = source

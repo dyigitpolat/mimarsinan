@@ -18,7 +18,8 @@ import torch
 
 
 def convert_pipeline_model(native_model, config, packaging):
-    """The pipeline's conversion: it runs every probe stage the packaging requires (stage 2 for value targets)."""
+    """The pipeline's conversion: it runs every probe stage the packaging requires (stage 2 for value targets);
+    ``decompose_leaf_modules`` (absent: false) decomposes the attention and recurrent leaves."""
     return convert_torch_model(
         native_model,
         input_shape=tuple(config["input_shape"]),
@@ -28,6 +29,7 @@ def convert_pipeline_model(native_model, config, packaging):
         encoding_layer_placement=str(config.get("encoding_layer_placement", "subsume")),
         packaging=packaging,
         value_program_stage=packaging.is_value_domain,
+        decompose_leaf_modules=bool(config.get("decompose_leaf_modules", False)),
     )
 
 

@@ -113,8 +113,10 @@ def test_measured_validity_tier_is_valid_flagged():
     assert verdict.tier == TIER_VALID_FLAGGED
     assert verdict.is_flagged
     assert verdict.param_frac == pytest.approx(0.423193, abs=1e-4)
-    assert verdict.mac_frac == pytest.approx(0.998918, abs=1e-4)
-    assert verdict.mac_frac >= 0.5
+    # [changed in Wave 1 G1: every on-chip conv counted at every output position and the host conv+BN packages
+    # counted (module_macs); the base counted one position per on-chip conv and none for a host package, 0.998918]
+    assert verdict.mac_frac == pytest.approx(0.479349, abs=1e-4)
+    assert verdict.mac_frac < 0.5
     assert verdict.param_frac < 0.5
 
 
@@ -148,9 +150,10 @@ def test_offload_does_not_lift_resnet18_to_valid():
     assert subsume.placement_fixable_ops == ["Linear"]
     assert offload.placement_fixable_ops == []
     assert subsume.param_frac == pytest.approx(0.422340, abs=1e-4)
-    assert subsume.mac_frac == pytest.approx(0.996931, abs=1e-4)
+    # [changed in Wave 1 G1: every conv at every output position (module_macs); 0.996931 and 0.998918 on the base]
+    assert subsume.mac_frac == pytest.approx(0.414285, abs=1e-4)
     assert offload.param_frac == pytest.approx(0.423193, abs=1e-4)
-    assert offload.mac_frac == pytest.approx(0.998918, abs=1e-4)
+    assert offload.mac_frac == pytest.approx(0.479349, abs=1e-4)
     assert offload.param_frac - subsume.param_frac < 0.01
     assert subsume.param_frac < 0.5
     assert offload.param_frac < 0.5
@@ -185,9 +188,10 @@ def test_resnet50_measured_validity_is_valid_under_both_placements():
     assert subsume.research_gap_ops == []
     assert offload.research_gap_ops == []
     assert subsume.param_frac == pytest.approx(0.665655, abs=1e-4)
-    assert subsume.mac_frac == pytest.approx(0.998093, abs=1e-4)
+    # [changed in Wave 1 G1: every conv at every output position (module_macs); 0.998093 and 0.998694 on the base]
+    assert subsume.mac_frac == pytest.approx(0.681820, abs=1e-4)
     assert offload.param_frac == pytest.approx(0.666060, abs=1e-4)
-    assert offload.mac_frac == pytest.approx(0.998694, abs=1e-4)
+    assert offload.mac_frac == pytest.approx(0.710688, abs=1e-4)
     assert subsume.param_frac >= 0.5
     assert offload.param_frac >= 0.5
     assert subsume.tier == TIER_VALID

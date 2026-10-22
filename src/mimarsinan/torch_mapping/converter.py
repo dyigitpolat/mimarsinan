@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import Callable, FrozenSet, List, NamedTuple, Optional, Tuple, Union
+from typing import Callable, Dict, FrozenSet, List, NamedTuple, Optional, Tuple, Union
 
 import torch
 import torch.fx as fx
@@ -26,6 +26,7 @@ from mimarsinan.torch_mapping.converted_model_flow import ConvertedModelFlow
 from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import program_purity
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.torch_mapping.graph_normalization import normalize_fx_graph
+from mimarsinan.torch_mapping.leaf_decomposition import decompose_leaves, decomposition_reference
 from mimarsinan.torch_mapping.value_parity import (
     NATIVE_EVAL_IDENTITY,
     STAGE_CONVERTED,
@@ -47,7 +48,7 @@ from mimarsinan.torch_mapping.value_parity.program_binding import (
     state_differences,
 )
 from mimarsinan.torch_mapping.value_parity.value_program import identity_value_program_stage
-from mimarsinan.torch_mapping.value_parity.witness import fp64_program, native_reference
+from mimarsinan.torch_mapping.value_parity.witness import fp64_program
 from mimarsinan.torch_mapping.value_parity.verdict import (
     WitnessProgramError,
     WitnessProgramMismatchError,
@@ -60,7 +61,8 @@ class TracedConversion(NamedTuple):
     """A converted flow, the representability report (absorption plan) it was converted under, its traced program as
     the witness binding compares it (``program_binding.program_record``) and, when asked for (``witness=True``), the
     probe's fp64 witness program of the same traced graph (``witness.fp64_program``; ``witness_error`` when it does
-    not run in fp64) with the tensors it holds otherwise than the traced program (``altered``)."""
+    not run in fp64) with the tensors it holds otherwise than the traced program (``altered``); ``stacked``: the leaf
+    parameters a decomposed program's parameters view (``leaf_decomposition.Decomposition``)."""
 
     flow: ConvertedModelFlow
     report: RepresentabilityReport
@@ -68,6 +70,7 @@ class TracedConversion(NamedTuple):
     witness: Optional[fx.GraphModule] = None
     witness_error: Optional[BaseException] = None
     altered: FrozenSet[str] = frozenset()
+    stacked: Dict[str, List[str]] = {}
 
 
 class TracedProgram(NamedTuple):
@@ -82,13 +85,14 @@ def check_representability(
     device: Union[torch.device, str] = "cpu",
     *,
     packaging: PackagingContract = SPIKING_PACKAGING,
+    decompose_leaf_modules: bool = False,
 ) -> RepresentabilityReport:
     """Trace a native PyTorch model and classify every op as supported, absorbable, or unsupported."""
-    gm = trace_model(model, input_shape, device=device)
+    program = decompose_leaves(model, tuple(input_shape), device).model if decompose_leaf_modules else model
+    gm = trace_model(program, input_shape, device=device)
     foreign = program_purity(gm).foreign_modules
-    gm = normalize_fx_graph(gm, foreign)
-    analyzer = RepresentabilityAnalyzer(gm, packaging=packaging, foreign_modules=foreign)
-    return analyzer.analyze()
+    gm = normalize_fx_graph(gm, foreign, decompose_leaf_modules)
+    return RepresentabilityAnalyzer(gm, packaging=packaging, foreign_modules=foreign).analyze()
 
 
 def trace_and_convert(
@@ -99,10 +103,16 @@ def trace_and_convert(
     encoding_layer_placement: str = "subsume",
     packaging: PackagingContract = SPIKING_PACKAGING,
     witness: bool = False,
+    decompose_leaf_modules: bool = False,
 ) -> TracedConversion:
     """Trace → purity (before any rewrite) → normalize → analyze → convert → mark encoding layers, without any probe.
     ``witness``: also derive the probe's fp64 witness program from the traced graph before the conversion rewrites it
-    (RNG-neutral)."""
+    (RNG-neutral). ``decompose_leaf_modules``: a module's registered leaves are replaced before tracing
+    (``leaf_decomposition``), and the conversion decomposes attention calls and recurrent leaves."""
+    stacked: Dict[str, List[str]] = {}
+    if decompose_leaf_modules and not isinstance(model, TracedProgram):
+        decomposition = decompose_leaves(model, tuple(input_shape), torch.device(device))
+        model, stacked = decomposition.model, decomposition.stacked
     traced = model.graph_module if isinstance(model, TracedProgram) else trace_model(
         model, input_shape, device=torch.device(device))
     program, unrun, altered = None, None, frozenset()
@@ -110,8 +120,8 @@ def trace_and_convert(
         program, unrun = guarded(lambda: fp64_program(traced, tuple(input_shape)))
         altered = state_differences(traced, program) if program is not None else frozenset()
     converted = convert_traced(traced, input_shape, device, encoding_layer_placement=encoding_layer_placement,
-                               packaging=packaging)
-    return converted._replace(witness=program, witness_error=unrun, altered=altered)
+                               packaging=packaging, decompose_leaf_modules=decompose_leaf_modules)
+    return converted._replace(witness=program, witness_error=unrun, altered=altered, stacked=stacked)
 
 
 def convert_traced(
@@ -121,32 +131,25 @@ def convert_traced(
     *,
     encoding_layer_placement: str = "subsume",
     packaging: PackagingContract = SPIKING_PACKAGING,
+    decompose_leaf_modules: bool = False,
 ) -> TracedConversion:
     """``trace_and_convert`` of a traced program (``trace_model``'s ``GraphModule``, which the conversion rewrites)."""
     device = torch.device(device)
     program = program_record(gm)
     purity = program_purity(gm)
-    gm = normalize_fx_graph(gm, purity.foreign_modules)
-
-    analyzer = RepresentabilityAnalyzer(gm, packaging=packaging, foreign_modules=purity.foreign_modules)
-    report = analyzer.analyze()
-
+    gm = normalize_fx_graph(gm, purity.foreign_modules, decompose_leaf_modules)
+    report = RepresentabilityAnalyzer(gm, packaging=packaging, foreign_modules=purity.foreign_modules).analyze()
     if not report.is_representable:
         raise RepresentabilityError(report)
-
-    converter = MapperGraphConverter(gm, input_shape, packaging=packaging, purity=purity)
-    mapper_repr = converter.convert(report)
-
-    flow = ConvertedModelFlow(device, mapper_repr)
+    converter = MapperGraphConverter(gm, input_shape, packaging=packaging, purity=purity,
+                                     decompose_leaf_modules=decompose_leaf_modules)
+    flow = ConvertedModelFlow(device, converter.convert(report))
     flow.shape_literals = converter.shape_literals()
     flow.shape_proof = converter.shape_proof()
     flow.shape_impurity = purity.impurity
     flow.shape_opaque = converter.shape_opaque()
-    # Flow birth for a torch module: the placement is resolved here, once, for
-    # EVERY packaging contract. Encoding layers are an event-domain concept
-    # (host-side spike-train generation), so a value-domain flow marks none —
-    # but it is still STAMPED (not-applicable), because an unstamped graph is
-    # indistinguishable from one nobody ever applied the placement to.
+    # Flow birth: the placement is resolved once, for every contract; a value-domain flow marks no encoding layer but
+    # is still stamped (not applicable), since an unstamped graph is one nobody applied the placement to.
     mark_encoding_layers(flow.get_mapper_repr(), placement=encoding_layer_placement, packaging=packaging)
 
     return TracedConversion(flow.to(device), report, program)
@@ -157,6 +160,7 @@ def witness_converter(
     *,
     encoding_layer_placement: str,
     packaging: PackagingContract,
+    decompose_leaf_modules: bool = False,
 ) -> Callable[[nn.Module], WitnessConversion]:
     """The conversion the value probe applies to its fp64 witness (CPU, same placement and packaging): a witness
     program (``fp64_program``) is converted as traced, any other witness traced first."""
@@ -164,7 +168,7 @@ def witness_converter(
     def convert(witness: nn.Module) -> WitnessConversion:
         program = TracedProgram(witness) if isinstance(witness, fx.GraphModule) else witness
         traced = trace_and_convert(program, input_shape, "cpu", encoding_layer_placement=encoding_layer_placement,
-                                   packaging=packaging)
+                                   packaging=packaging, decompose_leaf_modules=decompose_leaf_modules)
         return WitnessConversion(traced.flow, traced.report.absorption_plan, traced.program)
 
     return convert
@@ -196,10 +200,11 @@ def probe_witness_conversion(
     contract: FunctionContract = NATIVE_EVAL_IDENTITY,
     strict: bool = True,
     context: str = "probe_witness_conversion",
+    decompose_leaf_modules: bool = False,
 ) -> Tuple[ValueParityResult, ...]:
     """Every probe stage ``packaging`` requires, on an fp64 witness of ``model`` (the model is not touched)."""
     convert = witness_converter(tuple(input_shape), encoding_layer_placement=encoding_layer_placement,
-                                packaging=packaging)
+                                packaging=packaging, decompose_leaf_modules=decompose_leaf_modules)
     return probe_conversion(fp64_snapshot(model), convert, tuple(input_shape), later_stages=_later_stages(packaging),
                             contract=contract, strict=strict, context=context)
 
@@ -237,6 +242,7 @@ def convert_torch_model(
     encoding_layer_placement: str = "subsume",
     packaging: PackagingContract = SPIKING_PACKAGING,
     value_program_stage: bool = False,
+    decompose_leaf_modules: bool = False,
 ) -> ConvertedModelFlow:
     """Convert a trained native PyTorch model to a ``ConvertedModelFlow`` stamped with its conversion certificate.
 
@@ -247,7 +253,8 @@ def convert_torch_model(
     value-domain contract, stage 2, its identity value program, which the pipeline's conversion always runs). With
     ``strict=True`` a failure raises a ``ConversionProbeError``; otherwise the flow is returned with an uncertified
     stamp and an ``UnverifiedConversionWarning``. A certificate without every stage ``probe_stages(packaging)`` lists is
-    incomplete, and a pipeline cache refuses to resume from it.
+    incomplete, and a pipeline cache refuses to resume from it. ``decompose_leaf_modules``: the registered leaves are
+    decomposed (``leaf_decomposition``), and the probe's reference is still the user's model with its leaves.
     """
     # Imported lazily so tests can monkeypatch conversion_probe.probe_forward at call time.
     from mimarsinan.torch_mapping.conversion_probe import probe_forward
@@ -255,17 +262,14 @@ def convert_torch_model(
     device = torch.device(device)
     required = probe_stages(packaging)
     traced = trace_and_convert(
-        model, input_shape, device,
-        encoding_layer_placement=encoding_layer_placement, packaging=packaging, witness=True,
+        model, input_shape, device, encoding_layer_placement=encoding_layer_placement, packaging=packaging,
+        witness=True, decompose_leaf_modules=decompose_leaf_modules,
     )
     flow, snapshot, unrun, altered = traced.flow, traced.witness, traced.witness_error, traced.altered
 
     model_param = next(model.parameters(), None)
-    result = probe_forward(
-        flow, input_shape, device=device, batch=1,
-        strict=strict, context="convert_torch_model",
-        dtype=model_param.dtype if model_param is not None else None,
-    )
+    result = probe_forward(flow, input_shape, device=device, batch=1, strict=strict, context="convert_torch_model",
+                           dtype=model_param.dtype if model_param is not None else None)
     if not result.ok:
         return _uncertified(flow, result.format(), required)
     if snapshot is None:
@@ -276,11 +280,11 @@ def convert_torch_model(
 
     witnessed: List[WitnessConversion] = []
     convert = witness_converter(tuple(input_shape), encoding_layer_placement=encoding_layer_placement,
-                                packaging=packaging)
+                                packaging=packaging, decompose_leaf_modules=decompose_leaf_modules)
     results = probe_conversion(
         snapshot, _recording(convert, witnessed), tuple(input_shape),
         later_stages=_later_stages(packaging) if value_program_stage else (), strict=strict,
-        context="convert_torch_model", native=native_reference(model),
+        context="convert_torch_model", native=decomposition_reference(model, traced.stacked),
     )
     for stage_result in results:
         print(stage_result.format())
@@ -291,8 +295,6 @@ def convert_torch_model(
             raise mismatch
         flow.conversion_certificate = dataclasses.replace(flow.conversion_certificate, reason=str(mismatch))
     if not flow.conversion_certificate.certified:
-        warnings.warn(
-            f"[convert_torch_model] {flow.conversion_certificate.summary()}", UnverifiedConversionWarning,
-            stacklevel=2,
-        )
+        warnings.warn(f"[convert_torch_model] {flow.conversion_certificate.summary()}", UnverifiedConversionWarning,
+                      stacklevel=2)
     return flow

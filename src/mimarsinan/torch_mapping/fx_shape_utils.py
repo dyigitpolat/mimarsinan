@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, SupportsInt, Tuple, cast
+import operator
+from typing import Dict, List, Optional, Sequence, SupportsInt, Tuple, cast
 
 import torch
 import torch.fx as fx
@@ -45,6 +46,45 @@ def strip_batch(shape: Optional[Tuple[int, ...]]) -> Optional[Tuple[int, ...]]:
     if shape is None or len(shape) < 2:
         return None
     return tuple(shape[1:])
+
+
+def broadcasts_to(operands, node: fx.Node) -> bool:
+    """The traced operands broadcast to ``node``'s traced shape (an elementwise op, whose operands the mapper checks for
+    broadcasting at run time); ``y @ eye(6)`` does not, nor an attention's query and a key/value of another length,
+    and their operands need not broadcast at any batch."""
+    shapes, out = [node_output_shape(arg) for arg in operands], node_output_shape(node)
+    if out is None or any(shape is None for shape in shapes):
+        return True
+    try:
+        return tuple(torch.broadcast_shapes(*shapes)) == tuple(out)
+    except RuntimeError:
+        return False
+
+
+def traced_tuple(node: fx.Node) -> Optional[Sequence]:
+    """``node``'s traced metadata when its value is a tuple or list (its ``tensor_meta`` one, never a tensor's
+    ``TensorMetadata``, itself a NamedTuple); ``None`` otherwise."""
+    meta = node.meta.get("tensor_meta")
+    return meta if isinstance(meta, (tuple, list)) and not hasattr(meta, "shape") else None
+
+
+def carried_tuple_index(node: fx.Node) -> Optional[int]:
+    """The one element of ``node``'s traced tuple output its program reads: every user a ``getitem`` at an integer
+    index, exactly one such index read by a node, and that element a tensor; ``None`` otherwise."""
+    meta = traced_tuple(node)
+    users = list(node.users)
+    if meta is None or not users or any(
+            user.op != "call_function" or user.target is not operator.getitem or type(user.args[1]) is not int
+            for user in users):
+        return None
+    read = {cast(int, user.args[1]) for user in users if user.users}
+    index = next(iter(read)) if len(read) == 1 else None
+    return index if index is not None and hasattr(meta[index], "shape") else None
+
+
+def tuple_element_shape(node: fx.Node, index: int) -> Optional[Tuple[int, ...]]:
+    """The traced shape of element ``index`` of ``node``'s tuple output (batch dim included)."""
+    return tuple(node.meta["tensor_meta"][index].shape)
 
 
 def _meta_shape(node: fx.Node) -> Optional[Tuple[int, ...]]:

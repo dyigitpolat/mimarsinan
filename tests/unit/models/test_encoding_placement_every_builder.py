@@ -61,6 +61,7 @@ BUILD_SPECS: dict[str, tuple] = {
     ),
     "torch_vit_leaf": ((1, 32, 32), 10, {}, {}),
     "torch_squeezenet11": ((1, 28, 28), 10, {}, {}),
+    "vit_lite_cct": ((3, 8, 8), 10, {"embed_dim": 16, "depth": 2, "num_heads": 4}, {}),
     "cifar_vgg8": ((3, 32, 32), 10, {}, {}),
     "cifar_densenet_bc": (
         (3, 32, 32), 10, {"depth": 10, "growth_rate": 4, "layer_order": "post_activation"}, {},

@@ -14,7 +14,13 @@ from mimarsinan.mapping.platform.packaging_contract import (
     SPIKING_PACKAGING,
     PackagingContract,
 )
-from mimarsinan.models.nn.layers import ChannelsLastBatchNorm1d
+from mimarsinan.torch_mapping.converter_handlers.batchnorm_lowering import (
+    BATCHNORM_TYPES as BATCHNORM_TYPES,
+    batchnorm_channel_axis as batchnorm_channel_axis,
+    batchnorm_folds_into as batchnorm_folds_into,
+    has_running_statistics as has_running_statistics,
+)
+from mimarsinan.torch_mapping.converter_handlers.rules.method_rules import has_method_rule
 from mimarsinan.torch_mapping.fx_shape_utils import node_output_shape, node_target_str, shared_state_sites
 
 
@@ -59,9 +65,6 @@ class RepresentabilityError(ToolchainRefusal):
 
 _NEURAL_CORE_MODULES: set[type] = {nn.Linear, nn.Conv2d, nn.Conv1d}
 
-# The BatchNorms the converter lowers: folded into a weight op, else an exact host affine op.
-BATCHNORM_TYPES = (nn.BatchNorm1d, nn.BatchNorm2d)
-
 # The activations a Perceptron absorbs, with the name it rebuilds each from (perceptron.make_activation).
 _ABSORBABLE_ACTIVATION_NAMES = ((nn.ReLU, "ReLU"), (nn.LeakyReLU, "LeakyReLU"), (nn.GELU, "GELU"))
 ABSORBABLE_ACTIVATIONS = tuple(cls for cls, _name in _ABSORBABLE_ACTIVATION_NAMES)
@@ -70,25 +73,6 @@ ABSORBABLE_ACTIVATIONS = tuple(cls for cls, _name in _ABSORBABLE_ACTIVATION_NAME
 def absorbed_activation_name(act: Optional[nn.Module]) -> Optional[str]:
     """The name an absorbed activation is rebuilt from; None for no activation or a non-absorbable one."""
     return next((name for cls, name in _ABSORBABLE_ACTIVATION_NAMES if isinstance(act, cls)), None)
-
-
-def has_running_statistics(bn: nn.Module) -> bool:
-    """Eval-mode BatchNorm is a fixed affine op only when it normalizes with running statistics."""
-    return getattr(bn, "running_mean", None) is not None and getattr(bn, "running_var", None) is not None
-
-
-def batchnorm_channel_axis(bn: nn.Module, rank: int) -> int:
-    """The non-negative axis a BatchNorm normalizes in a rank-``rank`` tensor."""
-    return rank - 1 if isinstance(bn, ChannelsLastBatchNorm1d) else 1
-
-
-def batchnorm_folds_into(bn: nn.Module, weight: nn.Module, rank: Optional[int]) -> bool:
-    """Whether ``bn`` is a per-output-channel affine of ``weight``'s rank-``rank`` output (an exact fold)."""
-    if not isinstance(bn, BATCHNORM_TYPES) or not has_running_statistics(bn) or rank is None or rank < 2:
-        return False
-    out_axis = rank - 1 if isinstance(weight, nn.Linear) else 1
-    out_channels = weight.out_features if isinstance(weight, nn.Linear) else getattr(weight, "out_channels", None)
-    return batchnorm_channel_axis(bn, rank) == out_axis and bn.num_features == out_channels
 
 
 def activation_folds_exactly(act: nn.Module) -> bool:
@@ -100,15 +84,32 @@ def activation_folds_exactly(act: nn.Module) -> bool:
     return isinstance(act, nn.ReLU)
 
 
+@dataclass(frozen=True)
+class LoweringRequirement:
+    """A capability class a module's core lowering needs and today's cores do not declare: the module is the exact
+    host op of its own call, its reason a stated boundary (never a refusal)."""
+    capability: str
+    reason: str
+
+
+def core_lowering_requirement(module: nn.Module) -> Optional[LoweringRequirement]:
+    """The one conversion-time capability rule: a convolution with ``groups > 1`` needs class G (grouped lowering,
+    work item N5), so it runs on the host; ``None`` for a module the core lowering takes."""
+    groups = int(getattr(module, "groups", 1)) if isinstance(module, (nn.Conv1d, nn.Conv2d)) else 1
+    if groups == 1:
+        return None
+    return LoweringRequirement("G", f"grouped convolution (groups={groups}) is the exact host op of its module: its "
+                                    "core lowering needs capability class G (grouped convolution on the host until N5)")
+
+
 def lowers_to_perceptron(absorbs_activation: bool, packaging: PackagingContract) -> bool:
     """A weight op becomes a perceptron unless the contract requires an activation and none folds into it."""
     return absorbs_activation or not packaging.require_activation
 
 
-# The ONLY tensor call_methods the converter has a rule for (SSOT shared with
-# ``MapperGraphConverter._handle_call_method``). Everything else is rejected:
-# an unknown method used to fall through to identity and silently DROP the op
-# (e.g. ``.softmax(dim=-1)``), diverging from the native model with no error.
+# The tensor call_methods with a dedicated rule (SSOT shared with ``MapperGraphConverter._handle_call_method``);
+# every other method converts by the method rule (``rules/method_rules.has_method_rule``: a torch function of its
+# name) or is rejected: an unknown method used to fall through to identity and silently DROP the op.
 CONVERTIBLE_CALL_METHODS: frozenset[str] = frozenset({
     # shape/layout rewrites with dedicated mappers
     "view", "reshape", "flatten", "permute", "transpose",
@@ -201,19 +202,9 @@ class RepresentabilityAnalyzer:
             )
             return
 
-        if mod_type in _NEURAL_CORE_MODULES:
-            if isinstance(mod, (nn.Conv1d, nn.Conv2d)):
-                groups = getattr(mod, "groups", 1)
-                if groups > 1:
-                    report.unsupported_ops.append(
-                        OpInfo(node.name, "call_module", mod_type.__name__,
-                               reason=f"Grouped convolution (groups={groups}) not supported")
-                    )
-                    return
-
-        report.supported_ops.append(
-            OpInfo(node.name, "call_module", mod_type.__name__)
-        )
+        requirement = core_lowering_requirement(mod)
+        report.supported_ops.append(OpInfo(node.name, "call_module", mod_type.__name__,
+                                           reason=None if requirement is None else requirement.reason))
 
     def _classify_function_node(
         self, node: fx.Node, report: RepresentabilityReport
@@ -228,7 +219,7 @@ class RepresentabilityAnalyzer:
         self, node: fx.Node, report: RepresentabilityReport
     ) -> None:
         method_name = node_target_str(node)
-        if method_name not in CONVERTIBLE_CALL_METHODS:
+        if method_name not in CONVERTIBLE_CALL_METHODS and not has_method_rule(node):
             report.unsupported_ops.append(
                 OpInfo(
                     node.name, "call_method", method_name,
@@ -248,7 +239,8 @@ class RepresentabilityAnalyzer:
         """Fold BN / activation nodes into the weight op whose single-consumer chain they lie on."""
         targets: Dict[str, str] = {}
         for node in self.gm.graph.nodes:
-            if type(self._call_module(node, nn.Module)) in _NEURAL_CORE_MODULES:
+            module = self._call_module(node, nn.Module)
+            if module is not None and type(module) in _NEURAL_CORE_MODULES and core_lowering_requirement(module) is None:
                 for member in self._foldable_chain(node):
                     targets[member.name] = node.name
         for node in self.gm.graph.nodes:

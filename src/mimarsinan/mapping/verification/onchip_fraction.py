@@ -13,6 +13,7 @@ from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
 from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.support.device_placement import single_device_of
+from mimarsinan.mapping.support.module_macs import observed_macs
 from mimarsinan.mapping.support.host_contributors import (
     describe_host_holders,
     host_contributors_from_flow,
@@ -25,7 +26,6 @@ from mimarsinan.mapping.verification.onchip_majority import (
     OnchipMajorityError,
     OnchipParamBreakdown,
     compute_onchip_fraction,
-    module_macs as _module_macs,
     onchip_placement_remedy,
     unwrap_scale_wrapper as _unwrap_module,
 )
@@ -242,53 +242,24 @@ def _ops_breakdown(flow):
 
 
 def _macs_breakdown(flow, input_shape):
-    units: dict[int, tuple[nn.Module, bool]] = {}
+    """Every host and on-chip unit counted once per node at the shapes of its own call (``module_macs`` through
+    ``observed_macs``: a perceptron conv at its every output position)."""
+    counted = []
     for node in _exec_nodes(flow):
         host_unit = _host_unit(node)
-        if host_unit is not None:
-            units.setdefault(id(host_unit), (host_unit, True))
-            continue
-        chip_unit = _onchip_unit(node)
-        if chip_unit is not None:
-            units.setdefault(id(chip_unit), (chip_unit, False))
+        unit = host_unit if host_unit is not None else _onchip_unit(node)
+        if unit is not None:
+            counted.append((node, unit, host_unit is not None))
+    flow.eval()
+    # The flow's own device (a CPU spec or a GPU model mid-pipeline); a flow on BOTH is a defect upstream.
+    device = _flow_device(flow)
 
-    shapes: dict[int, tuple] = {}
-    handles = []
-
-    def _make_hook(key):
-        def _hook(_mod, inputs, output):
-            in_t = inputs[0] if inputs else None
-            in_shape = tuple(in_t.shape) if torch.is_tensor(in_t) else None
-            out = output[0] if isinstance(output, (tuple, list)) and output else output
-            out_shape = tuple(out.shape) if torch.is_tensor(out) else None
-            shapes[key] = (in_shape, out_shape)
-
-        return _hook
-
-    for key, (module, _is_host) in units.items():
-        handles.append(module.register_forward_hook(_make_hook(key)))
-
-    try:
-        flow.eval()
-        # Probe on the flow's own device so the estimator works whether the
-        # caller holds a CPU model spec (scheduler) or a GPU model mid-pipeline;
-        # a flow that is on BOTH is a defect upstream and says so here.
-        device = _flow_device(flow)
+    def run():
         with torch.no_grad():
             flow(torch.zeros(1, *tuple(input_shape), device=device))
-    finally:
-        for h in handles:
-            h.remove()
 
-    host = 0
-    total = 0
-    for key, (module, is_host) in units.items():
-        in_shape, out_shape = shapes.get(key, (None, None))
-        macs = _module_macs(module, in_shape, out_shape)
-        total += macs
-        if is_host:
-            host += macs
-    return host, total
+    macs = observed_macs([(node, unit) for node, unit, _host in counted], run)
+    return sum(m for m, (_n, _u, is_host) in zip(macs, counted) if is_host), sum(macs)
 
 
 def estimate_onchip_fraction(

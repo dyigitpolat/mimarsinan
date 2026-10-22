@@ -1,8 +1,10 @@
-"""BatchNorm lowering SSOT: the Perceptron normalization slot of a folded BN, else one exact host affine op."""
+"""BatchNorm lowering SSOT: which BatchNorm folds into its weight op (the predicates), the Perceptron normalization
+slot of a folded BN, else one exact host affine op."""
 
 from __future__ import annotations
 
 import copy
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -11,7 +13,28 @@ import torch.fx as fx
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper
 from mimarsinan.models.nn.layers import ChannelsLastBatchNorm1d
 from mimarsinan.torch_mapping.fx_shape_utils import node_output_shape, strip_batch
-from mimarsinan.torch_mapping.representability_analyzer import BATCHNORM_TYPES
+
+# The BatchNorms the converter lowers: folded into a weight op, else an exact host affine op.
+BATCHNORM_TYPES = (nn.BatchNorm1d, nn.BatchNorm2d)
+
+
+def has_running_statistics(bn: nn.Module) -> bool:
+    """Eval-mode BatchNorm is a fixed affine op only when it normalizes with running statistics."""
+    return getattr(bn, "running_mean", None) is not None and getattr(bn, "running_var", None) is not None
+
+
+def batchnorm_channel_axis(bn: nn.Module, rank: int) -> int:
+    """The non-negative axis a BatchNorm normalizes in a rank-``rank`` tensor."""
+    return rank - 1 if isinstance(bn, ChannelsLastBatchNorm1d) else 1
+
+
+def batchnorm_folds_into(bn: nn.Module, weight: nn.Module, rank: Optional[int]) -> bool:
+    """Whether ``bn`` is a per-output-channel affine of ``weight``'s rank-``rank`` output (an exact fold)."""
+    if not isinstance(bn, BATCHNORM_TYPES) or not has_running_statistics(bn) or rank is None or rank < 2:
+        return False
+    out_axis = rank - 1 if isinstance(weight, nn.Linear) else 1
+    out_channels = weight.out_features if isinstance(weight, nn.Linear) else getattr(weight, "out_channels", None)
+    return batchnorm_channel_axis(bn, rank) == out_axis and bn.num_features == out_channels
 
 
 class BatchNormAffine(nn.Module):

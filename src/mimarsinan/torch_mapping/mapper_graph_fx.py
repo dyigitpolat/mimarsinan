@@ -21,6 +21,7 @@ from mimarsinan.mapping.mapping_utils import ComputeOpMapper
 from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
 from mimarsinan.torch_mapping.converter_handlers.refusals import GenericOpArgumentError, op_name
 from mimarsinan.torch_mapping.fx_shape_utils import (
+    broadcasts_to,
     node_input_shapes,
     node_output_shape,
     strip_batch,
@@ -92,16 +93,10 @@ def _observed_shape(adapter: ComputeAdapter, inputs: tuple) -> Any:
     return tuple(out.shape) if isinstance(out, torch.Tensor) else type(out).__name__
 
 
-def _broadcasts_to(operands, node: fx.Node) -> bool:
-    """The traced operands broadcast to the traced output (an elementwise op, whose operands the mapper checks for
-    broadcasting at run time); ``y @ eye(6)`` does not, and its operands need not broadcast at any batch."""
-    shapes, out = [node_output_shape(arg) for arg in operands], node_output_shape(node)
-    if out is None or any(shape is None for shape in shapes):
-        return True
-    try:
-        return tuple(torch.broadcast_shapes(*shapes)) == tuple(out)
-    except RuntimeError:
-        return False
+def _non_floating_dtype(node: fx.Node) -> Optional[torch.dtype]:
+    """The traced dtype of a non-floating tensor value (a boolean mask, an index), else ``None``."""
+    dtype = getattr(node.meta.get("tensor_meta"), "dtype", None)
+    return dtype if isinstance(dtype, torch.dtype) and not (dtype.is_floating_point or dtype.is_complex) else None
 
 
 def _refusing_adapter(fn, node: fx.Node, unresolved) -> ComputeAdapter:
@@ -162,13 +157,16 @@ class MapperGraphFxMixin(ConverterContract):
             input_shapes_arg: Any = source_shapes[0]
         else:
             input_shapes_arg = source_shapes
+        dtypes = tuple(_non_floating_dtype(arg) for arg in source_nodes)
+        if any(dtype is not None for dtype in dtypes):
+            adapter.operand_dtypes = dtypes
         self._node_to_mapper[node] = ComputeOpMapper(
             [mapper for mapper, _ in partition.sources],
             adapter,
             input_shapes=input_shapes_arg,
             output_shape=output_shape,
             name=node.name,
-            elementwise_inputs=_broadcasts_to(source_nodes, node),
+            elementwise_inputs=broadcasts_to(source_nodes, node),
         )
 
     def _literal_anchor(self, node: fx.Node) -> Optional[fx.Node]:

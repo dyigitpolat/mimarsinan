@@ -45,30 +45,47 @@ class ClampMethodModel(nn.Module):
         return self.fc(x).clamp(min=0.0)
 
 
+class NoRuleMethodModel(nn.Module):
+    """Linear -> .half() (a method with no torch function of its name, so no conversion rule) -> Linear."""
+
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(12, 16)
+        self.fc2 = nn.Linear(16, 10)
+
+    def forward(self, x):
+        return self.fc2(self.fc1(x).half().float())
+
+
+def _assert_converts_exactly(model, shape):
+    torch.manual_seed(0)
+    flow = convert_torch_model(model.double().eval(), shape, num_classes=10, packaging=MVM_PACKAGING)
+    x = torch.randn(5, *shape, dtype=torch.float64)
+    with torch.no_grad():
+        assert torch.equal(flow(x), model(x))
+
+
 class TestUnknownCallMethodFailsLoud:
-    def test_softmax_method_raises_at_conversion_naming_the_method(self):
-        with pytest.raises(RepresentabilityError, match="softmax"):
-            convert_torch_model(
-                SoftmaxMethodModel().eval(), (12,), num_classes=10,
-                packaging=MVM_PACKAGING,
-            )
+    """[changed in Wave 1 G1: ``.softmax`` and ``.clamp`` have a torch function of their name, so the method rule
+    converts them as the host op of the method itself; the refusal is pinned on a method with none, ``.half``]"""
 
-    def test_softmax_method_flagged_unrepresentable_with_node_name(self):
-        report = check_representability(
-            SoftmaxMethodModel().eval(), (12,), packaging=MVM_PACKAGING
-        )
-        assert not report.is_representable
-        [op] = [o for o in report.unsupported_ops if o.module_type == "softmax"]
-        assert op.op_type == "call_method"
-        assert op.node_name  # the offending FX node is named
-        assert "softmax" in (op.reason or "")
+    def test_softmax_method_converts_exactly(self):
+        _assert_converts_exactly(SoftmaxMethodModel(), (12,))
 
-    def test_clamp_method_raises_at_conversion(self):
-        with pytest.raises(RepresentabilityError, match="clamp"):
-            convert_torch_model(
-                ClampMethodModel().eval(), (12,), num_classes=10,
-                packaging=MVM_PACKAGING,
-            )
+    def test_softmax_method_is_representable_by_the_method_rule(self):
+        report = check_representability(SoftmaxMethodModel().eval(), (12,), packaging=MVM_PACKAGING)
+        assert report.is_representable
+        assert [o.node_name for o in report.supported_ops if o.module_type == "softmax"]
+
+    def test_clamp_method_converts_exactly(self):
+        _assert_converts_exactly(ClampMethodModel(), (12,))
+
+    def test_a_method_with_no_rule_raises_at_conversion_naming_the_method(self):
+        with pytest.raises(RepresentabilityError, match="half"):
+            convert_torch_model(NoRuleMethodModel().eval(), (12,), num_classes=10, packaging=MVM_PACKAGING)
+        report = check_representability(NoRuleMethodModel().eval(), (12,), packaging=MVM_PACKAGING)
+        [op] = [o for o in report.unsupported_ops if o.module_type == "half"]
+        assert op.op_type == "call_method" and op.node_name and "half" in (op.reason or "")
 
     def test_converter_layer_raises_without_analyzer_screening(self):
         """The converter itself must refuse unknown methods (defense in depth:
@@ -83,11 +100,11 @@ class TestUnknownCallMethodFailsLoud:
         )
         from mimarsinan.torch_mapping.torch_graph_tracer import trace_model
 
-        model = SoftmaxMethodModel().eval()
+        model = NoRuleMethodModel().eval()
         gm = normalize_fx_graph(trace_model(model, (12,)))
         converter = MapperGraphConverter(gm, (12,), packaging=MVM_PACKAGING)
         permissive = RepresentabilityReport(is_representable=True)
-        with pytest.raises(UnsupportedCallMethodError, match="softmax"):
+        with pytest.raises(UnsupportedCallMethodError, match="half"):
             converter.convert(permissive)
 
 
