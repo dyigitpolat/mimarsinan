@@ -6,11 +6,18 @@ written), refuses a differing one unless ``target_overrides`` replaces the key w
 that departs from nothing, and refuses an unknown name listing the known ones; twice equals once.
 
 - **One reading at every door.** Every key the expansion reads (``target``, ``target_overrides``, the two labels
-  and, under a target, every key the bundle sets) is read in its registry section; a declaration in the other
-  section refuses by name, at the run door from the two sections, at the document door from the parser's
-  unknown paths. The selecting keys and the labels are read in the flat ``platform_constraints`` only: the run
-  door does not read the wizard's nested user/auto shapes, so a declaration in one (in its body, or beside its
-  mode) refuses by name at every door, located by the document parser.
+  and, under a target, every key the bundle sets) is read in its registry section, from the declarations as the
+  run lays them (``sections_run_layout``); a declaration in the other section that the run reads refuses by name,
+  at the run door from the two sections, at the document door from the parser's unknown paths (one no reader
+  reads is the one judge's to refuse: ``declaration_places.placement_errors``, the document's top level and an
+  object the parser does not read, such as the nested bias object, included). The selecting keys and the labels
+  are read in the flat ``platform_constraints`` only: the run door does not read the wizard's nested user/auto
+  shapes, so a declaration in one (in its body, or beside its mode) refuses by name at every door, located by the
+  document parser.
+- **Not applied.** A key the bundle sets whose registry relevance fails under the declarations, and that no
+  other concern provides, is named "<key> not applied" in the faithfulness label (the relevance the wizard's
+  dormant rows read); one whose consumer applies it only where ``applied_when`` holds, and it fails, is named
+  "<applied_by> not applied" (its other consumers read it as declared).
 - **Same declaration.** Two values declare the same thing when their consumers read the same JSON value: types
   count at every depth (4.0 is not 4, True is not 1), spellings a consumer normalizes do not.
 - **Labels.** ``write_derived`` adds a flat config's two labels, never a document's, and refuses a declared label
@@ -26,6 +33,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.config_schema.registry import REGISTRY, parse_deployment_document
 from mimarsinan.config_schema.registry.consumer_reading import SCHEMA_DEFAULTS, read_like_consumers
+from mimarsinan.config_schema.registry.declaration_judge import sections_run_layout
+from mimarsinan.config_schema.registry.declaration_places import unread_section_paths
 from mimarsinan.config_schema.registry.parse import ParsedDocument
 from mimarsinan.config_schema.registry.value_schema import DeclarationValueError, entry_value_errors
 # Bound as a module (resolved from sys.modules while it initializes): target_bundles imports the registry, whose
@@ -71,10 +80,11 @@ def _declares(key: str, explicit: Any, wanted: Any, flat: Mapping[str, Any]) -> 
     return same_declaration(*read)
 
 
-def _refuse_misplaced(keys: Iterable[str], declared_paths: Iterable[str]) -> None:
-    """Refuse each of ``keys`` found at ``<other section>.<key>`` among ``declared_paths``."""
+def _refuse_misplaced(keys: Iterable[str], declared_paths: Iterable[str], unread: Iterable[str] = ()) -> None:
+    """Refuse each of ``keys`` found at ``<other section>.<key>`` among ``declared_paths`` where the run reads it
+    (``unread``: the paths no reader reads, which the one judge refuses by name)."""
     wrong = {f"{DP if REGISTRY[key].section == PC else PC}.{key}": key for key in keys}
-    if found := sorted(path for path in set(declared_paths) if path in wrong):
+    if found := sorted(path for path in set(declared_paths) - set(unread) if path in wrong):
         raise TargetDeclarationError("; ".join(
             f"{path}: {wrong[path]} is a {REGISTRY[wrong[path]].section} key, read there at every door; "
             "declare it there" for path in found))
@@ -123,22 +133,34 @@ def _judge_overrides(name: str, values: Mapping[str, Any], overrides: Mapping[st
             "override" for key in inert))
 
 
+def _not_applied(key: str, state: Mapping[str, Any]) -> Optional[str]:
+    """The departure of a bundle key no consumer applies under ``state`` (its relevance fails), or that the consumer
+    ``applied_by`` names does not apply (its ``applied_when`` fails; the key's other consumers read it)."""
+    entry = REGISTRY[key]
+    if not entry.relevant.evaluate(state):
+        return f"{key} not applied"
+    if entry.applied_when is not None and not entry.applied_when.evaluate(state):
+        return f"{entry.applied_by} not applied"
+    return None
+
+
 def target_assignments(dp: Mapping[str, Any], pc: Mapping[str, Any], *, write_derived: bool,
                        bundles: Optional[Mapping[str, target_bundles.TargetBundle]] = None,
-                       declared_paths: Optional[Iterable[str]] = None) -> Dict[str, Dict[str, Any]]:
+                       declared_paths: Optional[Iterable[str]] = None,
+                       unread: Optional[Iterable[str]] = None) -> Dict[str, Dict[str, Any]]:
     """``{section: {key: value}}`` the expansion writes (empty without a target).
 
     ``declared_paths`` are the ``<section>.<key>`` paths the declarations hold outside the two sections as
-    given (the document parser's unknown paths); None reads them from ``dp`` and ``pc``, the sections as a run
-    lays them, whose nested platform shape the parser locates. ``target`` and ``target_overrides`` are judged by
-    their registry schemas first, and a key whose registry relevance hands it to another concern
-    (``provided_by``) is not the bundle's to set."""
+    given (the document parser's unknown paths), and ``unread`` those no reader reads; None reads them from
+    ``dp`` and ``pc``, the sections as a run lays them, whose nested platform shape the parser locates.
+    ``target`` and ``target_overrides`` are judged by their registry schemas first, and a key whose registry
+    relevance hands it to another concern (``provided_by``) is not the bundle's to set."""
     paths = list(_section_paths(dp, pc) if declared_paths is None else declared_paths)
     _refuse_misplaced(READ_KEYS, paths)
     if declared_paths is None:
-        nested = parse_deployment_document({PC: pc})
+        nested = parse_deployment_document({DP: dp, PC: pc})
         _refuse_nested(nested.paths, nested.unknown)
-    flat = {**dp, **pc}
+    flat = sections_run_layout(dp, pc)
     for key in TARGET_KEYS:
         if flat.get(key) is not None and (errors := entry_value_errors(REGISTRY[key], flat[key])):
             raise DeclarationValueError("; ".join(errors))
@@ -152,11 +174,13 @@ def target_assignments(dp: Mapping[str, Any], pc: Mapping[str, Any], *, write_de
         return {}
     bundle = target_bundles.get_target_bundle(name, bundles)
     values = bundle.values  # a fresh copy (target_bundles.TargetBundle.values)
-    _refuse_misplaced(values, paths)
+    _refuse_misplaced(values, paths, unread_section_paths(dp, pc) if unread is None else unread)
     _judge_overrides(name, values, overrides, flat)
     out: Dict[str, Dict[str, Any]] = {DP: {}, PC: {}}
+    state = {**SCHEMA_DEFAULTS, **flat, **{key: overrides[key]["value"] if key in overrides else value
+                                         for key, value in values.items() if flat.get(key) is None}}
     for key, value in values.items():
-        if (entry := REGISTRY[key]).provided_by and not entry.relevant.evaluate({**SCHEMA_DEFAULTS, **flat}):
+        if (entry := REGISTRY[key]).provided_by and not entry.relevant.evaluate(state):
             raise TargetConflictError(f"target={name!r} sets {key}, which {entry.provided_by} provides under these "
                                       "declarations: drop target, or the declaration that hands the key over")
         wanted = overrides[key]["value"] if key in overrides else value
@@ -167,8 +191,11 @@ def target_assignments(dp: Mapping[str, Any], pc: Mapping[str, Any], *, write_de
             raise TargetConflictError(f"{key}={explicit!r} differs from {source}, which sets {key}={wanted!r}: "
                                       f"drop {key}, or declare it in target_overrides with a note")
     if write_derived:
+        # A key another concern provides was refused above wherever its relevance fails (Rule R).
+        inert = [departure for key in values if (departure := _not_applied(key, state))]
         derived = {"target_claim_class": bundle.claim_class,
-                   "target_faithfulness_class": bundle.faithfulness.with_declared(overrides).label()}
+                   "target_faithfulness_class": bundle.faithfulness.with_declared(overrides).with_departures(
+                       inert).label()}
         _refuse_declared_labels(pc, derived, name)
         out[PC].update(derived)
     return out
@@ -182,22 +209,23 @@ def expand_target(dp: Mapping[str, Any], pc: Mapping[str, Any], *, write_derived
     return {**dp, **written.get(DP, {})}, {**pc, **written.get(PC, {})}
 
 
-def _document_assignments(parsed: ParsedDocument, *, write_derived: bool,
+def _document_assignments(document: Mapping[str, Any], parsed: ParsedDocument, *, write_derived: bool,
                           bundles: Optional[Mapping[str, target_bundles.TargetBundle]]) -> Dict[str, Dict[str, Any]]:
-    """``target_assignments`` of a parsed document (``parse_deployment_document``); empty without a target."""
+    """``target_assignments`` of a document as ``parse_deployment_document`` parsed it; empty without a target."""
     _refuse_misplaced(READ_KEYS, parsed.unknown)
     _refuse_nested(parsed.paths, parsed.unknown)
     if parsed.pc.get("target") is None and not parsed.pc.get("target_overrides"):
         return {}
     return target_assignments(parsed.dp, parsed.pc, write_derived=write_derived, bundles=bundles,
-                              declared_paths=parsed.unknown)
+                              declared_paths=parsed.unknown,
+                              unread=unread_section_paths(document.get(DP), document.get(PC)))
 
 
 def expand_target_document(document: Mapping[str, Any], *, write_derived: bool = False,
                            bundles: Optional[Mapping[str, target_bundles.TargetBundle]] = None) -> Mapping[str, Any]:
     """A deployment document with the target's keys written into its two sections (the target is read in the
     flat platform constraints only); the document itself without a target."""
-    written = _document_assignments(parse_deployment_document(document), write_derived=write_derived,
+    written = _document_assignments(document, parse_deployment_document(document), write_derived=write_derived,
                                     bundles=bundles)
     if not written:
         return document
@@ -211,10 +239,11 @@ def expand_target_document(document: Mapping[str, Any], *, write_derived: bool =
 def target_core_semantics(document: Mapping[str, Any]) -> Optional[str]:
     """The core semantics a run of ``document`` takes: the declared one, else the target's, else None (the
     default). A read of the expansion that writes nothing and never refuses: a refused target, a nested one
-    included, leaves the declarations."""
+    included, leaves the declarations; the parser reads any draft, a container that is no object an unknown
+    path."""
     parsed = parse_deployment_document(document)
     try:
-        written = _document_assignments(parsed, write_derived=False, bundles=None)
+        written = _document_assignments(document, parsed, write_derived=False, bundles=None)
     except ToolchainRefusal:
         written = {}
     value = {**parsed.dp, **written.get(DP, {})}.get("core_semantics")

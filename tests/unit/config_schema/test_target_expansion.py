@@ -52,16 +52,18 @@ HAND = {
         "allow_coalescing": False, "allow_neuron_splitting": False, "platform_physics_profile": "odin"}},
     "truenorth": {DP: {"core_semantics": "spiking"}, PC: {
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 4096, "has_bias": True}], "weight_bits": 1,
-        "platform_physics_profile": "truenorth", "cores_per_tile": 1, "tile_grid_rows": 64, "tile_grid_cols": 64}},
+        "platform_physics_profile": "truenorth", "cores_per_tile": 1, "tile_grid_rows": 64, "tile_grid_cols": 64,
+        "allow_coalescing": False, "allow_neuron_splitting": False}},
     "loihi": {DP: {"core_semantics": "spiking"}, PC: {
         "cores": [{"max_axons": 128, "max_neurons": 1024, "count": 128, "has_bias": False}], "weight_bits": 8,
-        "platform_physics_profile": "loihi"}},
+        "platform_physics_profile": "loihi", "allow_coalescing": False, "allow_neuron_splitting": True}},
     "isaac_like": {DP: {"core_semantics": "mvm"}, PC: {
         "cores": [{"max_axons": 128, "max_neurons": 128, "count": 16128, "has_bias": False}], "weight_bits": 16,
-        "platform_physics_profile": "isaac_like"}},
+        "platform_physics_profile": "isaac_like", "allow_coalescing": True, "allow_neuron_splitting": True}},
     "generic_estimated_22nm": {DP: {"core_semantics": "mvm"}, PC: {
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 1000}], "weight_bits": 8,
-        "platform_physics_profile": "generic_estimated_22nm"}},
+        "platform_physics_profile": "generic_estimated_22nm", "allow_coalescing": True,
+        "allow_neuron_splitting": True}},
 }
 PHYSICS = tuple(sorted(HAND))
 ODIN_CORES = {"value": [{"max_axons": 128, "max_neurons": 256, "count": 64, "has_bias": False}],
@@ -79,6 +81,9 @@ def _forms(name):
     written = {key for section in HAND[name].values() for key in section}
     dp = {k: v for k, v in doc["deployment_parameters"].items() if k not in written}
     pc = {k: v for k, v in doc["platform_constraints"].items() if k not in GEOMETRY_KEYS and k not in written}
+    bits = target_bundles()[name].values.get("weight_bits")
+    if bits is not None and bits < REGISTRY["weight_bits"].applied_schema.low:
+        dp["weight_quantization"] = False  # key amendment K1: no nonzero level under weight quantization
     hand = {DP: {**dp, **copy.deepcopy(HAND[name][DP])}, PC: {**pc, **copy.deepcopy(HAND[name][PC])}}
     return hand, {DP: dp, PC: {**pc, "target": name}}, doc
 
@@ -119,9 +124,12 @@ class TestBundleFormEqualsHandForm:
         pcfg_bundle = build_platform_constraints_resolved(flat_bundle)
         assert _without(pcfg_bundle) == pcfg_hand
         assert pcfg_bundle["platform_physics_resolved"] == pcfg_hand["platform_physics_resolved"] is not None
+        # Key amendment K2 (review round 1): a float run applies no weight grid, which the label names; the key's
+        # every-run readers (payload sizes, pricing, the record) read the bundle's weight_bits.
+        inert = ["weight grid not applied"] if bundled[DP].get("weight_quantization") is False else []
         assert {k: pcfg_bundle[k] for k in TARGET_KEYS} == {
             "target": name, "target_claim_class": target_bundles()[name].claim_class,
-            "target_faithfulness_class": target_bundles()[name].faithfulness.label()}
+            "target_faithfulness_class": target_bundles()[name].faithfulness.with_departures(inert).label()}
         plan_hand, plan_bundle = _plan(flat_hand, doc), _plan(flat_bundle, doc)
         for field in dataclasses.fields(DeploymentPlan):
             a, b = getattr(plan_hand, field.name), getattr(plan_bundle, field.name)
@@ -171,12 +179,20 @@ class TestConflictsAndOverrides:
         ({"target": "odin"}, {}, "deployment_parameters.target"),
         ({"target_overrides": {}}, {"target": "odin"}, "deployment_parameters.target_overrides"),
         ({"target_claim_class": "synthetic"}, {}, "deployment_parameters.target_claim_class"),
-        ({"weight_bits": 4}, {"target": "odin"}, "deployment_parameters.weight_bits"),
         ({}, {"target": "odin", "core_semantics": "spiking"}, "platform_constraints.core_semantics"),
     ], ids=lambda x: str(x)[:40])
     def test_a_key_outside_its_section_refuses_by_name(self, dp, pc, named):
         with pytest.raises(TargetDeclarationError, match=named):
             expand_target(dp, pc, write_derived=False)
+
+    def test_a_bundle_key_no_reader_reads_is_the_judge_s_to_refuse(self):
+        """A deployment-parameters copy of a platform key the platform default layer replaces is read by no reader
+        (the expansion reads the run's layout, so it never takes it for a declaration): the one judge refuses it by
+        name at the merge, with the message the document door states (review round 1)."""
+        assert expand_target({"weight_bits": 4}, {"target": "odin"}, write_derived=False)[1]["weight_bits"] == 4
+        with pytest.raises(ToolchainRefusal, match=r"deployment_parameters\.weight_bits: weight_bits is a "
+                                                   r"platform_constraints key, and nothing reads it here"):
+            merge_pipeline_config({"weight_bits": 4}, {"target": "odin"})
 
     def test_a_bundle_key_outside_its_section_is_the_bundle_s_concern_only(self):
         """Without a target, a misplaced key is the base's reading (the run's flat merge), not the expansion's."""

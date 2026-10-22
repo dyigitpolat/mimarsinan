@@ -18,14 +18,12 @@ from mimarsinan.config_schema.defaults import (
     DEFAULT_DEPLOYMENT_PARAMETERS,
     DEFAULT_PLATFORM_CONSTRAINTS,
     apply_preset as _apply_preset,
-    get_default_deployment_parameters,
-    get_default_platform_constraints,
 )
-from mimarsinan.config_schema.deployment_derivation import (
-    derive_deployment_parameters,
-    derive_pipeline_runtime_parameters,
+from mimarsinan.config_schema.registry import declaration_judge
+from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
+from mimarsinan.config_schema.runtime import (
+    DerivationRefusal, model_registration, registration_errors, registration_updates, run_config,
 )
-from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
 from mimarsinan.common.workload_profile import fold_workload_profiles
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 import mimarsinan.mapping.platform.target_expansion as target_expansion
@@ -43,24 +41,27 @@ def merge_pipeline_config(
     """The exact ``_initialize_config`` merge + derivation, sans provider facts
     and device I/O (shared with the golden-resolution harness).
 
-    A declared target expands first (``expand_target``, with the two labels a
-    flat config carries), and the merged declarations are read as their
-    consumers read them (``read_like_consumers``) before the derivation, so the
-    flat config carries the value every consumer runs."""
+    A declared target expands first (``expand_target``), so the one judge
+    (``declared_sections_errors``, G4 interface note 1) judges every declaration
+    as written, the bundle's included, under the core semantics the run takes
+    and the model builder's registration (``model_registration``: its weight
+    sets, which the pretrained regime's legal sets read), before anything else
+    reads one; then ``run_config``, the one derivation every reader takes: the
+    expansion writes the two labels a flat config carries, and
+    ``derive_run_config`` lays the sections as the run lays them (a null
+    declaration unset, as both doors read it), reads them as their consumers
+    read them, and derives (its refusal a ``DerivationRefusal``, a declared
+    derived key it would replace among them)."""
     deployment_parameters, platform_constraints = target_expansion.expand_target(
-        deployment_parameters, platform_constraints, write_derived=True
+        deployment_parameters, platform_constraints, write_derived=False
     )
-    config: dict = {}
-    config.update(get_default_deployment_parameters())
-    config.update(deployment_parameters)
-    config.update(get_default_platform_constraints())
-    config.update(platform_constraints)
-    config = read_like_consumers(config)
-    derive_deployment_parameters(
-        config, explicit_keys=set(deployment_parameters) | set(platform_constraints)
-    )
-    derive_pipeline_runtime_parameters(config)
-    return config
+    layout = declaration_judge.sections_run_layout(deployment_parameters, platform_constraints)
+    errors = declaration_judge.declared_sections_errors(
+        deployment_parameters, platform_constraints,
+        registration=registration_updates(model_registration(layout), None))
+    if errors:
+        raise DeclarationValueError("; ".join(errors))
+    return run_config(deployment_parameters, platform_constraints)
 
 
 def apply_provider_facts(config: dict, data_provider) -> None:
@@ -73,13 +74,25 @@ def apply_provider_facts(config: dict, data_provider) -> None:
 def apply_workload_profiles(config: dict, data_provider) -> None:
     """Fold the registered data/model workload profiles beneath explicit config
     keys (explicit > model registration > data registration > framework default)."""
-    fold_workload_profiles(
-        config,
-        model_profile=ModelRegistry.get_workload_profile(
-            str(config.get("model_type") or "")
-        ),
-        data_profile=data_provider.workload_profile(),
-    )
+    fold_workload_profiles(config, **_workload_profiles(config, data_provider))
+
+
+def _workload_profiles(config: dict, data_provider) -> dict:
+    return {"model_profile": ModelRegistry.get_workload_profile(str(config.get("model_type") or "")),
+            "data_profile": data_provider.workload_profile()}
+
+
+def apply_judged_workload_profiles(config: dict, data_provider, deployment_parameters: dict,
+                                   platform_constraints: dict) -> None:
+    """``apply_workload_profiles`` with the run's refusals of what the registrations meet, by name
+    (``registration_errors``: a registration-owned key declared otherwise, a declared value the registrations
+    make illegal, a declaration the workload reading refuses), over the declarations as the run lays them; the
+    document door states the same refusals from the builder registration (``run_derivation_errors``)."""
+    profiles = _workload_profiles(config, data_provider)
+    declared = declaration_judge.sections_run_layout(deployment_parameters, platform_constraints)
+    errors = registration_errors(config, declared, (profiles["model_profile"], profiles["data_profile"]))
+    if errors:
+        raise DerivationRefusal("; ".join(errors))
 
 
 class DeploymentPipeline(Pipeline):
@@ -124,7 +137,7 @@ class DeploymentPipeline(Pipeline):
         if data_provider is None:
             data_provider = self.data_provider_factory.create()
         apply_provider_facts(self.config, data_provider)
-        apply_workload_profiles(self.config, data_provider)
+        apply_judged_workload_profiles(self.config, data_provider, deployment_parameters, platform_constraints)
         self.config["device"] = select_device()
 
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":

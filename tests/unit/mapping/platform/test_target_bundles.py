@@ -223,7 +223,11 @@ class TestGeometryOnlyBundles:
 
     @staticmethod
     def _pcfg(name):
-        return build_platform_constraints_resolved(merge_pipeline_config({}, {"target": name}))
+        """The resolved platform of ``target: name``, float weights where the bundle's signed weight grid has no
+        nonzero level under weight quantization (key amendment K1 refuses that by name)."""
+        bits = target_bundles()[name].values.get("weight_bits")
+        dp = {"weight_quantization": False} if bits is not None and bits < REGISTRY["weight_bits"].applied_schema.low else {}
+        return build_platform_constraints_resolved(merge_pipeline_config(dp, {"target": name}))
 
     @pytest.mark.parametrize("name", sorted(set(target_bundles()) - set(PHYSICS_BUNDLES)))
     def test_geometry_resolves_and_physics_refuses_by_name(self, name):

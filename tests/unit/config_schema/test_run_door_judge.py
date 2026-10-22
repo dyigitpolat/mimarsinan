@@ -12,13 +12,16 @@ The 85 closed or bounded keys the run door did not judge were audited against th
 what its consumer accepts and runs (plan section 20 item 3). ``AUDITED_LEGAL_SETS`` pins the outcome, so a new closed
 key or a moved legal set fails here until it is audited.
 
-The judge lives in the registry (``declaration_judge``), so both doors can call one function. A run reads some
+The judge lives in the registry (``declaration_judge``), so both doors call one function. A run reads some
 declarations before its flat config exists (the derivation re-derives or casts them, the session casts the top-level
 seed and reads some deployment parameters from the section itself), so the both-doors test judges a document through
-the CLI path (``PipelineSession.from_config``), and every case the path reads before a judge is a strict xfail naming
-the G4 interface note that closes it (``RUN_PATH_GAPS``, ``SHADOWED_SECTION_READS``). The judge of a document judges
-the run's layout of its two sections and each section's own declarations as written, so it states every refusal of
-the document door's registry loop and of the run's layout (review round 2).
+the CLI path (``PipelineSession.from_config``). On the base and through S0 amendment B the path read those cases
+before any judge (``RUN_PATH_GAPS``, ``SHADOWED_SECTION_READS``, ``MISPLACED``, ``NULL_MISREADS``, pinned as strict
+xfails); the joint closure of S0-B and G4 lands G4 interface notes 1 to 3, so every entry point judges a document's
+declarations as written before anything reads one, and each case is a plain passing test. The judge of a document
+judges the run's layout of its two sections and each section's own declarations as written, by their schemas, the
+document domain rule, the legal-value-set law and the schemas consumers apply, so it states every refusal of the
+document door's registry loop, legality and domain rules and of the run's layout (review round 2, the closure).
 """
 
 import ast
@@ -59,9 +62,15 @@ from mimarsinan.config_schema.registry import declaration_judge, entries_platfor
 from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
 from mimarsinan.config_schema.registry.declaration_judge import document_declaration_errors
 from mimarsinan.config_schema.registry.entries_write import INJECTED_DECLARATIONS
+from mimarsinan.config_schema.resolve import resolve_draft
+from mimarsinan.gui.wizard.emit import emit_deployment_config
+from mimarsinan.config_schema.runtime import DerivationRefusal
+from mimarsinan.mapping.platform.target_bundles import target_bundles
+from mimarsinan.config_schema.registry.relevance import Relevance
 from mimarsinan.config_schema.registry.types import ConfigKeySchema
 from mimarsinan.config_schema.registry.value_schema import (
     DeclarationValueError,
+    ValueSchema,
     describe,
     entry_value_errors,
     schema_of,
@@ -172,15 +181,11 @@ def _through_the_run(document, workdir):
 
 
 def _document_only(document):
-    """The document door's refusals the resolver's judge does not state: of the document as a document (a key a
-    document may not declare, a retired key, a key of the other core-semantics domain: a run's flat config holds
-    derived and defaulted keys of both domains), the legal-value-set law, which the run applies in
-    ``merge_pipeline_config``, and the floorplan pairing, which the resolver applies after its judge
-    (``resolve_floorplan`` raises the same message)."""
-    dp = document.get("deployment_parameters") or {}
-    return (set(non_declarable_key_errors(document)) | {row["message"] for row in retired_key_errors(document)}
-            | set(mvm_document_errors(document)) | {row["message"] for row in legality_errors(dp, dp)}
-            | set(floorplan_config_errors(document.get("platform_constraints") or {})))
+    """The document door's refusals no run states: of the document as a document, a key a document may not
+    declare (``non_declarable_key_errors``) and a retired key (``retired_key_errors``), which the run reads through
+    the derivation or the retirement bridge. The domain rule, the legal-value-set law and the floorplan pairing
+    are the one judge's since the joint closure, so both doors state them."""
+    return set(non_declarable_key_errors(document)) | {row["message"] for row in retired_key_errors(document)}
 
 
 _LEGALITY = frozenset(key for key, entry in REGISTRY.items() if entry.legal_values is not None)
@@ -209,21 +214,21 @@ def _illegal_values(entry):
 
 SCALAR_CASES = [(key, value) for key in SCALAR_KEYS for value in _illegal_values(REGISTRY[key])]
 
-#: G4 interface note 1 (``merge_pipeline_config``, G4's): call ``declared_sections_errors`` on the two sections at the
-#: top of the merge and raise its refusal, before ``derive_deployment_parameters`` re-derives or casts a declaration
-#: (``bool("false")`` is true; an explicit activation_quantization is replaced by the derived one) or raises a plain
-#: ValueError that misreads it.
+#: G4 interface note 1 (``merge_pipeline_config``, G4's, landed by the joint closure): the merge calls
+#: ``declared_sections_errors`` on the two sections and raises its refusal before ``derive_deployment_parameters``
+#: re-derives or casts a declaration (``bool("false")`` is true; an explicit activation_quantization is replaced by
+#: the derived one) or raises a plain ValueError that misreads it.
 G4_MERGE = ("G4 interface note 1: merge_pipeline_config judges the declared sections (declared_sections_errors) "
             "before derive_deployment_parameters reads them")
-#: G4 interface note 2 (``parse_deployment_config``, G4's): call ``document_declaration_errors`` on the document
-#: before it reads one (the ``int(seed)`` cast, the data provider, the working directory, the preset, the target
-#: metric override, and the deployment parameters it hands the data provider or branches on); the session reads
-#: these with no judge.
+#: G4 interface note 2 (``parse_deployment_config``, G4's, landed): the session calls ``document_declaration_errors``
+#: on the document before it reads one (the ``int(seed)`` cast, the data provider, the working directory, the preset,
+#: the target metric override, and the deployment parameters it hands the data provider or branches on).
 G4_SESSION = ("G4 interface note 2: parse_deployment_config judges the document (document_declaration_errors) "
               "before it reads a declaration")
 
-#: Every case of the both-doors test that the CLI path reads before any judge (evidence/run_path_gaps_fix1.txt),
-#: with the G4 interface note that closes it. Each is a strict xfail, so it fails the day the note lands.
+#: Every case of the both-doors test that the CLI path read before any judge on the base and through S0 amendment B
+#: (evidence/run_path_gaps_fix1.txt), with the G4 interface note that closed it; each was a strict xfail until the
+#: joint closure and is a plain passing case since.
 RUN_PATH_GAPS = {
     ("activation_quantization", "false"): G4_MERGE,
     ("enable_loihi_simulation", "false"): G4_MERGE,
@@ -251,11 +256,7 @@ RUN_PATH_GAPS = {
 }
 
 
-SCALAR_PARAMS = [
-    pytest.param(key, value, id=f"{key}-{value!r}"[:48],
-                 marks=([pytest.mark.xfail(strict=True, reason=RUN_PATH_GAPS[(key, value)])]
-                        if (key, value) in RUN_PATH_GAPS else []))
-    for key, value in SCALAR_CASES]
+SCALAR_PARAMS = [pytest.param(key, value, id=f"{key}-{value!r}"[:48]) for key, value in SCALAR_CASES]
 
 
 def _document_door(document):
@@ -274,8 +275,8 @@ class TestEveryPresentSchemaAtTheRunDoor:
     @pytest.mark.parametrize("key,value", SCALAR_PARAMS)
     def test_a_value_outside_its_schema_refuses_by_name_at_both_doors(self, key, value, tmp_path):
         """The value is declared in the document and the run side takes the document through the CLI path
-        (``_through_the_run``), so a declaration the derivation or the session reads before the run door shows:
-        each such case is a strict xfail naming its G4 note (``RUN_PATH_GAPS``)."""
+        (``_through_the_run``), so a declaration the derivation or the session read before the run door would
+        show (``RUN_PATH_GAPS``, closed by G4 interface notes 1 and 2)."""
         entry = REGISTRY[key]
         base = _base(entry)
         assert validate_deployment_config(base) == [] and _through_the_run(base, tmp_path / "base") == []
@@ -287,7 +288,7 @@ class TestEveryPresentSchemaAtTheRunDoor:
         assert _parts(_through_the_run(document, tmp_path / "run")) == _parts(stated)
 
     def test_every_run_path_gap_is_a_case_of_the_both_doors_test(self):
-        """A gap whose case left the parametrization would drop its strict xfail silently."""
+        """A closed gap whose case left the parametrization would drop its pin silently."""
         assert set(RUN_PATH_GAPS) <= set(SCALAR_CASES)
 
     @pytest.mark.parametrize("key,value", SCALAR_CASES, ids=lambda x: str(x)[:40])
@@ -303,9 +304,9 @@ class TestEveryPresentSchemaAtTheRunDoor:
     def test_the_resolver_refuses_a_legality_bearing_value_outside_its_schema_by_name(self, key):
         """Every present key's schema is judged at the run door, a legality-bearing key's too (its legal set is a
         subset of its options), on a flat config no merge built (a search overlay, a hand config). Where the key's
-        legality does not apply (``preload_weights: 7`` on a model with no weight sets) the document door judges
-        neither its legal set nor its schema (``validate_against_registry`` leaves legality-bearing keys to
-        ``legality_errors``): a G4 interface note."""
+        legality does not apply (``preload_weights: 7`` on a model with no weight sets) both doors judge its schema
+        since the joint closure (``validate_against_registry`` judges every key's schema, and the legal-value-set
+        law only a value the schema admits)."""
         entry = REGISTRY[key]
         value = 7 if entry.type.value in ("bool", "str", "enum") else "not_a_legal_value"
         flat = _flat(_base(entry))
@@ -423,13 +424,17 @@ class TestEveryPresentSchemaAtTheRunDoor:
         loop = ast.parse(textwrap.dedent(inspect.getsource(declaration_judge.declaration_errors)))
         names = {node.id for node in ast.walk(loop) if isinstance(node, ast.Name)}
         assert {"REGISTRY", "entry_value_errors", "domain_errors"} <= names
+        layout = ast.parse(textwrap.dedent(inspect.getsource(declaration_judge._layout_errors)))
+        assert {"declaration_errors", "platform_bias_errors", "floorplan_config_errors"} <= {
+            node.id for node in ast.walk(layout) if isinstance(node, ast.Name)}
         door = ast.parse(textwrap.dedent(inspect.getsource(declaration_judge.run_door_errors)))
-        assert {"declaration_errors", "platform_bias_errors"} <= {
-            node.id for node in ast.walk(door) if isinstance(node, ast.Name)}
-        trees = [(loop, set()), (door, {"has_bias"})] + [
+        assert "_layout_errors" in {node.id for node in ast.walk(door) if isinstance(node, ast.Name)}
+        trees = [(loop, set()), (layout, {"has_bias"}), (door, set())] + [
             (ast.parse(textwrap.dedent(inspect.getsource(function))), set())
             for function in (declaration_judge.sections_run_layout, declaration_judge.section_declarations,
-                             declaration_judge.declared_sections_errors,
+                             declaration_judge.legality_rows, declaration_judge.applied_errors,
+                             declaration_judge._domain_rule_errors, declaration_judge._sections_view,
+                             declaration_judge.declared_legality_rows, declaration_judge.declared_sections_errors,
                              declaration_judge.document_declaration_errors)]
         for tree, allowed in trees:
             constants = {node.value for node in ast.walk(tree)
@@ -439,10 +444,10 @@ class TestEveryPresentSchemaAtTheRunDoor:
         assert "run_door_errors(pipeline_config)" in source
 
 
-#: G4 interface note 3 (``validate_deployment_config``, G4's): judge ``document_declaration_errors(config)`` in place
-#: of ``validate_against_registry`` over the parser's known flat keys (which skips a legality-bearing key and a key
-#: declared in the other section) and the bias rule over ``document_run_layout``, so the document door judges every
-#: declaration where, and as, the run judges it.
+#: G4 interface note 3 (``validate_deployment_config``, G4's, landed): the document door judges
+#: ``document_declaration_errors(config)`` beside ``validate_against_registry`` over the parser's known flat keys (which
+#: skipped a legality-bearing key and misses a key declared in the other section), in place of the bias rule over
+#: ``document_run_layout``, so it judges every declaration where, and as, the run judges it, each message once.
 G4_DOCUMENT = ("G4 interface note 3: validate_deployment_config judges document_declaration_errors(config), the run "
                "layout with legality-bearing keys included")
 
@@ -464,12 +469,17 @@ SCOUTED_MISREADS = [
     ("top", "target_metric_override", "0.5", "lif_mmixcore.json", G4_SESSION),
 ]
 
-#: A key declared in the other section: the parser lists it as unknown and the document door judges nothing, while
-#: the run lays both sections flat and reads it (review round 1, ``misplaced_probe.txt``).
+#: A key declared in the other section: the parser lists it as unknown and the document door judged nothing, while
+#: the run lays both sections flat and reads it (review round 1, ``misplaced_probe.txt``). The last two are
+#: derivation-read keys (S0-B final review, the major): the derivation rewrote them before the run door saw them, so
+#: both doors admitted them and the run misread them (``bool("false")`` ran quantized, ``"false" is not False`` armed
+#: the simulator; ``review_3/probes/misplaced_derived_*.jsonl``, identical on the base).
 MISPLACED = [
     ("platform_constraints", "lr", -1.0),
     ("platform_constraints", "lif_execution_discipline", "synchronised"),
     ("platform_constraints", "encoding_layer_placement", "Offload"),
+    ("platform_constraints", "weight_quantization", "false"),
+    ("platform_constraints", "enable_nevresim_simulation", "false"),
 ]
 
 #: A legality-bearing key outside its schema where its legality does not apply (the model registers no weight sets):
@@ -484,7 +494,7 @@ NULL_MISREADS = [("sync_simplemlp.json", "weight_quantization"), ("lif_mmixcore.
                  ("mvm_lenet5.json", "weight_quantization"), ("lif_mmixcore.json", "firing_mode"),
                  ("lif_mmixcore.json", "lif_exact_qat"), ("lif_mmixcore.json", "spiking_family"),
                  ("sync_simplemlp.json", "spiking_family")]
-G4_NULL = ("G4 interface note 1(c): merge_pipeline_config reads a laid null as unset (nulls_read_as_unset) before "
+G4_NULL = ("G4 interface note 1(c): merge_pipeline_config lays a null as unset (run_layers lays nothing for it) before "
            "derive_deployment_parameters, as both doors read a null declaration")
 
 #: A deployment-parameters declaration the session reads from the section itself, shadowed in the run's layout by a
@@ -570,18 +580,21 @@ class TestTheDeclarationJudge:
         assert legal_values_for(key, _flat(_load("lif_mmixcore.json"))) is None
         assert document_declaration_errors(document) == [_message(key, value)]
 
-    def test_a_declaration_in_the_other_section_a_later_one_replaces_is_judged_by_neither_door(self):
+    def test_a_declaration_in_the_other_section_a_later_one_replaces_is_refused_by_name(self):
         """A platform-constraints key declared in the deployment parameters (an unknown key to the parser, so no
-        section's own declaration) is replaced in the run's layout by the platform constraints' own window
-        (``dict.update``), so no run reads it, and neither door, nor the judge, refuses it. A key in its own
-        section is judged as written there, a later copy or not
+        section's own declaration) is replaced in the run's layout by the platform default layer and the platform
+        constraints' own window, so no reader reads it: the judge refuses it by name at both doors and at the merge
+        (review round 1; before, neither door judged it and the run read the window). A key in its own section is
+        judged as written there, a later copy or not
         (``test_a_section_s_own_declaration_is_judged_as_written_under_a_later_copy``)."""
         document = _declared("deployment_parameters", "simulation_steps", 32.5, name="sync_simplemlp.json")
         assert REGISTRY["simulation_steps"].section == "platform_constraints"
         assert isinstance(document["platform_constraints"]["simulation_steps"], int)
-        assert document_declaration_errors(document) == []
-        assert validate_deployment_config(document) == []
-        assert _run(_flat(document)) == []
+        message = ("deployment_parameters.simulation_steps: simulation_steps is a platform_constraints key, and "
+                   "nothing reads it here (the platform default layer replaces it): declare it in platform_constraints")
+        assert document_declaration_errors(document) == validate_deployment_config(document) == [message]
+        with pytest.raises(DeclarationValueError, match=r"deployment_parameters\.simulation_steps: "):
+            _flat(document)
 
     def test_a_top_level_key_is_judged_where_the_session_reads_it(self):
         """The session seeds the data provider with the top-level seed even where the deployment parameters
@@ -605,15 +618,16 @@ class TestTheDeclarationJudge:
         parameters' declaration from the section itself, while the flat config carries the platform constraints'
         copy, so the layout alone admits what the session misreads (``Bilinear`` runs as bicubic, a batch size of
         0 or 7.5 reaches the data provider, ``Search`` takes the fixed branch under a merged ``search``). The
-        judge and the document door refuse it by name, with one message. (Today's run door, over the merged flat
-        config, admits it; G4 interface note 1 refuses it in the merge, so that outcome is not pinned here.)"""
+        judge and the document door refuse it by name, with one message, and so does the merge since G4 interface
+        note 1 landed (``TestRunPathGaps`` pins the CLI path)."""
         document = _shadowed(name, key, value, shadow)
         dp, pc = document["deployment_parameters"], document["platform_constraints"]
         assert REGISTRY[key].section == "deployment_parameters" and _message(key, shadow) == ""
         layout = declaration_judge.sections_run_layout(dp, pc)
         assert layout[key] == shadow and declaration_judge.run_door_errors(read_like_consumers(layout)) == []
         message = _message(key, value)
-        assert validate_deployment_config(document) == [message]
+        # A copy that turns the hardware search on brings the document door's presence rule over the layout too.
+        assert validate_deployment_config(document)[:1] == [message]
         assert declaration_judge.declared_sections_errors(dp, pc) == [message]
         assert document_declaration_errors(document) == [message]
 
@@ -643,13 +657,17 @@ class TestTheDeclarationJudge:
         assert document_declaration_errors(document) == [reserved]
 
     def test_a_null_declaration_is_unset(self):
-        """Both doors read a null as unset, so the judge states nothing of one (``NULL_MISREADS``: the run must
-        read it alike, G4 interface note 1(c))."""
+        """Both doors read a null as unset, so the judge states of a null declaration exactly what it states of the
+        key undeclared (``NULL_MISREADS``: the run reads it alike, G4 interface note 1(c); on the TTFS fixture an
+        undeclared spiking family is the lif default, under which its TTFS firing and spike modes are illegal)."""
         for name, key in NULL_MISREADS:
             entry = REGISTRY[key]
-            document = _load(name)
-            document[entry.section][key] = None
-            assert document_declaration_errors(document) == [], (name, key)
+            absent = _load(name)
+            absent[entry.section].pop(key, None)
+            null = copy.deepcopy(absent)
+            null[entry.section][key] = None
+            assert document_declaration_errors(null) == document_declaration_errors(absent), (name, key)
+            assert validate_deployment_config(null) == validate_deployment_config(absent), (name, key)
 
     def test_the_judge_reads_like_the_consumers(self):
         """A spelling the consumer normalizes is judged as the consumer reads it (``read_like_consumers``), as at
@@ -663,60 +681,58 @@ class TestTheDeclarationJudge:
         assert document_declaration_errors(document) == []
 
     def test_a_laid_null_reads_as_the_key_undeclared(self):
-        """``nulls_read_as_unset`` (G4 interface note 1(c)): over the current merge, a null declaration reads as
-        the key undeclared, the default layer's value or absent, for every misread of ``NULL_MISREADS`` and for
-        keys the default layers hold (``lr``, a value; ``sanafe_custom_arch_path``, None)."""
+        """``run_layers`` (G4 interface note 1(c); review round 1: a null lays nothing): over the merge's layers, a
+        null declaration reads as the key undeclared, the default layer's value or absent, for every misread of
+        ``NULL_MISREADS`` and for keys the default layers hold (``lr``, a value; ``sanafe_custom_arch_path``,
+        None); and the merge, which lays the sections so, derives the null document as it derives the absent
+        one."""
         defaults = {**get_default_deployment_parameters(), **get_default_platform_constraints()}
         assert defaults["lr"] is not None and defaults["sanafe_custom_arch_path"] is None
         defaulted = [("lif_mmixcore.json", "lr"), ("sync_simplemlp.json", "sanafe_custom_arch_path")]
+
+        def laid(document):
+            return declaration_judge.run_layers(document["deployment_parameters"], document["platform_constraints"],
+                                                defaults=True)
+
         for name, key in [*NULL_MISREADS, *defaulted]:
             entry = REGISTRY[key]
             absent = _load(name)
             absent[entry.section].pop(key, None)
             null = copy.deepcopy(absent)
             null[entry.section][key] = None
-            expected = _merged_or_refusal(absent)
-            dp, pc = null["deployment_parameters"], null["platform_constraints"]
-            config = {**get_default_deployment_parameters(), **dp, **get_default_platform_constraints(), **pc}
-            declaration_judge.nulls_read_as_unset(config, defaults)
-            try:
-                derive_deployment_parameters(config, explicit_keys={k for k, v in {**dp, **pc}.items()
-                                                                    if v is not None})
-                derive_pipeline_runtime_parameters(config)
-            except ValueError as refusal:
-                config = f"{type(refusal).__name__}: {refusal}"
-            assert config == expected, (name, key)
+            assert laid(null) == laid(absent), (name, key)
+            assert _merged_or_refusal(null) == _merged_or_refusal(absent), (name, key)
 
     def test_the_layout_is_the_merge_s_layers(self):
         """``sections_run_layout``: the deployment parameters, then the platform constraints' default layer (a
         deployment-parameters declaration of a key it holds is read by no run), then the platform constraints, each
-        replacing a value whole."""
+        replacing a value whole; a null declaration is unset, so it lays nothing (review round 1)."""
         assert "weight_bits" in get_default_platform_constraints()
         layout = declaration_judge.sections_run_layout(
             {"weight_bits": 64, "a": 1, "nested": {"x": 1}, "b": "keep"}, {"a": None, "nested": {}})
-        assert layout == {"a": None, "nested": {}, "b": "keep"}
+        assert layout == {"a": 1, "nested": {}, "b": "keep"}
         assert declaration_judge.sections_run_layout("no object", {"lr": 0.5}) == {"lr": 0.5}
 
-    def test_a_declaration_the_default_layer_replaces_is_judged_by_neither_door(self, tmp_path):
-        """A deployment-parameters ``activity_factor`` is replaced by the platform constraints' default layer, so
-        the run reads the default, the document door judges nothing (an unknown key there), and neither does the
-        judge."""
+    def test_a_declaration_the_default_layer_replaces_is_refused_by_name(self, tmp_path):
+        """A deployment-parameters ``activity_factor`` is replaced by the platform constraints' default layer, so the
+        run read the default and ignored it, where both doors and the judge admitted it: no reader reads it, and the
+        judge refuses it by name at both doors and on the CLI path (review round 1)."""
         document = _declared("deployment_parameters", "activity_factor", 5.0, name="sync_simplemlp.json")
         assert "activity_factor" not in document["platform_constraints"]
         assert "activity_factor" in get_default_platform_constraints() and _message("activity_factor", 5.0)
-        assert document_declaration_errors(document) == validate_deployment_config(document) == []
-        assert _through_the_run(document, tmp_path) == []
+        message = ("deployment_parameters.activity_factor: activity_factor is a platform_constraints key, and "
+                   "nothing reads it here (the platform default layer replaces it): declare it in platform_constraints")
+        assert document_declaration_errors(document) == validate_deployment_config(document) == [message]
+        assert _through_the_run(document, tmp_path) == [message]
 
 
 class TestRunPathGaps:
-    """Each case the CLI path reads before any judge, as a strict xfail naming the G4 interface note that closes it:
-    the run door judges the flat config, which the derivation and the session have already rewritten. Every row
-    is identical on the base (amendment B introduced none and closes none on this path)."""
+    """Each case the CLI path read before any judge on the base and through S0 amendment B (the run door judged the
+    flat config, which the derivation and the session had already rewritten), now refused by name on the CLI path:
+    the joint closure lands the G4 interface note each case names (strict xfails until then)."""
 
     @pytest.mark.parametrize("section,key,value,name,note", [
-        pytest.param(*case, marks=pytest.mark.xfail(strict=True, reason=case[4]),
-                     id=f"{case[3][:-5]}-{case[1]}-{case[2]!r}")
-        for case in SCOUTED_MISREADS])
+        pytest.param(*case, id=f"{case[3][:-5]}-{case[1]}-{case[2]!r}") for case in SCOUTED_MISREADS])
     def test_a_scouted_misread_is_refused_by_name_on_the_cli_path(self, section, key, value, name, note, tmp_path):
         assert _parts(_through_the_run(_declared(section, key, value, name), tmp_path)) == _parts(
             [_message(key, value)])
@@ -729,18 +745,14 @@ class TestRunPathGaps:
         assert _parts(_through_the_run(document, tmp_path)) == _parts([_message("lif_exact_qat", "false")])
 
     @pytest.mark.parametrize("name,key,value,shadow", [
-        pytest.param(*case, marks=pytest.mark.xfail(strict=True, reason=G4_SESSION),
-                     id=f"{case[1]}-{case[2]!r}"[:40])
-        for case in SHADOWED_SECTION_READS])
+        pytest.param(*case, id=f"{case[1]}-{case[2]!r}"[:40]) for case in SHADOWED_SECTION_READS])
     def test_a_shadowed_section_read_is_refused_by_name_on_the_cli_path(self, name, key, value, shadow, tmp_path):
         """The session reads the deployment parameters' declaration before any judge, and the run door judges the
         flat config, which carries the platform constraints' copy (``SHADOWED_SECTION_READS``)."""
         assert _parts(_through_the_run(_shadowed(name, key, value, shadow), tmp_path)) == _parts(
             [_message(key, value)])
 
-    @pytest.mark.parametrize("name,key", [
-        pytest.param(name, key, marks=pytest.mark.xfail(strict=True, reason=G4_NULL), id=f"{name}-{key}")
-        for name, key in NULL_MISREADS])
+    @pytest.mark.parametrize("name,key", [pytest.param(name, key, id=f"{name}-{key}") for name, key in NULL_MISREADS])
     def test_a_null_declaration_runs_as_an_absent_one(self, name, key):
         absent, null = _absent_and_null(name, key)
         assert null == absent
@@ -760,8 +772,7 @@ class TestRunPathGaps:
         assert moved == []
 
     @pytest.mark.parametrize("section,key,value", [
-        pytest.param(*case, marks=pytest.mark.xfail(strict=True, reason=G4_DOCUMENT), id=f"{case[0]}.{case[1]}")
-        for case in MISPLACED])
+        pytest.param(*case, id=f"{case[0]}.{case[1]}-{case[2]!r}") for case in MISPLACED])
     def test_a_key_declared_in_the_other_section_is_refused_alike_at_both_doors(self, section, key, value,
                                                                                tmp_path):
         document = _declared(section, key, value)
@@ -769,9 +780,7 @@ class TestRunPathGaps:
         assert _message(key, value) in validate_deployment_config(document)
 
     @pytest.mark.parametrize("key,value", [
-        pytest.param(*case, marks=pytest.mark.xfail(strict=True, reason=f"{G4_DOCUMENT}; {G4_MERGE}"),
-                     id=f"{case[0]}-{case[1]!r}")
-        for case in INAPPLICABLE_LEGALITY])
+        pytest.param(*case, id=f"{case[0]}-{case[1]!r}") for case in INAPPLICABLE_LEGALITY])
     def test_a_legality_bearing_key_outside_its_schema_is_refused_alike_at_both_doors(self, key, value, tmp_path):
         """Where the key's legality does not apply, the document door judges nothing; the CLI path reads
         ``preload_weights: "false"`` as true in the workload-profile fold before the run door."""
@@ -849,7 +858,7 @@ AUDITED_LEGAL_SETS = {
     "scm_degradation_tolerance": "FLOAT in [0, 1]",
     "scm_torch_sim_parity_min_agreement": "FLOAT in [0, 1]",
     "scm_torch_sim_parity_samples": "INT >= 0",
-    "seed": "INT >= 0",
+    "seed": "INT in [0, 4294967295]",
     "simulation_batch_count": "INT >= 1",
     "simulation_batch_size": "INT >= 1",
     "simulation_step_timeout_s": "FLOAT > 0",
@@ -1103,3 +1112,309 @@ class TestNoDeadDeclaration:
         assert entry.resolved_options() == get_args(connectivity.ConnectivityMode)
         assert entry.consumer_reading is connectivity.resolve_nevresim_connectivity_mode
         assert REGISTRY["nevresim_connectivity_mode"].value_schema == entry.value_schema
+
+
+def _cli_refusal(document, workdir):
+    """The CLI path's refusal of a document as ``_through_the_run`` takes it (``PipelineSession.from_config``, then
+    the run door), the exception itself (any ``ToolchainRefusal``), or None when it runs."""
+    document = {**copy.deepcopy(document), "_working_directory": str(workdir)}
+    flags = (torch.are_deterministic_algorithms_enabled(), torch.is_deterministic_algorithms_warn_only_enabled(),
+             torch.backends.cudnn.benchmark, torch.backends.cuda.matmul.allow_tf32,
+             torch.backends.cudnn.allow_tf32, torch.get_float32_matmul_precision())
+    try:
+        with isolated_rng_stream():
+            session = PipelineSession.from_config(document, data_provider_factory=_StubProviderFactory(document))
+            build_platform_constraints_resolved(session.pipeline.config)
+    except ToolchainRefusal as refusal:
+        return refusal
+    finally:
+        torch.use_deterministic_algorithms(flags[0], warn_only=flags[1])
+        torch.backends.cudnn.benchmark = flags[2]
+        torch.backends.cuda.matmul.allow_tf32 = flags[3]
+        torch.backends.cudnn.allow_tf32 = flags[4]
+        torch.set_float32_matmul_precision(flags[5])
+    return None
+
+
+class TestTheClosedRunPath:
+    """The joint closure of S0-B and G4: every entry point judges a document's declarations as written before
+    anything reads one (G4 interface notes 1 to 3), by the one judge, and the document door states the run's own
+    refusal where the judge admits, so the two doors and the CLI path give one verdict, each violation stated
+    once."""
+
+    def test_a_legality_bearing_value_outside_its_schema_is_named_once(self, tmp_path):
+        """S0-B final review (note 3): ``legality_errors`` and the judge named one violation twice; the legal-value
+        set now judges only a value its schema admits, so both doors and the wizard state the schema's message."""
+        document = _declared("deployment_parameters", "firing_mode", 7)
+        message = _message("firing_mode", 7)
+        assert validate_deployment_config(document) == document_declaration_errors(document) == [message]
+        rows = [row for row in resolve_draft(document).errors if "firing_mode" in row["message"]]
+        assert [(row["key"], row["rule_id"], row["message"]) for row in rows] == [("firing_mode", "field_domain", message)]
+        assert _parts(_through_the_run(document, tmp_path)) == [message]
+
+    def test_a_section_the_judge_cannot_read_is_no_declaration(self):
+        """Mutant R1 (S0-B final review): the judge reads only object sections; a document without them, or with a
+        non-object section, declares nothing to it, and the document door states its shape refusals."""
+        for document in ({}, {"deployment_parameters": "x", "platform_constraints": [1]}):
+            assert document_declaration_errors(document) == []
+            assert "deployment_parameters must be a dict" in validate_deployment_config(document) or document == {}
+        assert "Missing top-level key: deployment_parameters" in validate_deployment_config({})
+
+    def test_a_value_domain_key_is_judged_by_the_document_s_domain(self, tmp_path):
+        """Mutant R5 (S0-B final review): the domain is the document's (its core semantics); a legal readout law
+        passes a value-domain document at both doors, and a spiking one refuses it by one domain message at both
+        doors and on the CLI path."""
+        legal = _declared("platform_constraints", "readout_law", _LEGAL_READOUT_LAW, name="mvm_lenet5.json")
+        assert document_declaration_errors(legal) == validate_deployment_config(legal) == []
+        spiking = _declared("platform_constraints", "readout_law", _LEGAL_READOUT_LAW, name="sync_simplemlp.json")
+        (message,) = document_declaration_errors(spiking)
+        assert message.startswith("readout_law declares a value-domain boundary grid")
+        assert validate_deployment_config(spiking) == [message]
+        assert str(_cli_refusal(spiking, tmp_path)) == message
+
+    def test_a_key_of_the_other_domain_refuses_by_name_on_the_cli_path(self, tmp_path):
+        """The document domain rule is the judge's, so a run refuses an other-domain declaration with the document
+        door's message where it ran it (``activation_bits`` on a spiking document); a null one is unset."""
+        document = _declared("platform_constraints", "activation_bits", 8, name="sync_simplemlp.json")
+        (message,) = validate_deployment_config(document)
+        refusal = _cli_refusal(document, tmp_path)
+        assert isinstance(refusal, DeclarationValueError) and str(refusal) == message
+        document["platform_constraints"]["activation_bits"] = None
+        assert validate_deployment_config(document) == [] and _through_the_run(document, tmp_path / "null") == []
+
+    @pytest.mark.parametrize("placement", ["other_section", "shadowed_own"])
+    def test_the_legal_value_set_law_judges_the_run_s_layout(self, placement, tmp_path):
+        """The legal-value-set law is the judge's over the run's layout and each section's own declarations, under
+        the run's state: a legality-bearing key declared in the other section, or one a later copy shadows, refuses
+        by name at both doors and on the CLI path (the document door admitted the first, the run the second)."""
+        document = _load("sync_simplemlp.json")
+        if placement == "other_section":
+            document["deployment_parameters"].pop("firing_mode", None)
+            document["platform_constraints"]["firing_mode"] = "Default"
+        else:
+            document["deployment_parameters"]["firing_mode"] = "Default"
+            document["platform_constraints"]["firing_mode"] = "TTFS"
+        message = "firing_mode='Default' is not legal here: the current config admits {'TTFS'}. Remove firing_mode to accept the derived value."
+        # A shadowed copy is a second reading too (review round 1), stated beside its legality.
+        twice = ("firing_mode is declared in deployment_parameters as 'Default' and in platform_constraints as "
+                 "'TTFS', and a run reads one firing_mode: declare it once")
+        stated = [message] if placement == "other_section" else [twice, message]
+        assert validate_deployment_config(document) == stated
+        refusal = _cli_refusal(document, tmp_path)
+        assert isinstance(refusal, DeclarationValueError) and str(refusal) == "; ".join(stated)
+        rows = [row for row in resolve_draft(document).errors if row["message"] == message]
+        assert [(row["key"], row["rule_id"]) for row in rows] == [("firing_mode", "legal_value_set")]
+        assert rows[0]["remedies"] and resolve_draft(document).resolved == {}
+
+    @pytest.mark.parametrize("section", ["deployment_parameters", "platform_constraints"])
+    def test_the_document_door_states_the_run_s_derivation_refusal(self, section, tmp_path):
+        """A pairing the derivation refuses (a simulator the mode cannot run) is stated by the document door, which
+        admitted it, and refused on the CLI path as a ``DerivationRefusal`` (a ``ToolchainRefusal``), one message."""
+        document = _load("sync_simplemlp.json")
+        document["deployment_parameters"].pop("enable_loihi_simulation", None)
+        document[section]["enable_loihi_simulation"] = True
+        (message,) = validate_deployment_config(document)
+        assert message.startswith("enable_loihi_simulation=true contradicts the mode capability")
+        refusal = _cli_refusal(document, tmp_path)
+        assert isinstance(refusal, DerivationRefusal) and str(refusal) == message
+
+    def test_the_document_door_states_the_quantization_assembly_contract(self, tmp_path):
+        """The contract reads the pipeline mode and the weight-quantization declaration the run reads; the document
+        door states it as the CLI path refuses it (a deployment-parameters float declaration under bits)."""
+        document = _declared("deployment_parameters", "weight_quantization", False, name="sync_simplemlp.json")
+        (message,) = validate_deployment_config(document)
+        assert message.startswith("quantization contract violation: weight quantization is bits-driven")
+        refusal = _cli_refusal(document, tmp_path)
+        assert isinstance(refusal, DerivationRefusal) and str(refusal) == message
+
+    def test_the_top_level_pipeline_mode_reaches_the_derivation(self, tmp_path):
+        """A top-level ``pipeline_mode: vanilla`` without a weight-quantization declaration ran quantized on the
+        CLI path (the session read the mode for its working directory only), while the wizard ran it float; the
+        session lays it beneath the deployment parameters, as the wizard's builder does."""
+        document = _load("sync_simplemlp.json")
+        document["pipeline_mode"] = "vanilla"
+        document["deployment_parameters"].pop("weight_quantization", None)
+        document["platform_constraints"].pop("weight_bits", None)
+        assert validate_deployment_config(document) == []
+        session = PipelineSession.from_config({**copy.deepcopy(document), "_working_directory": str(tmp_path)},
+                                              data_provider_factory=_StubProviderFactory(document))
+        assert session.pipeline.plan.weight_quantization is False
+        assert resolve_draft(document).resolved["weight_quantization"] is False
+
+    def test_a_null_top_level_declaration_is_unset_on_the_cli_path(self, tmp_path):
+        """``seed: null`` raised a TypeError at the session's seed cast; it reads as the absent seed, as both doors
+        read a null."""
+        document = _load("sync_simplemlp.json")
+        document["seed"] = None
+        assert validate_deployment_config(document) == [] and _through_the_run(document, tmp_path) == []
+
+    def test_the_floorplan_pairing_refuses_by_name_at_the_run_door(self):
+        """A half-declared tile grid: the run door's resolver raised ``resolve_floorplan``'s plain ValueError; the
+        pairing is the judge's (over the declarations their schemas admit), so the run refuses by name, with the
+        document door's message, once."""
+        document = _declared("platform_constraints", "tile_grid_rows", 4, name="sync_simplemlp.json")
+        (message,) = validate_deployment_config(document)
+        assert message.startswith("tile_grid_rows and tile_grid_cols must be declared together")
+        with pytest.raises(DeclarationValueError) as refusal:
+            build_platform_constraints_resolved({**_flat(_load("sync_simplemlp.json")), "tile_grid_rows": 4})
+        assert str(refusal.value) == message
+        with pytest.raises(DeclarationValueError, match="must be declared together"):
+            _flat(document)
+
+    def test_the_seed_s_legal_set_is_its_consumer_s(self, tmp_path):
+        """numpy's seed (``apply_determinism``) refuses a seed of 2^32 or more, which the CLI path raised as a
+        plain ValueError while both doors admitted it; the legal set is the consumer's (plan section 20 item 3)."""
+        top = 2 ** 32 - 1
+        assert describe(schema_of(REGISTRY["seed"])) == f"INT in [0, {top}]"
+        refused = _declared("top", "seed", top + 1, name="sync_simplemlp.json")
+        assert validate_deployment_config(refused) == [f"seed={top + 1} is above the maximum {top}"]
+        assert _parts(_through_the_run(refused, tmp_path)) == [f"seed={top + 1} is above the maximum {top}"]
+        assert _through_the_run(_declared("top", "seed", top, name="sync_simplemlp.json"), tmp_path / "top") == []
+
+    def test_a_declared_label_is_judged_and_never_overwritten(self, tmp_path):
+        """The generic rule for a derived key (item 3 of the closure): the document door refuses its declaration
+        (it is not declarable); the run judges it by its schema first (``target_claim_class: 7``, the both-doors
+        test), then its owner refuses a value it does not derive by name, and keeps one equal to what it derives,
+        so a declared label is never silently overwritten (as the quantization contract does for
+        ``activation_quantization``). Boundary, stated: an equal label under its target is refused by the
+        document door only, as an equal ``activation_quantization`` is."""
+        typed = _declared("platform_constraints", "target_claim_class", 7, name="sync_simplemlp.json")
+        assert _merged_or_refusal(typed) == f"DeclarationValueError: {_message('target_claim_class', 7)}"
+        refused = _declared("platform_constraints", "target_claim_class", "headline-eligible", name="sync_simplemlp.json")
+        assert any("not declarable" in m for m in validate_deployment_config(refused))
+        assert "derived by the target expansion" in str(_cli_refusal(refused, tmp_path))
+        bundled = _load("sync_simplemlp.json")
+        owned = set(target_bundles()["odin"].values) | {"max_axons", "max_neurons", "has_bias"}
+        bundled["platform_constraints"] = {k: v for k, v in bundled["platform_constraints"].items() if k not in owned}
+        bundled["platform_constraints"].update(target="odin", target_claim_class="quarantined")
+        assert any("not declarable" in m for m in validate_deployment_config(bundled))
+        assert _merged_or_refusal(bundled)["target_claim_class"] == "quarantined"
+        bundled["platform_constraints"]["target_claim_class"] = "headline-eligible"
+        assert "differs from target_claim_class='quarantined'" in _merged_or_refusal(bundled)
+
+    def test_the_applied_schema_is_judged_where_its_relevance_holds(self):
+        """Key amendment K1 through the registry: ``weight_bits``' applied schema (INT in [2, 32]) is judged where
+        weight quantization is on, and its reason is stated; under float weights the value is not applied."""
+        quantized = _declared("platform_constraints", "weight_bits", 1, name="sync_simplemlp.json")
+        (message,) = document_declaration_errors(quantized)
+        assert message.startswith("weight_bits=1 is below the minimum 2: the signed weight grid")
+        assert validate_deployment_config(quantized) == [message]
+        float_weights = copy.deepcopy(quantized)
+        float_weights["pipeline_mode"] = "vanilla"
+        float_weights["deployment_parameters"]["weight_quantization"] = False
+        assert document_declaration_errors(float_weights) == []
+        assert declaration_judge.applied_errors({"weight_quantization": False}, {"weight_bits": 1}) == []
+
+    def test_an_applied_schema_is_conditional_typed_and_reasoned(self):
+        """The registry refuses an applied schema of another type, one judged under an unconditional condition (it
+        would be the key's own schema), one without the consumer it names, and one that names no reason (review
+        round 1: the condition is the consumer's, ``applied_when``, never the key's relevance)."""
+        from_registry = REGISTRY["weight_bits"]
+        when, by = from_registry.applied_when, from_registry.applied_by
+        assert from_registry.applied_schema.low == 2 and when.op != "always" and from_registry.relevant.op == "always"
+        base = dict(flat_key="k", group="hardware", owner="o", type=from_registry.type, category=Category.BASIC,
+                    label="K", doc="d", section="platform_constraints")
+        good = from_registry.applied_schema
+        for broken in (dict(applied_schema=good, applied_by=by),
+                       dict(applied_schema=good, applied_when=Relevance.always(), applied_by=by),
+                       dict(applied_schema=good, applied_when=when),
+                       dict(applied_schema=ValueSchema(kind="float", low=2.0, doc="why"), applied_when=when,
+                            applied_by=by),
+                       dict(applied_schema=ValueSchema(kind="int", low=2), applied_when=when, applied_by=by),
+                       dict(applied_when=when, applied_by=by)):
+            with pytest.raises(ValueError, match="applied_schema"):
+                ConfigKeySchema(**base, **broken)
+        ConfigKeySchema(**base, applied_schema=good, applied_when=when, applied_by=by)
+
+    def test_the_wizard_keys_a_declaration_in_the_other_section(self):
+        """G4 interface note 3: the wizard gets keyed, remediable rows for the judge's refusals, a key declared in
+        the other section included (``platform_constraints.lr``)."""
+        document = _declared("platform_constraints", "lr", -1.0)
+        rows = [row for row in resolve_draft(document).errors if row["message"] == _message("lr", -1.0)]
+        assert [(row["key"], row["rule_id"]) for row in rows] == [("lr", "field_domain")]
+
+    def test_the_contract_reads_the_pipeline_mode_the_derivation_reads(self, tmp_path):
+        """The session's quantization assembly contract read the top-level mode, else the deployment parameters'
+        own, while the derivation reads the run's layout; a platform-constraints mode shadowing a misspelt
+        deployment-parameters one ran the derivation's vanilla over an explicit weight quantization unrefused. The
+        contract reads the layout's mode, so the run refuses the contradiction by name, as the document door does.
+        Review round 3 re-pin: the misspelt shadowed copy is itself refused by its schema with its place at both
+        doors (``declaration_places.reading_errors``), so the contract is pinned on the platform mode alone."""
+        document = _load("sync_simplemlp.json")
+        document.pop("pipeline_mode", None)
+        document["deployment_parameters"].update(pipeline_mode="Vanilla", weight_quantization=True)
+        document["platform_constraints"]["pipeline_mode"] = "vanilla"
+        shadowed = ("deployment_parameters.pipeline_mode: pipeline_mode='Vanilla' is not a valid option; choose one "
+                    "of ['vanilla', 'phased']")
+        assert validate_deployment_config(copy.deepcopy(document)) == [shadowed]
+        refusal = _cli_refusal(copy.deepcopy(document), tmp_path)
+        assert isinstance(refusal, DeclarationValueError) and str(refusal) == shadowed
+        del document["deployment_parameters"]["pipeline_mode"]
+        (message,) = validate_deployment_config(document)
+        assert message.startswith("quantization contract violation: explicit weight_quantization=true contradicts")
+        refusal = _cli_refusal(document, tmp_path)
+        assert isinstance(refusal, DerivationRefusal) and str(refusal) == message
+
+    @pytest.mark.parametrize("section", ["platform_constraints", "deployment_parameters"])
+    def test_a_section_that_is_no_object_is_refused_by_name_and_never_raises(self, section, tmp_path):
+        """A declared section that is no object: the document door and the CLI path refuse it by name with one
+        message (the CLI path cast or iterated it), the wizard states it without raising and derives no preview,
+        and emit writes it as declared (G4 final review, the emit regression on a malformed draft)."""
+        document = _load("sync_simplemlp.json")
+        document[section] = "x"
+        message = f"{section} must be a dict"
+        assert message in validate_deployment_config(document)
+        refusal = _cli_refusal(document, tmp_path)
+        assert isinstance(refusal, DeclarationValueError) and str(refusal) == message
+        resolution = resolve_draft(document)
+        assert message in [row["message"] for row in resolution.errors] and resolution.resolved == {}
+        assert emit_deployment_config(document)[section] == "x"
+
+
+    def test_the_domain_is_the_core_semantics_the_run_lays(self, tmp_path):
+        """A ``core_semantics`` declared in the platform constraints is the run's (the merge lays both sections
+        flat), so the domain rule reads the run's layout: a spiking fixture moved to ``mvm`` that way refuses its
+        event-domain declarations by name at both doors and on the CLI path, where both doors admitted it and the
+        run raised at the model check."""
+        document = _load("sync_simplemlp.json")
+        document["deployment_parameters"].pop("core_semantics", None)
+        document["platform_constraints"]["core_semantics"] = "mvm"
+        stated = validate_deployment_config(document)
+        assert stated and all("value-domain (core_semantics='mvm') deployment" in m for m in stated)
+        assert document_declaration_errors(document) == stated
+        refusal = _cli_refusal(document, tmp_path)
+        assert isinstance(refusal, DeclarationValueError) and _parts([str(refusal)]) == _parts(stated)
+
+    @pytest.mark.parametrize("key,value", [("core_semantics", 7), ("core_semantics", "bogus"),
+                                           ("tile_grid_rows", "x"), ("tile_grid_cols", [1])])
+    def test_the_document_door_states_what_its_rules_cannot_read(self, key, value):
+        """S0-B interface note (carried since amendment B): the document door raised ValueError where a document
+        rule could not read the value (an unknown core_semantics in the domain rules, a tile grid the floorplan
+        pairing cannot cast); it states the value schema's refusal instead, once, as the run does."""
+        document = _declared(REGISTRY[key].section, key, value, name="sync_simplemlp.json")
+        message = _message(key, value)
+        assert validate_deployment_config(document) == document_declaration_errors(document) == [message]
+
+    def test_the_run_s_state_reads_a_null_as_unset(self):
+        """The state the legal-value set and the applied schemas are judged under is the run's: the schema defaults
+        beneath the top-level declarations and the layout, a null declaration unset (``run_layers`` lays nothing
+        for it), so a null reads as the default, never as None."""
+        from_judge = declaration_judge._sections_view({"spiking_family": None, "lr": None}, {"simulation_steps": 8},
+                                                      {"pipeline_mode": None})
+        layout, own, state, refused = from_judge
+        assert layout == {"simulation_steps": 8} and refused == frozenset()
+        assert own == {"spiking_family": None, "lr": None, "simulation_steps": 8}
+        defaults = {key: entry.default for key, entry in REGISTRY.items() if entry.has_default()}
+        assert state["spiking_family"] == defaults["spiking_family"] and state["lr"] == defaults["lr"]
+        assert state["simulation_steps"] == 8 and "pipeline_mode" not in state
+
+    def test_the_applied_schema_reads_the_top_level_pipeline_mode(self, tmp_path):
+        """The run's state holds the top-level declarations: under a top-level ``pipeline_mode: vanilla`` the weight
+        grid is not applied, so ``weight_bits: 1`` passes the document door and the CLI path (the session lays the
+        mode beneath the deployment parameters), as the run computes it float."""
+        document = _load("sync_simplemlp.json")
+        document["pipeline_mode"] = "vanilla"
+        document["deployment_parameters"].pop("weight_quantization", None)
+        document["platform_constraints"]["weight_bits"] = 1
+        assert document_declaration_errors(document) == validate_deployment_config(document) == []
+        assert _through_the_run(document, tmp_path) == []

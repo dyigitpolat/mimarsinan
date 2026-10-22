@@ -6,15 +6,14 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Tuple
 
-from mimarsinan.config_schema.defaults import DEFAULT_TRAINING_RECIPE
 from mimarsinan.config_schema.registry.build import REGISTRY, section_keys
 from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
-from mimarsinan.config_schema.registry.entries_write import CORE_TYPE_SCHEMA
+from mimarsinan.config_schema.registry.entries_write import CORE_TYPE_SCHEMA, RECIPE_SCHEMA
 from mimarsinan.config_schema.registry.retired_keys import retired_keys_in_scope
 from mimarsinan.config_schema.registry.types import FieldType
 
 CORE_FIELDS = frozenset(CORE_TYPE_SCHEMA.fields)
-RECIPE_FIELDS = frozenset(DEFAULT_TRAINING_RECIPE)
+RECIPE_FIELDS = frozenset(RECIPE_SCHEMA.fields)  # the fields the recipe's consumer reads
 PREPROCESSING_FIELDS = frozenset({"resize_to", "normalize", "interpolation"})
 
 # Platform-constraints structural containers (wizard hw-search shape).
@@ -118,17 +117,20 @@ def _parse_platform(pc: Mapping[str, Any], out: ParsedDocument) -> None:
         _parse_section(pc, "platform_constraints", "platform_constraints.", out, out.pc)
         return
     for key, value in pc.items():
-        if key not in _PC_STRUCTURAL:
+        # A structural container that is no object nests nothing to parse: the parser reports it unknown.
+        if key not in _PC_STRUCTURAL or (key != "mode" and value is not None and not isinstance(value, Mapping)):
             out.unknown.append(f"platform_constraints.{key}")
+    raw_auto = pc.get("auto")
+    auto: Mapping[str, Any] = raw_auto if isinstance(raw_auto, Mapping) else {}
     if mode == "user":
         body, body_path = pc.get("user"), ("platform_constraints", "user")
     else:
-        body = (pc.get("auto") or {}).get("fixed")
+        body = auto.get("fixed")
         body_path = ("platform_constraints", "auto", "fixed")
     if isinstance(body, Mapping):
         _parse_section(body, "platform_constraints", "platform_constraints.", out,
                        out.pc, container_path=body_path)
-    search_space = pc.get("search_space") or (pc.get("auto") or {}).get("search_space")
+    search_space = pc.get("search_space") or auto.get("search_space")
     if isinstance(search_space, Mapping):
         out.pc["search_space"] = dict(search_space)
 

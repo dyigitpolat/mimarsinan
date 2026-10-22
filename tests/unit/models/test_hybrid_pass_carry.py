@@ -361,7 +361,7 @@ class TestSchedulingIsLegalUnderStreamedLif:
         from mimarsinan.config_schema.resolve import resolve_draft
 
         resolution = resolve_draft(
-            {"spiking_family": "lif", "spiking_variant": "streamed"}
+            {"deployment_parameters": {"spiking_family": "lif", "spiking_variant": "streamed"}}
         )
         assert resolution.resolved["allow_scheduling"] is False
 
@@ -544,7 +544,7 @@ class TestSemanticsDecideBeforeBackends:
         from mimarsinan.models.spiking.hybrid.carry import _BACKEND_ENABLE_KEYS
 
         resolved = resolve_draft(
-            {"spiking_family": "lif", "spiking_variant": "streamed"}
+            {"deployment_parameters": {"spiking_family": "lif", "spiking_variant": "streamed"}}
         ).resolved
         for key in _BACKEND_ENABLE_KEYS.values():
             assert key in resolved, key

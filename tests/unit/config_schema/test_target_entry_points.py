@@ -3,6 +3,8 @@ carries the value every consumer reads (S0 interface note: one ``read_like_consu
 
 import copy
 import dataclasses
+import functools
+import importlib.util
 import json
 import os
 from types import SimpleNamespace
@@ -10,7 +12,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from mimarsinan.config_schema.registry import REGISTRY
+from mimarsinan.config_schema.registry import REGISTRY, parse_deployment_document
+from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 from mimarsinan.config_schema.display_view import build_config_display_view
 from mimarsinan.config_schema.resolve import resolve_draft
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
@@ -43,6 +46,16 @@ def _load(path):
         return json.load(f)
 
 
+@functools.lru_cache(maxsize=None)
+def _generator():
+    """The tier-0 template generator, loaded from its file as the template checks load it."""
+    spec = importlib.util.spec_from_file_location("tier_generate_entry_points",
+                                                  os.path.join(_ROOT, "templates", "generate.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _owned(name):
     """The keys a bundle sets and the keys derived from them (the core maxima)."""
     keys = set(target_bundles()[name].values)
@@ -50,10 +63,15 @@ def _owned(name):
 
 
 def _document(name):
-    """A shipped fixture of the bundle's core semantics with every key the bundle sets replaced by ``target``."""
+    """A shipped fixture of the bundle's core semantics with every key the bundle sets replaced by ``target``; the
+    float assembly where the bundle's signed weight grid has no nonzero level under weight quantization (key
+    amendment K1 refuses that by name, ``TestAWeightGridWithoutALevel``)."""
     doc = _load(os.path.join(_FIXTURES, FIXTURE_FOR[target_bundles()[name].values.get("core_semantics", "spiking")]))
     doc[PC] = {**{k: v for k, v in doc[PC].items() if k not in GEOMETRY_KEYS and k not in _owned(name)},
                "target": name}
+    bits = target_bundles()[name].values.get("weight_bits")
+    if bits is not None and bits < REGISTRY["weight_bits"].applied_schema.low:
+        doc["pipeline_mode"], doc[DP]["weight_quantization"] = "vanilla", False
     return doc
 
 
@@ -116,6 +134,55 @@ class TestEveryEntryPoint:
         merged = _merged(doc)
         resolved = build_config_display_view(merged, saved_config=doc)["raw_resolved"]
         assert _projection(resolved, "odin") == _projection(merged, "odin")
+
+    @pytest.mark.parametrize("name", sorted(target_bundles()))
+    def test_the_monitor_s_flat_fallback_view_of_a_target_run(self, name):
+        """Without a saved run document the monitor splits the flat config back into its two sections by the
+        registry, so the target, its labels and its keys re-merge as the run laid them (G4 final review, the
+        display fallback; ``evidence/cl9_proposals/``)."""
+        merged = _merged(_document(name))
+        resolved = build_config_display_view(copy.deepcopy(merged))["raw_resolved"]
+        assert _projection(resolved, name) == _projection(merged, name)
+
+    def test_emit_reads_a_draft_the_parser_cannot_unpack(self):
+        """``emit_deployment_config`` writes nothing and never refuses: a structural container that is no object
+        is an unknown path to the parser, and the emitted document keeps the draft's own declarations (G4 final
+        review, the emit regression on a malformed draft)."""
+        draft = {"platform_constraints": {"mode": "auto", "auto": "x"},
+                 "deployment_parameters": {"core_semantics": "mvm"}}
+        assert "platform_constraints.auto" in parse_deployment_document(draft).unknown
+        emitted = emit_deployment_config(copy.deepcopy(draft))
+        assert emitted[PC] == {"mode": "auto", "auto": "x"} and emitted[DP] == {"core_semantics": "mvm"}
+        assert target_core_semantics(draft) == "mvm"
+        assert target_core_semantics({"deployment_parameters": "x"}) is None
+
+    #: Values a draft holds while a person types: none is an object of the shape a door reads.
+    MALFORMED = ("x", 7, 7.5, None, True, [1], {"a": 1}, [], {})
+
+    @pytest.mark.parametrize("value", MALFORMED, ids=repr)
+    @pytest.mark.parametrize("where", ["dp", "pc", "core_semantics", "target", "target_overrides", "override_entry",
+                                       "user", "auto", "mode", "label", "top_pipeline_mode"])
+    def test_emit_never_raises_on_a_malformed_draft(self, where, value):
+        """The emit's core-semantics read parses any draft (a container that is no object is an unknown path) and
+        catches only the expansion's refusals, so no draft a person types raises from it (G4 final review, the emit
+        regression on a malformed draft; closure mutant X7)."""
+        target = {"target": "odin"}
+        draft = {
+            "dp": {DP: value, PC: target},
+            "pc": {PC: value},
+            "core_semantics": {DP: {"core_semantics": value}, PC: target},
+            "target": {PC: {"target": value}},
+            "target_overrides": {PC: {**target, "target_overrides": value}},
+            "override_entry": {PC: {**target, "target_overrides": {"weight_bits": value}}},
+            "user": {PC: {**target, "mode": "user", "user": value}},
+            "auto": {PC: {**target, "mode": "auto", "auto": value}},
+            "mode": {PC: {**target, "mode": value}},
+            "label": {PC: {**target, "target_claim_class": value}},
+            "top_pipeline_mode": {"pipeline_mode": value, PC: target},
+        }[where]
+        semantics = target_core_semantics(draft)
+        assert semantics is None or isinstance(semantics, str)
+        emit_deployment_config(copy.deepcopy(draft))
 
     def test_a_derived_label_in_a_document_is_refused_at_both_wizard_doors(self):
         doc = _document("odin")
@@ -211,9 +278,16 @@ class TestTargetCells:
         assert pcfg["platform_physics_resolved"]["name"] == bundle.values["platform_physics_profile"]
         assert pcfg["target_faithfulness_class"].startswith("approximate")
 
+    #: The chip permissions a mapping reads (``ChipCapabilities``): a target cell authors none, its bundle states the
+    #: chip's (G4 final review, the TrueNorth and Loihi permissions).
+    PERMISSIONS = ("allow_coalescing", "allow_neuron_splitting")
+
     @pytest.mark.parametrize("path", _target_cells(), ids=os.path.basename)
     def test_a_cell_s_faithfulness_names_every_bundle_key_it_departs_from(self, path):
-        """Each bundle key a cell runs at another value is a declared override, named in its faithfulness."""
+        """Each bundle key a cell runs at another value is a declared override, named in its faithfulness; the
+        cell's own permission keys come from its bundle or from such an override, never from an ordinary key the
+        label would not name; and each bundle key no reader applies is named "<key> not applied", one the consumer
+        ``applied_by`` names does not apply "<applied_by> not applied" (K2, review round 1)."""
         doc = _load(path)
         bundle = target_bundles()[doc[PC]["target"]]
         flat = _merged(doc)
@@ -221,6 +295,22 @@ class TestTargetCells:
         assert departed == set(doc[PC].get("target_overrides", {}))
         named = flat["target_faithfulness_class"].split(": ", 1)[1].split("; ")
         assert [item for item in named if item.endswith(" declared")] == [f"{key} declared" for key in sorted(departed)]
+        assert set(self.PERMISSIONS) <= set(bundle.values) and not set(self.PERMISSIONS) & set(doc[PC])
+        inert = [f"{key} not applied" if not REGISTRY[key].relevant.evaluate(flat) else
+                 f"{REGISTRY[key].applied_by} not applied" for key in bundle.values
+                 if not REGISTRY[key].relevant.evaluate(flat)
+                 or (REGISTRY[key].applied_when is not None and not REGISTRY[key].applied_when.evaluate(flat))]
+        assert [item for item in named if item.endswith(" not applied")] == inert
+
+    @pytest.mark.parametrize("name", sorted(target_bundles()))
+    def test_a_target_row_authors_no_permission_key(self, name):
+        """The generator's permission defaults describe the study grid: a row of any target authors no permission
+        key, whether its bundle states the chip's (the bundle-key rule strips those) or states none (closure
+        mutant G1)."""
+        gen = _generator()
+        plain = {"n": 1, "mode": "lif", "quant": "fp", "s": 8, "vehicle": "simplemlp"}
+        assert set(self.PERMISSIONS) <= set(gen._platform(plain, gen.VEHICLES))
+        assert not set(self.PERMISSIONS) & set(gen._platform({**plain, "target": name}, gen.VEHICLES))
 
 
 class TestRecordIdentity:
@@ -260,10 +350,15 @@ class TestRunFlatConfigReadsLikeConsumers:
         flat.update(input_shape=(1, 28, 28), num_classes=10, input_size=int(np.prod((1, 28, 28))), device="cpu")
         assert DeploymentPlan.resolve(flat).s_allocation == "uniform"
 
-    def test_a_value_the_consumer_refuses_stays_as_written(self):
+    def test_a_value_the_consumer_refuses_is_refused_by_name_in_the_merge(self):
+        """A value the consumer's reading refuses stays as written for the one judge, which the merge calls before
+        the derivation (G4 interface note 1): it refuses there by name, with the run door's message."""
         doc = _load(os.path.join(_FIXTURES, "sync_simplemlp.json"))
         doc[DP]["nevresim_connectivity_mode"] = "codegen"
-        assert _merged(doc)["nevresim_connectivity_mode"] == "codegen"
+        message = "nevresim_connectivity_mode='codegen' is not a valid option; choose one of ['compile_time', 'runtime']"
+        with pytest.raises(DeclarationValueError) as refusal:
+            _merged(doc)
+        assert str(refusal.value) == message and message in validate_deployment_config(doc)
 
     def test_the_bias_declarations_stay_as_written(self):
         """The platform bias mode is the resolver's reading (flat, then nested), not a consumer reading."""

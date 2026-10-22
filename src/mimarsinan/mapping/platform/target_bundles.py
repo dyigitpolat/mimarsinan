@@ -49,9 +49,14 @@ class Faithfulness:
 
     def with_declared(self, keys: Iterable[str]) -> "Faithfulness":
         """The class once ``keys`` are overridden: an exact bundle becomes approximate, each key named."""
-        if not (declared := tuple(f"{key} declared" for key in sorted(keys))):
+        return self.with_departures(f"{key} declared" for key in sorted(keys))
+
+    def with_departures(self, departures: Iterable[str]) -> "Faithfulness":
+        """The class once a deployment departs from the bundle in ``departures``: an exact bundle becomes
+        approximate, each departure named after the bundle's own."""
+        if not (named := tuple(departures)):
             return self
-        return Faithfulness("approximate" if self.kind == "exact" else self.kind, self.named + declared)
+        return Faithfulness("approximate" if self.kind == "exact" else self.kind, self.named + named)
 
     def label(self) -> str:
         return self.kind if not self.named else f"{self.kind}: {'; '.join(self.named)}"

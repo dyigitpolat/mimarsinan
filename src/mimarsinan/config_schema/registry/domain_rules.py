@@ -18,19 +18,23 @@ def _domain_of(key: str) -> str:
     return entry.domain if entry is not None else "universal"
 
 
-def mvm_document_errors(config: Mapping[str, Any]) -> List[str]:
+def mvm_document_errors(config: Mapping[str, Any], *, run_layout: Any = None) -> List[str]:
     """Domain-key document rules for BOTH directions of core_semantics.
 
     The forbidden sets derive from the registry ``domain`` tags (the one SSOT
     the wizard existence rules and emission stripping also read); messages
     START with the offending key so the resolve channel keys them correctly.
+    The domain is the core semantics of ``run_layout`` where the caller gives
+    the run's layout of the two sections (the judge: a core semantics declared
+    in the platform constraints is the run's too), else the deployment
+    parameters' own declaration; an absent one reads as spiking.
     """
     dp = config.get("deployment_parameters")
     if not isinstance(dp, Mapping):
         return []
     pc = config.get("platform_constraints")
     pc = pc if isinstance(pc, Mapping) else {}
-    if not is_mvm_core_semantics(dp.get("core_semantics")):
+    if not is_mvm_core_semantics((dp if run_layout is None else run_layout).get("core_semantics")):
         return [
             f"{key} declares a value-domain boundary grid; an event-domain "
             f"(spiking) platform declares target_tq instead. Remove the key "

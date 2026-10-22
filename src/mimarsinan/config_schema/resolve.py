@@ -4,14 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Set
 
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.config_schema.deployment_derivation import (
-    enforce_quantization_assembly_contract,
-    legal_values_for,
-    legality_bearing_keys,
-)
+from mimarsinan.config_schema.deployment_derivation import legal_values_for, legality_bearing_keys
 from mimarsinan.config_schema.registry import (
     Category,
     REGISTRY,
@@ -21,17 +17,18 @@ from mimarsinan.config_schema.registry import (
     retired_scope_of,
 )
 from mimarsinan.config_schema.registry.build import split_domain_dormant
-from mimarsinan.config_schema.runtime import build_flat_pipeline_config
+from mimarsinan.config_schema.registry.value_schema import entry_value_errors
+from mimarsinan.config_schema.runtime import (
+    enforce_run_contract, model_registration, registration_updates, run_config, run_sections,
+)
+from mimarsinan.config_schema.registry.declaration_judge import document_declaration_errors, sections_run_layout
 from mimarsinan.config_schema.validation import (
-    legality_errors,
-    validate_against_registry,
+    declared_legality_errors, field_domain_error, legality_errors, section_shape_errors, validate_against_registry,
     validate_deployment_config,
 )
 # Bound as a module (resolved from sys.modules while it initializes): target_expansion imports the registry,
 # whose package imports this module first when target_expansion is the first import.
 import mimarsinan.mapping.platform.target_expansion as target_expansion
-
-_SESSION_DEFAULT_PIPELINE_MODE = "phased"
 
 
 @dataclass(frozen=True)
@@ -78,41 +75,59 @@ def _error_key_scope(key: Optional[str]) -> Optional[str]:
     return retired_scope_of(key)
 
 
-def _structural_errors(draft: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    return [
-        {"key": attach_error_key(msg), "message": msg, "rule_id": "config_shape"}
-        for msg in validate_deployment_config(dict(draft))
-    ]
+def _panel_messages(dp: Mapping[str, Any]) -> Set[str]:
+    """The rows the wizard's pretrained panel states itself, keyed with their remedies: the legal-value-set rows the
+    builder registration adds to the deployment parameters' declarations ``dp``, judged as the panel judges them
+    (the effective view with the registration beneath it). Every other placement's row is the wizard's own."""
+    declared = {key: value for key, value in dp.items()  # the declarations their schemas admit (the run's state)
+                if value is not None and not (key in REGISTRY and entry_value_errors(REGISTRY[key], value))}
+    view = effective_view(declared)
+    enriched = {**registration_updates(model_registration(view), None), **view}
+    return ({row["message"] for row in legality_errors(enriched, declared)}
+            - {row["message"] for row in legality_errors(view, declared)})
 
 
-def _contract_errors(
-    dp: Mapping[str, Any], pc: Mapping[str, Any], pipeline_mode: Optional[str]
-) -> List[Dict[str, Any]]:
+def _structural_errors(draft: Mapping[str, Any], dp: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """The document door's rows, the builder registration's included (wherever the run reads the declaration),
+    but those the pretrained panel states (``_panel_messages``)."""
+    panel = _panel_messages(dp)
+    return [{"key": attach_error_key(msg), "message": msg, "rule_id": "config_shape"}
+            for msg in validate_deployment_config(dict(draft)) if msg not in panel]
+
+
+def _run_sections(draft: Mapping[str, Any], parsed: Any) -> Dict[str, Any]:
+    """The draft as a run takes it for its flat config (``run_sections``): each section whole, as declared, so every
+    container the run reads is previewed (the nested bias object of ``PLATFORM_BIAS_PATHS`` among them; review
+    round 3), the parser's flat body standing in only for a structural platform shape (``mode`` user or auto) the
+    wizard nests. The dormant-domain keys the wizard keeps out of both sections are stripped before
+    (``_strip_dormant_domain``)."""
+    sections = {name: dict(draft[name])
+                for name in ("deployment_parameters", "platform_constraints") if isinstance(draft.get(name), Mapping)}
+    if sections.get("platform_constraints") is not None and draft["platform_constraints"].get("mode") is not None:
+        sections["platform_constraints"] = dict(parsed.pc)
+    return {**draft, "deployment_parameters": {}, **sections}
+
+
+def _contract_errors(draft: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """The quantization assembly contract over the run's layout of the draft (``run_sections``), as the CLI path
+    applies it; a draft whose sections the run cannot lay states it elsewhere."""
     try:
-        enforce_quantization_assembly_contract(dp, pc, pipeline_mode=pipeline_mode)
+        if isinstance(draft.get("deployment_parameters"), Mapping):
+            enforce_run_contract(*run_sections(draft)[:2])
     except ValueError as exc:
-        return [{
-            "key": "weight_quantization",
-            "message": str(exc),
-            "rule_id": "quantization_assembly",
-            # The rule prescribes its remedies; the frontend only applies them.
-            "remedies": [
-                {"label": "Declare vanilla (float weights)", "action": "set",
-                 "key": "pipeline_mode", "value": "vanilla"},
-                {"label": "Drop weight_bits", "action": "clear", "key": "weight_bits"},
-            ],
-        }]
+        # The rule prescribes its remedies; the frontend only applies them.
+        return [{"key": "weight_quantization", "message": str(exc), "rule_id": "quantization_assembly",
+                 "remedies": [{"label": "Declare vanilla (float weights)", "action": "set",
+                               "key": "pipeline_mode", "value": "vanilla"},
+                              {"label": "Drop weight_bits", "action": "clear", "key": "weight_bits"}]}]
     return []
 
 
 def effective_view(draft_dp: Mapping[str, Any]) -> Dict[str, Any]:
     """Schema defaults overlaid with the draft's declarations — ALWAYS computable,
     so legality (like the vehicle rows) survives an erroring draft."""
-    cfg = {
-        key: entry.default for key, entry in REGISTRY.items() if entry.has_default()
-    }
-    cfg.update({k: v for k, v in draft_dp.items() if v is not None})
-    return cfg
+    return {**{key: entry.default for key, entry in REGISTRY.items() if entry.has_default()},
+            **{k: v for k, v in draft_dp.items() if v is not None}}
 
 
 def legal_values_view(cfg: Mapping[str, Any]) -> Dict[str, List[Any]]:
@@ -124,12 +139,8 @@ def legal_values_view(cfg: Mapping[str, Any]) -> Dict[str, List[Any]]:
     whose legality does not apply here (``None``) is omitted, so the UI leaves it
     an ordinary widget.
     """
-    view: Dict[str, List[Any]] = {}
-    for key in legality_bearing_keys():
-        legal = legal_values_for(key, cfg)
-        if legal is not None:
-            view[key] = list(legal)
-    return view
+    view = {key: legal_values_for(key, cfg) for key in legality_bearing_keys()}
+    return {key: list(legal) for key, legal in view.items() if legal is not None}
 
 
 def derived_values_view(resolved: Mapping[str, Any]) -> Dict[str, Any]:
@@ -140,13 +151,8 @@ def derived_values_view(resolved: Mapping[str, Any]) -> Dict[str, Any]:
     a registration the registry cannot see); ``{}`` while the draft errors, so no
     hypothetical value ever renders.
     """
-    if not resolved:
-        return {}
-    return {
-        key: effective_value(resolved, key)
-        for key, entry in REGISTRY.items()
-        if entry.provenance is not None
-    }
+    return {key: effective_value(resolved, key) for key, entry in REGISTRY.items()
+            if entry.provenance is not None} if resolved else {}
 
 
 def derived_view(resolved: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -197,15 +203,15 @@ def _diff_vs_defaults(explicit: Mapping[str, Any]) -> List[Dict[str, Any]]:
 def _strip_dormant_domain(draft: Mapping[str, Any]):
     """Return ``(stripped_draft, dormant_keys)`` — the wizard-authoring view
     with other-domain keys excluded from both sections."""
-    out = dict(draft or {})
-    dp = dict(out.get("deployment_parameters") or {})
-    pc = dict(out.get("platform_constraints") or {})
-    core = str(dp.get("core_semantics") or "spiking")
-    dp_active, dp_dormant = split_domain_dormant(dp, core)
-    pc_active, pc_dormant = split_domain_dormant(pc, core)
-    out["deployment_parameters"] = dp_active
-    out["platform_constraints"] = pc_active
-    return out, sorted(dp_dormant) + sorted(pc_dormant)
+    out, dormant = dict(draft or {}), []
+    layout = sections_run_layout(out.get("deployment_parameters"), out.get("platform_constraints"))
+    core = str(layout.get("core_semantics") or "spiking")  # the core semantics the run's layout reads
+    for name in ("deployment_parameters", "platform_constraints"):
+        section = out.get(name)  # an absent section, or one that is no object, is the doors' to refuse, as declared
+        if isinstance(section, Mapping):
+            out[name], stripped = split_domain_dormant(dict(section), core)
+            dormant += sorted(stripped)
+    return out, dormant
 
 
 def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
@@ -227,64 +233,53 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     # is zero-friction from any green state (the draft retains them).
     draft, dormant_keys = _strip_dormant_domain(draft)
     parsed = parse_deployment_document(draft)
-    errors = _structural_errors(draft)
+    errors = _structural_errors(draft, parsed.dp)
 
-    declared_mode = draft.get(
-        "pipeline_mode", (draft.get("deployment_parameters") or {}).get("pipeline_mode")
-    )
-    errors.extend(_contract_errors(parsed.dp, parsed.pc, declared_mode))
-
-    # An illegal declaration would raise inside the derivation; report it as a
-    # keyed, REMEDIABLE row and never derive a hypothetical config from it. The
-    # remediable row supersedes the plain structural message for the same key.
-    illegal = legality_errors(effective_view(parsed.dp), parsed.dp)
+    # An illegal declaration is a keyed, REMEDIABLE row (superseding the plain structural row of its key), and no
+    # hypothetical config is derived from it, nor from any declaration the one judge refuses. The legal-value-set
+    # law is the run's: the draft's layout and each section's own declarations under the run's state.
+    illegal = declared_legality_errors(draft)
     illegal_keys = {row["key"] for row in illegal}
     errors = [error for error in errors if error["key"] not in illegal_keys]
     errors.extend(illegal)
 
-    # Field-domain errors (type/bounds/options) are keyed, remediable rows too;
-    # each supersedes the plain structural row stating its message (another
-    # violation keyed to the same key stays). Legality-bearing keys are skipped
-    # inside the validator, so these key sets never overlap.
-    field_errors = validate_against_registry(parsed.known_flat_keys())
-    stated = {(row["key"], row["message"]) for row in field_errors}
-    errors = [error for error in errors if (error["key"], error["message"]) not in stated]
-    errors.extend(field_errors)
+    # Field-domain errors (type/bounds/options), the parser's and the one judge's
+    # (the run's layout and the schemas consumers apply; G4 interface note 3),
+    # are keyed, remediable rows too, once each (a keyed row supersedes the plain
+    # structural row stating its message, below).
+    judge = document_declaration_errors(draft)
+    if not judge:  # the run applies the contract to the declarations its judge admits, as the document door states it
+        errors.extend(_contract_errors(draft))
+    judged = [(attach_error_key(message), message) for message in judge
+              if message not in {row["message"] for row in illegal}]
+    errors.extend({(row["key"], row["message"]): row for row in [
+        *validate_against_registry(parsed.known_flat_keys()),
+        *(field_domain_error(key, message) for key, message in judged if key and message.startswith(key))]}.values())
 
     # Retired keys come back as keyed rows with one-click MIGRATION remedies,
     # each carrying its SCOPE, superseding every other row for the same
     # (scope, key). Registry-bridged legacy keys still preview through the
     # meaning-preserving bridge; fully-removed keys never reach the derivation.
-    retired = retired_key_errors(
-        parsed.retirement_scan_view(), paths=parsed.retired_paths
-    )
+    retired = retired_key_errors(parsed.retirement_scan_view(), paths=parsed.retired_paths)
     retired_pairs = {(row["scope"], row["key"]) for row in retired}
-    errors = [
-        error for error in errors
-        if (_error_key_scope(error["key"]), error["key"]) not in retired_pairs
-    ]
+    errors = [error for error in errors if (_error_key_scope(error["key"]), error["key"]) not in retired_pairs]
     errors.extend(retired)
 
-    pipeline_mode = str(draft.get("pipeline_mode", _SESSION_DEFAULT_PIPELINE_MODE))
     resolved: Dict[str, Any] = {}
     derived: Dict[str, Dict[str, Any]] = {}
-    if not illegal and not target_refused:
-        try:
-            resolved = build_flat_pipeline_config(
-                dict(parsed.dp), dict(parsed.pc), pipeline_mode=pipeline_mode
-            )
+    if not (judge or target_refused or section_shape_errors(draft)):  # the run refuses these before deriving
+        try:  # the sections the run takes (``run_sections``), through its own derivation (``run_config``)
+            resolved = run_config(*run_sections(_run_sections(draft, parsed))[:2])
         except ValueError as exc:
             resolved = {}
-            errors.append({
-                "key": attach_error_key(str(exc)),
-                "message": str(exc),
-                "rule_id": "derivation",
-            })
+            errors.append({"key": attach_error_key(str(exc)), "message": str(exc), "rule_id": "derivation"})
         else:
             for key, value in parsed.top.items():
                 resolved.setdefault(key, value)
             derived = derived_view(resolved)
 
+    keyed = {row["message"] for row in errors if row.get("rule_id") != "config_shape"}
+    errors = [row for row in errors if row.get("rule_id") != "config_shape" or row["message"] not in keyed]
     explicit = parsed.known_flat_keys()
     return Resolution(
         resolved=resolved,

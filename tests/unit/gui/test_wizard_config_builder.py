@@ -519,7 +519,9 @@ class TestPerLayerSTemplate:
             doc["deployment_parameters"], doc["platform_constraints"],
             pipeline_mode=doc.get("pipeline_mode", "phased"),
         )
-        assert cfg["s_allocation"] == "explicit"
+        # The flat config carries the run's reading (owner decision 7): an explicit map whose every S is the
+        # uniform S is the uniform declaration (review round 2: the flat config is the run's derivation).
+        assert cfg["s_allocation"] == "uniform"
         assert cfg["allow_per_layer_s"] is True
         assert cfg["s_allocation_explicit"] == [4, 4, 4]
 

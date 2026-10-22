@@ -90,9 +90,42 @@ PREPROCESSING_SCHEMA = ValueSchema(
     closed=False,
 )
 
+
+def _recipe_field(kind: str, *, listed: bool = False, low: Optional[float] = None, high: Optional[float] = None,
+                  high_exclusive: bool = False, length: Optional[int] = None, nullable: bool = False) -> ValueSchema:
+    """One recipe field as ``TrainingRecipe`` reads it: ``build_recipe`` passes a null field to the dataclass as
+    None, which only an Optional field (``nullable``) reads as its own value; every other None fails at training,
+    so it is judged as a value. ``low``/``high`` (of each item, ``listed``) and ``length`` are the bounds the
+    consumer applies (torch's optimizers, ``_betas_pair``, the loss)."""
+    scalar = ValueSchema(kind=kind, low=low, high=high, high_exclusive=high_exclusive)
+    return ValueSchema(kind=T.JSON if listed else kind, item=scalar if listed else None,
+                       low=None if listed else low, high=None if listed else high,
+                       high_exclusive=False if listed else high_exclusive,
+                       min_length=length or 0, max_length=length, null_unset=nullable,
+                       decision_class=FUNCTION_BEARING, doc="a training-recipe field the trainer reads",
+                       absent_means="the TrainingRecipe default")
+
+
+#: The fields a recipe's consumer reads (``model_training.training_recipe.TrainingRecipe``, which ``build_recipe``
+#: takes them into, silently dropping every other one), with their types and the bounds the consumer applies (torch's
+#: Adam/AdamW betas in [0, 1), exactly two (``_betas_pair``); a weight decay and an SGD momentum >= 0; a gradient-clip
+#: norm >= 0 (``clip_grad_norm_`` reverses the gradients below 0); a label smoothing in [0, 1] (the loss); a warmup
+#: ratio in [0, 1] of the steps); closed, so both doors refuse a field it
+#: does not read and a recipe that is no object by name, and a null field but the Optional ``label_smoothing``. A
+#: test pins the fields to the consumer's.
+RECIPE_SCHEMA = ValueSchema(kind=T.RECIPE, fields={
+    "optimizer": _recipe_field(T.STR), "weight_decay": _recipe_field(T.FLOAT, low=0.0),
+    "betas": _recipe_field(T.FLOAT, listed=True, low=0.0, high=1.0, high_exclusive=True, length=2),
+    "momentum": _recipe_field(T.FLOAT, low=0.0),
+    "scheduler": _recipe_field(T.STR), "warmup_ratio": _recipe_field(T.FLOAT, low=0.0, high=1.0),
+    "grad_clip_norm": _recipe_field(T.FLOAT, low=0.0), "layer_wise_lr_decay": _recipe_field(T.FLOAT),
+    "no_decay_keywords": _recipe_field(T.STR, listed=True),
+    "label_smoothing": _recipe_field(T.FLOAT, low=0.0, high=1.0, nullable=True),
+})
+
 #: Declared attributes of keys whose entries live beside other concerns, injected by the builder: the core-type
 #: schema of ``cores``, the absent meaning of the platform bias mode (``platform_bias_mode``), the
-#: interpolation legal set of ``preprocessing``, and the legal sets taken from their consumers: a value the
+#: interpolation legal set of ``preprocessing``, the recipes' fields, and the legal sets taken from their consumers: a value the
 #: consumer refuses is no option, a value it names but no run implements is reserved, and both doors refuse
 #: either by name (``enum_legal_set``; the per-depth S map takes the list its consumer parses). A consumer that
 #: normalizes what it reads gives the key its reading (``consumer_reading``), by reference. An entry never
@@ -105,6 +138,8 @@ INJECTED_DECLARATIONS: Mapping[str, Mapping[str, Any]] = {
                                 "config's nested platform_constraints.has_bias, when present, is taken "
                                 "instead"},
     "preprocessing": {"value_schema": PREPROCESSING_SCHEMA},
+    "training_recipe": {"value_schema": RECIPE_SCHEMA},
+    "tuning_recipe": {"value_schema": RECIPE_SCHEMA},
     # tuning/orchestration/temporal_allocation.py: three modes are named, read lowercased; only uniform
     # is threaded.
     "s_allocation": {**enum_legal_set(S_ALLOCATION_SUPPORTED_MODES, reserved=tuple(

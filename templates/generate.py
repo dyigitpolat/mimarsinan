@@ -407,13 +407,28 @@ T0 = [
               "and coalescing are declared overrides, so the faithfulness names both "
               "('...; allow_coalescing declared; cores declared')"),
     dict(n=62, mode="lifs", quant="fp", s=8, vehicle="simplemlp", target="truenorth",
-         note="TrueNorth bundle (4096 cores of 256 x 256 on a 64 x 64 mesh): a float "
-              "(vanilla) cell, because a 1-bit signed grid has no nonzero level. "
-              "Boundary: a float run never applies weight_bits, so the cell runs float "
-              "weights and does not make the 1-bit approximation its faithfulness names"),
+         target_overrides={
+             "allow_coalescing": {
+                 "value": True,
+                 "note": "the MLP's 784-input layer exceeds one TrueNorth core's 256 axons, "
+                         "and a TrueNorth neuron integrates its own core's axons only: the "
+                         "cell declares coalescing, a departure from the chip"}},
+         note="TrueNorth bundle (4096 cores of 256 x 256 on a 64 x 64 mesh, no coalescing or "
+              "neuron splitting): a float (vanilla) cell, because both doors refuse weight "
+              "quantization on a 1-bit signed grid (no nonzero level); no weight grid "
+              "quantizes a float run's weights, while its payload sizes, pricing and record "
+              "read the bundle's weight_bits=1, and the faithfulness names it ('...; "
+              "allow_coalescing declared; weight grid not applied')"),
     dict(n=63, mode="lifsync", quant="wq", s=4, vehicle="simplemlp", seed=1, target="loihi",
-         note="Loihi bundle (dense equivalent 128 x 1024, 8-bit weights), the minimal "
-              "pair of t0_05"),
+         target_overrides={
+             "allow_coalescing": {
+                 "value": True,
+                 "note": "the MLP's 784- and 256-input layers exceed the dense equivalent's "
+                         "128 axons, and a Loihi neuron integrates within its core: the cell "
+                         "declares coalescing, a departure from the chip"}},
+         note="Loihi bundle (dense equivalent 128 x 1024, 8-bit weights, no coalescing, "
+              "neuron splitting), the minimal pair of t0_05; coalescing is a declared "
+              "override, so the faithfulness names it ('...; allow_coalescing declared')"),
     dict(n=64, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["pruned"],
          target="isaac_like",
          note="ISAAC-like bundle (16128 arrays of 128 x 128, 16-bit weights, value "
@@ -601,8 +616,11 @@ def _platform(row, vehicles):
         plat["simulation_steps"] = row["s"]
     if "wb" in row:
         plat["weight_bits"] = row["wb"]
-    plat["allow_coalescing"] = row.get("coalescing", v.get("coalescing", True))
-    plat["allow_neuron_splitting"] = row.get("splitting", True)
+    if "target" not in row:
+        # The generator's permission defaults describe the study grid; a target row authors none: the run reads
+        # the chip's from its bundle, and a cell that departs from them declares target_overrides with a note.
+        plat["allow_coalescing"] = row.get("coalescing", v.get("coalescing", True))
+        plat["allow_neuron_splitting"] = row.get("splitting", True)
     # Row-level platform passthrough (mirror of extra_dp): proven per-cell
     # hardware declarations (activation_bits, weight-reuse, pass budgets).
     plat.update(row_config_keys(row, "platform_constraints"))

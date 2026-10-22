@@ -77,17 +77,14 @@ def emit_deployment_config(draft: Mapping[str, Any]) -> Dict[str, Any]:
     for key in _REQUIRED_TOP_KEYS:
         top.setdefault(key, _top_default(key))
 
-    dp_raw = dict(draft.get("deployment_parameters") or {})
     # The core semantics a run takes, a declared target's included (a read that writes nothing).
     core_semantics = target_expansion.target_core_semantics(draft) or "spiking"
     out: Dict[str, Any] = {}
     for key in _CANONICAL_TOP_ORDER:
-        if key == "platform_constraints":
-            out[key] = _emit_section(
-                dict(draft.get("platform_constraints") or {}), core_semantics,
-            )
-        elif key == "deployment_parameters":
-            out[key] = _emit_section(dp_raw, core_semantics)
+        if key in ("platform_constraints", "deployment_parameters"):
+            section = draft.get(key, {})
+            # A section that is no object (a null one included) is emitted as declared: the doors refuse it.
+            out[key] = _emit_section(dict(section), core_semantics) if isinstance(section, Mapping) else section
         elif key in top:
             out[key] = top.pop(key)
     out.update(top)

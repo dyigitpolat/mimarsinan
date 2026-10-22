@@ -10,6 +10,7 @@ import pytest
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.config_schema.registry import REGISTRY, Category, ConfigKeySchema, FieldType
 from mimarsinan.config_schema.registry import value_schema as vs
+from mimarsinan.config_schema.registry.entries_write import RECIPE_SCHEMA
 from mimarsinan.config_schema.registry.value_schema import (
     ANY,
     DeclarationValueError,
@@ -216,7 +217,9 @@ class TestRegistryEntries:
         schema = schema_of(REGISTRY["weight_bits"])
         assert schema is not None
         assert (schema.kind, schema.low, schema.high) == (FieldType.INT, 1, 32)
-        assert schema_of(REGISTRY["training_recipe"]) is None
+        assert schema_of(REGISTRY["model_config"]) is None  # a non-scalar key without a declared value schema
+        # Review round 2: a recipe is judged by the fields its consumer reads (``RECIPE_SCHEMA``).
+        assert schema_of(REGISTRY["training_recipe"]) is schema_of(REGISTRY["tuning_recipe"]) is RECIPE_SCHEMA
 
     def test_existing_scalar_messages_are_unchanged(self):
         assert entry_value_errors(REGISTRY["nf_scm_parity_samples"], -1) == [

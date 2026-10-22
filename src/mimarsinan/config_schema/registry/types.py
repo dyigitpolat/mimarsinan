@@ -158,6 +158,16 @@ class ConfigKeySchema:
     value_schema: Optional[ValueSchema] = None
     # Per-end exclusivity of ``bounds`` (False = inclusive, the historical meaning).
     exclusive_bounds: Tuple[bool, bool] = (False, False)
+    # The value schema a declaration also passes where ``applied_when`` holds: the state in which the consumer
+    # ``applied_by`` names applies the value (the schema's ``doc`` names why); None = the key's own schema
+    # everywhere. Both doors judge it through the one judge (registry/declaration_judge.py), and the target
+    # expansion names a bundle key whose ``applied_when`` fails "<applied_by> not applied".
+    applied_schema: Optional[ValueSchema] = None
+    applied_when: Optional[Relevance] = None
+    applied_by: Optional[str] = None
+    # A top-level key the run also lays beneath this section's declarations, where its flat-config consumers read
+    # it (the derivation, the plan): every reader reads the run's layout of it (config_schema/runtime.py).
+    laid_beneath: Optional[str] = None
     # The resolver carries this platform key verbatim onto platform_constraints_resolved,
     # after judging its value and domain.
     passthrough: bool = False
@@ -189,6 +199,16 @@ class ConfigKeySchema:
                 self.resolved_options() != self.value_schema.options + self.value_schema.reserved):
             raise ValueError(f"{self.flat_key!r}: the options name the value schema's legal, then "
                              "reserved, values")
+        applied = (self.applied_schema, self.applied_when, self.applied_by)
+        if any(part is not None for part in applied) and (
+                self.applied_schema is None or self.applied_when is None or not self.applied_by
+                or self.applied_schema.kind != self.type.value or self.applied_when.op == "always"
+                or not self.applied_schema.doc):
+            raise ValueError(f"{self.flat_key!r}: an applied_schema is of its key's own type, judged where a "
+                             "conditional applied_when holds, by the consumer applied_by names, and names why in "
+                             "its doc")
+        if self.laid_beneath is not None and (self.section != "top" or self.laid_beneath not in SECTIONS[1:]):
+            raise ValueError(f"{self.flat_key!r}: laid_beneath names the section a top-level key is laid beneath")
         if self.consumer_reading is not None and self.value_schema is None:
             raise ValueError(f"{self.flat_key!r}: a consumer reading needs the value schema both doors "
                              "judge the read value by")

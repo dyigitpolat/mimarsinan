@@ -303,9 +303,15 @@ class TestLegalityErrorsAreGeneric:
         )
         assert [r["key"] for r in rows] == ["firing_mode"]
 
-    def test_an_unknown_value_outside_the_options_is_also_caught(self):
+    def test_a_value_outside_the_options_is_the_schema_s_to_name(self):
+        """A value outside the key's own options is named once, by its schema (the field
+        row), never again by the legal-value-set law (S0-B final review, note 3)."""
         rows = legality_errors(
             {"spiking_mode": "lif", "firing_mode": "Banana"},
             declared={"firing_mode": "Banana"},
         )
-        assert rows and rows[0]["rule_id"] == "legal_value_set"
+        assert rows == []
+        resolution = resolve_draft({"deployment_parameters": {"spiking_family": "lif", "firing_mode": "Banana"},
+                                    "platform_constraints": {}})
+        named = [row for row in resolution.errors if "Banana" in row["message"]]
+        assert [(row["key"], row["rule_id"]) for row in named] == [("firing_mode", "field_domain")]

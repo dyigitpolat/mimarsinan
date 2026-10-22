@@ -5,8 +5,6 @@
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
-    "allow_coalescing": true,
-    "allow_neuron_splitting": true,
     "target": "isaac_like"
   },
   "deployment_parameters": {

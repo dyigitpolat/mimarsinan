@@ -4,7 +4,9 @@
   "geometry": "loihi_dense_equiv_128x1024",
   "keys": {
     "core_semantics": "spiking",
-    "platform_physics_profile": "loihi"
+    "platform_physics_profile": "loihi",
+    "allow_coalescing": false,
+    "allow_neuron_splitting": true
   },
   "faithfulness": {
     "class": "approximate",
@@ -12,5 +14,6 @@
       "dense-equivalent capacity"
     ],
     "note": "Loihi's per-core capacity is a synaptic memory (128 KB) with fan-in and fan-out list limits (davies2018loihi p89); the registered geometry is its dense equivalent until a memory-bound core type exists (CH-B2)."
-  }
+  },
+  "notes": "allow_coalescing is false: \"Each neuromorphic core implements 1,024 primitive spiking neural units (compartments) grouped into sets of trees constituting neurons\" (davies2018loihi p.86, the registered geometry's provenance), so a neuron integrates within its core and no inter-core partial sum exists; a wide fan-in the dense equivalent's 128 axons cannot hold is the approximation's, and a deployment that needs one declares coalescing through target_overrides with a note, which its faithfulness names. allow_neuron_splitting is true: \"The total number of core-to-core fan-out edges mapped to any given core must not exceed 4,096 (Naxout)\" (p.89), so an axon reaches neurons on several cores, the input sharing a split core needs."
 }

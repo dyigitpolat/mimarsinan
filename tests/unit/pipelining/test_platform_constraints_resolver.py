@@ -2,6 +2,8 @@
 
 import pytest
 
+from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
+
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
@@ -153,7 +155,8 @@ def test_overrides_alone_resolve_to_a_custom_target():
 def test_an_unknown_physics_profile_fails_loud_at_resolution_time():
     # The floorplan discipline: an invalid declaration is refused HERE, not
     # discovered as a crash deep in the cost model.
-    with pytest.raises(KeyError, match="nosuchchip"):
+    # Refused by name (S0-B and G4 joint closure, review round 1): the consumer's KeyError, named.
+    with pytest.raises(DeclarationValueError, match="platform_physics_profile='nosuchchip': refused by its consumer"):
         build_platform_constraints_resolved({"platform_physics_profile": "nosuchchip"})
 
 

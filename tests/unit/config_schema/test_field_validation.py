@@ -17,9 +17,12 @@ from typing import Any
 
 import pytest
 
+from mimarsinan.config_schema.registry import REGISTRY
+from mimarsinan.config_schema.registry.value_schema import entry_value_errors
 from mimarsinan.config_schema.resolve import resolve_draft
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
 from mimarsinan.config_schema.validation import (
+    legality_errors,
     validate_against_registry,
     validate_deployment_config,
     validate_merged_config,
@@ -118,11 +121,15 @@ class TestRegistryWalkingValidator:
         assert validate_against_registry({"not_a_registry_key": -999}) == []
         assert validate_against_registry({"nf_scm_parity_samples": None}) == []
 
-    def test_legality_bearing_keys_are_owned_by_the_legal_value_set_law(self):
-        """firing_mode/spike_generation_mode/etc. have STATE-dependent admissible
-        sets — the field validator must not double-report them."""
-        assert validate_against_registry({"firing_mode": "Banana"}) == []
-        assert validate_against_registry({"s_allocation": "explicit"}) == []
+    def test_a_legality_bearing_key_is_judged_by_its_schema_once(self):
+        """firing_mode/spike_generation_mode/etc. have STATE-dependent legal sets:
+        the field validator judges their schema like every key's (as the one judge
+        does, G4 interface note 3), and the legal-value-set law judges only a value
+        the schema admits, so one violation is stated once (S0-B final review)."""
+        for key, value in (("firing_mode", "Banana"), ("s_allocation", "explicit")):
+            message = "; ".join(entry_value_errors(REGISTRY[key], value))
+            assert message and [row["message"] for row in validate_against_registry({key: value})] == [message]
+            assert legality_errors({"spiking_mode": "lif"}, {key: value}) == []
 
     def test_a_valid_value_passes(self):
         assert validate_against_registry({"nf_scm_parity_samples": 64}) == []

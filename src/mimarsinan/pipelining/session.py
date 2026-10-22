@@ -16,12 +16,15 @@ from mimarsinan.advisories import (
 )
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.reporter import DefaultReporter
-from mimarsinan.config_schema.deployment_derivation import (
-    enforce_quantization_assembly_contract,
+from mimarsinan.config_schema.runtime import (
+    enforce_run_contract, merge_search_space, run_config, run_sections, top_declaration,
 )
 from mimarsinan.data_handling.data_loader_factory import close_pipeline_loaders
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
+from mimarsinan.config_schema.registry import declaration_judge
+from mimarsinan.config_schema.validation import missing_top_level_errors, section_shape_errors
+from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 import mimarsinan.mapping.platform.target_expansion as target_expansion
 # The session APPLIES determinism, before any step runs (below); the contract
 # itself lives beside its counterpart `isolated_rng_stream`, so the families one
@@ -52,42 +55,42 @@ def parse_deployment_config(
 ) -> ParsedDeploymentConfig:
     """Parse a deployment-config dict and persist it under ``_RUN_CONFIG/``.
 
-    A declared target expands into both sections first (``expand_target``, no labels: the merge writes
-    them), so every later read of the sections, the quantization assembly contract included, sees the
-    bundle's keys; the persisted document is the one declared."""
-    deployment_name = deployment_config["experiment_name"]
-    deployment_parameters = dict(deployment_config["deployment_parameters"])
-    # The top-level seed must reach the merged pipeline config so DeploymentPlan.seed (and every config.get("seed") consumer) sees the configured value, not the fallback 0.
-    deployment_parameters.setdefault("seed", int(deployment_config.get("seed", 0)))
-    platform_constraints = _resolve_platform_constraints(
-        deployment_config, deployment_parameters
-    )
-    if isinstance(platform_constraints, dict):
-        deployment_parameters, platform_constraints = target_expansion.expand_target(
-            deployment_parameters, platform_constraints, write_derived=False
-        )
+    A declared target expands into both sections first (``expand_target_document``, the document door's
+    reading, no labels: the merge writes them). Then, before anything reads a declaration, the session refuses by
+    name a top-level key it reads that the document leaves absent or null (``missing_top_level_errors``: the
+    deployment parameters, the experiment name, the generated-files root and the provider name, which a document
+    declares whichever factory a caller hands in), a section that is no object, and every declaration the one
+    judge refuses
+    (``document_declaration_errors``, G4 interface note 2). Every read then takes the run's one layout
+    (``run_sections``: the top-level seed and pipeline mode laid beneath the deployment parameters, where the
+    derivation reads them, a null declaration unset): the data provider's seed, preprocessing and batch size, the
+    hardware-search branch and the quantization assembly contract (``enforce_run_contract``). The pipeline mode,
+    which names the working directory and the preset, is the one the run derives (``run_config``, the merge's own
+    derivation, which refuses a declared mode it would replace). The persisted document is the one declared."""
+    document = target_expansion.expand_target_document(deployment_config, write_derived=False)
+    required = ("deployment_parameters", "experiment_name", "generated_files_path", "data_provider_name")
+    errors = missing_top_level_errors(document, required)
+    errors += [*section_shape_errors(document), *declaration_judge.document_declaration_errors(document)]
+    if errors:
+        raise DeclarationValueError("; ".join(errors))
+    deployment_name = document["experiment_name"]
+    deployment_parameters, platform_constraints, layout = run_sections(document)
+    enforce_run_contract(deployment_parameters, platform_constraints)
+    pipeline_mode = str(run_config(copy.deepcopy(deployment_parameters),
+                                   copy.deepcopy(platform_constraints))["pipeline_mode"])
 
     if data_provider_factory is None:
         data_provider_factory = BasicDataProviderFactory(
-            deployment_config["data_provider_name"],
-            deployment_config.get("datasets_path", "./datasets"),
-            seed=deployment_config.get("seed", 0),
-            preprocessing=deployment_parameters.get("preprocessing"),
-            batch_size=deployment_parameters.get("batch_size"),
+            document["data_provider_name"],
+            top_declaration(document, "datasets_path", "./datasets"),
+            seed=layout["seed"],
+            preprocessing=layout.get("preprocessing"),
+            batch_size=layout.get("batch_size"),
         )
 
-    enforce_quantization_assembly_contract(
-        deployment_parameters,
-        platform_constraints if isinstance(platform_constraints, dict) else {},
-        pipeline_mode=deployment_config.get(
-            "pipeline_mode", deployment_parameters.get("pipeline_mode")
-        ),
-    )
-
-    pipeline_mode = deployment_config.get("pipeline_mode", "phased")
     working_directory = deployment_config.get(
         "_working_directory",
-        f"{deployment_config['generated_files_path']}/"
+        f"{document['generated_files_path']}/"
         f"{deployment_name}_{pipeline_mode}_deployment_run",
     )
     _persist_run_config(deployment_config, working_directory)
@@ -105,21 +108,10 @@ def parse_deployment_config(
     )
 
 
-def _resolve_platform_constraints(
-    deployment_config: dict, deployment_parameters: dict
-) -> dict:
-    """In hw search mode, merge search_space into arch_search without mutating the input."""
-    raw = deployment_config.get("platform_constraints", {})
-    if deployment_parameters.get("hw_config_mode", "fixed") != "search":
-        return raw
-    if not isinstance(raw, dict):
-        return raw
-    platform_constraints = copy.deepcopy(raw)
-    search_space = platform_constraints.pop("search_space", {}) or {}
-    arch_cfg = deployment_parameters.setdefault("arch_search", {})
-    for key, value in search_space.items():
-        arch_cfg.setdefault(key, value)
-    return platform_constraints
+def _resolve_platform_constraints(deployment_config: dict, deployment_parameters: dict) -> Any:
+    """In hw search mode, merge search_space into arch_search without mutating the input (``merge_search_space``,
+    the run's reading in ``run_sections``)."""
+    return merge_search_space(deployment_config.get("platform_constraints", {}), deployment_parameters)
 
 
 def _persist_run_config(deployment_config: dict, working_directory: str) -> None:

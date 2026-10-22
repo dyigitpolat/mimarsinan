@@ -221,8 +221,9 @@ class TestSAllocationValidation:
         assert validate_deployment_config(self._cfg({"s_allocation": "uniform"})) == []
 
     def test_unknown_mode_fails(self):
+        # One message per violation, the run door's: the value schema names an unknown mode (S0-B + G4 closure).
         errs = validate_deployment_config(self._cfg({"s_allocation": "magic"}))
-        assert any("s_allocation must be one of" in e for e in errs)
+        assert errs == ["s_allocation='magic' is not a valid option; choose one of ['uniform']"]
 
     def test_explicit_is_rejected_as_reserved(self):
         # Reserved/not-implemented => loud-reject regardless of capability/shape.
@@ -364,8 +365,10 @@ class TestFloorplanValidation:
 
     def test_full_or_absent_tile_grid_passes_document_validation(self):
         assert validate_deployment_config(self._doc({})) == []
+        # A full grid that holds the declared cores (the default 1000); one too small is refused by name since
+        # the document door states the run door's floorplan reading (S0-B and G4 joint closure, review round 1).
         assert validate_deployment_config(
-            self._doc({"tile_grid_rows": 2, "tile_grid_cols": 3,
+            self._doc({"tile_grid_rows": 10, "tile_grid_cols": 25,
                        "cores_per_tile": 4})
         ) == []
 

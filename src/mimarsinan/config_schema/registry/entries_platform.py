@@ -16,13 +16,17 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
     frozen_default as _frozen,
 )
-from mimarsinan.config_schema.registry.value_schema import enum_legal_set
+from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set
 from mimarsinan.config_schema.registry.entries_platform_backends import (
     _meta_backend_enable,
     _why_backend_enable,
 )
 
 _PC = "platform_constraints"
+#: Where the weight grid applies: the derivation runs float weights under pipeline_mode 'vanilla' or
+#: weight_quantization false (deployment_derivation.derive_deployment_parameters), where no grid quantizes them.
+_WEIGHT_GRID_APPLIED = R.all_of(R.not_(R.when("pipeline_mode", in_=("vanilla",))),
+                                R.not_(R.when("weight_quantization", in_=(False,))))
 
 # The NF<->SCM gate runs ONE question ("how many validation inputs?") on two
 # statistics: a serial per-neuron sweep whose mass comes from neurons (2 inputs
@@ -90,9 +94,13 @@ ENTRIES = (
        effect="Declares a quantized artifact (bits-driven WQ contract)",
        doc="Weight precision of the deployed artifact: quantized-N-bits "
            "(weight_bits declares a quantized artifact) or float weights "
-           "(the vanilla assembly: pipeline_mode='vanilla' + "
-           "weight_quantization=false, weight_bits then inert).",
-       bounds=(1, 32)),
+           "(the vanilla assembly: pipeline_mode='vanilla' + weight_quantization=false: no grid "
+           "quantizes the weights, and the payload sizes, the pricing and the record read weight_bits).",
+       bounds=(1, 32), applied_when=_WEIGHT_GRID_APPLIED, applied_by="weight grid",
+       applied_schema=ValueSchema(kind=T.INT.value, low=2, high=32, doc=(
+           "the signed weight grid (TensorQuantization) of 1 bit has no nonzero level (q_max = 2^0 - 1 = 0), "
+           "so weight quantization would divide by zero: declare weight_bits >= 2, or float weights "
+           "(pipeline_mode 'vanilla' or weight_quantization false)"))),
     _E("allow_coalescing", section=_PC, group="hardware", owner="MappingStrategy",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Allow Coalescing",
        doc="Capability: coalesce compatible soft cores into shared hard cores."),

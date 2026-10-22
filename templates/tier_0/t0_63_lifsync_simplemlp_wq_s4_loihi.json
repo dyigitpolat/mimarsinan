@@ -7,9 +7,13 @@
   "platform_constraints": {
     "target_tq": 4,
     "simulation_steps": 4,
-    "allow_coalescing": true,
-    "allow_neuron_splitting": true,
-    "target": "loihi"
+    "target": "loihi",
+    "target_overrides": {
+      "allow_coalescing": {
+        "value": true,
+        "note": "the MLP's 784- and 256-input layers exceed the dense equivalent's 128 axons, and a Loihi neuron integrates within its core: the cell declares coalescing, a departure from the chip"
+      }
+    }
   },
   "deployment_parameters": {
     "lr": 0.003,

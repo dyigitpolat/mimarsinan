@@ -7,9 +7,13 @@
   "platform_constraints": {
     "target_tq": 8,
     "simulation_steps": 8,
-    "allow_coalescing": true,
-    "allow_neuron_splitting": true,
-    "target": "truenorth"
+    "target": "truenorth",
+    "target_overrides": {
+      "allow_coalescing": {
+        "value": true,
+        "note": "the MLP's 784-input layer exceeds one TrueNorth core's 256 axons, and a TrueNorth neuron integrates its own core's axons only: the cell declares coalescing, a departure from the chip"
+      }
+    }
   },
   "deployment_parameters": {
     "lr": 0.003,

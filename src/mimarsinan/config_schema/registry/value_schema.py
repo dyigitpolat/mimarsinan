@@ -45,6 +45,8 @@ class ValueSchema:
     reserved: Tuple[Any, ...] = ()
     #: The minimum length of a string (characters) or a list (items).
     min_length: int = 0
+    #: The maximum length of a list (items); None = unbounded.
+    max_length: Optional[int] = None
     fields: Mapping[str, "ValueSchema"] = field(default_factory=dict)
     required: Tuple[str, ...] = ()
     required_iff: Tuple[RequiredIff, ...] = ()
@@ -59,6 +61,9 @@ class ValueSchema:
     #: What the field changes (the declaration table's reason) and what its absence means.
     doc: str = ""
     absent_means: str = ""
+    #: A null field of an object is unset (its consumer takes the absent meaning); False: the consumer reads the
+    #: null as a value, so this schema judges it like any other.
+    null_unset: bool = True
 
     def __post_init__(self) -> None:
         # A FieldType member is a str enum; hold its plain value so messages read the same on every Python.
@@ -139,7 +144,7 @@ def _object_errors(schema: ValueSchema, value: Any, path: str) -> List[str]:
             errors.append(f"{path}.{name} is not a declared field; known: {sorted(schema.fields)}")
     errors.extend(_presence_errors(schema, value, path))
     for name, sub in schema.fields.items():
-        if value.get(name) is not None:
+        if value.get(name) is not None or (name in value and not sub.null_unset):
             errors.extend(value_errors(sub, value[name], f"{path}.{name}"))
     return errors
 
@@ -155,6 +160,8 @@ def value_errors(schema: ValueSchema, value: Any, path: str) -> List[str]:
             return [f"{path} must be a list, got {type(value).__name__} ({value!r})"]
         if len(value) < schema.min_length:
             return [f"{path} must be a list of at least {schema.min_length} item(s)"]
+        if schema.max_length is not None and len(value) > schema.max_length:
+            return [f"{path} must be a list of at most {schema.max_length} item(s)"]
         return [e for i, item in enumerate(value)
                 for e in value_errors(schema.item, item, f"{path}[{i}]")]
     if schema.entries is not None:
@@ -230,7 +237,7 @@ def _number(x: float) -> str:
 
 
 def _bound_text(schema: ValueSchema) -> str:
-    kind, fmt = schema.kind.upper(), _number
+    kind, fmt = schema.kind.upper(), ((lambda x: str(int(x))) if schema.kind == _INT else _number)
     low, high = schema.low, schema.high
     if low is not None and high is not None:
         left, right = "(" if schema.low_exclusive else "[", ")" if schema.high_exclusive else "]"
@@ -257,5 +264,9 @@ def describe(schema: ValueSchema) -> str:
     if schema.entries is not None:
         return "JSON {key: " + describe(schema.entries) + "}"
     if schema.item is not None:
+        if schema.max_length is not None:
+            count = (f"{schema.max_length} items" if schema.max_length == schema.min_length
+                     else f"{schema.min_length} to {schema.max_length} items")
+            return "list of " + describe(schema.item) + f" ({count})"
         return "list of " + describe(schema.item) + (" (non-empty)" if schema.min_length else "")
     return "JSON {" + ", ".join(schema.fields) + "}"

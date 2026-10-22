@@ -399,14 +399,12 @@ class TestConsumerLegalSets:
         assert _resolve(config) == _resolve(canonical_config)
 
     def test_a_spelling_of_a_reserved_value_refuses_as_the_value_the_consumer_reads(self):
-        """``Explicit`` is the reserved ``explicit`` to its consumer: both doors refuse it by that name."""
+        """``Explicit`` is the reserved ``explicit`` to its consumer: both doors refuse it by that name, once (the
+        legal-value-set law judges only a value its schema admits; S0-B final review, note 3)."""
         config = _load("sync_simplemlp.json")
         config["deployment_parameters"]["s_allocation"] = "Explicit"
         reserved = unsupported_s_allocation_error("explicit")
-        assert validate_deployment_config(config) == [
-            reserved,
-            "s_allocation='explicit' is not legal here: the current config admits {'uniform'}. "
-            "Remove s_allocation to accept the derived value."]
+        assert validate_deployment_config(config) == [reserved]
         with pytest.raises(DeclarationValueError) as refusal:
             _resolve(config)
         assert str(refusal.value) == reserved
@@ -705,7 +703,12 @@ class TestPlatformBiasMode:
 
     @staticmethod
     def _document(**pc):
+        """sync_simplemlp with ``pc`` declared; a declared core grid replaces the fixture's core maxima too, which
+        every door derives from the cores (review round 2: a contradicting maximum is refused by name)."""
         config = _load("sync_simplemlp.json")
+        if "cores" in pc:
+            for dim in ("max_axons", "max_neurons"):
+                config["platform_constraints"].pop(dim)
         config["platform_constraints"].update(pc)
         return config
 
@@ -915,7 +918,8 @@ class TestPlatformBiasMode:
             run = []
         except DeclarationValueError as refusal:
             run = [str(refusal)]
-        assert validate_deployment_config(config) == run
+        stated = validate_deployment_config(config)
+        assert (["; ".join(stated)] if stated else []) == run
         judged = declared_sections_errors(*sections)
         assert (["; ".join(judged)] if judged else []) == run
 

@@ -136,8 +136,8 @@ def retired_key_errors(
 ) -> List[Dict[str, Any]]:
     """Keyed migration rows for a config-shaped mapping declaring retired keys.
 
-    Inspects BOTH scopes; one row per declared retired key, each carrying its
-    scope. The spiking_mode row carries the full one-click axes migration (its
+    Inspects BOTH scopes; one row per declared retired key (a null one is
+    unset, so it declares nothing), each carrying its scope. The spiking_mode row carries the full one-click axes migration (its
     ops also clear a declared schedule). ``paths`` (the parse layer's
     ``retired_paths``) tells each clear remedy where the key was FOUND, so a
     declaration nested inside a structural pc container gets a shape-aware op.
@@ -147,10 +147,11 @@ def retired_key_errors(
         body = config.get(scope)
         if not isinstance(body, Mapping):
             continue
-        if scope == _DP and "spiking_mode" in body:
+        # A null declaration is unset, as every other rule and the run read it: it retires nothing.
+        if scope == _DP and body.get("spiking_mode") is not None:
             rows.append(_spiking_mode_migration_row(body))
         for key, message in _RETIRED_STANDALONE_MESSAGES[scope].items():
-            if key in body:
+            if body.get(key) is not None:
                 rows.append(_retired_row(
                     scope, key, message,
                     [_clear_remedy(scope, key, f"Remove {key}",

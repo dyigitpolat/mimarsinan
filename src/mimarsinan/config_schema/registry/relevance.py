@@ -11,7 +11,9 @@ class Relevance:
     """A combinator tree the frontend can evaluate without shipping Python.
 
     Ops: ``always`` · ``in`` (key value in values) · ``true`` (key truthy) ·
-    ``set`` (key present, non-null) · ``all`` / ``any`` (over ``items``).
+    ``set`` (key present, non-null) · ``all`` / ``any`` (over ``items``) ·
+    ``not`` (of its one item; an evaluator that does not know an op reads it as
+    relevant, so a frontend renders the key until it learns the op).
     """
 
     op: str = "always"
@@ -43,6 +45,10 @@ class Relevance:
     def any_of(*items: "Relevance") -> "Relevance":
         return Relevance(op="any", items=tuple(items))
 
+    @staticmethod
+    def not_(item: "Relevance") -> "Relevance":
+        return Relevance(op="not", items=(item,))
+
     def evaluate(self, config: Mapping[str, Any]) -> bool:
         if self.op == "always":
             return True
@@ -56,6 +62,8 @@ class Relevance:
             return all(item.evaluate(config) for item in self.items)
         if self.op == "any":
             return any(item.evaluate(config) for item in self.items)
+        if self.op == "not":
+            return not self.items[0].evaluate(config)
         raise ValueError(f"unknown relevance op {self.op!r}")
 
     def to_json(self) -> Dict[str, Any]:
@@ -78,7 +86,7 @@ class Relevance:
             return Relevance.when_true(str(data["key"]))
         if op == "set":
             return Relevance.when_set(str(data["key"]))
-        if op in ("all", "any"):
+        if op in ("all", "any", "not"):
             items = tuple(Relevance.from_json(item) for item in data.get("items", ()))
             return Relevance(op=op, items=items)
         raise ValueError(f"unknown relevance op {op!r}")

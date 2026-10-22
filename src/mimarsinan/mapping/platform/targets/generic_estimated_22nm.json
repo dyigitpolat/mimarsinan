@@ -16,7 +16,9 @@
   },
   "keys": {
     "core_semantics": "mvm",
-    "platform_physics_profile": "generic_estimated_22nm"
+    "platform_physics_profile": "generic_estimated_22nm",
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true
   },
   "faithfulness": {
     "class": "approximate",
@@ -24,5 +26,6 @@
       "all constants estimated"
     ],
     "note": "Every constant of the profile is an estimate and the geometry is an assumption of the profile: the bundle exercises the estimated-evidence path and is never cited as a chip."
-  }
+  },
+  "notes": "allow_coalescing and allow_neuron_splitting are true, an assumption of the estimated point like its geometry: the profile describes no real chip, and its digital cores are assumed to add partial sums and split outputs across cores, as the framework's study grid declares (every tier-0 cell of that grid declares both); a study that assumes otherwise declares either through target_overrides with a note."
 }

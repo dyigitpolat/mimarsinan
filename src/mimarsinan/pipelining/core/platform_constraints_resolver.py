@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Mapping, cast
+from typing import Any, Callable, Iterable, Mapping, TypeVar, cast
 
 from mimarsinan.chip_simulation.core_semantics import resolve_core_semantics
 from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import resolve_floorplan
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
 from mimarsinan.config_schema.registry.build import passthrough_keys
-from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
+from mimarsinan.config_schema.registry.consumer_reading import (
+    consumer_refusal, read_like_consumers, workload_reading_errors,
+)
 # The one judge both doors call lives in the registry (S0 amendment B); the resolver is the run door's caller and
 # re-exports the two names of its frozen interface.
 from mimarsinan.config_schema.registry.declaration_judge import (
@@ -21,7 +23,29 @@ from mimarsinan.config_schema.registry.entries_write import platform_bias_mode
 from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
-from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
+from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY, resolve_residency_policy
+
+_Read = TypeVar("_Read")
+
+
+def _read_by_consumer(pipeline_config: Mapping[str, Any], keys: Iterable[str], read: Callable[[], _Read]) -> _Read:
+    """A consumer's reading of declarations its value schemas do not judge whole (the residency granularities, the
+    physics profile and overrides, the floorplan's capacity against the declared cores), whose refusal is a
+    ``DeclarationValueError`` naming each declared key and value with the consumer's reason, where the run would
+    raise a plain TypeError, ValueError, KeyError or AttributeError."""
+    try:
+        return read()
+    except (TypeError, ValueError, KeyError, AttributeError) as refusal:
+        declared = {key: pipeline_config[key] for key in keys if pipeline_config.get(key) is not None}
+        raise DeclarationValueError(consumer_refusal(declared, refusal)) from refusal
+
+
+def _residency_declaration(pipeline_config: Mapping[str, Any]) -> dict[str, Any]:
+    """The declared granularities, read by their consumer (``resolve_residency_policy``) before they ride the
+    surface, so a quantity or granularity it does not know is refused here."""
+    declared = pipeline_config.get(RESIDENCY_KEY, {}) or {}
+    resolve_residency_policy({RESIDENCY_KEY: declared}, value_domain=domain_of(pipeline_config) == "value")
+    return dict(declared)
 
 
 def build_platform_constraints_resolved(
@@ -37,7 +61,7 @@ def build_platform_constraints_resolved(
     changed.
     """
     pipeline_config = read_like_consumers(pipeline_config)
-    errors = run_door_errors(pipeline_config)
+    errors = run_door_errors(pipeline_config) or workload_reading_errors(pipeline_config, pipeline_config)
     if errors:
         raise DeclarationValueError("; ".join(errors))
     cores = pipeline_config.get("cores")
@@ -54,7 +78,8 @@ def build_platform_constraints_resolved(
         pipeline_config.get("allow_neuron_splitting", False)
     )
     pcfg["allow_scheduling"] = bool(pipeline_config.get("allow_scheduling", False))
-    pcfg[RESIDENCY_KEY] = dict(pipeline_config.get(RESIDENCY_KEY, {}) or {})
+    pcfg[RESIDENCY_KEY] = _read_by_consumer(pipeline_config, (RESIDENCY_KEY,),
+                                            lambda: _residency_declaration(pipeline_config))
     # The scheduled-build pass budget: dropping it here silently pins the
     # builder to its default and disarms residency streaming (t0_44 measured).
     pcfg["max_schedule_passes"] = int(
@@ -77,13 +102,11 @@ def build_platform_constraints_resolved(
     # file); these keys then carry the declared-platform derivation only.
     # Missing "count" means one core of that type (the imc_platforms
     # convention) — minimal declarations (e.g. bias-mode queries) stay valid.
-    floorplan = resolve_floorplan(
-        sum(int(core_type.get("count", 1)) for core_type in cores),
-        str(pipeline_config.get("sanafe_arch_preset", "loihi")),
-        pcfg["cores_per_tile"],
-        pcfg["tile_grid_rows"],
-        pcfg["tile_grid_cols"],
-    )
+    floorplan = _read_by_consumer(pipeline_config, ("cores_per_tile", "tile_grid_rows", "tile_grid_cols"),
+                                  lambda: resolve_floorplan(
+                                      sum(int(core_type.get("count", 1)) for core_type in cores),
+                                      str(pipeline_config.get("sanafe_arch_preset", "loihi")),
+                                      pcfg["cores_per_tile"], pcfg["tile_grid_rows"], pcfg["tile_grid_cols"]))
     pcfg["cores_per_tile_resolved"] = int(floorplan.cores_per_tile)
     pcfg["tile_grid_rows_resolved"] = int(floorplan.rows)
     pcfg["tile_grid_cols_resolved"] = int(floorplan.cols)
@@ -95,10 +118,10 @@ def build_platform_constraints_resolved(
     # the profile file changes later. None means none declared — the absolute
     # objectives are then unavailable rather than defaulted. An unknown profile or
     # an unknown constant fails loud HERE, at resolution time.
-    physics = resolve_platform_physics(
-        str(pipeline_config.get("platform_physics_profile", "") or ""),
-        pipeline_config.get("platform_physics_overrides") or {},
-    )
+    physics = _read_by_consumer(
+        pipeline_config, ("platform_physics_profile", "platform_physics_overrides"),
+        lambda: resolve_platform_physics(str(pipeline_config.get("platform_physics_profile", "") or ""),
+                                         pipeline_config.get("platform_physics_overrides") or {}))
     pcfg["platform_physics_resolved"] = physics.to_dict() if physics else None
 
     if "target_tq" in pipeline_config:

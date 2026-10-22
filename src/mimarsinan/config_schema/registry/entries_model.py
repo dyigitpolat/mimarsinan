@@ -162,7 +162,9 @@ ENTRIES = (
        empty_means="falls back to batch_size"),
     _E("training_recipe", group="training", owner="training_loop",
        type=T.RECIPE, category=Category.BASIC, exposure="user", label="Training Recipe",
-       doc="Optimizer/scheduler recipe for pretraining (AdamW + cosine + LLRD default)."),
+       doc="Optimizer/scheduler recipe for pretraining (AdamW + cosine + LLRD default). An empty recipe ({}) is "
+           "no recipe: the trainer's legacy path (Adam, weight decay 5e-5, cosine to lr/1000), while an absent "
+           "one is the default recipe."),
     _E("mirror_training_recipe", group="tuning", owner="deployment_derivation/recipe_mirror",
        type=T.BOOL, category=Category.BASIC, exposure="user",
        label="Mirror Training Recipe",
@@ -172,7 +174,9 @@ ENTRIES = (
            "tuning_recipe declaration conflicts and is rejected."),
     _E("tuning_recipe", group="tuning", owner="AdaptationManager",
        type=T.RECIPE, category=Category.BASIC, exposure="user", label="Tuning Recipe",
-       doc="Optimizer/scheduler recipe for adaptation tuners (no warmup/LLRD default).",
+       doc="Optimizer/scheduler recipe for adaptation tuners (no warmup/LLRD default). An empty recipe ({}) is "
+           "no recipe: the tuners' legacy path (Adam, weight decay 5e-5), while an absent one is the default "
+           "recipe.",
        relevant=R.when("mirror_training_recipe", in_=(False,)),
        provided_by="training"),
     _E("kd_ce_alpha", group="training", owner="training_loop/distillation",

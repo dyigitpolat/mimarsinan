@@ -11,7 +11,8 @@ import pytest
 
 import mimarsinan.mapping.platform.target_bundles as bundle_module
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.config_schema.registry import REGISTRY
+from mimarsinan.config_schema.registry import REGISTRY, Relevance
+from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 from mimarsinan.config_schema.resolve import resolve_draft
 from mimarsinan.config_schema.validation import validate_deployment_config
 from mimarsinan.mapping.platform.target_bundles import load_bundles, target_bundles
@@ -324,3 +325,126 @@ class TestTheOdinCell:
         assert departed == ["allow_coalescing", "cores"]
         for key in departed:
             assert f"{key} declared" in flat["target_faithfulness_class"]
+
+
+class TestOverridesNeedATarget:
+    """``target_overrides`` declared without a target (none, or a null one) refuses by name at every door: the
+    document door's rule (``_document_assignments``) and the run door's (``target_assignments``) state one message
+    (G4 final review, overrides without a target; probes O1 and O3)."""
+
+    @pytest.mark.parametrize("target", ["absent", None], ids=["O1_no_target", "O3_null_target"])
+    def test_overrides_without_a_target_refuse_at_every_door(self, tmp_path, target):
+        doc = _load(SPIKING)
+        if target != "absent":
+            doc[PC]["target"] = target
+        doc[PC]["target_overrides"] = {"weight_bits": {"value": 6, "note": "a narrower grid"}}
+        document, wizard, run = _refused_by_name(doc, tmp_path, "declared without a target")
+        assert {m for m in document if "without a target" in m} == {m for m in wizard if "without a target" in m} \
+            == {str(run)}
+
+
+class TestTargetWhereNothingReadsIt:
+    """``target`` (and every key the expansion reads) declared where no door reads it refuses by name at every
+    door: at the document's top level (P1), or inside an object the parser does not read, the nested bias object
+    of either section included, at any depth (P7); before, every door ignored it and the run deployed the default
+    grid (G4 final review, the placement rule)."""
+
+    @staticmethod
+    def _cases():
+        top = _plain()
+        top["target"] = "odin"
+        nested = _plain()
+        nested[PC]["platform_constraints"] = {"target": "odin"}
+        nested_bias = _plain()
+        nested_bias[PC]["platform_constraints"] = {"has_bias": False, "target": "odin"}
+        deep = _plain()
+        deep[DP]["platform_constraints"] = {"extra": {"target_overrides": {}}}
+        label = _plain()
+        label["target_claim_class"] = "headline-eligible"
+        return {"P1_top_level": (top, "target: target"),
+                "P7_nested_bias_object": (nested, "platform_constraints.platform_constraints.target"),
+                "P7b_beside_a_bias": (nested_bias, "platform_constraints.platform_constraints.target"),
+                "deep_in_the_deployment_parameters": (
+                    deep, "deployment_parameters.platform_constraints.extra.target_overrides"),
+                "label_at_the_top_level": (label, "target_claim_class: target_claim_class")}
+
+    @pytest.mark.parametrize("case", ["P1_top_level", "P7_nested_bias_object", "P7b_beside_a_bias",
+                                      "deep_in_the_deployment_parameters", "label_at_the_top_level"])
+    def test_an_unread_declaration_refuses_by_name_at_every_door(self, tmp_path, case):
+        doc, named = self._cases()[case]
+        document, wizard, run = _refused_by_name(doc, tmp_path, named)
+        assert "nothing reads it here" in str(run)
+        # The one judge refuses it (review round 1: every registry key no reader reads, one rule), beside any other
+        # violation the document holds (P7b's nested bias disagrees with the flat one).
+        assert {m for m in document if named in m} == {m for m in wizard if named in m} == {
+            part for part in str(run).split("; ") if named in part}
+        assert set(str(run).split("; ")) <= set(document)
+        assert resolve_draft(copy.deepcopy(doc)).resolved == {}
+
+    def test_the_run_door_of_the_two_sections_refuses_a_nested_one(self):
+        """The merge reads the two sections: a target in either section's unread object refuses there too."""
+        with pytest.raises(ToolchainRefusal, match="platform_constraints.platform_constraints.target"):
+            merge_pipeline_config({}, {"platform_constraints": {"target": "odin"}})
+        with pytest.raises(ToolchainRefusal, match="deployment_parameters.platform_constraints.target"):
+            merge_pipeline_config({"platform_constraints": {"target": "odin"}}, {})
+
+
+class TestAWeightGridWithoutALevel:
+    """Key amendment K1: under weight quantization the signed weight grid of 1 bit has no nonzero level (q_max =
+    0), so ``weight_bits`` below 2 refuses by name at every door through its applied schema, the bundle's value
+    and the hand form alike; under float weights it is not applied and passes (key amendment K2 names it)."""
+
+    MESSAGE = "weight_bits=1 is below the minimum 2"
+
+    def test_truenorth_under_weight_quantization_refuses_at_every_door(self, tmp_path):
+        doc = _document("truenorth")
+        assert doc[DP]["weight_quantization"] is True and target_bundles()["truenorth"].values["weight_bits"] == 1
+        document, wizard, run = _refused_by_name(doc, tmp_path, self.MESSAGE)
+        assert isinstance(run, DeclarationValueError)
+
+    def test_the_hand_form_refuses_alike(self, tmp_path):
+        doc = _load(SPIKING)
+        doc[PC]["weight_bits"] = 1
+        _refused_by_name(doc, tmp_path, self.MESSAGE)
+
+    def test_truenorth_under_float_weights_passes_every_door(self, tmp_path):
+        doc = _document("truenorth")
+        doc["pipeline_mode"], doc[DP]["weight_quantization"] = "vanilla", False
+        assert _verdicts(doc, tmp_path) == ([], [], None)
+        assert _run(doc, tmp_path)["target_faithfulness_class"].endswith("; weight grid not applied")
+
+    def test_two_bits_pass_under_weight_quantization(self, tmp_path):
+        doc = _load(SPIKING)
+        doc[PC]["weight_bits"] = 2
+        assert _verdicts(doc, tmp_path) == ([], [], None)
+
+
+class TestNotApplied:
+    """Key amendment K2, as review round 1 corrected it: ``weight_bits``' consumers read it in every run (payload
+    sizes, pricing, the record, the mapping's register bound), so its relevance is ``always``; the weight grid
+    applies it only under weight quantization (``applied_when``). A bundle key whose relevance fails is named
+    "<key> not applied", and one whose ``applied_when`` fails "<applied_by> not applied"; an applied key is never
+    named."""
+
+    def test_weight_bits_is_relevant_and_its_grid_is_conditional(self):
+        """The grid applies where neither ``pipeline_mode: vanilla`` nor ``weight_quantization: false`` holds (absent
+        reads as on), through the relevance language's ``not``; the key itself stays relevant in every run."""
+        entry = REGISTRY["weight_bits"]
+        assert entry.relevant == Relevance.always() and entry.applied_by == "weight grid"
+        when = entry.applied_when
+        assert when.evaluate({}) and when.evaluate({"pipeline_mode": "phased", "weight_quantization": True})
+        assert not when.evaluate({"weight_quantization": False}) and not when.evaluate({"pipeline_mode": "vanilla"})
+        assert Relevance.from_json(when.to_json()) == when and {item["op"] for item in when.to_json()["items"]} == {"not"}
+        assert Relevance.not_(Relevance.when_true("x")).evaluate({}) and not Relevance.not_(Relevance.always()).evaluate({})
+
+    def test_a_quantized_run_applies_the_grid(self, tmp_path):
+        assert "not applied" not in _run(_document("odin"), tmp_path)["target_faithfulness_class"]
+
+    def test_the_float_truenorth_cell_names_the_grid(self):
+        path = os.path.join(_FIXTURES, "..", "..", "..", "templates", "tier_0", "t0_62_lifs_simplemlp_fp_s8_truenorth.json")
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        flat = merge_pipeline_config(dict(doc[DP]), copy.deepcopy(doc[PC]))
+        assert flat["target_faithfulness_class"] == (
+            "approximate: 1-bit weights for the axon-type weight law; allow_coalescing declared; "
+            "weight grid not applied")

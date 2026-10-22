@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Tuple
 
 from mimarsinan.chip_simulation.activation_semantics import RETIRED_SPIKING_KEYS
 from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import floorplan_config_errors
 from mimarsinan.chip_simulation.spiking_semantics import require_known_spiking_mode
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.config_schema.deployment_derivation import (
-    legal_value_error, legal_values_for, legality_bearing_keys,
-)
-from mimarsinan.config_schema.registry import (
-    Category, REGISTRY,
-    mvm_document_errors, parse_deployment_document, retired_key_errors,
-)
+from mimarsinan.config_schema.deployment_derivation import legal_value_error
+from mimarsinan.config_schema.registry import REGISTRY, parse_deployment_document, retired_key_errors
 from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
-from mimarsinan.config_schema.registry.entries_write import platform_bias_errors
+from mimarsinan.config_schema.registry.declaration_judge import (
+    applied_view_errors, declared_legality_rows, document_declaration_errors, legality_rows,
+)
+from mimarsinan.config_schema.registry.declaration_places import not_declarable_message, run_layers
 from mimarsinan.config_schema.registry.parse import read_document_like_consumers
+from mimarsinan.config_schema.runtime import run_derivation_errors, unset
 from mimarsinan.config_schema.registry.value_schema import entry_value_errors
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 # Bound as a module (resolved from sys.modules while it initializes): target_expansion imports the registry,
@@ -75,29 +74,31 @@ def legality_errors(
     An absent key is legal by construction (the derivation supplies a legal
     value), so only declarations are judged — and each row names the offending
     key, never the mode that constrains it. Generic over the registry: no
-    per-mode ladder lives here or anywhere downstream.
+    per-mode ladder lives here or anywhere downstream. The rows are the one
+    judge's (``declaration_judge.legality_rows``): a value outside its own
+    schema is the schema's to name, so the set judges only the rest.
     """
-    errors: List[Dict[str, Any]] = []
-    for flat_key in legality_bearing_keys():
-        value = declared.get(flat_key)
-        if flat_key not in declared or value is None:
-            continue
-        legal_tuple = legal_values_for(flat_key, cfg)
-        if legal_tuple is None:  # legality does not apply here — do not judge
-            continue
-        legal = list(legal_tuple)
-        if value in legal:
-            continue
-        errors.append({
-            "key": flat_key,
-            "message": str(legal_value_error(flat_key, value, legal)),
-            "rule_id": "legal_value_set",
-            "remedies": _legality_remedies(flat_key, legal),
-        })
-    return errors
+    return _legality_rows(legality_rows(cfg, declared))
 
 
-def _field_domain_error(flat_key: str, message: str) -> Dict[str, Any]:
+def declared_legality_errors(document: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """``legality_errors`` of a document as a run judges it: its two sections' run layout and own declarations
+    under the run's state (``declaration_judge.declared_legality_rows``), the rows the document door states."""
+    top = {k: v for k, v in document.items() if k in REGISTRY and REGISTRY[k].section == "top"}
+    return _legality_rows(declared_legality_rows(
+        document.get("deployment_parameters"), document.get("platform_constraints"), top=top))
+
+
+def _legality_rows(rows: List[Any]) -> List[Dict[str, Any]]:
+    return [{
+        "key": flat_key,
+        "message": str(legal_value_error(flat_key, value, legal)),
+        "rule_id": "legal_value_set",
+        "remedies": _legality_remedies(flat_key, list(legal)),
+    } for flat_key, value, legal in rows]
+
+
+def field_domain_error(flat_key: str, message: str) -> Dict[str, Any]:
     """A keyed, remediable field-domain row (same shape as the legality errors):
     the universal remedy is to clear the value and accept the derived/default."""
     label = REGISTRY[flat_key].label
@@ -119,51 +120,61 @@ def validate_against_registry(flat: Mapping[str, Any]) -> List[Dict[str, Any]]:
     rows in the same error channel as the legal-value-set law — one generic loop,
     no per-key ladder.
 
-    Legality-bearing keys are owned wholesale by ``legality_errors`` (their
-    admissible set is STATE-dependent), so they are skipped here; unknown keys are
-    reported by the document parser, not duplicated; an absent/``None`` value is
-    'unset' and never judged.
+    A legality-bearing key is judged here too, as the one judge judges it: its
+    schema names a value outside it, and ``legality_errors`` judges only a value
+    its schema admits (one message per violation); unknown keys are reported by
+    the document parser, not duplicated; an absent/``None`` value is 'unset' and
+    never judged.
     """
-    legality_owned = set(legality_bearing_keys())
     errors: List[Dict[str, Any]] = []
     for flat_key, value in flat.items():
-        if flat_key not in REGISTRY or value is None or flat_key in legality_owned:
+        if flat_key not in REGISTRY or value is None:
             continue
         messages = entry_value_errors(REGISTRY[flat_key], value)
         if messages:
-            errors.append(_field_domain_error(flat_key, "; ".join(messages)))
+            errors.append(field_domain_error(flat_key, "; ".join(messages)))
     return errors
 
 
 def non_declarable_key_errors(config: Mapping[str, Any]) -> List[str]:
     """Reject document declarations of keys the derivation/runtime owns.
 
-    A RUNTIME key or a non-declarable DERIVED key in a config file would
+    A RUNTIME key or a non-declarable DERIVED key in a config document would
     shadow its owner (or silently be overwritten) — unexposed knobs must not
-    be settable programmatically either.
+    be settable programmatically either. A key is judged in its own place and,
+    for a section key, in either section, where the run's layout reads it; a
+    null declaration is unset, as both doors read it.
     """
-    containers = {
-        "top": config,
-        "deployment_parameters": config.get("deployment_parameters"),
-        "platform_constraints": config.get("platform_constraints"),
-    }
+    places = [config.get(section) for section in ("deployment_parameters", "platform_constraints")]
     errors: List[str] = []
     for flat_key, entry in REGISTRY.items():
-        if flat_key in RETIRED_SPIKING_KEYS:
+        if flat_key in RETIRED_SPIKING_KEYS or (message := not_declarable_message(flat_key)) is None:
             continue  # the retired-key rule owns these with migration remedies
-        if entry.category is Category.RUNTIME:
-            owner_kind = "the runtime"
-        elif entry.category is Category.DERIVED and not entry.declarable:
-            owner_kind = "the derivation"
-        else:
-            continue
-        container = containers.get(entry.section)
-        if isinstance(container, Mapping) and flat_key in container:
-            errors.append(
-                f"{flat_key} is not declarable in a config document — "
-                f"{owner_kind} ({entry.owner}) owns it. Remove the key."
-            )
+        containers = [config] if entry.section == "top" else places
+        if any(isinstance(container, Mapping) and container.get(flat_key) is not None for container in containers):
+            errors.append(message)
     return errors
+
+
+#: The top-level keys a run reads with no value of its own: a document leaves each one missing when it is absent,
+#: and, but for ``start_step`` (null runs from the first step) and the sections (the shape rule names a null one),
+#: when it is unset (null, or an empty path: ``runtime.unset``).
+REQUIRED_TOP_LEVEL = ("data_provider_name", "experiment_name", "generated_files_path", "platform_constraints",
+                      "deployment_parameters", "start_step")
+_NULL_ALLOWED = ("platform_constraints", "deployment_parameters", "start_step")
+
+
+def missing_top_level_errors(config: Mapping[str, Any], keys: Tuple[str, ...] = REQUIRED_TOP_LEVEL) -> List[str]:
+    """Each of ``keys`` a document leaves missing, by name: absent, or null where a null is no value; the document
+    door states them, and the CLI path refuses those the session reads."""
+    return [f"Missing top-level key: {key}" for key in keys
+            if key not in config or (unset(key, config[key]) and key not in _NULL_ALLOWED)]
+
+
+def section_shape_errors(config: Mapping[str, Any]) -> List[str]:
+    """A declared section that is no object: the document door and the CLI path refuse it by name."""
+    return [f"{section} must be a dict" for section in ("platform_constraints", "deployment_parameters")
+            if section in config and not isinstance(config[section], dict)]
 
 
 def document_run_layout(config: Mapping[str, Any]) -> Dict[str, Any]:
@@ -175,11 +186,18 @@ def document_run_layout(config: Mapping[str, Any]) -> Dict[str, Any]:
     return {k: v for section in sections if isinstance(section, Mapping) for k, v in section.items()}
 
 
-def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
+def validate_deployment_config(config: Dict[str, Any], *, builder_registration: bool = True) -> List[str]:
     """Validate the deployment config JSON shape main.py expects; return error messages (empty if valid).
 
     The document is read as its consumers read it before anything judges it
     (``read_document_like_consumers``), as the run door reads its flat config.
+    Every declaration is judged where, and as, a run judges it by the one judge
+    (``document_declaration_errors``, G4 interface note 3), beside the parser's
+    registry loop, which also judges the wizard's structural platform bodies,
+    by their value schemas and the schemas their consumers apply
+    (``applied_view_errors``); each message is stated once. A document the judge admits is derived as a
+    run derives it, under the model builder's registration unless
+    ``builder_registration`` is False (``run_derivation_errors``).
     """
     errors: List[str] = []
 
@@ -196,60 +214,47 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
     except ToolchainRefusal as refusal:
         target_refusals = [str(refusal)]
     errors.extend(row["message"] for row in retired_key_errors(config))
-    errors.extend(mvm_document_errors(config))
 
     pc = config.get("platform_constraints")
     if isinstance(pc, dict):
         errors.extend(coalescing_config_errors(pc))
-        errors.extend(floorplan_config_errors(pc))
 
-    dp_for_axis = config.get("deployment_parameters")
-    errors.extend(
-        s_allocation_config_errors(
-            dp_for_axis if isinstance(dp_for_axis, Mapping) else {},
-            pc if isinstance(pc, Mapping) else {},
-        )
-    )
+    parsed = parse_deployment_document(config)
+    errors.extend(row["message"] for row in validate_against_registry(parsed.known_flat_keys()))
+    if isinstance(pc, dict) and pc.get("mode") is not None:  # the wizard's structural platform body, as parsed
+        errors.extend(applied_view_errors(parsed.dp, parsed.pc, top=parsed.top))
+    # The one judge both doors call: the run's layout of the two sections (a key declared in the other section
+    # included) and each section's own declarations as written, by their value schemas, the domain rule
+    # (``mvm_document_errors``), the legal-value-set law, the schemas consumers apply and the bias rule; then a
+    # refused target expansion.
+    judged = [*document_declaration_errors(config), *target_refusals]
+    # A document the judge admits is derived as a run derives it, and the run's own refusal is stated
+    # (``run_derivation_errors``: the quantization assembly contract and the derivation's pairings).
+    errors.extend(judged or run_derivation_errors(config, builder_registration=builder_registration))
 
-    flat_view = parse_deployment_document(config).known_flat_keys()
-    errors.extend(row["message"] for row in validate_against_registry(flat_view))
-    # The run door's bias rule over the run layout of the two sections: each declaration by the BOOL schema,
-    # then their agreement (a refusal the registry loop above already states is not repeated).
-    stated = set(errors)
-    bias_errors = platform_bias_errors(document_run_layout(config), REGISTRY["has_bias"])
-    errors.extend(message for message in [*bias_errors, *target_refusals] if message not in stated)
+    errors.extend(missing_top_level_errors(config))
+    errors.extend(section_shape_errors(config))
+    if isinstance(config.get("deployment_parameters"), dict):
+        errors.extend(presence_errors(run_layers(config["deployment_parameters"], config.get("platform_constraints"),
+                                                 defaults=True)))
 
-    for key in ("data_provider_name", "experiment_name", "generated_files_path", "platform_constraints", "deployment_parameters", "start_step"):
-        if key not in config:
-            errors.append(f"Missing top-level key: {key}")
+    return list(dict.fromkeys(errors))
 
-    dp = config.get("deployment_parameters")
-    if not isinstance(dp, dict):
-        if "deployment_parameters" in config:
-            errors.append("deployment_parameters must be a dict")
-    else:
-        model_mode = dp.get("model_config_mode", "user")
-        hw_mode = dp.get("hw_config_mode", "fixed")
-        any_search = model_mode == "search" or hw_mode == "search"
 
-        if model_mode == "user":
-            if "model_type" not in dp:
-                errors.append("model_config_mode is 'user' but model_type is missing")
-            if "model_config" not in dp:
-                errors.append("model_config_mode is 'user' but model_config is missing")
-
-        if any_search:
-            if "arch_search" not in dp or not isinstance(dp.get("arch_search"), dict):
-                errors.append("Search is active but arch_search is missing or not a dict")
-            if "model_type" not in dp:
-                errors.append(
-                    "Search is active but model_type is missing (the builder "
-                    "family whose config space the search explores)"
-                )
-
-        # Legality lambdas are total over raw documents; retired keys report above.
-        errors.extend(row["message"] for row in legality_errors(dp, dp))
-
+def presence_errors(layout: Mapping[str, Any]) -> List[str]:
+    """The model and search keys the chosen modes need, read where the run reads them (the run's layout of the two
+    sections over their default layers)."""
+    errors: List[str] = []
+    model_mode, hw_mode = layout.get("model_config_mode", "user"), layout.get("hw_config_mode", "fixed")
+    if model_mode == "user":
+        errors += [f"model_config_mode is 'user' but {key} is missing" for key in ("model_type", "model_config")
+                   if key not in layout]
+    if model_mode == "search" or hw_mode == "search":
+        if not isinstance(layout.get("arch_search"), dict):
+            errors.append("Search is active but arch_search is missing or not a dict")
+        if "model_type" not in layout:
+            errors.append("Search is active but model_type is missing (the builder "
+                          "family whose config space the search explores)")
     return errors
 
 

@@ -10,6 +10,7 @@ from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
+from mimarsinan.config_schema.registry import REGISTRY, Category
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
 from mimarsinan.config_schema import display_view_meta as _meta
 from mimarsinan.config_schema.display_view_build import (
@@ -17,6 +18,27 @@ from mimarsinan.config_schema.display_view_build import (
     build_pipeline_preview,
     _ordered_keys,
 )
+
+def _flat_fallback_sections(raw_config: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """A flat config split back into the two sections a run lays: each key in its registry section (every
+    platform default a platform key), less the derived platform keys whose inputs it holds (the core maxima, the
+    target's labels), which the merge derives again; the view then shows the flat config's own values over it."""
+    def platform(key: str) -> bool:
+        entry = REGISTRY.get(key)
+        return key in get_default_platform_constraints() or (entry is not None and entry.section == "platform_constraints")
+
+    def rederived(key: str) -> bool:
+        entry = REGISTRY.get(key)
+        return (platform(key) and entry is not None and entry.category is Category.DERIVED
+                and bool(entry.derived_from) and set(entry.derived_from) <= set(raw_config))
+
+    kept = {k: v for k, v in raw_config.items() if not rederived(k)}
+    return {
+        "deployment_parameters": {k: v for k, v in kept.items() if not platform(k)
+                                  and k not in _meta.TOP_LEVEL_RUN_KEYS and k not in _meta.RUNTIME_KEYS},
+        "platform_constraints": {k: v for k, v in kept.items() if platform(k)},
+    }
+
 
 def build_config_display_view(
     raw_config: Mapping[str, Any],
@@ -34,17 +56,8 @@ def build_config_display_view(
         from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
         filled_outer = build_deployment_config_from_state(dict(saved))
     else:
-        filled_outer = {
-            "pipeline_mode": raw_config.get("pipeline_mode", "phased"),
-            "deployment_parameters": {
-                k: v for k, v in raw_config.items()
-                if k not in get_default_platform_constraints() and k not in _meta.TOP_LEVEL_RUN_KEYS
-                and k not in _meta.RUNTIME_KEYS
-            },
-            "platform_constraints": {
-                k: v for k, v in raw_config.items() if k in get_default_platform_constraints()
-            },
-        }
+        filled_outer = {"pipeline_mode": raw_config.get("pipeline_mode", "phased"),
+                        **_flat_fallback_sections(raw_config)}
 
     pipeline_mode = str(filled_outer.get("pipeline_mode", "phased"))
     dp = dict(filled_outer.get("deployment_parameters") or {})
