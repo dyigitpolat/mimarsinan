@@ -216,7 +216,8 @@ def domain_errors(entry: Any, *, run_domain: str) -> List[str]:
 
 def judge_declaration(entry: Any, value: Any, *, run_domain: Optional[str]) -> Any:
     """``value`` unchanged when its schema (and, given a run domain, its domain tag) admits it, else a
-    refusal naming every violation."""
+    refusal naming every violation. No ``src/`` caller since S0 amendment B (the run door judges through
+    ``declaration_judge.run_door_errors``); kept for the frozen interface groups code against."""
     errors = [] if run_domain is None else domain_errors(entry, run_domain=run_domain)
     errors += entry_value_errors(entry, value)
     if errors:

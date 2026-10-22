@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, get_args
 
+from mimarsinan.chip_simulation.nevresim.connectivity import (
+    ConnectivityMode,
+    resolve_nevresim_connectivity_mode,
+)
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
@@ -12,6 +16,7 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
     frozen_default as _frozen,
 )
+from mimarsinan.config_schema.registry.value_schema import enum_legal_set
 from mimarsinan.config_schema.registry.entries_platform_backends import (
     _meta_backend_enable,
     _why_backend_enable,
@@ -139,10 +144,11 @@ ENTRIES = (
        why=_why_backend_enable(
            "nevresim", "nevresim has no synchronized-window backend"),
        meta=_meta_backend_enable("nevresim"), provenance="ConversionPolicy recipe"),
+    # The consumer's legal set and reading (connectivity.py: compile_time or runtime, read stripped).
     _E("nevresim_connectivity_mode", group="deployment_target", owner="nevresim_backend",
-       type=T.ENUM, options=("runtime", "codegen"), category=Category.ADVANCED,
-       label="Nevresim Connectivity Mode",
-       doc="How chip connectivity reaches nevresim: runtime JSON or generated code.",
+       type=T.ENUM, **enum_legal_set(get_args(ConnectivityMode)), category=Category.ADVANCED,
+       label="Nevresim Connectivity Mode", consumer_reading=resolve_nevresim_connectivity_mode,
+       doc="How chip connectivity reaches nevresim: generated code (compile_time) or runtime JSON.",
        relevant=R.when_true("enable_nevresim_simulation")),
     _E("enable_loihi_simulation", group="deployment_target",
        owner="ConversionPolicy/backend_registry", type=T.BOOL,
@@ -198,7 +204,9 @@ ENTRIES = (
        type=T.INT, category=Category.ADVANCED, label="Simulation Batch Size",
        doc="Eval batch bound for deployed metric reads (primary + OOM retry).",
        bounds=(1, None), provenance="consumer frozen default",
-       derived_default=_frozen(8), empty_means="8"),
+       derived_default=_frozen(8),
+       empty_means="8 on the spiking hard-core read and every OOM retry; the census batch "
+                   "max(test batch, 1024) on the other deployed-metric reads"),
     _E("simulation_batch_count", group="deployment_target", owner="SimulationRunner",
        type=T.INT, category=Category.ADVANCED, label="Simulation Batch Count",
        doc="Batches per simulator probe run.", bounds=(1, None),
@@ -211,8 +219,8 @@ ENTRIES = (
     _E("eval_max_samples", group="deployment_target", owner="DeploymentPlan",
        type=T.INT, category=Category.ADVANCED, exposure="user", label="Eval Max Samples",
        doc="Universal deployment-metric test-sample cap: a set at/below this size "
-           "evaluates in full, larger uses a seeded subsample.",
-       bounds=(1, None), provenance="consumer frozen default", derived_default=_frozen(10000)),
+           "evaluates in full, larger uses a seeded subsample; 0 = no cap (the full set).",
+       bounds=(0, None), provenance="consumer frozen default", derived_default=_frozen(10000)),
     _E("scm_degradation_tolerance", group="deployment_target", owner="soft_core_mapping",
        type=T.FLOAT, category=Category.ADVANCED, label="SCM Degradation Tolerance",
        doc="Retention tolerance of the SCM identity read; absent, the global "

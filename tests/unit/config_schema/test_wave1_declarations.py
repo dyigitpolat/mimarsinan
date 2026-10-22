@@ -24,6 +24,8 @@ from mimarsinan.config_schema import validation as validation_module
 from mimarsinan.config_schema.registry import consumer_reading as consumer_reading_module
 from mimarsinan.config_schema.registry.build import passthrough_keys
 from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
+from mimarsinan.config_schema.registry import declaration_judge as declaration_judge_module
+from mimarsinan.config_schema.registry.declaration_judge import declared_sections_errors, sections_run_layout
 from mimarsinan.config_schema.registry import entries_write as entries_write_module
 from mimarsinan.config_schema.registry.entries_write import (
     conflicting_platform_bias_error,
@@ -439,11 +441,13 @@ class TestConsumerLegalSets:
 
     def test_the_run_door_has_no_branch_on_a_key_name(self):
         """The run door's judging loop names no registry key: which keys it judges is read from the
-        registry (a value schema or the passthrough flag), never listed."""
-        tree = ast.parse(textwrap.dedent(inspect.getsource(judged_passthrough)))
-        constants = {node.value for node in ast.walk(tree)
-                     if isinstance(node, ast.Constant) and isinstance(node.value, str)}
-        assert not (set(REGISTRY) & constants), sorted(set(REGISTRY) & constants)
+        registry (every present key since S0 amendment B; the domain tag where a value schema or the passthrough
+        flag is declared), never listed."""
+        for function in (judged_passthrough, resolver_module.declaration_errors):
+            tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+            constants = {node.value for node in ast.walk(tree)
+                         if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+            assert not (set(REGISTRY) & constants), sorted(set(REGISTRY) & constants)
 
 
 class TestConsumerReading:
@@ -502,6 +506,14 @@ class TestConsumerReading:
         assert reserved and validate_merged_config({**flat, "s_allocation": "Explicit"}) == reserved
 
 
+def _value_schema_statements(config):
+    """The document door's refusals but its legal-value-set rows: at the run door ``merge_pipeline_config`` applies
+    that law, and the resolver states every value-schema refusal (S0 amendment B)."""
+    dp = config["deployment_parameters"]
+    law = {row["message"] for row in validation_module.legality_errors(dp, dp)}
+    return [m for m in validate_deployment_config(config) if m not in law]
+
+
 def _per_layer_s_document(mode, explicit):
     config = _load("sync_simplemlp.json")
     config["deployment_parameters"].update(s_allocation=mode, s_allocation_explicit=explicit)
@@ -550,10 +562,11 @@ class TestPerLayerSMap:
         config = _per_layer_s_document("explicit", explicit)
         reserved = unsupported_s_allocation_error("explicit")
         assert parse_deployment_document(config).dp["s_allocation"] == "explicit"
-        assert reserved in validate_deployment_config(config)
+        stated = _value_schema_statements(config)
+        assert reserved in stated
         with pytest.raises(DeclarationValueError) as refusal:
             _resolve(config)
-        assert str(refusal.value) == reserved
+        assert str(refusal.value) == "; ".join(stated)
 
     @pytest.mark.parametrize("steps", [float("inf"), "four", [32]], ids=["infinity", "a-string", "a-list"])
     def test_a_simulation_steps_the_consumer_cannot_read_leaves_the_mode_and_refuses_by_name(self, steps):
@@ -654,10 +667,11 @@ class TestPerLayerSMap:
         del config["platform_constraints"]["simulation_steps"]
         reserved = unsupported_s_allocation_error("explicit")
         assert parse_deployment_document(config).dp["s_allocation"] == "explicit"
-        assert reserved in validate_deployment_config(config)
+        stated = _value_schema_statements(config)
+        assert reserved in stated
         with pytest.raises(DeclarationValueError) as refusal:
             _resolve(config)
-        assert str(refusal.value) == reserved
+        assert str(refusal.value) == "; ".join(stated)
 
     def test_a_budget_declaration_stays_reserved(self):
         config = _per_layer_s_document("budget", [self._S] * 3)
@@ -737,13 +751,18 @@ class TestPlatformBiasMode:
             build_platform_constraints_resolved(config)
         assert isinstance(refusal.value, ToolchainRefusal) and str(refusal.value) == message
 
-    @pytest.mark.parametrize("door", [resolver_module, validation_module], ids=["run-door", "document-door"])
+    @pytest.mark.parametrize("door", [declaration_judge_module, validation_module], ids=["run-door", "document-door"])
     def test_both_doors_call_the_one_bias_rule(self, door):
         """A flat config may carry the nested form too, and the same rule judges both, declaration by
-        declaration and then their agreement (each door's behaviour is pinned by the tests below)."""
+        declaration and then their agreement (each door's behaviour is pinned by the tests below). The run
+        door's judge is the registry's ``declaration_judge`` since S0 amendment B round 1, which the resolver
+        calls."""
+        assert resolver_module.run_door_errors is declaration_judge_module.run_door_errors
         tree = ast.parse(textwrap.dedent(inspect.getsource(door)))
         names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-        assert {"platform_bias_errors"} <= names
+        called = names | {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+        # The document door calls the rule itself, or through the registry judge (G4 interface note 3).
+        assert "platform_bias_errors" in called or "document_declaration_errors" in called
         assert not {"conflicting_platform_bias_error", "dropped_platform_bias_error"} & names
 
     @pytest.mark.parametrize("flat,nested,expected", [
@@ -808,18 +827,29 @@ class TestPlatformBiasMode:
                 "cores": [dict(self._BARE)], "platform_constraints": {"has_bias": "false"}})
         assert str(refusal.value) == "platform_constraints.has_bias must be bool, got str ('false')"
 
-    def _bare_document(self):
-        config = self._document(cores=[dict(self._BARE)])
+    def _bare_document(self, cores=(_BARE,)):
+        config = self._document(cores=[dict(c) for c in cores])
         del config["platform_constraints"]["has_bias"]
         return config
 
+    #: The core types a platform bias declaration may reach: a bare core takes it; a core declaring its own
+    #: has_bias reads none, so there the declaration is inert (it ran exactly on the base).
+    _CORES = pytest.mark.parametrize("cores", [(_BARE,), ({**_BARE, "has_bias": True},)],
+                                     ids=["bare-core", "every-core-declares-its-own"])
+
+    @_CORES
     @pytest.mark.parametrize("section", ["platform_constraints", "deployment_parameters"])
     @pytest.mark.parametrize("flat", [None, False], ids=["alone", "beside-a-flat-false"])
-    def test_a_document_nesting_a_non_boolean_bias_is_refused_by_name_at_both_doors(self, section, flat):
+    def test_a_document_nesting_a_non_boolean_bias_is_refused_by_name_at_both_doors(self, section, flat, cores):
         """The run door judges the nested declaration by the BOOL schema, so the document door does too, over
         the layout a run gives the two sections: a nested string 'false' (truthy, which the base deployed
-        onto every bare core) refuses by name at both doors, alone or beside a flat boolean."""
-        config = self._bare_document()
+        onto every bare core) refuses by name at both doors, alone or beside a flat boolean.
+
+        Boundary finding (S0 amendment B): where every core type declares its own has_bias no core reads the
+        platform declaration, and the base ran such a document exactly; both doors refuse it too, by the
+        relevance-independent value check every key follows (plan section 21 item 7, "Strict, stated").
+        Alternative (a), judging the bias only where a bare core reads it, is recorded and not taken."""
+        config = self._bare_document(cores)
         if flat is not None:
             config["platform_constraints"]["has_bias"] = flat
         config[section]["platform_constraints"] = {"has_bias": "false"}
@@ -830,11 +860,13 @@ class TestPlatformBiasMode:
             _resolve(config)
         assert isinstance(refusal.value, ToolchainRefusal) and str(refusal.value) == message
 
-    def test_a_non_boolean_flat_bias_in_the_deployment_parameters_is_refused_by_name_at_both_doors(self):
+    @_CORES
+    def test_a_non_boolean_flat_bias_in_the_deployment_parameters_is_refused_by_name_at_both_doors(self, cores):
         """A run reads a has_bias the deployment parameters declare when the platform constraints declare
         none (``merge_pipeline_config`` lays both sections flat); the parser reports it as an unknown key, and
-        the bias rule over the run layout judges it as the run door does."""
-        config = self._bare_document()
+        the bias rule over the run layout judges it as the run door does, whether a bare core reads it or
+        every core type declares its own (the boundary finding above)."""
+        config = self._bare_document(cores)
         config["deployment_parameters"]["has_bias"] = "no"
         message = "has_bias must be bool, got str ('no')"
         assert "deployment_parameters.has_bias" in parse_deployment_document(config).unknown
@@ -863,16 +895,68 @@ class TestPlatformBiasMode:
             config[section]["has_bias"] = self._SECTION_BIAS[section]
         for section in nested_in:
             config[section]["platform_constraints"] = {"has_bias": self._SECTION_BIAS[section]}
-        merged = merge_pipeline_config(copy.deepcopy(config["deployment_parameters"]),
-                                       copy.deepcopy(config["platform_constraints"]))
-        layout = validation_module.document_run_layout(copy.deepcopy(config))
-        assert platform_bias_declarations(layout) == platform_bias_declarations(merged)
+        self._assert_the_doors_agree(config)
+
+    def _assert_the_doors_agree(self, config):
+        """Both doors, and the registry judge both can call (``declaration_judge``, S0 amendment B round 1), over
+        the run's layout of the two sections: the same bias declarations as the merged run config, the same
+        verdict and the same message."""
+        sections = (copy.deepcopy(config["deployment_parameters"]), copy.deepcopy(config["platform_constraints"]))
         try:
-            build_platform_constraints_resolved(merged)
+            merged = merge_pipeline_config(*copy.deepcopy(sections))
+        except DeclarationValueError:  # the merge judges the declared sections first (G4 interface note 1)
+            merged = None
+        if merged is not None:
+            bias = platform_bias_declarations(merged)
+            assert platform_bias_declarations(validation_module.document_run_layout(copy.deepcopy(config))) == bias
+            assert platform_bias_declarations(sections_run_layout(*sections)) == bias
+        try:
+            build_platform_constraints_resolved(merge_pipeline_config(*copy.deepcopy(sections)))
             run = []
         except DeclarationValueError as refusal:
             run = [str(refusal)]
         assert validate_deployment_config(config) == run
+        judged = declared_sections_errors(*sections)
+        assert (["; ".join(judged)] if judged else []) == run
+
+    #: What the later section (the platform constraints) may carry over an earlier section's bias declaration in
+    #: the run's layout, one shallow update per section: an explicit null flat bias, and a nested object
+    #: without a bias, with another field, or no object at all.
+    _SHADOWS = (("has_bias", None), ("platform_constraints", {}), ("platform_constraints", {"foo": 1}),
+                ("platform_constraints", "x"), ("platform_constraints", None))
+
+    @pytest.mark.parametrize("earlier", ["flat", "nested"])
+    @pytest.mark.parametrize("key,shadow", _SHADOWS,
+                             ids=["null-flat", "empty-nested", "nested-without-bias", "nested-str", "nested-null"])
+    def test_a_later_section_shadows_an_earlier_bias_alike_at_both_doors(self, earlier, key, shadow):
+        """The run's layout replaces an earlier section's value whole (``merge_pipeline_config``'s
+        ``dict.update``): no deep merge of the nested objects, no skipped null, no skipped non-object. The
+        document door's layout carries the merged run config's bias declarations, and both doors give the same
+        verdict and message, where the platform constraints shadow a non-boolean bias the deployment
+        parameters declare flat or nested."""
+        config = self._bare_document()
+        if earlier == "flat":
+            config["deployment_parameters"]["has_bias"] = "false"
+        else:
+            config["deployment_parameters"]["platform_constraints"] = {"has_bias": "false"}
+        config["platform_constraints"][key] = shadow
+        self._assert_the_doors_agree(config)
+
+    @pytest.mark.parametrize("flat_section", ["platform_constraints", "deployment_parameters"])
+    @pytest.mark.parametrize("nested_section", ["platform_constraints", "deployment_parameters"])
+    def test_two_invalid_bias_declarations_are_both_refused_by_name_at_both_doors(self, flat_section,
+                                                                                    nested_section):
+        """A flat and a nested declaration that are both non-boolean: the document door states both messages,
+        and the run door joins the same two (each once; the wizard's keyed rows are G4's)."""
+        config = self._bare_document()
+        config[flat_section]["has_bias"] = "no"
+        config[nested_section]["platform_constraints"] = {"has_bias": 0}
+        flat_message = "has_bias must be bool, got str ('no')"
+        nested_message = "platform_constraints.has_bias must be bool, got int (0)"
+        assert validate_deployment_config(config) == [flat_message, nested_message]
+        with pytest.raises(DeclarationValueError) as refusal:
+            _resolve(config)
+        assert str(refusal.value) == "; ".join([flat_message, nested_message])
 
 
 class TestPassthrough:

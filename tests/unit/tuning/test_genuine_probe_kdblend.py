@@ -49,7 +49,7 @@ def _make_lif_pipeline(tmp_path, *, cycle_accurate):
     from conftest import MockPipeline, default_config
 
     cfg = default_config()
-    cfg["spiking_mode"] = "rate"
+    cfg["spiking_mode"] = "lif"  # "rate" is no spiking mode (S0 amendment B judges it at the run door)
     cfg["cycle_accurate_lif_forward"] = cycle_accurate
     cfg["tuning_budget_scale"] = 1.0
     cfg["simulation_steps"] = 16

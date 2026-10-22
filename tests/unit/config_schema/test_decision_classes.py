@@ -308,10 +308,10 @@ class TestClassEvidence:
         simulation_factory.run_trainer_metric(pipeline, model, device="cpu")
         assert model.seen == expected
 
-    @pytest.mark.parametrize("declared,expected", [(None, 10000), (123, 123)])
+    @pytest.mark.parametrize("declared,expected", [(None, 10000), (123, 123), (0, "full")])
     def test_every_step_metric_reads_the_eval_max_samples_subsample(self, declared, expected):
         """Every trainer or tuner step measures its metric (the next tuner's target) on the
-        eval_max_samples subsample."""
+        eval_max_samples subsample; 0 is no cap, the full test set (a legal value since S0 amendment B)."""
         calls = []
 
         class _Trainer:

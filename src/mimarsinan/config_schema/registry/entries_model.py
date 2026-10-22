@@ -133,10 +133,10 @@ ENTRIES = (
        bounds=(0.0, 1.0)),
     _E("lr_range_min", group="training", owner="lr_finder",
        type=T.FLOAT, category=Category.ADVANCED, label="LR Range Min",
-       doc="Lower bound of the LR-finder sweep.", bounds=(0.0, None)),
+       doc="Lower bound of the LR-finder sweep.", bounds=(0.0, None), exclusive_bounds=(True, False)),
     _E("lr_range_max", group="training", owner="lr_finder",
        type=T.FLOAT, category=Category.ADVANCED, label="LR Range Max",
-       doc="Upper bound of the LR-finder sweep.", bounds=(0.0, None)),
+       doc="Upper bound of the LR-finder sweep.", bounds=(0.0, None), exclusive_bounds=(True, False)),
     _E("training_epochs", group="training", owner="training_loop",
        type=T.INT, category=Category.BASIC, exposure="user", label="Training Epochs",
        doc="From-scratch pretraining epochs.", unit="epochs", bounds=(0, None)),
@@ -184,7 +184,7 @@ ENTRIES = (
        type=T.FLOAT, category=Category.ADVANCED, label="KD Temperature",
        doc="Softmax temperature for distillation targets (the mode recipe "
            "may override the schema default).", bounds=(0.0, None),
-       provenance="ConversionPolicy recipe"),
+       exclusive_bounds=(True, False), provenance="ConversionPolicy recipe"),
     _E("input_data_scale", group="workload", owner="workload_profile/spike_encoding",
        type=T.FLOAT, category=Category.ADVANCED, label="Input Data Scale",
        doc="Deployed input-boundary scale (post-transform upper value bound). "

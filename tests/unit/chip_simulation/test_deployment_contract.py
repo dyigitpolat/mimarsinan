@@ -7,6 +7,8 @@ import pytest
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
+from mimarsinan.chip_simulation.spiking_semantics import ttfs_cycle_schedule
+from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 
 
 def _cfg(**overrides):
@@ -51,10 +53,11 @@ class TestFactory:
             _cfg(ttfs_cycle_schedule=None)
         )
         assert contract.ttfs_cycle_schedule == "cascaded"
-        contract = SpikingDeploymentContract.from_pipeline_config(
-            _cfg(ttfs_cycle_schedule="bogus")
-        )
-        assert contract.ttfs_cycle_schedule == "cascaded"
+        # An unknown schedule, which the normalization reads as cascaded, is refused by name at the run door
+        # the contract resolves its bias mode through (S0 amendment B: every present key's schema is judged).
+        assert ttfs_cycle_schedule("bogus") == "cascaded"
+        with pytest.raises(DeclarationValueError, match="ttfs_cycle_schedule='bogus'"):
+            SpikingDeploymentContract.from_pipeline_config(_cfg(ttfs_cycle_schedule="bogus"))
 
     def test_simulation_steps_required(self):
         cfg = _cfg()

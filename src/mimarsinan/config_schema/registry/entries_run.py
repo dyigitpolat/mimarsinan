@@ -72,7 +72,7 @@ ENTRIES = (
        doc="Wall cap in seconds for one external-simulator invocation (nevresim "
            "compile/execute, the segment emit+compile pool, SANA-FE chip.sim); a "
            "hung invocation is killed, retried once, then the step fails loud.",
-       bounds=(1.0, None), provenance="consumer frozen default",
+       bounds=(0.0, None), exclusive_bounds=(True, False), provenance="consumer frozen default",
        derived_default=_frozen(DEFAULT_SIMULATION_STEP_TIMEOUT_S),
        empty_means="900 s per external-simulator invocation"),
     # Runtime-resolved keys: never declared in a config document; schema-known

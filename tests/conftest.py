@@ -227,7 +227,8 @@ def default_config():
         "spike_generation_mode": "Deterministic",
         "thresholding_mode": "<",
         "simulation_steps": 4,
-        "max_simulation_samples": -1,
+        # 0 = no sample cap (INT >= 0; the run door judges every present key since S0 amendment B).
+        "max_simulation_samples": 0,
         "input_shape": (1, 8, 8),
         "num_classes": 4,
         "num_workers": 0,

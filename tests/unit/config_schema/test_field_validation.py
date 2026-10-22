@@ -71,7 +71,8 @@ CASES = (
     Case("target_tq", 0, "platform_constraints", "bounds"),
     Case("simulation_steps", 3.5, "platform_constraints", "type"),
     Case("sanafe_arch_preset", "quantum", "deployment_parameters", "enum"),
-    Case("simulation_step_timeout_s", 0.5, "deployment_parameters", "bounds"),
+    # The consumer's cap is any positive wall time (execution_bounds: <= 0 raises; S0 amendment B).
+    Case("simulation_step_timeout_s", 0.0, "deployment_parameters", "bounds"),
 )
 
 

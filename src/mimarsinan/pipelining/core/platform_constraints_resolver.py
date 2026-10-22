@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, cast
+from typing import Any, Mapping, cast
 
-from mimarsinan.chip_simulation.core_semantics import (
-    is_mvm_core_semantics,
-    resolve_core_semantics,
-)
+from mimarsinan.chip_simulation.core_semantics import resolve_core_semantics
 from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import resolve_floorplan
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
-from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.config_schema.registry.build import passthrough_keys
 from mimarsinan.config_schema.registry.consumer_reading import read_like_consumers
-from mimarsinan.config_schema.registry.entries_write import platform_bias_errors, platform_bias_mode
-from mimarsinan.config_schema.registry.value_schema import DeclarationValueError, judge_declaration
+# The one judge both doors call lives in the registry (S0 amendment B); the resolver is the run door's caller and
+# re-exports the two names of its frozen interface.
+from mimarsinan.config_schema.registry.declaration_judge import (
+    declaration_errors as declaration_errors,
+    domain_of,
+    run_door_errors as run_door_errors,
+)
+from mimarsinan.config_schema.registry.entries_write import platform_bias_mode
+from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
@@ -34,12 +37,15 @@ def build_platform_constraints_resolved(
     changed.
     """
     pipeline_config = read_like_consumers(pipeline_config)
+    errors = run_door_errors(pipeline_config)
+    if errors:
+        raise DeclarationValueError("; ".join(errors))
     cores = pipeline_config.get("cores")
     if cores is None:
         cores = list(cast("list[dict[str, Any]]", DEFAULT_PLATFORM_CONSTRAINTS["cores"]))
 
     cores = [dict(ct) for ct in cores]
-    bias_mode = _judged_platform_bias(pipeline_config)
+    bias_mode = platform_bias_mode(pipeline_config)
     for ct in cores:
         ct.setdefault("has_bias", bias_mode)
 
@@ -124,51 +130,28 @@ def build_platform_constraints_resolved(
     return pcfg
 
 
-def _run_domain(pipeline_config: dict[str, Any]) -> str:
-    return "value" if is_mvm_core_semantics(pipeline_config.get("core_semantics")) else "event"
-
-
-def _judged_platform_bias(pipeline_config: dict[str, Any]) -> Any:
-    """The bias mode a core type without its own ``has_bias`` takes (``platform_bias_mode``: the flat
-    key, then the nested ``platform_constraints.has_bias``, else a bias lane), judged by the one rule the
-    document door applies (``platform_bias_errors``): each declaration is a boolean (the registry's BOOL
-    schema), and a flat and a nested declaration that disagree refuse by name."""
-    errors = platform_bias_errors(pipeline_config, REGISTRY["has_bias"])
+def judged_passthrough(pipeline_config: dict[str, Any], run_domain: str) -> dict[str, Any]:
+    """The passthrough keys verbatim (an absent key does not appear), after ``declaration_errors`` judges every
+    present key (``DeclarationValueError`` names each). No ``src/`` caller since S0 amendment B (the resolver
+    judges through ``run_door_errors``); kept for the frozen interface groups code against."""
+    errors = declaration_errors(pipeline_config, run_domain)
     if errors:
         raise DeclarationValueError("; ".join(errors))
-    return platform_bias_mode(pipeline_config)
+    return _passthrough_surface(pipeline_config)
 
 
-def judged_passthrough(pipeline_config: dict[str, Any], run_domain: str) -> dict[str, Any]:
-    """Judge every present key the registry gives a value schema or the passthrough flag, by the
-    schema the document door judges it with (``DeclarationValueError`` names the key), and return
-    the passthrough keys verbatim (an absent key does not appear).
-
-    The domain tag judges a declaration: a key with a schema default sits in every flat config, so
-    its presence is no declaration, and only its value is judged here (its domain is the document
-    door's).
-    """
-    carried = set(passthrough_keys())
-    surface: dict[str, Any] = {}
-    for key, entry in REGISTRY.items():
-        value = pipeline_config.get(key)
-        if value is None or not (key in carried or entry.value_schema is not None):
-            continue
-        judge_declaration(entry, value, run_domain=None if entry.has_default() else run_domain)
-        if key in carried:
-            surface[key] = copy.deepcopy(value)
-    return surface
+def _passthrough_surface(pipeline_config: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: copy.deepcopy(pipeline_config[key]) for key in passthrough_keys()
+            if pipeline_config.get(key) is not None}
 
 
 def declared_surface(pipeline_config: dict[str, Any]) -> dict[str, Any]:
-    """The resolved surface's declaration part, judged here because a run never calls the
-    document validator (``judged_passthrough``, over the config as its consumers read it); the
-    value domain is named, with its value grid when declared, exactly for value-domain runs, so
-    every spiking surface is unchanged.
+    """The resolved surface's declaration part, over the config as its consumers read it, which
+    ``run_door_errors`` judged first: the passthrough keys verbatim, and the value domain named, with its value
+    grid when declared, exactly for value-domain runs, so every spiking surface is unchanged.
     """
-    run_domain = _run_domain(pipeline_config)
-    value_domain = run_domain == "value"
-    surface = judged_passthrough(pipeline_config, run_domain)
+    value_domain = domain_of(pipeline_config) == "value"
+    surface = _passthrough_surface(pipeline_config)
     if value_domain:
         surface["core_semantics"] = resolve_core_semantics(pipeline_config)
         if pipeline_config.get("activation_bits") is not None:

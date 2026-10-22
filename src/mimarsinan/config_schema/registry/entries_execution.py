@@ -44,7 +44,7 @@ ENTRIES = (
        label="Spike-count Parity Samples",
        doc="Samples per backend spike-count certificate [calculus 17]: counts "
            "are integer-exact, so 1-2 samples x millions of neuron-windows "
-           "out-powers argmax parity at any n.", bounds=(1, None),
+           "out-powers argmax parity at any n; 0 disarms the certificate.", bounds=(0, None),
        provenance="consumer frozen default", derived_default=_frozen(2),
        empty_means="2 samples"),
     _E("activation_bits", domain="value", section="platform_constraints", group="hardware",

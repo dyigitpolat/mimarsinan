@@ -32,7 +32,6 @@ _FLOORPLAN = (_CO, "NoC floorplan of the priced chip; traffic cost only")
 _PRUNING = (_FB, "removes weights, so the computed function changes")
 _RESERVED_S = (_ND, "reserved: no run threads the per-depth S map, so every depth runs simulation_steps")
 _GATE = (_AB, "a verification threshold: a deployment outside it is refused")
-_SAMPLES = (_AB, "sample count of a refusing certificate gate: fewer samples admit more")
 _SAMPLES_0 = (_AB, "sample count of a refusing certificate gate: fewer samples admit more, 0 disarms it")
 _METRIC_SAMPLE = (_AB, "chooses the test samples of the deployed-metric reads the retention gate "
                        "judges; no tuner runs after them")
@@ -61,7 +60,7 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "pipeline_mode": (_FB, "phased arms the quantization chain; vanilla keeps float weights"),
     "target_metric_override": (_FB, "seeds the metric the tuners' accept and rollback rules read"),
     "tuner_target_floor_ratio": (_ND, "read by no run: the tuner floor derives from degradation_tolerance"),
-    "spike_count_parity_samples": _SAMPLES,
+    "spike_count_parity_samples": _SAMPLES_0,
     "nf_scm_parity_samples": _SAMPLES_0,
     "scm_torch_sim_parity_samples": _SAMPLES_0,
     "value_parity_samples": _SAMPLES_0,

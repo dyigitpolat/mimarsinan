@@ -1,15 +1,11 @@
 """Registry entries: the write-law policy keys, the core-type field schema the write fields extend, the
-declarations the builder injects into entries that live in files S0 does not edit (consumer readings
-included), and the platform bias rule both doors apply."""
+declarations the builder injects into entries declared beside other concerns (consumer readings included), and
+the platform bias rule both doors apply."""
 
 from __future__ import annotations
 
-from typing import Any, List, Mapping, Optional, Tuple, get_args
+from typing import Any, List, Mapping, Optional, Tuple
 
-from mimarsinan.chip_simulation.nevresim.connectivity import (
-    ConnectivityMode,
-    resolve_nevresim_connectivity_mode,
-)
 from mimarsinan.config_schema.registry.decision_classes import COST_ONLY, FUNCTION_BEARING
 from mimarsinan.config_schema.registry.types import (
     Category,
@@ -17,6 +13,7 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
 )
 from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set, schema_of, value_errors
+from mimarsinan.data_handling.preprocessing import PreprocessingSpec, interpolation_mode_names
 from mimarsinan.mapping.support.period_census import WRITE_GRANULARITIES, WRITE_OVERLAP_MODES
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_EXPLICIT,
@@ -80,26 +77,34 @@ def s_allocation_as_read(config: Mapping[str, Any]) -> str:
     return S_ALLOCATION_UNIFORM if allocation.is_uniform else mode
 
 
-#: Declared attributes of keys whose entries live in files S0 does not edit, injected by the builder:
-#: the core-type schema of ``cores``, the absent meaning of the platform bias mode
-#: (``platform_bias_mode``), the absent meaning of the census batch bound
-#: (``simulation_factory.resolve_census_batch_size``: the resolved 8 caps the spiking hard-core read and
-#: every OOM retry, the other reads take the census batch), and the legal sets taken from their
-#: consumers: a value the consumer refuses is no option, a value it names but no run implements is
-#: reserved, and both doors refuse either by name (``enum_legal_set``; the per-depth S map takes the list
-#: its consumer parses). A consumer that normalizes what it reads gives the key its reading
-#: (``consumer_reading``), by reference.
+#: The one field of ``preprocessing`` whose consumers read a non-canonical spelling differently: the FFCV writer
+#: lowercases ``Bilinear`` to bilinear, the torchvision transform falls back to bicubic
+#: (``data_handling/preprocessing.py``), so its legal set is the spellings both read alike, judged as written. The
+#: other fields stay the parser's (``PREPROCESSING_FIELDS``).
+PREPROCESSING_SCHEMA = ValueSchema(
+    kind=T.JSON,
+    fields={"interpolation": ValueSchema(
+        kind=T.ENUM, options=interpolation_mode_names(), decision_class=FUNCTION_BEARING,
+        doc="the resize filter of the inputs the network trains and computes on",
+        absent_means=PreprocessingSpec().interpolation)},
+    closed=False,
+)
+
+#: Declared attributes of keys whose entries live beside other concerns, injected by the builder: the core-type
+#: schema of ``cores``, the absent meaning of the platform bias mode (``platform_bias_mode``), the
+#: interpolation legal set of ``preprocessing``, and the legal sets taken from their consumers: a value the
+#: consumer refuses is no option, a value it names but no run implements is reserved, and both doors refuse
+#: either by name (``enum_legal_set``; the per-depth S map takes the list its consumer parses). A consumer that
+#: normalizes what it reads gives the key its reading (``consumer_reading``), by reference. An entry never
+#: declares a different value of an attribute injected here (a value nothing would read).
 INJECTED_DECLARATIONS: Mapping[str, Mapping[str, Any]] = {
-    "cores": {"value_schema": ValueSchema(kind=T.CORES, item=CORE_TYPE_SCHEMA)},
+    # sanafe/arch_synth/floorplan.resolve_floorplan refuses a platform of no cores (a capacity below 1), and
+    # every core type counts at least one core: a non-empty list.
+    "cores": {"value_schema": ValueSchema(kind=T.CORES, item=CORE_TYPE_SCHEMA, min_length=1)},
     "has_bias": {"empty_means": "true — every core type declaring no has_bias gets a bias lane; a flat "
                                 "config's nested platform_constraints.has_bias, when present, is taken "
                                 "instead"},
-    "simulation_batch_size": {"empty_means": "8 on the spiking hard-core read and every OOM retry; the "
-                                             "census batch max(test batch, 1024) on the other "
-                                             "deployed-metric reads"},
-    # chip_simulation/nevresim/connectivity.py: compile_time or runtime, read stripped; else it raises.
-    "nevresim_connectivity_mode": {**enum_legal_set(get_args(ConnectivityMode)),
-                                   "consumer_reading": resolve_nevresim_connectivity_mode},
+    "preprocessing": {"value_schema": PREPROCESSING_SCHEMA},
     # tuning/orchestration/temporal_allocation.py: three modes are named, read lowercased; only uniform
     # is threaded.
     "s_allocation": {**enum_legal_set(S_ALLOCATION_SUPPORTED_MODES, reserved=tuple(
