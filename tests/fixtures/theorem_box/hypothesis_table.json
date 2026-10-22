@@ -1,0 +1,873 @@
+{
+ "schema": "theorem-box/2",
+ "statement": {
+  "semantics_in_scope": [
+   "streamed_lif",
+   "windowed_lif",
+   "synchronized_lif",
+   "cascaded_ttfs",
+   "synchronized_ttfs",
+   "value",
+   "event_serial"
+  ],
+  "granularities_in_scope": [
+   "per_cycle",
+   "per_event"
+  ],
+  "encoders_in_scope": [
+   "Uniform",
+   "FrontLoaded",
+   "TTFS"
+  ],
+  "semantics_outside": {
+   "analytical_ttfs": "evaluates real-valued activations (chip_simulation/ttfs/ttfs_segment.py: clip(max(v, 0) / theta, 0, 1)); accumulation is not integer, so H8 fails by representation; outside by name, measured as a boundary row",
+   "stochastic_spike_generation": "draws from an RNG at every encode, and passes and packings reorder the draws, so Lemmas 5 and 7 fail; outside by name, refused at plan time on a multi-pass run by G5 at CL1 (u1_design.md section 8; plan section 21 item 1)"
+  },
+  "relations": {
+   "packed": "Theorem 1 (decision invariance): two deployments of N under declarations that agree on every property that is not cost-only, differing only in cost-only decisions, that meet the program conditions and run on executors that meet the executor conditions, give every neuron the identity program's observable in every window",
+   "network": "Proposition 2 (function of N): under the executor conditions and H8-staircase the identity program computes the integer network N: the composed staircase clamp(F(Q/theta), 0, T) under LIF, the level under synchronized TTFS, the integer affine law in the value domain"
+  },
+  "conditions": {
+   "program": "on the two deployments; the identity program meets them by construction (one core per IR core, one pass per segment)",
+   "executor": "on every run, the identity program's included: hypotheses on the executors",
+   "network": "conditions of Proposition 2 alone: the data-dependent H2-H4 (streamed and windowed LIF) and H8-staircase (every staircase on the integer charge, no saturation where the staircase identity is claimed)"
+  },
+  "observable": "per neuron and window, as the semantics' reference executor (HCM) reports it: the spike count (LIF and cascaded TTFS), the decoded level (synchronized TTFS), the integer output (value domain); a backend is tied to HCM by its parity certificate, a separate boundary",
+  "fixed_at_code_level": {
+   "comparator": "'<=' (fire at V >= theta)",
+   "reset": "subtractive (firing mode Default)",
+   "membrane": "unbounded (float64 executors)",
+   "encoder": "Uniform comb, no phase dither (deterministic); the R4 arm alone declares the phase-dithered Uniform encode, on both programs",
+   "granularity": "per-cycle cores (per-event cores are the FPGA branch's)",
+   "value_law": "the base tree's affine value core at theta 1"
+  },
+  "synchronized_ttfs_preconditions": "sync_deployment_exactness.md section 2 on an integer identity program: P1 (scalar theta per hop) holds, one theta per layer; P2 (QAT entry quantizers equal the deployed snaps) is vacuous, no QAT forward is compared and the entry snap is the identity on the grid levels a count input and the host ops (identity, ReLU, the clamped sum) deliver; P3 and P4 (the half-step folded once, carried by the bias lattice) are vacuous, no half-step is folded, the biases are integers and the comparator half-step is off; P6 (float readout) is vacuous, every layer is observed per neuron; P5 (dtype tie stability) is H8-staircase",
+  "code_level_window": "the code-level strata draw T in 1-8, the plan's declared range, except the long-window stratum (on_long_window: scheduled synchronized LIF and TTFS deployments at T in 9-64, reported apart); a defect that binds only beyond T 8 (count_rebuild) is visible to that stratum alone"
+ },
+ "cost_only": [
+  "activity_factor",
+  "allow_coalescing",
+  "allow_neuron_splitting",
+  "allow_scheduling",
+  "core_value_granularity",
+  "cores.count",
+  "cores.max_axons",
+  "cores.max_neurons",
+  "cores.write_granularity",
+  "cores.write_units_in_parallel",
+  "cores_per_tile",
+  "inference_batch_K",
+  "max_axons",
+  "max_neurons",
+  "max_schedule_passes",
+  "platform_physics_overrides",
+  "platform_physics_profile",
+  "residency_plan",
+  "residency_plan.index",
+  "residency_plan.step",
+  "tile_grid_cols",
+  "tile_grid_rows",
+  "write_overlap",
+  "write_overlap.mode",
+  "write_overlap.shadow_capacity_fraction",
+  "write_ports"
+ ],
+ "cost_only_hypotheses": {
+  "allow_scheduling": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "max_schedule_passes": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "residency_plan": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "H10",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "residency_plan.index": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "H10",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "residency_plan.step": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "H10",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "allow_coalescing": [
+   "H1-theta",
+   "H1-latency",
+   "H6",
+   "H8",
+   "H7",
+   "R4",
+   "R6",
+   "H0"
+  ],
+  "allow_neuron_splitting": [
+   "H1-theta",
+   "H1-latency",
+   "H7",
+   "R4",
+   "R6"
+  ],
+  "cores.count": [
+   "H1-theta",
+   "H1-latency",
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "R6",
+   "R1",
+   "R2",
+   "H7",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "cores.max_axons": [
+   "H1-theta",
+   "H1-latency",
+   "H6",
+   "H8",
+   "H7",
+   "R4",
+   "R6",
+   "H0"
+  ],
+  "cores.max_neurons": [
+   "H1-theta",
+   "H1-latency",
+   "R4",
+   "R6"
+  ],
+  "max_axons": [
+   "H1-theta",
+   "H1-latency",
+   "H6",
+   "H8",
+   "H7",
+   "R4",
+   "R6",
+   "H0"
+  ],
+  "max_neurons": [
+   "H1-theta",
+   "H1-latency",
+   "R4",
+   "R6"
+  ],
+  "core_value_granularity": [
+   "H1-theta"
+  ]
+ },
+ "findings_on_classes": [
+  {
+   "id": "leaf_decomposition_value_cores",
+   "statement": "decompose_leaf_modules is function_bearing (owner's S0 review: on spiking cores the moved projections ride the activation grid); on value (MVM) cores a decomposed projection is an integer affine map, so Lemma V makes it exact provided the new core boundary adds no readout (requantization): true for the base tree's affine value core; under G2's finite readout law (CL1) the added boundary adds a readout, and the decomposition is function-bearing there",
+   "status": "stated as a finding; evidence is G1's value-domain decomposition parity, integrated at CL4 (not on this base)"
+  },
+  {
+   "id": "core_value_granularity_inert",
+   "statement": "core_value_granularity is cost_only by its reason 'packing honours it', but no packer reads the policy on this tree (mapping/platform/core_residency.py: resolve_residency_policy has no caller; HardCore fixes constrained_properties to every singleton)",
+   "status": "finding for the S0 owner; drawn by the screen, inert"
+  }
+ ],
+ "hypotheses": [
+  {
+   "id": "H0",
+   "name": "Semantics fidelity",
+   "kind": "executor",
+   "relation": "packed",
+   "semantics": [
+    "windowed_lif"
+   ],
+   "statement": "every stage executes the declared semantics, or the builder refuses it by name: a windowed-LIF segment the builder cannot level under per-hop re-timing is refused, never run streamed",
+   "memo": "spiking_deployment_calculus.md section 16.3 (synchronized-rate exactness); the C3 re-timing of mapping/packing/retimed_levels.py; proof_check.md PC4",
+   "sites": [
+    {
+     "site": "mimarsinan.mapping.layout.segmentation:segment_depth_groups",
+     "kind": "construction",
+     "tree": "base"
+    }
+   ],
+   "gap": "no refusal on this base: segment_depth_groups returns None for a segment holding any coalescing group, a lone master core included (mapping/layout/segmentation.py:72-77), so the segment gets no level stages and runs streamed; a refusal by name at that return, or the generic fix that levels a coalescing group as one unit (its parts share one depth), needs an owner (conductor)",
+   "witness": [
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_base_runs_a_counterexample_of_the_arms_mechanism[H0]"
+   ],
+   "arms": {
+    "code": "H0",
+    "model": null
+   },
+   "model_level": "no model-level counterpart: the golden models no per-hop re-timing (second agent, part 1)"
+  },
+  {
+   "id": "H1-theta",
+   "name": "Co-resident singletons",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": "all",
+   "statement": "soft cores that share a hard core agree on every value the core stores once: threshold (spiking) or shift (value), activation, parameter and input scales, boundary grid",
+   "memo": "lif_deployment_exactness.md section 2 (Theorem 1, the fire rule per core threshold); core_residency.py (the singleton SSOT)",
+   "sites": [
+    {
+     "site": "mimarsinan.mapping.platform.core_residency:adopt_or_check",
+     "kind": "refusal",
+     "tree": "base"
+    },
+    {
+     "site": "mimarsinan.mapping.packing.canonical:canonical_is_mapping_possible",
+     "kind": "admission",
+     "tree": "base"
+    },
+    {
+     "site": "mimarsinan.mapping.ir.legacy_convert:_residency_class_of",
+     "kind": "construction",
+     "tree": "base"
+    }
+   ],
+   "witness": [
+    "tests/unit/certification/randomized/test_witnesses.py::TestCodeLevelWitnesses::test_off_arm_differs_and_control_agrees[H1-theta]",
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H1-theta]"
+   ],
+   "arms": {
+    "code": "H1-theta",
+    "model": "H1-theta"
+   },
+   "note": "adopt_or_check raises CoreResidencyViolation, an AssertionError that is no ToolchainRefusal (unnamed-refusal finding)"
+  },
+  {
+   "id": "H1-latency",
+   "name": "Identity-program latency",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": "all",
+   "statement": "every neuron of a deployment runs at its identity-program (fused, ALAP) latency: soft cores that share a hard core share one latency equal to each resident's identity latency, and splitting, output tiling and coalescing keep every part at it",
+   "memo": "lif_deployment_exactness.md section 1 (the latency invariant); streamed_pass_scheduling_design.md section 4 (one absolute cycle grid); u1_design.md section 2 (ALAP); proof_check.md PC3",
+   "sites": [
+    {
+     "site": "mimarsinan.mapping.packing.canonical:canonical_is_mapping_possible",
+     "kind": "admission",
+     "tree": "base"
+    },
+    {
+     "site": "G5 pins: executed latency equals the fused latency (mapping/latency/chip.py pins, mapping/packing/pass_timing.py)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "the executed-latency assertion: the base predicate compares the soft cores' IR latency, the ASAP depth (mapping/packing/canonical.py:107-111, mapping/latency/ir.py:53, copied at mapping/ir/legacy_convert.py:200), while the executors run ChipLatency's ALAP-raised latencies on the hard-core graph (mapping/latency/chip.py:60-100, :203-230); two residents of one depth whose consumers differ in depth pass the predicate, and sharing a core raises the shallower one (witness: 3 spikes against 4). ChipLatency._compute_all_delays only refuses cyclic graphs, with an unnamed RuntimeError, so it is no H1-latency site. Assertion site: G5's pins at CL1",
+   "witness": [
+    "tests/unit/certification/randomized/test_witnesses.py::TestCodeLevelWitnesses::test_off_arm_differs_and_control_agrees[H1-latency]",
+    "tests/unit/certification/randomized/test_witnesses.py::TestLatentDefects::test_coresident_soft_cores_of_one_ir_depth_and_two_alap_latencies",
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H1-latency]"
+   ],
+   "arms": {
+    "code": "H1-latency",
+    "model": "H1-latency"
+   }
+  },
+  {
+   "id": "H2",
+   "name": "Window coverage",
+   "kind": "network",
+   "relation": "network",
+   "semantics": [
+    "streamed_lif"
+   ],
+   "statement": "every spike an in-segment producer emits in its window arrives inside its consumer's window",
+   "memo": "lif_deployment_exactness.md section 2, Theorem 2 condition 1; section 3 V6",
+   "sites": [
+    {
+     "site": "x3a_golden.hypotheses:admit_network",
+     "kind": "model",
+     "tree": "golden"
+    }
+   ],
+   "gap": "data-dependent; the toolchain asserts it nowhere at run time (lif_depth_balancing_relays removes the gap-2 cause but is function-bearing)",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H2]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "H2"
+   }
+  },
+  {
+   "id": "H3",
+   "name": "No terminal overshoot",
+   "kind": "network",
+   "relation": "network",
+   "semantics": [
+    "streamed_lif"
+   ],
+   "statement": "the running staircase F(Q_t) never exceeds the terminal F(Q_T)",
+   "memo": "lif_deployment_exactness.md section 2, Theorem 2 condition 2; Theorem 3",
+   "sites": [
+    {
+     "site": "x3a_golden.hypotheses:admit_network",
+     "kind": "model",
+     "tree": "golden"
+    }
+   ],
+   "gap": "data-dependent; asserted nowhere at run time",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H3]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "H3"
+   }
+  },
+  {
+   "id": "H4",
+   "name": "Chase completion",
+   "kind": "network",
+   "relation": "network",
+   "semantics": [
+    "streamed_lif"
+   ],
+   "statement": "every burst debt F(Q_t) - c_t drains before the window ends, so c_T = clamp(F(Q_T), 0, T)",
+   "memo": "lif_deployment_exactness.md section 2, Theorem 2 condition 3; section 3 V3",
+   "sites": [
+    {
+     "site": "x3a_golden.hypotheses:admit_network",
+     "kind": "model",
+     "tree": "golden"
+    }
+   ],
+   "gap": "data-dependent; asserted nowhere at run time (per-hop re-timing removes the cause under windowed LIF)",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H4]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "H4"
+   }
+  },
+  {
+   "id": "H5-collapse",
+   "name": "Discipline-matched carry",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": "all",
+   "statement": "a pass cut delivers on every carried wire what the fused segment delivers on it: the producer's raster under streamed LIF; its count re-encode under windowed LIF, synchronized LIF and synchronized TTFS (the level); under cascaded TTFS the latched train's count, which fixes the spike time, re-emitted at its fused delivery time; the value in the value domain",
+   "memo": "streamed_pass_scheduling_design.md sections 4 and 14; carry.py run_pass_transfer; u1_design.md section 5.2 (cascaded TTFS under COLLAPSE); proof_check.md PC16, PC23",
+   "sites": [
+    {
+     "site": "mimarsinan.models.spiking.hybrid.carry:run_pass_transfer",
+     "kind": "rule",
+     "tree": "base"
+    },
+    {
+     "site": "mimarsinan.mapping.support.schedule.pass_cut:transfer_for",
+     "kind": "rule",
+     "tree": "base"
+    }
+   ],
+   "gap": "the executors accept any pass_transfer (SpikingHybridCoreFlow takes it as an argument and checks it against nothing); a run-time refusal of a transfer that contradicts the semantics is listed for CL9 (models/spiking/hybrid/flow.py)",
+   "witness": [
+    "tests/unit/models/test_hybrid_pass_carry.py::TestPassingIsSemanticallyInvisible::test_the_carry_is_load_bearing",
+    "tests/unit/certification/randomized/test_witnesses.py::TestCodeLevelWitnesses::test_off_arm_differs_and_control_agrees[H5-collapse]",
+    "tests/unit/certification/randomized/test_witnesses.py::TestCodeLevelWitnesses::test_off_arm_differs_and_control_agrees[H5-collapse/windowed]",
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H5-collapse]"
+   ],
+   "arms": {
+    "code": "H5-collapse",
+    "model": "H5-collapse"
+   },
+   "note": "necessary under streamed LIF, windowed LIF and synchronized TTFS; not under synchronized LIF, whose count executor is arrival-free (a verbatim carry also preserves counts there)"
+  },
+  {
+   "id": "H5-skew",
+   "name": "Fused pass timing",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": [
+    "streamed_lif",
+    "cascaded_ttfs"
+   ],
+   "statement": "every pass reproduces the fused segment's timing: its cores at the fused latencies (R1) and each carried raster at its fused delivery delay (R2)",
+   "memo": "streamed_pass_scheduling_design.md section 4 (a); g5_residency_planner/u1_design.md sections 2, 3 and 5.1",
+   "sites": [
+    {
+     "site": "G5 pass projection (mapping/packing/pass_timing.py, mapping/latency/chip.py pins)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "on this base U1 cuts without pass projection, so a timing-moving cut runs inexactly (counterexample class u1_cut, G5's witness skew3)",
+   "witness": [
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_base_runs_a_counterexample_of_the_arms_mechanism[H5-skew]",
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H5-skew]",
+    "G5: tests/unit/mapping/residency/executed/test_u1_exactness.py (skew3), the necessity witness after CL1"
+   ],
+   "arms": {
+    "code": "H5-skew",
+    "model": "H5-skew"
+   }
+  },
+  {
+   "id": "H6",
+   "name": "Exact partial sums",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": "all",
+   "statement": "on per-cycle cores, the parts of a fused (coalesced) neuron deliver exact integer partial charges to one membrane",
+   "memo": "spiking_deployment_calculus.md section 17 (integer chip arithmetic is associative and exact)",
+   "sites": [
+    {
+     "site": "mimarsinan.mapping.packing.canonical:canonical_fuse_hardcores",
+     "kind": "construction",
+     "tree": "base"
+    }
+   ],
+   "gap": "holds by construction on this tree: a fused core executes one dot product over all its axons; no field declares a partial-sum width, so the code level has no off arm",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H6]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "H6"
+   }
+  },
+  {
+   "id": "H7",
+   "name": "Own-event canonical order",
+   "kind": "executor",
+   "relation": "packed",
+   "semantics": [
+    "event_serial"
+   ],
+   "statement": "on a per-event core a neuron's fire checks happen only at its own synaptic events, folded in canonical rank order whatever the axon slots; H7 requires a toolchain to refuse by name any fusion of a per-event neuron's fan-in across cores (the golden refuses it; the FPGA branch's guard refuses co-residency and neuron splitting on per-event cores, and its refusal of a fused fan-in is checked in Wave 3)",
+   "memo": "ODIN plan section 2.2 (serial fold, row-pair lemma), RA/08_significance/evidence.md section 4.1; D15 and D19; proof_check.md PC11",
+   "sites": [
+    {
+     "site": "FPGA branch mapping/platform/event_order.py",
+     "kind": "construction",
+     "tree": "FPGA"
+    },
+    {
+     "site": "FPGA branch models/spiking/serial/guards.py:_require_fold_invariant_placements (MappingTransformRefusalError: co-residency and neuron splitting under firing_granularity per_event; origin/odin-fpga-infra f08c8efa)",
+     "kind": "refusal",
+     "tree": "FPGA"
+    },
+    {
+     "site": "x3a_golden.packer:fragments",
+     "kind": "refusal",
+     "tree": "golden"
+    }
+   ],
+   "gap": "per-event cores exist only on the FPGA branch; not exercisable on main. The per-event fire check alone makes the fold order-dependent (theta 5, w = [+3, -3]: 1 spike adjacent, 0 interleaved; no saturation needed); a core-wide event loop makes coalescing function-bearing even in canonical order (1 spike against 2). D15 refuses per-event cores with subtractive reset; the golden's H7 domain draws that pair, so its results stand for the model",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H7]",
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_a_core_wide_event_loop_makes_coalescing_function_bearing"
+   ],
+   "arms": {
+    "code": null,
+    "model": "H7"
+   }
+  },
+  {
+   "id": "H8",
+   "name": "Exact accumulation",
+   "kind": "executor",
+   "relation": "both",
+   "semantics": "all",
+   "statement": "every count or level a core reads lies on its lattice (integer counts, levels k/S; a count an executor rebuilds between cores included) and every partial sum an executor forms is exact in its charge unit (integer charges below 2^53 in float64, 2^24 in float32; under synchronized TTFS the float level sum is snapped to its 1/(2S) lattice before the ladder, which recovers the integer charge while the summation dust stays below 1/(4S)), so every deployment's charge is the same integer",
+   "memo": "spiking_deployment_calculus.md section 17; RA/06_build/audit_v42/arith/arith_toggle.md sections 3.7 and 3.8; proof_check.md PC2, PC20; review round 2 (H8 split); chip_simulation/ttfs/ttfs_segment.py:149-179 (the 1/(2S) lattice snap); proof_check.md PC27; targeted pass: sync_counts.py:56-59 (the float64 count rebuild), G6/evidence/probe_count_rebuild_targeted.json (exhaustive range check)",
+   "sites": [
+    {
+     "site": "G2 E283 fp64 exactness bound on the value path",
+     "kind": "refusal",
+     "tree": "CL1"
+    },
+    {
+     "site": "mimarsinan.chip_simulation.ttfs.segment_arrays:SegmentTtfsArrays.integer_lattice",
+     "kind": "construction",
+     "tree": "base"
+    }
+   ],
+   "gap": "no run-time bound assertion on this tree (G2's E283 at CL1). Base violation (class count_rebuild, finding for the conductor): the synchronized LIF count executor rebuilds each core's count as stair*T/theta in float64 (models/spiking/hybrid/executors/sync_counts.py:56-59), which is the integer count on the screen's declared range (every (T, theta, c) with T in 1-8, theta in 1-16, c in 0-T: 0 of 704 cells off, checked exhaustively) and off it beyond (1,807 of 34,304 cells for T <= 64, theta <= 16; first T 11, theta 3, count 5, rebuilt as 4.999999999999999). An in-segment consumer reads the rebuilt count while a pass cut re-encodes the carried count as the integer, so a cost-only cut changes outputs where R6 holds (T 13 chain input -> L1 (3, theta 3) -> L2 (1, 1): 2 of 28 windows). The long-window stratum (on_long_window, T in 9-64) sees the class in 3 of its 200 admitted deployments; the T in 1-8 strata cannot. sync_counts.py is on no Wave 1 group's list: owner to be named by the conductor",
+   "witness": [
+    "tests/unit/certification/randomized/test_witnesses.py::TestCodeLevelWitnesses::test_off_arm_differs_and_control_agrees[H8]",
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H8]",
+    "tests/unit/certification/randomized/test_witnesses.py::TestTheCountRebuild::test_a_rebuilt_count_off_the_lattice_makes_a_pass_cut_change_outputs",
+    "tests/unit/certification/randomized/test_witnesses.py::TestTheCountRebuild::test_the_long_window_stratum_runs_a_counterexample_of_the_rebuild"
+   ],
+   "arms": {
+    "code": "H8",
+    "model": "H8"
+   }
+  },
+  {
+   "id": "H8-staircase",
+   "name": "Exact staircases",
+   "kind": "network",
+   "relation": "network",
+   "semantics": "all",
+   "statement": "every staircase an executor takes is taken on the integer charge, never through a floating-point quotient, and no saturating membrane saturates where Proposition 2's staircase identity is claimed",
+   "memo": "sync_deployment_exactness.md section 2 (P5, dtype tie stability); TTFS closure HT2, RA/06_parts/ttfs.md section 4.2; lif_deployment_exactness.md section 2 (Theorem 2, exact charges); proof_check.md PC2, PC20; review round 2 (H8 split)",
+   "sites": [
+    {
+     "site": "x3a_golden.kernels:staircase",
+     "kind": "construction",
+     "tree": "golden"
+    },
+    {
+     "site": "x3a_golden.hypotheses:admit_network",
+     "kind": "refusal",
+     "tree": "golden"
+    }
+   ],
+   "gap": "Proposition 2 alone: a staircase is a deterministic function of the same integer charge, theta and window in every deployment, so Theorem 1 holds whatever the staircase computes. The base violates the staircase clause on every synchronized run: the LIF count staircase floor(T((Q/T)/theta)) (models/spiking/wire_semantics.py:112-121, called at models/spiking/hybrid/executors/sync_counts.py:53) and the TTFS ladder ceil(S(1 - V/theta)) (wire_semantics.py:17-34, via chip_simulation/ttfs/ttfs_segment.py:182) are floating-point quotients that lose an exact tie (Q = 3, T = 5, theta = 3: 0 spikes for N's 1; Q = 6: TTFS level 1 for N's 2; theta 1, T = 7, count 6: TTFS level 5/7 for N's 6/7); no assertion on this tree; owner to be named by the conductor. Proposition 2's synchronized-LIF boundary has a third base cause beside this clause and R6: beyond the declared window range a rebuilt count leaves N with no staircase tie involved (H8's class count_rebuild; T 13 chain: the identity program reports 4.999999999999999 for N's 5 at L1 and 4 for N's 5 at L2)",
+   "witness": [
+    "tests/unit/certification/randomized/test_runner.py::TestTheNetworkRelation::test_an_exact_tie_witnesses_the_synchronized_staircase_defect[synchronized_lif-2]",
+    "tests/unit/certification/randomized/test_runner.py::TestTheNetworkRelation::test_an_exact_tie_witnesses_the_synchronized_staircase_defect[synchronized_ttfs-1]",
+    "tests/unit/certification/randomized/test_runner.py::TestTheInputPath::test_every_spiking_identity_layer_reports_every_declared_count[synchronized_ttfs-7-6]"
+   ],
+   "arms": {
+    "code": null,
+    "model": null
+   },
+   "code_level": "measured, never switched: the network relation (the identity program against N) on every hypothesis-on seed, judged where Proposition 2 claims N; the strict-xfail identity cells pin the base's departures",
+   "model_level": "no label of its own: the golden takes every staircase on the integer charge (x3a_golden.kernels:staircase), and its H8 arm switches the saturation clause together with the accumulation clause"
+  },
+  {
+   "id": "H9",
+   "name": "Dependency order",
+   "kind": "executor",
+   "relation": "packed",
+   "semantics": "all",
+   "statement": "every pass runs after every pass it reads (the pass partition is a DAG-monotone cut executed in dependency order), and a coalescing group is never cut across passes",
+   "memo": "streamed_pass_scheduling_design.md section 5 (the true graph cut); canonical.py (a fused core is one hard core); proof_check.md PC18",
+   "sites": [
+    {
+     "site": "mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner:require_inputs_produced",
+     "kind": "refusal",
+     "tree": "base"
+    }
+   ],
+   "witness": [
+    "tests/unit/certification/randomized/test_assertion_sites.py::TestStageOrder::test_a_stage_before_its_producer_refuses_by_name",
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H9]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "H9"
+   },
+   "code_level": "no silent counterexample exists at code level: a stage run before its producer reads a node absent from the state buffer; the stage loop refuses it by name (StageOrderError) before any executor reads it"
+  },
+  {
+   "id": "H10",
+   "name": "Residency integrity",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": "all",
+   "statement": "a pinned (resident) core's slot is never written by another core, so every pass runs its own programs",
+   "memo": "RA/10_wave1/plan.md section 9.1 (G5b executed residency); period_census.resident_core_indices",
+   "sites": [
+    {
+     "site": "G5 executed residency plan (mapping/packing/schedule_residency_plan.py)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "residency_plan's consumer is G5's; drawn by the code level from CL1",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[H10]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "H10"
+   }
+  },
+  {
+   "id": "R1",
+   "name": "Pinned pass latencies",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": [
+    "streamed_lif",
+    "cascaded_ttfs"
+   ],
+   "statement": "every pass runs its cores at the fused segment's ALAP latencies, not at latencies recomputed over its own cores",
+   "memo": "g5_residency_planner/u1_design.md section 2 and section 5.1 rule 1",
+   "sites": [
+    {
+     "site": "G5 pass projection (mapping/packing/pass_timing.py, mapping/latency/chip.py pins)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "on this base each pass recomputes ChipLatency over its own cores (models/spiking/hybrid/lif_step.py); the code level attributes R1 counterexamples jointly with H5-skew (both restore on undoing the cut)",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[R1]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "R1"
+   }
+  },
+  {
+   "id": "R2",
+   "name": "Delivery delays",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": [
+    "streamed_lif",
+    "cascaded_ttfs"
+   ],
+   "statement": "a carried raster is replayed at the fused delivery delay d = Lc - 1 - Lp, not read at the consumer's local cycle",
+   "memo": "g5_residency_planner/u1_design.md section 2 and section 5.1 rule 2",
+   "sites": [
+    {
+     "site": "G5 pass projection (mapping/packing/pass_timing.py, mapping/latency/chip.py pins)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "on this base a carried wire is read as a stage input at delay 0 (models/spiking/hybrid/lif_step.py, executors/packed_cycle.py); attributed jointly with H5-skew at code level",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[R2]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "R2"
+   }
+  },
+  {
+   "id": "R6",
+   "name": "Dependency-ordered walks",
+   "kind": "executor",
+   "relation": "packed",
+   "semantics": "all",
+   "statement": "every core of a segment is evaluated after its in-segment producers, whatever the packing order and whichever program runs (the identity program's walk included)",
+   "memo": "g5_residency_planner/u1_design.md section 3 (analytical TTFS order effect) and section 5.1 rule 6; proof_check.md PC1, PC5",
+   "sites": [
+    {
+     "site": "G5 R6 dependency-ordered walks (chip_simulation/ttfs/ttfs_segment.py); G2's value walk (chip_simulation/value_run/value_execution.py:32-34)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "the core walks of the synchronized LIF count executor (models/spiking/hybrid/executors/sync_counts.py:36-39), the TTFS segment, analytical TTFS and the value executor order a segment's cores by stored latency; ChipLatency's ALAP raise (mapping/latency/chip.py:203-230) can give a producer a latency at or above its consumer's, so the walk, the identity program's included, reads a buffer not yet written (class latency_order_walk); sync_counts.py is on no group's list: owner to be named by the conductor",
+   "witness": [
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_base_runs_a_counterexample_of_the_arms_mechanism[R6]",
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_a_walk_counterexample_is_the_walks_whichever_side_walks_out_of_order",
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[R6]"
+   ],
+   "arms": {
+    "code": "R6",
+    "model": "R6"
+   }
+  },
+  {
+   "id": "R3",
+   "name": "Scoped carry store",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": [
+    "streamed_lif"
+   ],
+   "statement": "a segment entry re-encodes an earlier segment's window count; carried rasters are scoped to their producing segment",
+   "memo": "g5_residency_planner/u1_design.md section 3 (silent streamed-LIF replay across segments) and section 5.1 rule 3",
+   "sites": [
+    {
+     "site": "G5 scoped carry store (models/spiking/hybrid/rate_forward.py, spiking/segment_boundary.py)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "on this base the code level attributes R3 counterexamples jointly with H5-skew, R1 and R2 (all restore on undoing the cut)",
+   "witness": [
+    "tests/unit/certification/randomized/test_x3a_golden_witnesses.py::test_the_witness_differs_off_and_holds_on[R3]"
+   ],
+   "arms": {
+    "code": null,
+    "model": "R3"
+   }
+  },
+  {
+   "id": "R4",
+   "name": "Per-slice input kinds",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": [
+    "streamed_lif",
+    "windowed_lif",
+    "synchronized_lif",
+    "cascaded_ttfs",
+    "synchronized_ttfs"
+   ],
+   "statement": "a carried slice is replayed, and every other slice is encoded exactly as the fused stage encodes it, in its fused channel positions (a position-free encoder meets the position clause by construction): a pass cut, a packing or a relabelling never changes how a slice is encoded",
+   "memo": "g5_residency_planner/u1_design.md section 3 ('Crash: mixed-input pass under VERBATIM', 'Position-dependent encodes') and section 5.1 rule 4; chip_simulation/recording/spike_modes.py:60-66 (the dither comb rotates by stage-input channel index); proof_check.md PC6, PC17; review round 2",
+   "sites": [
+    {
+     "site": "G5 fused input positions (mapping/packing/pass_timing.py fused_input_positions, spiking/segment_boundary.py)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "no assertion on this base, which violates both clauses. Per-slice kinds: a pass that holds cached trains and must encode a non-raw external slice crashes (spiking/segment_boundary.py:279-286; run-error class mixed_input_pass, 3 hypothesis-on seeds, all streamed LIF). Fused positions: a phase-dithered Uniform encode rotates each slice by its channel index in the deployed stage input (spike_modes.uniform_phase_offsets via spiking/spike_trains.py), so packing, relabelling and pass cuts move its train (silent class position_dependent_encode, the R4 arm; u1_design.md section 3 measured 13 streamed and 146 windowed silent mismatches on G5's round-2 tree)",
+   "witness": [
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_base_runs_a_counterexample_of_the_arms_mechanism[R4]",
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_r4_violation_needs_the_dithered_encode_on_both_programs",
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_a_cached_trains_crash_is_tagged_by_its_rule[streamed_lif-mixed_input_pass]",
+    "RA/10_wave1/g5_residency_planner/u1_design.md section 3, per-slice rule off (442 crashes) and dither fuzz; G5's tests at CL1"
+   ],
+   "arms": {
+    "code": "R4",
+    "model": null
+   },
+   "code_level": "the R4 arm declares the phase-dithered Uniform encode on both programs (a function-bearing axis held equal) under windowed LIF with scheduled declarations and no coalescing; each counterexample is attributed by a position-free rotation (one offset for every channel) that restores equality; the hypothesis-on arms keep the encoder undithered",
+   "model_level": "no model-level counterpart: the golden's encode is position-free (second agent, part 1)"
+  },
+  {
+   "id": "R5",
+   "name": "Level units",
+   "kind": "program",
+   "relation": "packed",
+   "semantics": [
+    "windowed_lif"
+   ],
+   "statement": "under per-hop re-timing, every pass of a multi-level fused segment executes as count re-encoded level units",
+   "memo": "g5_residency_planner/u1_design.md section 3 (windowed LIF, cached spike trains) and section 5.1 rule 5; mapping/packing/retimed_levels.py; proof_check.md PC6",
+   "sites": [
+    {
+     "site": "G5 level units (mapping/packing/retimed_levels.py, mapping/packing/pass_timing.py)",
+     "kind": "construction",
+     "tree": "CL1"
+    }
+   ],
+   "gap": "on this base a single-level chunk of a re-timed segment gets no level stages (mapping/packing/retimed_levels.py:44-46), so the pass streams and mixes cached host trains with an unpublished carried producer; u1_design.md section 3 measured 298 windowed-LIF crashes on the base fuzz (run-error class windowed_cached_trains at code level, seen only in the windowed H5-collapse arm)",
+   "witness": [
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_a_cached_trains_crash_is_tagged_by_its_rule[windowed_lif-windowed_cached_trains]",
+    "RA/10_wave1/g5_residency_planner/u1_design.md section 3, level units off: 298 crashes; G5's test at CL1"
+   ],
+   "arms": {
+    "code": null,
+    "model": null
+   },
+   "code_level": "exercised only as run errors (class windowed_cached_trains); no switch on this base, so its arm is G5's at CL1",
+   "model_level": "no model-level counterpart: per-hop re-timing is function-bearing and not modelled"
+  }
+ ],
+ "defects": [
+  {
+   "id": "retiming_dropped",
+   "statement": "a windowed-LIF segment holding a coalescing group gets no per-hop level stages (mapping/layout/segmentation.py segment_depth_groups returns None for any coalescing_group_id, including a lone master core), so it runs streamed: the declared windowed semantics changes with cores.max_axons and allow_coalescing",
+   "owner": "conductor (mapping/layout/segmentation.py is no Wave 1 group's)",
+   "hypothesis": "H0",
+   "probe_arm": "H0"
+  },
+  {
+   "id": "synchronized_staircase",
+   "hypothesis": "H8-staircase",
+   "statement": "the synchronized LIF count staircase floor(T((Q/T)/theta)) (models/spiking/wire_semantics.py:112-121 via executors/sync_counts.py:53) and the TTFS ladder ceil(S(1 - V/theta)) (wire_semantics.py:17-34 via chip_simulation/ttfs/ttfs_segment.py:182) lose an exact tie Q = k theta, so the synchronized identity programs depart from N (Proposition 2's boundary on this base; counts in the G6 report's network relation)",
+   "owner": "conductor (wire_semantics.py and sync_counts.py are on no Wave 1 group's list)"
+  },
+  {
+   "id": "latency_order_walk",
+   "hypothesis": "R6",
+   "statement": "the synchronized LIF count walk (models/spiking/hybrid/executors/sync_counts.py:36-39) orders a segment's cores by stored latency, which ChipLatency's ALAP raise makes a non-dependency order; the identity program's walk included",
+   "owner": "conductor (sync_counts.py is not on G5's R6 list; ttfs_segment.py is G5's, value_execution.py G2's)"
+  },
+  {
+   "id": "count_rebuild",
+   "hypothesis": "H8",
+   "probe_arm": "on_long_window",
+   "statement": "the synchronized LIF count executor rebuilds each core's count as stair*T/theta in float64 (models/spiking/hybrid/executors/sync_counts.py:56-59), off the integer lattice for (T, theta) beyond the screen's declared window range (0 of 704 cells at T in 1-8, theta in 1-16; 1,807 of 34,304 at T <= 64): an in-segment consumer reads the rebuilt count where a pass cut re-encodes the integer, so cost-only pass decisions change outputs where R6 holds (T 13 chain, 2 of 28 windows; long-window stratum 3 of 200), and the identity program departs from N with no staircase tie (Proposition 2's third base cause on synchronized LIF)",
+   "owner": "conductor (sync_counts.py is on no Wave 1 group's list)"
+  },
+  {
+   "id": "synchronized_cached_trains",
+   "probe_arm": "on_long_window",
+   "statement": "a synchronized-LIF pass that reads the input encoder's cached host train (a Perceptron ComputeOp) beside carried wires, which the synchronized count path publishes as counts with no train, crashes at spiking/segment_boundary.py:279-286 (long-window seed 18, T 11; the same deployment at T 8 crashes too, so it is no window effect); recorded as an unattributed run error: the message names R4's rule under streamed LIF and R5's under windowed LIF only",
+   "owner": "conductor (G5 to confirm at CL1 whether R4's per-slice input kinds remove it)"
+  },
+  {
+   "id": "position_dependent_encode",
+   "hypothesis": "R4",
+   "probe_arm": "R4",
+   "statement": "a phase-dithered Uniform encode rotates each slice's comb by its channel index in the deployed stage input (chip_simulation/recording/spike_modes.py uniform_phase_offsets, through spiking/spike_trains.py and spiking/segment_boundary.py), so packing, relabelling and pass cuts change a slice's train: the dithered declaration's outputs depend on cost-only decisions",
+   "owner": "G5 (fused channel positions, plan section 21 item 1; u1_design.md section 5.3, spike_modes.py)"
+  },
+  {
+   "id": "mixed_input_pass",
+   "hypothesis": "R4",
+   "statement": "a streamed pass that holds cached trains for some input slices and none for a non-raw one crashes (spiking/segment_boundary.py:279-286) instead of encoding that slice as the fused stage does or refusing by name",
+   "owner": "G5 (per-slice input kinds, plan section 21 item 1; u1_design.md section 5.1 rule 4)"
+  },
+  {
+   "id": "unnamed_refusals",
+   "statement": "infeasible declarations refuse without ToolchainRefusal: WideFanInUnsupportedError(ValueError) (mapping/platform/mapping_structure.py), 'Hard-core packing failed' and 'requiring at least k coalescing cores' RuntimeErrors (mapping/packing), ChipLatency's cyclic-dependency RuntimeError, CoreResidencyViolation(AssertionError)",
+   "owner": "conductor"
+  },
+  {
+   "id": "residency_class_planes",
+   "statement": "the capacity splitter sizes passes by layout-spec residency classes keyed on values, while the runtime packer keys classes on the source perceptron (legacy_convert._residency_class_of: segment subgraphs carry no layout record), so many draws that the plan admits fail to pack",
+   "owner": "conductor (G2 owns legacy_convert.py)"
+  },
+  {
+   "id": "nevresim_record_build",
+   "statement": "the nevresim LIF record build (NEVRESIM_RECORD_SPIKES) does not compile with g++-13 on this host: nevresim/include/_tests/all.hpp static_asserts evaluate SpikingExecution::execute, which under the record flag calls the non-constexpr make_spike_recorder",
+   "owner": "conductor (nevresim/)"
+  },
+  {
+   "id": "cascade_skew_parity",
+   "statement": "on cascaded TTFS, nevresim and HCM disagree on generated identity programs that hold an unequal-depth fan-in inside a segment, and on none without one (counts in the G6 report): the two backends integrate a skewed latched single spike differently; the integration parity test covers a two-core chain only",
+   "owner": "conductor (chip_simulation backends; a backend-parity finding, outside Theorem 1's relation)",
+   "probe": "scripts/random_deployments.py nevresim --semantics cascaded_ttfs"
+  },
+  {
+   "id": "nevresim_cascade_cut",
+   "statement": "a cascaded-TTFS multi-pass deployment that HCM runs equal to the identity program can differ from it on nevresim, and undoing the cut restores equality: nevresim collapses the carried single spike without its fused delivery time",
+   "owner": "G5 (backend replay, chip_simulation/simulation_runner/carry.py, plan section 21 item 1)",
+   "probe": "scripts/random_deployments.py nevresim --semantics cascaded_ttfs"
+  }
+ ]
+}

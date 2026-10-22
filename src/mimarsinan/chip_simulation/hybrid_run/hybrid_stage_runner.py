@@ -6,6 +6,29 @@ import inspect
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
+from mimarsinan.common.refusal import ToolchainRefusal
+
+
+class StageOrderError(ToolchainRefusal, AssertionError):
+    """A stage reads a node no earlier stage produced: the program does not run in dependency order (H9)."""
+
+
+def require_inputs_produced(stage, state_buffer: Dict[int, Any]) -> None:
+    """[theorem box H9] every node a stage reads is the raw input or an earlier stage's stored output."""
+    if stage.kind == "neural":
+        reads = {int(s.node_id) for s in getattr(stage, "input_map", None) or ()}
+    elif stage.kind == "compute" and getattr(getattr(stage, "compute_op", None), "input_sources", None) is not None:
+        sources = stage.compute_op.input_sources
+        flat = sources.flatten() if hasattr(sources, "flatten") else sources
+        reads = {int(src.node_id) for src in flat if getattr(src, "node_id", None) is not None}
+    else:
+        return
+    missing = sorted(n for n in reads if n >= 0 and n not in state_buffer)
+    if missing:
+        raise StageOrderError(
+            f"stage {getattr(stage, 'name', '?')!r} reads node(s) {missing[:8]} that no earlier stage produced; a program "
+            f"runs its stages in dependency order (a pass after every pass it reads)")
+
 
 @dataclass
 class HybridStageContext:
@@ -104,6 +127,7 @@ def run_hybrid_stages(
                 # keeps program-level bookkeeping (input decref) and its
                 # outputs are stored by the levels under the same node ids.
                 for level_stage in levels:
+                    require_inputs_produced(level_stage, state_buffer)
                     _invoke_cb(on_neural, _ctx(index, level_stage))
                     index += 1
                 if after_neural is not None:
@@ -113,12 +137,14 @@ def run_hybrid_stages(
                 continue
             ctx = _ctx(index, stage)
             index += 1
+            require_inputs_produced(stage, state_buffer)
             _invoke_cb(on_neural, ctx)
             if after_neural is not None:
                 _invoke_cb(after_neural, ctx)
         elif stage.kind == "compute":
             ctx = _ctx(index, stage)
             index += 1
+            require_inputs_produced(stage, state_buffer)
             if stage_timer is not None:
                 with stage_timer.time_compute_stage(ctx.stage_index, stage.name):
                     _invoke_cb(on_compute, ctx)
