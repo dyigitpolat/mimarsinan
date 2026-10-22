@@ -28,6 +28,8 @@ from mimarsinan.mapping.support.schedule.bank_clustered_law import (
     BankInstance,
     compose_bank_clustered_passes,
 )
+from mimarsinan.mapping.support.schedule.residency_composition import (
+    ResidencyComposition, ShapeOnlyResidency, compose_shape_only_program)
 from mimarsinan.mapping.support.schedule.schedule_budget import (
     effective_core_budget,
 )
@@ -201,6 +203,7 @@ class ProgramPassPlan:
 
     segments: Tuple[Tuple[int, SegmentPassPlan], ...]
     budget: int
+    residency: Optional[ResidencyComposition] = None  # [E85] set under a declared residency_plan
 
     @property
     def feasible(self) -> bool:
@@ -243,8 +246,18 @@ def plan_program_passes(
     allow_coalescing: bool = False,
     allow_splitting: bool = False,
     max_schedule_passes: int = 8,
+    residency: Optional[ShapeOnlyResidency] = None,
+    runs: Optional[Sequence[int]] = None,
 ) -> ProgramPassPlan:
-    """Group by the specs' own ``segment_id`` and plan each segment."""
+    """Group by the specs' own ``segment_id`` and plan each segment. [U1 W9] ``runs`` (aligned with *softcores*: the
+    walk's IR-run segment of each spec, ``residency_rules.spec_runs``) groups them by the builder's segments
+    (``partition_ir_graph``), each planned as the builder plans it (``plan_segment_passes`` over the segment's specs,
+    whose capacity split cuts at their ``segment_id``), so the plane's passes and pass counts are the builder's."""
+    if residency is not None:  # [E85] one residency composition over the whole program, the builder's refusal rules
+        comp = compose_shape_only_program(softcores, core_types, residency, allow_coalescing=allow_coalescing,
+                                          allow_splitting=allow_splitting, max_schedule_passes=max_schedule_passes)
+        return ProgramPassPlan(tuple((s, SegmentPassPlan(tuple(tuple(softcores[i] for i in m) for m in ps), True, False))
+                                     for s, ps in sorted(comp.segment_passes().items())), comp.budget, comp)
     core_dicts = [
         {"max_axons": ct.max_axons, "max_neurons": ct.max_neurons, "count": ct.count}
         for ct in core_types
@@ -252,8 +265,8 @@ def plan_program_passes(
     budget = effective_core_budget(core_dicts)
 
     seg_softcores: Dict[int, List[LayoutSoftCoreSpec]] = {}
-    for sc in softcores:
-        sid = sc.segment_id if sc.segment_id is not None else 0
+    for index, sc in enumerate(softcores):
+        sid = int(runs[index]) if runs is not None else (sc.segment_id if sc.segment_id is not None else 0)
         seg_softcores.setdefault(sid, []).append(sc)
 
     return ProgramPassPlan(

@@ -86,7 +86,6 @@ ALLOWLIST = {
     "mapping/support/bias_compensation.py",
     "mapping/support/negative_shift.py",
     "mapping/support/residual_merge.py",
-    "mapping/support/schedule/schedule_partitioner.py",
     "mapping/support/schedule/schedule_split.py",
     "mapping/verification/onchip_fraction.py",
     "mapping/verification/verifier/mapping_verifier_soft.py",

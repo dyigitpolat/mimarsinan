@@ -9,6 +9,7 @@ from mimarsinan.mapping.packing.core_packing import (
     canonical_is_mapping_possible,
     canonical_split_softcore,
 )
+from mimarsinan.mapping.packing.greedy.pool import LazyCorePool
 from mimarsinan.mapping.packing.infeasibility_proofs import (
     failed_pack_verdict,
     tag_with_verdict,
@@ -40,8 +41,12 @@ class LayoutMaterializer:
     (split/coalescing fragments inherit their parent's origin) — the NoC
     estimator's placement input. Lookup is strict: a spec the origin map has
     never seen means an engine path copied specs, which must fail loud rather
-    than misplace traffic.
+    than misplace traffic. Fused components stay referenced (``fused_components``),
+    so no later core can take a component's id and resolve to its fused core.
     """
+
+    #: The predicate is ``canonical_is_mapping_possible`` (the engine indexes core states).
+    canonical_feasibility = True
 
     def __init__(self, collect_placements: bool = False) -> None:
         self.split_counter = 0
@@ -50,6 +55,7 @@ class LayoutMaterializer:
         self.origin_of: Dict[int, int] = {}
         self.placed: List[Tuple[int, LayoutHardCoreInstance]] = []
         self.fused_alias: Dict[int, LayoutHardCoreInstance] = {}
+        self.fused_components: List[LayoutHardCoreInstance] = []
 
     @staticmethod
     def is_mapping_possible(softcore, hardcore) -> bool:
@@ -72,6 +78,7 @@ class LayoutMaterializer:
 
         fused = canonical_fuse_hardcores(hcs, make_fused=_mk)
         if self.collect_placements:
+            self.fused_components.extend(hcs)
             for component in hcs:
                 self.fused_alias[id(component)] = fused
         return fused
@@ -89,12 +96,12 @@ class LayoutMaterializer:
         return fragments
 
 
-def _make_instances(core_types: Sequence[LayoutHardCoreType]) -> List[LayoutHardCoreInstance]:
-    out: List[LayoutHardCoreInstance] = []
-    for t in core_types:
-        for _ in range(int(t.count)):
-            out.append(LayoutHardCoreInstance(axons_per_core=int(t.max_axons), neurons_per_core=int(t.max_neurons)))
-    return out
+def _core_pool(core_types: Sequence[LayoutHardCoreType]) -> LazyCorePool:
+    """Every declared core, built only when the engine reads or takes it."""
+    return LazyCorePool(
+        [((int(t.max_axons), int(t.max_neurons)), int(t.count)) for t in core_types],
+        lambda key: LayoutHardCoreInstance(axons_per_core=key[0], neurons_per_core=key[1]),
+    )
 
 
 def _make_layout_fragments(
@@ -178,7 +185,7 @@ def pack_layout(
     placed unit; fragments repeat their origin)."""
 
     used_hardcores: List[LayoutHardCoreInstance] = []
-    unused_hardcores: List[LayoutHardCoreInstance] = _make_instances(core_types)
+    unused_hardcores = _core_pool(core_types)
 
     unmapped = list(copy.deepcopy(list(softcores)))
     pre_coalesce_count = len(unmapped)

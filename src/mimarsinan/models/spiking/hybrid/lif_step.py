@@ -9,7 +9,7 @@ import torch
 
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
-from mimarsinan.models.spiking.hybrid.carry import (
+from mimarsinan.models.spiking.hybrid.executors.carry_record import (
     record_reference_carry, require_carry_capable)
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
@@ -108,10 +108,9 @@ class HybridLifStepMixin(HybridFlowHost):
             and self.spiking_mode == "lif" and not single_spike and not recording)
         if output_train is not None:
             # capable= must describe the EXECUTED path: the synchronized early-
-            # return and the single-spike latch record no multi-spike raster;
-            # the packed executor AND the reference loop below both do.
-            require_carry_capable(
-                stage, packed=(not synchronized_path and not single_spike))
+            # return records no raster; the packed executor AND the reference
+            # loop below (single-spike latch included, [U1 W3]) both do.
+            require_carry_capable(stage, packed=not synchronized_path)
 
         if synchronized_path:
             return run_neural_segment_counts(
@@ -139,7 +138,7 @@ class HybridLifStepMixin(HybridFlowHost):
                        if single_spike else None)
 
         reference_carry = None
-        if output_train is not None and not single_spike:
+        if output_train is not None:
             reference_carry = torch.zeros(
                 T, batch_size, len(output_sources),
                 device=device, dtype=COMPUTE_DTYPE)
@@ -197,6 +196,11 @@ class HybridLifStepMixin(HybridFlowHost):
                     record_in_t[core_idx] += input_signals[core_idx][0].to(torch.int64)
                     record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64).detach()
 
+            if reference_carry is not None:
+                record_reference_carry(
+                    reference_carry, output_spans, cores, cycle=cycle,
+                    buffers=buffers, input_spikes=input_spikes, T=T)
+
             if single_spike:
                 assert out_arrival is not None
                 single_spike_output_step(
@@ -224,12 +228,7 @@ class HybridLifStepMixin(HybridFlowHost):
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
 
-            if reference_carry is not None:
-                record_reference_carry(
-                    reference_carry, output_spans, cores, cycle=cycle,
-                    buffers=buffers, input_spikes=input_spikes, T=T)
-
-        if output_train is not None and not single_spike:
+        if output_train is not None:
             output_train.append(reference_carry)
 
         stash_membrane_readout_correction(

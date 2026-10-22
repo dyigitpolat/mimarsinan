@@ -36,9 +36,18 @@ from mimarsinan.chip_simulation.sanafe.net_synth import apply_ttfs_preset_membra
 from mimarsinan.chip_simulation.sanafe.records import SanafeSegmentRecord
 from mimarsinan.chip_simulation.sanafe.runner.bounded_sim import simulate_chip_bounded
 from mimarsinan.mapping.latency.chip import ChipLatency
-from mimarsinan.models.spiking.hybrid.carry import apply_carried_input
+from mimarsinan.chip_simulation.sanafe.runner.carry import present_inputs_in_core_time
+from mimarsinan.models.spiking.hybrid.carry import carry_scope, replay_input_slices, shift_delayed_slices
 
 from .constants import _COMPUTE_DTYPE
+
+
+def _padded(encoded: np.ndarray, T_eff: int) -> np.ndarray:
+    """``(N, size, T)`` input train zero-padded to the executed window ``T_eff``."""
+    if T_eff <= encoded.shape[2]:
+        return encoded
+    pad = np.zeros((encoded.shape[0], encoded.shape[1], T_eff - encoded.shape[2]), dtype=encoded.dtype)
+    return np.concatenate([encoded, pad], axis=2)
 
 
 class SanafeNeuralStageMixin:
@@ -185,13 +194,7 @@ class SanafeNeuralStageMixin:
             encoded = _encode(
                 seg_input_rates.astype(np.float64), self.T,
             ).astype(np.float32)
-            encoded_padded = encoded
-            if T_eff > encoded.shape[2]:
-                pad = np.zeros(
-                    (encoded.shape[0], encoded.shape[1], T_eff - encoded.shape[2]),
-                    dtype=encoded.dtype,
-                )
-                encoded_padded = np.concatenate([encoded, pad], axis=2)
+            encoded_padded = _padded(encoded, T_eff)
             if is_cycle:
                 _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
         elif is_cascade:
@@ -202,29 +205,18 @@ class SanafeNeuralStageMixin:
             encoded = ttfs_single_spike_train(
                 seg_input_rates.astype(np.float64), self.T,
             ).astype(np.float32)
-            encoded_padded = encoded
-            if T_eff > encoded.shape[2]:
-                pad = np.zeros(
-                    (encoded.shape[0], encoded.shape[1], T_eff - encoded.shape[2]),
-                    dtype=encoded.dtype,
-                )
-                encoded_padded = np.concatenate([encoded, pad], axis=2)
+            encoded_padded = _padded(encoded, T_eff)
+            shift_delayed_slices(encoded_padded, stage, self.T)
             _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
+            present_inputs_in_core_time(core_input_neurons, hcm, encoded_padded)
         else:
             encoded = self._behavior.encode_segment_input(seg_input_rates, self.T)
-            encoded_padded = encoded
-            if T_eff > encoded.shape[2]:
-                pad = np.zeros(
-                    (encoded.shape[0], encoded.shape[1], T_eff - encoded.shape[2]),
-                    dtype=encoded.dtype,
-                )
-                encoded_padded = np.concatenate([encoded, pad], axis=2)
-            if state_buffer_spikes:
-                # A pass boundary inside this segment replays the producer's raster
-                # verbatim; only slices with a published train are overwritten, so a
-                # host boundary in the same input map still arrives re-encoded.
-                apply_carried_input(encoded_padded, stage, state_buffer_spikes)
+            encoded_padded = _padded(encoded, T_eff)
+            # A carried slice replays its producer's published raster (VERBATIM) or its re-encode, each read at its
+            # delivery delay; a host boundary arrives re-encoded; every row in its readers' local time [U1 R2].
+            replay_input_slices(encoded_padded, stage, carry_scope(state_buffer_spikes or {}, stage), self.T)
             _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
+            present_inputs_in_core_time(core_input_neurons, hcm, encoded_padded)
         core_latencies = {
             i: (int(c.latency) if getattr(c, "latency", None) is not None else 0)
             for i, c in enumerate(hcm.cores)
@@ -279,7 +271,7 @@ class SanafeNeuralStageMixin:
             chip=chip,
             results=results,
             seg_input_rates=seg_input_rates,
-            encoded=encoded,
+            encoded=encoded_padded[:, :, :self.T],                   # the train the cores read [U1 R2]
             T_eff=T_eff,
             is_ttfs=is_ttfs,
             contract_ttfs_cores=contract_ttfs_cores,
@@ -297,4 +289,5 @@ class SanafeNeuralStageMixin:
             state_buffer_spikes=state_buffer_spikes,
             pkts_in=pkts_in,
             pkts_out=pkts_out,
+            core_time_rows=() if is_ttfs else ((0, seg_in_size),),   # the rows the cores read in local time
         )

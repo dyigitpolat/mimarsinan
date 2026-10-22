@@ -16,7 +16,7 @@ from mimarsinan.chip_simulation.simulation_runner.membrane_probe import (
 )
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
-from mimarsinan.models.spiking.hybrid.carry import carried_output_ids
+from mimarsinan.models.spiking.hybrid.carry import carried_output_ids, require_backend_replay
 from typing import Dict
 
 import numpy as np
@@ -174,6 +174,8 @@ def _serialize_output_sources(chip) -> "list[tuple[str, int, int]]":
 
 def prepare_all_segments(runner, hybrid) -> "Dict[int, _PreparedSegment]":
     """Emit all segment params and compile nevresim binaries in parallel (keyed by segment idx)."""
+    require_backend_replay(hybrid, "nevresim", transfer=runner.pass_transfer,      # [U1] before anything compiles
+                           spike_mode=runner.spike_generation_mode, spiking_mode=runner.spiking_mode)
     stages = hybrid.stages
     num_samples = len(runner.test_data)
     original_input = np.stack([d[0] for d in runner.test_data])

@@ -7,11 +7,14 @@ from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, ir_graph_to_sof
 from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
 
 
-def _make_two_core_ir():
+def _make_two_core_ir(timed: bool = False):
     """Neural-only IR: 4 inputs -> core0 (4 neurons) -> core1 (2 neurons).
 
     Both cores carry ``perceptron_index=0`` so they share a threshold group
     and may be packed into one hardcore (exercising the traceability path).
+    ``timed``: core1 carries the latency tag the IR latency pass gives it (1),
+    as every builder input does; the hybrid builder refuses by name a hard
+    core that co-packs a producer with its consumer (U1 pass projection).
     """
     w1 = np.ones((5, 4), dtype=np.float32) * 0.1
     s1 = np.array([IRSource(-2, i) for i in range(4)] + [IRSource(-3, 0)], dtype=object)
@@ -20,7 +23,7 @@ def _make_two_core_ir():
 
     w2 = np.ones((5, 2), dtype=np.float32) * 0.1
     s2 = np.array([IRSource(0, i) for i in range(4)] + [IRSource(-3, 0)], dtype=object)
-    c2 = NeuralCore(id=1, name="o", input_sources=s2, core_matrix=w2, latency=0,
+    c2 = NeuralCore(id=1, name="o", input_sources=s2, core_matrix=w2, latency=1 if timed else 0,
                     perceptron_index=0)
 
     out = np.array([IRSource(1, 0), IRSource(1, 1)], dtype=object)
@@ -77,7 +80,7 @@ class TestSnapshotMappedPlacements:
         from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
-        ir = _make_two_core_ir()
+        ir = _make_two_core_ir(timed=True)
         cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 5}]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
         snap, _descs = snapshot_hard_core_mapping(hm)
@@ -98,7 +101,7 @@ class TestSnapshotMappedPlacements:
         from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
-        ir = _make_two_core_ir()
+        ir = _make_two_core_ir(timed=True)
         cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 5}]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
         snap, _descs = snapshot_hard_core_mapping(hm)
@@ -126,7 +129,7 @@ class TestSnapshotMappedPlacements:
         from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
-        ir = _make_two_core_ir()
+        ir = _make_two_core_ir(timed=True)
         cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 5}]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
         hcm = hm.get_neural_segments()[0]
@@ -140,7 +143,7 @@ class TestSnapshotMappedPlacements:
         from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard_core_mapping
         from mimarsinan.gui.snapshot import snapshot_hard_core_mapping
 
-        ir = _make_two_core_ir()
+        ir = _make_two_core_ir(timed=True)
         cores_config = [{"max_axons": 32, "max_neurons": 32, "count": 5}]
         hm = build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=cores_config)
         snap, _descs = snapshot_hard_core_mapping(hm)

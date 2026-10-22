@@ -1,6 +1,7 @@
-import numpy as np
-
+import heapq
 from typing import List, Sequence
+
+import numpy as np
 
 from mimarsinan.chip_simulation.ttfs.segment_arrays import (
     SegmentTtfsArrays,
@@ -125,6 +126,32 @@ def _gather_segment_output(
     return output
 
 
+def dependency_order(seg: SegmentTtfsArrays) -> List[int]:
+    """[U1 R6] Cores in dependency order (every core after the cores it reads), ties by stored latency then index: the
+    stored latency alone is no order once an ALAP alignment raised a producer above a shallower consumer."""
+    n_cores = len(seg.core_params)
+    reads = [{int(sp.src_core) for sp in seg.axon_spans[i] if sp.kind not in ("off", "on", "input")} - {i}
+             for i in range(n_cores)]
+    readers: List[List[int]] = [[] for _ in range(n_cores)]
+    for i, sources in enumerate(reads):
+        for p in sources:
+            readers[p].append(i)
+    pending = [len(sources) for sources in reads]
+    ready = [(seg.latencies[i], i) for i in range(n_cores) if not pending[i]]
+    heapq.heapify(ready)
+    order: List[int] = []
+    while ready:
+        _, ci = heapq.heappop(ready)
+        order.append(ci)
+        for reader in readers[ci]:
+            pending[reader] -= 1
+            if not pending[reader]:
+                heapq.heappush(ready, (seg.latencies[reader], reader))
+    if len(order) != n_cores:
+        raise ValueError("TTFS segment: cyclic core dependency")
+    return order
+
+
 def _run_ttfs_segment_ordered(
     seg: SegmentTtfsArrays,
     input_activations: np.ndarray,
@@ -133,7 +160,7 @@ def _run_ttfs_segment_ordered(
     spiking_mode: str,
     comparator_half_step: bool = False,
 ) -> tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
-    """Execute TTFS cores in latency order; propagate activations between cores."""
+    """Execute TTFS cores in dependency order; propagate activations between cores."""
     from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
 
     batch = input_activations.shape[0]
@@ -160,8 +187,7 @@ def _run_ttfs_segment_ordered(
         np.zeros((batch, seg.n_neurons_per_core[i]), dtype=np.float64)
         for i in range(n_cores)
     ]
-    topo = sorted(range(n_cores), key=lambda i: seg.latencies[i])
-    for ci in topo:
+    for ci in dependency_order(seg):
         _fill_signal_numpy(
             input_signals[ci],
             input_activations=input_activations,

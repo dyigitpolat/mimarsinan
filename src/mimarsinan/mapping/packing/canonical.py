@@ -122,6 +122,14 @@ def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike
     )
 
 
+#: Every hard-core attribute ``canonical_is_mapping_possible`` reads besides the core's shape (``get_input_count``,
+#: ``get_output_count``); the best fit's cost for a softcore without a weight bank and the split into a used core read
+#: no other. Two cores alike on these and on their shape answer every such softcore alike: the engine's core-state
+#: index (``greedy/used_index.py``) keys on exactly this set. A bank-affine softcore also reads the core's banks,
+#: so it scans every core.
+CANONICAL_CORE_READS = ("residency_class_id", "latency", "latency_tag", "available_axons", "available_neurons")
+
+
 def _placement_waste(soft: SoftCoreLike, hard: HardCoreLike) -> int:
     """L-shaped diagonal-packing dead-zone area ``h_a·s_n + s_a·h_n − 2·s_a·s_n``; penalises aspect-ratio mismatch."""
     s_a = int(soft.get_input_count())

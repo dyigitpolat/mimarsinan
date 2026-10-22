@@ -24,7 +24,7 @@ def run_placement(
     *,
     softcores: list,
     used_hardcores: list,
-    unused_hardcores: list,
+    unused_hardcores: Any,
     materializer: Materializer,
     allow_neuron_splitting: bool,
     allow_coalescing: bool = True,
@@ -33,6 +33,8 @@ def run_placement(
 
     Mutates the hardcore lists in place; ``split_softcore`` is wired only when
     ``allow_neuron_splitting`` and ``fuse_hardcores`` only when ``allow_coalescing``.
+    A materializer whose ``canonical_feasibility`` is true states that its
+    predicate is ``canonical_is_mapping_possible``, so the engine indexes core states.
     """
     greedy_pack_softcores(
         softcores=softcores,
@@ -44,4 +46,5 @@ def run_placement(
         split_softcore=(
             materializer.split_softcore if allow_neuron_splitting else None
         ),
+        canonical_feasibility=bool(getattr(materializer, "canonical_feasibility", False)),
     )

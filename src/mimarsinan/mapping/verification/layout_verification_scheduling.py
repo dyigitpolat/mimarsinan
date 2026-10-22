@@ -10,6 +10,7 @@ from mimarsinan.mapping.verification.layout_verification_types import LayoutVeri
 from mimarsinan.mapping.support.schedule.pass_planner import (
     plan_program_passes,
 )
+from mimarsinan.mapping.support.schedule.residency_composition import refuse_without_cut_census
 
 
 def compute_mapping_stats(
@@ -20,6 +21,8 @@ def compute_mapping_stats(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
     max_schedule_passes: int = 8,
+    residency_plan: Optional[dict] = None,
+    runs: Optional[Sequence[int]] = None,
 ) -> Tuple[LayoutVerificationStats, Optional[str]]:
     """Pack softcores and compute verification statistics with scheduling support.
 
@@ -32,9 +35,15 @@ def compute_mapping_stats(
     scheduled platform is otherwise searched against a program it will never
     run [C4]. The composition itself comes from the ONE planner
     (``pass_planner``: residency-first, capacity fallback) that the hard-core
-    builder also consumes [U1] — so the searched program is the deployed one
-    by construction, not by parity pinning.
+    builder also consumes [U1]. [U1 W9] With the walk's ``runs``
+    (``residency_rules.spec_runs``) it plans the builder's segments, so the
+    searched program is the deployed one; without them it groups the specs by
+    their depth segments, which is the deployed program only where both
+    segmentations group the specs alike (every tier-0 template; a branchy graph
+    whose host op splits one depth segment into two builder segments, or one
+    builder segment holding two depth segments, differs on the base too).
     """
+    refuse_without_cut_census("compute_mapping_stats", residency_plan)
     if not softcores or not core_types:
         return _empty_stats(feasible=False, num_softcores=len(softcores)), \
             "No softcores or core types"
@@ -68,6 +77,7 @@ def compute_mapping_stats(
         allow_coalescing=allow_coalescing,
         allow_splitting=allow_neuron_splitting,
         max_schedule_passes=max_schedule_passes,
+        runs=runs,
     )
 
     if not plan.feasible:

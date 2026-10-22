@@ -18,7 +18,7 @@ import torch
 from mimarsinan.models.spiking.hybrid.membrane_readout import (
     stash_membrane_readout_correction,
 )
-from mimarsinan.models.spiking.hybrid.carry import (
+from mimarsinan.models.spiking.hybrid.executors.carry_record import (
     carry_plan_for,
     record_carry,
 )

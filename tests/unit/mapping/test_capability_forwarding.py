@@ -49,7 +49,10 @@ class TestCapabilityBits:
             max_schedule_passes=4,
         )
         bits = caps.capability_bits()
-        assert set(bits) == {f.name for f in fields(ChipCapabilities)}
+        # A declared-only capability (field metadata) is served only when declared.
+        assert set(bits) == {
+            f.name for f in fields(ChipCapabilities) if not f.metadata.get("declared_only")
+        }
         assert bits == {
             "max_axons": 256, "max_neurons": 128, "hardware_bias": True,
             "allow_coalescing": True, "allow_neuron_splitting": True,
@@ -142,7 +145,9 @@ class TestLayoutKwargs:
         }
 
     def test_every_key_is_a_real_parameter_of_every_layout_helper(self):
-        keys = set(ChipCapabilities().layout_kwargs())
+        keys = set(ChipCapabilities().layout_kwargs()) | set(
+            ChipCapabilities(allow_scheduling=True, residency_plan={"step": "floor"}).layout_kwargs()
+        )
         for helper in (compute_mapping_stats, verify_hardware_config, build_layout_plan):
             params = set(inspect.signature(helper).parameters)
             assert keys <= params, (helper.__name__, sorted(keys - params))

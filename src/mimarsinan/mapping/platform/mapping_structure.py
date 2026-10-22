@@ -2,12 +2,38 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
-from typing import Any, Literal, Mapping
+from dataclasses import dataclass, field, fields
+from typing import Any, Literal, Mapping, Optional, Tuple
 
+from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.support.period_census import RESIDENCY_STEP_RULES, STEP_INDEX
 from mimarsinan.mapping.platform.platform_constraints import (
     resolve_platform_mapping_params,
 )
+
+#: Field metadata of a capability served only when declared, so an undeclared one leaves every dict unchanged.
+DECLARED_ONLY = {"declared_only": True}
+
+
+class ResidencyPlanError(ToolchainRefusal, ValueError):
+    """A declared ``residency_plan`` the toolchain cannot plan or execute exactly; the message names why."""
+
+
+
+
+def residency_declaration(value: Any) -> Tuple[str, Optional[int]]:
+    """The one rule judging a declared ``residency_plan`` (``{step, index}``): its (rule, index), or a refusal by
+    name. Read where the key enters (``ChipCapabilities``) and where a step is selected (``ResidencySelection``)."""
+    if not isinstance(value, Mapping) or set(value) - {"step", "index"}:
+        raise ResidencyPlanError(f"residency_plan must be a mapping {{step, index}}, got {value!r}")
+    rule, index = value.get("step"), value.get("index")
+    if rule not in RESIDENCY_STEP_RULES:
+        raise ResidencyPlanError(f"residency_plan step {rule!r} is not one of {list(RESIDENCY_STEP_RULES)}")
+    if (rule == STEP_INDEX) != (index is not None):
+        raise ResidencyPlanError(f"residency_plan index is required iff step is 'index', got {dict(value)!r}")
+    if index is not None and (isinstance(index, bool) or not isinstance(index, int) or index < 0):
+        raise ResidencyPlanError(f"residency_plan index must be an integer >= 0, got {index!r}")
+    return str(rule), index
 
 
 def compute_core_input_count(
@@ -71,6 +97,16 @@ class ChipCapabilities:
     # The scheduled-build pass budget the planner's residency floor is sized
     # against; dropping it pins the answer to the default and disarms streaming.
     max_schedule_passes: int = 8
+    # [E85] The executed residency step ({step, index}); None = U1's pass planner.
+    residency_plan: Optional[Mapping[str, Any]] = field(default=None, hash=False, metadata=DECLARED_ONLY)
+
+    def __post_init__(self) -> None:
+        if self.residency_plan is not None:
+            residency_declaration(self.residency_plan)
+        if self.residency_plan is not None and not self.allow_scheduling:
+            raise ResidencyPlanError(
+                "residency_plan is declared but allow_scheduling is not: a residency plan is a multi-pass "
+                "schedule, so the chip must declare allow_scheduling")
 
     @classmethod
     def from_platform_constraints(
@@ -106,7 +142,19 @@ class ChipCapabilities:
             allow_scheduling=bool(constraints.get("allow_scheduling", False)),
             allow_per_layer_s=bool(constraints.get("allow_per_layer_s", False)),
             max_schedule_passes=int(constraints.get("max_schedule_passes", 8) or 8),
+            residency_plan=(
+                None if constraints.get("residency_plan") is None
+                else _declared_residency_plan(constraints["residency_plan"])
+            ),
         )
+
+    def declared_fields(self) -> dict[str, Any]:
+        """Every field, a declared-only one only when set (one metadata rule, no per-key branch)."""
+        return {
+            f.name: getattr(self, f.name)
+            for f in fields(self)
+            if not (f.metadata.get("declared_only") and getattr(self, f.name) is None)
+        }
 
     def capability_bits(self) -> dict[str, Any]:
         """The COMPLETE declaration, one entry per declared field.
@@ -118,7 +166,7 @@ class ChipCapabilities:
         POPULATED by whoever builds the object — a served ``None`` means
         "this platform declares no core grid", never "we did not look".
         """
-        return {f.name: getattr(self, f.name) for f in fields(self)}
+        return self.declared_fields()
 
     def permission_kwargs(self) -> dict[str, bool]:
         """The three permission bits the leaf packing helpers take.
@@ -139,9 +187,12 @@ class ChipCapabilities:
         property of the permission bits alone, and a layout answer computed
         without the budget describes a program the chip will never run.
         """
+        declared = self.declared_fields()
         return {
             **self.permission_kwargs(),
             "max_schedule_passes": self.max_schedule_passes,
+            **{f.name: declared[f.name] for f in fields(self)
+               if f.metadata.get("declared_only") and f.name in declared},
         }
 
 
@@ -220,3 +271,9 @@ class MappingStrategy:
             caps.hardware_bias,
             caps.allow_coalescing,
         )
+
+
+def _declared_residency_plan(value: Any) -> dict:
+    """A declared ``residency_plan`` judged by ``residency_declaration``, as a plain dict."""
+    residency_declaration(value)
+    return dict(value)

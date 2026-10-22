@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict
 
 import numpy as np
 import torch
@@ -23,6 +23,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     requires_ttfs_firing,
 )
+from mimarsinan.models.spiking.hybrid.carry import carry_scope
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.membrane_readout import (
     apply_membrane_corrections_to_logits,
@@ -49,6 +50,8 @@ class HybridRateForwardMixin(HybridFlowHost):
         x_compute = x.to(COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
         state_buffer_spikes: Dict[int, torch.Tensor] = {}
+        # [U1 R3] carried rasters apart from the host-op trains, per producing schedule segment.
+        carry_store: Dict[Any, Dict[int, torch.Tensor]] = {}
         # [C2] host-read decode side channel: per-node membrane terms for the
         # final logits only; the count currency below never carries them.
         readout_corrections: Dict[int, torch.Tensor] = {}
@@ -94,6 +97,7 @@ class HybridRateForwardMixin(HybridFlowHost):
                 T=T,
                 batch_size=batch_size,
                 device=device,
+                carried=carry_scope(carry_store, stage),
             )
 
             recorder_seg: SegmentSpikeRecord | None = None
@@ -137,7 +141,8 @@ class HybridRateForwardMixin(HybridFlowHost):
                 # publishing it here is what makes the cut semantically invisible,
                 # and is the exact mirror of what a host ComputeOp already does.
                 self._publish_carried_trains(
-                    stage, output_train[0], carried_ids, spikes_buffer,
+                    stage, output_train[0], carried_ids,
+                    carry_scope(carry_store, stage, publish=True),
                 )
             count_recorder = getattr(self, "stage_count_recorder", None)
             if count_recorder is not None:

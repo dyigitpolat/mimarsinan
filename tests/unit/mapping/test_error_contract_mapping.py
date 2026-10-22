@@ -123,9 +123,10 @@ class TestScheduleErrorsPropagate:
             LayoutSoftCoreSpec(input_count=2, output_count=2, latency_tag=0),
             LayoutSoftCoreSpec(input_count=2, output_count=2, latency_tag=1),
         ]
+        # One core for two softcores: the capacity certificate leaves the verdict open, so a pack runs.
         with pytest.raises(ValueError, match="pack bug"):
             split_softcores_by_capacity(
-                scs, [LayoutHardCoreType(max_axons=4, max_neurons=4, count=2)]
+                scs, [LayoutHardCoreType(max_axons=4, max_neurons=4, count=1)]
             )
 
     def test_estimate_passes_validated_propagates_pack_bugs(self, monkeypatch):
@@ -138,9 +139,11 @@ class TestScheduleErrorsPropagate:
             raise ValueError("pack bug")
 
         monkeypatch.setattr(lp, "pack_layout", _bug)
+        # Two softcores on one core: the capacity certificate leaves the verdict open, so a pack runs.
         with pytest.raises(ValueError, match="pack bug"):
             estimate_passes_for_layout_validated(
-                [LayoutSoftCoreSpec(input_count=2, output_count=2)],
+                [LayoutSoftCoreSpec(input_count=2, output_count=2),
+                 LayoutSoftCoreSpec(input_count=2, output_count=2)],
                 1,
                 core_types=[LayoutHardCoreType(max_axons=4, max_neurons=4, count=1)],
             )

@@ -76,6 +76,7 @@ class SanafeNeuralStageRecordMixin:
         state_buffer_spikes=None,
         pkts_in,
         pkts_out,
+        core_time_rows=(),
     ) -> SanafeSegmentRecord:
         per_core_records: List[SanafeCoreRecord] = []
         for core_idx, core in enumerate(hcm.cores):
@@ -96,7 +97,7 @@ class SanafeNeuralStageRecordMixin:
                 seg_raster=seg_raster,
                 group_row_offsets=group_row_offsets,
                 consumer_latency=int(core.latency) if core.latency is not None else 0,
-                hcm=hcm,
+                hcm=hcm, local_rows=core_time_rows,
             )
             core_raster: Optional[np.ndarray] = None
             if seg_raster is not None:

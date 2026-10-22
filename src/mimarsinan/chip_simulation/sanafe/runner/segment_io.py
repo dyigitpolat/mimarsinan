@@ -36,10 +36,10 @@ class SanafeSegmentIOMixin:
         seg_input_encoded: np.ndarray,
         group_spike_counts: Dict[str, np.ndarray],
         core_to_group: Dict[int, Any],
-        seg_raster: Optional[np.ndarray] = None,
-        group_row_offsets: Optional[Dict[str, int]] = None,
+        seg_raster: Optional[np.ndarray] = None, group_row_offsets: Optional[Dict[str, int]] = None,
         consumer_latency: int = 0,
         hcm: Any = None,
+        local_rows: Any = (),
     ) -> Tuple[np.ndarray, int]:
         """Per-axon input spike counts for one core (HCM window semantics)."""
         used_ax = _used_axons(core)
@@ -64,9 +64,9 @@ class SanafeSegmentIOMixin:
                 n_always_on += 1
                 continue
             if getattr(src, "is_input_", False):
-                k = int(src.neuron_)
-                lo = min(consumer_latency, T)
-                hi = min(consumer_latency + T, T)
+                k = int(src.neuron_)            # [U1] a row the core reads in its local time (``local_rows``)
+                lo = 0 if any(r0 <= k < r1 for r0, r1 in local_rows) else min(consumer_latency, T)
+                hi = T if lo == 0 else min(consumer_latency + T, T)
                 if hi > lo:
                     counts[a] = int(seg_input_encoded[0, k, lo:hi].sum())
                 continue

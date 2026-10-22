@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections import Counter
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from mimarsinan.mapping.packing.canonical import (
     HardT,
     SoftCoreLike,
     SoftT,
 )
+from mimarsinan.mapping.packing.greedy.pool import CorePool
 from mimarsinan.mapping.packing.pick_index import PickBestIndex
 
 
@@ -29,15 +29,15 @@ def _try_split_into_used(
     split_softcore: Callable[[SoftT, int], tuple[SoftT, SoftT]],
     split_threshold: float,
     place: Callable[[int, HardT, SoftT], None],
-    softcores: List[SoftT],
+    softcores,
     *,
     candidate_indices: "list[int] | None" = None,
     pick_index: "PickBestIndex | None" = None,
-) -> bool:
+) -> Optional[int]:
     """Split *core* into the used core with the most remaining neurons (axons fit, neurons don't, remainder above threshold).
 
-    ``candidate_indices`` restricts the scan to a pre-filtered subset; returns
-    True if a split was performed.
+    ``candidate_indices`` restricts the scan to a pre-filtered subset (the first of equals wins, so a subset
+    holding each candidate state's earliest core selects as the whole set does); returns the index split into.
     """
     best_idx = None
     best_avail_n = -1
@@ -73,71 +73,49 @@ def _try_split_into_used(
             best_avail_n = avail_n
 
     if best_idx is None:
-        return False
+        return None
 
     frag1, frag2 = split_softcore(core, best_avail_n)
     place(best_idx, used_hardcores[best_idx], frag1)
     softcores.remove(core)
     softcores.append(frag2)
     _swap_in_pick_index(pick_index, core, frag2)
-    return True
+    return best_idx
 
 
 def _try_split_into_unused(
     core: SoftT,
     used_hardcores: List[HardT],
-    unused_hardcores: List[HardT],
+    pool: CorePool,
     split_softcore: Callable[[SoftT, int], tuple[SoftT, SoftT]],
     split_threshold: float,
     place: Callable[[int, HardT, SoftT], None],
-    softcores: List[SoftT],
+    softcores,
     *,
-    type_counts: "Counter | None" = None,
-    type_key: Callable[[HardT], tuple] | None = None,
-    unused_by_type: "dict | None" = None,
-    hard_type_key: Callable[[HardT], tuple] | None = None,
     pick_index: "PickBestIndex | None" = None,
 ) -> bool:
-    """Last-resort split of *core* into a fresh unused core when its neurons exceed every core type's capacity."""
-    best_hc = None
-    best_total_n = -1
-    for hc in unused_hardcores:
-        total_a = int(hc.get_input_count())
-        total_n = int(hc.get_output_count())
-        if (
-            core.get_input_count() <= total_a
-            and core.get_output_count() > total_n
-            and total_n > 0
-            and total_n > best_total_n
-        ):
-            best_hc = hc
-            best_total_n = total_n
+    """Last-resort split of *core* into a fresh unused core when its neurons exceed every core type's capacity.
 
-    if best_hc is None:
+    The core is the first unused one, in list order, of the most neurons that takes the axons; a pool's group
+    holds one core shape, so that core is the head of the earliest such group.
+    """
+    best_key = None
+    for key in pool.keys():
+        total_a, total_n = key
+        if core.get_input_count() <= total_a and core.get_output_count() > total_n and total_n > 0 and (
+            best_key is None or total_n > best_key[1]
+            or (total_n == best_key[1] and pool.first_position(key) < pool.first_position(best_key))
+        ):
+            best_key = key
+
+    if best_key is None:
         return False
 
-    frag1, frag2 = split_softcore(core, best_total_n)
-    for _i, _x in enumerate(unused_hardcores):
-        if _x is best_hc:
-            del unused_hardcores[_i]
-            break
-    used_hardcores.append(best_hc)
-    if type_counts is not None and type_key is not None:
-        type_counts[type_key(best_hc)] -= 1
-    if unused_by_type is not None and hard_type_key is not None:
-        tk = hard_type_key(best_hc)
-        bucket = unused_by_type.get(tk)
-        if bucket is not None:
-            for _i, _x in enumerate(bucket):
-                if _x is best_hc:
-                    del bucket[_i]
-                    break
-            if not bucket:
-                del unused_by_type[tk]
+    frag1, frag2 = split_softcore(core, best_key[1])
+    used_hardcores.append(pool.take_first(best_key))
     new_idx = len(used_hardcores) - 1
     place(new_idx, used_hardcores[new_idx], frag1)
     softcores.remove(core)
     softcores.append(frag2)
     _swap_in_pick_index(pick_index, core, frag2)
     return True
-

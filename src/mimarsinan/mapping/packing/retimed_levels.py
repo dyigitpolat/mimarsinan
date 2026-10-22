@@ -33,6 +33,7 @@ def attach_retimed_level_stages(
     allow_neuron_splitting: bool,
     allow_coalescing: bool,
     identity: bool = False,
+    level_units: "Sequence[list[NeuralCore]] | None" = None,
 ) -> None:
     """Attach per-depth-level execution stages to a fused neural stage.
 
@@ -40,9 +41,11 @@ def attach_retimed_level_stages(
     or coalescing/psum-group segments — exactly the historical split refusals.
     Level chips place on a private pool: they are execution vehicles like the
     per-segment compiled binaries, not capacity-bearing program structure.
+    [U1 R5] ``level_units``: a pass of a multi-level fused segment executes
+    the fused segment's levels it holds, one level unit each, even a single one.
     """
-    groups = segment_depth_groups(current_neural)
-    if groups is None or len(groups) <= 1:
+    groups = segment_depth_groups(current_neural) if level_units is None else list(level_units)
+    if groups is None or (level_units is None and len(groups) <= 1):
         return
 
     pool = [] if identity else _make_available_hardware_cores(cores_config)

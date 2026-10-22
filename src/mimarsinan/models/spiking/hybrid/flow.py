@@ -14,6 +14,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMap
 from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
 from mimarsinan.spiking.segment_boundary import BoundaryConfig
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE, validate_spiking_init
+from mimarsinan.models.spiking.hybrid.carry import refuse_stochastic_replay
 from mimarsinan.models.spiking.hybrid.lif_step import HybridLifStepMixin
 from mimarsinan.models.spiking.hybrid.rate_forward import HybridRateForwardMixin
 from mimarsinan.models.spiking.hybrid.stage_io import HybridStageIOMixin
@@ -119,6 +120,7 @@ class SpikingHybridCoreFlow(
             phase_dither=bool(phase_dither),
         )
 
+        refuse_stochastic_replay(hybrid_mapping, spike_mode=spike_mode, pass_transfer=self.pass_transfer)
         self._segment_tensor_cache: Dict[int, dict] = {}
         self._segment_tensor_cache_key: int | None = None
 

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from mimarsinan.chip_simulation.sanafe.analysis import _group_name
+from mimarsinan.chip_simulation.sanafe.neuron_model import input_neuron_attributes
 from mimarsinan.models.spiking.hybrid.carry import (
     carried_output_ids,
+    carry_scope,
     publish_carried_trains,
 )
 
@@ -38,7 +40,7 @@ core_to_group,
     )
     if raster is None:
         return
-    publish_carried_trains(stage, raster, carried, state_buffer_spikes)
+    publish_carried_trains(stage, raster, carried, carry_scope(state_buffer_spikes, stage, publish=True))
 
 
 def _stage_index_of(mapping, stage) -> int:
@@ -46,3 +48,17 @@ def _stage_index_of(mapping, stage) -> int:
         if candidate is stage:
             return index
     return -1
+
+
+def present_inputs_in_core_time(core_input_neurons, hcm, encoded) -> None:
+    """[U1 R2] Every stage-input row reaches each core that reads it in that core's local time, as the HCM reads a
+    stage input (``lif_step``): SANA-FE's input neurons spike at the global cycle, so the neuron feeding a core that
+    starts at latency L > 0 replays its row of ``encoded`` ``(1, size, T')`` L cycles late. A carried slice and a
+    host-encoded one alike: an ALAP-raised reader of a host slice read it L cycles late before, identity programs
+    included."""
+    for (core_idx, axon_idx), neuron in core_input_neurons.items():
+        latency = int(getattr(hcm.cores[core_idx], "latency", 0) or 0)
+        k = int(hcm.cores[core_idx].axon_sources[axon_idx].neuron_)
+        if latency > 0 and k < encoded.shape[1]:
+            train = [0] * latency + [int(b) for b in encoded[0, k, :max(0, encoded.shape[2] - latency)].tolist()]
+            neuron.set_attributes(model_attributes=input_neuron_attributes(train))

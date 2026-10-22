@@ -2,7 +2,7 @@ from __future__ import annotations
 import copy
 import math
 from collections import OrderedDict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.packing.infeasibility_proofs import (
@@ -14,6 +14,7 @@ from mimarsinan.mapping.support.schedule.pass_planner import (
     compute_schedule_sync_count,
     plan_program_passes,
 )
+from mimarsinan.mapping.support.schedule.residency_composition import refuse_without_cut_census
 
 # One layout question is asked several times per run (build-time capacity gate,
 # per-model-update GUI snapshots, wizard previews) on identical shape-only
@@ -27,7 +28,7 @@ def clear_verify_hardware_config_memo() -> None:
 
 
 def _memo_key(
-    softcores, core_types, splitting, coalescing, scheduling, max_passes,
+    softcores, core_types, splitting, coalescing, scheduling, max_passes, runs=None,
 ) -> Tuple:
     return (
         tuple(
@@ -43,7 +44,7 @@ def _memo_key(
             for ct in core_types
         ),
         bool(splitting), bool(coalescing), bool(scheduling),
-        int(max_passes),
+        int(max_passes), None if runs is None else tuple(int(r) for r in runs),
     )
 
 
@@ -55,11 +56,15 @@ def verify_hardware_config(
     allow_coalescing: bool = False,
     allow_scheduling: bool = False,
     max_schedule_passes: int = 8,
+    residency_plan: Optional[dict] = None,
+    runs: Optional[Sequence[int]] = None,
 ) -> Dict[str, Any]:
-    """Memoizing front of :func:`_verify_hardware_config_uncached` (LRU, deep-copied)."""
+    """Memoizing front of :func:`_verify_hardware_config_uncached` (LRU, deep-copied). ``runs``: the walk's builder
+    segments (``residency_rules.spec_runs``), so the preview plans the deployed passes [U1 W9]."""
+    refuse_without_cut_census("verify_hardware_config (the wizard layout preview)", residency_plan)
     key = _memo_key(
         softcores, core_types, allow_neuron_splitting, allow_coalescing,
-        allow_scheduling, max_schedule_passes,
+        allow_scheduling, max_schedule_passes, runs,
     )
     hit = _MEMO.get(key)
     if hit is None:
@@ -70,6 +75,7 @@ def verify_hardware_config(
             allow_coalescing=allow_coalescing,
             allow_scheduling=allow_scheduling,
             max_schedule_passes=max_schedule_passes,
+            runs=runs,
         )
         _MEMO[key] = copy.deepcopy(hit)
         while len(_MEMO) > _MEMO_MAX:
@@ -87,6 +93,7 @@ def _verify_hardware_config_uncached(
     allow_coalescing: bool = False,
     allow_scheduling: bool = False,
     max_schedule_passes: int = 8,
+    runs: Optional[Sequence[int]] = None,
 ) -> Dict[str, Any]:
     """Check whether a hardware core configuration can pack the given softcores.
 
@@ -166,6 +173,7 @@ def _verify_hardware_config_uncached(
             allow_coalescing=allow_coalescing,
             allow_splitting=allow_neuron_splitting,
             max_schedule_passes=max_schedule_passes,
+            runs=runs,
         )
         per_segment_passes = plan.per_segment_passes
         per_segment_pass_lists = {

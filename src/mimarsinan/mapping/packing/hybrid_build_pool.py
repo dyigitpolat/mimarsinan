@@ -19,8 +19,10 @@ from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_build_scheduled import _build_scheduled
+from mimarsinan.mapping.packing.pass_timing import project_passes
 from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
 from mimarsinan.mapping.packing.hybrid_types import HybridHardCoreMapping, HybridStage
+from mimarsinan.mapping.support.period_census import SCHEDULE_RESIDENCY_PLAN
 from mimarsinan.mapping.platform.mapping_structure import (
     ChipCapabilities,
     MappingStrategy,
@@ -59,9 +61,10 @@ def build_hybrid_hard_core_mapping(
     stages: list[HybridStage] = []
 
     all_reindex_maps: dict[int, dict[int, int]] = {}
+    residency = None
 
     if strategy.allow_scheduling:
-        _build_scheduled(
+        residency = _build_scheduled(
             ir_graph=ir_graph,
             cores_config=cores_config,
             consumed_by=consumed_by,
@@ -72,6 +75,7 @@ def build_hybrid_hard_core_mapping(
             per_hop_neural_segments=per_hop_neural_segments,
             retimed_level_stages=retimed_level_stages,
             max_schedule_passes=max_schedule_passes,
+            residency_plan=strategy.capabilities.residency_plan,
         )
     else:
         _build_single_pool(
@@ -95,13 +99,16 @@ def build_hybrid_hard_core_mapping(
     node_activation_scales = _compute_node_activation_scales(ir_graph)
     node_input_activation_scales = _compute_node_input_activation_scales(ir_graph)
 
-    return HybridHardCoreMapping(
+    mapping = HybridHardCoreMapping(
         stages=stages,
         output_sources=output_sources,
         node_activation_scales=node_activation_scales,
         node_input_activation_scales=node_input_activation_scales,
         node_buffer_scales=_compute_node_buffer_scales(ir_graph),
     )
+    if residency is not None:
+        setattr(mapping, SCHEDULE_RESIDENCY_PLAN, residency)
+    return mapping
 
 
 def build_identity_hybrid_mapping(
@@ -160,10 +167,13 @@ def _build_single_pool(
     per_hop_neural_segments: bool = False,
     retimed_level_stages: bool = False,
 ) -> None:
-    """Single-shared-pool compilation path (``identity=True``: no pool)."""
+    """Single-shared-pool compilation path (``identity=True``: no pool). [U1] A packed stage runs at its identity
+    stage's timing (``project_passes``: pins where packing moves an edge, a refusal by name where it co-packs soft
+    cores the identity runs at two latencies); the identity is the timing reference and re-timed stages run levels."""
     shared_pool: list[HardCore] = (
         [] if identity else _make_available_hardware_cores(cores_config)
     )
+    first_stage = len(stages)
 
     for segment in partition_ir_graph(ir_graph, per_hop=per_hop_neural_segments):
         if isinstance(segment, NeuralSegment):
@@ -201,6 +211,8 @@ def _build_single_pool(
             ).reshape(node.input_sources.shape)
             _apply_reindex_to_ir_sources(op_copy.input_sources, all_reindex_maps)
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
+    if not identity and not retimed_level_stages:
+        project_passes(stages[first_stage:])
 
 
 _SPLIT_FALLBACK_LOGGED = False

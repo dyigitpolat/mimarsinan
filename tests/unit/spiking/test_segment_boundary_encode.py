@@ -227,8 +227,10 @@ def test_conv2d_perceptron_mapper_resolver_returns_none() -> None:
     assert _resolve_lif_perceptron(conv_mapper) is None
 
 
-def test_build_segment_input_partial_cache_raises() -> None:
-    """When one slice has a cached train but another doesn't (and isn't raw input), error."""
+def test_build_segment_input_partial_cache_encodes_each_slice_by_its_kind() -> None:
+    """[U1 R4] One slice with a cached train and another without (not raw input): the cached slice is replayed and
+    the other uniform-encoded from its rate, as when no slice is cached (the chip regenerates every slice from its
+    value). It raised before, which crashed a fused stage reading a LIF host train and an uncached host value."""
     hybrid, _ = _tiny_lif_model()
     cfg = _config()
     stage = next(s for s in hybrid.stages if s.kind == "neural")
@@ -247,23 +249,26 @@ def test_build_segment_input_partial_cache_raises() -> None:
         s1, s2 = stage.input_map[0], stage.input_map[1]
 
     in_size = sum(s.size for s in stage.input_map)
-    rates = torch.zeros(1, in_size, dtype=cfg.compute_dtype)
-    state_buffer_spikes = {
-        int(s1.node_id): torch.rand(cfg.simulation_length, 1, s1.size, dtype=cfg.compute_dtype),
-    }
+    rates = torch.full((1, in_size), 0.5, dtype=cfg.compute_dtype)
+    cached = (torch.rand(cfg.simulation_length, 1, s1.size) > 0.5).to(cfg.compute_dtype)
     if int(s2.node_id) == -2:
         pytest.skip("test requires a non-raw missing slice")
-    with pytest.raises(ValueError, match="missing spike train"):
-        encode_segment_input(
-            stage,
-            rates,
-            state_buffer_spikes,
-            config=cfg,
-            hybrid_mapping=hybrid,
-            T=cfg.simulation_length,
-            batch_size=1,
-            device=rates.device,
-        )
+    out = encode_segment_input(
+        stage,
+        rates,
+        {int(s1.node_id): cached},
+        config=cfg,
+        hybrid_mapping=hybrid,
+        T=cfg.simulation_length,
+        batch_size=1,
+        device=rates.device,
+    )
+    uniform = encode_segment_input(
+        stage, rates, {}, config=cfg, hybrid_mapping=hybrid, T=cfg.simulation_length, batch_size=1,
+        device=rates.device,
+    )
+    assert torch.equal(out[:, :, s1.offset:s1.offset + s1.size], cached)
+    assert torch.equal(out[:, :, s2.offset:s2.offset + s2.size], uniform[:, :, s2.offset:s2.offset + s2.size])
 
 
 def test_warn_once_on_unshifted_negative_boundary(capsys) -> None:

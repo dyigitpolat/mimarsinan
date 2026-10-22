@@ -11,11 +11,17 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
+from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.models.spiking.hybrid.executors.carry_record import (  # noqa: F401 (re-exported)
+    carry_plan_for, record_carry, record_reference_carry, require_carry_capable)
+from mimarsinan.mapping.packing.pass_timing import carried_nodes, off_clock_readers, replay_delays
 from mimarsinan.mapping.support.schedule.pass_carry import (
     carried_outputs_by_stage,
     carried_wire_bytes,
 )
-from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
+from mimarsinan.chip_simulation.activation_semantics import effective_legacy_spiking_mode, is_streamed_lif
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import execution_neural_stages
+from mimarsinan.chip_simulation.spiking_semantics import is_cycle_based
 from mimarsinan.mapping.support.schedule.pass_cut import (
     COLLAPSE,
     VERBATIM,
@@ -30,6 +36,74 @@ def carried_output_ids(hybrid_mapping) -> Dict[int, Tuple[int, ...]]:
         cached = carried_outputs_by_stage(hybrid_mapping.stages)
         setattr(hybrid_mapping, "_carried_output_cache", cached)
     return cached
+
+
+class PassReplayRefusal(ToolchainRefusal, ValueError):
+    """A multi-pass run that cannot replay its carried rasters exactly, refused by name."""
+
+
+def carry_scope(store: Dict[Any, Any], stage, *, publish: bool = False) -> Dict[int, Any]:
+    """[U1 R3] The carried rasters of ``stage``'s own schedule segment: a later segment reads a carried producer
+    through its count, as the fused program does."""
+    segment = getattr(stage, "schedule_segment_index", None)
+    return store.setdefault(segment, {}) if publish else store.get(segment, {})
+
+
+def replay_raster(raster, delay: int, *, time_axis: int):
+    """[U1 R2] ``raster`` read ``delay`` (<= 0) cycles late, as the fused segment delivers it: |delay| zero cycles
+    first, its last |delay| dropped (numpy or torch, any layout)."""
+    if not delay:
+        return raster
+    if delay > 0:
+        raise PassReplayRefusal(f"replay delay {delay} > 0: hold-last replay is unexercised and refused")
+    n = int(raster.shape[time_axis])
+    shift = min(-int(delay), n)
+    lead = (slice(None),) * (time_axis % raster.ndim)
+    out = raster * 0
+    out[lead + (slice(shift, n),)] = raster[lead + (slice(0, n - shift),)]
+    return out
+
+
+def replay_carried_slices(train, stage, carried: Dict[int, Any]) -> None:
+    """Every carried slice of a ``(T, B, size)`` input train replayed in place from its producer's raster, every
+    delayed slice shifted (a count's single-spike re-encode under COLLAPSE is the lossless codec)."""
+    delays = {} if getattr(stage, "is_retimed_level", False) else replay_delays(stage)
+    for k, s in enumerate(stage.input_map):
+        raster = None if getattr(stage, "is_retimed_level", False) else carried.get(int(s.node_id))
+        if raster is None and not delays.get(k):
+            continue
+        source = train[:, :, s.offset:s.offset + s.size] if raster is None else raster[:, :, :s.size].to(train.dtype)
+        train[:, :, s.offset:s.offset + s.size] = replay_raster(source, delays.get(k, 0), time_axis=0)
+
+
+def shift_delayed_slices(encoded, stage, T: int, skip=()) -> None:
+    """Every delayed slice of a backend's ``(N, size, T')`` input train (but the nodes in ``skip``) shifted in place
+    within its first ``T`` cycles: a count re-encode read late (the single-spike codec under cascaded TTFS)."""
+    for k, delay in replay_delays(stage).items():
+        s = stage.input_map[k]
+        if int(s.node_id) in skip:
+            continue
+        window = encoded[:, s.offset:s.offset + s.size, :T]
+        encoded[:, s.offset:s.offset + s.size, :T] = replay_raster(window, delay, time_axis=2)
+
+
+def replay_input_slices(encoded, stage, scope, T: int) -> None:
+    """[U1 R2] A backend's ``(N, size, T')`` input train as the HCM's ``replay_carried_slices`` builds it: each slice
+    whose producer published a raster in ``scope`` replayed, every other delayed slice's re-encode read late."""
+    apply_carried_input(encoded, stage, scope)
+    shift_delayed_slices(encoded, stage, T, skip=set(scope))
+
+
+def shift_rows_to_core_time(window, rows, latency: int, T: int):
+    """``window`` ``(size, N, T')`` with each given row's first ``T`` cycles moved ``latency`` late, so a core that
+    starts at ``latency`` and reads at the global cycle sees them in its local time (a copy; ``window`` when idle)."""
+    if latency <= 0 or not rows:
+        return window
+    out = window.copy()
+    for lo, hi in rows:
+        out[lo:hi, :, :] = 0
+        out[lo:hi, :, latency:latency + T] = window[lo:hi, :, :T]
+    return out
 
 
 def publish_carried_trains(
@@ -64,11 +138,12 @@ def apply_carried_input(encoded, stage, state_buffer_spikes) -> bool:
     whether anything was replayed, so a caller can report the discipline it
     actually ran rather than the one it hoped for.
     """
-    replayed = False
-    for s in stage.input_map:
+    replayed, delays = False, replay_delays(stage)
+    for k, s in enumerate(stage.input_map):
         train = state_buffer_spikes.get(int(s.node_id))
         if train is None:
             continue
+        train = replay_raster(train, delays.get(k, 0), time_axis=-2)
         width = min(int(s.size), train.shape[-1], encoded.shape[1] - int(s.offset))
         if width <= 0:
             continue
@@ -86,94 +161,7 @@ def apply_carried_input(encoded, stage, state_buffer_spikes) -> bool:
     return replayed
 
 
-def record_reference_carry(
-    carry, output_spans, cores, *, cycle: int, buffers, input_spikes, T: int
-) -> None:
-    """One cycle of the REFERENCE loop's output raster, producer-local time.
-
-    The per-core twin of the packed executor's ``record_carry``: same span walk,
-    same window discipline (a cycle outside a producer's ``[lat, lat+T)`` window
-    is SKIPPED, never clamped), reading each core's live fire vector instead of
-    the packed ``fires`` slab.
-    """
-    for sp in output_spans:
-        d0, d1 = int(sp.dst_start), int(sp.dst_end)
-        if sp.kind == "off":
-            continue
-        if sp.kind == "on":
-            if cycle < T:
-                carry[cycle, :, d0:d1] = 1.0
-            continue
-        if sp.kind == "input":
-            if cycle < T:
-                carry[cycle, :, d0:d1] = (
-                    input_spikes[:, int(sp.src_start):int(sp.src_end)])
-            continue
-        latency = cores[int(sp.src_core)].latency
-        if latency is None:
-            continue
-        local = cycle - int(latency)
-        if not (0 <= local < T):
-            continue
-        carry[local, :, d0:d1] = (
-            buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)])
-
-
-def require_carry_capable(stage, *, packed: bool) -> None:
-    """Refuse an execution path that cannot record the raster it owes."""
-    if packed:
-        return
-    raise NotImplementedError(
-        f"stage {stage.name!r} must carry a spike raster to a later pass of its "
-        f"segment, but this execution path (synchronized / recording / single-spike) "
-        f"records none. Carrying is implemented on the packed cycle executor; a path "
-        f"that cannot carry must refuse rather than hand the next pass a re-encoded "
-        f"count."
-    )
-
-
-def carry_plan_for(output_spans, packed, cores, T: int):
-    """(kind, dst slice, source slice, producer latency) per output span.
-
-    The producer latency is per SPAN, not per segment: each output source starts
-    emitting at its own core's latency, and producer-local time is what the
-    consumer pass replays.
-    """
-    plan = []
-    for sp in output_spans:
-        d0, d1 = int(sp.dst_start), int(sp.dst_end)
-        if sp.kind == "off":
-            continue
-        if sp.kind in ("on", "input"):
-            plan.append((sp.kind, d0, d1, int(sp.src_start), int(sp.src_end), 0))
-            continue
-        offset = packed.neuron_offset.get(int(sp.src_core))
-        if offset is None:
-            continue
-        latency = int(cores[int(sp.src_core)].latency or 0)
-        plan.append((
-            "core", d0, d1,
-            offset + int(sp.src_start), offset + int(sp.src_end), int(latency),
-        ))
-    return plan
-
-
-def record_carry(carry, plan, *, cycle: int, fires, train, T: int) -> None:
-    """Write this cycle's emissions into producer-local time."""
-    for kind, d0, d1, s0, s1, latency in plan:
-        local = cycle - latency
-        if not (0 <= local < T):
-            continue
-        if kind == "on":
-            carry[local, :, d0:d1] = 1.0
-        elif kind == "input":
-            carry[local, :, d0:d1] = train[local][:, s0:s1]
-        else:
-            carry[local, :, d0:d1] = fires[:, s0:s1]
-
-
-#: Backends that replay a carried raster verbatim. A backend outside this set uses
-#: the COLLAPSE discipline instead — never a refusal.
+#: Backends that replay a carried raster verbatim; a streamed run refuses any other by name.
 VERBATIM_BACKENDS = frozenset({"hcm", "sanafe", "nevresim", "lava"})
 
 
@@ -186,67 +174,120 @@ _BACKEND_ENABLE_KEYS = {
 }
 
 
-def run_pass_transfer(config) -> str:
-    """ONE discipline per run: semantics first, then the weakest enabled backend.
+def run_pass_transfer(config, hybrid_mapping=None) -> str:
+    """ONE discipline per run: semantics first, then every enabled backend.
 
-    Semantics first — only STREAMED execution has a rhythm to carry. The windowed
-    disciplines re-encode at every boundary by definition and mvm has no spikes at
-    all, so their pass boundaries collapse regardless of which backends run; a
-    "verbatim" record for such a run would name a computation that never happened,
-    and a backend replaying a raw raster into a windowed pass would diverge from
-    every peer that re-encoded.
-
-    Then the weakest backend — a run whose backends disagreed would report the
-    numbers of two different computations, and the cross-backend exactness gates,
-    which admit no tolerance on integer arithmetic, would compare unlike things.
-    Measured on a 3-pass streamed MLP: HCM carrying while nevresim collapsed
-    diverged on 4.4% of neuron windows by one spike each — exactly the rhythm a
-    collapse normalizes away. So enabling a backend that cannot replay a raster
-    costs the whole run its verbatim boundaries, and teaching that backend to
-    record one upgrades the run.
+    Only STREAMED execution has a rhythm to carry: the windowed disciplines re-encode at every boundary by
+    definition and mvm has no spikes, so their pass boundaries collapse whatever the backends. A streamed run carries
+    rasters on every backend, or the cross-backend exactness gates would compare two computations (measured on a
+    3-pass streamed MLP: HCM carrying while nevresim collapsed diverged on 4.4% of neuron windows); collapsing it
+    changes the function, so an enabled backend that cannot replay is refused by name [U1 W6]. With the built
+    ``hybrid_mapping``, the program's replay refusals run here, at plan time (``require_replayable_program``).
     """
-    if transfer_for(streamed=is_streamed_lif(config)) == COLLAPSE:
-        return COLLAPSE
-    enabled = [
-        backend for backend, key in _BACKEND_ENABLE_KEYS.items() if config.get(key)
-    ]
-    if any(pass_transfer_for_backend(b) == COLLAPSE for b in enabled):
-        return COLLAPSE
-    return VERBATIM
+    transfer = COLLAPSE if transfer_for(streamed=is_streamed_lif(config)) == COLLAPSE else VERBATIM
+    weak = [backend for backend, key in _BACKEND_ENABLE_KEYS.items()
+            if config.get(key) and pass_transfer_for_backend(backend) == COLLAPSE]
+    if weak and transfer == VERBATIM:
+        raise PassReplayRefusal(
+            f"a streamed run carries spike rasters across pass boundaries, and enabled backend(s) {weak} cannot "
+            f"replay them; collapsing to counts would change the function (disable them or run unscheduled)")
+    if hybrid_mapping is not None:
+        require_replayable_program(hybrid_mapping, config, transfer)
+    return transfer
 
 
 def pass_transfer_for_backend(backend: str) -> str:
-    """Which pass-boundary discipline ``backend`` will actually execute.
+    """Which pass-boundary discipline ``backend`` can execute.
 
-    Both are legitimate deployments of a scheduled segment, because the boundary is
-    one this program INTRODUCES: a chip that reprograms between passes has to buffer
-    the intermediate signal either way, and the choice is only WHAT it buffers.
-
-    - ``VERBATIM`` buffers the spike raster (``ceil(T/8)`` bytes per wire) and
-      reproduces the fused execution bit-for-bit.
-    - ``COLLAPSE`` buffers window counts (``ceil(log2(T+1)/8)`` bytes per wire) and
-      re-emits an even train, which normalizes rhythm — the same decode/re-encode a
-      host boundary performs, applied at a boundary that now genuinely exists.
-
-    A backend therefore never refuses a scheduled deployment; it reports which
-    discipline it ran, and the record carries that so a reader knows which of the two
-    computations produced the numbers.
+    ``VERBATIM`` buffers the spike raster (``ceil(T/8)`` bytes per wire) and reproduces the fused execution
+    bit-for-bit; ``COLLAPSE`` buffers window counts (``ceil(log2(T+1)/8)`` bytes per wire) and re-emits an even
+    train, the decode/re-encode a host boundary performs. The record carries the discipline a run executed.
     """
     return VERBATIM if backend in VERBATIM_BACKENDS else COLLAPSE
 
 
+def stochastic_replay_conflicts(hybrid_mapping, stage) -> list:
+    """The input nodes of ``stage`` a verbatim replay under stochastic spike generation cannot serve: when it reads a
+    carried raster, every slice it does not replay (the chip's RNG cannot be reproduced host-side)."""
+    carried = {n for i, ids in carried_output_ids(hybrid_mapping).items()
+               if hybrid_mapping.stages[i].schedule_segment_index == getattr(stage, "schedule_segment_index", None)
+               for n in ids}
+    nodes = [int(s.node_id) for s in stage.input_map]
+    return [n for n in nodes if n not in carried] if carried & set(nodes) else []
+
+
+def refuse_stochastic_replay(hybrid_mapping, *, spike_mode: str, pass_transfer: str) -> None:
+    """[U1] Plan-time refusal by name of stochastic spike generation on a verbatim multi-pass run."""
+    if spike_mode != "Stochastic" or pass_transfer != VERBATIM:
+        return
+    for stage in hybrid_mapping.stages:
+        missing = stochastic_replay_conflicts(hybrid_mapping, stage) if stage.kind == "neural" else []
+        if missing:
+            raise PassReplayRefusal(
+                f"segment {stage.name!r}: verbatim replay under Stochastic spike generation needs every input slice "
+                f"carried, but nodes {missing} are host boundaries; the chip's RNG cannot be reproduced host-side")
+
+
+#: Backends that deliver every stage-input row to each reading core in that core's local time, as the HCM reads a stage
+#: input: SANA-FE (an input neuron per core and axon) and Lava (a per-core input window) shift it to the reader's start.
+#: nevresim reads its T-cycle input train at the global cycle, so a core starting at latency L > 0 would read the slice
+#: L cycles late and never its last L cycles.
+CORE_LOCAL_REPLAY_BACKENDS = frozenset({"hcm", "sanafe", "lava"})
+#: Backends that encode a value-mode stage input on chip, so a delayed slice cannot be read late there.
+ON_CHIP_ENCODE_BACKENDS = frozenset({"nevresim"})
+
+
+class ChipClockReplayRefusal(PassReplayRefusal):
+    """A multi-pass program a backend cannot replay in its readers' local time, refused by name."""
+
+
+def require_backend_replay(hybrid_mapping, backend: str, *, transfer: str, spike_mode: str, spiking_mode: str,
+                           stages=None) -> None:
+    """[U1] Refusals by name of a multi-pass program ``backend`` cannot replay exactly (every neural stage, or the
+    given ``stages``): Stochastic generation under VERBATIM, a carried slice read above latency 0 in a unit the backend
+    executes where it reads a cycle-timed stage input at the global cycle (``executed_off_clock_readers``; an analytical
+    TTFS value is read whenever its core runs), a delayed slice the backend's on-chip encode cannot shift."""
+    refuse_stochastic_replay(hybrid_mapping, spike_mode=spike_mode, pass_transfer=transfer)
+    timed = backend not in CORE_LOCAL_REPLAY_BACKENDS and is_cycle_based(spiking_mode)
+    for stage in hybrid_mapping.stages if stages is None else stages:
+        if stage.kind != "neural":
+            continue
+        late = executed_off_clock_readers(hybrid_mapping, stage) if timed else []
+        if late:
+            raise ChipClockReplayRefusal(
+                f"{backend} reads a stage input at the global cycle, and segment {stage.name!r} has carried slices "
+                f"read by cores that start above latency 0 ((core, latency) {late[:4]}); they would arrive that many "
+                f"cycles late. Run without {backend}, or on a backend that replays in core-local time")
+        delays = replay_delays(stage)
+        if delays and backend in ON_CHIP_ENCODE_BACKENDS and transfer == COLLAPSE and is_cycle_based(spiking_mode):
+            raise ChipClockReplayRefusal(
+                f"{backend} encodes a value-mode input on chip and cannot replay segment {stage.name!r}'s delayed "
+                f"slices {sorted(delays)} late under {spiking_mode!r}; run the pass transfer VERBATIM")
+
+
+def executed_off_clock_readers(hybrid_mapping, stage) -> list:
+    """``(core, latency)`` per core that reads one of ``stage``'s carried slices above latency 0 in the units a backend
+    EXECUTES for it (``execution_neural_stages``): the pass itself, or under per-hop re-timing its level units, whose
+    cores all start at latency 0 (each reads the pass's carried nodes among its own inputs)."""
+    carried = carried_nodes(hybrid_mapping.stages, stage)
+    return [late for unit in execution_neural_stages(stage) for late in off_clock_readers(unit, carried)]
+
+
+def require_replayable_program(hybrid_mapping, config, transfer: str) -> None:
+    """[U1] The plan-time refusals of ``require_backend_replay`` for the HCM and every backend ``config`` enables."""
+    for backend in ["hcm"] + [b for b, key in _BACKEND_ENABLE_KEYS.items() if config.get(key)]:
+        require_backend_replay(hybrid_mapping, backend, transfer=transfer,
+                               spike_mode=str(config.get("spike_generation_mode", "")),
+                               spiking_mode=effective_legacy_spiking_mode(config))
+
+
 #: Re-exported so a backend reads the discipline and its price from one import.
 __all__ = [
-    "VERBATIM_BACKENDS",
-    "carried_output_ids",
-    "apply_carried_input",
-    "carried_wire_bytes",
-    "carry_plan_for",
-    "pass_transfer_for_backend",
+    "CORE_LOCAL_REPLAY_BACKENDS", "ChipClockReplayRefusal", "ON_CHIP_ENCODE_BACKENDS", "VERBATIM_BACKENDS",
+    "PassReplayRefusal", "apply_carried_input", "carried_output_ids", "carried_wire_bytes", "carry_plan_for",
+    "carry_scope", "pass_transfer_for_backend", "publish_carried_trains", "record_carry", "record_reference_carry",
+    "refuse_stochastic_replay", "replay_carried_slices", "replay_input_slices", "replay_raster",
+    "executed_off_clock_readers", "require_backend_replay", "require_carry_capable", "require_replayable_program",
     "run_pass_transfer",
-    "run_pass_transfer",
-    "publish_carried_trains",
-    "record_carry",
-    "record_reference_carry",
-    "require_carry_capable",
+    "shift_delayed_slices", "shift_rows_to_core_time", "stochastic_replay_conflicts",
 ]

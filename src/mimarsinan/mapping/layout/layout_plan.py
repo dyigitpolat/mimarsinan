@@ -169,6 +169,7 @@ def build_layout_plan(
     allow_coalescing: bool = False,
     allow_scheduling: bool = False,
     max_schedule_passes: int = 8,
+    residency_plan: Optional[dict] = None,
 ) -> LayoutPlan:
     """Build a ``LayoutPlan`` from a shape-only ``MappingVerificationResult``.
 
@@ -184,6 +185,7 @@ def build_layout_plan(
         allow_coalescing=allow_coalescing,
         allow_scheduling=allow_scheduling,
         max_schedule_passes=max_schedule_passes,
+        residency_plan=residency_plan,
     )
 
     stats_dict = dict(hw.get("stats") or {})

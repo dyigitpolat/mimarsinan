@@ -9,18 +9,12 @@ import numpy as np
 
 from mimarsinan.common.env import loihi_quiet, loihi_wave_workers
 
-from mimarsinan.chip_simulation.execution_bounds import (
-    ReusableBoundedPool, run_tasks_in_pool_bounded,)
+from mimarsinan.chip_simulation.execution_bounds import ReusableBoundedPool, run_tasks_in_pool_bounded
 from mimarsinan.chip_simulation.lava_loihi.core_worker import run_lava_core_task
-from mimarsinan.chip_simulation.lava_loihi.segment_assembly import (
-    assemble_core_active_input,)
-from mimarsinan.chip_simulation.lava_loihi.wave_schedule import (
-    core_dependency_graph, wave_levels,)
-from mimarsinan.chip_simulation.lava_loihi.carry import (
-    _output_raster,
-    apply_carried_input,
-    publish_carried_trains,
-)
+from mimarsinan.chip_simulation.lava_loihi.segment_assembly import assemble_core_active_input
+from mimarsinan.chip_simulation.lava_loihi.wave_schedule import core_dependency_graph, wave_levels
+from mimarsinan.chip_simulation.lava_loihi.carry import _output_raster, publish_carried_trains
+from mimarsinan.models.spiking.hybrid.carry import carry_scope, replay_input_slices, shift_rows_to_core_time
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
@@ -97,14 +91,16 @@ class LavaSegmentMixin:
         timing = _SegmentTiming.from_mapping(seg, T)
 
         seg_input_spikes = self._behavior.encode_segment_input(seg_input_rates, T)
-        if stage is not None and state_buffer_trains:
-            # Verbatim pass carry: overwrite carried input slices with the
-            # producing pass's rasters; host-boundary slices keep the encode.
-            apply_carried_input(seg_input_spikes, stage, state_buffer_trains)
-        seg_input_logical = np.zeros(
-            (seg_in_size, N, timing.sample_stride), dtype=_LAVA_DTYPE,
-        )
+        if stage is not None:
+            # [U1 R2] A carried slice replays its producer's raster (VERBATIM) or its re-encode, at its delivery
+            # delay; a host boundary keeps the encode.
+            replay_input_slices(seg_input_spikes, stage, carry_scope(state_buffer_trains or {}, stage), T)
+        seg_input_logical = np.zeros((seg_in_size, N, timing.sample_stride), dtype=_LAVA_DTYPE)
         seg_input_logical[:, :, :T] = seg_input_spikes.transpose(1, 0, 2)
+        # [U1 R2] Every stage-input row in each reader's local time (``core_input``), as the HCM reads a stage input:
+        # a core starting at latency L reads its window [L, L + T), so its rows move L cycles late.
+        core_input = {i: shift_rows_to_core_time(seg_input_logical, [(0, seg_in_size)], timing.core_latency(c), T)
+                      for i, c in enumerate(seg.cores)}
 
         core_output_spikes: Dict[int, np.ndarray] = {}
         core_buffer_spikes: Dict[int, np.ndarray] = {}
@@ -139,7 +135,7 @@ class LavaSegmentMixin:
                         T=T,
                         latency=latency,
                         used_ax=used_ax,
-                        seg_input_logical=seg_input_logical,
+                        seg_input_logical=core_input[core_idx],
                         core_buffer_spikes=core_buffer_spikes,
                     )
                     grid = core.get_core_matrix()
@@ -223,12 +219,13 @@ class LavaSegmentMixin:
                 stage,
                 _output_raster(
                     seg, timing, core_output_spikes, seg_input_logical, T, N),
-                carried_out, state_buffer_trains,
+                carried_out, carry_scope(state_buffer_trains, stage, publish=True),
             )
 
         if recorder_seg is not None:
             assert N == 1, "Spike recording requires a single sample (N == 1)"
             recorder_seg.seg_output_spike_count = seg_out_counts[0].astype(np.int64)
+            recorder_seg.seg_input_spike_count = seg_input_spikes[0].sum(axis=1).astype(np.int64)  # as replayed [U1]
             for core_idx, core in enumerate(seg.cores):
                 used_ax = used_axons(core, min_one=True)
                 used_neu = used_neurons(core, min_one=True)
@@ -255,7 +252,7 @@ class LavaSegmentMixin:
                         continue
                     if sp.kind == "input":
                         s0 = int(sp.src_start)
-                        in_count[d0:end] += seg_input_logical[
+                        in_count[d0:end] += core_input[core_idx][
                             s0:s0 + take, 0, active_slice
                         ].sum(axis=1).astype(np.int64)
                         continue

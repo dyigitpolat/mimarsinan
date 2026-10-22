@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Dict
 
 import numpy as np
@@ -14,6 +13,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
 )
+from mimarsinan.mapping.packing.pass_positions import fused_input_positions
 from mimarsinan.mapping.support.activation_scales import (
     perceptron_wrapped_activation_scale,
 )
@@ -215,6 +215,24 @@ def _encode_uniform(rates, T, config):
     ).to(config.compute_dtype)
 
 
+def _at_fused_positions(encode, rates: torch.Tensor, stage, hybrid_mapping, config: BoundaryConfig):
+    """[U1 R4] A position-dependent encode (phase dither) of each external slice at the channels the fused stage
+    encodes it at; a carried slice (replayed afterwards) takes a channel of its own beyond them."""
+    positions = fused_input_positions(hybrid_mapping, stage) if config.phase_dither else None
+    if not positions:
+        return encode(rates)
+    in_size = int(rates.shape[1])
+    offsets = [positions.get(k, int(s.offset)) for k, s in enumerate(stage.input_map)]
+    width = max((o + int(s.size) for o, s in zip(offsets, stage.input_map) if o is not None), default=0)
+    index = torch.arange(in_size, device=rates.device) + width
+    for offset, s in zip(offsets, stage.input_map):
+        if offset is not None:
+            index[s.offset:s.offset + s.size] = torch.arange(offset, offset + int(s.size), device=rates.device)
+    placed = rates.new_zeros(rates.shape[0], width + in_size)
+    placed[:, index] = rates
+    return encode(placed)[:, :, index]
+
+
 def encode_segment_input(
     stage: HybridStage,
     seg_input_rates_clamped: torch.Tensor,
@@ -226,9 +244,9 @@ def encode_segment_input(
     batch_size: int,
     device: torch.device,
 ) -> torch.Tensor:
-    """``(T, B, in_size)`` segment input. Cached trains take precedence EXCEPT
-    for retimed level stages, whose input is the COUNT re-encode by definition
-    (cached raw rhythm shifts combs at equal counts — the t0_04 s32 catch)."""
+    """``(T, B, in_size)`` segment input, slice by slice by its kind: a cached train verbatim, every other slice by
+    the encode of its value [U1 R4]. Retimed level stages read the COUNT re-encode by definition (cached raw rhythm
+    shifts combs at equal counts — the t0_04 s32 catch)."""
     if getattr(stage, "is_retimed_level", False):
         state_buffer_spikes = {}
     in_size = seg_input_rates_clamped.shape[1]
@@ -237,63 +255,29 @@ def encode_segment_input(
     )
 
     filled_ranges: list[tuple[int, int]] = []
-    missing_slices: list[tuple[int, int, int]] = []
+    missing = False
     for s in stage.input_map:
         train = state_buffer_spikes.get(int(s.node_id))
         if train is None:
-            missing_slices.append((int(s.node_id), int(s.offset), int(s.size)))
+            missing = True
             continue
         spike_train[:, :, s.offset : s.offset + s.size] = (
             train[:, :, : s.size].to(config.compute_dtype)
         )
         filled_ranges.append((int(s.offset), int(s.offset) + int(s.size)))
 
-    if not config.use_cycle_accurate_trains:
-        if not filled_ranges:
+    if not missing:
+        return spike_train
+    if config.use_cycle_accurate_trains:
+        def encode(rates):
+            return _encode_uniform(rates, T, config)
+    else:
+        def encode(rates):
             return rates_to_spike_train(
-                seg_input_rates_clamped, T, spike_mode=config.spike_mode,
-                log_fallback=True, phase_dither=config.phase_dither,
+                rates, T, spike_mode=config.spike_mode,
+                log_fallback=not filled_ranges, phase_dither=config.phase_dither,
             ).to(config.compute_dtype)
-        if not missing_slices:
-            return spike_train
-        encoded = rates_to_spike_train(
-            seg_input_rates_clamped, T, spike_mode=config.spike_mode,
-            log_fallback=False, phase_dither=config.phase_dither,
-        ).to(config.compute_dtype)
-        for lo, hi in filled_ranges:
-            encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
-        return encoded
-
-    only_raw_input = (
-        len(stage.input_map) == 1
-        and int(stage.input_map[0].node_id) == -2
-    )
-    if not filled_ranges and only_raw_input:
-        if config.spike_mode == "SpikeTrain":
-            return _encode_uniform(seg_input_rates_clamped, T, config)
-        return _encode_uniform(seg_input_rates_clamped, T, config)
-
-    non_raw_missing = [m for m in missing_slices if m[0] != -2]
-    raw_missing = [m for m in missing_slices if m[0] == -2]
-
-    if non_raw_missing:
-        if filled_ranges:
-            raise ValueError(
-                f"encode_segment_input: stage {stage.name!r} has cached spike "
-                f"trains for some inputs but is missing spike train(s) for node_id(s) "
-                f"{[m[0] for m in non_raw_missing]}. Every non-raw input slice must have a "
-                f"cached train (cycle-accurate parity)."
-            )
-        logging.getLogger("mimarsinan.spiking.segment_boundary").debug(
-            "stage %r: rate-only boundary at non-raw inputs %s — uniform-encoding.",
-            stage.name, [m[0] for m in non_raw_missing],
-        )
-        return _encode_uniform(seg_input_rates_clamped, T, config)
-
-    if raw_missing:
-        encoded = _encode_uniform(seg_input_rates_clamped, T, config)
-        for lo, hi in filled_ranges:
-            encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
-        return encoded
-
-    return spike_train
+    encoded = _at_fused_positions(encode, seg_input_rates_clamped, stage, hybrid_mapping, config)
+    for lo, hi in filled_ranges:
+        encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
+    return encoded

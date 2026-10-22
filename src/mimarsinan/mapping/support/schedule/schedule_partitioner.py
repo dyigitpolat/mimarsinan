@@ -13,6 +13,7 @@ from mimarsinan.mapping.support.schedule.schedule_budget import (
 )
 from mimarsinan.mapping.support.schedule.schedule_split import (
     split_softcores_by_capacity as split_softcores_by_capacity,
+    split_with_verdicts,
 )
 
 def estimate_passes_for_layout(
@@ -67,15 +68,15 @@ def estimate_passes_for_layout_validated(
 
     The returned ``(num_passes, pass_lists, all_feasible)`` mirrors what
     the hard-core mapper will emit at build time: the wizard now sees the
-    same segment count the simulator will run.
+    same segment count the simulator will run. Each sub-segment's
+    feasibility is the split's own ``pack_layout`` verdict on that list
+    (``split_with_verdicts``), so no pass is packed twice.
     """
     if not softcores or max_cores_per_pass <= 0:
         ok = not softcores
         return (0, [], ok) if not softcores else (1, [list(softcores)], ok)
 
     hw_types = list(core_types)
-
-    from mimarsinan.mapping.layout.layout_packer import pack_layout
 
     by_segment: dict[int, List[LayoutSoftCoreSpec]] = defaultdict(list)
     for sc in softcores:
@@ -93,7 +94,7 @@ def estimate_passes_for_layout_validated(
     all_ok = True
     for seg_id in sorted(by_segment.keys()):
         seg_cores = by_segment[seg_id]
-        sub_segments = split_softcores_by_capacity(
+        sub_segments = split_with_verdicts(
             seg_cores,
             hw_types,
             allow_coalescing=allow_coalescing,
@@ -105,15 +106,8 @@ def estimate_passes_for_layout_validated(
         )
         if not sub_segments:
             continue
-        for sub in sub_segments:
-            pr = pack_layout(
-                softcores=sub,
-                core_types=hw_types,
-                allow_neuron_splitting=allow_splitting,
-                allow_coalescing=allow_coalescing,
-            )
-            if not pr.feasible:
-                all_ok = False
-        all_pass_lists.extend(sub_segments)
+        if not all(ok for _, ok in sub_segments):
+            all_ok = False
+        all_pass_lists.extend(sub for sub, _ in sub_segments)
 
     return len(all_pass_lists), all_pass_lists, all_ok

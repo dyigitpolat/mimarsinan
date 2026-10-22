@@ -2,6 +2,9 @@ from collections import defaultdict
 
 import numpy as np
 
+#: A pass's hard-core-mapping attribute: per core, the latency the fused segment runs it at (set only where pinned).
+PINNED_LATENCIES = "pinned_latencies"
+
 
 class ChipLatency:
     def __init__(self, mapping):
@@ -132,6 +135,11 @@ class ChipLatency:
                 self.memo[(ci, j)] = int(neuron_delays[j])
 
     def calculate(self):
+        pins = getattr(self.mapping, PINNED_LATENCIES, None)
+        if pins is not None:
+            for core, pin in zip(self.mapping.cores, pins):
+                core.latency = int(pin)
+            return max((int(p) for p in pins), default=-1) + 1
         self.memo = {}
         self._matrix_cache = {}
         if len(self.mapping.output_sources) == 0:
