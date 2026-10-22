@@ -1,306 +1,31 @@
 {
  "causes": {
-  "estimator_conv_one_position": "estimate_onchip_fraction(metric='macs') counts every on-chip conv perceptron at one position: the conv mappers drive the shared perceptron through F.conv2d (conv2d_mapper.py:124-150), so the forward hook of _macs_breakdown (onchip_fraction.py:244-292) never fires and module_macs gets in_shape None (_num_positions returns 1, onchip_majority.py:78-86); the oracle counts conv MACs from FX shapes. MAC SSOT, owned by G1 (module_macs.py); not a census rule",
-  "ir_emission_order": "the in-order partition follows IR emission order (partition_ir_graph, segmentation.py:29), which differs from FX order on the explicit-attention blocks; the dependency segmentation (compute_segment_ids, segmentation.py:132) gives the oracle's 30 at C0-C2",
-  "no_convtranspose_mac_rule": "module_macs has no ConvTranspose rule (onchip_majority.py:117-142 returns 0), so the host ConvTranspose2d counts 0 MACs and the on-chip share reads 1.0 until S is declared",
-  "no_matmul_mac_rule": "module_macs has no rule for a product of two activations (onchip_majority.py:117-142 returns 0), so the host matmuls count 0 MACs and the on-chip share reads 1.0; G1's Contraction declares forward_macs() (plan \u00a75.1), re-pinned at CL4"
+  "ir_emission_order": "the in-order partition follows IR emission order (partition_ir_graph, segmentation.py:29), which differs from FX order on the explicit-attention blocks; the dependency segmentation (compute_segment_ids, segmentation.py:132) gives the oracle's 30 at C0-C2"
  },
  "members": {
-  "efficientnet_mbconv_se_dense_twin": {
-   "C0": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19908976,
-     "toolchain": 46624
-    }
-   },
-   "C1": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19908976,
-     "toolchain": 46624
-    }
-   },
-   "C2": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19908976,
-     "toolchain": 46624
-    }
-   },
-   "C3": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19908976,
-     "toolchain": 46624
-    }
-   },
-   "C4": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19908976,
-     "toolchain": 46624
-    }
-   },
-   "C5": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19908976,
-     "toolchain": 46624
-    }
-   },
-   "C6": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19908976,
-     "toolchain": 46624
-    }
-   }
-  },
-  "mobilenetv2_small_relu6_dense_twin": {
-   "C0": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19906800,
-     "toolchain": 44448
-    }
-   },
-   "C1": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19906800,
-     "toolchain": 44448
-    }
-   },
-   "C2": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19906800,
-     "toolchain": 44448
-    }
-   },
-   "C3": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19906800,
-     "toolchain": 44448
-    }
-   },
-   "C4": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19906800,
-     "toolchain": 44448
-    }
-   },
-   "C5": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19906800,
-     "toolchain": 44448
-    }
-   },
-   "C6": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 19906800,
-     "toolchain": 44448
-    }
-   }
-  },
-  "resnet18_cifar_w1/4": {
-   "C0": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 35058176,
-     "toolchain": 710576
-    }
-   },
-   "C1": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 35058176,
-     "toolchain": 710576
-    }
-   },
-   "C2": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 35058176,
-     "toolchain": 710576
-    }
-   },
-   "C3": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 35058176,
-     "toolchain": 710576
-    }
-   },
-   "C4": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 35058176,
-     "toolchain": 710576
-    }
-   },
-   "C5": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 35058176,
-     "toolchain": 710576
-    }
-   },
-   "C6": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 35058176,
-     "toolchain": 710576
-    }
-   }
-  },
-  "unet_level_convtranspose": {
-   "C0": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 11689984,
-     "toolchain": 62192
-    },
-    "onchip_mac_fraction": {
-     "cause": "no_convtranspose_mac_rule",
-     "oracle": 0.9552,
-     "toolchain": 1.0
-    }
-   },
-   "C1": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 11689984,
-     "toolchain": 62192
-    },
-    "onchip_mac_fraction": {
-     "cause": "no_convtranspose_mac_rule",
-     "oracle": 0.9552,
-     "toolchain": 1.0
-    }
-   },
-   "C2": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 11689984,
-     "toolchain": 62192
-    }
-   },
-   "C3": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 11689984,
-     "toolchain": 62192
-    }
-   },
-   "C4": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 11689984,
-     "toolchain": 62192
-    }
-   },
-   "C5": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 11689984,
-     "toolchain": 62192
-    }
-   },
-   "C6": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 11689984,
-     "toolchain": 62192
-    }
-   }
-  },
   "vit_lite_7_4_softmax_ln_gelu": {
    "C0": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 250350080,
-     "toolchain": 234895872
-    },
     "neural_segments": {
      "cause": "ir_emission_order",
      "oracle": 30,
      "toolchain": 37
-    },
-    "onchip_mac_fraction": {
-     "cause": "no_matmul_mac_rule",
-     "oracle": 0.9414,
-     "toolchain": 1.0
     }
    },
    "C1": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 250350080,
-     "toolchain": 234895872
-    },
     "neural_segments": {
      "cause": "ir_emission_order",
      "oracle": 30,
      "toolchain": 37
-    },
-    "onchip_mac_fraction": {
-     "cause": "no_matmul_mac_rule",
-     "oracle": 0.9414,
-     "toolchain": 1.0
     }
    },
    "C2": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 250350080,
-     "toolchain": 234895872
-    },
     "neural_segments": {
      "cause": "ir_emission_order",
      "oracle": 30,
      "toolchain": 37
-    },
-    "onchip_mac_fraction": {
-     "cause": "no_matmul_mac_rule",
-     "oracle": 0.9414,
-     "toolchain": 1.0
-    }
-   },
-   "C3": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 250350080,
-     "toolchain": 234895872
-    }
-   },
-   "C4": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 250350080,
-     "toolchain": 234895872
-    }
-   },
-   "C5": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 250350080,
-     "toolchain": 234895872
-    }
-   },
-   "C6": {
-    "macs_total": {
-     "cause": "estimator_conv_one_position",
-     "oracle": 250350080,
-     "toolchain": 234895872
     }
    }
   }
  },
- "source": "base_rows.json (oracle 296ff421dcc7088b on the Wave 0 base); reviewed by the G7 implementer"
+ "source": "base_rows.json (oracle 296ff421dcc7088b on the Wave 0 base); reviewed by the G7 implementer; at integration (G1's MAC SSOT, ConvTranspose and Contraction rules) the deltas of causes estimator_conv_one_position, no_convtranspose_mac_rule and no_matmul_mac_rule no longer differ and are removed"
 }
