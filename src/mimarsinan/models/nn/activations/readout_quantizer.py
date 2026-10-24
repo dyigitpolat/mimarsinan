@@ -229,10 +229,11 @@ class ReadoutQuantizer(nn.Module):
             self.lane_seam = LaneSeam()
 
     def quantize(self, y: torch.Tensor) -> torch.Tensor:
-        """The value grid this quantizer writes (no STE)."""
+        """The value grid this quantizer writes (no STE): the lane grid on an unsigned lane, else :meth:`_snap`
+        (each consumer group on its own range and width; without groups the per-perceptron grid)."""
         if self.lane_unsigned:
             return quantize_to_lane_grid(y, self.range, self.activation_bits, self.lane_offset)
-        return quantize_to_value_grid(y, self.range, self.activation_bits)
+        return self._snap(y)
 
     def end_lane(self, v: torch.Tensor, operand: Optional[torch.Tensor]) -> torch.Tensor:
         """A fused add's or a reduction's end: STE of its value ``v`` (the sum, the pooled value) onto the lane grid,

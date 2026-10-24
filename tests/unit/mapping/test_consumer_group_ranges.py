@@ -12,7 +12,8 @@ from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.mappers.operand import OperandContractionMapper, operand_perceptrons
 from mimarsinan.mapping.support.tensor_stats import safe_quantile
 from mimarsinan.models.nn.activations.integer_law import grid_levels
-from mimarsinan.models.nn.activations.readout_quantizer import ReadoutQuantizer
+from mimarsinan.models.nn.activations.readout_quantizer import ReadoutQuantizer, snap_channel_groups
+from mimarsinan.models.nn.activations.value_quantizer import quantize_to_value_grid
 from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
     CALIBRATION_QUANTILE,
     MIN_BOUNDARY_SCALE,
@@ -135,3 +136,85 @@ def test_consumer_groups_without_an_operand_core_type_group_nothing():
     quantizers = [m for m in grouped.model.modules() if isinstance(m, ReadoutQuantizer)]
     assert quantizers and all(q.channel_groups is None for q in quantizers)
     assert law_digests_by_core(grouped.ir) == law_digests_by_core(plain.ir)
+
+
+# The trained (unstamped) forward: the STE the Readout Law step's validation, its clipping census and every training
+# step before Soft Core Mapping run (integration merge review M1). N2's tree snapped each consumer group onto its own
+# range and width; the lanes merge routed the forward through ``quantize``, whose non-lane branch read one
+# per-perceptron grid at ``activation_bits`` and ignored the groups.
+
+def _grouped_quantizer(channel_axis=-1):
+    quantizer = ReadoutQuantizer(8)
+    quantizer.set_groups(np.array([0, 0, 0, 1, 1, 1]), (grid_levels(8), grid_levels(4)), channel_axis=channel_axis)
+    quantizer.calibrate_groups([1.0, 4.0])
+    return quantizer
+
+
+def _group_grid(quantizer, y):
+    index = torch.as_tensor(quantizer.channel_groups)
+    levels = torch.as_tensor(quantizer.group_levels)[index]
+    return snap_channel_groups(y, quantizer.group_ranges[index], levels, quantizer.channel_axis)
+
+
+@pytest.mark.parametrize("channel_axis, shape", [(-1, (5, 6)), (1, (4, 6, 3))])
+def test_an_unstamped_grouped_quantizer_snaps_each_group_on_its_own_range_and_width(channel_axis, shape):
+    quantizer = _grouped_quantizer(channel_axis)
+    y = (torch.randn(*shape, generator=torch.Generator().manual_seed(0)) * 2.0).requires_grad_(True)
+    out = quantizer(y)
+    expected = _group_grid(quantizer, y.detach())
+    assert torch.equal(out.detach(), expected)
+    assert torch.equal(quantizer.quantize(y.detach()), expected)
+    assert not torch.equal(expected, quantize_to_value_grid(y.detach(), quantizer.range, 8))  # the probe discriminates
+    payload = expected.movedim(channel_axis, -1)[..., 3:]
+    step = 4.0 / grid_levels(4)
+    assert torch.equal(payload, torch.round(payload / step) * step) and float(payload.abs().max()) <= 4.0
+    out.sum().backward()
+    assert torch.equal(y.grad, torch.ones_like(y))  # the STE passes the gradient through
+
+
+def test_an_unstamped_ungrouped_quantizer_snaps_on_the_per_perceptron_grid():
+    quantizer = ReadoutQuantizer(8, 2.5)
+    y = torch.randn(5, 6, generator=torch.Generator().manual_seed(1)) * 3.0
+    assert quantizer.channel_groups is None
+    assert torch.equal(quantizer(y), quantize_to_value_grid(y, quantizer.range, 8))
+    assert torch.equal(quantizer.quantize(y), quantize_to_value_grid(y, quantizer.range, 8))
+
+
+def test_the_calibrated_attention_block_runs_each_qkv_group_on_its_group_grid_before_stamping():
+    """In situ, as the Readout Law step leaves the model for its validation and the steps that train after it: the
+    qkv perceptron's quantizer is calibrated per group and not yet stamped, and its forward output is the group
+    grid of its input (the Q group at activation_bits, the K and V payload groups at payload_bits)."""
+    import contextlib
+    import io
+
+    from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
+    from mimarsinan.mapping.support.operand_lowering import lower_contractions
+    from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import (
+        calibrate_readout_quantizers,
+        install_readout_quantizers,
+    )
+    from mimarsinan.torch_mapping.converter import convert_torch_model
+    from unit.chip_simulation.value_run.operand_programs import attention_block
+
+    platform = operand_platform(payload_bits=4)
+    with contextlib.redirect_stdout(io.StringIO()):
+        flow = convert_torch_model(attention_block(), (3, 8, 8), 5, device="cpu", packaging=MVM_PACKAGING).eval()
+    lower_contractions(flow.get_mapper_repr(), platform)
+    perceptrons = list(flow.get_perceptrons()) + list(operand_perceptrons(flow.get_mapper_repr()))
+    quantizers = install_readout_quantizers(perceptrons, 8)
+    batches = [torch.randn(16, 3, 8, 8, generator=torch.Generator().manual_seed(s)) for s in (5, 6)]
+    calibrate_readout_quantizers(flow, perceptrons, quantizers, batches, platform=platform)
+    qkv = next(q for p, q in zip(perceptrons, quantizers) if p.name == "blocks_0_self_attn_qkv")
+    assert qkv.stamped is None and qkv.channel_groups is not None
+    assert len(set(qkv.group_levels)) == 2  # the streamed Q group and the payload groups differ in width
+    seen = []
+    handle = qkv.register_forward_hook(lambda module, args, out: seen.append((args[0].detach(), out.detach())))
+    try:
+        with torch.no_grad():
+            flow(torch.randn(8, 3, 8, 8, generator=torch.Generator().manual_seed(7)))
+    finally:
+        handle.remove()
+    assert seen
+    for y, out in seen:
+        assert torch.equal(out, _group_grid(qkv, y))
+        assert not torch.equal(out, quantize_to_value_grid(y, qkv.range, 8))
