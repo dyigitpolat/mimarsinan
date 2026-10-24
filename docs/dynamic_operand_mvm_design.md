@@ -1,6 +1,6 @@
 # Dynamic-Operand MVM (DOM) — attention products as packable constructs
 
-**Status: DESIGN — direction approved 2026-08-18, implementation unscheduled.**
+**Status: BUILT (value domain, host-sourced payload writes) by Wave 2 item N2, 2026-10-23; the build specification is `papers/mimarsinan_tcad_2026/research_artifacts/11_wave2/n2_attention/design.md`, the build report beside it in `build/build_report.md`. Built: the binding (`mapping/ir/dynamic_bank.py`), the lowering (`mapping/support/operand_lowering.py`, `mapping/mappers/operand/`), consumer-group readout ranges, per-sample payload execution in both value executors and the int64 golden, the payload edge, the producer census and the write-source pricing. Per-core-type write physics (N2b, 2026-10-24): a core type declares `write_physics`, and the write law prices each write technology's share of the census by its own physics (`deployment_record/quantities/write_technology.py`), so NVM static tiles beside an SRAM operand core type are priced and judged per technology (report `build/n2b_report.md`). Not built: the executed on-chip write-back (N2c), spiking semantics (refused by name). Direction approved 2026-08-18.**
 
 Owner directives folded in verbatim:
 

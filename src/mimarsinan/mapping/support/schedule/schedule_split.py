@@ -128,10 +128,13 @@ def split_with_verdicts(
     # pack_layout copies a batch with one memo, so an object listed twice is one softcore placed twice: the
     # bound holds no more, as the pick index then raises, and such a segment is packed as it is.
     distinct = len({id(sc) for sc in softcores}) == len(softcores)
+    # The bound and the pool demand certify geometry alone; core types that restrict roles (N2) are judged by
+    # ``pack_layout`` itself, which routes them.
+    geometric = not any(getattr(t, "accepted_roles", None) is not None for t in hw_types)
     bound = capacity_bound(softcores, hw_types, allow_coalescing=allow_coalescing,
-                           allow_splitting=allow_splitting) if distinct else None
+                           allow_splitting=allow_splitting) if distinct and geometric else None
     demand = PoolDemand.for_pool(softcores, hw_types, allow_coalescing=allow_coalescing,
-                                 allow_splitting=allow_splitting)
+                                 allow_splitting=allow_splitting) if geometric else None
     tally = demand.running() if demand is not None else None
     cost: Dict[int, int] = {} if bound is None else {
         id(sc): b for sc, b in zip(softcores, bound.per_softcore)}

@@ -14,6 +14,7 @@ from mimarsinan.certification.value_certificate import (
     certify_twin_flow_values,
     value_edge_atol,
 )
+from mimarsinan.certification.operand_certificate import certify_operand_program
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 from mimarsinan.mapping.ir.core_law import graph_carries_laws
 from mimarsinan.mapping.support.boundary_grids import widest_boundary_step
@@ -141,6 +142,8 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
         print("[ValueTwinCertificate] SKIP (no validation batch available)")
         return None
     samples = samples.detach().to("cpu", torch.float64)
+    if getattr(ir_graph, "dynamic_bank_bindings", None):
+        return _operand_program_gate(model, ir_graph, hybrid_mapping, samples)
     reference_flow = fp64_identity_program(ir_graph)
     backend_flow = ValueHybridCoreFlow(
         hybrid_mapping, device="cpu", dtype=torch.float64
@@ -155,6 +158,17 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
             f"{certificate.summary()} | {detail}"
         )
     print(f"[ValueTwinCertificate] PASS {certificate.summary()}")
+    return certificate
+
+
+def _operand_program_gate(model, ir_graph, hybrid_mapping, samples):
+    """[N2] a program with dynamic operand banks: every edge of design §3.2 at atol 0, the payload edge included."""
+    reference = copy.deepcopy(model).to("cpu").double().eval()
+    certificate = certify_operand_program(reference, build_identity_hybrid_mapping(ir_graph=ir_graph),
+                                          hybrid_mapping, samples)
+    if not certificate.passed:
+        raise RuntimeError(f"operand program certificate FAILED: {certificate.summary()}")
+    print(f"[ValueTwinCertificate] PASS operand program {certificate.summary()}")
     return certificate
 
 

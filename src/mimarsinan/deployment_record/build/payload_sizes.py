@@ -11,8 +11,9 @@ mapping steps run.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional, Tuple
 
+from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON
 
 
@@ -57,6 +58,19 @@ def core_payload_bytes(cells_used: int, weight_bits: Any, sign_rows: int = 0) ->
     """One core's programmed payload, the rule every payload site reads: its cells at the weight width
     (``params_bytes``) and its sign register (``sign_register_bytes``, 0 on a per-synapse core)."""
     return params_bytes(cells_used, weight_bits) + sign_register_bytes(sign_rows)
+
+
+def core_sign_rows(core: Any, occupancy: Optional[CoreOccupancy] = None) -> int:
+    """The used rows a built hard core's per-row sign register signs (0 unless the core is of a per-axon type)."""
+    occupancy = occupancy or CoreOccupancy.from_hard_core(core)
+    return sign_register_rows(getattr(core, "weight_sign_granularity", None), occupancy.axons_used)
+
+
+def pass_program_bytes(program: Any, weight_bits: Any) -> Tuple[int, ...]:
+    """Per core of a candidate pass program, its payload by the one rule (cells and sign register)."""
+    signs = tuple(getattr(program, "core_sign_rows", ()) or ())
+    return tuple(core_payload_bytes(cells, weight_bits, signs[i] if i < len(signs) else 0)
+                 for i, cells in enumerate(program.core_cells))
 
 
 def core_connectivity_entries(hard_core: Any) -> int:

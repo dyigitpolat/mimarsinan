@@ -851,6 +851,8 @@ AUDITED_LEGAL_SETS = {
     "prune_group_size": "INT in [1, 4096]",
     "prune_sparsity": "FLOAT in [0, 1]",
     "pruning_fraction": "FLOAT in [0, 1]",
+    # N2 (Wave 2) key amendment: readout_ranges, its consumer's legal set (design §2.9).
+    "readout_ranges": "ENUM per_perceptron | per_consumer_group",
     "sanafe_arch_preset": "ENUM loihi | truenorth | custom",
     "sanafe_sample_count": "INT >= 1",
     "scale_migration_clip_ratio": "FLOAT >= 1",

@@ -347,7 +347,8 @@ class TestTheIntegerValueRegime:
 
         instance = _deep_value_chain()
         law = value_execution.run_core_law
-        monkeypatch.setattr(value_execution, "run_core_law", lambda signal, prepared: law(signal, prepared) + 1.0)
+        monkeypatch.setattr(value_execution, "run_core_law",
+                            lambda signal, prepared, weight=None: law(signal, prepared, weight) + 1.0)
         ref = reference(instance, ON)
         x = ex.input_tensor(instance, torch.float64).numpy()
         windows, mismatches = program.golden_relation(ref.mapping, x, ref.nodes)
@@ -365,7 +366,8 @@ class TestTheIntegerValueRegime:
         clean = run_instance(7, "H8", control=True)
         assert clean.semantics == VALUE and clean.outcome == EQUAL and clean.golden_windows > 0
         law = value_execution.run_core_law
-        monkeypatch.setattr(value_execution, "run_core_law", lambda signal, prepared: law(signal, prepared) + 1.0)
+        monkeypatch.setattr(value_execution, "run_core_law",
+                            lambda signal, prepared, weight=None: law(signal, prepared, weight) + 1.0)
         shared = run_instance(7, "H8", control=True)
         assert shared.mismatches == 0 and shared.golden_mismatches > 0
         assert shared.outcome == COUNTEREXAMPLE, shared.to_dict()

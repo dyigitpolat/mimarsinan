@@ -56,7 +56,7 @@ def spec_from_neural_core(
         perceptron_index=(
             None if perceptron_index is None else int(perceptron_index)
         ),
-        name=core.name,
+        name=core.name, core_role=getattr(core, "core_role", None),
     )
 
 
@@ -117,5 +117,5 @@ def spec_from_softcore(
         perceptron_index=(
             None if perceptron_index is None else int(perceptron_index)
         ),
-        name=getattr(softcore, "name", None),
+        name=getattr(softcore, "name", None), core_role=getattr(softcore, "core_role", None),
     )

@@ -9,8 +9,9 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps
 from mimarsinan.deployment_record.build.payload_sizes import (
-    core_connectivity_entries, core_payload_bytes, sign_register_rows,
+    core_connectivity_entries, core_payload_bytes, core_sign_rows, pass_program_bytes,
 )
+from mimarsinan.deployment_record.build.producer_census import candidate_operand_cells, operand_cells_by_core
 from mimarsinan.deployment_record.build.write_census import (
     BoundaryWidths, PassRow, ProgramPasses, stage_latency,
 )
@@ -32,19 +33,6 @@ class _SingleStageProgram:
 
     def __init__(self, stage: Any) -> None:
         self.stages = [stage]
-
-
-def core_sign_rows(core: Any, occupancy: Optional[CoreOccupancy] = None) -> int:
-    """The used rows a built hard core's per-row sign register signs (0 unless the core is of a per-axon type)."""
-    occupancy = occupancy or CoreOccupancy.from_hard_core(core)
-    return sign_register_rows(getattr(core, "weight_sign_granularity", None), occupancy.axons_used)
-
-
-def pass_program_bytes(program: Any, weight_bits: Any) -> Tuple[int, ...]:
-    """Per core of a candidate pass program, its payload by the one rule (cells and sign register)."""
-    signs = tuple(getattr(program, "core_sign_rows", ()) or ())
-    return tuple(core_payload_bytes(cells, weight_bits, signs[i] if i < len(signs) else 0)
-                 for i, cells in enumerate(program.core_cells))
 
 
 def core_record(core_index: int, core: Any, *, weight_bits: int, resident: bool) -> SegmentCoreRecord:
@@ -180,9 +168,16 @@ def boundary_widths_of(crossings: Iterable[Tuple[int, int, int]],
     return tuple((p, out.get(p, 0), inbound.get(p, 0)) for p in sorted(set(out) | set(inbound)))
 
 
+#: Why each plane that cannot see operand regions states none (N2): its write terms refuse under an operand core type.
+CANDIDATE_OPERANDS_UNSTATED = ("the candidate plane does not lower products onto operand cores (they stay host ops "
+                               "there), so it states no operand regions")
+RECORD_OPERANDS_UNSTATED = "the sealed record's schema states no operand regions per pass"
+
+
 def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: Any,
-                             timesteps: Optional[int]) -> Optional[ProgramPasses]:
-    """A candidate's passes, one row per (planned pass, segment), with the spiking rule's steps.
+                             timesteps: Optional[int], dynamic_banks=None) -> Optional[ProgramPasses]:
+    """A candidate's passes, one row per (planned pass, segment), with the spiking rule's steps; ``dynamic_banks``
+    (the program's bound banks) states its operand regions, None that the plane does not lower products.
 
     A hard core a shape-only pack shares between segments belongs to its lowest segment, so no core
     is counted twice (the builder never shares one). ``semantics`` duck-types the executed-window
@@ -210,9 +205,12 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
                 softcores, [[pl for pl in placements if segment_of[pl[0]] == segment]],
                 retimed=bool(semantics.retimed), runs=runs)
             position[(index, segment)] = len(rows)
+            operand = candidate_operand_cells(softcores, placements, cores, dynamic_banks or ())
             rows.append(PassRow(
                 segment_index=segment, resident=bool(program.resident),
-                core_cells=tuple(int(program.core_cells[h]) for h in cores),
+                core_cells=tuple(int(program.core_cells[h]) - o for h, o in zip(cores, operand)),
+                producer_cells=sum(operand), producer_cores=frozenset(i for i, o in enumerate(operand) if o),
+                producer_core_cells=tuple(operand) if any(operand) else None,
                 marks=frozenset(i for i, h in enumerate(cores) if h in kept), core_extents=None,
                 compute_steps=None if timesteps is None else program_latency_steps(
                     stage_max_latencies=latencies, timesteps=int(timesteps), is_cycle=semantics.is_cycle,
@@ -230,7 +228,8 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
              for node, w, made, last in carried_softcore_spans(softcores, noc.pass_placements,
                                                                 noc.census.pair_wires, segment_of)),
             ((w, position[(reader, segment_of[node])]) for node, w, reader in delayed_carry_wires(softcores, noc)))
-    return ProgramPasses(rows=tuple(rows), boundary_widths=widths)
+    return ProgramPasses(rows=tuple(rows), boundary_widths=widths,
+                         operands_unstated=None if dynamic_banks is not None else CANDIDATE_OPERANDS_UNSTATED)
 
 
 def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
@@ -240,6 +239,7 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
     stage latencies instead).
     """
     stages = hybrid_mapping.stages
+    banks = getattr(hybrid_mapping, "dynamic_bank_bindings", None) or {}
     rows: List[PassRow] = []
     position: Dict[int, int] = {}
     for index, stage in enumerate(stages):
@@ -247,6 +247,7 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
             continue
         cores = list(stage.hard_core_mapping.cores)
         occupancy = [CoreOccupancy.from_hard_core(c) for c in cores]
+        operand = operand_cells_by_core(stage.hard_core_mapping, banks) if banks else [0] * len(cores)
         span = stage_latency([getattr(c, "latency", None) for c in cores])
         latencies = None if span is None else (span,)
         position[index] = len(rows)
@@ -254,7 +255,9 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
             segment_index=int(stage.schedule_segment_index if stage.schedule_segment_index is not None
                               else len(rows)),
             resident=bool(getattr(stage, "schedule_weights_resident", False)),
-            core_cells=tuple(o.cells_used for o in occupancy),
+            core_cells=tuple(o.cells_used - c for o, c in zip(occupancy, operand)),
+            producer_cells=sum(operand), producer_cores=frozenset(i for i, c in enumerate(operand) if c),
+            producer_core_cells=tuple(operand) if any(operand) else None,
             marks=resident_core_indices(stage, len(cores)) if getattr(stage, SCHEDULE_RESIDENT_CORES, None)
             is not None else frozenset(),
             core_extents=tuple((o.axons_used, o.neurons_used) for o in occupancy),
@@ -291,4 +294,4 @@ def record_program_passes(record: Any) -> ProgramPasses:
             core_types=tuple((c.axons, c.neurons) for c in segment.cores),
             core_sign_rows=tuple(int(c.sign_register_rows or 0) for c in segment.cores),
         ))
-    return ProgramPasses(rows=tuple(rows))
+    return ProgramPasses(rows=tuple(rows), operands_unstated=RECORD_OPERANDS_UNSTATED)

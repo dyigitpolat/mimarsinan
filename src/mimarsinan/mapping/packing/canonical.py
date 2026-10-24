@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from mimarsinan.mapping.platform.core_residency import ungrouped_fallback_id
 
-from typing import List, Protocol, TypeVar
+from typing import List, Optional, Protocol, Sequence, TypeVar
 
 
 class SoftCoreLike(Protocol):
@@ -92,12 +92,34 @@ def canonical_split_softcore(
     )
 
 
+#: N2 core roles: a dynamic operand bank's instance, or every other (static) soft core.
+OPERAND_ROLE, STATIC_ROLE = "operand", "static"
+
+
+def declared_core_roles(cores_config: Sequence[dict]) -> List[Optional[frozenset]]:
+    """Per declared core type, the roles its cores accept: on a chip that declares an operand core type beside
+    static ones, operand types take operand banks only and the others static tiles only; otherwise every role."""
+    operand = [ct.get("operand") is not None for ct in cores_config]
+    if not any(operand) or all(operand):
+        return [None] * len(operand)
+    return [frozenset({OPERAND_ROLE}) if flag else frozenset({STATIC_ROLE}) for flag in operand]
+
+
+def fused_core_roles(template_roles: Optional[frozenset]) -> frozenset:
+    """The roles a fused core accepts: its template's, never the operand role (an operand bank sits on a whole
+    core, where its per-sample payload is written)."""
+    return frozenset(template_roles if template_roles is not None else (OPERAND_ROLE, STATIC_ROLE)) - {OPERAND_ROLE}
+
+
 def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike) -> bool:
     """Single-source-of-truth feasibility predicate shared by the layout and runtime packers.
 
-    A hardcore accepts a softcore only when residency-class, latency, and the
-    remaining axon/neuron budget all match.
+    A hardcore accepts a softcore only when residency-class, latency, the core role (N2, where the chip
+    declares separate operand cores) and the remaining axon/neuron budget all match.
     """
+    roles = getattr(hardcore, "accepted_roles", None)
+    if roles is not None and (getattr(softcore, "core_role", None) or STATIC_ROLE) not in roles:
+        return False
     hc_tg = getattr(hardcore, "residency_class_id", None)
     if hc_tg is not None:
         sc_tg = _read_residency_class(softcore)
@@ -127,7 +149,8 @@ def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike
 #: no other. Two cores alike on these and on their shape answer every such softcore alike: the engine's core-state
 #: index (``greedy/used_index.py``) keys on exactly this set. A bank-affine softcore also reads the core's banks,
 #: so it scans every core.
-CANONICAL_CORE_READS = ("residency_class_id", "latency", "latency_tag", "available_axons", "available_neurons")
+CANONICAL_CORE_READS = ("residency_class_id", "latency", "latency_tag", "available_axons", "available_neurons",
+                        "accepted_roles")
 
 
 def _placement_waste(soft: SoftCoreLike, hard: HardCoreLike) -> int:

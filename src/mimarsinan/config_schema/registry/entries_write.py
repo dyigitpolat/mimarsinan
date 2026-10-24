@@ -15,7 +15,11 @@ from mimarsinan.config_schema.registry.types import (
 from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set, schema_of, value_errors
 from mimarsinan.data_handling.preprocessing import PreprocessingSpec, interpolation_mode_names
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON, PER_SYNAPSE, WEIGHT_SIGN_GRANULARITIES
-from mimarsinan.mapping.support.period_census import WRITE_GRANULARITIES, WRITE_OVERLAP_MODES
+from mimarsinan.mapping.support.period_census import (
+    OPERAND_WRITE_SOURCES,
+    WRITE_GRANULARITIES,
+    WRITE_OVERLAP_MODES,
+)
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_EXPLICIT,
     S_ALLOCATION_MODES,
@@ -58,6 +62,33 @@ CORE_TYPE_SCHEMA = ValueSchema(
         "write_units_in_parallel": ValueSchema(kind=T.INT, low=1, decision_class=COST_ONLY,
                                                doc="units one write commits at once: write time only",
                                                absent_means="1"),
+        "write_physics": ValueSchema(kind=T.STR, min_length=1, decision_class=COST_ONLY,
+                                     doc="the write technology of this core type's cells (N2b): a shipped physics "
+                                         "profile whose write rows price their write energy, write time and "
+                                         "endurance, per core type; a name no profile ships is refused by name at "
+                                         "resolution",
+                                     absent_means="the chip's one physics (platform_physics_profile and its "
+                                                  "overrides)"),
+        "operand": ValueSchema(
+            kind=T.JSON, decision_class=FUNCTION_BEARING,
+            doc="an operand core type (N2): products of two activations leave the host for its cores, each "
+                "bank's payload written per inference on its grid",
+            absent_means="no operand core type: every product of two activations stays a host op, byte-identical",
+            fields={
+                "payload_bits": ValueSchema(kind=T.INT, low=2, decision_class=FUNCTION_BEARING,
+                                            doc="the payload grid width: rounds every written operand",
+                                            absent_means="required when operand is declared"),
+                "write_source": ValueSchema(kind=T.ENUM, options=OPERAND_WRITE_SOURCES, decision_class=COST_ONLY,
+                                            doc="who writes the payloads (a host op, or the producer's on-chip "
+                                                "write-back): the same codes, priced apart, where every payload "
+                                                "write copies its producer's codes (readout_ranges "
+                                                "per_consumer_group, each stationary operand core-fed at "
+                                                "payload_bits); on_chip on a program whose banks re-snap is "
+                                                "refused by name at Operand Lowering",
+                                            absent_means="host"),
+            },
+            required=("payload_bits",),
+        ),
     },
     closed=False,
 )

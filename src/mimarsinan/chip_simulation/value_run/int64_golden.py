@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
 
-from mimarsinan.chip_simulation.value_run.value_flow import execute_host_op
+from mimarsinan.chip_simulation.value_run.host_ops import execute_host_op
+from mimarsinan.chip_simulation.value_run.operand_blocks import (
+    bank_payload,
+    cells_beyond_width,
+    operand_blocks,
+    stage_banks,
+)
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.models.nn.activations.integer_law import apply_law_int64, round_half_away
@@ -37,13 +44,26 @@ def _row_steps(hard_core) -> np.ndarray:
     return steps
 
 
+@dataclass
+class GoldenTrace:
+    """What one golden run read and wrote beside its output codes: the payload codes of every bound bank
+    (bank: (batch, axons, neurons)), each host op's fp64 values (op id: (batch, width)) and each core's codes."""
+
+    payloads: Dict[int, np.ndarray] = field(default_factory=dict)
+    host_values: Dict[int, np.ndarray] = field(default_factory=dict)
+    core_codes: Dict[int, np.ndarray] = field(default_factory=dict)
+
+
 class _Segment:
     """One neural stage evaluated on demand, core by core, from its segment input."""
 
-    def __init__(self, hcm, seg_values: np.ndarray, seg_codes: np.ndarray, seg_steps: np.ndarray) -> None:
+    def __init__(self, hcm, seg_values: np.ndarray, seg_codes: np.ndarray, seg_steps: np.ndarray,
+                 payloads: Optional[Dict[int, np.ndarray]] = None, bindings=None) -> None:
         self.hcm = hcm
         self.seg_values, self.seg_codes, self.seg_steps = seg_values, seg_codes, seg_steps
         self.done: Dict[int, np.ndarray] = {}
+        self.payloads = payloads or {}
+        self.operand = operand_blocks(hcm, bindings) if bindings else None
 
     def core(self, index: int) -> np.ndarray:
         hit = self.done.get(index)
@@ -73,15 +93,55 @@ class _Segment:
             else:
                 q[:, row] = self.core(int(source.core_))[:, int(source.neuron_)]
         weight = np.asarray(hc.get_core_matrix(), dtype=np.float64)
-        if not np.array_equal(weight, np.round(weight)):
-            raise GoldenGridError(f"hard core {index}: weights are not integers")
-        acc = q @ weight.astype(np.int64)
+        blocks = self.operand[index] if self.operand is not None else []
+        if blocks:
+            weight = _per_sample_weight(weight, blocks, self.payloads, batch)
+            acc = np.einsum("ba,ban->bn", q, weight)
+        else:
+            if not np.array_equal(weight, np.round(weight)):
+                raise GoldenGridError(f"hard core {index}: weights are not integers")
+            acc = q @ weight.astype(np.int64)
         codes = apply_law_int64(acc, **_law_kwargs(law))
         self.done[index] = codes
         return codes
 
 
-def _neural_stage(stage, values, codes, steps) -> None:
+def _per_sample_weight(static: np.ndarray, blocks, payloads: Dict[int, np.ndarray], batch: int) -> np.ndarray:
+    """(batch, axons, neurons) int64: the core's integer grid with every operand block's payload codes written."""
+    weight = static.copy()
+    for block in blocks:
+        weight[block.axon_offset: block.axon_offset + block.axons,
+               block.neuron_offset: block.neuron_offset + block.neurons] = 0.0
+    if not np.array_equal(weight, np.round(weight)):
+        raise GoldenGridError("a core's static weights are not integers")
+    out = np.repeat(weight.astype(np.int64)[None], batch, axis=0)
+    for block in blocks:
+        rows, cols = slice(*block.bank_axons), slice(*block.bank_neurons)
+        out[:, block.axon_offset: block.axon_offset + block.axons,
+            block.neuron_offset: block.neuron_offset + block.neurons] = payloads[block.bank][:, rows, cols]
+    return out
+
+
+def _stage_payloads(stage, values, bindings, trace: Optional[GoldenTrace]) -> Dict[int, np.ndarray]:
+    """{bank: int64 (batch, axons, neurons)}: each bound bank's codes recovered from its write's fp64 values on its
+    payload grid (an off-grid value refuses by name, ``OffGridInputError``), each within its ``payload_bits``."""
+    out: Dict[int, np.ndarray] = {}
+    for bank in stage_banks(stage, bindings):
+        binding = bindings[bank]
+        if binding.payload_step is None:
+            raise GoldenGridError(f"operand bank {bank} has no payload grid: the golden reads law programs only")
+        codes = bank_payload(torch.as_tensor(values[int(binding.source_node_id)]), binding)
+        out[bank] = codes.numpy().astype(np.int64)
+        beyond = cells_beyond_width(out[bank], binding.payload_bits)
+        if beyond:
+            raise GoldenGridError(f"operand bank {bank}: {beyond} payload cells lie beyond its payload_bits "
+                                  f"{binding.payload_bits} grid, which bounds its accumulator and sizes its ADC")
+        if trace is not None:
+            trace.payloads[bank] = out[bank]
+    return out
+
+
+def _neural_stage(stage, values, codes, steps, bindings=None, trace: Optional[GoldenTrace] = None) -> None:
     hcm = stage.hard_core_mapping
     width = max((s.offset + s.size for s in stage.input_map), default=0)
     batch = next(iter(values.values())).shape[0]
@@ -93,7 +153,8 @@ def _neural_stage(stage, values, codes, steps) -> None:
         if int(s.node_id) in codes:
             seg_codes[:, s.offset: s.offset + s.size] = codes[int(s.node_id)][:, : s.size]
             seg_steps[s.offset: s.offset + s.size] = steps[int(s.node_id)][: s.size]
-    segment = _Segment(hcm, seg_values, seg_codes, seg_steps)
+    payloads = _stage_payloads(stage, values, bindings, trace) if bindings else None
+    segment = _Segment(hcm, seg_values, seg_codes, seg_steps, payloads, bindings)
     out_sources = list(np.asarray(hcm.output_sources).flatten())
     out_codes = np.zeros((batch, len(out_sources)), dtype=np.int64)
     out_steps = np.zeros(len(out_sources))
@@ -110,11 +171,17 @@ def _neural_stage(stage, values, codes, steps) -> None:
         codes[node] = out_codes[:, s.offset: s.offset + s.size]
         steps[node] = out_steps[s.offset: s.offset + s.size]
         values[node] = codes[node] * steps[node]
+    if trace is not None:
+        for index, core_codes in segment.done.items():
+            trace.core_codes[id(hcm.cores[index])] = core_codes
 
 
-def run_golden(program, x) -> Tuple[np.ndarray, np.ndarray]:
+def run_golden(program, x, *, trace: Optional[GoldenTrace] = None) -> Tuple[np.ndarray, np.ndarray]:
     """``(output codes int64, output steps)`` of ``program`` on the host input ``x`` (integer or real values:
-    the entry snap rounds each host value onto its boundary grid, as the executor does; never truncated)."""
+    the entry snap rounds each host value onto its boundary grid, as the executor does; never truncated). Host
+    ops are replayed segment by segment in fp64 by the executor's seam; bound banks read their payload codes
+    per sample (N2). ``trace`` collects the payloads, host values and core codes the certificate compares."""
+    bindings = getattr(program, "dynamic_bank_bindings", None) or None
     x = np.asarray(x, dtype=np.float64)
     flat = x.reshape(x.shape[0], -1)
     values: Dict[int, np.ndarray] = {_RAW_INPUT: flat}
@@ -124,7 +191,7 @@ def run_golden(program, x) -> Tuple[np.ndarray, np.ndarray]:
     x_torch = torch.as_tensor(flat)
     for stage in program.stages:
         if stage.kind == "neural":
-            _neural_stage(stage, values, codes, steps)
+            _neural_stage(stage, values, codes, steps, bindings, trace)
         elif stage.kind == "compute":
             op = stage.compute_op
             state = {k: torch.as_tensor(v, dtype=torch.float64) for k, v in values.items()}
@@ -132,6 +199,8 @@ def run_golden(program, x) -> Tuple[np.ndarray, np.ndarray]:
                 values[int(op.id)] = execute_host_op(
                     op, x_torch, state, dtype=torch.float64, twins=twins,
                 ).numpy()
+            if trace is not None:
+                trace.host_values[int(op.id)] = values[int(op.id)]
     out = np.asarray(program.output_sources).flatten()
     out_codes = np.zeros((flat.shape[0], out.size), dtype=np.int64)
     out_steps = np.zeros(out.size)

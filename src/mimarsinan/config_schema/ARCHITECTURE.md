@@ -155,7 +155,7 @@ own phrase). `passthrough=True` marks the Wave 1 platform keys
 (`entries_{target,write,readout,residency}.py`) the resolver carries verbatim onto
 `platform_constraints_resolved` (`passthrough_keys()`); `entries_lowering.py`
 declares the converter's `decompose_leaf_modules`. Every Wave 1 key has no default:
-absent, every resolution and program is byte for byte the pre-Wave-1 one.
+absent, every resolution and program is byte for byte the pre-Wave-1 one. [N2] The core-type schema's `operand` field (`payload_bits`, function-bearing and required; `write_source`, `host` or `on_chip`, cost-only and pricing-only in X3a) declares an operand core type; `readout_ranges` (`entries_readout.py`, function-bearing, absent: `per_perceptron`) declares per-consumer-group output ranges; both vocabularies live in `mapping/support/period_census.py`.
 
 ## Key files
 | File | Purpose |

@@ -130,11 +130,16 @@ class TestUnitsAndPorts:
         assert values["write_events"].value == pytest.approx(10 / 4 + 3)
         assert values["written_units"].value == pytest.approx(40 / 4 + 9)
 
-    def test_producer_wear_adds_one_write_to_the_most_written_core(self):
-        """The wear quantity is the high-wear end: the core's period writes / K plus one per inference."""
+    def test_producer_wear_on_the_most_written_core_adds_its_writes_per_inference(self):
+        """[N2 fix round, a named change] The wear quantity is the slot rule's: a producer region placed on the
+        most-written core (2 static writes per period, 1 producer write per inference) wears it 2 / K + 1; with
+        the producer cells on cores the census does not place the wear has no upper end, so it is not stated
+        (it was the band's high end, M / K + 1, which assumed one producer write per inference)."""
         census = PassPeriodCensus(passes=(_pass(0, cells=40, cores=1), _pass(1, producer=9, payload=0)))
-        values = write_quantities(census, WritePolicy(batch_k=1), most_written=2)
-        assert values["max_writes_per_cell_per_inference"].value == 3.0
+        placed = write_quantities(census, WritePolicy(batch_k=1), most_written=2, producer_slots=((2, 1),))
+        assert placed["max_writes_per_cell_per_inference"].value == 3.0
+        unplaced = write_quantities(census, WritePolicy(batch_k=1), most_written=2)
+        assert "max_writes_per_cell_per_inference" not in unplaced
 
     def test_an_undeclared_granularity_leaves_the_units_absent(self):
         census = PassPeriodCensus(passes=(_pass(0, cells=600),))
@@ -218,26 +223,41 @@ class TestLifetime:
         assert life.value == pytest.approx(1e7)
         assert "upper bound" in life.source
 
-    def test_producer_cells_on_an_unstated_core_widen_the_wear_to_a_band(self):
-        """The most-written core takes 2 writes per period at K = 4 (0.5 per inference); the producer's
-        cells sit on an unstated core, so the most-written cell takes between max(0.5, 1) and 0.5 + 1."""
+    def test_producer_cells_on_an_unstated_core_bound_the_wear_from_below(self):
+        """[N2 fix round, a named change] The most-written core takes 2 writes per period at K = 4 (0.5 per
+        inference); the producer's cells sit on cores the census does not place, so the most-written cell takes
+        at least max(0.5, 1) writes per inference and the lifetime is an upper bound. The pre-N2 band capped the
+        wear at 0.5 + 1, one producer write per inference, which the slot rule refutes (operand regions of
+        several passes on one core take one write per inference each)."""
         census = PassPeriodCensus(passes=(_pass(0, cells=30, cores=2), _pass(1, producer=5, payload=0)))
         life = _terms(price_write_terms(census, _lifetime_physics(), WritePolicy(batch_k=4),
                                         most_written=2))["lifetime_inferences"]
-        assert (life.band.low, life.value, life.band.high) == pytest.approx((1e6 / 1.5, 1e7 / 1.5, 1e9 / 1.0))
-        assert "producer" in life.source and "bound" in life.source
+        assert (life.band.low, life.value, life.band.high) == pytest.approx((1e6, 1e7, 1e9))
+        assert "producer" in life.source and "at least" in life.source
+
+    @pytest.mark.parametrize("slots, wear", [(((2, 1),), 1.5), (((0, 1),), 1.0), (((0, 3),), 3.0)])
+    def test_producer_cells_placed_by_the_slot_rule_make_the_wear_exact(self, slots, wear):
+        """The region on the most-written core (2 / 4 + 1), on a core of its own (1), or three operand passes
+        rotated onto one core (3): the wear is exact, max over cores of static / K + producer."""
+        census = PassPeriodCensus(passes=(_pass(0, cells=30, cores=2), _pass(1, producer=5, payload=0)))
+        life = _terms(price_write_terms(census, _lifetime_physics(), WritePolicy(batch_k=4), most_written=2,
+                                        producer_slots=slots))["lifetime_inferences"]
+        assert (life.band.low, life.value, life.band.high) == pytest.approx((1e6 / wear, 1e7 / wear, 1e9 / wear))
 
     @pytest.mark.parametrize("floor, verdict", [(1e9 / 0.75 / 3600, "inadmissible"),
-                                                (1e9 / 1.25 / 3600, "straddles"),
-                                                (1e6 / 1.75 / 3600, "admitted")])
-    def test_the_producer_band_is_judged_at_its_sound_ends(self, floor, verdict):
-        """Wear in [1, 1.5]: inadmissible only when even the low-wear end fails the floor (a floor
-        between endurance / 1.5 and endurance / 1 straddles), admitted only when even the high-wear end
-        clears it."""
+                                                (1e9 / 1.25 / 3600, None),
+                                                (1e6 / 1.75 / 3600, None)])
+    def test_an_unplaced_producer_wear_is_judged_at_its_sound_end(self, floor, verdict):
+        """Wear at least 1: inadmissible when even the longest lifetime (endurance / 1) fails the floor; any
+        other floor is refused by name, since an upper-bound lifetime never admits (it straddled or admitted
+        on the pre-N2 band)."""
         census = PassPeriodCensus(passes=(_pass(0, cells=30, cores=2), _pass(1, producer=5, payload=0)))
         policy = WritePolicy(batch_k=4, inference_rate_hz=1.0, min_lifetime_hours=floor)
-        judged, = price_write_terms(census, _lifetime_physics(), policy, most_written=2).verdicts
-        assert judged.verdict == verdict
+        judged = price_write_terms(census, _lifetime_physics(), policy, most_written=2)
+        if verdict is None:
+            assert not judged.verdicts and "upper bound" in _refusals(judged)["lifetime_admissible"]
+        else:
+            assert [v.verdict for v in judged.verdicts] == [verdict]
 
     def test_without_a_core_assignment_or_a_core_count_the_lifetime_refuses_by_name(self):
         census = PassPeriodCensus(passes=(_pass(0, cells=100),))
@@ -372,14 +392,20 @@ class TestPolicyKeysOnBothPlanes:
 class TestWearAndRefusalCoverage:
     """Targeted pass: asserts that kill the reviewer's surviving write-law mutants."""
 
-    def test_producer_cells_with_no_core_rewrite_wear_once_per_inference(self):
+    def test_producer_cells_with_no_core_rewrite_wear_at_least_once_per_inference(self):
         """No core is rewritten per period and no most-written core is stated, but a producer writes its
-        cells every inference: the wear is 1, never 'no cell is written'."""
+        cells every inference: the wear is at least 1, never 'no cell is written'. [N2 fix round, a named
+        change] Unplaced, it has no upper end (it was read as exactly 1), so the floor is refused by name;
+        placed on its own core by the slot rule it is exactly 1 and admitted."""
         census = PassPeriodCensus(passes=(_pass(0, producer=50, payload=0),))
         policy = WritePolicy(batch_k=8, inference_rate_hz=1.0, min_lifetime_hours=1.0)
         pricing = price_write_terms(census, _lifetime_physics(), policy)
         assert _terms(pricing)["lifetime_inferences"].value == pytest.approx(1e7)
-        verdict, = pricing.verdicts
+        assert not pricing.verdicts and "upper bound" in _refusals(pricing)["lifetime_admissible"]
+        assert "no cell is written" not in _refusals(pricing)["lifetime_admissible"]
+        placed = price_write_terms(census, _lifetime_physics(), policy, most_written=0, producer_slots=((0, 1),))
+        assert _terms(placed)["lifetime_inferences"].value == pytest.approx(1e7)
+        verdict, = placed.verdicts
         assert verdict.verdict == "admitted" and verdict.evidence != "no wear"
         assert "no cell is written" not in verdict.reason
 

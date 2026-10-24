@@ -4,6 +4,7 @@ from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
 import numpy as np
 
+from mimarsinan.mapping.packing.canonical import fused_core_roles
 from mimarsinan.mapping.packing.softcore.fragments import make_real_fragments
 from mimarsinan.mapping.packing.softcore.hard_core import HardCore
 from mimarsinan.mapping.platform.platform_constraints import (
@@ -58,6 +59,8 @@ class RuntimeMaterializer:
                         if (g := getattr(hc, "weight_sign_granularity", None)) is not None]
             if declared and pool_sign_granularity(declared) == PER_AXON:
                 fused.weight_sign_granularity = PER_AXON
+            if getattr(template, "accepted_roles", None) is not None:  # N2: declared-only, absent without roles
+                fused.accepted_roles = fused_core_roles(template.accepted_roles)  # pyright: ignore[reportAttributeAccessIssue]
             fused.fused_component_axons = [
                 int(hc.axons_per_core) for hc in components
             ]

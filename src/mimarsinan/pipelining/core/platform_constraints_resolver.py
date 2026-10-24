@@ -21,7 +21,8 @@ from mimarsinan.config_schema.registry.declaration_judge import (
 )
 from mimarsinan.config_schema.registry.entries_write import platform_bias_mode
 from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
-from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
+from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics, write_physics_profile
+from mimarsinan.deployment_record.quantities.write_technology import WRITE_PHYSICS_RESOLVED, core_technologies
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY, resolve_residency_policy
 
@@ -46,6 +47,14 @@ def _residency_declaration(pipeline_config: Mapping[str, Any]) -> dict[str, Any]
     declared = pipeline_config.get(RESIDENCY_KEY, {}) or {}
     resolve_residency_policy({RESIDENCY_KEY: declared}, value_domain=domain_of(pipeline_config) == "value")
     return dict(declared)
+
+
+def _sealed_write_physics(cores: list) -> dict[str, Any]:
+    """N2b: each write physics a core type names, as the write law will price it (``write_physics_resolved``); the
+    core types judged as the write law reads them (``core_technologies``); a name no profile ships is refused."""
+    core_technologies({"cores": cores})
+    names = sorted({str(ct["write_physics"]) for ct in cores if ct.get("write_physics")})
+    return {name: write_physics_profile(name).to_dict() for name in names}
 
 
 def build_platform_constraints_resolved(
@@ -123,6 +132,10 @@ def build_platform_constraints_resolved(
         lambda: resolve_platform_physics(str(pipeline_config.get("platform_physics_profile", "") or ""),
                                          pipeline_config.get("platform_physics_overrides") or {}))
     pcfg["platform_physics_resolved"] = physics.to_dict() if physics else None
+    # N2b: each core type's named write physics, sealed the same way (only when a core type names one).
+    sealed = _read_by_consumer(pipeline_config, ("cores",), lambda: _sealed_write_physics(cores))
+    if sealed:
+        pcfg[WRITE_PHYSICS_RESOLVED] = sealed
 
     if "target_tq" in pipeline_config:
         pcfg["target_tq"] = pipeline_config["target_tq"]

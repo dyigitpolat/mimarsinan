@@ -9,6 +9,7 @@ from mimarsinan.mapping.packing.core_packing import (
     canonical_is_mapping_possible,
     canonical_split_softcore,
 )
+from mimarsinan.mapping.packing.canonical import fused_core_roles
 from mimarsinan.mapping.packing.greedy.pool import LazyCorePool
 from mimarsinan.mapping.packing.infeasibility_proofs import (
     failed_pack_verdict,
@@ -17,6 +18,7 @@ from mimarsinan.mapping.packing.infeasibility_proofs import (
 from mimarsinan.mapping.packing.placement_engine import run_placement
 from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 from mimarsinan.mapping.layout.layout_types import (
+    core_pool_types,
     LayoutCoreSnapshot,
     LayoutHardCoreInstance,
     LayoutHardCoreType,
@@ -74,6 +76,7 @@ class LayoutMaterializer:
             )
             inst.residency_class_id = getattr(template, "residency_class_id", None)
             inst.latency_tag = getattr(template, "latency_tag", None)
+            inst.accepted_roles = fused_core_roles(getattr(template, "accepted_roles", None))
             return inst
 
         fused = canonical_fuse_hardcores(hcs, make_fused=_mk)
@@ -97,11 +100,8 @@ class LayoutMaterializer:
 
 
 def _core_pool(core_types: Sequence[LayoutHardCoreType]) -> LazyCorePool:
-    """Every declared core, built only when the engine reads or takes it."""
-    return LazyCorePool(
-        [((int(t.max_axons), int(t.max_neurons)), int(t.count)) for t in core_types],
-        lambda key: LayoutHardCoreInstance(axons_per_core=key[0], neurons_per_core=key[1]),
-    )
+    """Every declared core, built only when the engine reads or takes it (with its type's roles, N2)."""
+    return LazyCorePool(*core_pool_types(core_types))
 
 
 def _make_layout_fragments(
@@ -117,14 +117,14 @@ def _make_layout_fragments(
         output_count=first_neurons,
         residency_class_id=softcore.residency_class_id,
         latency_tag=softcore.latency_tag,
-        name=f"{softcore.name}_split_0" if softcore.name else None,
+        name=f"{softcore.name}_split_0" if softcore.name else None, core_role=softcore.core_role,
     )
     frag2 = LayoutSoftCoreSpec(
         input_count=softcore.input_count,
         output_count=remaining_neurons,
         residency_class_id=softcore.residency_class_id,
         latency_tag=softcore.latency_tag,
-        name=f"{softcore.name}_split_1" if softcore.name else None,
+        name=f"{softcore.name}_split_1" if softcore.name else None, core_role=softcore.core_role,
     )
     return frag1, frag2
 
@@ -161,7 +161,7 @@ def _expand_for_axon_coalescing(
                     output_count=sc.output_count,
                     residency_class_id=sc.residency_class_id,
                     latency_tag=sc.latency_tag,
-                    name=f"{sc.name}_coal{i}" if sc.name else None,
+                    name=f"{sc.name}_coal{i}" if sc.name else None, core_role=sc.core_role,
                 ))
                 origins.append(position)
             group_sizes.append(k)
@@ -205,7 +205,7 @@ def pack_layout(
                 output_count=sc.output_count,
                 residency_class_id=sc.residency_class_id,
                 latency_tag=sc.latency_tag,
-                name=f"__sc_{i}",
+                name=f"__sc_{i}", core_role=sc.core_role,
             )
 
     materializer = LayoutMaterializer(collect_placements=collect_placements)

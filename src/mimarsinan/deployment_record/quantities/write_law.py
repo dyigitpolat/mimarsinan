@@ -16,11 +16,9 @@ from mimarsinan.deployment_record.build.write_census import (
     CoreType, ProgramPasses, WriteCensus, WriteCensusError, core_capacity_of, period_census,
 )
 from mimarsinan.deployment_record.quantities.spec import QuantityValue
-from mimarsinan.deployment_record.quantities.value_domain import (
-    names_value_domain, value_bits, value_bytes, value_window,
-)
+from mimarsinan.deployment_record.quantities import write_technology as wt
+from mimarsinan.deployment_record.quantities.value_domain import domain_bytes_of, names_value_domain, value_window
 from mimarsinan.mapping.support.period_census import WRITE_OVERLAP_MODES, natural
-from mimarsinan.mapping.support.schedule.pass_cut import raster_bytes
 
 WRITE_KEYS = ("inference_batch_K", "write_overlap", "write_ports", "inference_rate_hz",
               "min_lifetime_hours")
@@ -53,14 +51,20 @@ class WritePolicy:
     #: The chip's declared cores (every type); bounds the most-written core of a census that
     #: states no per-core writes.
     physical_cores: Optional[int] = None
+    #: N2: where an operand core type's payloads come from (``host``: a transfer into the chip per inference,
+    #: ``on_chip``: the producer's write-back) and their width; None without an operand core type.
+    producer_write_source: Optional[str] = None
+    payload_bits: Optional[int] = None
+    #: N2b: per core geometry its write technology; None where every core type writes by one (the chip's one law).
+    core_technologies: Optional[Tuple[wt.CoreTechnology, ...]] = None
 
 
 def _common(cores: Sequence[Mapping[str, Any]], field: str, default: Any) -> Tuple[Any, Optional[str]]:
     declared = [ct.get(field, default) for ct in cores]
     values = set(declared)
     if len(values) > 1:
-        return default, (f"the core types declare {field} {declared}; one write law per chip needs "
-                         "one value (per-core-type write technology is Wave 2)")
+        return default, (f"the core types declare {field} {declared}: the chip states no one value, so its write "
+                         "terms are priced per core type (write_technology.py)")
     return (values.pop() if values else default), None
 
 
@@ -79,6 +83,7 @@ def write_policy_of(platform: Mapping[str, Any]) -> Optional[WritePolicy]:
     rate = platform.get("inference_rate_hz")
     floor = platform.get("min_lifetime_hours")
     capacity = core_capacity_of(platform)
+    operand = next((dict(ct["operand"]) for ct in cores if ct.get("operand") is not None), None)
     return WritePolicy(
         batch_k=natural(batch, "inference_batch_K", error=WriteLawError),
         overlap_mode=mode,
@@ -91,6 +96,9 @@ def write_policy_of(platform: Mapping[str, Any]) -> Optional[WritePolicy]:
         min_lifetime_hours=None if floor is None else float(floor),
         core_capacity=None if capacity is None else tuple(sorted(capacity.items())),
         physical_cores=sum(int(ct.get("count", 1)) for ct in cores) if cores else None,
+        producer_write_source=None if operand is None else str(operand.get("write_source", "host")),
+        payload_bits=None if operand is None else int(operand["payload_bits"]),
+        core_technologies=wt.core_technologies(platform),
     )
 
 
@@ -116,14 +124,13 @@ def pass_events(units: Sequence[int], policy: WritePolicy) -> Tuple[int, ...]:
     return tuple(math.ceil(u / lanes) for u in units)
 
 
-def max_writes_per_cell(census: Any, batch_k: int, most_written: int) -> float:
-    """The most-written cell's writes per inference: its physical core's period writes over K, plus
-    one per inference where a producer writes cells. The census states no core for producer cells,
-    so this is the high-wear end (they sit on the most-written core); the lifetime prices the band
-    down to max(period writes / K, 1). Every written tile's used rectangle starts at its core's
-    first row and column, so the core's most-written cell takes every write of the core."""
-    producer = 1.0 if any(p.written_cells_producer for p in census.passes) else 0.0
-    return natural(most_written, "most-written core writes", error=WriteLawError) / batch_k + producer
+def placed_wear(batch_k: int, most_written: int, producer_slots: Sequence[Tuple[int, int]] = ()) -> float:
+    """The most-written cell's writes per inference on a census that places every written core: the slot rule's
+    max over physical cores of static writes per period / K plus producer writes per inference. Every written
+    tile's used rectangle starts at its core's first row and column, so the core's most-written cell takes every
+    write of the core."""
+    static = natural(most_written, "most-written core writes", error=WriteLawError) / batch_k
+    return max([static] + [s / batch_k + p for s, p in producer_slots])
 
 
 def written_cores(census: Any) -> int:
@@ -133,9 +140,11 @@ def written_cores(census: Any) -> int:
 
 def write_quantities(census: Any, policy: WritePolicy, *,
                      written_extents: Optional[Sequence[Sequence[Tuple[int, int]]]] = None,
-                     most_written: Optional[int] = None) -> Dict[str, QuantityValue]:
-    """The write-law quantities of a period census at the declared batch K (static facts);
-    ``most_written`` is the period writes of the most-written physical core, where the plane states it."""
+                     most_written: Optional[int] = None,
+                     producer_slots: Optional[Sequence[Tuple[int, int]]] = None) -> Dict[str, QuantityValue]:
+    """The write-law quantities of a period census at the declared batch K (static facts); ``most_written`` and
+    ``producer_slots`` are the slot rule's placement (``WriteCensus``), where the plane states it. The most-written
+    cell's wear is the lifetime's (``cell_wear``), stated only where it has an upper end."""
     k = policy.batch_k
     producer = sum(p.written_cells_producer for p in census.passes)
     values = {
@@ -143,13 +152,15 @@ def write_quantities(census: Any, policy: WritePolicy, *,
         "runtime_written_cells": sum(p.written_cells_backing_store for p in census.passes) / k + producer,
     }
     if most_written is not None:
-        values["max_writes_per_cell_per_inference"] = max_writes_per_cell(census, k, most_written)
+        wear, _ = cell_wear(census, policy, most_written, producer_slots)
+        if wear is not None and wear.high is not None:
+            values["max_writes_per_cell_per_inference"] = wear.high
     units = pass_units(census, policy, written_extents)
     if units is not None and (producer == 0 or policy.write_granularity == "cell"):
         values["written_units"] = sum(units) / k + producer
         events = sum(pass_events(units, policy)) / k
         if producer:
-            events += sum(pass_events([producer], policy))
+            events += sum(pass_events([p.written_cells_producer for p in census.passes], policy))
         values["write_events"] = events
     return {key: QuantityValue(float(value), "static") for key, value in values.items()}
 
@@ -168,31 +179,37 @@ class CellWear:
         return self.high == self.low
 
 
-def cell_wear(census: Any, policy: WritePolicy,
-              most_written: Optional[int]) -> Tuple[Optional[CellWear], Optional[str]]:
-    """(the most-written cell's wear, or None with why it is unknown).
-
-    A plane that places each rewritten core states its most-written core's period writes M. Producer
-    cells sit on a core the census does not state, so with them the wear is a band from
-    max(M / K, 1) (another core) to M / K + 1 (the most-written core). A census that places no core
-    (an untyped plane on a chip of several types whose tiles exceed every declared core, so it
-    provably rewrites) bounds the wear from below by pigeonhole, ceil(W / C) of W core writes on the
-    chip's C declared cores: its lifetime is an upper bound, which proves inadmissibility only."""
+def cell_wear(census: Any, policy: WritePolicy, most_written: Optional[int],
+              producer_slots: Optional[Sequence[Tuple[int, int]]] = None) -> Tuple[Optional[CellWear], Optional[str]]:
+    """(the most-written cell's wear, or None with why it is unknown). A plane that places each rewritten core
+    states its most-written core's period writes M, and with operand regions (N2) each core's producer writes per
+    inference by the same slot rule (``producer_slots``): the wear is exact, ``placed_wear``. Producer cells on
+    unplaced cores bound it from below only (one write per inference). A census that places no core (an untyped
+    plane on a chip of several types whose tiles exceed every declared core, so it provably rewrites) bounds it
+    below by pigeonhole, ceil(W / C) of W core writes on C declared cores: an upper-bound lifetime, which
+    proves inadmissibility only."""
     k = policy.batch_k
     producer = any(p.written_cells_producer for p in census.passes)
+    if most_written is not None and not producer:
+        wear = placed_wear(k, most_written)
+        return CellWear(wear, wear, f"most-written core: {most_written} writes per period / K"), None
+    if most_written is not None and producer_slots is not None:
+        wear = placed_wear(k, most_written, producer_slots)
+        static, writes = max(producer_slots, key=lambda slot: slot[0] / k + slot[1])
+        return CellWear(wear, wear, (f"one slot rule for static tiles and operand regions: the most-written "
+                                     f"operand core takes {static} static writes per period / K and {writes} "
+                                     f"producer writes per inference; the most-written core {most_written} writes "
+                                     "per period / K")), None
     if most_written is not None:
-        high = max_writes_per_cell(census, k, most_written)
-        if not producer:
-            return CellWear(high, high, f"most-written core: {most_written} writes per period / K"), None
         low = max(most_written / k, 1.0)
-        return CellWear(low, high, (f"most-written core: {most_written} writes per period / K, and producer "
-                                    f"cells on an unstated core: a bound between {low:g} and {high:g} writes "
-                                    "per inference")), None
+        return CellWear(low, None, (f"most-written core: {most_written} writes per period / K, and producer cells on "
+                                    f"cores the census does not place: at least {low:g} writes per inference")), None
     period = written_cores(census)
     if period == 0:
-        wear = 1.0 if producer else 0.0
-        return CellWear(wear, wear, "no core is rewritten per period" + (
-            "; producer cells are written once per inference" if producer else "")), None
+        if not producer:
+            return CellWear(0.0, 0.0, "no core is rewritten per period"), None
+        return CellWear(1.0, None, ("no core is rewritten per period; producer cells on cores the census does not "
+                                    "place are written at least once per inference")), None
     if not policy.physical_cores:
         return None, ("the census places no rewritten core on a physical core and the policy states "
                       "no physical core count, so the most-written cell is unknown")
@@ -210,15 +227,8 @@ class PlaneWrites:
     policy: WritePolicy
     census: Optional[WriteCensus]
     unavailable: Optional[str] = None
-
-
-def domain_bytes_of(platform: Mapping[str, Any], timesteps: Optional[int]) -> Optional[Any]:
-    """How a boundary's carried elements are sized in this run's domain, or None when unknown:
-    values at the declared grid, else the dense spike raster at the window."""
-    if names_value_domain(platform):
-        bits = value_bits(platform)
-        return None if bits is None else (lambda elements: value_bytes(elements, bits))
-    return None if timesteps is None else (lambda elements: raster_bytes(elements, int(timesteps)))
+    #: N2b: the census split by write technology, where the policy states several (``policy.core_technologies``).
+    by_technology: Optional[wt.TechnologySplit] = None
 
 
 def spans_match_carry(passes: ProgramPasses, carry: Optional[Mapping[str, Any]], timesteps: Optional[int]) -> bool:
@@ -266,9 +276,14 @@ def plane_writes(passes: Optional[ProgramPasses], platform: Mapping[str, Any], *
         return None
     if passes is None:
         return PlaneWrites(policy, None, f"the {label} plane states no pass structure, so it has no period census")
+    if policy.payload_bits is not None and passes.operands_unstated is not None:
+        return PlaneWrites(policy, None, f"the platform declares an operand core type and {passes.operands_unstated}"
+                                         ", so its per-inference payload writes are unpriced: write terms refused")
     census, reason = plane_write_census(passes, platform, weight_bits=weight_bits, timesteps=timesteps,
                                         label=label, carry=carry)
-    return PlaneWrites(policy, census, reason)
+    split = None if census is None or policy.core_technologies is None else wt.split_by_technology(
+        passes, census, policy, weight_bits=int(weight_bits))
+    return PlaneWrites(policy, census, reason, split)
 
 
 def record_write_census(record: Any) -> Optional[PlaneWrites]:

@@ -54,6 +54,9 @@ def build_real_fragment(
     law = getattr(parent, "readout_law", None)
     if law is not None:
         frag.readout_law = law.take_columns(np.arange(lo, hi))
+    role = getattr(parent, "core_role", None)
+    if role is not None:
+        frag.core_role = role  # pyright: ignore[reportAttributeAccessIssue] -- declared-only (N2)
     if bank_neuron_slice is not None:
         frag.weight_bank_id = parent.weight_bank_id
         frag.bank_axon_slice = parent.bank_axon_slice

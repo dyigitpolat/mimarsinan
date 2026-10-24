@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import time
 from typing import Dict
 
@@ -13,11 +12,13 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_torch,
     decref_consumers,
     decref_op_consumers,
-    execute_compute_op_torch,
     gather_final_output_torch,
     store_segment_output_torch,
 )
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+from mimarsinan.chip_simulation.value_run import operand_payloads
+from mimarsinan.chip_simulation.value_run.host_ops import execute_host_op
+from mimarsinan.chip_simulation.value_run.operand_blocks import stage_banks
 from mimarsinan.chip_simulation.value_run.value_execution import (
     ValueSegmentScope,
     run_neural_segment_values,
@@ -47,31 +48,21 @@ def _consumer_counts(hybrid_mapping) -> Dict[int, int]:
     for src in hybrid_mapping.output_sources.flatten():
         if isinstance(src, IRSource) and src.node_id >= 0:
             _bump(int(src.node_id))
+    for stage in hybrid_mapping.stages:  # N2: a neural stage reads its banks' payload writes
+        for source in _payload_sources(hybrid_mapping, stage):
+            _bump(source)
     hybrid_mapping._consumer_counts_cache = counts
     return counts
+
+
+def _payload_sources(hybrid_mapping, stage) -> list:
+    bindings = getattr(hybrid_mapping, "dynamic_bank_bindings", None)
+    if not bindings or stage.kind != "neural":
+        return []
+    return sorted({int(bindings[bank].source_node_id) for bank in stage_banks(stage, bindings)})
+
+
 _RAW_INPUT_NODE_ID = -2
-
-
-def execute_host_op(op, x_flat, state_buffer, *, dtype: torch.dtype, twins: Dict[int, nn.Module]):
-    """One host ComputeOp in ``dtype``; an fp64 run executes a double twin of the stored fp32 module."""
-    original = op.params.get("module")
-    if dtype == torch.float64 and original is not None:
-        double = twins.get(int(op.id))
-        if double is None:
-            double = copy.deepcopy(original).double()
-            twins[int(op.id)] = double
-        op.params["module"] = double
-        try:
-            return execute_compute_op_torch(
-                op, x_flat, state_buffer,
-                in_scale=1.0, out_scale=1.0, output_dtype=dtype, gather_dtype=dtype,
-            )
-        finally:
-            op.params["module"] = original
-    return execute_compute_op_torch(
-        op, x_flat, state_buffer,
-        in_scale=1.0, out_scale=1.0, output_dtype=dtype, gather_dtype=dtype,
-    )
 
 
 class ValueHybridCoreFlow(nn.Module):
@@ -90,6 +81,8 @@ class ValueHybridCoreFlow(nn.Module):
         self.execution_device = torch.device(device)
         self.value_dtype = dtype
         self.stage_count_recorder = None
+        # N2: called (stage, core index, operand block, programmed payload) for every operand block written.
+        self.payload_recorder = None
         self.lif_execution_synchronized = False
         self._fp64_ops: Dict[int, nn.Module] = {}
         # Static gather plans, shared across forwards (weights are NOT:
@@ -136,9 +129,14 @@ class ValueHybridCoreFlow(nn.Module):
             )
             spent["assemble"] += time.perf_counter() - _t
             _t = time.perf_counter()
+            bindings = getattr(self.hybrid_mapping, "dynamic_bank_bindings", None)
+            payloads = operand_payloads.materialize(stage, buf, bindings) if bindings else None
+            payload_hook = self.payload_recorder
             seg_output = run_neural_segment_values(
                 stage.hard_core_mapping, seg_input,
-                resident_head=scope.head_hcm, scope=scope,
+                resident_head=scope.head_hcm, scope=scope, payloads=payloads, bindings=bindings,
+                payload_recorder=None if payload_hook is None
+                else (lambda *args, s=stage, hook=payload_hook: hook(s, *args)),
             )
             spent["neural"] += time.perf_counter() - _t
             recorder = self.stage_count_recorder
@@ -152,6 +150,9 @@ class ValueHybridCoreFlow(nn.Module):
                 (int(s.node_id) for s in stage.input_map
                  if s.node_id is not None and int(s.node_id) >= 0),
             )
+            payload_sources = _payload_sources(self.hybrid_mapping, stage) if bindings else []
+            if payload_sources:
+                decref_consumers(buf, remaining, payload_sources)
 
         def on_compute(_index, stage, buf):
             op = stage.compute_op

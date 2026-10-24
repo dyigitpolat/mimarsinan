@@ -25,6 +25,10 @@ RESIDENCY_STEP_RULES = (STEP_FLOOR, STEP_STATELESS, STEP_INDEX)
 WRITE_GRANULARITIES = ("cell", "row", "column", "core")
 #: ``write_overlap.mode``: writes exposed after compute, or hidden behind it up to the shadow capacity.
 WRITE_OVERLAP_MODES = ("serial", "overlapped")
+#: N2 ``cores[i].operand.write_source``: payloads written by a host op, or by the producer's on-chip write-back.
+OPERAND_WRITE_SOURCES = ("host", "on_chip")
+#: N2 ``readout_ranges``: one output range per perceptron (G2's law), or one per consumer group of its columns.
+READOUT_RANGE_RULES = ("per_perceptron", "per_consumer_group")
 
 
 class PeriodCensusError(ToolchainRefusal, ValueError):

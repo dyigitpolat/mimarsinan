@@ -46,6 +46,7 @@ _STEP_PLAN = StepPlan([
     StepSpec("Weight Preloading",              WeightPreloadingStep,             group="pretraining"),
     StepSpec("Pretraining",                    PretrainingStep,                  group="pretraining"),
     StepSpec("Torch Mapping",                  TorchMappingStep,                 group="torch_mapping"),
+    StepSpec("Operand Lowering",               OperandLoweringStep,              group="torch_mapping"),
     StepSpec(PRUNING_ADAPTATION_STEP,          PruningAdaptationStep,            group="pruning"),
     StepSpec("Scale Migration",                ScaleMigrationStep,               group="activation"),
     StepSpec("Reference Teacher Snapshot",     ReferenceTeacherSnapshotStep,     group="activation"),

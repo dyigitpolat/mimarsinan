@@ -23,6 +23,12 @@ def _perceptron_grids(model_repr) -> dict:
         grid = boundary_grid_of(getattr(perceptron, "input_activation", None))
         if grid is not None:
             grids[int(index)] = grid
+    for node in exec_order:
+        banks = getattr(node, "banks", None)  # N2 bank perceptrons (a host-fed streamed operand's entry grid)
+        for operand in banks if isinstance(banks, list) else ():
+            grid = boundary_grid_of(operand.input_activation)
+            if grid is not None and operand.perceptron_index is not None:
+                grids[int(operand.perceptron_index)] = grid
     return grids
 
 

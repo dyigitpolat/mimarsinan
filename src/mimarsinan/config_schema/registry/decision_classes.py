@@ -101,8 +101,8 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "tile_grid_rows": _FLOORPLAN,
     "tile_grid_cols": _FLOORPLAN,
     "pass_buffer_capacity_bytes": (_AB, "a schedule whose carried rasters exceed the buffer is refused"),
-    "cores": (_FB, "join of its fields: has_bias is function-bearing, geometry, weight-sign and write fields "
-                   "cost-only"),
+    "cores": (_FB, "join of its fields: has_bias and operand are function-bearing, geometry, weight-sign and write "
+                   "fields cost-only"),
     "max_axons": _GEOMETRY,
     "max_neurons": _GEOMETRY,
     "has_bias": (_FB, "the bias mode changes the weight-quantization grid; a core type without its own "
@@ -121,6 +121,7 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "target_claim_class": (_ND, "a bundle label; nothing decides on it"),
     "target_faithfulness_class": (_ND, "a bundle label; nothing decides on it"),
     "readout_law": (_FB, "join of its fields: the ADC and requantization law sets the integer outputs"),
+    "readout_ranges": (_FB, "per consumer group gives each group of a perceptron's columns its own output grid"),
     "write_overlap": (_CO, "join of its fields: exposed write time only"),
     "write_ports": (_CO, "write time only"),
     "min_lifetime_hours": (_AB, "a program below the lifetime floor is inadmissible by name"),

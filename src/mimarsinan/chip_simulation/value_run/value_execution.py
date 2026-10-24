@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 
 import torch
 
+from mimarsinan.chip_simulation.value_run.operand_blocks import fill_operand_blocks, operand_blocks, static_part
 from mimarsinan.chip_simulation.value_run.value_law import prepare_core_law, run_core_law
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.latency.chip import ChipLatency
@@ -131,6 +132,9 @@ class _PreparedValueSegment:
             prepare_core_law(core, weight, index)
             for index, (core, weight) in enumerate(zip(hcm.cores, self.weights))
         ]
+        # [N2] per core its operand blocks and its static grid without them (filled on first use).
+        self.operand: "List[list] | None" = None
+        self.operand_static: List[Any] = []
 
 
 def ensure_core_latencies(hcm) -> None:
@@ -200,9 +204,20 @@ class ValueSegmentScope:
         return prepared
 
 
+def _operand_cores(prepared: _PreparedValueSegment, hcm, bindings) -> List[list]:
+    """Per core its operand blocks (N2), the static grids cleared of the banks' placeholders, cached per segment."""
+    cached = prepared.operand
+    if cached is None:
+        cached = operand_blocks(hcm, bindings)
+        prepared.operand_static = [None if not blocks else static_part(prepared.weights[i], blocks)
+                                   for i, blocks in enumerate(cached)]
+        prepared.operand = cached
+    return cached
+
+
 def run_neural_segment_values(
     hcm, seg_input: torch.Tensor, resident_head=None,
-    scope: "ValueSegmentScope | None" = None,
+    scope: "ValueSegmentScope | None" = None, payloads=None, bindings=None, payload_recorder=None,
 ) -> torch.Tensor:
     """Execute one packed segment in the value domain: y_core = (x @ W + b) / theta.
 
@@ -220,6 +235,7 @@ def run_neural_segment_values(
     prepared = scope.prepared(hcm, device, dtype, resident_head=resident_head)
     batch = seg_input.shape[0]
 
+    operand = _operand_cores(prepared, hcm, bindings) if bindings else None
     buffers: Dict[int, torch.Tensor] = {}
     for idx in prepared.order:
         signal = torch.empty(
@@ -229,11 +245,18 @@ def run_neural_segment_values(
             signal, input_spikes=seg_input, buffers=buffers, on_value=1.0,
             input_transform=prepared.entry_transforms[idx],
         )
+        weight = None
+        if operand is not None and operand[idx]:
+            weight = fill_operand_blocks(prepared.operand_static[idx], operand[idx], payloads or {})
+            if payload_recorder is not None:
+                for block in operand[idx]:
+                    payload_recorder(idx, block, weight[:, block.axon_offset: block.axon_offset + block.axons,
+                                                       block.neuron_offset: block.neuron_offset + block.neurons])
         law = prepared.laws[idx]
         if law is not None:
-            buffers[idx] = run_core_law(signal, law).to(dtype)
+            buffers[idx] = run_core_law(signal, law, weight).to(dtype)
             continue
-        out = signal @ prepared.weights[idx]
+        out = signal @ prepared.weights[idx] if weight is None else torch.bmm(signal.unsqueeze(1), weight).squeeze(1)
         bias = prepared.biases[idx]
         if bias is not None:
             out = out + bias

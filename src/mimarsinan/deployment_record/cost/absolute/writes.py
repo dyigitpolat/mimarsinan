@@ -3,32 +3,33 @@ batch K, lifetime against endurance, and the lifetime floor as a separate admiss
 
 One pricer for every census producer (the record and candidate planes, the residency plan steps,
 the capability-level census): it reads the S0 ``PassPeriodCensus`` and the declared policy only.
+On a chip of several write technologies (N2b, ``quantities/write_technology.py``) the same law prices each
+technology's share under its physics, and the shares join: energies and per-pass walls add, the lifetime and
+verdict are ``write_lifetime.join_lifetimes``'.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, List, Optional, Sequence, Tuple
 
-from mimarsinan.deployment_record.build.write_census import shadow_room_refusal
-from mimarsinan.deployment_record.cost.absolute.context import AdmissibilityVerdict, PricingRefusal
 from mimarsinan.deployment_record.cost.absolute.formulas import add_bands, mul_bands, scale_band
-from mimarsinan.deployment_record.cost.terms import CostTerm
-from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
-from mimarsinan.deployment_record.quantities.write_law import (
-    CellWear, WritePolicy, cell_wear, pass_events, pass_units,
+from mimarsinan.deployment_record.cost.absolute.write_lifetime import (
+    LIFETIME_HOURS, LIFETIME_INFERENCES, LIFETIME_VERDICT, SECONDARY_MARKERS, WritePricing, join_lifetimes,
+    price_lifetime,
 )
+from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.deployment_record.platform_physics.resolve import technology_physics
+from mimarsinan.deployment_record.quantities.write_law import WritePolicy, pass_events, pass_units
+from mimarsinan.deployment_record.quantities.write_technology import TechnologySplit, shadow_room_refusal
 from mimarsinan.deployment_record.schema.provenance import Band
+
+__all__ = ["ENERGY_WRITE", "LATENCY_WRITE", "LIFETIME_HOURS", "LIFETIME_INFERENCES", "LIFETIME_VERDICT",
+           "SECONDARY_MARKERS", "WriteInputs", "WritePricing", "price_write_inputs", "price_write_terms"]
 
 ENERGY_WRITE = "energy_write_mj"
 LATENCY_WRITE = "latency_write_exposed_s"
-LIFETIME_INFERENCES = "lifetime_inferences"
-LIFETIME_HOURS = "lifetime_hours"
-LIFETIME_VERDICT = "lifetime_admissible"
 _J_TO_MJ = 1e3
-_S_PER_H = 3600.0
-#: The evidence-class marker of a SECONDARY row (a published row read in a secondary source).
-SECONDARY_MARKERS = ("SECONDARY", "secondary")
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,11 @@ class WriteInputs:
     most_written: Optional[int] = None
     #: Per pass, the cores of each type it computes on (``WriteCensus.pass_core_types``).
     pass_core_types: Optional[Sequence[Sequence[Tuple[Tuple[int, int], int]]]] = None
+    #: N2: (static writes per period, producer writes per inference) of each core holding operand regions
+    #: (``WriteCensus.producer_slots``).
+    producer_slots: Optional[Sequence[Tuple[int, int]]] = None
+    #: N2b: the census split by write technology (``PlaneWrites.by_technology``), where the policy states several.
+    by_technology: Optional[TechnologySplit] = None
 
     @classmethod
     def of(cls, writes: Any) -> "WriteInputs":
@@ -55,26 +61,9 @@ class WriteInputs:
                    compute_sealed=census is not None and census.compute_sealed,
                    unavailable=writes.unavailable,
                    most_written=None if census is None else census.most_written_core,
-                   pass_core_types=None if census is None else census.pass_core_types)
-
-
-@dataclass
-class WritePricing:
-    """What the write law priced, refused and judged; the two bands join the headlines."""
-
-    terms: List[CostTerm] = field(default_factory=list)
-    refusals: List[PricingRefusal] = field(default_factory=list)
-    verdicts: List[AdmissibilityVerdict] = field(default_factory=list)
-    energy: Optional[Band] = None
-    exposed: Optional[Band] = None
-
-    def term(self, name: str, unit: str, band: Band) -> Band:
-        self.terms.append(CostTerm(name=name, unit=unit, value=band.nominal, band=band,
-                                   kind="modeled", source=band.basis))
-        return band
-
-    def refuse(self, name: str, reason: str) -> None:
-        self.refusals.append(PricingRefusal(name=name, reason=reason))
+                   pass_core_types=None if census is None else census.pass_core_types,
+                   producer_slots=None if census is None else census.producer_slots,
+                   by_technology=getattr(writes, "by_technology", None))
 
 
 def _zero(basis: str) -> Band:
@@ -85,8 +74,9 @@ def _iterations(physics: PlatformPhysics) -> Optional[Band]:
     return physics.band("write_verify_iterations") if physics.has("write_verify_iterations") else None
 
 
-def _write_energy(census: Any, physics: PlatformPhysics, k: int) -> Tuple[Optional[Band], str]:
+def _write_energy(census: Any, physics: PlatformPhysics, policy: WritePolicy) -> Tuple[Optional[Band], str]:
     """(per-inference write energy in mJ, or None with the refusal reason)."""
+    k = policy.batch_k
     payload = sum(p.payload_bytes for p in census.passes)
     cells = sum(p.written_cells_backing_store for p in census.passes)
     producer = sum(p.written_cells_producer for p in census.passes)
@@ -99,6 +89,13 @@ def _write_energy(census: Any, physics: PlatformPhysics, k: int) -> Tuple[Option
                                 "e_dma_per_byte x period_rewrite_bytes / K"))
     elif payload:
         notes.append("unpriced: e_dma_per_byte(write transfer)")
+    if producer and policy.producer_write_source == "host" and policy.payload_bits is not None:
+        moved = producer * int(policy.payload_bits) / 8.0  # host-sourced payloads cross into the chip per inference
+        if physics.has("e_dma_per_byte"):
+            parts.append(scale_band(physics.band("e_dma_per_byte"), moved * _J_TO_MJ,
+                                    "e_dma_per_byte x host-sourced payload bytes per inference (transfer)"))
+        else:
+            notes.append("unpriced: e_dma_per_byte(host-sourced payload transfer)")
     if physics.has("e_write_per_cell"):
         iterations = _iterations(physics)
         if iterations is None:
@@ -144,11 +141,15 @@ def _pass_write_times(census: Any, physics: PlatformPhysics, policy: WritePolicy
         walls = [scale_band(step, events, "write_events x write step") for events in pass_events(units, policy)]
         if producer and policy.write_granularity != "cell":
             return None, None, "producer writes are counted in cells; their units at another granularity are unstated"
-        return walls, scale_band(step, pass_events([producer], policy)[0], "producer write steps"), ""
+        steps = sum(pass_events([p.written_cells_producer for p in passes], policy))  # no step spans two passes
+        return walls, scale_band(step, steps, "producer write steps, per pass"), ""
     if physics.has("t_program_per_byte") and not producer:
         per_byte = physics.band("t_program_per_byte")
         return [scale_band(per_byte, p.payload_bytes, "t_program_per_byte x payload_bytes")
                 for p in passes], _zero("no producer write"), ""
+    if producer:
+        return None, None, ("producer cells are written per inference and need t_write_per_unit; t_program_per_byte "
+                            "prices backing-store bytes only")
     return None, None, "cells are written but the target declares no write time (t_write_per_unit or t_program_per_byte)"
 
 
@@ -163,6 +164,12 @@ def _exposed_write(census: Any, physics: PlatformPhysics, policy: WritePolicy, e
     walls, producer, reason = _pass_write_times(census, physics, policy, extents)
     if walls is None or producer is None:
         return None, reason
+    return _expose(walls, producer, census, physics, policy, compute_sealed, pass_types)
+
+
+def _expose(walls: Sequence[Band], producer: Band, census: Any, physics: PlatformPhysics, policy: WritePolicy,
+            compute_sealed: bool, pass_types: Any) -> Tuple[Optional[Band], str]:
+    """The exposure rule over per-pass write walls and the per-inference producer wall (serial or overlapped)."""
     k = policy.batch_k
     if all(w.high == 0.0 for w in walls) and producer.high == 0.0:
         return _zero("nothing is written: no write time is exposed"), ""
@@ -184,86 +191,94 @@ def _exposed_write(census: Any, physics: PlatformPhysics, policy: WritePolicy, e
     return add_bands(terms, "overlapped: sum_q max(0, t_w(q+1) / K - t_c(q)) + producer writes"), ""
 
 
-def _life_band(endurance: Band, wear: CellWear, basis: str) -> Band:
-    """endurance / wear corner-wise: the low lifetime at the high-wear end, the high at the low."""
-    if wear.high is None or wear.exact:
-        return scale_band(endurance, 1.0 / wear.low, basis)
-    return Band(endurance.low / wear.high, endurance.nominal / wear.high, endurance.high / wear.low, basis)
+def _refuse_all(policy: WritePolicy, reason: str) -> WritePricing:
+    out = WritePricing()
+    for name in (ENERGY_WRITE, LATENCY_WRITE, LIFETIME_INFERENCES) + (
+            (LIFETIME_VERDICT,) if policy.min_lifetime_hours is not None else ()):
+        out.refuse(name, reason)
+    return out
 
 
-def _lifetime(out: WritePricing, census: Any, physics: PlatformPhysics, policy: WritePolicy,
-              most_written: Optional[int]) -> None:
-    wear, unknown = cell_wear(census, policy, most_written)
-    floor = policy.min_lifetime_hours
-    if wear is not None and wear.high == 0.0:
-        if floor is not None:
-            out.verdicts.append(AdmissibilityVerdict(LIFETIME_VERDICT, "admitted",
-                                                     "no cell is written per inference", "no wear"))
-        return
-    if not physics.has("endurance_cycles"):
-        unknown = "cells are written per inference but endurance_cycles is undeclared"
-    if unknown is not None or wear is None:
-        reason = unknown or "the most-written cell is unknown"
-        out.refuse(LIFETIME_INFERENCES, reason)
-        if floor is not None:
-            out.refuse(LIFETIME_VERDICT, f"a lifetime floor is declared but the lifetime is refused: {reason}")
-        return
-    endurance = physics.constants["endurance_cycles"]
-    life = out.term(LIFETIME_INFERENCES, "inferences", _life_band(
-        endurance.band, wear, f"endurance_cycles / max_writes_per_cell_per_inference ({wear.basis})"))
-    rate = policy.inference_rate_hz
-    if rate is None:
-        if floor is not None:
-            out.refuse(LIFETIME_VERDICT, "min_lifetime_hours is declared without inference_rate_hz, "
-                                         "so the lifetime has no hours to compare")
-        return
-    hours = out.term(LIFETIME_HOURS, "h", scale_band(life, 1.0 / (rate * _S_PER_H),
-                                                     f"lifetime_inferences / inference_rate_hz ({wear.basis})"))
-    if floor is None:
-        return
-    # Sound at both ends: inadmissible only when the longest lifetime fails the floor, admitted only
-    # when the shortest clears it; a lower-bound-only wear can never admit.
-    verdict = ("inadmissible" if hours.high < floor else "admitted" if hours.low >= floor else "straddles")
-    one_sided = wear.high is None
-    if one_sided and verdict != "inadmissible":
-        out.refuse(LIFETIME_VERDICT, f"the lifetime is an upper bound ({wear.basis}), which can prove a program "
-                                     "inadmissible but never admit one")
-        return
-    kind = " (upper bound)" if one_sided else "" if wear.exact else " (a wear band)"
-    secondary = "; a secondary source" if any(m in endurance.note for m in SECONDARY_MARKERS) else ""
-    out.verdicts.append(AdmissibilityVerdict(
-        LIFETIME_VERDICT, verdict,
-        f"lifetime {hours.low:.4g}-{hours.high:.4g} h{kind} against min_lifetime_hours {floor:g}",
-        f"endurance_cycles [{endurance.basis}{secondary}]"))
+#: Why the one-law pricer refuses a policy of several write technologies: their shares need the census split.
+_SEVERAL = ("the chip declares several write technologies (core types' write_physics or write declarations), and "
+            "this census is not split by write technology, so one law would price every cell alike")
 
 
 def price_write_inputs(writes: WriteInputs, physics: PlatformPhysics) -> WritePricing:
-    """``price_write_terms`` over a plane's inputs; a plane without a census refuses by name."""
+    """``price_write_terms`` over a plane's inputs, per write technology where the chip declares several; a plane
+    without a census, or without its split, refuses by name."""
     if writes.census is None:
-        out = WritePricing()
-        reason = writes.unavailable or "the plane states no period census"
-        names = (ENERGY_WRITE, LATENCY_WRITE, LIFETIME_INFERENCES) + (
-            (LIFETIME_VERDICT,) if writes.policy.min_lifetime_hours is not None else ())
-        for name in names:
-            out.refuse(name, reason)
-        return out
+        return _refuse_all(writes.policy, writes.unavailable or "the plane states no period census")
+    if writes.policy.core_technologies is not None:
+        split = writes.by_technology
+        if split is None or split.refused is not None:
+            return _refuse_all(writes.policy, _SEVERAL if split is None else split.refused or _SEVERAL)
+        return _price_technologies(writes, split, physics)
     return price_write_terms(writes.census, physics, writes.policy,
                              written_extents=writes.written_extents, compute_sealed=writes.compute_sealed,
-                             most_written=writes.most_written, pass_core_types=writes.pass_core_types)
+                             most_written=writes.most_written, pass_core_types=writes.pass_core_types,
+                             producer_slots=writes.producer_slots)
+
+
+def _price_technologies(writes: WriteInputs, split: TechnologySplit, chip: PlatformPhysics) -> WritePricing:
+    """G3's law on each write technology's share, under its physics; one technology is the one law at its physics."""
+    shares = [(part, technology_physics(chip, part.technology)) for part in split.parts]
+    if len(shares) == 1:
+        part, physics = shares[0]
+        return price_write_terms(part.census, physics, part.policy, written_extents=part.written_extents,
+                                 compute_sealed=writes.compute_sealed, most_written=part.most_written,
+                                 pass_core_types=part.pass_core_types, producer_slots=part.producer_slots)
+    out = WritePricing()
+    energies = [(part.label, _write_energy(part.census, physics, part.policy)) for part, physics in shares]
+    refused = [f"{label}: {reason}" for label, (band, reason) in energies if band is None]
+    if refused:
+        out.refuse(ENERGY_WRITE, "; ".join(refused))
+    else:
+        out.energy = out.term(ENERGY_WRITE, "mJ", add_bands(
+            [band for _, (band, _) in energies if band is not None],
+            "per write technology: " + "; ".join(f"{label}: {band.basis}" for label, (band, _) in energies
+                                                 if band is not None)))
+    timed = [(part.label, _pass_write_times(part.census, physics, part.policy, part.written_extents))
+             for part, physics in shares]
+    refused = [f"{label}: {reason}" for label, (walls, producer, reason) in timed if walls is None or producer is None]
+    if refused:
+        out.refuse(LATENCY_WRITE, "; ".join(refused))
+    else:
+        walls = [add_bands([w[q] for _, (w, _, _) in timed if w is not None], "the technologies' walls, shared ports")
+                 for q in range(len(writes.census.passes))]
+        producer = add_bands([p for _, (_, p, _) in timed if p is not None], "every technology's producer writes")
+        exposed, reason = _expose(walls, producer, writes.census, chip, writes.policy, writes.compute_sealed,
+                                  writes.pass_core_types)
+        if exposed is None:
+            out.refuse(LATENCY_WRITE, reason)
+        else:
+            out.exposed = out.term(LATENCY_WRITE, "s", exposed)
+    lives = []
+    for part, physics in shares:
+        own = WritePricing()
+        price_lifetime(own, part.census, physics, part.policy, part.most_written, part.producer_slots)
+        lives.append((part.label, own))
+    join_lifetimes(out, lives, writes.policy.min_lifetime_hours)
+    return out
 
 
 def price_write_terms(census: Any, physics: PlatformPhysics, policy: WritePolicy, *,
                       written_extents: Optional[Sequence[Sequence[Tuple[int, int]]]] = None,
                       compute_sealed: bool = True, most_written: Optional[int] = None,
-                      pass_core_types: Any = None) -> WritePricing:
+                      pass_core_types: Any = None,
+                      producer_slots: Optional[Sequence[Tuple[int, int]]] = None) -> WritePricing:
     """Write energy, exposed write time and lifetime of one period census at the declared K.
 
     ``most_written`` is the period writes of the most-written physical core (``WriteCensus.
     most_written_core``). A producer that places no core leaves it None only where the census
     provably rewrites; the lifetime is then an upper bound that can only prove inadmissibility.
-    ``pass_core_types`` (``WriteCensus.pass_core_types``) gives the overlapped mode its per-type room."""
+    ``pass_core_types`` (``WriteCensus.pass_core_types``) gives the overlapped mode its per-type room;
+    ``producer_slots`` (``WriteCensus.producer_slots``) the operand regions' placement by the same slot rule. A
+    policy of several write technologies refuses by name (``price_write_inputs`` prices their shares)."""
+    if policy.core_technologies is not None:
+        return _refuse_all(policy, _SEVERAL)
     out = WritePricing()
-    energy, reason = _write_energy(census, physics, policy.batch_k)
+    energy, reason = _write_energy(census, physics, policy)
     if energy is None:
         out.refuse(ENERGY_WRITE, reason)
     else:
@@ -273,5 +288,5 @@ def price_write_terms(census: Any, physics: PlatformPhysics, policy: WritePolicy
         out.refuse(LATENCY_WRITE, reason)
     else:
         out.exposed = out.term(LATENCY_WRITE, "s", exposed)
-    _lifetime(out, census, physics, policy, most_written)
+    price_lifetime(out, census, physics, policy, most_written, producer_slots)
     return out

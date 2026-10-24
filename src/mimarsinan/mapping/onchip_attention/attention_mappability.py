@@ -90,11 +90,25 @@ _VERDICTS = {
 }
 
 
-def affine_realizability_report(op: str) -> AffineRealizability:
-    """Return the realizability verdict for ``op`` (raises ``KeyError`` if unknown)."""
+#: The two products of activations become realizable once the chip declares an operand core type (N2): one
+#: operand is written into the core as its matrix once per inference, the other streamed through it.
+_DYNAMIC_OPERAND_OPS = ("qk_score", "attention_value_matmul")
+
+
+def affine_realizability_report(op: str, *, operand_core_type: bool = False) -> AffineRealizability:
+    """Return the realizability verdict for ``op`` (raises ``KeyError`` if unknown); with a declared operand core
+    type (N2), the two products of activations are realizable on dynamic operand cores."""
     if op not in _VERDICTS:
         raise KeyError(
             f"Unknown attention/LN sub-op {op!r}; "
             f"known ops: {sorted(AffineRealizability.KNOWN_OPS)}"
+        )
+    if operand_core_type and op in _DYNAMIC_OPERAND_OPS:
+        static = _VERDICTS[op]
+        return AffineRealizability(
+            op=op, realizable=True, reason_code="dynamic_operand_core",
+            explanation=(f"{static.explanation}  With an operand core type declared, one operand is written into "
+                         "the core as its matrix once per inference (a payload on its producer's grid) and the "
+                         "other streamed through it, so the product runs on cores (mapping/support/operand_lowering)."),
         )
     return _VERDICTS[op]

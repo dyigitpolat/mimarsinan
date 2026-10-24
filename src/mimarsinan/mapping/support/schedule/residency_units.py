@@ -183,11 +183,14 @@ def pinned_tiles(pass_tiles: Sequence[int], r: int, C: int) -> Tuple[int, ...]:
     return tuple(out)
 
 
-def pinned_cores(core_payloads: Sequence[int], k: int, core_tiles: Optional[Sequence[int]] = None) -> FrozenSet[int]:
-    """Cores of largest payload first (ties to the lower index) while their tiles stay within ``k``."""
+def pinned_cores(core_payloads: Sequence[int], k: int, core_tiles: Optional[Sequence[int]] = None, *,
+                 operand_cores: FrozenSet[int] = frozenset()) -> FrozenSet[int]:
+    """Cores of largest payload first (ties to the lower index) while their tiles stay within ``k``; an operand
+    core (N2: its payload is rewritten every inference) is never pinned."""
     tiles = core_tiles if core_tiles is not None else [1] * len(core_payloads)
     chosen, used = [], 0
-    for i in sorted(range(len(core_payloads)), key=lambda i: (-int(core_payloads[i]), i)):
+    for i in sorted((i for i in range(len(core_payloads)) if i not in operand_cores),
+                    key=lambda i: (-int(core_payloads[i]), i)):
         if used + int(tiles[i]) <= int(k):
             chosen.append(i)
             used += int(tiles[i])

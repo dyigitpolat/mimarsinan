@@ -191,7 +191,7 @@ def from_candidate(
     if writes is not None and writes.census is not None:
         values.update(write_quantities(
             writes.census.census, writes.policy, written_extents=writes.census.written_extents,
-            most_written=writes.census.most_written_core,
+            most_written=writes.census.most_written_core, producer_slots=writes.census.producer_slots,
         ))
 
     if noc is not None:

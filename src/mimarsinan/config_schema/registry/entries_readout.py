@@ -9,6 +9,7 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
 )
 from mimarsinan.config_schema.registry.value_schema import RequiredIff, ValueSchema
+from mimarsinan.mapping.support.period_census import READOUT_RANGE_RULES
 
 #: ``readout_law.range``: the ADC range from calibration, or the declared ``range_value``.
 READOUT_RANGE_MODES = ("calibrated", "fixed")
@@ -41,4 +42,15 @@ ENTRIES = (
            "the requantization multiplier width. activation_bits stays the input (DAC) grid.",
        value_schema=READOUT_LAW_SCHEMA, passthrough=True,
        empty_means="no readout law — the float executor, byte for byte"),
+    _E("readout_ranges", domain="value", section="platform_constraints", group="hardware",
+       owner="mapping/export/law_grids", type=T.ENUM, options=READOUT_RANGE_RULES,
+       category=Category.ADVANCED, exposure="user", label="Readout Ranges",
+       effect="One output range per perceptron, or one per consumer group of its columns",
+       doc="How the readout law's output ranges are calibrated: per perceptron (G2's law), or per group of "
+           "a perceptron's columns that its readers read whole (N2: the K and V of each head leave the qkv "
+           "projection on their own payload grids). Groups apply only to the perceptrons an operand product "
+           "reads, and groups an operand bank writes take its payload_bits; without an operand core type no "
+           "perceptron is grouped and the law is per_perceptron's.",
+       passthrough=True,
+       empty_means="per_perceptron — one output range per perceptron, G2's law byte for byte"),
 )

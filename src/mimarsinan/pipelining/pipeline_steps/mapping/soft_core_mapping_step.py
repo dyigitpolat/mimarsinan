@@ -16,6 +16,7 @@ from mimarsinan.mapping.latency.depth_balancing import (
 from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.export.law_solver import install_readout_laws
+from mimarsinan.mapping.ir.dynamic_bank import validate_bindings
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.support.bias_compensation import (
     apply_ttfs_quantization_bias_compensation,
@@ -272,6 +273,7 @@ class SoftCoreMappingStep(PipelineStep):
         install_readout_laws(  # [E282.S] declared-only: absent readout_law is a no-op
             ir_graph, model, platform_constraints, weight_quantization=plan.weight_quantization, weight_bits=bits,
         )
+        validate_bindings(ir_graph, packaging=packaging_contract_for(plan))  # [N2] no-op without operand banks
 
         with _phase("onchip_validity_gate"):
             self._run_onchip_validity_gate(model, ir_graph)

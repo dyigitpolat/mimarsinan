@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from mimarsinan.mapping.capability.requirements import REQUIREMENTS, UnknownOpKindError
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, NeuralCore
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter, _cat_along, cat_per_sample
+from mimarsinan.mapping.support.operand_write import OperandWrite
 from mimarsinan.mapping.support.scale_wrapper import unwrap_scale_wrapper
 from mimarsinan.torch_mapping.converter_handlers.batchnorm_lowering import BatchNormAffine
 from mimarsinan.torch_mapping.converter_handlers.rules.method_rules import torch_function_of
@@ -19,6 +20,8 @@ from mimarsinan.torch_mapping.converter_handlers.rules.method_rules import torch
 #: The §5.1 interface (G1's ``Contraction`` payload): ``op_type`` names it, ``operand_roles`` decides D against S.
 CONTRACTION_OP_TYPE = "Contraction"
 ACTIVATION_ROLE = "activation"
+#: The requirement-table kind of N2's payload write host op (``ladder.PAYLOAD_WRITE_KIND`` names the same row).
+PAYLOAD_WRITE_KIND = "payload_write"
 
 _CONVS = (nn.Conv1d, nn.Conv2d, nn.Conv3d)
 _MODULE_TYPES: Tuple[Tuple[tuple, str], ...] = (
@@ -135,7 +138,9 @@ def op_kind(node: IRNode) -> str:
     if not isinstance(node, ComputeOp):
         raise UnknownOpKindError(f"IR node {node.name!r} is neither a NeuralCore nor a ComputeOp ({type(node).__name__})")
     payload = _payload(node)
-    if node.op_type == CONTRACTION_OP_TYPE or hasattr(payload, "operand_roles"):
+    if isinstance(payload, OperandWrite):  # N2: the host write of a lowered product's operand banks
+        kind = PAYLOAD_WRITE_KIND
+    elif node.op_type == CONTRACTION_OP_TYPE or hasattr(payload, "operand_roles"):
         kind = _contraction_kind(payload)
     elif isinstance(payload, ComputeAdapter):
         kind = _adapter_kind(payload, node)

@@ -23,7 +23,7 @@ import resource
 import time
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
-from mimarsinan.deployment_record.build.program_census import pass_program_bytes
+from mimarsinan.deployment_record.build.payload_sizes import pass_program_bytes
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 import mimarsinan.deployment_record.introspection.scaling_ladder_law as law
 from mimarsinan.deployment_record.introspection.scaling_ladder_types import (

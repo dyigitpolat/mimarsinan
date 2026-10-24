@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
+from mimarsinan.mapping.ir.dynamic_bank import dynamic_bank_ids
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 from mimarsinan.transformations.quantization_verify import assert_integer_scaled_matrix
 
@@ -32,7 +33,11 @@ def quantize_ir_graph(
 
     quantized_banks: set[int] = set()
     bank_scale_used: dict[int, float] = {}
+    # N2: a bound bank's matrix is a payload of integer codes written at run time; its law carries the scale.
+    dynamic = dynamic_bank_ids(ir_graph)
     for bank_id, bank in ir_graph.weight_banks.items():
+        if bank_id in dynamic:
+            continue
         scale = _matrix_scale(bank.core_matrix, bank.parameter_scale, q_max, eps)
         bank.core_matrix = np.clip(np.round(bank.core_matrix * scale), q_min, q_max).astype(q_dtype)
         bank.parameter_scale = torch.tensor(1.0)
@@ -43,6 +48,8 @@ def quantize_ir_graph(
         if not isinstance(node, NeuralCore):
             continue
         if node.has_weight_bank():
+            if node.weight_bank_id in dynamic:
+                continue
             if node.weight_bank_id in quantized_banks:
                 scale_used = bank_scale_used[node.weight_bank_id]
                 node.threshold = scale_used
@@ -140,7 +147,10 @@ def verify_ir_graph_quantized(ir_graph: IRGraph, bits: int) -> None:
     q_min, q_max = quantization_bounds(bits)
     failures: list[str] = []
     bank_checked: set[int] = set()
+    dynamic = dynamic_bank_ids(ir_graph)
     for core in ir_graph.get_neural_cores():
+        if core.weight_bank_id is not None and int(core.weight_bank_id) in dynamic:
+            continue
         ps = core.parameter_scale
         scale = float(ps.item() if hasattr(ps, "item") else ps)
         th = float(core.threshold)

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
+
+from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.packing.canonical import declared_core_roles as _declared_core_roles
 
 from mimarsinan.mapping.packing.infeasibility_proofs import VERDICT_FEASIBLE
 from mimarsinan.mapping.platform.core_residency import BASIS_VALUES
+
+
+class CoreRoleGeometryError(ToolchainRefusal, ValueError):
+    """An operand core type and a static core type of one geometry: the planner's pool cannot tell them apart."""
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,8 @@ class LayoutSoftCoreSpec:
     perceptron_index: Optional[int] = None
 
     name: Optional[str] = None
+    # N2: the role of the soft core (``packing.canonical.OPERAND_ROLE`` for a dynamic operand bank's instance).
+    core_role: Optional[str] = None
 
     def get_input_count(self) -> int:
         return int(self.input_count)
@@ -48,6 +57,8 @@ class LayoutHardCoreType:
     max_axons: int
     max_neurons: int
     count: int
+    # N2: the soft-core roles this type's cores accept (None: every role), ``packing.canonical.declared_core_roles``.
+    accepted_roles: Optional[frozenset] = None
 
 
 @dataclass
@@ -62,6 +73,7 @@ class LayoutHardCoreInstance:
 
     residency_class_id: Optional[int] = None
     latency_tag: Optional[int] = None
+    accepted_roles: Optional[frozenset] = None
 
     unusable_space: int = 0
     used_area: int = 0
@@ -132,15 +144,32 @@ class LayoutCoreSnapshot:
 
 
 def core_types_from_declaration(cores) -> "list[LayoutHardCoreType]":
-    """The declared chip's hardcore types, as every layout consumer reads them."""
+    """The declared chip's hardcore types, as every layout consumer reads them (with their N2 core roles)."""
+    from_roles = _declared_core_roles(list(cores))
     return [
         LayoutHardCoreType(
             max_axons=int(ct["max_axons"]),
             max_neurons=int(ct["max_neurons"]),
             count=int(ct["count"]),
+            accepted_roles=roles,
         )
-        for ct in cores
+        for ct, roles in zip(cores, from_roles)
     ]
+
+
+def core_pool_types(core_types) -> "tuple[list, Callable[[tuple], LayoutHardCoreInstance]]":
+    """(the pool's ``(geometry, count)`` list, the instance factory): an instance carries its type's roles; two
+    types of one geometry and different roles cannot share a geometry-keyed pool and refuse by name."""
+    roles: dict = {}
+    for t in core_types:
+        key = (int(t.max_axons), int(t.max_neurons))
+        if roles.setdefault(key, t.accepted_roles) != t.accepted_roles:
+            raise CoreRoleGeometryError(
+                f"two core types of geometry {key[0]} x {key[1]} accept different roles; the shape-only planner "
+                "pools cores by geometry, so an operand core type must differ in geometry from a static one")
+    return ([((int(t.max_axons), int(t.max_neurons)), int(t.count)) for t in core_types],
+            lambda key: LayoutHardCoreInstance(axons_per_core=key[0], neurons_per_core=key[1],
+                                               accepted_roles=roles.get(key)))
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ import numpy as np
 def _new_build_token() -> str:
     return uuid.uuid4().hex
 
+from mimarsinan.mapping.ir.dynamic_bank import DynamicBankBinding
 from mimarsinan.mapping.ir.types import ComputeOp, IRNode, NeuralCore
 from mimarsinan.mapping.ir.source import IRSource
 from mimarsinan.mapping.ir.weight_bank import WeightBank
@@ -27,8 +28,13 @@ class IRGraph:
     # Unique per construction; derived artifacts record it to detect stale cached copies across resumes.
     # None only for legacy unpickled graphs that predate the field (see __getattr__).
     build_token: str | None = field(default_factory=_new_build_token)
+    # N2: banks whose matrix is a payload written per inference (empty for every graph without dynamic operands).
+    dynamic_bank_bindings: Dict[int, DynamicBankBinding] = field(default_factory=dict)
 
     def __getattr__(self, name: str):
+        if name == "dynamic_bank_bindings":
+            self.dynamic_bank_bindings = {}
+            return self.dynamic_bank_bindings
         if name == "weight_banks":
             self.weight_banks = {}
             return self.weight_banks

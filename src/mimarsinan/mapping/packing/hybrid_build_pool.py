@@ -12,6 +12,7 @@ from mimarsinan.mapping.support.activation_scales import (
     compute_node_output_scales as _compute_node_activation_scales,
 )
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
+from mimarsinan.mapping.ir.dynamic_bank import carry_bindings
 from mimarsinan.mapping.packing.softcore import HardCore
 from mimarsinan.mapping.packing.hybrid_segment import _flush_neural_segment
 from mimarsinan.mapping.packing.hybrid_segment_helpers import (
@@ -110,7 +111,7 @@ def build_hybrid_hard_core_mapping(
     )
     if residency is not None:
         setattr(mapping, SCHEDULE_RESIDENCY_PLAN, residency)
-    return mapping
+    return carry_bindings(mapping, ir_graph)
 
 
 def build_identity_hybrid_mapping(
@@ -147,13 +148,13 @@ def build_identity_hybrid_mapping(
     output_sources = ir_graph.output_sources.copy()
     _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
 
-    return HybridHardCoreMapping(
+    return carry_bindings(HybridHardCoreMapping(
         stages=stages,
         output_sources=output_sources,
         node_activation_scales=_compute_node_activation_scales(ir_graph),
         node_input_activation_scales=_compute_node_input_activation_scales(ir_graph),
         node_buffer_scales=_compute_node_buffer_scales(ir_graph),
-    )
+    ), ir_graph)
 
 
 def _build_single_pool(

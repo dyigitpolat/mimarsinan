@@ -99,7 +99,7 @@ Pipeline engine                       core/engine/ — cache, contracts, hooks
 
 The full step order (each step self-selects via `applies_to(plan)`):
 Architecture Search, Model Configuration, Model Building, Weight Preloading,
-Pretraining, Torch Mapping, Pruning Adaptation, Activation
+Pretraining, Torch Mapping, Operand Lowering, Pruning Adaptation, Activation
 Analysis/Adaptation, Clamp Adaptation, Activation Shifting, Activation
 Quantization, LIF Adaptation, TTFS Cycle Fine-Tuning, Noise Adaptation, Weight
 Quantization (+ Verification), Normalization Fusion, Soft Core Mapping, Core

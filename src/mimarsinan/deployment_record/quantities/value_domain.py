@@ -17,6 +17,7 @@ from mimarsinan.deployment_record.build.write_census import stage_latency
 from mimarsinan.deployment_record.quantities.spec import QuantityValue
 from mimarsinan.mapping.noc.value_traffic import stage_value_noc_wire_hops
 from mimarsinan.mapping.support.period_census import natural
+from mimarsinan.mapping.support.schedule.pass_cut import raster_bytes
 
 #: The resolved-surface key naming the value domain, and the value grid beside it.
 SEMANTICS_KEY = "core_semantics"
@@ -188,3 +189,12 @@ def record_value_facts(record: Any) -> ValueDomainFacts:
         carry_out_bytes=sized.get("carry_out_bytes"), carry_in_bytes=sized.get("carry_in_bytes"),
         withheld=tuple(sorted(withheld.items())), noc_value_bytes=noc_value,
     )
+
+
+def domain_bytes_of(platform: Mapping[str, Any], timesteps: Optional[int]) -> Optional[Any]:
+    """How a boundary's carried elements are sized in this run's domain, or None when unknown:
+    values at the declared grid, else the dense spike raster at the window."""
+    if names_value_domain(platform):
+        bits = value_bits(platform)
+        return None if bits is None else (lambda elements: value_bytes(elements, bits))
+    return None if timesteps is None else (lambda elements: raster_bytes(elements, int(timesteps)))

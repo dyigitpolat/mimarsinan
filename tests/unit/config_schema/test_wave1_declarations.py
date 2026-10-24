@@ -152,7 +152,8 @@ class TestRegistryEntries:
         assert REGISTRY["readout_law"].domain == "value"
 
     def test_the_passthrough_set_is_the_wave1_platform_keys(self):
-        assert set(passthrough_keys()) == set(PLATFORM_KEYS)
+        # N2 (Wave 2) key amendment: readout_ranges joins the platform passthrough (design §2.9).
+        assert set(passthrough_keys()) == set(PLATFORM_KEYS) | {"readout_ranges"}
 
     def test_derived_keys_are_not_declarable(self):
         for key in DERIVED_KEYS:
@@ -163,6 +164,8 @@ class TestRegistryEntries:
         assert CORE_FIELDS == {
             "max_axons", "max_neurons", "count", "has_bias", "weight_sign_granularity",
             "write_granularity", "write_units_in_parallel",
+            "operand",  # N2 (Wave 2) key amendment: the operand core type (design §2.9)
+            "write_physics",  # N2b key amendment: per-core-type write technology (design §2.9)
         }
 
 

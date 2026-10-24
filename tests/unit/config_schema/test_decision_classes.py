@@ -110,8 +110,13 @@ class TestCoverage:
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",
+    # N2 (Wave 2) key amendment: who writes an operand core type's payloads, priced apart (design §2.9).
+    "cores.operand.write_source",
     "cores.weight_sign_granularity",
-    "cores.write_granularity", "cores.write_units_in_parallel", "cores_per_tile",
+    "cores.write_granularity",
+    # N2b key amendment: a core type's write technology, priced per core type (design §2.9).
+    "cores.write_physics",
+    "cores.write_units_in_parallel", "cores_per_tile",
     "inference_batch_K", "max_axons", "max_neurons",
     "max_schedule_passes", "platform_physics_overrides", "platform_physics_profile",
     "residency_plan", "residency_plan.index", "residency_plan.step",
@@ -176,7 +181,9 @@ class TestPlanClasses:
 
     def test_the_cost_only_set_is_the_owner_reviewed_set(self):
         cost_only = {path for path, cls in _every_path_class() if cls == COST_ONLY}
-        assert len(FROZEN_COST_ONLY) == 27
+        # 26 owner-reviewed rows + the closure's CL-SG amendment (weight_sign_granularity) + the N2 key amendment
+        # (write_source) + the N2b one (write_physics)
+        assert len(FROZEN_COST_ONLY) == 29
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 
@@ -423,7 +430,8 @@ class TestJoin:
         }
         assert declared_paths(values) == (
             "cores.count", "cores.has_bias", "cores.max_axons", "cores.max_neurons",
-            "cores.weight_sign_granularity", "cores.write_granularity", "cores.write_units_in_parallel",
+            "cores.operand.payload_bits", "cores.operand.write_source", "cores.weight_sign_granularity",
+            "cores.write_granularity", "cores.write_physics", "cores.write_units_in_parallel",
             "weight_bits", "write_overlap.mode", "write_overlap.shadow_capacity_fraction",
         )
         assert effective_class(declared_paths(values)) == FUNCTION_BEARING

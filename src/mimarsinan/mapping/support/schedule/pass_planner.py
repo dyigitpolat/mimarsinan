@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.layout.layout_packer import pack_layout
+from mimarsinan.mapping.packing.canonical import OPERAND_ROLE
 from mimarsinan.mapping.layout.layout_types import (
     LayoutHardCoreType,
     LayoutSoftCoreSpec,
@@ -155,9 +156,12 @@ def plan_segment_passes(
     it is declined rather than reported as an infeasible layout.
     ``coalescing_group_ids`` (aligned with *softcores*) keeps a coalesced
     wide-fan-in's fragments in ONE pass on the capacity path — the caller
-    holding real cores passes them; the shape-only planes have none.
+    holding real cores passes them; the shape-only planes have none. A segment
+    holding a dynamic operand bank's instances takes the capacity split (N2).
     """
-    chunks = bank_clustered_layout_passes(
+    # N2: an operand bank's payload is rewritten every pass (design §2.7), so residency never composes over one.
+    operand = any(getattr(s, "core_role", None) == OPERAND_ROLE for s in softcores)
+    chunks = None if operand else bank_clustered_layout_passes(
         softcores, core_types, max_schedule_passes=max_schedule_passes,
     )
     if chunks is not None and all(

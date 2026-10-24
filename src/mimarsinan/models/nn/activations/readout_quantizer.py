@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.nn.activations.integer_law import IntegerLawRangeError, apply_law, grid_codes
+from mimarsinan.models.nn.activations.integer_law import IntegerLawRangeError, apply_law, grid_codes, round_half_away
 from mimarsinan.models.nn.activations.value_quantizer import quantize_to_value_grid
 
 #: The per-channel arrays of a stamped law (the ``CoreLaw`` fields read by the accumulator law).
@@ -97,11 +97,28 @@ class ReadoutStamp:
         return codes * per["output_step"]
 
 
+def snap_channel_groups(y: torch.Tensor, ranges: torch.Tensor, levels: torch.Tensor, axis: int) -> torch.Tensor:
+    """``y`` snapped per channel onto its group's grid ``±range`` of ``levels`` positive levels (ties away)."""
+    shape = [1] * y.dim()
+    shape[axis] = -1
+    ranges = ranges.to(y.dtype).reshape(shape)
+    levels = levels.to(y.dtype).reshape(shape)
+    step = torch.where(ranges > 0, ranges / levels, torch.ones_like(ranges))
+    snapped = torch.clamp(round_half_away(y / step), -levels, levels) * step
+    return torch.where(ranges > 0, snapped, y)
+
+
 class ReadoutQuantizer(nn.Module):
     """STE onto the output grid ``±range`` until a law is stamped; then the exact integer law on the
-    accumulator the perceptron's own forward computes from integer codes and integer weights."""
+    accumulator the perceptron's own forward computes from integer codes and integer weights. With consumer
+    groups (N2, ``readout_ranges: per_consumer_group``) each group of output channels has its own range and width."""
 
     range: torch.Tensor
+    group_ranges: torch.Tensor
+    #: N2 consumer groups (set by ``set_groups``; absent on a per-perceptron quantizer, whose state is unchanged).
+    channel_groups: Optional[np.ndarray] = None
+    group_levels: Tuple[int, ...] = ()
+    channel_axis: int = -1
 
     def __init__(self, activation_bits: int, range_value: float = 0.0) -> None:
         super().__init__()
@@ -112,6 +129,26 @@ class ReadoutQuantizer(nn.Module):
 
     def calibrate(self, range_value: float) -> None:
         self.range.fill_(float(range_value))
+        if self.channel_groups is not None:
+            self.group_ranges.fill_(float(range_value))
+
+    def set_groups(self, channels: np.ndarray, levels: Tuple[int, ...], channel_axis: int) -> None:
+        """Per output channel its group, per group its positive levels; each group's range starts at 0."""
+        self.channel_groups = np.asarray(channels, dtype=np.int64)
+        self.group_levels = tuple(int(level) for level in levels)
+        self.channel_axis = int(channel_axis)
+        self.register_buffer("group_ranges", torch.zeros(len(self.group_levels)))
+
+    def calibrate_groups(self, ranges) -> None:
+        self.group_ranges.copy_(torch.as_tensor([float(r) for r in ranges]))
+        self.range.fill_(max(float(r) for r in ranges))
+
+    def _snap(self, y: torch.Tensor) -> torch.Tensor:
+        if self.channel_groups is None:
+            return quantize_to_value_grid(y, self.range, self.activation_bits)
+        index = torch.as_tensor(self.channel_groups, device=y.device)
+        levels = torch.as_tensor(self.group_levels, device=y.device)[index]
+        return snap_channel_groups(y, self.group_ranges.to(y.device)[index], levels, self.channel_axis)
 
     def input_tap(self) -> ReadoutInputTap:
         return ReadoutInputTap(self._state)
@@ -128,7 +165,7 @@ class ReadoutQuantizer(nn.Module):
         if state.rerunning:
             return y
         if self._stamp is None:
-            quantized = quantize_to_value_grid(y, self.range, self.activation_bits)
+            quantized = self._snap(y)
             return y + (quantized - y).detach()
         x, state.pending = state.pending, None
         if x is None:

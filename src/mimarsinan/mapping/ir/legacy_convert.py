@@ -179,6 +179,9 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
     law = getattr(neural_core, "readout_law", None)
     if law is not None:
         soft.readout_law = law
+    role = getattr(neural_core, "core_role", None)
+    if role is not None:
+        soft.core_role = role  # pyright: ignore[reportAttributeAccessIssue] -- declared-only (N2 operand banks)
     return soft
 
 

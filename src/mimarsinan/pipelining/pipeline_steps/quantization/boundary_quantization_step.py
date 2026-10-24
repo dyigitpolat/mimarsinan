@@ -6,6 +6,7 @@ from typing import Iterable
 
 import torch
 
+from mimarsinan.mapping.mappers.operand import operand_entry_perceptrons
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 from mimarsinan.mapping.support.tensor_stats import safe_quantile
 from mimarsinan.models.nn.activations.value_quantizer import ValueGridQuantizer
@@ -111,7 +112,9 @@ class BoundaryQuantizationStep(PipelineStep):
     def process(self):
         model = self.get_entry("model")
         bits = int(self.pipeline.config["activation_bits"])
-        entries = list(segment_entry_perceptrons(model.get_mapper_repr()))
+        # [N2] a bank whose streamed operand is host-fed (softmax's P) takes its own entry grid too.
+        entries = list(segment_entry_perceptrons(model.get_mapper_repr())) + list(
+            operand_entry_perceptrons(model.get_mapper_repr()))
         if not entries:
             raise RuntimeError(
                 "Boundary Quantization found no segment-entry perceptrons; "

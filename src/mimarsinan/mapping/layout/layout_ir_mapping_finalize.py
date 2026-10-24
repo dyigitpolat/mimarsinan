@@ -206,7 +206,7 @@ class _LayoutIRMappingFinalize:
                 perceptron_index=(
                     None if perceptron_index is None else int(perceptron_index)
                 ),
-                name=old.name,
+                name=old.name, core_role=old.core_role,
             )
 
         self.layout_preview = self._build_layout_preview(segment_ids, latencies)

@@ -90,6 +90,7 @@ class IRMappingCore(LayoutIRMapping):
             output_sources=output_sources,
             weight_banks=dict(self._weight_banks),
             layout_softcores=list(self.layout_softcores),
+            dynamic_bank_bindings=dict(self.__dict__.get("dynamic_bank_bindings", {})),
         )
 
     def _convert_sources(self, sources: np.ndarray) -> np.ndarray:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Dict, Mapping, Optional
 
 from mimarsinan.common.refusal import ToolchainRefusal
@@ -68,3 +69,42 @@ def merge_override_blocks(blocks: Mapping[str, Mapping[str, Mapping[str, Any]]])
             merged[key] = entry
             owner[key] = block
     return merged
+
+
+#: N2b: the write-technology constants (CH-A1's rows and the per-byte commit energy), what a core type's own write
+#: physics declares for its cells. The transfer channel (``e_dma_per_byte``, ``t_program_per_byte``) and every other
+#: constant stay the chip's.
+WRITE_TECHNOLOGY_KEYS = ("e_write_per_cell", "e_verify_read_per_cell", "write_verify_iterations", "t_write_per_unit",
+                         "t_write_setup_per_event", "endurance_cycles", "e_program_per_byte")
+
+
+class WritePhysicsError(ToolchainRefusal, ValueError):
+    """A core type's ``write_physics`` that names no shipped physics profile."""
+
+
+def write_physics_profile(name: str, sealed: Optional[Mapping[str, Mapping[str, Any]]] = None) -> PlatformPhysics:
+    """The write physics a core type names: the copy its run sealed (``write_physics_resolved``), else the shipped
+    profile; a name no profile ships refuses by name, listing the shipped ones."""
+    if sealed and name in sealed:
+        return PlatformPhysics.from_dict(sealed[name])
+    try:
+        return get_platform_physics(name)
+    except KeyError as missing:
+        raise WritePhysicsError(f"write_physics {name!r}: {missing.args[0]}") from None
+
+
+def technology_physics(chip: PlatformPhysics, technology: Any) -> PlatformPhysics:
+    """The physics a core type's cells are written under (``write_technology.CoreTechnology``): the chip's where it
+    names no write physics, else the chip's with the named physics' write rows (its sealed copy, else the profile)."""
+    if technology.write_physics is None:
+        return chip
+    named = technology.physics if technology.physics is not None else write_physics_profile(technology.write_physics)
+    return with_write_technology(chip, named)
+
+
+def with_write_technology(chip: PlatformPhysics, technology: PlatformPhysics) -> PlatformPhysics:
+    """The chip's physics with every write-technology constant taken from ``technology``, absent where it declares
+    none (never the chip's): the physics one core type's cells are written under."""
+    constants = {k: v for k, v in chip.constants.items() if k not in WRITE_TECHNOLOGY_KEYS}
+    constants.update({k: v for k, v in technology.constants.items() if k in WRITE_TECHNOLOGY_KEYS})
+    return replace(chip, name=f"{chip.name} (writes: {technology.name})", constants=constants)

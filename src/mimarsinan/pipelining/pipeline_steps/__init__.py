@@ -21,6 +21,7 @@ from .quantization.readout_law_step import ReadoutLawStep as ReadoutLawStep
 from .quantization.weight_quantization_step import WeightQuantizationStep as WeightQuantizationStep
 from .quantization.quantization_verification_step import QuantizationVerificationStep as QuantizationVerificationStep
 from .quantization.normalization_fusion_step import NormalizationFusionStep as NormalizationFusionStep
+from .mapping.operand_lowering_step import OperandLoweringStep as OperandLoweringStep
 from .mapping.soft_core_mapping_step import SoftCoreMappingStep as SoftCoreMappingStep
 from .mapping.core_quantization_verification_step import CoreQuantizationVerificationStep as CoreQuantizationVerificationStep
 from .mapping.hard_core_mapping_step import HardCoreMappingStep as HardCoreMappingStep

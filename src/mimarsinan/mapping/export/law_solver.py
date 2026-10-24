@@ -12,6 +12,13 @@ import torch
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.export.law_grids import CoreGrid, assign_core_grids
 from mimarsinan.mapping.export.law_stamp import readout_quantizers_by_perceptron, stamp_model_laws
+from mimarsinan.mapping.export.operand_laws import (
+    bind_payload_steps,
+    operand_floors,
+    operand_ranges,
+    output_groups_of,
+    stamp_operand_laws,
+)
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.ir.core_law import CoreLaw
 from mimarsinan.models.nn.activations.integer_law import (
@@ -114,42 +121,51 @@ def adc_step_exponent(need: int, levels: int, *, core: str) -> int:
 
 
 def solve_core_law(*, core: str, theta: float, bias: np.ndarray, acc_bounds: Sequence[int], grid: CoreGrid,
-                   spec: ReadoutLawSpec) -> CoreLaw:
+                   spec: ReadoutLawSpec, floor: Optional[int] = None) -> CoreLaw:
     """``y = clamp(rnd_s(M0 f_adc(acc) + B), lo, hi)`` per column, for ``(Δin acc + b) / θ`` on the output grid.
 
     ``acc_bounds`` bounds each column's |acc| (:func:`accumulator_bounds`); A is the width of the widest.
     An ADC of at least A bits is the identity, stored as the A-bit ADC. A narrower ADC takes, per column,
     the finest step ``2^t`` whose codes span every accumulator that is both reachable and unsaturated, so its
-    clamp never changes an output: only its step does (the declared function).
+    clamp never changes an output: only its step does (the declared function). A grid that states per-column
+    steps (N2 consumer groups) solves each column on its own step and levels; ``floor`` 0 is an absorbed ReLU.
     """
     columns = int(np.asarray(bias).size)
-    levels_out = grid_levels(spec.activation_bits)
-    m0, shift = multiplier_and_shift(grid.input_step / (theta * grid.output_step), spec.mult_bits, core=core)
-    b = _round_ints(np.ldexp(np.asarray(bias, dtype=np.float64) / (theta * grid.output_step), shift))
+    bias = np.asarray(bias, dtype=np.float64).reshape(-1)
     bounds = [int(v) for v in acc_bounds]
     if len(bounds) != columns:
         raise ValueError(f"core {core!r}: {len(bounds)} accumulator bounds for {columns} columns")
     width = accumulator_width(max(bounds, default=0))
-    if spec.adc_bits >= width:
-        adc_levels, adc_shift = grid_levels(width), [0] * columns
-    else:
-        adc_levels = grid_levels(spec.adc_bits)
-        adc_shift = [
-            adc_step_exponent(min(bound, saturation_reach(m0, int(bj), shift, levels_out)), adc_levels, core=core)
-            for bound, bj in zip(bounds, b.tolist())
-        ]
-    bound = law_magnitude_bound(bounds, m0, b, adc_shift)
-    if bound >= FP64_EXACT_BOUND:
-        raise IntegerLawRangeError(
-            f"core {core!r}: |z| reaches {bound} >= 2^53 (accumulator width {width} bits, mult_bits "
-            f"{spec.mult_bits}); fp64 execution of its law is not exact"
-        )
-    full = np.full(columns, 1)
-    return CoreLaw(
-        input_step=full * grid.input_step, m0=full * m0, shift=full * shift, bias=b,
-        lo=full * -levels_out, hi=full * levels_out, output_step=full * grid.output_step,
-        adc_shift=np.asarray(adc_shift, dtype=np.int64), adc_levels=full * adc_levels,
-    )
+    steps = grid.column_steps or (grid.output_step,) * columns
+    levels = grid.column_levels or (grid.output_levels or grid_levels(spec.activation_bits),) * columns
+    out = {name: np.zeros(columns, dtype=np.int64) for name in ("m0", "shift", "bias", "lo", "hi", "adc_shift",
+                                                                 "adc_levels")}
+    out_step = np.zeros(columns)
+    for step, levels_out in dict.fromkeys(zip(steps, levels)):
+        cols = [j for j in range(columns) if (steps[j], levels[j]) == (step, levels_out)]
+        m0, shift = multiplier_and_shift(grid.input_step / (theta * step), spec.mult_bits, core=core)
+        b = _round_ints(np.ldexp(bias[cols] / (theta * step), shift))
+        sub = [bounds[j] for j in cols]
+        if spec.adc_bits >= width:
+            adc_levels, adc_shift = grid_levels(width), [0] * len(cols)
+        else:
+            adc_levels = grid_levels(spec.adc_bits)
+            adc_shift = [
+                adc_step_exponent(min(bound, saturation_reach(m0, int(bj), shift, levels_out)), adc_levels, core=core)
+                for bound, bj in zip(sub, b.tolist())
+            ]
+        bound = law_magnitude_bound(sub, m0, b, adc_shift)
+        if bound >= FP64_EXACT_BOUND:
+            raise IntegerLawRangeError(
+                f"core {core!r}: |z| reaches {bound} >= 2^53 (accumulator width {width} bits, mult_bits "
+                f"{spec.mult_bits}); fp64 execution of its law is not exact"
+            )
+        out["m0"][cols], out["shift"][cols], out["bias"][cols] = m0, shift, b
+        out["lo"][cols] = -levels_out if floor is None else int(floor)
+        out["hi"][cols], out["adc_levels"][cols] = levels_out, adc_levels
+        out["adc_shift"][cols] = np.asarray(adc_shift, dtype=np.int64)
+        out_step[cols] = step
+    return CoreLaw(input_step=np.full(columns, 1) * grid.input_step, output_step=out_step, **out)
 
 
 def _refuse_psum(ir_graph) -> None:
@@ -161,23 +177,41 @@ def _refuse_psum(ir_graph) -> None:
             )
 
 
-def solve_ir_laws(ir_graph, perceptron_ranges: Mapping[int, float], spec: ReadoutLawSpec) -> Dict[int, CoreLaw]:
-    """{core id: CoreLaw}; cores with equal law inputs (a bank slice's positions) share one object."""
+def _bias_and_bounds(node: NeuralCore, ir_graph, grid: CoreGrid) -> Tuple[np.ndarray, Tuple[int, ...]]:
+    """A core's integer bias and per-column |acc| bounds; a bound operand core's payload codes span
+    ``±(2^(payload_bits-1) - 1)`` in every cell and it has no bias (N2)."""
+    binding = ir_graph.dynamic_bank_bindings.get(node.weight_bank_id) if node.weight_bank_id is not None else None
+    if binding is None:
+        bias, weights = core_bias_and_data_weights(node, ir_graph)
+        return bias, tuple(accumulator_bounds(weights, grid.input_levels))
+    axons, neurons = binding.payload_shape
+    bound = int(axons) * grid_levels(binding.payload_bits) * int(grid.input_levels)
+    return np.zeros(int(neurons)), (bound,) * int(neurons)
+
+
+def solve_ir_laws(ir_graph, perceptron_ranges: Mapping[int, float], spec: ReadoutLawSpec, *,
+                  grids: Optional[Mapping[int, CoreGrid]] = None,
+                  floors: Optional[Mapping[int, int]] = None) -> Dict[int, CoreLaw]:
+    """{core id: CoreLaw}; cores with equal law inputs (a bank slice's positions) share one object. ``grids``
+    (``assign_core_grids``) defaults to the per-perceptron grids of ``perceptron_ranges``; ``floors`` gives a
+    perceptron's output floor (0: an absorbed ReLU)."""
     _refuse_psum(ir_graph)
-    grids, _steps = assign_core_grids(ir_graph, perceptron_ranges, spec.activation_bits)
+    if grids is None:
+        grids, _steps = assign_core_grids(ir_graph, perceptron_ranges, spec.activation_bits)
+    floors = dict(floors or {})
     memo: Dict[tuple, CoreLaw] = {}
     laws: Dict[int, CoreLaw] = {}
     for node in ir_graph.nodes:
         if not isinstance(node, NeuralCore):
             continue
-        bias, weights = core_bias_and_data_weights(node, ir_graph)
         grid = grids[int(node.id)]
-        bounds = tuple(accumulator_bounds(weights, grid.input_levels))
-        key = (node.weight_bank_id, node.weight_row_slice, float(node.threshold), bias.tobytes(), bounds, grid)
+        bias, bounds = _bias_and_bounds(node, ir_graph, grid)
+        floor = floors.get(int(node.perceptron_index)) if node.perceptron_index is not None else None
+        key = (node.weight_bank_id, node.weight_row_slice, float(node.threshold), bias.tobytes(), bounds, grid, floor)
         law = memo.get(key)
         if law is None:
             law = solve_core_law(core=node.name, theta=float(node.threshold), bias=bias, acc_bounds=bounds,
-                                 grid=grid, spec=spec)
+                                 grid=grid, spec=spec, floor=floor)
             memo[key] = law
         laws[int(node.id)] = law
     return laws
@@ -211,14 +245,20 @@ def install_readout_laws(ir_graph, model, platform_constraints: Mapping[str, Any
     spec = ReadoutLawSpec.from_declaration(
         readout_law, activation_bits=platform_constraints.get("activation_bits"), weight_bits=weight_bits,
     )
-    quantizers = readout_quantizers_by_perceptron(model.get_mapper_repr())
-    if not quantizers:
+    model_repr = model.get_mapper_repr()
+    quantizers = readout_quantizers_by_perceptron(model_repr)
+    operands = operand_ranges(model_repr)
+    if not quantizers and not operands:
         raise ReadoutLawDeclarationError("readout_law declared but no readout quantizer is installed (Readout Law)")
-    ranges = {index: float(entry[2].range) for index, entry in quantizers.items()}
+    ranges = {**{index: float(entry[2].range) for index, entry in quantizers.items()}, **operands}
     _refuse_stale_fixed_range(quantizers, readout_law.get("range_value"))
-    laws = solve_ir_laws(ir_graph, ranges, spec)
+    groups = output_groups_of(model_repr)
+    grids, steps = assign_core_grids(ir_graph, ranges, spec.activation_bits, groups=groups)
+    bind_payload_steps(ir_graph, model_repr, steps, groups, spec.activation_bits)
+    laws = solve_ir_laws(ir_graph, ranges, spec, grids=grids, floors=operand_floors(model_repr))
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
             node.readout_law = laws[int(node.id)]  # pyright: ignore[reportAttributeAccessIssue] -- declared-only attribute
     stamp_model_laws(model, ir_graph, laws, weight_bits=weight_bits)
+    stamp_operand_laws(model_repr, ir_graph, laws)
     return len(laws)

@@ -27,7 +27,8 @@ DERIVED_GEOMETRY: Tuple[str, ...] = ("max_axons", "max_neurons")
 DRAWN_BY_FIELDS: Tuple[str, ...] = ("residency_plan",)
 #: Cost-only paths no program reads: pricing constants, the priced floorplan and the write law.
 PRICING_ONLY: Tuple[str, ...] = (
-    "activity_factor", "cores.write_granularity", "cores.write_units_in_parallel", "cores_per_tile",
+    "activity_factor", "cores.operand.write_source", "cores.write_granularity", "cores.write_physics",
+    "cores.write_units_in_parallel", "cores_per_tile",
     "inference_batch_K", "platform_physics_overrides", "platform_physics_profile", "tile_grid_cols",
     "tile_grid_rows", "write_overlap", "write_overlap.mode", "write_overlap.shadow_capacity_fraction",
     "write_ports",

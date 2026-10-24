@@ -54,10 +54,11 @@ def prepare_core_law(hard_core, weight: torch.Tensor, index: int) -> Optional[Pr
     )
 
 
-def run_core_law(signal: torch.Tensor, law: PreparedLaw) -> torch.Tensor:
-    """``y Δout`` in fp64: the integer codes of ``signal``, their exact accumulator, the stamped law."""
+def run_core_law(signal: torch.Tensor, law: PreparedLaw, weight: Optional[torch.Tensor] = None) -> torch.Tensor:
+    """``y Δout`` in fp64: the integer codes of ``signal``, their exact accumulator, the stamped law. ``weight``
+    (batch, axons, neurons) replaces the stamped grid for a core holding a per-sample operand payload (N2)."""
     codes = grid_codes(signal, law.row_steps, where=law.name)
-    acc = codes @ law.weight
+    acc = codes @ law.weight if weight is None else torch.bmm(codes.unsqueeze(1), weight.to(torch.float64)).squeeze(1)
     if not bool(torch.equal(acc, torch.round(acc))):
         raise IntegerLawRangeError(f"{law.name}: the fp64 accumulator is not integral")
     c = law.columns

@@ -53,8 +53,10 @@
   "cores.count",
   "cores.max_axons",
   "cores.max_neurons",
+  "cores.operand.write_source",
   "cores.weight_sign_granularity",
   "cores.write_granularity",
+  "cores.write_physics",
   "cores.write_units_in_parallel",
   "cores_per_tile",
   "inference_batch_K",
@@ -230,6 +232,11 @@
    "id": "per_axon_sign_split",
    "statement": "cores.weight_sign_granularity is cost_only (S0 amendment for CL-SG, owner answer L1 = a), stated under the hypothesis that the per-axon split is exact: under per_axon a soft core's mixed-sign row j becomes the adjacent rows max(W[j], 0) then min(W[j], 0) over the same source, after compaction and before packing, so every input sum is unchanged term by term (H8's exact accumulation on the integer grid; W+ + W- = W per entry, one of each pair zero) and, on per-event cores, the zero row of a pair cannot fire (H7's order, the FPGA branch's pair lemma: zero reset and a starting membrane below theta). A weight off the integer grid is refused by name (SignSplitError) and so is the q_min code of a per-axon row (SignRowsError)",
    "status": "certified at code level on this tree: identity against the per-axon deployment at atol 0 under the value, LIF (Default and Novena firing, streamed and synchronized) and TTFS semantics, single- and multi-pass (tests/unit/mapping/packing/test_sign_split_exactness.py) and the sign-split screen strata (on_sign_split, on_sign_split_scheduled); the quantized and cascaded TTFS half at any window S, an offload-placed raw input included, rests on the executor's per-neuron 1/(2S) lattice (closure fix round X1; tests/unit/chip_simulation/test_ttfs_lattice_exactness.py); analytical TTFS, outside the integer scope by name, is equal up to float rounding (the split reorders a real-valued sum); the per-event half rests on the FPGA branch (Wave 3)"
+  },
+  {
+   "id": "operand_cost_only_conditions",
+   "statement": "cores.operand.write_source and the derived stationary-operand choice are cost_only under conditions, never unconditionally (N2 design sections 2.2 and 2.8). The write source: only where every payload write copies its producer's codes (readout_ranges per_consumer_group and each stationary operand core-fed at payload_bits); a bank that re-snaps its payload makes write_source on_chip compute another function, and Operand Lowering refuses on_chip by name there. The stationary choice: only where both operands of the product are core-fed at payload_bits equal to activation_bits under consumer groups; a host-fed operand (softmax's P) keeps the declared default, B stationary.",
+   "status": "enforced at Operand Lowering (operand_lowering.product_choice and bank_resnaps); X3a draws neither (write_source is pricing-only, the choice is derived)"
   }
  ],
  "hypotheses": [

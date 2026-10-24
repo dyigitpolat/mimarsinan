@@ -150,6 +150,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "decompose_leaf_modules", "target", "target_overrides", "target_claim_class",
     "target_faithfulness_class", "readout_law", "inference_batch_K", "write_overlap",
     "write_ports", "inference_rate_hz", "min_lifetime_hours", "residency_plan",
+    # Wave 2 N2 declaration (registry/entries_readout.py): no default, absent is G2's per-perceptron law.
+    "readout_ranges",
 }
 
 

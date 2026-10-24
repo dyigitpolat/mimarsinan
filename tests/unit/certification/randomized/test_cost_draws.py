@@ -15,7 +15,9 @@ class TestPartition:
         parts = cd.partition()
         listed = {p for paths in parts.values() for p in paths}
         assert listed == cd.cost_only_set()
-        assert len(cd.cost_only_set()) == 27
+        # closure amendment: cores.weight_sign_granularity; N2 amendment: cores.operand.write_source; N2b amendment:
+        # cores.write_physics (the last two pricing-only)
+        assert len(cd.cost_only_set()) == 29
 
     @pytest.mark.parametrize("change", ["add", "drop"])
     def test_registry_drift_breaks_the_partition(self, monkeypatch, change):

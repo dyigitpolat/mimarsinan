@@ -102,6 +102,7 @@ def _flush_scheduled_subsegments(
     planes plan the same passes given the walk's runs (``spec_runs``).
     """
     from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
+    from mimarsinan.mapping.packing.canonical import declared_core_roles
     from mimarsinan.mapping.packing.hybrid_build_pool import segment_specs_for
     from mimarsinan.mapping.packing.schedule_bank_clustered import (
         dedup_resident_stage_matrices,
@@ -129,8 +130,9 @@ def _flush_scheduled_subsegments(
                 max_axons=int(ct["max_axons"]),
                 max_neurons=int(ct["max_neurons"]),
                 count=int(ct["count"]),
+                accepted_roles=roles,
             )
-            for ct in cores_config
+            for ct, roles in zip(cores_config, declared_core_roles(list(cores_config)))
         ]
         plan = plan_segment_passes(
             specs,
@@ -231,6 +233,10 @@ def _build_scheduled(
             raise ResidencyPlanError(
                 "residency_plan plans the program's neural segments; the per-hop mapping-level split "
                 "(per_hop_neural_segments, the differential reference) is not planned with it")
+        if getattr(ir_graph, "dynamic_bank_bindings", None):
+            raise ResidencyPlanError(
+                "residency_plan pins cores by payload, and its units do not yet state which cores hold dynamic "
+                "operand banks (rewritten every inference, never pinned): refused for a program with operand banks")
         segments = depth_partition(ir_graph)
         builder = compose_builder_program(
             [s for s in segments if isinstance(s, NeuralSegment)], ir_graph=ir_graph,

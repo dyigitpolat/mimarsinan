@@ -16,7 +16,12 @@ from mimarsinan.certification.randomized.screen import FIXED_AXES
 ROOT = Path(__file__).resolve().parents[4]
 TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: Changing the fixture changes the box: re-pin deliberately (and regenerate RA/10_wave1/thm/).
-TABLE_SHA256 = "20ab2aeb960af5c7a543cf9a05ebf9a276a2602479526380a58067235bbc6825"
+#: N2 (Wave 2) re-pin: ``cores.operand.write_source`` joins the cost-only list (pricing-only, X3a ``PRICING_ONLY``);
+#: N2's fix round adds the finding that states its condition and the stationary choice's (``findings_on_classes``).
+#: N2b re-pin: ``cores.write_physics`` joins the cost-only list (pricing-only, X3a ``PRICING_ONLY``).
+#: Integration re-pin (tcad/wave1-merged, N2 onto the closure and Swin): the closure's ``cores.weight_sign_granularity``
+#: and finding ``per_axon_sign_split`` beside N2's two entries and N2b's one, 29 cost-only rows.
+TABLE_SHA256 = "90b6e13ae63a30695d5e9c1be0748fd39ef69908b6c1b6dec91d37f92dbc389f"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -32,7 +37,7 @@ def test_the_fixture_is_the_pinned_one():
 
 def test_the_class_list_is_the_registry_cost_only_set(table):
     assert set(table["cost_only"]) == cost_only_set()
-    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 27
+    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 29
 
 
 #: The proof check's split (PC1): conditions on the two deployments, and conditions on every run (the

@@ -135,6 +135,10 @@ class ModelRepresentation:
                     if id(p) not in seen:
                         seen.add(id(p))
                         idx += 1
+        for node in exec_order:
+            assign = getattr(node, "assign_operand_indices", None)
+            if callable(assign):  # N2 bank perceptrons: indexed after every static one
+                idx = assign(idx)
 
     def __call__(self, x):
         """Execute the mapper graph; frees intermediates once their consumers run."""
