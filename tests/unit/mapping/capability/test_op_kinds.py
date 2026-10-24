@@ -105,3 +105,78 @@ def test_operand_spans_follow_the_executed_input_layout():
     assert operand_spans(product) == ((0, 8, (2, 4)), (8, 12, (4, 3)))
     assert stationary_operand(product) == (8, 12, (4, 3))
     assert operand_spans(_unary(nn.ReLU())) == ((0, 4, (4,)),)
+
+
+# [integration exactness review] The host ops the Swin family brings had no op-kind rule, so N2's operand certificate
+# (its nonzero census) and N9's capability census refused a Swin program by name although every output was exact:
+# padding (``torch._C._nn.pad``, the spelling the converter records), the shifted window's roll and MaxViT's swapaxes
+# move values without arithmetic (W), and a dropout that drops nothing (eval mode or p = 0) is the identity.
+
+@pytest.mark.parametrize("fn, extra, kwargs", [
+    (torch._C._nn.pad, ((0, 0, 0, 0, 0, 0), "constant", None), {}),
+    (F.pad, ((0, 1),), {}),
+    (torch.roll, (), {"shifts": (-1, -1), "dims": (1, 2)}),
+    (torch.Tensor.roll, (), {"shifts": 1, "dims": 0}),
+    (torch.swapaxes, (-2, -3), {}),
+    (torch.Tensor.swapaxes, (0, 1), {}),
+    (torch.swapdims, (0, 1), {}),
+], ids=["pad_c_nn", "pad_functional", "roll", "roll_method", "swapaxes", "swapaxes_method", "swapdims"])
+def test_the_swin_family_wiring_ops_are_wiring(fn, extra, kwargs):
+    assert op_kind(_unary(ComputeAdapter(fn, extra_args=extra, kwargs=kwargs))) == "wire+"
+
+
+@pytest.mark.parametrize("extra, kwargs", [
+    ((), {"p": 0.0, "training": False}), ((), {"p": 0.3, "training": False}), ((0.0, True), {}), ((0.3, False), {}),
+    ((), {"p": 0.0}),
+], ids=["eval_p0", "eval_p03", "train_p0_positional", "eval_positional", "p0_default_training"])
+def test_a_dropout_that_drops_nothing_is_transparent_wiring(extra, kwargs):
+    assert op_kind(_unary(ComputeAdapter(F.dropout, extra_args=extra, kwargs=kwargs))) == "wire+"
+
+
+@pytest.mark.parametrize("extra, kwargs", [((), {}), ((), {"p": 0.3, "training": True}), ((0.3,), {})],
+                         ids=["defaults", "train_p03", "p03_default_training"])
+def test_a_dropout_that_drops_has_no_rule_and_refuses_by_name(extra, kwargs):
+    with pytest.raises(UnknownOpKindError, match="no op-kind rule"):
+        op_kind(_unary(ComputeAdapter(F.dropout, extra_args=extra, kwargs=kwargs)))
+
+
+def test_a_dropout_module_is_wiring_where_it_drops_nothing():
+    assert op_kind(_unary(nn.Dropout(0.3).eval())) == "wire+"
+    assert op_kind(_unary(nn.Dropout(0.0).train())) == "wire+"
+    with pytest.raises(UnknownOpKindError, match="no op-kind rule"):
+        op_kind(_unary(nn.Dropout(0.3).train()))
+
+
+def _tiny_swin():
+    from torchvision.models.swin_transformer import SwinTransformer
+
+    return SwinTransformer(patch_size=[4, 4], embed_dim=16, depths=[2, 2], num_heads=[2, 2], window_size=[2, 2],
+                           stochastic_depth_prob=0.0, num_classes=5)
+
+
+def _tiny_maxvit():
+    from torchvision.models.maxvit import MaxVit
+
+    return MaxVit(input_size=(32, 32), stem_channels=8, partition_size=2, block_channels=[16], block_layers=[2],
+                  head_dim=8, stochastic_depth_prob=0.0, num_classes=5)
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("factory, shape, wiring", [
+    (_tiny_swin, (3, 16, 16),
+     {"torch._C._nn.pad", "torch.nn.functional.dropout", "torch._VariableFunctionsClass.roll"}),
+    (_tiny_maxvit, (3, 32, 32), {"torch._VariableFunctionsClass.swapaxes"}),
+], ids=["swin_tiny", "maxvit_tiny"])
+def test_every_host_op_of_the_tiny_swin_family_programs_has_a_kind(factory, shape, wiring):
+    import contextlib
+    import io
+
+    from unit.chip_simulation.value_run.integer_programs import build_integer_program
+
+    torch.manual_seed(0)
+    with contextlib.redirect_stdout(io.StringIO()):
+        program = build_integer_program(factory().eval(), shape, num_classes=5)
+    kinds = ir_op_kinds(program.ir)
+    assert set(kinds.values()) <= set(REQUIREMENTS)
+    ops = {op.op_type: kinds[op.id] for op in program.ir.get_compute_ops() if op.op_type in wiring}
+    assert set(ops) == wiring and set(ops.values()) == {"wire+"}

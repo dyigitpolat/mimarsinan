@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Callable, Dict, Mapping, Tuple
+from typing import Any, Callable, Dict, Mapping, Tuple
 
 import torch
 import torch.nn as nn
@@ -24,6 +24,8 @@ ACTIVATION_ROLE = "activation"
 PAYLOAD_WRITE_KIND = "payload_write"
 
 _CONVS = (nn.Conv1d, nn.Conv2d, nn.Conv3d)
+#: The padding builtin the converter records (``torch._C._nn.pad``, which ``F.pad`` wraps).
+_C_PAD: Callable = getattr(getattr(torch._C, "_nn"), "pad")
 _MODULE_TYPES: Tuple[Tuple[tuple, str], ...] = (
     ((nn.ReLU, nn.ReLU6, nn.Hardtanh, nn.LeakyReLU, nn.PReLU, nn.Hardsigmoid), "clamp"),
     ((nn.Hardswish,), "hswish"),
@@ -43,6 +45,7 @@ _MODULE_RULES: Tuple[Tuple[Callable[[nn.Module], bool], str], ...] = (
     (lambda m: isinstance(m, _CONVS + (nn.Linear,)), "mms"),
     (lambda m: isinstance(m, nn.Upsample) and m.mode == "nearest", "wire+"),
     (lambda m: isinstance(m, nn.Upsample), "mms"),
+    (lambda m: isinstance(m, nn.modules.dropout._DropoutNd) and (not m.training or float(m.p) == 0.0), "wire+"),
 )
 _FUNCTION_KINDS: Mapping[Callable, str] = {
     **dict.fromkeys((F.relu, torch.relu, F.relu6, F.hardtanh, F.leaky_relu, torch.clamp, torch.clip,
@@ -55,8 +58,9 @@ _FUNCTION_KINDS: Mapping[Callable, str] = {
     **dict.fromkeys((torch.mean, F.adaptive_avg_pool1d, F.adaptive_avg_pool2d, F.avg_pool1d, F.avg_pool2d), "pool"),
     **dict.fromkeys((F.max_pool1d, F.max_pool2d, F.adaptive_max_pool2d), "maxp"),
     **dict.fromkeys((operator.getitem, torch.cat, torch.stack, torch.chunk, torch.split, torch.narrow, torch.select,
-                     F.pad, torch.flatten, torch.reshape, torch.permute, torch.transpose, torch.squeeze, torch.unsqueeze,
-                     cat_per_sample, _cat_along), "wire+"),
+                     F.pad, _C_PAD, torch.flatten, torch.reshape, torch.permute, torch.transpose,
+                     torch.swapaxes, torch.swapdims, torch.roll, torch.squeeze, torch.unsqueeze, cat_per_sample,
+                     _cat_along), "wire+"),
     F.scaled_dot_product_attention: "leaf",
 }
 #: Binary arithmetic: (kind with two activation operands, kind with one activation and a constant).
@@ -113,8 +117,18 @@ def _function_of(fn: Callable) -> Callable:
     return fn
 
 
+def _dropout_kind(adapter: ComputeAdapter) -> str | None:
+    """A dropout that drops nothing (``training`` false, or ``p`` 0) is the identity: transparent wiring. One that
+    drops is stochastic and has no rule; an argument the call does not show reads as ``F.dropout``'s default."""
+    named: Dict[str, Any] = dict(zip(("p", "training"), adapter.extra_args)) if adapter.arg_template is None else {}
+    named.update(adapter.kwargs)
+    return "wire+" if named.get("training", True) is False or named.get("p", 0.5) == 0 else None
+
+
 def _adapter_kind(adapter: ComputeAdapter, op: ComputeOp) -> str | None:
     fn = _function_of(adapter.fn)
+    if fn is F.dropout:
+        return _dropout_kind(adapter)
     binary = _BINARY_KINDS.get(fn)
     if binary is not None:
         return binary[0] if len(operand_spans(op)) >= 2 else binary[1]

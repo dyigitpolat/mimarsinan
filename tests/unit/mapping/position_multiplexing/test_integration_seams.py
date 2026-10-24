@@ -168,3 +168,50 @@ class TestTheSignRegisterOfAFusedCorePerTile:
         assert row.core_bytes(0, 8) + row.core_bytes(1, 8) == (
             core_payload_bytes(row.core_cells[0], 8, 256) + core_payload_bytes(row.core_cells[1], 8, 44))
         assert math.ceil(256 / 8) + math.ceil(44 / 8) == math.ceil(300 / 8)
+
+
+#: Executed on-chip lanes with the pool class (WI-5e): the classes beside the integer path's readout law.
+POOL_LANES = {"onchip_arithmetic": {"classes": ["L", "E", "P"]},
+              "readout_law": {"adc_bits": 40, "range": "calibrated", "mult_bits": 24}}
+
+
+class TestPositionMultiplexingBesideAPoolLane:
+    """[integration exactness review] A pool lane core (``mapping/lanes/ir/pool_cores.py``) carries no layout record,
+    so the multiplexing planner cannot order it and the builder refuses a lane program with an on-chip pool after
+    training ("this IR carries no layout record for its cores"), while every door admitted the declaration. Until pool
+    lane cores carry layout records, executed P lanes admit only false, refused by name at every door. L and E lanes,
+    and lanes off the integer path (no readout law: a pool stays a host op), keep both values."""
+
+    STATE = {"allow_scheduling": True, "lif_depth_balancing_relays": False}  # relays off (carried minor N1)
+
+    def test_the_declaration_admits_only_false_beside_executed_pool_lanes(self):
+        entry = REGISTRY["position_multiplexing"]
+        state = {**self.STATE, "cores": [STATIC]}
+        assert tuple(entry.legal_values({**state, **POOL_LANES})) == (False,)
+        clamp_and_add = {**POOL_LANES, "onchip_arithmetic": {"classes": ["L", "E"]}}
+        assert tuple(entry.legal_values({**state, **clamp_and_add})) == (False, True)
+        float_path = {"onchip_arithmetic": POOL_LANES["onchip_arithmetic"]}
+        assert tuple(entry.legal_values({**state, **float_path})) == (False, True)
+        off_ablation = {**POOL_LANES, "onchip_arithmetic": {"classes": []}}
+        assert tuple(entry.legal_values({**state, **off_ablation})) == (False, True)
+
+    def test_a_malformed_lane_declaration_is_left_to_its_own_rule(self):
+        entry = REGISTRY["position_multiplexing"]
+        malformed = {**POOL_LANES, "onchip_arithmetic": {"classes": ["P"]}}  # P without L
+        assert tuple(entry.legal_values({**self.STATE, "cores": [STATIC], **malformed})) == (False, True)
+
+    def test_every_door_refuses_it_by_name(self, tmp_path):
+        doc = _document([STATIC])
+        doc[PC] = {**doc[PC], "allow_scheduling": True, "position_multiplexing": True, **POOL_LANES}
+        _refused_by_name(doc, tmp_path, "position_multiplexing")
+
+    def test_a_pool_lane_chip_declaring_it_false_passes_every_door(self, tmp_path):
+        doc = _document([STATIC])
+        doc[PC] = {**doc[PC], "allow_scheduling": True, "position_multiplexing": False, **POOL_LANES}
+        assert _verdicts(doc, tmp_path) == ([], [], None)
+
+    def test_a_clamp_and_add_lane_chip_declaring_it_true_passes_every_door(self, tmp_path):
+        doc = _document([STATIC])
+        doc[PC] = {**doc[PC], "allow_scheduling": True, "position_multiplexing": True, **POOL_LANES,
+                   "onchip_arithmetic": {"classes": ["L", "E"]}}
+        assert _verdicts(doc, tmp_path) == ([], [], None)
