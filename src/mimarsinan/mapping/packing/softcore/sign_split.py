@@ -10,6 +10,7 @@ from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.packing.softcore.matrix_placement import materialize_signed
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON
+from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns
 
 
 class SignSplitError(ToolchainRefusal, ValueError):
@@ -66,8 +67,9 @@ def _copied(source: SpikeSource) -> SpikeSource:
 def split_soft_core(core: Any, memo: Optional[Dict[Any, Any]] = None) -> None:
     """Re-describe ``core`` by its physical rows, in place: the shared payload stays the source of a descriptor
     whose rows repeat each mixed row, signed by ``compact_row_signs``; each source is duplicated as a distinct
-    object (the packer remaps placed sources in place). Bank bookkeeping is dropped, as compaction drops it, so
-    no reader slices the logical bank by a physical row count."""
+    object (the packer remaps placed sources in place), and columnar sources (``SpikeSourceColumns``, the identity
+    build's) take each row's entry, since the packer remaps columns whole. Bank bookkeeping is dropped, as
+    compaction drops it, so no reader slices the logical bank by a physical row count."""
     if is_sign_split(core):
         return
     memo = {} if memo is None else memo
@@ -80,8 +82,11 @@ def split_soft_core(core: Any, memo: Optional[Dict[Any, Any]] = None) -> None:
         source, rows = core.core_matrix, origin
         cols = np.arange(np.shape(source)[1], dtype=np.intp)
     sources = core.axon_sources
-    core.axon_sources = [sources[j] if i == 0 or origin[i - 1] != j else _copied(sources[j])
-                         for i, j in enumerate(origin.tolist())]
+    if isinstance(sources, SpikeSourceColumns):
+        core.axon_sources = sources.take(origin)
+    else:
+        core.axon_sources = [sources[j] if i == 0 or origin[i - 1] != j else _copied(sources[j])
+                             for i, j in enumerate(origin.tolist())]
     core.compact_source_matrix = source
     core.compact_keep_rows = _memoized(memo, np.asarray(rows, dtype=np.intp))
     core.compact_keep_cols = _memoized(memo, np.asarray(cols, dtype=np.intp))
