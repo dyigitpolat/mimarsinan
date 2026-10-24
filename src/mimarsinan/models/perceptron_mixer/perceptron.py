@@ -97,6 +97,19 @@ def make_activation(name=None):
     return ACTIVATION_REGISTRY[name]()
 
 
+VALUE_DOMAIN_INPUT_ATTR = "reads_value_domain"
+"""Stamped at flow birth (``mark_encoding_layers``) on a value-domain flow's perceptrons: they read signed values."""
+
+
+def declare_value_domain_input(perceptron) -> None:
+    setattr(perceptron, VALUE_DOMAIN_INPUT_ATTR, True)
+
+
+def reads_value_domain(perceptron) -> bool:
+    """Whether the perceptron is declared to read the value domain (not the event wire's spike rates in [0, 1])."""
+    return bool(getattr(perceptron, VALUE_DOMAIN_INPUT_ATTR, False))
+
+
 def as_affine_package(perceptron: "Perceptron") -> "Perceptron":
     """Value-domain (mvm) affine package: a true Identity activation by
     construction — never the spiking flow's ReLU-ification of unnamed acts."""

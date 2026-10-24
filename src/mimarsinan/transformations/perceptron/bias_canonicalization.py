@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.models.nn.off_floor import has_off_floor
 from mimarsinan.models.perceptron_mixer.perceptron import activation_channel_axis
 from mimarsinan.transformations.perceptron.bias_saturation import (
     _EMPIRICAL_MARGIN,
@@ -79,6 +80,7 @@ def canonicalize_starved_bias_outliers(
 
     Arms only perceptrons whose predicted weight-zero fraction at the target grid
     is >= 0.8; each guarded rung is VERIFIED (a decision flip restores state exactly).
+    The empirical shift runs only on a node that declares a constant-OFF floor.
     """
     report = {"clipped": 0, "restored": 0, "removed": 0, "removal_restored": 0}
     batches = [x for x in calibration_batches]
@@ -102,6 +104,8 @@ def canonicalize_starved_bias_outliers(
             return report
         reference = _decisions(model, batches, device)
         for perceptron in armed:
+            if not has_off_floor(getattr(perceptron, "base_activation", None)):
+                continue  # the shift's OFF (v_max <= 0) is a floor's state; an affine package has none
             v_min, v_max = _channel_preactivation_range(
                 perceptron, model, batches, device,
             )

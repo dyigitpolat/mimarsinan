@@ -15,6 +15,7 @@ from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
 from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.structural import InputMapper
+from mimarsinan.models.perceptron_mixer.perceptron import declare_value_domain_input
 
 
 _PERCEPTRON_MAPPER_TYPES = (PerceptronMapper, Conv2DPerceptronMapper, Conv1DPerceptronMapper)
@@ -102,7 +103,8 @@ def mark_encoding_layers(
     generate spike trains; ``"offload"`` clears the mark so they map on-chip as NeuralCores.
     ``packaging`` is the target family's contract: a VALUE-domain target has no
     spike-train encoder at all, so nothing is marked and the graph is stamped
-    :data:`PLACEMENT_NOT_APPLICABLE` — an explicit answer, not an absent one.
+    :data:`PLACEMENT_NOT_APPLICABLE` — an explicit answer, not an absent one —
+    and every perceptron is stamped as a value-domain reader (signed inputs).
 
     THE one writer of the placement decision, and it records the decision on the
     graph (:func:`resolved_encoding_placement`) so a consumer can tell a resolved
@@ -119,6 +121,8 @@ def mark_encoding_layers(
             f"got {placement!r}"
         )
     if packaging.is_value_domain:
+        for perceptron in model_repr.get_perceptrons():
+            declare_value_domain_input(perceptron)
         model_repr.encoding_placement = PLACEMENT_NOT_APPLICABLE
         return
     model_repr._ensure_exec_graph()

@@ -81,7 +81,7 @@ class PerceptronTransformer:
         self.apply_effective_weight_transform(perceptron, parameter_transform)
         self.apply_effective_bias_transform(perceptron, parameter_transform)
 
-    def _get_input_scale(self, perceptron):
+    def input_scale(self, perceptron):
         """Return broadcastable input scale: per-channel tensor or scalar 1.0."""
         pis = getattr(perceptron, 'per_input_scales', None)
         if pis is not None:
@@ -106,7 +106,7 @@ class PerceptronTransformer:
         return a
 
     def get_effective_weight(self, perceptron):
-        scale = self._get_input_scale(perceptron)
+        scale = self.input_scale(perceptron)
         act = self._activation_scale_for_weight(perceptron)
         if isinstance(perceptron.normalization, nn.Identity):
             return scale * perceptron.layer.weight.data / act
@@ -128,7 +128,7 @@ class PerceptronTransformer:
         
     def apply_effective_weight_transform(self, perceptron, weight_transform):
         effective_weight = self.get_effective_weight(perceptron)
-        scale = self._get_input_scale(perceptron)
+        scale = self.input_scale(perceptron)
         act = self._activation_scale_for_weight(perceptron)
 
         if isinstance(perceptron.normalization, nn.Identity):

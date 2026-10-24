@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.models.nn.off_floor import declare_off_floor, has_off_floor
 from mimarsinan.tuning.orchestration.mbh_ledger import full_transform_measurement
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 from mimarsinan.tuning.teacher import freeze_module
@@ -40,6 +41,16 @@ class BlendActivation(nn.Module):
         if self.rate >= 1.0:
             return self.target_activation(x)
         return (1.0 - self.rate) * self.old_activation(x) + self.rate * self.target_activation(x)
+
+
+def _blend_off_floor(blend: nn.Module) -> bool:
+    """``(1 - rate) old + rate target`` has the floor when every side its rate reads has it."""
+    rate = float(getattr(blend, "rate"))
+    return (rate >= 1.0 or has_off_floor(getattr(blend, "old_activation"))) and (
+        rate <= 0.0 or has_off_floor(getattr(blend, "target_activation")))
+
+
+declare_off_floor(BlendActivation, _blend_off_floor)
 
 
 class PlainClassificationLoss:

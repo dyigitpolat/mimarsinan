@@ -40,6 +40,22 @@ width's grid, and the bias canonicalization predicts its weight zeros at that wi
 - `models` — `normalization_fusion.py` uses `models.nn.activations.ttfs_spiking.refresh_perceptron_bias_references` and `models.perceptron_mixer.perceptron.effective_preactivation_bias`; `perceptron/perceptron_transformer.py` lazily imports `models.nn.layers.norm_affine_params` to read normalization affine parameters.
 - `mapping` — `pruning/masks.py` lazily imports `mapping.pruning.boundary_policy.compute_perceptron_io_exemption_indices` to exempt model-I/O layers when computing masks from an IR graph; `channel_scale_equalization.py` imports `channel_axis_walk.channel_aligned_consumer_targets` (the shared mapper-DAG traversal) and `PerceptronMapper` to find exactly-migratable pairs.
 
+## Constant-OFF bias clip on the proven input range (D19)
+
+`perceptron/bias_saturation.py`: `clip_off_saturated_effective_bias` clips a channel to `off_saturation_bias_bound`,
+`-sum_i max(w_i lo_i, w_i hi_i)` over the `InputRange` that `constant_off_input_range` proves, and only there: a node
+that declares a constant-OFF floor (`models.nn.off_floor.has_off_floor` on `base_activation`: ReLU, LIF and TTFS
+nodes and their blends; an affine package's output is linear in its bias, so it is never clipped), not an encoding
+layer, and a proven range from `declared_input_range`: the value range of the boundary grid the input wire ends on
+(`models.nn.activations.value_quantizer.wire_output_grid`), hulled with 0 for zero padding and divided by
+`per_input_scales` (`PerceptronTransformer.input_scale`); the event wire's `UNIT_INPUT_RANGE` [0, 1] (bitwise the
+legacy formula) when the wire holds no value-domain grid and the perceptron is not stamped a value-domain reader
+(`models.perceptron_mixer.perceptron.reads_value_domain`); none (no clip) for a value-domain reader with no armed grid
+at its wire's end. On a declared range the bound is taken in float64 and lowered by the float32 error bound of the
+forward's sum, so a clipped channel stays OFF in the layer's own forward. `perceptron/bias_canonicalization.py` runs
+its guarded empirical shift only on a node with the floor (its OFF test `v_max <= 0` is a floor's state); the
+verified channel removal is unchanged.
+
 ## Dependents
 - `mapping` — `PerceptronTransformer` (perceptron/conv1d/conv2d mappers, bias compensation), `TensorQuantization` (`mapping_utils`), `quantization_bounds` and `assert_integer_scaled_matrix` (`export.chip_quantize`, `pruning.boundary_policy`).
 - `pipelining` — `fuse_into_perceptron` (normalization-fusion step), `PerceptronTransformer` (quantization-verification step), `quantization_bounds` and `pruning.committed_masks` commit/verify (soft-core mapping step and the cache store/load boundary), `prune_perceptron_chain` (soft-core structured-pruning step), `equalize_channel_scales` + `DEFAULT_CLIP_RATIO` (the config-gated Scale Migration step and `DeploymentPlan`/registry defaults).

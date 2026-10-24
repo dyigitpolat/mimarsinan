@@ -57,6 +57,17 @@ class BoundaryGrid:
         """The value of code 0 is ``-entry_offset()``: a value is ``code * step - entry_offset()``."""
         return 0.0
 
+    @property
+    def code_range(self) -> Tuple[int, int]:
+        """The least and greatest code the entry snap writes."""
+        return -self.levels, self.levels
+
+    @property
+    def value_range(self) -> Tuple[float, float]:
+        """The least and greatest value the entry snap can produce (the declared input range of its reader)."""
+        low, high = self.code_range
+        return low * self.step - self.entry_offset(), high * self.step - self.entry_offset()
+
     def snap(self, x: torch.Tensor) -> torch.Tensor:
         """The entry snap of ``x`` onto this grid (the boundary SSOT)."""
         return quantize_to_value_grid(x, self.scale, self.bits)
@@ -208,4 +219,19 @@ def boundary_grid_of(module: "nn.Module | None") -> "BoundaryGrid | None":
     for candidate in module.modules():
         if isinstance(candidate, ValueGridQuantizer) and candidate.grid.armed:
             return candidate.grid
+    return None
+
+
+def carries_value_grid(wire: "nn.Module | None") -> bool:
+    """Whether an input wire holds a value-domain boundary quantizer, armed or not."""
+    return wire is not None and any(isinstance(m, ValueGridQuantizer) for m in wire.modules())
+
+
+def wire_output_grid(wire: "nn.Module | None") -> "BoundaryGrid | None":
+    """The armed grid the wire's LAST op snaps onto (so it bounds what the reader reads), else None."""
+    last = wire
+    while isinstance(last, nn.Sequential) and len(last) > 0:
+        last = last[-1]
+    if isinstance(last, ValueGridQuantizer) and last.grid.armed:
+        return last.grid
     return None
