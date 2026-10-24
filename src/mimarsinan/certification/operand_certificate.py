@@ -16,7 +16,8 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.capability.op_kinds import op_kind
 from mimarsinan.models.nn.activations.integer_law import grid_levels
 
-#: Samples the golden replays alone against their place in the batch (the batch-of-one edge).
+#: Samples the golden replays alone against their place in the batch (the batch-of-one edge, a spot check of the
+#: first two; batch invariance at the certified shapes is pinned per host-op kind by the batch-invariance tests).
 BATCH_OF_ONE_SAMPLES = 2
 BATCH_OF_ONE = "batch of one (golden alone/in the batch)"
 
@@ -133,9 +134,12 @@ def _flow_outputs(mapping, samples):
 
 
 def _batch_of_one_edge(identity_mapping, samples: torch.Tensor, codes: np.ndarray, trace: GoldenTrace) -> EdgeResult:
-    """The golden on the first samples alone against the same samples in the batch, every output code and host
-    value: the host edge compares golden and executor on one batch, so this edge is what sees a host op whose fp64
-    output depends on batch composition (design §3.2's per-sample replay)."""
+    """The golden on the first ``BATCH_OF_ONE_SAMPLES`` samples alone against the same samples in the batch, every
+    output code and host value. The host edge compares golden and executor on one batch, so this edge is a spot check
+    of design §3.2's per-sample replay: it sees a host op whose fp64 output depends on batch composition only where
+    the first samples differ (torch's fp64 ELU and GELU at small shapes differ mostly in later samples). Batch and
+    thread invariance at the certified shapes rests on the per-shape pins of
+    ``tests/unit/chip_simulation/test_host_op_batch_invariance.py``, not on this edge."""
     got, want = [], []
     for i in range(min(BATCH_OF_ONE_SAMPLES, int(samples.shape[0]))):
         alone = GoldenTrace()
