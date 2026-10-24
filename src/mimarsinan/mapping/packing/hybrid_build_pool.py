@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Sequence
+from typing import Iterable, Sequence
 
 import numpy as np
 
@@ -119,17 +119,22 @@ def build_hybrid_hard_core_mapping(
 
 def build_identity_hybrid_mapping(
     *, ir_graph: IRGraph, per_hop_neural_segments: bool = False,
-    retimed_level_stages: bool = False,
+    retimed_level_stages: bool = False, exposed: Iterable[int] = (),
 ) -> HybridHardCoreMapping:
     """Compile an IRGraph into a 1:1 NeuralCore→HardCore hybrid program (no pool/pad/reindex/coalesce/split).
 
     Carries pure IR semantics; the rung-2 SCM gate executor the packed builder
     must be value-preserving against (so it shares the per-hop segmentation
-    decision with the packed build).
+    decision with the packed build). ``exposed`` names IR nodes every stage
+    also writes out (a twin certificate's backend carries, WI-5e); a node
+    already read outside its stage is written out anyway, so the default
+    program is unchanged.
     """
-    from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
+    from mimarsinan.mapping.pruning.ir_segmentation import _FINAL_OUTPUT_SENTINEL, build_ir_consumed_by
 
     consumed_by = build_ir_consumed_by(ir_graph)
+    for node_id in exposed:
+        consumed_by[int(node_id)].add(_FINAL_OUTPUT_SENTINEL)
 
     stages: list[HybridStage] = []
     all_reindex_maps: dict[int, dict[int, int]] = {}

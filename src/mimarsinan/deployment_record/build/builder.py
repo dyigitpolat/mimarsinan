@@ -30,6 +30,7 @@ _FRAGMENT_TYPES: Dict[str, type] = {
     "energy": EnergyRecord,
     "adaptation": AdaptationRecord,
     "adaptation_ledger": AdaptationSummaryRecord,
+    "output_stage": dict,
 }
 
 _ALWAYS_REQUIRED = (
@@ -113,6 +114,7 @@ class DeploymentRecordBuilder:
             adaptation=self._fragments.get("adaptation"),
             provenance=dict(self._provenance),
             adaptation_ledger=self._fragments.get("adaptation_ledger"),
+            output_stage=self._fragments.get("output_stage"),
         )
 
     def _require(self, group: str, reason: str) -> Any:

@@ -29,6 +29,35 @@ pipeline's `ModelRegistry` so configs can instantiate models by `model_type` id.
 | `preprocessing/` | Empty placeholder package (legacy `InputCQ` removed; input encoding now lives in IR encoding layers). |
 | `spiking/` | The deployable spiking simulator: `SpikingHybridCoreFlow` (`hybrid/` stage-IO/LIF/rate/TTFS mixins plus the [C2] `membrane_readout` charge decode for final-only LIF output cores, applied only at the decode-to-logits boundary — spike-count records stay raw; `hybrid/carry.py` is the RASTER CARRY seam — under streamed semantics a pass boundary INSIDE a segment is a physical cut, not a semantic one, so it must hand the next pass the spike raster rather than a count, and the packed executor records that raster in producer-local time from the same `fires` the counts accumulate (`raster.sum(0) == counts` by construction). Only wires read by a later PASS of the same segment are published: a wire crossing to a later SEGMENT is a host boundary and collapses by design. An execution path that cannot record a raster — synchronized, recording, single-spike — REFUSES by name rather than handing the next pass a re-encoded count), per-cycle neuron policies, TTFS wire-semantics kernel pairs (torch+numpy twins), spiking config constants, and differentiable spike-train training forwards. |
 
+## Declared boundary grids (Wave 2 WI-5a)
+
+`nn/activations/value_quantizer.py`: `BoundaryGrid.snap` (the entry snap, `quantize_to_value_grid` byte for byte),
+`entry_codes` (the DAC codes the golden reads) and `entry_offset()` (0); `DeclaredBoundaryGrid` adds the offset
+(a value is `code * step - offset`), the entry rounding (`ENTRY_ROUNDINGS`: nearest half away, or floor) and the
+code range inside the DAC's `±(2^(b-1) - 1)` (`BoundaryGridDeclarationError` otherwise); `ValueGridQuantizer.declare`
+installs one (a later `calibrate` drops it). `integer_law.grid_codes(..., offset=)` reads `(x + o) / Δ` within the
+dtype's rounding. `readout_quantizer.ReadoutStamp.evaluate` reads its entry grid's offset and subtracts
+`OFFSET_MULTIPLIER * (accumulator of ones)` from the bias, the law's own per-position offset term.
+
+## Lanes in the model (Wave 2 WI-5e)
+
+`nn/activations/lane_quantization.py` holds the model side of a lane program: the unsigned lane grid
+(`quantize_to_lane_grid`, codes `0..2^b - 1` at step `range / (2^b - 1)`, an optional offset), `LaneAddModule` (a
+fused add's end: STE onto its accumulator perceptron's lane grid, or once stamped that perceptron's law with the
+add's other input as operand, one rounding for the sum), `LanePoolModule` and its `PoolStamp` (a pool lane: STE onto
+its own grid, or once stamped the sum of codes over each window and the law), `LaneReduceModule` (a producer-side
+reduction's end, D11: an average pool its perceptron alone feeds, STE of the pooled value onto that perceptron's lane
+grid, or once stamped the perceptron's accumulators summed over each window and its law per pool output, one
+rounding) and `LaneSeam` (the calibration seam of a lane that rounds downstream). `ReadoutQuantizer.set_lane` makes a
+perceptron's readout quantizer its lane (unsigned or offset grid; `lane_continues` when it rounds at a fused add's
+or a reduction's end, its own slot then passing the value through); class defaults keep every other quantizer's
+pickle unchanged. `ReadoutStamp.evaluate` reads a lane's input offset, its operand (on the operand's own grid,
+`OPERAND_M`, `OPERAND_STEP`, `OPERAND_OFFSET`), its output offset (`OUTPUT_OFFSET`) and a reduction's window
+(`lane_reduce`, its law arrays then per pool output element as the IR folded them); without them it is step 1's law.
+`DeclaredBoundaryGrid.unsigned_dac` lets a lane chip's DAC read the 2^b unsigned codes at a declared entry, and an
+unsigned declared code range there is the unsigned lane grid of its bits (`DeclaredBoundaryGrid.unsigned`, `step =
+scale / (2^b - 1)`, the step a lane's readout range of the same value writes).
+
 ## Dependencies
 - **`mapping`** — `HybridHardCoreMapping`/`HybridStage` and `IRSource` consumed by the
   spiking flow; core geometry and spike-source spans for stage IO; IR/chip latency for

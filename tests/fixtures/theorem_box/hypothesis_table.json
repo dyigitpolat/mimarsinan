@@ -63,6 +63,8 @@
   "max_axons",
   "max_neurons",
   "max_schedule_passes",
+  "onchip_arithmetic.lane_block",
+  "onchip_arithmetic.lanes_per_core",
   "platform_physics_overrides",
   "platform_physics_profile",
   "position_multiplexing",

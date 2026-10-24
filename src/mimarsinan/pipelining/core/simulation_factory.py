@@ -29,6 +29,7 @@ from mimarsinan.mapping.platform.mapping_structure import (
     MappingStrategy,
 )
 from mimarsinan.mapping.support.bias_compensation import propagate_negative_shifts_to_hybrid
+from mimarsinan.mapping.support.core_types import typed_cores_config
 from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
@@ -68,7 +69,7 @@ def build_hybrid_mapping_for_pipeline(
     )
     hybrid_mapping = build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,
-        cores_config=platform_constraints["cores"],
+        cores_config=typed_cores_config(platform_constraints),  # [WI-5g] each type with its own width
         strategy=strategy,
         retimed_level_stages=_per_hop_retiming_enabled(pipeline_config),
         max_schedule_passes=int(platform_constraints.get("max_schedule_passes", 8) or 8),

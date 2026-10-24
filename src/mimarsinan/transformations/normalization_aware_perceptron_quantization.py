@@ -4,6 +4,7 @@ from mimarsinan.transformations.perceptron.bias_saturation import (
     clip_off_saturated_effective_bias,
 )
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.quantization_bounds import layer_weight_bits
 
 import torch
 
@@ -19,22 +20,44 @@ class NormalizationAwarePerceptronQuantization:
     integer-ratio-snapped to the weight grid (``bias_scale = parameter_scale/r``),
     so the quantized bias stays an exact integer on the weight-grid lattice —
     the torch<->chip parity contract (``wq_cascade_crater_repair.md`` §4.3/§5).
+
+    Declared value-domain grids (Wave 2): ``fractional_scale`` takes the scale
+    ``q_max / max`` instead of its integer floor (the law's multiplier carries
+    it); ``float_bias`` derives the weight grid from ``max|w|`` alone and leaves
+    the bias float (the readout law rounds it at its own resolution).
     """
 
-    def __init__(self, bits, device, rate=1.0, two_scale=False):
+    def __init__(self, bits, device, rate=1.0, two_scale=False, fractional_scale=False, float_bias=False):
         self.device = device
         self.bits = bits
         self.q_min = -( 2 ** (bits - 1) )
         self.q_max = ( 2 ** (bits - 1) ) - 1
         self.rate = rate
         self.two_scale = bool(two_scale)
+        self.fractional_scale = bool(fractional_scale)
+        self.float_bias = bool(float_bias)
 
     def transform(self, perceptron):
+        # [WI-5g] a perceptron on a core type of its own weight width quantizes on that width's grid.
+        bits = layer_weight_bits(perceptron, self.bits)
+        projection = self if bits == self.bits else NormalizationAwarePerceptronQuantization(
+            bits, self.device, self.rate, two_scale=self.two_scale, fractional_scale=self.fractional_scale,
+            float_bias=self.float_bias)
         transformer = PerceptronTransformer()
         with transformer.deferred_finite_checks(perceptron):
-            self._transform(perceptron, transformer)
+            projection._transform(perceptron, transformer)
+
+    def _grid_scale(self, peak):
+        """The weight grid's scale for ``peak = max|·|``: the integer floor (chip threshold register) or
+        ``q_max / peak`` under a declared fractional rule."""
+        quotient = self.q_max / torch.clamp(peak, min=1e-12)
+        return quotient if self.fractional_scale else torch.clamp(torch.floor(quotient), min=1.0)
 
     def _transform(self, perceptron, transformer):
+        if self.float_bias:
+            # No bias grid exists, so no bias mass can starve it: the projection leaves the bias as trained.
+            self._transform_float_bias(perceptron, transformer)
+            return
         # The scale must never be set by functionally-unobservable bias mass:
         # a constant-OFF channel's outlier bias starves the shared weight grid
         # (the t01_19/t0_03 WQ-entry crater). Idempotent, function-preserving.
@@ -67,7 +90,7 @@ class NormalizationAwarePerceptronQuantization:
         # FLOOR, not round: p_max*scale <= q_max keeps every quantized
         # parameter inside its register (no clip saturation, relays keep
         # their strict-comparator margin).
-        scale = torch.clamp(torch.floor(self.q_max / p_max), min=1.0)
+        scale = self._grid_scale(p_max)
 
         # set_parameter_scale re-declares the shared grid (bias_scale follows).
         perceptron.set_parameter_scale(scale)
@@ -79,9 +102,7 @@ class NormalizationAwarePerceptronQuantization:
 
     def _transform_two_scale(self, perceptron, transformer, w_max, b_max):
         # [nevresim parity] integer-lattice weight grid (see single-scale note).
-        weight_scale = torch.clamp(
-            torch.floor(self.q_max / torch.clamp(w_max, min=1e-12)), min=1.0,
-        )
+        weight_scale = self._grid_scale(w_max)
         # Integer-ratio snap: a bias grid of r whole weight-grid steps keeps
         # `bias * weight_scale = r * bias_int` exactly integer, which is the
         # lattice the chip export emits and the NF<->SCM parity consumes.
@@ -98,6 +119,12 @@ class NormalizationAwarePerceptronQuantization:
         transformer.apply_effective_bias_transform(
             perceptron, self._quantize_param_fn(bias_scale)
         )
+
+    def _transform_float_bias(self, perceptron, transformer):
+        weight_scale = self._grid_scale(torch.max(torch.abs(transformer.get_effective_weight(perceptron))))
+        perceptron.set_parameter_scale(weight_scale)
+        self._stamp_membrane_lattice(perceptron, weight_scale)
+        transformer.apply_effective_weight_transform(perceptron, self._quantize_param_fn(weight_scale))
 
     @staticmethod
     def _stamp_membrane_lattice(perceptron, scale) -> None:

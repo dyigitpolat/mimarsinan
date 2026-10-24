@@ -73,6 +73,15 @@ class ValueWindowCertificate:
         )
 
 
+def exposed_nodes(hybrid_mapping) -> frozenset:
+    """The IR nodes a hybrid program's neural stages write out: its segment outputs and, scheduled, the values its
+    passes carry. An identity reference exposing them (``fp64_identity_program(ir, exposed=...)``) shows the twin
+    certificate every node the backend shows (a lane program is one segment, so its carries are otherwise internal
+    to the identity program)."""
+    return frozenset(int(s.node_id) for stage in hybrid_mapping.stages if stage.kind == "neural"
+                     for s in stage.output_map)
+
+
 def certify_twin_flow_values(
     reference_flow,
     backend_flow,

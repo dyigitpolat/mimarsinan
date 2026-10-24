@@ -48,14 +48,17 @@ class IntegerProgram:
         return ValueHybridCoreFlow(build_identity_hybrid_mapping(ir_graph=self.ir), dtype=torch.float64)
 
     def packed_mapping(self, *, axons: int, neurons: int, count: int = 999, split: bool = True,
-                       coalescing: bool = False, passes: Optional[int] = None):
+                       coalescing: bool = False, passes: Optional[int] = None,
+                       widths: Optional[Sequence[int]] = None):
+        """``widths``: one core type of ``count`` cores per weight width (WI-5g core types), else one untyped type."""
         strategy = MappingStrategy.resolve(ChipCapabilities(
             allow_neuron_splitting=split, allow_coalescing=coalescing,
             allow_scheduling=passes is not None, max_schedule_passes=passes or 8,
         ))
+        core = {"max_axons": axons, "max_neurons": neurons, "count": count}
+        cores = [core] if widths is None else [dict(core, weight_bits=int(w)) for w in widths]
         return build_hybrid_hard_core_mapping(
-            ir_graph=self.ir, cores_config=[{"max_axons": axons, "max_neurons": neurons, "count": count}],
-            strategy=strategy, max_schedule_passes=passes or 8,
+            ir_graph=self.ir, cores_config=cores, strategy=strategy, max_schedule_passes=passes or 8,
         )
 
     def packed(self, **kwargs) -> ValueHybridCoreFlow:

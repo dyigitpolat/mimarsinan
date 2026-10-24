@@ -5,6 +5,7 @@ from __future__ import annotations
 import heapq
 from typing import Any, Dict, Iterable, List, Sequence
 
+import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.value_run.operand_blocks import fill_operand_blocks, operand_blocks, static_part
@@ -15,7 +16,6 @@ from mimarsinan.mapping.packing.softcore.matrix_placement import (
     same_core_matrix_payloads,
 )
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
-from mimarsinan.models.nn.activations.value_quantizer import quantize_to_value_grid
 from mimarsinan.models.spiking.signal_spans import SpanFillPlan
 
 
@@ -112,7 +112,7 @@ class _PreparedValueSegment:
             )
             self.entry_transforms.append(
                 None if armed is None
-                else (lambda t, g=armed: quantize_to_value_grid(t, g.scale, g.bits))
+                else armed.snap
             )
         out_key = (id(hcm), "outputs", str(device))
         output_plan = plans.get(out_key)
@@ -143,20 +143,35 @@ def ensure_core_latencies(hcm) -> None:
         ChipLatency(hcm).calculate()
 
 
+def _native_codes(core) -> bool:
+    """A lane law's core (WI-5e) keeps its integer weight codes in their own dtype, converted per accumulate: a
+    whole-network lane segment then holds one byte per cell instead of eight. Every other core uploads ``dtype``."""
+    return hasattr(getattr(core, "readout_law", None), "operand_row")
+
+
+def _grid_tensor(core, dtype, device, native: bool):
+    """The core's grid as a tensor: in ``dtype``, or (``native``) in its integer codes' own dtype."""
+    matrix = core.get_core_matrix()
+    if native and np.issubdtype(np.asarray(matrix).dtype, np.integer):
+        return torch.as_tensor(np.require(matrix, requirements=["W"]), device=device)
+    return torch.as_tensor(matrix, dtype=dtype, device=device)
+
+
 def _upload(core, dtype, device, memo: "dict | None"):
     """Device tensor for the core's weight grid; cores resolving to
     byte-identical grids share one tensor ([F2] — content-keyed, so cores
     whose padded grid is now a transient composite still upload once).
     The memo retains the payloads and re-checks them by identity, so a
     freed-and-reallocated array can never alias through a stale key."""
+    native = _native_codes(core)
     if memo is None:
-        return torch.as_tensor(core.get_core_matrix(), dtype=dtype, device=device)
-    key = (core.core_matrix_key(), dtype, str(device))
+        return _grid_tensor(core, dtype, device, native)
+    key = (core.core_matrix_key(), "native" if native else dtype, str(device))
     payloads = core.core_matrix_payloads()
     hit = memo.get(key)
     if hit is not None and same_core_matrix_payloads(hit[0], payloads):
         return hit[1]
-    tensor = torch.as_tensor(core.get_core_matrix(), dtype=dtype, device=device)
+    tensor = _grid_tensor(core, dtype, device, native)
     memo[key] = (payloads, tensor)
     return tensor
 

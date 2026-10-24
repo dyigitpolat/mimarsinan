@@ -15,8 +15,11 @@ from mimarsinan.config_schema.registry.decision_classes import (
     declared_paths_in, effective_class_in, with_decision_class,
 )
 from mimarsinan.config_schema.registry.entries_conversion import ENTRIES as _CONVERSION
+from mimarsinan.config_schema.registry.entries_core_types import ENTRIES as _CORE_TYPES
 from mimarsinan.config_schema.registry.entries_endpoint import ENTRIES as _ENDPOINT
 from mimarsinan.config_schema.registry.entries_execution import ENTRIES as _EXECUTION
+from mimarsinan.config_schema.registry.entries_grids import ENTRIES as _GRIDS
+from mimarsinan.config_schema.registry.entries_lanes import ENTRIES as _LANES
 from mimarsinan.config_schema.registry.entries_lowering import ENTRIES as _LOWERING
 from mimarsinan.config_schema.registry.entries_model import ENTRIES as _MODEL
 from mimarsinan.config_schema.registry.entries_physics import ENTRIES as _PHYSICS
@@ -193,7 +196,7 @@ _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
         with_decision_class(_inject_domain_relevance(_inject_default(_inject_declarations(e))))
         for e in (_RUN + _MODEL + _SEMANTICS + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM + _PHYSICS
-                  + _LOWERING + _TARGET + _WRITE + _READOUT + _RESIDENCY)
+                  + _LOWERING + _TARGET + _WRITE + _READOUT + _RESIDENCY + _GRIDS + _LANES + _CORE_TYPES)
     )
 )
 _assert_domain_tags(_REGISTRY.values())

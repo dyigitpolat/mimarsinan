@@ -33,11 +33,13 @@ DEFERRED_REASONS: Mapping[str, str] = {
     "position_multiplexing": "W02's decision, added after the declared draw space; not drawn on this tree (a later "
                              "CL1 round draws it, the pack unit's follow-up P5)",
 }
-#: Cost-only paths no program reads: pricing constants, the priced floorplan and the write law.
+#: Cost-only paths no program reads: pricing constants, the priced floorplan, the write law and the lane block
+#: (W08: its constants and lane count price the lane rows only).
 PRICING_ONLY: Tuple[str, ...] = (
     "activity_factor", "cores.operand.write_source", "cores.write_granularity", "cores.write_physics",
     "cores.write_units_in_parallel", "cores_per_tile",
-    "inference_batch_K", "platform_physics_overrides", "platform_physics_profile", "tile_grid_cols",
+    "inference_batch_K", "onchip_arithmetic.lane_block", "onchip_arithmetic.lanes_per_core",
+    "platform_physics_overrides", "platform_physics_profile", "tile_grid_cols",
     "tile_grid_rows", "write_overlap", "write_overlap.mode", "write_overlap.shadow_capacity_fraction",
     "write_ports",
 )

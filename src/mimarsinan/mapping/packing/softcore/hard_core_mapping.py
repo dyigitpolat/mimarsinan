@@ -7,12 +7,14 @@ import numpy as np
 from mimarsinan.mapping.packing.canonical import fused_core_roles
 from mimarsinan.mapping.packing.softcore.fragments import make_real_fragments
 from mimarsinan.mapping.packing.softcore.hard_core import HardCore
+from mimarsinan.mapping.packing.type_binding import binding_classes, bound_bits
 from mimarsinan.mapping.platform.platform_constraints import (
     PER_AXON,
     SIGN_GRANULARITY_FIELD,
     pool_sign_granularity,
 )
 from mimarsinan.mapping.support.spike_source_columns import PlacementNeuronMap, SpikeSourceColumns
+from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
 from mimarsinan.mapping.support.spike_source_spans import (
     compress_spike_sources,
     pack_output_sources_state,
@@ -51,6 +53,8 @@ class RuntimeMaterializer:
             fused.parameter_scale = template.parameter_scale
             fused.latency = template.latency
             fused.hardware_bias = template.hardware_bias
+            if bound_bits(template) is not None:  # [WI-5g] a fused core keeps its type's width
+                setattr(fused, CORE_WEIGHT_BITS, bound_bits(template))
             if getattr(template, "readout_law", None) is not None:
                 fused.readout_law = template.readout_law
             # A fused core is per-axon when any component is (the pool's fold): the per-axon row gate then checks
@@ -178,14 +182,31 @@ class HardCoreMapping:
 
         from mimarsinan.mapping.packing.placement_engine import run_placement
 
-        run_placement(
-            softcores=unmapped_cores,
-            used_hardcores=self.cores,
-            unused_hardcores=self.unused_cores,
-            materializer=RuntimeMaterializer(self),
-            allow_neuron_splitting=allow_neuron_splitting,
-            allow_coalescing=allow_coalescing,
-        )
+        materializer = RuntimeMaterializer(self)
+        classes = binding_classes(unmapped_cores, self.unused_cores)
+        if classes is None:
+            run_placement(
+                softcores=unmapped_cores,
+                used_hardcores=self.cores,
+                unused_hardcores=self.unused_cores,
+                materializer=materializer,
+                allow_neuron_splitting=allow_neuron_splitting,
+                allow_coalescing=allow_coalescing,
+            )
+        else:  # [WI-5g] each width's soft cores pack from that width's unused cores only
+            for bits in classes:
+                pool = [hc for hc in self.unused_cores if bound_bits(hc) == bits]
+                offered = {id(hc) for hc in pool}
+                run_placement(
+                    softcores=[core for core in unmapped_cores if bound_bits(core) == bits],
+                    used_hardcores=self.cores,
+                    unused_hardcores=pool,
+                    materializer=materializer,
+                    allow_neuron_splitting=allow_neuron_splitting,
+                    allow_coalescing=allow_coalescing,
+                )
+                taken = offered - {id(hc) for hc in pool}
+                self.unused_cores[:] = [hc for hc in self.unused_cores if id(hc) not in taken]
 
         self._finalize_sources(softcore_mapping)
 
@@ -201,6 +222,8 @@ class HardCoreMapping:
                 neurons_per_core=softcore.get_output_count(),
                 has_bias_capability=getattr(softcore, "hardware_bias", None) is not None,
             )
+            if bound_bits(softcore) is not None:  # [WI-5g] the 1:1 core is of the soft core's type
+                setattr(hardcore, CORE_WEIGHT_BITS, bound_bits(softcore))
             self.cores.append(hardcore)
             self.merge_softcore_into(core_idx, hardcore, softcore)
 

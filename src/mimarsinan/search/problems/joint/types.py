@@ -69,6 +69,8 @@ class HwOnlyCache:
     model: Any
     total_params: float
     mapper_repr: Any = None
+    #: [W08] The model's mapper graph under the value-domain packaging (the lane plan's input on a lane chip).
+    value_mapper_repr: Any = None
     # (params, macs) OnchipFractionEstimate pair — a function of the fixed
     # model and placement alone, so computed once like the mapper repr.
     onchip_census: Any = None

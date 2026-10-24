@@ -26,6 +26,36 @@ _J_TO_MJ = 1e3
 
 ENERGY_HEADLINE = "energy_per_inference_mj"
 ENERGY_DYNAMIC = "energy_dynamic_mj"
+#: [W08] The chip's own energy (dynamic, static and write terms, no host), priced beside the headline wherever a
+#: point prices a lane block (``lanes_per_tile`` present), so a host-bound verdict shows what the chip spends.
+ENERGY_CHIP_ONLY = "energy_chip_only_mj"
+
+
+def _prices_lane_block(ctx: PricingContext) -> bool:
+    return ctx.quantities.has("lanes_per_tile") or "lanes_per_tile" in ctx.quantities.withheld
+
+
+def _refuse(ctx: PricingContext, reason: str) -> None:
+    """The headline refused, and with it (for a lane-block point) the chip-only term, by the same reason."""
+    ctx.refuse(ENERGY_HEADLINE, reason)
+    if _prices_lane_block(ctx):
+        ctx.refuse(ENERGY_CHIP_ONLY, reason)
+
+
+def _chip_only(ctx: PricingContext, components: List[Band], evidence: List[str], writes: Optional[Any],
+               unpriced: List[str]) -> None:
+    """The chip's own sum, naming every chip component of it the target cannot price (``unpriced``: the dynamic
+    sum's, never a host item), as the dynamic and headline terms do."""
+    if not _prices_lane_block(ctx):
+        return
+    parts, sources = list(components), list(evidence)
+    if writes is not None and writes.energy is not None:
+        parts.append(writes.energy)
+        sources.append("writes: " + writes.energy.basis)
+    source = "chip only (no host energy): " + "; ".join(sources)
+    if unpriced:
+        source += f"; unpriced: {', '.join(unpriced)}"
+    ctx.term(ENERGY_CHIP_ONLY, "mJ", add_bands(parts, source), source)
 
 
 def _compute_constant(ctx: PricingContext) -> Optional[str]:
@@ -145,21 +175,21 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     """Energy per inference, or a refusal naming the missing constant or census."""
     compute = _compute_constant(ctx)
     if compute is None:
-        ctx.refuse(ENERGY_HEADLINE, "no compute-energy source is declared: the "
-                                    "target declares neither e_synaptic_event_total "
-                                    "nor e_mac")
+        _refuse(ctx, "no compute-energy source is declared: the "
+                     "target declares neither e_synaptic_event_total "
+                     "nor e_mac")
         _programming_energy(ctx)
         return
     outside = _aggregate_outside(ctx, compute)
     if outside is not None:
-        ctx.refuse(ENERGY_HEADLINE, f"e_synaptic_event_total lies outside its validity: {outside}")
+        _refuse(ctx, f"e_synaptic_event_total lies outside its validity: {outside}")
         _programming_energy(ctx)
         return
     if not ctx.quantities.has("synaptic_events"):
-        ctx.refuse(ENERGY_HEADLINE, f"{compute} is declared but the synaptic_events "
-                                    "census is absent (at candidate time it needs "
-                                    "the declared activity_factor; no record seals "
-                                    "an event census yet)")
+        _refuse(ctx, f"{compute} is declared but the synaptic_events "
+                     "census is absent (at candidate time it needs "
+                     "the declared activity_factor; no record seals "
+                     "an event census yet)")
         _programming_energy(ctx)
         return
     value = ctx.physics.band(compute)
@@ -186,8 +216,8 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     static, static_blocked = _static_band(ctx, e2e)
     if static_blocked:
         root = ctx.refusal_reason("e2e_latency_s") or "no reason was recorded"
-        ctx.refuse(ENERGY_HEADLINE, "static power is declared but the priced latency "
-                                    f"it multiplies is unavailable, because {root}")
+        _refuse(ctx, "static power is declared but the priced latency "
+                     f"it multiplies is unavailable, because {root}")
         _programming_energy(ctx)
         return
     if static is not None:
@@ -195,8 +225,10 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
         components.append(static)
         evidence.append("static: " + static.basis)
 
+    chip, chip_evidence, chip_unpriced = list(components), list(evidence), list(unpriced)
     host, host_reason = _host_band(ctx)
     if host_reason is not None:
+        _chip_only(ctx, chip, chip_evidence, writes, chip_unpriced)
         ctx.refuse(ENERGY_HEADLINE, host_reason)
         _programming_energy(ctx)
         return
@@ -208,11 +240,12 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     if writes is not None:
         if writes.energy is None:
             reason = next(r.reason for r in writes.refusals if r.name == "energy_write_mj")
-            ctx.refuse(ENERGY_HEADLINE, f"the write energy is refused: {reason}")
+            _refuse(ctx, f"the write energy is refused: {reason}")
             _programming_energy(ctx)
             return
         components.append(writes.energy)
         evidence.append("writes: " + writes.energy.basis)
+    _chip_only(ctx, chip, chip_evidence, writes, chip_unpriced)
 
     source = "; ".join(evidence)
     if unpriced:

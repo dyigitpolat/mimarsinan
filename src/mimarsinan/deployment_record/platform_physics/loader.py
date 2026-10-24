@@ -109,6 +109,11 @@ def _constant_from_dict(key: str, data: Mapping[str, Any]) -> PhysicsConstantVal
         raise ValueError(f"{key}: source_ref {data['source_ref']!r} — {exc}") from exc
 
 
+def constant_from_declaration(key: str, data: Mapping[str, Any]) -> PhysicsConstantValue:
+    """One constant from its JSON declaration, judged as a profile's are (a lane block's rows, W08)."""
+    return _constant_from_dict(key, data)
+
+
 def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
     """Build a profile from its JSON body, refusing anything the vocabulary rejects."""
     version = int(data.get("format_version", -1))

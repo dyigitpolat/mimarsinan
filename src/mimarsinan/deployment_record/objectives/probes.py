@@ -8,7 +8,7 @@ all) and the RUN probe (that, narrowed by what this run actually declared).
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from mimarsinan.deployment_record.objectives.spec import LayoutStatsView
 from mimarsinan.deployment_record.objectives.views import (
@@ -62,7 +62,7 @@ FRAGMENT_CONTEXT_KEYS = {
 
 def _probe_context() -> CandidateQuantityContext:
     """Every run declaration a candidate could carry, at placeholder magnitudes."""
-    fragment_keys = {
+    fragment_keys: Dict[str, Any] = {
         key: 1 for keys in FRAGMENT_CONTEXT_KEYS.values() for key in keys
     }
     return CandidateQuantityContext(

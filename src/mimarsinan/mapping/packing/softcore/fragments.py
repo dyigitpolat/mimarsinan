@@ -5,8 +5,22 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+from mimarsinan.mapping.ir.lane_law import OPERAND_AXONS
 from mimarsinan.mapping.packing.softcore.sign_split import is_sign_split, logical_view, split_soft_core
 from mimarsinan.mapping.packing.softcore.soft_core import SoftCore
+from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
+
+
+def sibling_operand_rows(law, lo: int, hi: int) -> set:
+    """The rows of ``law``'s fused operands that belong to columns outside ``[lo, hi)`` (WI-5e): a fragment keeps
+    them as axons (every parent row stays) but off, so no executor decodes a sibling's operand on its own grid. Their
+    weights are 0 in every column, so no accumulator changes."""
+    rows = getattr(law, "operand_row", None)
+    if rows is None:
+        return set()
+    columns = np.arange(len(rows))
+    outside = (columns < lo) | (columns >= hi)
+    return {int(r) for r in np.asarray(rows)[outside].tolist() if r >= 0}
 
 
 def build_real_fragment(
@@ -24,11 +38,14 @@ def build_real_fragment(
     """The fragment of ``parent`` computing its columns ``window = (lo, hi)`` over ``axon_sources`` (the
     parent's, by default)."""
     lo, hi = window
+    law = getattr(parent, "readout_law", None)
+    siblings = sibling_operand_rows(law, lo, hi)
     frag = SoftCore(
         core_matrix=matrix_slice,
         axon_sources=[
-            SpikeSource(s.core_, s.neuron_, s.is_input_, s.is_off_, s.is_always_on_)
-            for s in (parent.axon_sources if axon_sources is None else axon_sources)
+            SpikeSource(-1, 0, is_input=False, is_off=True) if row in siblings
+            else SpikeSource(s.core_, s.neuron_, s.is_input_, s.is_off_, s.is_always_on_)
+            for row, s in enumerate(parent.axon_sources if axon_sources is None else axon_sources)
         ],
         id=parent.id,
         activation_scale=parent.activation_scale,
@@ -53,9 +70,14 @@ def build_real_fragment(
     frag.split_original_neurons = original_neurons
     frag.perceptron_index = getattr(parent, "perceptron_index", None)
     frag.perceptron_output_slice = getattr(parent, "perceptron_output_slice", None)
+    bits = getattr(parent, CORE_WEIGHT_BITS, None)
+    if bits is not None:  # [WI-5g] a fragment binds to its parent's core type
+        setattr(frag, CORE_WEIGHT_BITS, bits)
     if hardware_bias_slice is not None:
         frag.hardware_bias = hardware_bias_slice
-    law = getattr(parent, "readout_law", None)
+    axons = getattr(parent, OPERAND_AXONS, None)
+    if axons:  # [W08] every parent operand row stays an axon of each fragment (priced as the operand port)
+        setattr(frag, OPERAND_AXONS, int(axons))
     if law is not None:
         frag.readout_law = law.take_columns(np.arange(lo, hi))
     role = getattr(parent, "core_role", None)

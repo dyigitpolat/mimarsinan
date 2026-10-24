@@ -32,6 +32,7 @@ from mimarsinan.mapping.support.schedule.pass_carry import (
     carried_softcore_spans, carried_wire_spans, delayed_input_slices,
 )
 from mimarsinan.mapping.weight_programming import weight_programming_report
+from mimarsinan.transformations.quantization_bounds import core_weight_bits
 
 
 class _SingleStageProgram:
@@ -44,7 +45,7 @@ class _SingleStageProgram:
 def core_record(core_index: int, core: Any, *, weight_bits: int, resident: bool) -> SegmentCoreRecord:
     occupancy = CoreOccupancy.from_hard_core(core)
     latency = getattr(core, "latency", None)
-    signs = core_sign_rows(core, occupancy)
+    signs, width = core_sign_rows(core, occupancy), core_weight_bits(core, weight_bits)
     return SegmentCoreRecord(
         core_index=int(core_index),
         axons=int(occupancy.axons_physical),
@@ -52,9 +53,8 @@ def core_record(core_index: int, core: Any, *, weight_bits: int, resident: bool)
         axons_used=int(occupancy.axons_used),
         neurons_used=int(occupancy.neurons_used),
         cells_used=int(occupancy.cells_used),
-        # A resident pass sends no weight payload (schema §2.1: 0 when resident); a per-axon core's payload
-        # carries its sign register (plan section 21 item 11).
-        params_bytes=0 if resident else core_payload_bytes(occupancy.cells_used, weight_bits, signs),
+        # Resident: no payload (schema §2.1); else the cells at the core type's width (WI-5g) and the sign register.
+        params_bytes=0 if resident else core_payload_bytes(occupancy.cells_used, width, signs),
         connectivity_entries=core_connectivity_entries(core),
         static_delay_levels=None if latency is None else int(latency),
         sign_register_rows=signs or None,

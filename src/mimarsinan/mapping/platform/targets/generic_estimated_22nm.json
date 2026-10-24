@@ -18,14 +18,25 @@
     "core_semantics": "mvm",
     "platform_physics_profile": "generic_estimated_22nm",
     "allow_coalescing": true,
-    "allow_neuron_splitting": true
+    "allow_neuron_splitting": true,
+    "onchip_arithmetic": {
+      "classes": [
+        "L",
+        "E",
+        "P"
+      ],
+      "lanes_per_core": 4,
+      "lane_block": "ng45_os_lane"
+    }
   },
   "faithfulness": {
     "class": "approximate",
     "named": [
-      "all constants estimated"
+      "all constants estimated",
+      "output-stage lanes estimated",
+      "one ADC on the fused accumulator (per-array ADC not built, W47)"
     ],
     "note": "Every constant of the profile is an estimate and the geometry is an assumption of the profile: the bundle exercises the estimated-evidence path and is never cited as a chip."
   },
-  "notes": "allow_coalescing and allow_neuron_splitting are true, an assumption of the estimated point like its geometry: the profile describes no real chip, and its digital cores are assumed to add partial sums and split outputs across cores, as the framework's study grid declares (every tier-0 cell of that grid declares both); a study that assumes otherwise declares either through target_overrides with a note."
+  "notes": "allow_coalescing and allow_neuron_splitting are true, an assumption of the estimated point like its geometry: the profile describes no real chip, and its digital cores are assumed to add partial sums and split outputs across cores, as the framework's study grid declares (every tier-0 cell of that grid declares both); a study that assumes otherwise declares either through target_overrides with a note. onchip_arithmetic declares the lane subset L, E and P (on by default for value-domain chips, owner 2026-10-15; the off ablation declares classes [] through target_overrides with a note): ReLU as the law's clamp, a fused add and a requantizing average pool run on chip when the program is on the integer path (readout_law); a float value program keeps its host ops. The lane block is ng45_os_lane (an output-stage lane synthesized at 45 nm and 1.1 V, arith_toggle.md section 6, estimated; the resolver scales its area by node^2 and its energy by node x V^2 to this target's node, naming the factor in each row), one lane per 64 output columns, so 4 lanes per core (256 output columns per core). The certified function applies one ADC to each column's fused accumulator, while the cost model prices one conversion per array: the two are identical where adc_bits reaches an array's accumulator width, and below it the checked accuracy is not the priced chip's (per-array ADC, W47, not built)."
 }

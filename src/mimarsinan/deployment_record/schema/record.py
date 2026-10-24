@@ -87,6 +87,10 @@ class DeploymentRecord:
     # LAST, defaults to None, no format-version bump — a record written before
     # the controller ledger existed still loads.
     adaptation_ledger: Optional[AdaptationSummaryRecord] = None
+    #: [W08] The output stage of a chip declaring ``onchip_arithmetic`` (``mapping.lanes.output_stage``): lane
+    #: work, host boundary bytes and round trips, labelled executed or estimated. Emitted only when set, so every
+    #: record of a chip without the declaration is byte-identical.
+    output_stage: Optional[Mapping[str, Any]] = None
 
     def __post_init__(self) -> None:
         _require_version("DeploymentRecord", self.format_version)
@@ -108,6 +112,7 @@ class DeploymentRecord:
                 None if self.adaptation_ledger is None
                 else self.adaptation_ledger.to_dict()
             ),
+            **({} if self.output_stage is None else {"output_stage": json.loads(json.dumps(self.output_stage))}),
         }
 
     @classmethod
@@ -135,6 +140,8 @@ class DeploymentRecord:
             kwargs["adaptation_ledger"] = optional(
                 AdaptationSummaryRecord.from_dict, kwargs["adaptation_ledger"]
             )
+        if kwargs.get("output_stage") is not None:
+            kwargs["output_stage"] = dict(kwargs["output_stage"])
         return cls(**kwargs)
 
 

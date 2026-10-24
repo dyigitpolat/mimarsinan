@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.mapping.ir import NeuralCore
+from mimarsinan.mapping.support.quantizer_state import verify_declared_state
 from mimarsinan.models.nn.activations.value_quantizer import (
     BoundaryGrid,
     boundary_grid_of,
@@ -32,13 +33,15 @@ def _perceptron_grids(model_repr) -> dict:
     return grids
 
 
-def install_boundary_grids(ir_graph, model) -> int:
+def install_boundary_grids(ir_graph, model, *, quantizer_state=None) -> int:
     """Stamp each entry's realized grid onto its cores; return how many.
 
     The grid is a first-class field, NOT a value smuggled through the event
     domain's ``input_activation_scale`` — so the spiking boundary walk may
-    run unconditionally without clobbering it.
+    run unconditionally without clobbering it. A model whose grids or ranges
+    are not exactly the declared ``quantizer_state``'s is refused by name.
     """
+    verify_declared_state(model, quantizer_state)
     grids = _perceptron_grids(model.get_mapper_repr())
     if not grids:
         return 0

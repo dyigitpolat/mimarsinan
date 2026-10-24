@@ -153,8 +153,13 @@ class TestRegistryEntries:
 
     def test_the_passthrough_set_is_the_wave1_platform_keys(self):
         # N2 (Wave 2) key amendment: readout_ranges joins the platform passthrough (design §2.9); W02 (pack) adds
-        # position_multiplexing (registry/entries_residency.py).
-        assert set(passthrough_keys()) == set(PLATFORM_KEYS) | {"readout_ranges", "position_multiplexing"}
+        # position_multiplexing (registry/entries_residency.py); Wave 2 WI-5a to WI-5c (registry/entries_grids.py),
+        # WI-5e and W08 (onchip_arithmetic) and WI-5g (layer_core_types) add the declared value grids and lanes.
+        assert set(passthrough_keys()) == set(PLATFORM_KEYS) | {"readout_ranges", "position_multiplexing",
+                                                                "quantizer_state", "weight_scale_rule",
+                                                                "bias_resolution",
+                                                                "onchip_arithmetic",  # Wave 2 WI-5e, W08
+                                                                "layer_core_types"}  # Wave 2 WI-5g
 
     def test_derived_keys_are_not_declarable(self):
         for key in DERIVED_KEYS:
@@ -167,6 +172,7 @@ class TestRegistryEntries:
             "write_granularity", "write_units_in_parallel",
             "operand",  # N2 (Wave 2) key amendment: the operand core type (design §2.9)
             "write_physics",  # N2b key amendment: per-core-type write technology (design §2.9)
+            "weight_bits",  # Wave 2 WI-5g: a core type's own weight width
         }
 
 

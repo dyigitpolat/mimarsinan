@@ -190,6 +190,7 @@ class CandidateStaticView:
                 candidate_cost_report(
                     self.quantities, self.physics, writes=self._write_inputs(),
                     geometry=None if context is None else context.core_geometry,
+                    output_stage=None if context is None else context.output_stage,
                 )
                 if self.physics is not None
                 else None

@@ -8,8 +8,9 @@ N0 incident (every candidate raised at extraction while the gate said yes).
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.program_census import (
     CandidateProgramming, candidate_carry_census, candidate_programming_census,
@@ -19,6 +20,10 @@ from mimarsinan.deployment_record.objectives import (
     candidate_context_from_platform,
 )
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics
+from mimarsinan.mapping.lanes.declaration import lane_declaration, lanes_executed
+from mimarsinan.mapping.lanes.output_stage import planned_lane_ops
+from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
+from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
@@ -92,6 +97,9 @@ class ProgramFacts:
     carry: Optional[Dict[str, int]] = None
     #: Per (pass, segment): cells, residency marks and stage latencies (the period census's rows).
     passes: Optional[Any] = None
+    #: [W08] The lane work by kind the declared lanes run on the candidate's model (the lane plan's estimate,
+    #: ``planned_lane_ops``); None on a chip declaring no ``onchip_arithmetic``.
+    lane_ops: Optional[Dict[str, int]] = None
 
 
 def with_stage_placements(
@@ -175,8 +183,31 @@ def candidate_fragments(
         programming=program.programming,
         carry=program.carry,
         passes=program.passes,
+        lane_ops=program.lane_ops,
     )
     return physics, context
+
+
+def value_mapper_repr(model: Any, *, input_shape: Tuple[int, ...], num_classes: int, device: Any, target_tq: int,
+                      placement: str) -> Any:
+    """[W08] ``model``'s mapper graph under the value-domain packaging, the deployed program's ops (a value-domain
+    run converts with it, Torch Mapping; the candidate's layout converts with the spiking default). A native
+    builder's flow is its own graph. The conversion reads a copy: ``model`` is never touched."""
+    if hasattr(model, "get_mapper_repr"):
+        return model.get_mapper_repr()
+    flow = convert_torch_model(copy.deepcopy(model), input_shape=tuple(input_shape), num_classes=num_classes,
+                               device=device, Tq=target_tq, encoding_layer_placement=placement,
+                               packaging=MVM_PACKAGING)
+    return flow.get_mapper_repr()
+
+
+def with_lane_work(program: ProgramFacts, pcfg: Dict, mapper_repr: Callable[[], Any]) -> ProgramFacts:
+    """[W08] ``program`` with the lane work the chip's declared lanes run on the candidate's value-domain mapper
+    graph (``mapper_repr``, built only where the lanes run; unchanged on a chip declaring no ``onchip_arithmetic``)."""
+    if lane_declaration(pcfg) is None:
+        return program
+    work = planned_lane_ops(mapper_repr() if lanes_executed(pcfg) is not None else None, pcfg)
+    return program if work is None else _dc_replace(program, lane_ops=work)
 
 
 def collect_candidate_noc(

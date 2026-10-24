@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, fields
-from typing import Iterable, List, Sequence
+from typing import ClassVar, FrozenSet, Iterable, List, Sequence
 
 import numpy as np
 
@@ -32,10 +32,13 @@ class CoreLaw:
     adc_shift: np.ndarray
     adc_levels: np.ndarray
 
+    #: The fields held as float64 (the others are int64); a subclass that adds float fields extends it.
+    float_fields: ClassVar[FrozenSet[str]] = _FLOAT_FIELDS
+
     def __post_init__(self) -> None:
         width = None
         for f in fields(self):
-            dtype = np.float64 if f.name in _FLOAT_FIELDS else np.int64
+            dtype = np.float64 if f.name in self.float_fields else np.int64
             array = np.array(getattr(self, f.name), dtype=dtype).reshape(-1)
             array.flags.writeable = False
             if width is None:
@@ -56,7 +59,7 @@ class CoreLaw:
         memo = self._memo  # pyright: ignore[reportAttributeAccessIssue] -- set in __post_init__
         hit = memo.get(key)
         if hit is None:
-            hit = CoreLaw(**{f.name: getattr(self, f.name)[index] for f in fields(self)})
+            hit = type(self)(**{f.name: getattr(self, f.name)[index] for f in fields(self)})
             memo[key] = hit
         return hit
 
@@ -78,7 +81,7 @@ class CoreLaw:
             array = np.array(getattr(self, f.name))
             array[int(offset): int(offset) + law.columns] = getattr(law, f.name)
             spliced[f.name] = array
-        return CoreLaw(**spliced)
+        return type(self)(**spliced)
 
     def column_digests(self) -> List[str]:
         """One stable digest per column (floats by their exact hex), for digests over surviving columns."""
@@ -87,7 +90,7 @@ class CoreLaw:
             parts = []
             for f in fields(self):
                 value = getattr(self, f.name)[j]
-                parts.append(f"{f.name}={float(value).hex() if f.name in _FLOAT_FIELDS else int(value)}")
+                parts.append(f"{f.name}={float(value).hex() if f.name in self.float_fields else int(value)}")
             out.append(hashlib.sha256(";".join(parts).encode()).hexdigest())
         return out
 
@@ -134,8 +137,10 @@ def merge_core_law(hard_core, softcore, *, axon_offset: int, neuron_offset: int)
         )
     if law is None:
         return
+    if axon_offset and hasattr(law, "shift_rows"):
+        law = law.shift_rows(axon_offset)  # a lane law's operand rows, in the hard core's rows
     if current is None and neuron_offset == 0 and law.columns == int(hard_core.neurons_per_core):
         hard_core.readout_law = law
         return
-    base = current if current is not None else CoreLaw.blank(int(hard_core.neurons_per_core))
+    base = current if current is not None else type(law).blank(int(hard_core.neurons_per_core))
     hard_core.readout_law = base.splice(neuron_offset, law)

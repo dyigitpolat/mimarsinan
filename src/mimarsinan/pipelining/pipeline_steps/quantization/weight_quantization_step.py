@@ -2,6 +2,7 @@ from typing import Iterable, cast
 
 import torch
 
+from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
 from mimarsinan.mapping.support.bias_compensation import (
     LIF_HALF_STEP_FLAG,
@@ -11,7 +12,10 @@ from mimarsinan.tuning.orchestration.adaptation_manager import sync_exact_qat_ac
 from mimarsinan.tuning.orchestration.lif_exact_qat import model_trained_lif_exact
 from mimarsinan.tuning.orchestration.ttfs_exact_qat import model_trained_ttfsq_exact
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.mapping.support.core_types import install_layer_weight_bits, refuse_unbuilt_domain
+from mimarsinan.mapping.support.grid_declarations import projection_grids
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
+    resolve_bias_mode,
     resolve_wq_two_scale_projection as resolve_wq_two_scale_projection,
 )
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
@@ -44,9 +48,18 @@ class WeightQuantizationStep(TunerPipelineStep):
     def process(self):
         model = self.get_entry("model")
         adaptation_manager = self.get_entry("adaptation_manager")
+        grids = projection_grids(
+            self.pipeline.config, two_scale=bool(self.pipeline.config.get("wq_two_scale_projection", False)),
+            on_chip_bias=lambda: resolve_bias_mode(self.pipeline.config) == "on_chip",
+        )
+        # [WI-5g] core types with their own weight width: each layer quantizes on its type's grid.
+        refuse_unbuilt_domain(self.pipeline.config, value_domain=is_mvm_core_semantics(DeploymentPlan.of(self.pipeline).core_semantics),
+                              weight_quantization=True)
+        install_layer_weight_bits(model, self.pipeline.config)
         self._freeze_exact_qat_theta(model)
         self._apply_lif_half_step_entry_fold(model)
-        self._canonicalize_starved_bias_outliers(model)
+        if not grids.law_bias:  # a float bias has no grid a bias outlier could starve
+            self._canonicalize_starved_bias_outliers(model)
         compute_per_source_scales(
             model.get_mapper_repr(),
             arm_wire_value_ops=not requires_ttfs_firing(
@@ -78,6 +91,8 @@ class WeightQuantizationStep(TunerPipelineStep):
             adaptation_manager,
             quantization_bits=bits,
             two_scale_projection=two_scale,
+            fractional_scale=grids.fractional_scale,
+            float_bias=grids.law_bias,
         )
 
     def _freeze_exact_qat_theta(self, model) -> None:

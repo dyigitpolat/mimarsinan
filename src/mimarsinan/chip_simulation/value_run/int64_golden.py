@@ -17,7 +17,7 @@ from mimarsinan.chip_simulation.value_run.operand_blocks import (
 )
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import IRSource
-from mimarsinan.models.nn.activations.integer_law import apply_law_int64, round_half_away
+from mimarsinan.models.nn.activations.integer_law import apply_law_int64
 
 _RAW_INPUT = -2
 
@@ -27,9 +27,8 @@ class GoldenGridError(ToolchainRefusal, ValueError):
 
 
 def _snap(values: np.ndarray, grid) -> np.ndarray:
-    """The entry snap's codes (the boundary SSOT's rounding) in int64."""
-    quotient = torch.as_tensor(values, dtype=torch.float64) / float(grid.step)
-    return torch.clamp(round_half_away(quotient), -grid.levels, grid.levels).numpy().astype(np.int64)
+    """The entry snap's codes (the boundary SSOT's rounding, offset and code range) in int64."""
+    return grid.entry_codes(values)
 
 
 def _law_kwargs(law) -> dict:
@@ -39,8 +38,12 @@ def _law_kwargs(law) -> dict:
 
 def _row_steps(hard_core) -> np.ndarray:
     steps = np.full(int(hard_core.axons_per_core), np.nan)
+    law = hard_core.readout_law
     for p in hard_core.matrix_placements:
-        steps[p.axon_offset: p.axon_offset + p.axons] = hard_core.readout_law.input_step[p.neuron_offset]
+        steps[p.axon_offset: p.axon_offset + p.axons] = law.input_step[p.neuron_offset]
+    rows = np.asarray(getattr(law, "operand_row", ()), dtype=np.int64)
+    if rows.size:  # a lane law's operand rows read their operand's grid (WI-5e)
+        steps[rows[rows >= 0]] = law.operand_step[rows >= 0]
     return steps
 
 
@@ -54,13 +57,42 @@ class GoldenTrace:
     core_codes: Dict[int, np.ndarray] = field(default_factory=dict)
 
 
+def _row_offsets(hard_core) -> np.ndarray:
+    """Per row, the offset of the grid the row reads (a lane law's; 0 elsewhere): a producer must write it."""
+    offsets = np.zeros(int(hard_core.axons_per_core))
+    law = hard_core.readout_law
+    if not hasattr(law, "operand_row"):
+        return offsets
+    for p in hard_core.matrix_placements:
+        offsets[p.axon_offset: p.axon_offset + p.axons] = law.input_offset[p.neuron_offset]
+    rows = np.asarray(law.operand_row, dtype=np.int64)
+    offsets[rows[rows >= 0]] = law.operand_offset[rows >= 0]
+    return offsets
+
+
+def _operand_codes(law, q: np.ndarray) -> tuple:
+    """A lane law's operand term: each column's operand-row code (0 where it has none)."""
+    rows = np.asarray(getattr(law, "operand_row", ()), dtype=np.int64)
+    if not rows.size or not (rows >= 0).any():
+        return ()
+    codes = np.where(rows >= 0, q[:, np.maximum(rows, 0)], 0)
+    return ((codes, law.operand_m),)
+
+
+def output_offsets(law) -> np.ndarray:
+    """The value of output code 0 is minus this, per column (0 off a lane law)."""
+    return np.asarray(getattr(law, "output_offset", np.zeros(law.columns)), dtype=np.float64)
+
+
 class _Segment:
     """One neural stage evaluated on demand, core by core, from its segment input."""
 
     def __init__(self, hcm, seg_values: np.ndarray, seg_codes: np.ndarray, seg_steps: np.ndarray,
-                 payloads: Optional[Dict[int, np.ndarray]] = None, bindings=None) -> None:
+                 seg_offsets: "np.ndarray | None" = None, payloads: Optional[Dict[int, np.ndarray]] = None,
+                 bindings=None) -> None:
         self.hcm = hcm
         self.seg_values, self.seg_codes, self.seg_steps = seg_values, seg_codes, seg_steps
+        self.seg_offsets = np.zeros(seg_steps.shape) if seg_offsets is None else seg_offsets
         self.done: Dict[int, np.ndarray] = {}
         self.payloads = payloads or {}
         self.operand = operand_blocks(hcm, bindings) if bindings else None
@@ -73,7 +105,7 @@ class _Segment:
         law = getattr(hc, "readout_law", None)
         if law is None:
             raise GoldenGridError(f"hard core {index} carries no readout law")
-        steps = _row_steps(hc)
+        steps, row_offsets = _row_steps(hc), _row_offsets(hc)
         grid = getattr(hc, "boundary_grid", None)
         batch = self.seg_values.shape[0]
         q = np.zeros((batch, int(hc.axons_per_core)), dtype=np.int64)
@@ -83,7 +115,7 @@ class _Segment:
             if source.is_input_:
                 position = int(source.neuron_)
                 if self.seg_steps[position] == self.seg_steps[position]:
-                    if self.seg_steps[position] != steps[row]:
+                    if self.seg_steps[position] != steps[row] or self.seg_offsets[position] != row_offsets[row]:
                         raise GoldenGridError(f"hard core {index} row {row}: producer and reader grids differ")
                     q[:, row] = self.seg_codes[:, position]
                 elif grid is not None and grid.armed and float(grid.step) == steps[row]:
@@ -101,7 +133,7 @@ class _Segment:
             if not np.array_equal(weight, np.round(weight)):
                 raise GoldenGridError(f"hard core {index}: weights are not integers")
             acc = q @ weight.astype(np.int64)
-        codes = apply_law_int64(acc, **_law_kwargs(law))
+        codes = apply_law_int64(acc, **_law_kwargs(law), operands=_operand_codes(law, q))
         self.done[index] = codes
         return codes
 
@@ -141,23 +173,29 @@ def _stage_payloads(stage, values, bindings, trace: Optional[GoldenTrace]) -> Di
     return out
 
 
-def _neural_stage(stage, values, codes, steps, bindings=None, trace: Optional[GoldenTrace] = None) -> None:
+def _neural_stage(stage, values, codes, steps, offsets: "Dict[int, np.ndarray] | None" = None,
+                  bindings=None, trace: Optional[GoldenTrace] = None) -> None:
+    offsets = {} if offsets is None else offsets
     hcm = stage.hard_core_mapping
     width = max((s.offset + s.size for s in stage.input_map), default=0)
     batch = next(iter(values.values())).shape[0]
     seg_values = np.zeros((batch, width))
     seg_codes = np.zeros((batch, width), dtype=np.int64)
     seg_steps = np.full(width, np.nan)
+    seg_offsets = np.zeros(width)
     for s in stage.input_map:
         seg_values[:, s.offset: s.offset + s.size] = values[int(s.node_id)][:, : s.size]
         if int(s.node_id) in codes:
             seg_codes[:, s.offset: s.offset + s.size] = codes[int(s.node_id)][:, : s.size]
             seg_steps[s.offset: s.offset + s.size] = steps[int(s.node_id)][: s.size]
+            if int(s.node_id) in offsets:
+                seg_offsets[s.offset: s.offset + s.size] = offsets[int(s.node_id)][: s.size]
     payloads = _stage_payloads(stage, values, bindings, trace) if bindings else None
-    segment = _Segment(hcm, seg_values, seg_codes, seg_steps, payloads, bindings)
+    segment = _Segment(hcm, seg_values, seg_codes, seg_steps, seg_offsets, payloads, bindings)
     out_sources = list(np.asarray(hcm.output_sources).flatten())
     out_codes = np.zeros((batch, len(out_sources)), dtype=np.int64)
     out_steps = np.zeros(len(out_sources))
+    out_offsets = np.zeros(len(out_sources))
     for position, source in enumerate(out_sources):
         if source.is_off_:
             continue
@@ -166,11 +204,13 @@ def _neural_stage(stage, values, codes, steps, bindings=None, trace: Optional[Go
         core = int(source.core_)
         out_codes[:, position] = segment.core(core)[:, int(source.neuron_)]
         out_steps[position] = hcm.cores[core].readout_law.output_step[int(source.neuron_)]
+        out_offsets[position] = output_offsets(hcm.cores[core].readout_law)[int(source.neuron_)]
     for s in stage.output_map:
         node = int(s.node_id)
         codes[node] = out_codes[:, s.offset: s.offset + s.size]
         steps[node] = out_steps[s.offset: s.offset + s.size]
-        values[node] = codes[node] * steps[node]
+        offsets[node] = out_offsets[s.offset: s.offset + s.size]
+        values[node] = codes[node] * steps[node] - offsets[node]
     if trace is not None:
         for index, core_codes in segment.done.items():
             trace.core_codes[id(hcm.cores[index])] = core_codes
@@ -187,11 +227,12 @@ def run_golden(program, x, *, trace: Optional[GoldenTrace] = None) -> Tuple[np.n
     values: Dict[int, np.ndarray] = {_RAW_INPUT: flat}
     codes: Dict[int, np.ndarray] = {}
     steps: Dict[int, np.ndarray] = {}
+    offsets: Dict[int, np.ndarray] = {}
     twins: Dict = {}
     x_torch = torch.as_tensor(flat)
     for stage in program.stages:
         if stage.kind == "neural":
-            _neural_stage(stage, values, codes, steps, bindings, trace)
+            _neural_stage(stage, values, codes, steps, offsets, bindings, trace)
         elif stage.kind == "compute":
             op = stage.compute_op
             state = {k: torch.as_tensor(v, dtype=torch.float64) for k, v in values.items()}

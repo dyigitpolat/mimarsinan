@@ -7,6 +7,9 @@ import os
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from mimarsinan.mapping.ir.lane_law import operand_axons
+from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
+
 UTILIZATION_RECORD_FILENAME = "crossbar_utilization.json"
 
 
@@ -44,11 +47,13 @@ class CoreOccupancy:
 
     @classmethod
     def from_hard_core(cls, core: Any) -> "CoreOccupancy":
-        """Read a ``HardCore``: used = geometry minus the capacity still available."""
+        """Read a ``HardCore``: used = geometry minus the capacity still available. [W08] A fused add's operand rows
+        (zero crossbar weights) are the lane's operand port, priced as lane work: they are no used axon, cell, MAC
+        or programming byte here (the packed program still places them on axons; the output stage names that)."""
         axons = int(getattr(core, "axons_per_core", 0) or 0)
         neurons = int(getattr(core, "neurons_per_core", 0) or 0)
         return cls(
-            axons_used=axons - int(getattr(core, "available_axons", 0) or 0),
+            axons_used=axons - int(getattr(core, "available_axons", 0) or 0) - operand_axons(core),
             axons_physical=axons,
             neurons_used=neurons - int(getattr(core, "available_neurons", 0) or 0),
             neurons_physical=neurons,
@@ -68,14 +73,19 @@ class CrossbarUtilizationReport:
 
     cores: tuple[CoreOccupancy, ...]
     weight_bits: int | None
+    #: [WI-5g] each core's own type width, when the chip's core types declare theirs (None otherwise).
+    core_widths: tuple[int, ...] | None = None
 
     @classmethod
     def from_hard_cores(
         cls, cores: Iterable[Any], *, weight_bits: int | None = None
     ) -> "CrossbarUtilizationReport":
+        cores = list(cores)
+        widths = [getattr(c, CORE_WEIGHT_BITS, None) for c in cores]
         return cls(
             cores=tuple(CoreOccupancy.from_hard_core(c) for c in cores),
             weight_bits=None if weight_bits is None else int(weight_bits),
+            core_widths=tuple(int(w) for w in widths if w is not None) if widths and None not in widths else None,
         )
 
     @classmethod
@@ -146,8 +156,11 @@ class CrossbarUtilizationReport:
 
     @property
     def programming_bits(self) -> int | None:
-        """The weight cells' bits, ``cells_used * weight_bits``; a per-axon core's sign register is not in
-        it (``SegmentCoreRecord.params_bytes`` carries the register)."""
+        """The weight cells' bits, ``cells_used * weight_bits`` (on a chip of typed widths each core's cells at its
+        own type's width, WI-5g); a per-axon core's sign register is not in it (``SegmentCoreRecord.params_bytes``
+        carries the register)."""
+        if self.core_widths is not None:  # [WI-5g] each core's cells at its own type's width
+            return sum(c.cells_used * w for c, w in zip(self.cores, self.core_widths))
         if self.weight_bits is None:
             return None
         return self.cells_used * self.weight_bits

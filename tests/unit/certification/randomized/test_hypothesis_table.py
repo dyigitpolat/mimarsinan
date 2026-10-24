@@ -23,7 +23,9 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: and finding ``per_axon_sign_split`` beside N2's two entries and N2b's one, 29 cost-only rows.
 #: Integration re-pin (tcad/wave1-merged, pack onto N2): W02's ``position_multiplexing`` joins the cost-only list
 #: (X3a ``DEFERRED``, its ``cost_only_hypotheses`` row residency_plan's), 30 cost-only rows.
-TABLE_SHA256 = "ec541d9181ffd9ac1ebe3c8f6315369f883ea5745bcd8496cd3911e0e65a13a9"
+#: Integration re-pin (tcad/wave1-merged, lanes onto pack): W08's two lane-block pricing-only fields
+#: (``onchip_arithmetic.lane_block``, ``onchip_arithmetic.lanes_per_core``) join the cost-only list, 32 rows.
+TABLE_SHA256 = "c7ae72daaccee49632e32d90a19accc0e65c8c072d5f80b03a530b1320e8a854"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -39,7 +41,7 @@ def test_the_fixture_is_the_pinned_one():
 
 def test_the_class_list_is_the_registry_cost_only_set(table):
     assert set(table["cost_only"]) == cost_only_set()
-    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 30
+    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 32
 
 
 #: The proof check's split (PC1): conditions on the two deployments, and conditions on every run (the

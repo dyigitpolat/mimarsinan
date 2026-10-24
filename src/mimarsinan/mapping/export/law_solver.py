@@ -2,16 +2,33 @@
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-import torch
 
-from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.export.entry_offsets import (
+    FoldRefit,
+    core_entry_offset,
+    fold_entry_offset,
+    host_row_weight_sums,
+    refit_folded_laws,
+)
 from mimarsinan.mapping.export.law_grids import CoreGrid, assign_core_grids
-from mimarsinan.mapping.export.law_stamp import readout_quantizers_by_perceptron, stamp_model_laws
+from mimarsinan.mapping.export.law_rules import (  # the law's public names stay importable from here
+    MAX_SHIFT as MAX_SHIFT,
+    ReadoutLawDeclarationError,
+    ReadoutLawPsumError as ReadoutLawPsumError,
+    ReadoutLawRatioError as ReadoutLawRatioError,
+    ReadoutLawSpec,
+    ReadoutLawStaleRangeError as ReadoutLawStaleRangeError,
+    adc_step_exponent,
+    core_bias_and_data_weights,
+    multiplier_and_shift,
+    refuse_psum,
+    refuse_stale_fixed_range,
+    round_ints,
+)
+from mimarsinan.mapping.export.law_stamp import channel_keys, readout_quantizers_by_perceptron, stamp_model_laws
 from mimarsinan.mapping.export.operand_laws import (
     bind_payload_steps,
     operand_floors,
@@ -19,8 +36,12 @@ from mimarsinan.mapping.export.operand_laws import (
     output_groups_of,
     stamp_operand_laws,
 )
+from mimarsinan.mapping.export.output_law import OutputLawError, identity_output_indices, solve_identity_law
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.ir.core_law import CoreLaw
+from mimarsinan.mapping.lanes.declaration import lanes_executed
+from mimarsinan.mapping.lanes.install import install_lane_laws
+from mimarsinan.mapping.support.grid_declarations import ParameterGrids, identity_output_law
 from mimarsinan.models.nn.activations.integer_law import (
     FP64_EXACT_BOUND,
     IntegerLawRangeError,
@@ -28,97 +49,8 @@ from mimarsinan.models.nn.activations.integer_law import (
     accumulator_width,
     grid_levels,
     law_magnitude_bound,
-    round_half_away,
     saturation_reach,
 )
-
-#: The int64 golden shifts by at most this many bits (``1 << (s - 1)`` stays an int64).
-MAX_SHIFT = 62
-
-
-class ReadoutLawDeclarationError(ToolchainRefusal, ValueError):
-    """``readout_law`` declared where the integer value path cannot run."""
-
-
-class ReadoutLawPsumError(ToolchainRefusal, ValueError):
-    """A readout law on a partial-sum core, whose law must apply to the final sum (E285, Wave 2)."""
-
-
-class ReadoutLawRatioError(ToolchainRefusal, ValueError):
-    """A requantization ratio that no ``mult_bits`` multiplier with a non-negative shift represents."""
-
-
-class ReadoutLawStaleRangeError(ToolchainRefusal, ValueError):
-    """A declared fixed ``range_value`` that a readout quantizer does not carry (a stale Readout Law run)."""
-
-
-@dataclass(frozen=True)
-class ReadoutLawSpec:
-    """The declared law parameters the solver reads (the run door judged the value)."""
-
-    adc_bits: int
-    mult_bits: int
-    activation_bits: int
-    weight_bits: int
-
-    @classmethod
-    def from_declaration(cls, readout_law: Mapping[str, Any], *, activation_bits, weight_bits) -> "ReadoutLawSpec":
-        if activation_bits is None:
-            raise ReadoutLawDeclarationError(
-                "readout_law needs activation_bits: the output requantization writes the activation (DAC) grid"
-            )
-        return cls(
-            adc_bits=int(readout_law["adc_bits"]), mult_bits=int(readout_law["mult_bits"]),
-            activation_bits=int(activation_bits), weight_bits=int(weight_bits),
-        )
-
-
-def _round_ints(values) -> np.ndarray:
-    return round_half_away(torch.as_tensor(np.asarray(values, dtype=np.float64))).numpy().astype(np.int64)
-
-
-def multiplier_and_shift(ratio: float, mult_bits: int, *, core: str) -> Tuple[int, int]:
-    """The largest shift s whose ``M0 = rnd(ratio 2^s)`` fits ``mult_bits`` unsigned bits, and that M0."""
-    m_max = (1 << int(mult_bits)) - 1
-    if not (math.isfinite(ratio) and ratio > 0.0):
-        raise ReadoutLawRatioError(f"core {core!r}: requantization ratio {ratio!r} is not a positive number")
-    if int(_round_ints(ratio)) > m_max:
-        raise ReadoutLawRatioError(
-            f"core {core!r}: requantization ratio {ratio:.6g} needs more than mult_bits={mult_bits} bits at shift 0"
-        )
-    shift = max(0, int(math.floor(math.log2(m_max / ratio))))
-    while shift > 0 and int(_round_ints(math.ldexp(ratio, shift))) > m_max:
-        shift -= 1
-    while int(_round_ints(math.ldexp(ratio, shift + 1))) <= m_max:
-        shift += 1
-    if shift > MAX_SHIFT:
-        raise IntegerLawRangeError(f"core {core!r}: requantization shift {shift} exceeds {MAX_SHIFT} bits")
-    return int(_round_ints(math.ldexp(ratio, shift))), shift
-
-
-def core_bias_and_data_weights(core: NeuralCore, ir_graph) -> Tuple[np.ndarray, np.ndarray]:
-    """(integer bias per column in weight-grid units, integer weight codes of the non-bias rows) of a
-    quantized core; off and pruned rows stay in, so a bank slice's positions share one bound."""
-    matrix = np.asarray(core.get_core_matrix(ir_graph))
-    sources = core.input_sources.flatten()
-    if len(sources) != matrix.shape[0]:
-        raise ValueError(f"core {core.name!r}: {len(sources)} sources for a {matrix.shape[0]}-row matrix")
-    on = np.array([source.is_always_on() for source in sources], dtype=bool)
-    bias = matrix[on, :].astype(np.float64).sum(axis=0) if on.any() else np.zeros(matrix.shape[1])
-    if core.hardware_bias is not None:
-        bias = bias + np.asarray(core.hardware_bias, dtype=np.float64)
-    if not np.array_equal(bias, np.round(bias)):
-        raise ReadoutLawDeclarationError(f"core {core.name!r}: bias is not on the weight grid")
-    return bias, matrix[~on, :]
-
-
-def adc_step_exponent(need: int, levels: int, *, core: str) -> int:
-    """The smallest t with ``levels 2^t >= need``: the ADC's codes span ``[-need, need]`` unclamped."""
-    for t in range(MAX_SHIFT + 1):
-        if (int(levels) << t) >= int(need):
-            return t
-    raise ReadoutLawDeclarationError(f"core {core!r}: an ADC of {levels} levels cannot span |acc| <= {need}")
-
 
 def solve_core_law(*, core: str, theta: float, bias: np.ndarray, acc_bounds: Sequence[int], grid: CoreGrid,
                    spec: ReadoutLawSpec, floor: Optional[int] = None) -> CoreLaw:
@@ -144,7 +76,7 @@ def solve_core_law(*, core: str, theta: float, bias: np.ndarray, acc_bounds: Seq
     for step, levels_out in dict.fromkeys(zip(steps, levels)):
         cols = [j for j in range(columns) if (steps[j], levels[j]) == (step, levels_out)]
         m0, shift = multiplier_and_shift(grid.input_step / (theta * step), spec.mult_bits, core=core)
-        b = _round_ints(np.ldexp(bias[cols] / (theta * step), shift))
+        b = round_ints(np.ldexp(bias[cols] / (theta * step), shift))
         sub = [bounds[j] for j in cols]
         if spec.adc_bits >= width:
             adc_levels, adc_shift = grid_levels(width), [0] * len(cols)
@@ -168,21 +100,13 @@ def solve_core_law(*, core: str, theta: float, bias: np.ndarray, acc_bounds: Seq
     return CoreLaw(input_step=np.full(columns, 1) * grid.input_step, output_step=out_step, **out)
 
 
-def _refuse_psum(ir_graph) -> None:
-    for node in ir_graph.nodes:
-        if isinstance(node, NeuralCore) and node.psum_role is not None:
-            raise ReadoutLawPsumError(
-                f"core {node.name!r} is a partial-sum core ({node.psum_role}); its law must apply to the final "
-                f"sum (E285)"
-            )
-
-
-def _bias_and_bounds(node: NeuralCore, ir_graph, grid: CoreGrid) -> Tuple[np.ndarray, Tuple[int, ...]]:
-    """A core's integer bias and per-column |acc| bounds; a bound operand core's payload codes span
-    ``±(2^(payload_bits-1) - 1)`` in every cell and it has no bias (N2)."""
+def _bias_and_bounds(node: NeuralCore, ir_graph, grid: CoreGrid, *, real_bias: bool
+                     ) -> Tuple[np.ndarray, Tuple[int, ...]]:
+    """A core's bias and per-column |acc| bounds (``real_bias``: the bias held at the law's resolution, WI-5c); a
+    bound operand core's payload codes span ``±(2^(payload_bits-1) - 1)`` in every cell and it has no bias (N2)."""
     binding = ir_graph.dynamic_bank_bindings.get(node.weight_bank_id) if node.weight_bank_id is not None else None
     if binding is None:
-        bias, weights = core_bias_and_data_weights(node, ir_graph)
+        bias, weights = core_bias_and_data_weights(node, ir_graph, real_bias=real_bias)
         return bias, tuple(accumulator_bounds(weights, grid.input_levels))
     axons, neurons = binding.payload_shape
     bound = int(axons) * grid_levels(binding.payload_bits) * int(grid.input_levels)
@@ -191,47 +115,53 @@ def _bias_and_bounds(node: NeuralCore, ir_graph, grid: CoreGrid) -> Tuple[np.nda
 
 def solve_ir_laws(ir_graph, perceptron_ranges: Mapping[int, float], spec: ReadoutLawSpec, *,
                   grids: Optional[Mapping[int, CoreGrid]] = None,
-                  floors: Optional[Mapping[int, int]] = None) -> Dict[int, CoreLaw]:
+                  floors: Optional[Mapping[int, int]] = None,
+                  real_bias: bool = False, identity_outputs: frozenset = frozenset()) -> Dict[int, CoreLaw]:
     """{core id: CoreLaw}; cores with equal law inputs (a bank slice's positions) share one object. ``grids``
     (``assign_core_grids``) defaults to the per-perceptron grids of ``perceptron_ranges``; ``floors`` gives a
-    perceptron's output floor (0: an absorbed ReLU)."""
-    _refuse_psum(ir_graph)
+    perceptron's output floor (0: an absorbed ReLU). Cores of the ``identity_outputs`` perceptrons take the
+    identity output law; an entry offset folds into each core's bias, and the integers reading the folded bias are
+    refit per channel (:func:`refit_folded_laws`)."""
+    refuse_psum(ir_graph)
     if grids is None:
         grids, _steps = assign_core_grids(ir_graph, perceptron_ranges, spec.activation_bits)
     floors = dict(floors or {})
     memo: Dict[tuple, CoreLaw] = {}
     laws: Dict[int, CoreLaw] = {}
+    folds: Dict[int, FoldRefit[CoreLaw]] = {}
     for node in ir_graph.nodes:
         if not isinstance(node, NeuralCore):
             continue
         grid = grids[int(node.id)]
-        bias, bounds = _bias_and_bounds(node, ir_graph, grid)
+        bias, bounds = _bias_and_bounds(node, ir_graph, grid, real_bias=real_bias)
         floor = floors.get(int(node.perceptron_index)) if node.perceptron_index is not None else None
-        key = (node.weight_bank_id, node.weight_row_slice, float(node.threshold), bias.tobytes(), bounds, grid, floor)
+        identity = node.perceptron_index in identity_outputs
+        if identity and floor is not None:
+            raise OutputLawError(
+                f"core {node.name!r}: the identity output law has no clamp, but its perceptron's operand product "
+                "absorbed a ReLU (an output floor 0, N2): the two are not composed on this tree")
+        key = (node.weight_bank_id, node.weight_row_slice, float(node.threshold), bias.tobytes(), bounds, grid, floor,
+               identity)
         law = memo.get(key)
         if law is None:
-            law = solve_core_law(core=node.name, theta=float(node.threshold), bias=bias, acc_bounds=bounds,
-                                 grid=grid, spec=spec, floor=floor)
+            if identity:
+                law = solve_identity_law(core=node.name, theta=float(node.threshold), bias=bias, acc_bounds=bounds,
+                                         grid=grid, spec=spec)
+            else:
+                law = solve_core_law(core=node.name, theta=float(node.threshold), bias=bias, acc_bounds=bounds,
+                                     grid=grid, spec=spec, floor=floor)
             memo[key] = law
+        if core_entry_offset(node) != 0.0:
+            fold_key = (id(law), host_row_weight_sums(node, ir_graph).tobytes())
+            if fold_key not in memo:
+                memo[fold_key] = fold_entry_offset(law, node, ir_graph)
+            narrow = spec.adc_bits < accumulator_width(max(bounds, default=0))
+            folds[int(node.id)] = FoldRefit(
+                node.name, memo[fold_key], bounds, identity, channels=channel_keys(node),
+                reach_hi=grid_levels(spec.activation_bits) if narrow and not identity else None)
         laws[int(node.id)] = law
+    laws.update(refit_folded_laws(folds))  # per channel: a conv's position cores keep one law per channel
     return laws
-
-
-def _refuse_stale_fixed_range(quantizers, declared) -> None:
-    """A declared ``range_value`` must be every quantizer's range (in the buffer's own dtype), so a law
-    re-solved under a new declaration (CL6) never reads a range calibrated under an earlier one."""
-    if declared is None:
-        return
-    stale = {}
-    for index, (_mapper, _perceptron, quantizer) in quantizers.items():
-        want = torch.tensor(float(declared), dtype=quantizer.range.dtype, device=quantizer.range.device)
-        if not bool(torch.equal(quantizer.range, want)):
-            stale[index] = float(quantizer.range)
-    if stale:
-        raise ReadoutLawStaleRangeError(
-            f"readout_law declares range_value {float(declared)!r} but the readout quantizers of perceptrons "
-            f"{sorted(stale)} carry {sorted(set(stale.values()))}: rerun Readout Law under this declaration"
-        )
 
 
 def install_readout_laws(ir_graph, model, platform_constraints: Mapping[str, Any], *,
@@ -245,17 +175,24 @@ def install_readout_laws(ir_graph, model, platform_constraints: Mapping[str, Any
     spec = ReadoutLawSpec.from_declaration(
         readout_law, activation_bits=platform_constraints.get("activation_bits"), weight_bits=weight_bits,
     )
+    lanes = lanes_executed(platform_constraints)
+    if lanes is not None:  # WI-5e: the declared lanes fuse first, then every core takes its lane law
+        return install_lane_laws(ir_graph, model, platform_constraints, spec, lanes, weight_bits=weight_bits)
     model_repr = model.get_mapper_repr()
     quantizers = readout_quantizers_by_perceptron(model_repr)
     operands = operand_ranges(model_repr)
     if not quantizers and not operands:
         raise ReadoutLawDeclarationError("readout_law declared but no readout quantizer is installed (Readout Law)")
     ranges = {**{index: float(entry[2].range) for index, entry in quantizers.items()}, **operands}
-    _refuse_stale_fixed_range(quantizers, readout_law.get("range_value"))
+    identity = frozenset(identity_output_indices(ir_graph, model_repr, quantizers)
+                         if identity_output_law(readout_law) else ())
+    refuse_stale_fixed_range(quantizers, readout_law.get("range_value"), skip=identity)
     groups = output_groups_of(model_repr)
     grids, steps = assign_core_grids(ir_graph, ranges, spec.activation_bits, groups=groups)
     bind_payload_steps(ir_graph, model_repr, steps, groups, spec.activation_bits)
-    laws = solve_ir_laws(ir_graph, ranges, spec, grids=grids, floors=operand_floors(model_repr))
+    laws = solve_ir_laws(ir_graph, ranges, spec, grids=grids, floors=operand_floors(model_repr),
+                         real_bias=ParameterGrids.from_config(platform_constraints).law_bias,
+                         identity_outputs=identity)
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
             node.readout_law = laws[int(node.id)]  # pyright: ignore[reportAttributeAccessIssue] -- declared-only attribute

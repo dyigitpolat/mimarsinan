@@ -12,6 +12,7 @@ from mimarsinan.transformations.perceptron.bias_saturation import (
     empirical_bias_shift,
     predicted_weight_zero_fraction,
 )
+from mimarsinan.transformations.quantization_bounds import layer_weight_bits
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
     PerceptronTransformer,
 )
@@ -95,7 +96,7 @@ def canonicalize_starved_bias_outliers(
             if perceptron.layer.bias is None:
                 continue
             clip_off_saturated_effective_bias(perceptron)
-            if predicted_weight_zero_fraction(perceptron, bits) >= _STARVATION_ZERO_FRAC:
+            if predicted_weight_zero_fraction(perceptron, layer_weight_bits(perceptron, bits)) >= _STARVATION_ZERO_FRAC:
                 armed.append(perceptron)
         if not armed:
             return report
@@ -171,7 +172,7 @@ def _remove_nuisance_grid_dominators(
     at the shared grid). Each removal is verified; a flip restores exactly."""
     attempts = 0
     while (
-        predicted_weight_zero_fraction(perceptron, bits) >= _STARVATION_ZERO_FRAC
+        predicted_weight_zero_fraction(perceptron, layer_weight_bits(perceptron, bits)) >= _STARVATION_ZERO_FRAC
         and attempts < 8
     ):
         attempts += 1

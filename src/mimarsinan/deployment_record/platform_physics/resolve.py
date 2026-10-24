@@ -6,7 +6,8 @@ from dataclasses import replace
 from typing import Any, Dict, Mapping, Optional
 
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.deployment_record.platform_physics.loader import apply_overrides
+from mimarsinan.deployment_record.platform_physics.lane_blocks import TargetNode, lane_block_rows
+from mimarsinan.deployment_record.platform_physics.loader import apply_overrides, constant_from_declaration
 from mimarsinan.deployment_record.platform_physics.profile import (
     PlatformPhysics,
     PlatformPhysicsValidity,
@@ -29,19 +30,29 @@ _CUSTOM = PlatformPhysics(
 
 
 def resolve_platform_physics(
-    profile_name: Optional[str], overrides: Optional[Mapping[str, Mapping[str, Any]]]
+    profile_name: Optional[str], overrides: Optional[Mapping[str, Mapping[str, Any]]],
+    lane_block: Optional[str] = None,
 ) -> Optional[PlatformPhysics]:
     """The physics for a run, or ``None`` when it declares none.
 
     ``None`` is meaningful: a run that names no profile and overrides nothing must
     report no absolute area/energy number at all, rather than one computed from
-    framework defaults wearing a vendor's name.
+    framework defaults wearing a vendor's name. A declared ``lane_block`` (W08) adds
+    the lane rows the physics lacks; it never makes a chip priceable on its own.
     """
     overrides = overrides or {}
     if not profile_name and not overrides:
         return None
     base = get_platform_physics(profile_name) if profile_name else _CUSTOM
-    return apply_overrides(base, overrides)
+    physics = apply_overrides(base, overrides)
+    validity = physics.validity
+    rows = lane_block_rows(lane_block, physics.constants,
+                           TargetNode(technology_node_nm=validity.technology_node_nm, supply_v=validity.supply_v))
+    if not rows:
+        return physics
+    constants = dict(physics.constants)
+    constants.update({key: constant_from_declaration(key, data) for key, data in rows.items()})
+    return replace(physics, constants=constants)
 
 
 class OverrideBlockConflictError(ToolchainRefusal, ValueError):

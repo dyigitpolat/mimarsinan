@@ -27,6 +27,10 @@ class InstanceMemo(Generic[T]):
         weakref.finalize(host, self._memo.pop, key, None)
         return value
 
+    def evict(self, host: Any) -> None:
+        """Drop ``host``'s value (its inputs changed); the next ``get`` rebuilds it."""
+        self._memo.pop(id(host), None)
+
     def __len__(self) -> int:
         return len(self._memo)
 

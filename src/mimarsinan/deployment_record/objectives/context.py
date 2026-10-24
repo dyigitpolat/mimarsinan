@@ -6,6 +6,8 @@ from dataclasses import replace
 from typing import Any, Mapping, Optional
 
 from mimarsinan.deployment_record.cost.absolute.validity import declared_geometry
+from mimarsinan.deployment_record.quantities.lanes import lane_block_quantities
+from mimarsinan.mapping.lanes.declaration import lane_declaration, lanes_executed
 from mimarsinan.deployment_record.quantities.from_candidate import (
     CandidateQuantityContext,
 )
@@ -32,6 +34,7 @@ def candidate_context_from_platform(
     programming: Optional[Any] = None,
     carry: Optional[Any] = None,
     passes: Optional[Any] = None,
+    lane_ops: Optional[Mapping[str, int]] = None,
 ) -> CandidateQuantityContext:
     """The declarations a candidate's platform carries, as quantity context.
 
@@ -43,6 +46,9 @@ def candidate_context_from_platform(
     spiking one (``quantities.value_domain``). ``passes`` (the candidate's
     per-(pass, segment) rows, ``ProgramPasses``) feed the value window and,
     when ``inference_batch_K`` is declared, the period census of the write law.
+    A chip declaring ``onchip_arithmetic`` [W08] prices its lane block as its
+    record does: ``lane_ops`` is the lane plan's estimate by kind
+    (``mapping.lanes.output_stage.planned_lane_ops``; absent without a model).
     """
     context = _spiking_rule_context(
         pcfg, host_macs=host_macs, onchip_macs=onchip_macs, host_params=host_params,
@@ -52,6 +58,7 @@ def candidate_context_from_platform(
     context = replace(context, core_geometry=declared_geometry(list(pcfg.get("cores") or ())),
                       writes=plane_writes(passes, pcfg, weight_bits=pcfg.get("weight_bits"),
                                           timesteps=context.timesteps, label="candidate", carry=carry))
+    context = _lane_context(context, pcfg, lane_ops)
     if not names_value_domain(pcfg):
         return context
     refuse_spiking_activity(pcfg)
@@ -68,6 +75,35 @@ def candidate_context_from_platform(
         latency_steps=rule.latency_steps, mac_events=rule.mac_events, carry_out_bytes=rule.carry_out_bytes,
         carry_in_bytes=rule.carry_in_bytes, value_bits=value_bits(pcfg), value_rule=rule,
     )
+
+
+#: [W08] What the candidate plane's output stage cannot see: it prices the lane-free shape's layout and host census.
+CANDIDATE_STAGE_NOTE = ("candidate plane: lane work estimated from the lane plan on the candidate's model; its "
+                        "layout, pass structure and host census are the lane-free shape's (no pool reduction cores, "
+                        "the absorbed host ops still counted on the host)")
+
+
+def _lane_context(context: CandidateQuantityContext, pcfg: Mapping[str, Any],
+                  lane_ops: Optional[Mapping[str, int]]) -> CandidateQuantityContext:
+    """The lane block of a chip declaring ``onchip_arithmetic``, by the record plane's rule
+    (``lane_block_quantities``); the context itself on every other chip."""
+    declaration = lane_declaration(pcfg)
+    if declaration is None:
+        return context
+    executed = lanes_executed(pcfg) is not None
+    work = None if lane_ops is None else {kind: int(n) for kind, n in sorted(dict(lane_ops).items())}
+    values, withheld = lane_block_quantities(
+        classes=tuple(sorted(declaration.classes)), lanes_per_core=declaration.lanes_per_core,
+        cores_per_tile=int(pcfg.get("cores_per_tile_resolved") or 1),
+        lane_ops=sum((work or {}).values()) if executed else 0,
+        provenance="modeled" if executed else "static")
+    if work is None and executed:
+        values.pop("lane_ops")  # no model, no estimate: the lane energy term names the census absent
+    stage = {"label": "estimated" if executed else "no lanes executed", "classes": sorted(declaration.classes),
+             "lanes_per_core": declaration.lanes_per_core, "lane_block": declaration.lane_block, "deployed": None,
+             "lane_ops": work if executed and work is not None else {}, "notes": [CANDIDATE_STAGE_NOTE]}
+    return replace(context, lane_quantities=tuple(sorted(values.items())),
+                   lane_withheld=tuple(sorted(withheld.items())), output_stage=stage)
 
 
 def _spiking_rule_context(

@@ -12,11 +12,14 @@ from mimarsinan.certification.value_certificate import (
     VALUE_R_EDGE_WQ_ATOL,
     VALUE_TWIN_FP64_ATOL,
     certify_twin_flow_values,
+    exposed_nodes,
     value_edge_atol,
 )
 from mimarsinan.certification.operand_certificate import certify_operand_program
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir.core_law import graph_carries_laws
+from mimarsinan.mapping.lanes.ir.fusion import LANE_REPORT
 from mimarsinan.mapping.support.boundary_grids import widest_boundary_step
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
@@ -75,6 +78,10 @@ def _assert_aq_grid_parity(got, want, max_abs_delta, lsb, n_samples) -> None:
     )
 
 
+class LaneParityDisarmedError(ToolchainRefusal, RuntimeError):
+    """A lane program whose R-edge is disarmed (``value_parity_samples`` 0)."""
+
+
 def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     """[mvm R-edge, FATAL] model forward ≡ identity value program (fp64).
 
@@ -85,6 +92,11 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     """
     n = int(_effective(pipeline.config, "value_parity_samples"))
     if n <= 0:
+        if getattr(ir_graph, LANE_REPORT, None) is not None:
+            raise LaneParityDisarmedError(
+                "value_parity_samples=0 disarms the R-edge, the one pipeline certificate that compares the model "
+                "with the program; a lane program (fused adds, clamps and pools on chip) keeps it armed: declare "
+                "value_parity_samples >= 1")
         print("[ValueParityGate] SKIP (value_parity_samples=0)")
         return
     samples = _certificate_samples(pipeline, model, n)
@@ -144,7 +156,8 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     samples = samples.detach().to("cpu", torch.float64)
     if getattr(ir_graph, "dynamic_bank_bindings", None):
         return _operand_program_gate(model, ir_graph, hybrid_mapping, samples)
-    reference_flow = fp64_identity_program(ir_graph)
+    # The identity reference writes out every node the backend's stages write (its pass carries included).
+    reference_flow = fp64_identity_program(ir_graph, exposed=exposed_nodes(hybrid_mapping))
     backend_flow = ValueHybridCoreFlow(
         hybrid_mapping, device="cpu", dtype=torch.float64
     )

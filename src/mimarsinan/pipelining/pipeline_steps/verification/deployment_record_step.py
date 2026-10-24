@@ -224,6 +224,11 @@ class DeploymentRecordStep(PipelineStep):
                 "energy", energy,
                 _prov("measured", "SANA-FE energy trace", "SANA-FE Simulation"),
             )
+        if "output_stage" in scm:  # [W08] a chip declaring onchip_arithmetic
+            builder.attach(
+                "output_stage", dict(scm["output_stage"]),
+                _prov("derived", "G7 census of the deployed IR + lane fusion report", "Soft Core Mapping"),
+            )
         # The AC5 wall bundle plus [TS5] the controller-ledger totals; the
         # per-event trace stays in the steps' own artifacts.
         adaptation = attach_adaptation_fragments(

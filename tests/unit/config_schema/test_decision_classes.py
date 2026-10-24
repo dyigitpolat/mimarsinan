@@ -108,6 +108,8 @@ class TestCoverage:
 #: sign split is exact per cycle (W = W+ + W- on the integer grid) and per event (the pair lemma), and a
 #: float weight on a per-axon target is refused by name, so the set has 27 rows. W02's
 #: ``position_multiplexing`` (owner approval of 2026-10-23, a cost-only mapping decision) is a further row.
+#: Wave 2 W08 (owner Q9, 2026-10-23: lanes declared as a priced chip block) adds the lane block's two pricing-only
+#: fields, read by the lane rows of the physics and the record's lane quantities only (a program never reads them).
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",
@@ -119,7 +121,8 @@ FROZEN_COST_ONLY = frozenset({
     "cores.write_physics",
     "cores.write_units_in_parallel", "cores_per_tile",
     "inference_batch_K", "max_axons", "max_neurons",
-    "max_schedule_passes", "platform_physics_overrides", "platform_physics_profile",
+    "max_schedule_passes", "onchip_arithmetic.lane_block", "onchip_arithmetic.lanes_per_core",
+    "platform_physics_overrides", "platform_physics_profile",
     "residency_plan", "residency_plan.index", "residency_plan.step", "position_multiplexing",
     "tile_grid_cols", "tile_grid_rows",
     "write_overlap", "write_overlap.mode", "write_overlap.shadow_capacity_fraction", "write_ports",
@@ -183,8 +186,9 @@ class TestPlanClasses:
     def test_the_cost_only_set_is_the_owner_reviewed_set(self):
         cost_only = {path for path, cls in _every_path_class() if cls == COST_ONLY}
         # 26 owner-reviewed rows + the closure's CL-SG amendment (weight_sign_granularity) + the N2 key amendment
-        # (write_source) + the N2b one (write_physics) + W02's position_multiplexing (pack)
-        assert len(FROZEN_COST_ONLY) == 30
+        # (write_source) + the N2b one (write_physics) + W02's position_multiplexing (pack) + W08's two lane-block
+        # pricing fields (lanes)
+        assert len(FROZEN_COST_ONLY) == 32
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 
@@ -431,7 +435,9 @@ class TestJoin:
         }
         assert declared_paths(values) == (
             "cores.count", "cores.has_bias", "cores.max_axons", "cores.max_neurons",
-            "cores.operand.payload_bits", "cores.operand.write_source", "cores.weight_sign_granularity",
+            "cores.operand.payload_bits", "cores.operand.write_source",
+            "cores.weight_bits",  # Wave 2 WI-5g: absent, the platform weight_bits (function-bearing)
+            "cores.weight_sign_granularity",
             "cores.write_granularity", "cores.write_physics", "cores.write_units_in_parallel",
             "weight_bits", "write_overlap.mode", "write_overlap.shadow_capacity_fraction",
         )

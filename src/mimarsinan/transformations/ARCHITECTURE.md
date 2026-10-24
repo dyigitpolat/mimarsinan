@@ -23,6 +23,19 @@ and `pipelining` modules consume the results when emitting IR and hard cores.
 | `perceptron/` | `PerceptronTransformer` plus the bias canonicalization suite (`bias_saturation.py`: provable constant-OFF saturation clip + empirical shift math feeding the saturation-aware NAPQ scale; `bias_canonicalization.py`: the guarded, decision-VERIFIED QAT-entry pass — empirical saturation shifts + nuisance-channel removal, bit-exact restore on any calibration decision flip). `PerceptronTransformer`: computes effective weights/biases by fusing normalization, `per_input_scales`, and (possibly per-channel) `activation_scale`; applies transforms in effective-parameter space — every effective→raw write re-commits the layer's prune masks and fails loud on non-finite results. |
 | `pruning/` | Pruning suite: mask computation from weight-L1 or activation importance with cross-layer propagation and IR-derived I/O exemptions (`masks.py`, `activation.py` — the importance probe DECIDES which channels are deleted permanently and a NaN importance vector still sorts into a finite boolean mask, so its reads go through `data_handling.batch_integrity` like every other decided number), rate-adaptive mask application (`apply.py`), structured magnitude channel pruning that shrinks layer shapes and core counts (`magnitude.py`, default-off deployment knob; [P] `prune_perceptron_chain_by_counts` is the counts-driven variant the candidate pruning twin drives with the mask floor rule, and `masks.mask_prune_count` is THE `floor(rate*f*dim)` formula both the committed masks and that twin read), the committed-raw-parameter pruning contract (`committed_masks.py`: per-layer and module-tree commit/verify helpers backing the enforcement hooks, transformer writes, DFQ entry, the soft-core-mapping gate, and the pipeline-cache store/load boundary), and the criterion-agnostic seed generators (`seed_generators.py`: the `row_col_l1`/`activation`/`partial_column_group` registry behind `prune_criterion` — each criterion emits `LayerSeedMasks` in the ONE committed-mask buffer format (`install_seed_masks`, also the SSOT behind the pruning tuner's buffer registration) that seeds the IR pruning cascade; `partial_column_group` kills Meng-style contiguous row-groups per column, whose completed rows/cols the cascade harvests). |
 
+## Declared grids (Wave 2 WI-5b, WI-5c)
+
+`NormalizationAwarePerceptronQuantization(fractional_scale=, float_bias=)`: the scale `q_max / max` instead of its
+integer floor (`_grid_scale`), and a float bias (the weight grid from `max|w|` alone, the bias as trained, no
+saturation clip since no bias grid exists); both default off, the projection then byte for byte the base's.
+
+## Per-layer weight widths (Wave 2 WI-5g)
+
+`quantization_bounds.py` names the width a layer or a core declares (`LAYER_WEIGHT_BITS` on a perceptron,
+`CORE_WEIGHT_BITS` on an IR core, bank, soft or hard core) and reads it (`layer_weight_bits`, `core_weight_bits`, the
+platform width when absent); `NormalizationAwarePerceptronQuantization.transform` projects each perceptron on its own
+width's grid, and the bias canonicalization predicts its weight zeros at that width.
+
 ## Dependencies
 - `models` — `normalization_fusion.py` uses `models.nn.activations.ttfs_spiking.refresh_perceptron_bias_references` and `models.perceptron_mixer.perceptron.effective_preactivation_bias`; `perceptron/perceptron_transformer.py` lazily imports `models.nn.layers.norm_affine_params` to read normalization affine parameters.
 - `mapping` — `pruning/masks.py` lazily imports `mapping.pruning.boundary_policy.compute_perceptron_io_exemption_indices` to exempt model-I/O layers when computing masks from an IR graph; `channel_scale_equalization.py` imports `channel_axis_walk.channel_aligned_consumer_targets` (the shared mapper-DAG traversal) and `PerceptronMapper` to find exactly-migratable pairs.

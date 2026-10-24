@@ -6,14 +6,25 @@
     "core_semantics": "mvm",
     "platform_physics_profile": "isaac_like",
     "allow_coalescing": true,
-    "allow_neuron_splitting": true
+    "allow_neuron_splitting": true,
+    "onchip_arithmetic": {
+      "classes": [
+        "L",
+        "E",
+        "P"
+      ],
+      "lanes_per_core": 2,
+      "lane_block": "ng45_os_lane"
+    }
   },
   "faithfulness": {
     "class": "approximate",
     "named": [
-      "energies derived from power"
+      "energies derived from power",
+      "output-stage lanes estimated",
+      "one ADC on the fused accumulator (per-array ADC not built, W47)"
     ],
     "note": "A design-space study, not a fabricated chip: every energy constant multiplies a published power by the paper's 100 ns cycle (isaac_like.json validity, shafiee2016isaac Table I)."
   },
-  "notes": "allow_coalescing and allow_neuron_splitting are true: \"Since the operation requires a logical crossbar array of size 256 x 256, it must be spread across 4 physical crossbar arrays of size 128 x 128\", whose ADC results \"are then fed to the shift-and-add units, where the results are merged with the output register (OR) in the IMA\", and \"may undergo another step of shift-and-adds and merging with the central OR in the tile if the convolution is spread across multiple IMAs\" (shafiee2016isaac, Section V, the Figure 4 example): a dot product's rows (partial sums) and its output columns span several arrays."
+  "notes": "allow_coalescing and allow_neuron_splitting are true: \"Since the operation requires a logical crossbar array of size 256 x 256, it must be spread across 4 physical crossbar arrays of size 128 x 128\", whose ADC results \"are then fed to the shift-and-add units, where the results are merged with the output register (OR) in the IMA\", and \"may undergo another step of shift-and-adds and merging with the central OR in the tile if the convolution is spread across multiple IMAs\" (shafiee2016isaac, Section V, the Figure 4 example): a dot product's rows (partial sums) and its output columns span several arrays. onchip_arithmetic declares the lane subset L, E and P (on by default for value-domain chips, owner 2026-10-15; the off ablation declares classes [] through target_overrides with a note): ReLU as the law's clamp, a fused add and a requantizing average pool run on chip when the program is on the integer path (readout_law); a float value program keeps its host ops. The lane block is ng45_os_lane (an output-stage lane synthesized at 45 nm and 1.1 V, arith_toggle.md section 6, estimated; the resolver scales its area by node^2 and its energy by node x V^2 to this target's node, naming the factor in each row), one lane per 64 output columns, so 2 lanes per core (128 output columns per array). The certified function applies one ADC to each column's fused accumulator, while the cost model prices one conversion per array: the two are identical where adc_bits reaches an array's accumulator width, and below it the checked accuracy is not the priced chip's (per-array ADC, W47, not built)."
 }

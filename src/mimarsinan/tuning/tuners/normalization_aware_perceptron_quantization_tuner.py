@@ -24,7 +24,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
 
     def __init__(
         self, pipeline, model, quantization_bits, target_accuracy, lr,
-        adaptation_manager, two_scale_projection=False,
+        adaptation_manager, two_scale_projection=False, fractional_scale=False, float_bias=False,
     ):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits
@@ -33,6 +33,9 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
         # on-chip bias capability); every projection this tuner applies —
         # rungs, probe replicas, endpoint reprojection — must share it.
         self.two_scale_projection = bool(two_scale_projection)
+        # The declared value-domain grids (weight_scale_rule, bias_resolution), shared the same way.
+        self.fractional_scale = bool(fractional_scale)
+        self.float_bias = bool(float_bias)
         self._axis = NAPQAxis(
             self._apply_rate, replica_apply_fn=self._apply_rate_to,
         )
@@ -54,6 +57,8 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
                 self.pipeline.config["device"],
                 rate,
                 two_scale=self.two_scale_projection,
+                fractional_scale=self.fractional_scale,
+                float_bias=self.float_bias,
             ).transform(perceptron)
         return transform
 

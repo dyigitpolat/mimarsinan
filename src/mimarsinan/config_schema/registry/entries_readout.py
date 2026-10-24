@@ -10,6 +10,7 @@ from mimarsinan.config_schema.registry.types import (
 )
 from mimarsinan.config_schema.registry.value_schema import RequiredIff, ValueSchema
 from mimarsinan.mapping.support.period_census import READOUT_RANGE_RULES
+from mimarsinan.mapping.support.grid_declarations import OUTPUT_LAWS
 
 #: ``readout_law.range``: the ADC range from calibration, or the declared ``range_value``.
 READOUT_RANGE_MODES = ("calibrated", "fixed")
@@ -27,6 +28,9 @@ READOUT_LAW_SCHEMA = ValueSchema(
                                    doc="the declared ADC range: moves the output grid"),
         "mult_bits": ValueSchema(kind=T.INT, low=2, decision_class=FUNCTION_BEARING,
                                  doc="requantization multiplier width: rounds outputs"),
+        "output_law": ValueSchema(kind=T.ENUM, options=OUTPUT_LAWS, decision_class=FUNCTION_BEARING,
+                                  doc="output cores requantize or write exact integers: moves the logits",
+                                  absent_means="requantize — every core writes the activation grid"),
     },
     required=("adc_bits", "range", "mult_bits"),
     required_iff=(RequiredIff("range_value", "range", ("fixed",)),),

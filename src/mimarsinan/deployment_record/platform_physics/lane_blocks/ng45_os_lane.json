@@ -1,0 +1,45 @@
+{
+  "format_version": 1,
+  "name": "ng45_os_lane",
+  "display_name": "Output-stage lane (L, E, P), NanGate 45 nm synthesis, one lane per 64 output columns",
+  "classes": [
+    "L",
+    "E",
+    "P"
+  ],
+  "columns_per_lane": 64,
+  "source": "RA/06_build/audit_v42/arith/arith_toggle.md section 6 (rtl/os_lane.v, lane_synth.sh, pd_probe g3_ng45_256x64x4)",
+  "technology_node_nm": 45.0,
+  "supply_v": 1.1,
+  "scaling": {
+    "area": "node^2",
+    "energy": "node*V^2",
+    "time": "none"
+  },
+  "constants": {
+    "area_per_lane": {
+      "low": 8202.9,
+      "nominal": 13047.9,
+      "high": 15000.1,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "One output-stage lane (24 x 16 multiplier law, add operand, clamp; P needs no lane logic) with its per-column law table in a 64 x 64 SRAM macro, NanGate 45 nm: Yosys synthesis area 6,506.9 um^2 (MEASURED) scaled x 1.2606 to a placed equivalent (8,202.9 um^2, ESTIMATE) plus the fakeram45_64x64 macro (4,845 um^2, from the probe's T0 design). Low: the table folded into the crossbar bias row (lane only). High: every lane feature (two-piece law and comparator, 10,155.1 um^2) plus the macro. 7.1% to 13% of the probe's 256 x 64 four-bit tile (0.1155 mm^2). At 45 nm and 1.1 V (NanGate45 typical); the resolver scales it to the target's node by the block's declared rule and names the factor."
+    },
+    "e_lane_op": {
+      "low": 2.45,
+      "nominal": 4.9,
+      "high": 9.8,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "Energy per lane element operation: the G3 tile's 58.6 mW at 842 MHz under OpenROAD's default activity, times the logic share of the instance (0.41) as a power share, times the L+E lane's share of the standard-cell area (0.173); a factor-of-two band on the area-as-power proxy (arith_toggle.md section 6.3). The probe's MAC energy at the same activity is 1.83 pJ. At 45 nm and 1.1 V; scaled to the target by node x V^2 at resolution."
+    },
+    "t_lane_op": {
+      "low": 1.1876,
+      "nominal": 1.1876,
+      "high": 1.1876,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "One element per cycle at the G3 tile clock, 842 MHz (os_lane takes one element per cycle in five pipeline stages, so a column-serial sweep of 64 columns fits 64 of the 256 cycles of the next MVM); should the multiplier stage not close at 842 MHz, one more pipeline stage adds latency, not time per element (arith_toggle.md section 6.1, 6.6). Not scaled (rule 'none'): the 45 nm element time is kept at a finer node, a conservative wall."
+    }
+  }
+}

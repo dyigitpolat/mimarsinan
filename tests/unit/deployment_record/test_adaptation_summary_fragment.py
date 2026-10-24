@@ -60,9 +60,12 @@ class TestFragmentShape:
 
 class TestAdditiveDiscipline:
     def test_the_field_is_last_and_defaults_to_none(self):
+        # Later additive fields follow it (Wave 2 W08's ``output_stage``), each defaulting to None.
         fields = dataclasses.fields(DeploymentRecord)
-        assert fields[-1].name == FIELD
-        assert fields[-1].default is None
+        names = [f.name for f in fields]
+        trailing = fields[names.index(FIELD):]
+        assert [f.name for f in trailing] == [FIELD, "output_stage"]
+        assert all(f.default is None for f in trailing)
 
     def test_a_record_without_the_fragment_still_seals_and_round_trips(self):
         record = make_builder().seal(PlanView(), ["Hard Core Mapping"])

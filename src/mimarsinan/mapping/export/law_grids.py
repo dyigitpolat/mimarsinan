@@ -118,6 +118,10 @@ class _Union:
         return list(self.parent)
 
 
+#: The union-find over producers read by one core (public for the lane grids, WI-5e).
+GridUnion = _Union
+
+
 def assign_core_grids(
     ir_graph, perceptron_ranges: Mapping[int, float], activation_bits: int, *,
     groups: Optional[Mapping[int, OutputGroups]] = None,

@@ -429,6 +429,8 @@ WEIGHT_BITS_READERS = {
     "mapping/platform/target_bundles.py": "every run",
     # CL-SG: the per-axon register bound (a sign and a (bits - 1)-bit magnitude) on every per-axon run.
     "pipelining/core/simulation_factory.py": "every run",
+    # Wave 2 WI-5g: the width of the layers no layer-to-type rule selects, read only on a chip with typed widths.
+    "mapping/support/core_types.py": "grid",
 }
 _READ = re.compile(r"\.get\(\s*[\"']weight_bits[\"']|\[\s*[\"']weight_bits[\"']\s*\]|for key in \(\s*\"weight_bits\"")
 

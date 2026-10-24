@@ -7,11 +7,13 @@ from typing import Iterable
 import torch
 
 from mimarsinan.mapping.mappers.operand import operand_entry_perceptrons
+from mimarsinan.mapping.lanes.model_lanes import lane_absorbed
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 from mimarsinan.mapping.support.tensor_stats import safe_quantile
 from mimarsinan.models.nn.activations.value_quantizer import ValueGridQuantizer
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.pipeline_steps.quantization.declared_state import declare_entry_state
 from mimarsinan.torch_mapping.encoding_layers import segment_entry_perceptrons
 from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 
@@ -112,8 +114,9 @@ class BoundaryQuantizationStep(PipelineStep):
     def process(self):
         model = self.get_entry("model")
         bits = int(self.pipeline.config["activation_bits"])
+        absorbed = lane_absorbed(model, self.pipeline.config)  # WI-5e: a perceptron reading a lane is no entry
         # [N2] a bank whose streamed operand is host-fed (softmax's P) takes its own entry grid too.
-        entries = list(segment_entry_perceptrons(model.get_mapper_repr())) + list(
+        entries = list(segment_entry_perceptrons(model.get_mapper_repr(), absorbed)) + list(
             operand_entry_perceptrons(model.get_mapper_repr()))
         if not entries:
             raise RuntimeError(
@@ -128,6 +131,7 @@ class BoundaryQuantizationStep(PipelineStep):
             model, entries, quantizers,
             (x.to(device) for x, _ in iter_val_batches(trainer, CALIBRATION_BATCHES)),
         )
+        declare_entry_state(model, entries, quantizers, self.pipeline.config)  # WI-5a: none when undeclared
         print(
             f"[BoundaryQuantizationStep] installed {bits}-bit value-grid "
             f"quantizers on {len(entries)} segment-entry perceptron(s); "

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
+from mimarsinan.deployment_record.quantities.lanes import lane_block_quantities
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import (
     apply_value_rule,
@@ -18,6 +19,7 @@ from mimarsinan.deployment_record.quantities.write_law import (
 from mimarsinan.deployment_record.schema import DeploymentRecord
 from mimarsinan.deployment_record.build.program_census import declared_core_geometries
 from mimarsinan.mapping.packing.residency_tiles import declared_tiles
+from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
 
 
 def _measured(value: float) -> QuantityValue:
@@ -30,6 +32,23 @@ def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
     if value is None:
         return
     values[key] = QuantityValue(value=float(value), provenance=provenance)
+
+
+def _lane_quantities(values: Dict[str, QuantityValue], withheld: Dict[str, str], record: DeploymentRecord) -> None:
+    """[W08] A chip declaring ``onchip_arithmetic`` prices its lane block (``lanes.lane_block_quantities``, the
+    candidate plane's rule too): the lane work the deployed program executed (0 where its lanes do not run) and lanes
+    per tile, or lanes per tile withheld by name where the lanes carry no lane count."""
+    stage = record.output_stage
+    if stage is None:
+        return
+    executed = stage.get("label") == "executed"
+    work = sum(int(n) for n in dict(stage["deployed"]["lane_ops"]).values()) if executed else 0
+    lane_values, lane_withheld = lane_block_quantities(
+        classes=tuple(stage.get("classes") or ()), lanes_per_core=stage.get("lanes_per_core"),
+        cores_per_tile=int(record.identity.platform.get("cores_per_tile_resolved") or 1), lane_ops=work,
+        provenance="measured" if executed else "static")
+    values.update(lane_values)
+    withheld.update(lane_withheld)
 
 
 def from_record(record: DeploymentRecord) -> Quantities:
@@ -47,12 +66,18 @@ def from_record(record: DeploymentRecord) -> Quantities:
     values["neurons_used"] = _measured(crossbar.neurons_used)
     values["axons_used"] = _measured(crossbar.axons_used)
     values["macs"] = _measured(crossbar.macs)
-    # A declaration of the run, not a measurement of the execution.
-    _put(values, "weight_bits", crossbar.weight_bits, provenance="static")
-
     # The *_physical totals are the DECLARED chip's — area and static power price
     # the chip as declared, never just the cores this mapping happened to allocate.
     cores = list(record.identity.platform.get("cores") or ())
+    # A declaration of the run, not a measurement of the execution. [WI-5g] On a chip whose core types carry
+    # different widths no one width prices a cell: the quantity is withheld by name (each per-bit term says so).
+    widths = sorted({int(core[CORE_WEIGHT_BITS]) for core in cores if core.get(CORE_WEIGHT_BITS) is not None})
+    typed_withheld: Dict[str, str] = {}
+    if len(widths) > 1:
+        typed_withheld = {"weight_bits": f"the core types carry weight widths {widths}: no one width prices a cell "
+                                         f"(per-type per-bit pricing is not built, WI-5g)"}
+    else:
+        _put(values, "weight_bits", crossbar.weight_bits, provenance="static")
     if cores:
         counts = [int(core.get("count", 1)) for core in cores]
         axons = [int(core["max_axons"]) for core in cores]
@@ -139,10 +164,11 @@ def from_record(record: DeploymentRecord) -> Quantities:
             sum(link.packet_count for link in noc.link_loads)
         )
 
-    withheld: Dict[str, str] = {}
+    withheld: Dict[str, str] = dict(typed_withheld)
+    _lane_quantities(values, withheld, record)
     if names_value_domain(platform):
         refuse_spiking_activity(platform)
-        withheld = apply_value_rule(values, record_value_facts(record))
+        withheld.update(apply_value_rule(values, record_value_facts(record)))
     writes = record_write_census(record)
     if writes is not None and writes.census is not None:
         values.update(write_quantities(writes.census.census, writes.policy,

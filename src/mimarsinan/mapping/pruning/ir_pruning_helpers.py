@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Dict, Mapping, Sequence, Set, Tuple
 import numpy as np
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.pruning.boundary_policy import compute_model_io_boundary_policy
+from mimarsinan.mapping.pruning.boundary_policy import compute_model_io_boundary_policy, offset_grid_exempt_rows
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 def _force_dead_nodes_fully_pruned(
     graph: IRGraph,
@@ -39,9 +39,16 @@ def _masks_to_sets(
 def _boundary_policy_exemptions(
     graph: IRGraph,
 ) -> Tuple[Mapping[int, frozenset], Mapping[int, frozenset]]:
-    """Per-node frozensets of rows/cols that must never be pruned (model I/O)."""
+    """Per-node frozensets of rows/cols that must never be pruned (model I/O, and the host rows an offset entry grid
+    reads, whose pruned 0 is not 0 on that grid: ``offset_grid_exempt_rows``)."""
     policy = compute_model_io_boundary_policy(graph)
-    return policy.exempt_rows_per_node, policy.exempt_cols_per_node
+    offset_rows = offset_grid_exempt_rows(graph)
+    if not offset_rows:
+        return policy.exempt_rows_per_node, policy.exempt_cols_per_node
+    rows = dict(policy.exempt_rows_per_node)
+    for node_id, extra in offset_rows.items():
+        rows[node_id] = rows.get(node_id, frozenset()) | extra
+    return rows, policy.exempt_cols_per_node
 
 
 def _collect_initial_seeds(

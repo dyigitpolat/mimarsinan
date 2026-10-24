@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.mapping.ir.core_law import CoreLaw, merge_core_law
+from mimarsinan.mapping.ir.lane_law import OPERAND_AXONS
 from mimarsinan.mapping.packing.placement_cost import note_resident_bank
 from mimarsinan.mapping.packing.softcore.matrix_memo import (
     memoized_resolve_core_matrix,
@@ -123,6 +124,9 @@ class HardCore:
                 self.hardware_bias = np.zeros(self.neurons_per_core)
             self.hardware_bias[neuron_offset:neuron_offset + softcore.get_output_count()] = softcore.hardware_bias
         merge_core_law(self, softcore, axon_offset=axon_offset, neuron_offset=neuron_offset)
+        operand_axons = getattr(softcore, OPERAND_AXONS, None)
+        if operand_axons:  # [W08] fused-add operand rows on this core's axons (absent on a lane-free core)
+            setattr(self, OPERAND_AXONS, int(getattr(self, OPERAND_AXONS, 0)) + int(operand_axons))
 
         self.unusable_space += \
             (neuron_offset * softcore.get_input_count()) + \

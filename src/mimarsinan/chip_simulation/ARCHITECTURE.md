@@ -55,6 +55,22 @@ Pareto decision layer.
 | `simulation_runner/` | `SimulationRunner` orchestrating end-to-end nevresim runs (flat single-segment and hybrid multi-segment); `carry.py` is nevresim's verbatim pass-carry seam (segment roles computed in `emit.prepare_all_segments`, which moved there with its compile pool: PRODUCING segments add the SPKTRN define to their record build, CONSUMING segments compile in SpikeTrain input mode; `assemble_carried_input_train` builds the consuming train — host slices via the SAME encoder twin the HCM flow deploys, carried slices verbatim — and `publish_segment_trains` gathers the extracted trains into the rasters a later pass replays); `run()` executes inside `measurement_plane()` so host ComputeOps feeding the chip decide exact lattice ties by snapped values (device/batch-invariant, identical to the certificate twin); opt-in `stage_timer` (W4.3) threads the `hybrid_run.StageTimer` through the hybrid stage loop, and the flat driver path surfaces the driver's measured total-output-spikes figure as `nevresim_total_spikes` (formerly printed-and-dropped) |
 | `ttfs/` | TTFS execution: encoding kernels, analytical executor + hybrid contract runner, segment arrays, genuine cycle sim, recorder. [closure X1] `membrane_lattice.py` decides the integer chip's `1/(2S)` membrane lattice per neuron from that neuron's own inputs (integral weights, bias and threshold; every nonzero-weight input a level, a midpoint or the always-on row; partial sums inside 2^53): such a membrane is computed in integers and its staircase decided exactly (`wire_semantics.ttfs_quantized_staircase_lattice_np`), so no packing that reorders a sum (co-residency at an axon offset, the per-axon split, a fused core) moves an output; every other neuron keeps the float path. [closure R1] `float_membrane.py` gives that float path, under quantized and cycle-based TTFS, a membrane that is a fixed function of the neuron's own terms (every input and weight split into 16-bit windows of one global power-of-two grid, each window product sum exact in float64, the sums added in one global window order), so for every finite input it is bit for bit the same in every packing, also on a raw input off the grid such as 8-bit codes k/255 in float64 (a non-finite term hands its whole sample row to the dot product); past 2^21 terms, or a window product outside float64's range, it refuses by name (`FloatMembraneRangeError`). Analytical TTFS keeps the layout's dot product |
 
+## Declared entry grids (Wave 2 WI-5a)
+
+The value executor snaps entry columns with the core's grid (`BoundaryGrid.snap`, the calibrated grid's rule byte
+for byte), and a law-carrying core on an offset grid reads its host rows' codes at `(x + o) / Δ`
+(`value_law.core_row_offsets`, `PreparedLaw.row_offsets`); the int64 golden reads host codes through
+`BoundaryGrid.entry_codes`. The offset term itself is in each core's law (`mapping/export/entry_offsets.py`).
+
+## Lane laws (Wave 2 WI-5e)
+
+A packed core carrying a `LaneLaw` decodes every row on its own grid (`value_run/value_law.lane_rows`: the placed
+soft core's accumulator grid, step and offset, and each operand row its operand's grid), accumulates the crossbar
+(operand rows carry zero weights), adds `operand_m * q` per column and writes `y Δout - o_out`. The int64 golden
+(`value_run/int64_golden.py`) reads the same rows (`_row_steps`, `_row_offsets`), refuses a producer whose grid,
+offset included, is not the reader's, adds the operand codes in `apply_law_int64` and carries each stage's output
+offsets to host values and later stages. A `CoreLaw` runs as before.
+
 ## Dependencies
 - **`mapping`** — `HardCoreMapping`/`HybridHardCoreMapping` inputs, `ChipLatency` scheduling, core geometry and spike-source spans, IR `ComputeOp`, chip export.
 - **`code_generation`** — `ChipModel`/`SpikeSource` C++ chip model and nevresim main-function generation.

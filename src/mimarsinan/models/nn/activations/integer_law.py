@@ -21,12 +21,20 @@ class OffGridInputError(ToolchainRefusal, RuntimeError):
     """An input of a law-carrying core that does not lie on the core's declared input grid."""
 
 
-def grid_codes(values: torch.Tensor, step: torch.Tensor, *, where: str) -> torch.Tensor:
+def grid_codes(values: torch.Tensor, step: torch.Tensor, *, where: str,
+               offset: "torch.Tensor | None" = None) -> torch.Tensor:
     """fp64 integer codes of ``values`` on the grid of ``step`` (an infinite step reads code 0), each
-    value asserted on its grid within the rounding of ``values``' own dtype."""
-    quotient = values.to(torch.float64) / step.to(torch.float64)
+    value asserted on its grid within the rounding of ``values``' own dtype. A grid with an ``offset``
+    reads ``(values + offset) / step`` (a value is ``code * step - offset``)."""
+    if offset is None:
+        quotient = values.to(torch.float64) / step.to(torch.float64)
+        spread = 1.0
+    else:
+        shift = offset.to(torch.float64)
+        quotient = (values.to(torch.float64) + shift) / step.to(torch.float64)
+        spread = 1.0 + torch.nan_to_num(shift.abs() / step.to(torch.float64), posinf=0.0)
     codes = torch.round(quotient)
-    tolerance = 8.0 * torch.finfo(values.dtype).eps * (codes.abs() + 1.0)
+    tolerance = 8.0 * torch.finfo(values.dtype).eps * (codes.abs() + spread)
     if bool(((quotient - codes).abs() > tolerance).any()):
         worst = float((quotient - codes).abs().max())
         raise OffGridInputError(

@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, Tuple
 
+from mimarsinan.mapping.lanes.declaration import lanes_executed
 from mimarsinan.search.optimizers.budget import charge_evaluation
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
 from .candidate_fragments import (
-    candidate_program_facts, collect_candidate_noc, with_stage_placements,
+    candidate_program_facts, collect_candidate_noc, value_mapper_repr, with_lane_work, with_stage_placements,
 )
 
 from .types import (
@@ -144,6 +145,8 @@ class JointValidateMixin(JointHostContract):
         """Lay a built model onto the candidate chip: conversion → softcores → packing."""
         try:
             mapped_model = self._ensure_mapper_repr(model, placement)
+            # [W08] where the chip's lanes run, the lane plan reads the value-domain graph (converted here, once)
+            lane_graph = self._value_mapper_repr(model, placement) if lanes_executed(pcfg) is not None else None
         except Exception as exc:
             return None, self._failure(HW_CONVERSION_PHASE, "HW conversion failed", exc)
 
@@ -173,6 +176,7 @@ class JointValidateMixin(JointHostContract):
             weight_bits=pcfg.get("weight_bits"),
             pass_transfer=self.pass_transfer,
         )
+        program = with_lane_work(program, pcfg, lambda: lane_graph)
         return CandidateLayout(
             platform=pcfg,
             softcores=softcores,
@@ -183,6 +187,17 @@ class JointValidateMixin(JointHostContract):
                 stats, pcfg, total_params, host_segments, census, noc, program,
             ),
         ), None
+
+    def _value_mapper_repr(self, model: Any, placement: str) -> Any:
+        """[W08] The model's value-domain mapper graph, memoized on the hardware-only fixture like its layout one."""
+        cache = self._hw_only_cache.get(placement)
+        if cache is not None and model is cache.model and cache.value_mapper_repr is not None:
+            return cache.value_mapper_repr
+        graph = value_mapper_repr(model, input_shape=tuple(self.input_shape), num_classes=self.num_classes,
+                                  device=self.device, target_tq=self.target_tq, placement=placement)
+        if cache is not None and model is cache.model:
+            cache.value_mapper_repr = graph
+        return graph
 
     def _resolve_entry(
         self, mc: Dict, pcfg: Dict, placement: str,

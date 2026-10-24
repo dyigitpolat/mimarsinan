@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, NamedTuple, Optional, Tuple
+from typing import Iterable, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import torch
@@ -41,10 +41,11 @@ class LoweredProgram(NamedTuple):
     mapper_sources: List[Tuple[str, np.ndarray]]
 
 
-def fp64_identity_program(ir_graph) -> ValueHybridCoreFlow:
-    """The fp64 identity value program of an IR graph (one hard core per neural core, float weights)."""
+def fp64_identity_program(ir_graph, *, exposed: Iterable[int] = ()) -> ValueHybridCoreFlow:
+    """The fp64 identity value program of an IR graph (one hard core per neural core, float weights); ``exposed``
+    nodes are written out by their stages too (a twin certificate's backend carries)."""
     return ValueHybridCoreFlow(
-        build_identity_hybrid_mapping(ir_graph=ir_graph), device="cpu", dtype=torch.float64,
+        build_identity_hybrid_mapping(ir_graph=ir_graph, exposed=exposed), device="cpu", dtype=torch.float64,
     )
 
 

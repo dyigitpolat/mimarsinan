@@ -115,6 +115,11 @@ def gather_plan_for(node) -> GatherPlan:
     return _PLANS.get(node, build_gather_plan)
 
 
+def invalidate_gather_plan(node) -> None:
+    """Forget ``node``'s plan after a pass rewired its sources (lane fusion)."""
+    _PLANS.evict(node)
+
+
 def gather_inputs_reference(
     node,
     input_tensor: torch.Tensor,

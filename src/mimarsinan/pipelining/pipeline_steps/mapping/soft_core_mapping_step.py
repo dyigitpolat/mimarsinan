@@ -7,6 +7,7 @@ from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.pipelining.core.steps.pipeline_step import METRIC_CARRIED, PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
+from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.latency.depth_balancing import (
@@ -14,10 +15,13 @@ from mimarsinan.mapping.latency.depth_balancing import (
     insert_depth_balancing_relays,
 )
 from mimarsinan.mapping.latency.ir import IRLatency
-from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
+from mimarsinan.mapping.export.chip_quantize import ParameterGrids, quantize_ir_graph
 from mimarsinan.mapping.export.law_solver import install_readout_laws
 from mimarsinan.mapping.ir.dynamic_bank import validate_bindings
+from mimarsinan.mapping.lanes.install import lanes_report
+from mimarsinan.mapping.lanes.output_stage import output_stage_of_program
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
+from mimarsinan.mapping.support.core_types import bind_core_types, check_core_codes, refuse_unbuilt_domain
 from mimarsinan.mapping.support.bias_compensation import (
     apply_ttfs_quantization_bias_compensation,
     transfer_negative_shifts_to_ir,
@@ -242,8 +246,12 @@ class SoftCoreMappingStep(PipelineStep):
         self._verify_pruning_committed(model)
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
+        # [WI-5g] every core binds to its layer's core type before its codes quantize on that type's grid.
+        refuse_unbuilt_domain(platform_constraints, value_domain=is_mvm_core_semantics(plan.core_semantics),
+                              weight_quantization=plan.weight_quantization)
+        bind_core_types(ir_graph, model, platform_constraints)
         # [mvm AQ] realize the model's boundary grids onto the mapped cores.
-        install_boundary_grids(ir_graph, model)
+        install_boundary_grids(ir_graph, model, quantizer_state=platform_constraints.get("quantizer_state"))
 
         if bool(self.pipeline.config.get("negative_value_shift", True)):
             transfer_negative_shifts_to_ir(model, ir_graph)
@@ -254,7 +262,7 @@ class SoftCoreMappingStep(PipelineStep):
 
         wt_q = plan.weight_quantization
         with _phase("weight_quantization"):
-            quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q)
+            quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q, grids=ParameterGrids.from_config(platform_constraints))
         if relays_enabled:
             # [C5/V9] the strict-'<' exact-theta dead-relay lattice guard, on
             # the QUANTIZED graph (threshold = scale after integerization).
@@ -274,6 +282,8 @@ class SoftCoreMappingStep(PipelineStep):
             ir_graph, model, platform_constraints, weight_quantization=plan.weight_quantization, weight_bits=bits,
         )
         validate_bindings(ir_graph, packaging=packaging_contract_for(plan))  # [N2] no-op without operand banks
+        if bind_core_types(ir_graph, model, platform_constraints):  # [WI-5g] lane cores bind too; codes checked
+            check_core_codes(ir_graph)
 
         with _phase("onchip_validity_gate"):
             self._run_onchip_validity_gate(model, ir_graph)
@@ -290,8 +300,10 @@ class SoftCoreMappingStep(PipelineStep):
         neural_cores = ir_graph.get_neural_cores()
         print(f"[SoftCoreMappingStep] IR Graph: {len(neural_cores)} neural cores, {len(compute_ops)} compute ops")
         print_weight_reuse_report(ir_graph)
+        if lanes_report(ir_graph) is not None:  # [WI-5e] fused lanes moved the cores' depths
+            max_latency = IRLatency(ir_graph).calculate()
         self._emit_deployment_record_scm(
-            ir_graph, relay_cores_inserted, int(max_latency),
+            ir_graph, relay_cores_inserted, int(max_latency), output_stage_of_program(ir_graph, platform_constraints),
         )
         if compute_ops:
             print(f"[SoftCoreMappingStep] Model contains {len(compute_ops)} non-neural operations:")
@@ -353,11 +365,12 @@ class SoftCoreMappingStep(PipelineStep):
             print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
 
     def _emit_deployment_record_scm(
-        self, ir_graph, relay_cores_inserted: int, ir_max_latency: int
+        self, ir_graph, relay_cores_inserted: int, ir_max_latency: int, output_stage=None,
     ) -> None:
         """Persist the SCM deployment-record fragment: the weight-reuse plan
         (an unconditional pure IR read, provenance "planned@scm"), the
-        formerly-dropped relay count, and the IR latency census."""
+        formerly-dropped relay count, the IR latency census, and [W08] the
+        output stage of a chip declaring ``onchip_arithmetic``."""
         reuse_plan = weight_reuse_plan_from_graph(ir_graph)
         self.add_entry("deployment_record_scm", {
             "reuse_plan": {
@@ -367,6 +380,7 @@ class SoftCoreMappingStep(PipelineStep):
             },
             "relay_cores_inserted": int(relay_cores_inserted),
             "ir_max_latency": int(ir_max_latency),
+            **({} if output_stage is None else {"output_stage": output_stage.to_dict()}),
         }, "basic")
 
     def _commit_pruning_to_raw_params(self, model) -> None:

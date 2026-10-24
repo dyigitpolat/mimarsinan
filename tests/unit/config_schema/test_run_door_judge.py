@@ -799,6 +799,8 @@ AUDITED_LEGAL_SETS = {
     "activation_bits": "INT >= 2",
     "activation_scale_policy": "ENUM count_quantile | min_distortion | percentile_norm | max_norm",
     "activation_scale_quantile": "FLOAT in [0, 1]",
+    # Wave 2 WI-5b, WI-5c: the consumers' vocabularies (mapping/support/grid_declarations.py), audited there.
+    "bias_resolution": "ENUM weight_grid | law",
     "activity_factor": "FLOAT in [0, 1]",
     "batch_size": "INT >= 1",
     "conversion_draws": "INT >= 1",
@@ -885,6 +887,7 @@ AUDITED_LEGAL_SETS = {
     "weight_bits": "INT in [1, 32]",
     "wq_endpoint_recovery_steps": "INT >= 0",
     "write_ports": "INT >= 1",
+    "weight_scale_rule": "ENUM integer | fractional",  # Wave 2 WI-5b
 }
 
 

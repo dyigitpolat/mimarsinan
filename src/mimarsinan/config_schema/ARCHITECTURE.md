@@ -157,6 +157,29 @@ own phrase). `passthrough=True` marks the Wave 1 platform keys
 declares the converter's `decompose_leaf_modules`. Every Wave 1 key has no default:
 absent, every resolution and program is byte for byte the pre-Wave-1 one. [N2] The core-type schema's `operand` field (`payload_bits`, function-bearing and required; `write_source`, `host` or `on_chip`, cost-only and pricing-only in X3a) declares an operand core type; `readout_ranges` (`entries_readout.py`, function-bearing, absent: `per_perceptron`) declares per-consumer-group output ranges; both vocabularies live in `mapping/support/period_census.py`.
 
+## Declared value grids (Wave 2)
+
+`registry/entries_grids.py` declares `quantizer_state` (`file`, `sha256`), `weight_scale_rule`
+(`integer | fractional`) and `bias_resolution` (`weight_grid | law`), and `entries_readout.py` the `readout_law`
+field `output_law` (`requantize | identity`): value-domain, function-bearing platform passthrough keys with no
+default, their vocabularies in `mapping/support/grid_declarations.py`; absent, every program is the base's.
+
+## On-chip arithmetic lanes (Wave 2 WI-5e, W08)
+
+`registry/entries_lanes.py` registers `onchip_arithmetic` (value domain, platform passthrough, no default,
+function-bearing as the join of its fields): `classes` (function-bearing; options L, E, P, the toggle's A, C, W, I
+reserved by name), `lanes_per_core` and `lane_block` (cost-only: the lane block's count and constants). Its consumer
+(`mapping/lanes/declaration.py`) refuses what the schema cannot judge (E or P without L, a class twice, a lane block
+on a chip without lanes); the value-domain target bundles declare it (on by default, the off ablation is
+`classes []` through `target_overrides`).
+
+## Core types with their own weight bits (Wave 2 WI-5g)
+
+`registry/entries_core_types.py` registers `layer_core_types` (value domain, platform passthrough, no default,
+function-bearing; a list of `{layers: [glob, ...], weight_bits}`), and `entries_write.CORE_TYPE_SCHEMA` gains the
+function-bearing core-type field `weight_bits` (absent: the platform `weight_bits`); the consumer is
+`mapping/support/core_types.py`.
+
 ## Key files
 | File | Purpose |
 |---|---|

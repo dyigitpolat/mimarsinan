@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Mapping, Set, Tuple
 
+import torch
+
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 
 __all__ = [
@@ -15,6 +17,7 @@ __all__ = [
     "build_computeop_producer_map",
     "build_computeop_referenced_neurons",
     "compute_perceptron_io_exemption_indices",
+    "offset_grid_exempt_rows",
 ]
 
 
@@ -56,6 +59,30 @@ def compute_model_io_boundary_policy(ir_graph: IRGraph) -> PruningBoundaryPolicy
         exempt_rows_per_node={nid: frozenset(s) for nid, s in exempt_rows.items()},
         exempt_cols_per_node={nid: frozenset(s) for nid, s in exempt_cols.items()},
     )
+
+
+def _zero_reads_nonzero(grid) -> bool:
+    """Whether an armed entry grid snaps the value 0 to a nonzero value (an offset grid, WI-5a)."""
+    if grid is None or not getattr(grid, "armed", False):
+        return False
+    return float(grid.snap(torch.zeros(1, dtype=torch.float64))[0]) != 0.0
+
+
+def offset_grid_exempt_rows(ir_graph: IRGraph) -> Dict[int, frozenset[int]]:
+    """Rows that read a host value through an entry grid whose value 0 snaps to a nonzero value: a pruned producer's
+    0 reads as that value on chip and in the model, so the row's term is not 0 and the row is never pruned (the host
+    op still computes the 0, the entry snaps it). Empty on every program without an offset grid."""
+    nodes = {int(n.id): n for n in ir_graph.nodes}
+    exempt: Dict[int, frozenset[int]] = {}
+    for node in ir_graph.nodes:
+        if not isinstance(node, NeuralCore) or not _zero_reads_nonzero(getattr(node, "boundary_grid", None)):
+            continue
+        rows = frozenset(
+            i for i, src in enumerate(node.input_sources.flatten())
+            if isinstance(src, IRSource) and (src.is_input() or isinstance(nodes.get(int(src.node_id)), ComputeOp)))
+        if rows:
+            exempt[int(node.id)] = rows
+    return exempt
 
 
 def _computeop_relays_deadness(op: ComputeOp) -> bool:

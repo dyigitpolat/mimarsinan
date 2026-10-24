@@ -154,6 +154,13 @@ CONFIG_KEYS_SET: Set[str] = {
     "readout_ranges",
     # Wave 2 (registry/entries_residency.py): no default, an absent key leaves every program byte for byte.
     "position_multiplexing",
+    # Wave 2 WI-5a to WI-5c declarations (registry/entries_grids.py): no default, absent is the calibrated,
+    # integer-lattice, weight-grid-bias program.
+    "quantizer_state", "weight_scale_rule", "bias_resolution",
+    # Wave 2 WI-5e (registry/entries_lanes.py): no default, absent is the lane-free MVM contract.
+    "onchip_arithmetic",
+    # Wave 2 WI-5g (registry/entries_core_types.py): no default, absent binds no layer to a core type.
+    "layer_core_types",
 }
 
 

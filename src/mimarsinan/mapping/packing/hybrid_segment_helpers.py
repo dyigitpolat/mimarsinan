@@ -10,6 +10,7 @@ from mimarsinan.mapping.packing.canonical import declared_core_roles
 from mimarsinan.mapping.packing.softcore import HardCore
 from mimarsinan.mapping.packing.hybrid_types import SegmentIOSlice
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON, SIGN_GRANULARITY_FIELD
+from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
 
 
 def _make_available_hardware_cores(cores_config: Sequence[dict]) -> list[HardCore]:
@@ -21,12 +22,15 @@ def _make_available_hardware_cores(cores_config: Sequence[dict]) -> list[HardCor
         max_neurons = int(core_type["max_neurons"])
         has_bias = bool(core_type.get("has_bias", True))
         per_axon = core_type.get(SIGN_GRANULARITY_FIELD) == PER_AXON
+        bits = core_type.get(CORE_WEIGHT_BITS)  # [WI-5g] a core type's own weight width binds its cores
         for _ in range(count):
             core = HardCore(max_axons, max_neurons, has_bias_capability=has_bias)
             if per_axon:
                 core.weight_sign_granularity = PER_AXON
             if roles is not None:
                 core.accepted_roles = roles  # pyright: ignore[reportAttributeAccessIssue] -- declared-only (N2)
+            if bits is not None:
+                setattr(core, CORE_WEIGHT_BITS, int(bits))
             available_hardware_cores.append(core)
     return available_hardware_cores
 

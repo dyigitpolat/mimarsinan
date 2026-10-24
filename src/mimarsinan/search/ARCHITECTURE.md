@@ -64,6 +64,15 @@ deployment's own estimator, gated on `_requires_fragment("quantity_context")`
 and memoized on the hardware-only fixture) — the axis gate
 (`resolve_active_specs(physics=...)`) and the view extraction must answer from
 one source, or an admitted priced axis raises at extraction on every candidate.
+[W08] On a chip declaring `onchip_arithmetic`, `with_lane_work` adds the lane work
+the declared lanes run on the candidate's model (`mapping.lanes.output_stage.planned_lane_ops`,
+the lane plan's estimate) to the program facts, so the candidate prices the lane
+block, its work and the chip-only energy by the record plane's rule. The plan reads
+the model's mapper graph under the value-domain packaging (`value_mapper_repr`, a
+copy converted as Torch Mapping converts a value-domain run, memoized on the
+hardware-only fixture), built only where the lanes run: the candidate's layout
+itself still converts with the spiking default, and the output stage says its
+layout and host census are the lane-free shape's.
 [E1/E2] The same file derives what the candidate's PASS STRUCTURE implies:
 `candidate_program_facts` returns the executed wall (`candidate_latency_steps`
 applies `chip_simulation.stage_timesteps` — the runner's own rule — to the

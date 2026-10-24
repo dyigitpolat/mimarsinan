@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional, Protocol
+from typing import Any, Dict, Mapping, Optional, Protocol, Tuple
 
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.write_law import write_quantities
@@ -108,6 +108,12 @@ class CandidateQuantityContext:
     #: The write law's inputs (``write_law.PlaneWrites``), present only when
     #: ``inference_batch_K`` is declared.
     writes: Optional[Any] = None
+    #: [W08] The lane block of a chip declaring ``onchip_arithmetic`` (``lanes.lane_block_quantities``): the lane
+    #: work estimated from the lane plan and lanes per tile, and the quantities withheld by name; empty otherwise.
+    lane_quantities: Tuple[Tuple[str, QuantityValue], ...] = ()
+    lane_withheld: Tuple[Tuple[str, str], ...] = ()
+    #: [W08] The candidate's output stage, printed beside its priced point (``output_stage_note``).
+    output_stage: Optional[Mapping[str, Any]] = None
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
@@ -224,5 +230,7 @@ def from_candidate(
             provenance="modeled",
         )
 
-    held = {**dict(getattr(context.value_rule, "withheld", ()) or ()), **dict(withheld or {})}
+    values.update(dict(context.lane_quantities))
+    held = {**dict(getattr(context.value_rule, "withheld", ()) or ()), **dict(context.lane_withheld),
+            **dict(withheld or {})}
     return Quantities(values, withheld={key: reason for key, reason in held.items() if key not in values})

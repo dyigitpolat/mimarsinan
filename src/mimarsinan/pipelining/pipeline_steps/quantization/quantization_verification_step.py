@@ -1,9 +1,11 @@
 import torch
 
 from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.mapping.support.grid_declarations import ParameterGrids
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.quantization_bounds import LAYER_WEIGHT_BITS, layer_weight_bits, quantization_bounds
 
 
 def integer_grid_stats(ints: torch.Tensor, q_max: int) -> dict:
@@ -26,12 +28,13 @@ def _assert_integer_lattice(scaled: torch.Tensor, what: str) -> torch.Tensor:
     return rounded
 
 
-def assert_effective_parameters_on_chip_grid(perceptron, q_max: int) -> None:
+def assert_effective_parameters_on_chip_grid(perceptron, q_max: int, *, law_bias: bool = False) -> None:
     """The WQ install contract, both projection modes: effective weights are
     integer on the ``parameter_scale`` grid; the effective bias is integer on
     its OWN ``bias_scale`` grid within the ±q_max register range AND on the
     weight-grid lattice (``bias * parameter_scale = r * bias_int`` — what the
-    chip export emits, so both parity sides see the same semantics)."""
+    chip export emits, so both parity sides see the same semantics). A bias
+    declared at the law's resolution (``law_bias``) has no grid to be on."""
     transformer = PerceptronTransformer()
     fused_w = transformer.get_effective_weight(perceptron)
     fused_b = transformer.get_effective_bias(perceptron)
@@ -41,6 +44,8 @@ def assert_effective_parameters_on_chip_grid(perceptron, q_max: int) -> None:
         bias_scale = param_scale
 
     _assert_integer_lattice(fused_w * param_scale, "weights off the chip grid")
+    if law_bias:
+        return
     _assert_integer_lattice(
         fused_b * param_scale, "bias off the weight-grid lattice"
     )
@@ -52,9 +57,23 @@ def assert_effective_parameters_on_chip_grid(perceptron, q_max: int) -> None:
     )
 
 
+def _declared_q_max(perceptron, q_max: int) -> int:
+    """The register range of ``perceptron``'s grid: its core type's width (WI-5g), else the run's ``q_max``."""
+    declared = getattr(perceptron, LAYER_WEIGHT_BITS, None)
+    return q_max if declared is None else quantization_bounds(int(declared))[1]
+
+
+def assert_weights_within_layer_grid(perceptron, q_max: int) -> None:
+    """A perceptron on a core type of its own width holds weight codes inside that width's register (WI-5g)."""
+    ints = torch.round(PerceptronTransformer().get_effective_weight(perceptron) * perceptron.parameter_scale)
+    assert float(ints.abs().max()) <= q_max + 0.5, (
+        f"{getattr(perceptron, 'name', '?')}: weight codes up to {float(ints.abs().max())} outside the ±{q_max} "
+        f"register of its {layer_weight_bits(perceptron, 0)}-bit core type")
+
+
 def quantization_grid_report(perceptrons, q_max: int) -> list[dict]:
     """Per-perceptron integer-grid rows following the verification convention
-    (``round(fused_w * parameter_scale)`` lies on the ±q_max grid)."""
+    (``round(fused_w * parameter_scale)`` lies on the ±q_max grid, or that of the layer's core type, WI-5g)."""
     rows: list[dict] = []
     transformer = PerceptronTransformer()
     for index, perceptron in enumerate(perceptrons):
@@ -64,7 +83,7 @@ def quantization_grid_report(perceptrons, q_max: int) -> list[dict]:
             "index": index,
             "name": str(getattr(perceptron, "name", f"perceptron_{index}")),
             "parameter_scale": float(perceptron.parameter_scale.item()),
-            **integer_grid_stats(ints, q_max),
+            **integer_grid_stats(ints, _declared_q_max(perceptron, q_max)),
         })
     return rows
 
@@ -99,7 +118,11 @@ class QuantizationVerificationStep(TrainerPipelineStep):
             print(perceptron.parameter_scale)
             print(perceptron.scale_factor)
             perceptron.to(self.pipeline.config["device"])
-            assert_effective_parameters_on_chip_grid(perceptron, q_max)
+            assert_effective_parameters_on_chip_grid(
+                perceptron, _declared_q_max(perceptron, q_max),
+                law_bias=ParameterGrids.from_config(self.pipeline.config).law_bias)
+            if getattr(perceptron, LAYER_WEIGHT_BITS, None) is not None:
+                assert_weights_within_layer_grid(perceptron, _declared_q_max(perceptron, q_max))
 
         # The asserts above ARE the gate; surviving them is the verdict. The
         # per-layer grid diagnostics ship as one low-rate structured event.

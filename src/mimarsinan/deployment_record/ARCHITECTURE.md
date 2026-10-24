@@ -152,3 +152,45 @@ registry directly (W5.1).
   withheld by name; host dispatch with no host MACs is priced through
   `t_host_op_overhead` or named unpriced; `platform_physics/resolve.merge_override_blocks` merges named override
   blocks into the one `platform_physics_overrides` value and refuses a constant two blocks declare.
+
+## Lane block and output stage (Wave 2 W08)
+
+- **Lane block.** `platform_physics/lane_blocks/` ships lane blocks as data (`ng45_os_lane.json`: the output-stage
+  lane of `arith_toggle.md` section 6, area, energy and time per lane, every row `estimated`, at the block's declared
+  `technology_node_nm` and `supply_v`, 45 nm and 1.1 V); a chip declaring `onchip_arithmetic` with lane classes and a
+  `lane_block` resolves its physics with the block's G3 lane rows (`area_per_lane`, `e_lane_op`, `t_lane_op`)
+  wherever the profile and the overrides declare none (`resolve.resolve_platform_physics(lane_block=)`), never on its
+  own: a block adds no physics to an unpriced chip. Each row is scaled from the block's node and supply to the
+  physics' own (`validity.technology_node_nm`, `supply_v`) by the block's declared rule (area `node^2`, energy
+  `node*V^2`, or by node alone where the target declares no supply, time `none`), the factor named in its note
+  (`lane_blocks.lane_block_rows(target=TargetNode)`); a block beside physics of no declared node, or without a rule
+  for a dimension, is refused by name (`LaneBlockError`). The value-domain target bundles declare the block (one lane
+  per 64 output columns).
+- **Lane quantities.** One rule on both planes (`quantities/lanes.lane_block_quantities`): `lanes_per_tile` is lanes
+  per core times the resolved cores per tile (0 on the off ablation, `classes` []), withheld by name where lanes
+  carry no `lanes_per_core` (`NO_LANE_COUNT`: the block's area and time named unpriced), and `lane_ops` the lane work
+  per inference (0 where the lanes do not run). The record plane (`quantities/from_record.py`) reads the executed work
+  from the record's optional `output_stage`, which `schema/record.py` emits only when set (sealed from the Soft Core
+  Mapping fragment), so every record of a chip without the declaration is byte-identical; the candidate plane
+  (`objectives/context.candidate_context_from_platform(lane_ops=)`) prices the work the lane plan estimates on the
+  candidate's model (provenance `modeled`) and carries an estimated output stage that names what it cannot see (its
+  layout and host census are the lane-free shape's). A fused add's operand rows are no crossbar cells, MACs or
+  programming bytes (`mapping/crossbar_utilization.CoreOccupancy` subtracts them): the add is priced once, as lane
+  work; a pool lane's work is its requantized outputs, its window sums priced as its reduction cores' cells.
+- **Chip-only energy and the output-stage line.** A point that prices a lane block (`lanes_per_tile` present or
+  withheld by name) gets `energy_chip_only_mj` beside the headline (compute, periphery, static and write terms, no
+  host energy; priced when the host refuses the headline too), naming the chip components it cannot price as the
+  dynamic term does (and refused by the headline's own reason where the headline refuses before any host term,
+  e.g. a candidate's static power without a priced latency), and `cost/absolute/output_stage.output_stage_note`
+  prints beside it the lane work, host round
+  trips (with the dependency barriers), host boundary bytes and the chip-only energy with its unpriced components,
+  labelled `executed` or `estimated` (a requirement placement where the lanes do not run), in the record's cost
+  report and in `candidate_cost_report` (a candidate's stage prints its lane plan's work).
+
+## Core types with their own weight bits (Wave 2 WI-5g)
+
+On a chip whose core types carry their own `weight_bits`, every core's programmed payload is sized at its own type's
+width (`build/program_census.core_record`, `mapping/crossbar_utilization.CrossbarUtilizationReport.core_widths` for
+`programming_bits`), the record's platform lists each type's width, and the one-width quantity `weight_bits` is
+withheld where the types carry different widths (`quantities/from_record.py`), so every per-bit term (cell area per
+bit, an aggregate's bit validity) refuses by name instead of pricing every cell at the platform width.

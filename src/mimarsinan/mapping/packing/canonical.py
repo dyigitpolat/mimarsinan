@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from mimarsinan.mapping.platform.core_residency import ungrouped_fallback_id
+from mimarsinan.mapping.packing.type_binding import binding_admits
 
 from typing import List, Optional, Protocol, Sequence, TypeVar
 
@@ -115,7 +116,7 @@ def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike
     """Single-source-of-truth feasibility predicate shared by the layout and runtime packers.
 
     A hardcore accepts a softcore only when residency-class, latency, the core role (N2, where the chip
-    declares separate operand cores) and the remaining axon/neuron budget all match.
+    declares separate operand cores), the core-type width (WI-5g) and the remaining axon/neuron budget all match.
     """
     roles = getattr(hardcore, "accepted_roles", None)
     if roles is not None and (getattr(softcore, "core_role", None) or STATIC_ROLE) not in roles:
@@ -125,6 +126,9 @@ def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike
         sc_tg = _read_residency_class(softcore)
         if sc_tg != int(hc_tg):
             return False
+
+    if not binding_admits(softcore, hardcore):  # [WI-5g] a typed core takes only its width's layers
+        return False
 
     hc_lat = _read_latency(hardcore)
     if hc_lat is not None:
@@ -150,7 +154,7 @@ def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike
 #: index (``greedy/used_index.py``) keys on exactly this set. A bank-affine softcore also reads the core's banks:
 #: on the index it reads the cores hosting its bank, then one core per state (``greedy/pack._best_used_core``).
 CANONICAL_CORE_READS = ("residency_class_id", "latency", "latency_tag", "available_axons", "available_neurons",
-                        "accepted_roles")
+                        "accepted_roles", "weight_bits")
 
 
 def _placement_waste(soft: SoftCoreLike, hard: HardCoreLike) -> int:

@@ -196,11 +196,13 @@ def resolve_unstamped_encoding_placement(
     return True
 
 
-def segment_entry_perceptrons(model_repr: ModelRepresentation) -> list:
+def segment_entry_perceptrons(model_repr: ModelRepresentation, on_chip: frozenset = frozenset()) -> list:
     """Perceptrons that are the FIRST on-chip core of a neural segment.
 
     These read a freshly assembled hybrid stage input — the seam the synchronized
     TTFS wire contract grid-quantizes. Structural mappers are transparent in the walk.
+    A host-op mapper whose ``id`` is in ``on_chip`` (a lane absorbs it, WI-5e) is
+    on chip: a perceptron reading it reads a core, not a segment entry.
     """
     model_repr._ensure_exec_graph()
     exec_order = model_repr._exec_order
@@ -216,6 +218,8 @@ def segment_entry_perceptrons(model_repr: ModelRepresentation) -> list:
             if _is_perceptron_holder(src):
                 if getattr(src.perceptron, "is_encoding_layer", False):
                     entries.append(node.perceptron)
+                break
+            if isinstance(src, ComputeOpMapper) and id(src) in on_chip:
                 break
             if isinstance(src, (InputMapper, ComputeOpMapper)):
                 entries.append(node.perceptron)

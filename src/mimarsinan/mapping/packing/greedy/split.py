@@ -9,6 +9,7 @@ from mimarsinan.mapping.packing.canonical import (
     _read_latency,
 )
 from mimarsinan.mapping.packing.greedy.pool import CorePool
+from mimarsinan.mapping.packing.type_binding import binding_admits
 from mimarsinan.mapping.packing.pick_index import PickBestIndex
 
 
@@ -70,6 +71,8 @@ def _try_split_into_used(
             if hc_latency is not None:
                 if core_latency is None or core_latency != hc_latency:
                     continue
+            if not binding_admits(core, hc):  # [WI-5g] the canonical predicate's core-type check
+                continue
             best_idx = idx
             best_avail_n = avail_n
 

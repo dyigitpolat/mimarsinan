@@ -5,8 +5,10 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.mapping.ir.graph import IRGraph
+from mimarsinan.mapping.ir.lane_law import OPERAND_AXONS
 from mimarsinan.mapping.ir.types import NeuralCore
 from mimarsinan.mapping.ir.source import IRSource
+from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
 
 
 def spike_source_to_ir_source(spike_source, core_id_offset: int = 0) -> IRSource:
@@ -164,6 +166,12 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
     )
     soft.perceptron_index = int(pi) if pi is not None else None
     soft.perceptron_output_slice = getattr(neural_core, "perceptron_output_slice", None)
+    bits = getattr(neural_core, CORE_WEIGHT_BITS, None)
+    if bits is not None:  # [WI-5g] the soft core binds to its layer's core type
+        setattr(soft, CORE_WEIGHT_BITS, int(bits))
+    operand_axons = getattr(neural_core, OPERAND_AXONS, None)
+    if operand_axons:  # [W08] the fused add's operand rows, priced as the lane's operand port
+        setattr(soft, OPERAND_AXONS, int(operand_axons))
     if pruned_row_mask is not None and pruned_col_mask is not None:
         soft.pruned_row_mask = pruned_row_mask
         soft.pruned_col_mask = pruned_col_mask

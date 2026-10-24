@@ -6,6 +6,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.mapping.export.chip_quantize import verify_ir_graph_quantized
+from mimarsinan.mapping.support.grid_declarations import ParameterGrids
 
 
 class CoreQuantizationVerificationStep(PipelineStep):
@@ -53,7 +54,7 @@ class CoreQuantizationVerificationStep(PipelineStep):
             }
             return
 
-        verify_ir_graph_quantized(ir_graph, bits)
+        verify_ir_graph_quantized(ir_graph, bits, grids=ParameterGrids.from_config(self.pipeline.config))
         print(
             f"[CoreQuantizationVerificationStep] OK: verified {len(cores)} "
             f"NeuralCores at {bits}-bit quantization."

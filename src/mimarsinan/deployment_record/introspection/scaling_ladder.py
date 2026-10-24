@@ -163,7 +163,7 @@ def price_program(
                                 census=census.wire_census, declared_cores=platform["cores"], **kwargs)
     stage("price")
     noc, facts = program_facts(census.softcores, noc, platform)
-    host = dict(network.host_census or {})
+    host: Dict[str, Any] = dict(network.host_census or {})
     context = candidate_context_from_platform(
         platform, latency_steps=facts.latency_steps, programming=facts.programming, carry=facts.carry,
         **{k: host.get(k) for k in ("host_macs", "onchip_macs", "host_params", "onchip_params",

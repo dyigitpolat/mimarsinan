@@ -23,6 +23,8 @@ from mimarsinan.config_schema.registry.entries_write import platform_bias_mode
 from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics, write_physics_profile
 from mimarsinan.deployment_record.quantities.write_technology import WRITE_PHYSICS_RESOLVED, core_technologies
+from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
+from mimarsinan.mapping.lanes.declaration import LANE_KEY, declared_lane_block
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY, resolve_residency_policy
 
@@ -128,9 +130,10 @@ def build_platform_constraints_resolved(
     # objectives are then unavailable rather than defaulted. An unknown profile or
     # an unknown constant fails loud HERE, at resolution time.
     physics = _read_by_consumer(
-        pipeline_config, ("platform_physics_profile", "platform_physics_overrides"),
+        pipeline_config, ("platform_physics_profile", "platform_physics_overrides", LANE_KEY),
         lambda: resolve_platform_physics(str(pipeline_config.get("platform_physics_profile", "") or ""),
-                                         pipeline_config.get("platform_physics_overrides") or {}))
+                                         pipeline_config.get("platform_physics_overrides") or {},
+                                         lane_block=declared_lane_block(pipeline_config)))
     pcfg["platform_physics_resolved"] = physics.to_dict() if physics else None
     # N2b: each core type's named write physics, sealed the same way (only when a core type names one).
     sealed = _read_by_consumer(pipeline_config, ("cores",), lambda: _sealed_write_physics(cores))

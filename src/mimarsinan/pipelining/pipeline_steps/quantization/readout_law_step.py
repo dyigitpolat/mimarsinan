@@ -18,12 +18,14 @@ from mimarsinan.models.nn.activations.readout_quantizer import ReadoutQuantizer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.pipeline_steps.quantization.declared_state import declare_readout_state
 from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
     CALIBRATION_BATCHES,
     CALIBRATION_QUANTILE,
     MIN_BOUNDARY_SCALE,
     measure_seam_quantiles,
 )
+from mimarsinan.mapping.lanes.model_lanes import install_planned_lanes, lane_clipping_census, measure_lane_ranges
 from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 
 
@@ -132,7 +134,8 @@ def clipping_census(model, perceptrons: list, quantizers: list, batches: Iterabl
     for quantizer in quantizers:
         def hook(module, args, q=quantizer):
             y = args[0].detach()
-            totals[id(q)][0] += int((y.abs() > float(q.range)).sum())
+            if float(q.range) > 0.0:  # an inert quantizer (an identity output) clips nothing
+                totals[id(q)][0] += int((y.abs() > float(q.range)).sum())
             totals[id(q)][1] += int(y.numel())
         handles.append(quantizer.register_forward_pre_hook(hook))
     try:
@@ -170,6 +173,22 @@ class ReadoutLawStep(PipelineStep):
         assert self.trainer is not None  # process() ran first
         return self.trainer.test()
 
+    @staticmethod
+    def _calibrated(model, perceptrons, quantizers, batches, lanes=None) -> List[float]:
+        names = [p.name for p in perceptrons]
+        if lanes is None:
+            measured = measure_seam_quantiles(model, quantizers, batches)
+        else:  # WI-5e: each lane's range at its end (after its clamp or fused add); pool lanes by FX name
+            measured = measure_lane_ranges(model, quantizers, batches, CALIBRATION_QUANTILE)
+            names += [name for name, _ in lanes]
+        unseen = [names[i] for i, value in enumerate(measured) if value == 0.0]
+        if unseen:
+            raise ReadoutLawCalibrationError(
+                f"Readout Law calibration never reached perceptron(s) {unseen}: a silent floor range would "
+                f"saturate their outputs"
+            )
+        return [max(value, MIN_BOUNDARY_SCALE) for value in measured]
+
     def process(self):
         model = self.get_entry("model")
         platform = self.get_entry("platform_constraints_resolved")
@@ -188,21 +207,31 @@ class ReadoutLawStep(PipelineStep):
         batches = [x.to(device) for x, _ in iter_val_batches(trainer, CALIBRATION_BATCHES)]
         perceptrons = list(model.get_perceptrons()) + _bank_perceptrons(model)
         quantizers = install_readout_quantizers(perceptrons, int(bits))
+        lanes = install_planned_lanes(model, platform, int(bits))  # WI-5e: None without executed lanes
+        every = quantizers + [q for _, q in lanes or ()]
         fixed = readout_law.get("range_value")
-        measured = calibrate_readout_quantizers(model, perceptrons, quantizers, batches, platform=platform)
-        unseen = [perceptrons[i].name for i, value in enumerate(measured) if value == 0.0]
-        if fixed is None and unseen:
-            raise ReadoutLawCalibrationError(
-                f"Readout Law calibration never reached perceptron(s) {unseen}: a silent floor range would "
-                f"saturate their outputs"
-            )
-        census = clipping_census(model, perceptrons, quantizers, batches)
+        if lanes is None:  # [N2] per consumer group where declared, then the payload grids of re-snapped banks
+            measured = calibrate_readout_quantizers(model, perceptrons, quantizers, batches, platform=platform)
+            unseen = [perceptrons[i].name for i, value in enumerate(measured) if value == 0.0]
+            if fixed is None and unseen:
+                raise ReadoutLawCalibrationError(
+                    f"Readout Law calibration never reached perceptron(s) {unseen}: a silent floor range would "
+                    f"saturate their outputs"
+                )
+        else:  # WI-5e: each lane's range at its end, pool lanes by FX name
+            ranges = [float(fixed)] * len(every) if fixed is not None else self._calibrated(
+                model, perceptrons, every, batches, lanes)
+            for quantizer, value in zip(every, ranges):
+                quantizer.calibrate(value)
+        declared = declare_readout_state(model, perceptrons, quantizers, platform, lanes or ())  # {} undeclared
+        census = clipping_census(model, perceptrons, quantizers, batches) if lanes is None else lane_clipping_census(
+            model, [(str(p.name), q) for p, q in zip(perceptrons, quantizers)] + list(lanes), batches)
         print(
             f"[ReadoutLawStep] {len(quantizers)} readout quantizer(s) at {bits} bits, range "
             f"{'fixed' if fixed is not None else 'calibrated'}; clipped fraction max "
             f"{max((c['clipped_fraction'] for c in census.values()), default=0.0):.4f}"
         )
         self.add_entry("readout_law_report", {
-            "activation_bits": int(bits), "range_fixed": fixed is not None, "perceptrons": census,
+            "activation_bits": int(bits), "range_fixed": fixed is not None, "perceptrons": census, **declared,
         }, "basic")
         self.update_entry("model", model, "torch_model")

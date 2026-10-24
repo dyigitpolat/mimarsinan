@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import replace
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.context import AbsolutePricing
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
+from mimarsinan.deployment_record.cost.absolute.output_stage import output_stage_note
 from mimarsinan.deployment_record.cost.absolute.validity import UNJUDGED, declared_geometry
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
@@ -92,19 +94,22 @@ def report_with_absolute_terms(
 def candidate_cost_report(
     quantities: Quantities, physics: PlatformPhysics, *,
     writes: Optional[WriteInputs] = None, geometry: Optional[Tuple[Any, ...]] = None,
+    output_stage: Optional[Mapping[str, Any]] = None,
 ) -> DeploymentCostReport:
     """A candidate's report: priced terms only — no segments, no measured plane. A candidate that
-    declares no complete core geometry prices the aggregates as declared (``UNJUDGED``)."""
+    declares no complete core geometry prices the aggregates as declared (``UNJUDGED``); an
+    ``output_stage`` (W08, ``mapping.lanes.output_stage``) is printed beside it."""
     pricing = price_absolute(quantities, physics, writes=writes,
                              geometry=UNJUDGED if geometry is None else geometry)
     groups = _grouped(pricing)
+    stage = () if output_stage is None else (output_stage_note(output_stage, pricing),)
     return DeploymentCostReport(
         segments=(),
         energy=tuple(groups["energy"]),
         latency=tuple(groups["latency"]),
         area=tuple(groups["area"]),
         throughput=tuple(groups["throughput"]),
-        notes=_notes(pricing),
+        notes=_notes(pricing) + stage,
         lifetime=tuple(groups["lifetime"]),
     )
 
@@ -160,9 +165,10 @@ def emit_physics_report(record: DeploymentRecord, run_dir: str) -> Optional[str]
         else DeploymentCostReport(segments=(), energy=(), latency=(), area=(),
                                   throughput=(), notes=())
     )
-    return save_deployment_cost_report(
-        report_with_absolute_terms(base, pricing), run_dir
-    )
+    report = report_with_absolute_terms(base, pricing)
+    if record.output_stage is not None:  # [W08] printed beside the priced point
+        report = replace(report, notes=report.notes + (output_stage_note(record.output_stage, pricing),))
+    return save_deployment_cost_report(report, run_dir)
 
 
 def save_deployment_cost_report(report: DeploymentCostReport, run_dir: str) -> str:

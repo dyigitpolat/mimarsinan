@@ -56,7 +56,10 @@ _REFUSED = ("false", 7.5, [], True, {})
 #: Candidates for a value a key's schema admits, after the fixture's own declaration and the key's options (the
 #: object-valued keys' from ``test_wave1_declarations.LEGAL``).
 _ADMITTED = (True, 8, 784, 0.5, "x", {}, [1], {"mode": "serial"}, {"step": "index", "index": 1},
-             {"adc_bits": 6, "range": "fixed", "range_value": 4.0, "mult_bits": 16})
+             {"adc_bits": 6, "range": "fixed", "range_value": 4.0, "mult_bits": 16},
+             {"file": "/tmp/state.json", "sha256": "ab" * 32},  # Wave 2 WI-5a: quantizer_state
+             {"classes": ["L", "E", "P"]},  # Wave 2 WI-5e: onchip_arithmetic
+             [{"layers": ["fc"], "weight_bits": 2}])  # Wave 2 WI-5g: layer_core_types
 
 
 def _shadowable_keys():

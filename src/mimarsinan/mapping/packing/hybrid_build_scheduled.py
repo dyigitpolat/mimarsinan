@@ -16,13 +16,13 @@ from mimarsinan.mapping.packing.hybrid_types import HybridStage
 from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 from mimarsinan.mapping.packing.pass_timing import PassTimingError, project_passes
 from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
-from mimarsinan.mapping.packing.softcore import eliminated_core_extent
 from mimarsinan.mapping.packing.schedule_residency_plan import (
     compose_builder_program,
     depth_partition,
     mark_residency_plan,
 )
-from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError, ResidencyPlanError
+from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
+from mimarsinan.mapping.packing.type_binding import refuse_typed_multi_pass
 from mimarsinan.mapping.support.period_census import ResidencySegmentPlan
 from mimarsinan.mapping.layout.segmentation import (
     NeuralSegment,
@@ -102,6 +102,7 @@ def _flush_scheduled_subsegments(
         dedup_resident_stage_matrices,
         mark_bank_residency,
         mark_multiplexed_residency,
+        multiplexing_shares,
     )
     from mimarsinan.mapping.support.schedule.pass_planner import (
         plan_segment_passes,
@@ -117,17 +118,7 @@ def _flush_scheduled_subsegments(
     if planned_chunks is not None:
         chunks = [list(chunk) for chunk in planned_chunks]
     else:
-        if position_multiplexing and not (getattr(ir_graph, "layout_softcores", None) and all(
-                getattr(c, "layout_softcore_index", None) is not None for c in cores)):
-            raise PositionMultiplexingError(
-                f"position_multiplexing orders {segment_label_base!r}'s passes by the layout walk's dependency "
-                f"levels, and this IR carries no layout record for its cores")
-        shares = [c.weight_bank_id is not None and eliminated_core_extent(c) == (0, 0) for c in cores]
-        if position_multiplexing and any(c.weight_bank_id is not None and not ok for c, ok in zip(cores, shares)):
-            raise PositionMultiplexingError(
-                f"position_multiplexing: IR elimination compacted bank instances of {segment_label_base!r} into owned "
-                "cores, which the shape-only plane plans as sharing their bank's copy; the planes would price two "
-                "programs (declare it without pruning)")
+        shares = multiplexing_shares(cores, ir_graph, segment_label_base, position_multiplexing)
         specs, spec_to_core, coalescing_group_ids = segment_specs_for(cores_config)(
             cores, ir_graph=ir_graph, hardware_bias=hardware_bias,
         )
@@ -162,6 +153,7 @@ def _flush_scheduled_subsegments(
         residency_applied, run_heads = plan.residency_applied, plan.run_heads
     if not chunks:
         return segment_index_start
+    refuse_typed_multi_pass(segment_label_base, len(chunks), cores)
     levels = _pass_levels(segment_label_base, cores, chunks) if retimed_level_stages else None
 
     label_tag = (

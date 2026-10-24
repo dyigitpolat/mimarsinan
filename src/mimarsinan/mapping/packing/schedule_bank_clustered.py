@@ -4,6 +4,7 @@ planner's streamed composition (the composition itself lives in
 
 from __future__ import annotations
 
+from mimarsinan.mapping.packing.softcore import eliminated_core_extent
 from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError
 from mimarsinan.mapping.support.schedule.pass_planner import resident_passes
 
@@ -125,3 +126,21 @@ def mark_multiplexed_residency(pass_stages: list, run_heads) -> None:
                 f"position_multiplexing: pass {stage.schedule_pass_index} of segment {stage.schedule_segment_index} "
                 f"places other weights than the first pass of its run, so it cannot execute on that pass's copies")
         stage.schedule_weights_resident = True
+
+
+def multiplexing_shares(cores: list, ir_graph, label: str, position_multiplexing) -> list:
+    """[W02] Per IR core whether it shares its bank's one copy (a bank instance IR elimination left whole), for the
+    pass planner; under ``position_multiplexing`` an IR without the layout walk's record, or a compacted bank instance,
+    refuses by name (moved from ``hybrid_build_scheduled``)."""
+    if position_multiplexing and not (getattr(ir_graph, "layout_softcores", None) and all(
+            getattr(c, "layout_softcore_index", None) is not None for c in cores)):
+        raise PositionMultiplexingError(
+            f"position_multiplexing orders {label!r}'s passes by the layout walk's dependency "
+            f"levels, and this IR carries no layout record for its cores")
+    shares = [c.weight_bank_id is not None and eliminated_core_extent(c) == (0, 0) for c in cores]
+    if position_multiplexing and any(c.weight_bank_id is not None and not ok for c, ok in zip(cores, shares)):
+        raise PositionMultiplexingError(
+            f"position_multiplexing: IR elimination compacted bank instances of {label!r} into owned "
+            "cores, which the shape-only plane plans as sharing their bank's copy; the planes would price two "
+            "programs (declare it without pruning)")
+    return shares
