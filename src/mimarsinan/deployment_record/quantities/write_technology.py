@@ -20,7 +20,6 @@ from fractions import Fraction
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.deployment_record.build.payload_sizes import params_bytes
 from mimarsinan.deployment_record.build.write_census import CoreType, PassRow, ProgramPasses, WriteCensus
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensus
@@ -193,7 +192,7 @@ def split_by_technology(passes: ProgramPasses, written: WriteCensus, policy: Any
                 resident_cores=len(mine) - len(rewritten),
                 written_cells_backing_store=sum(row.core_cells[i] for i in rewritten),
                 written_cells_producer=producer,
-                payload_bytes=sum(params_bytes(row.core_cells[i], weight_bits) for i in rewritten),
+                payload_bytes=sum(row.core_bytes(i, weight_bits) for i in rewritten),  # cells and sign register
                 compute_steps=full.compute_steps))
             if written.written_extents is not None:
                 extents.append(tuple(extent for i, extent in zip(cores, written.written_extents[position])

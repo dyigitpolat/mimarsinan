@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 from mimarsinan.common.refusal import ToolchainRefusal
 
@@ -39,6 +39,21 @@ def carries_sign_register(axons: int, neurons: int, cores: Sequence[Mapping[str,
     parts = exact or [c for c in cores
                       if int(c["max_neurons"]) == int(neurons) and int(axons) % int(c["max_axons"]) == 0]
     return any(c.get(SIGN_GRANULARITY_FIELD, PER_SYNAPSE) == PER_AXON for c in parts)
+
+
+def operand_sign_conflict(cores: Sequence[Any]) -> Optional[str]:
+    """Why per-axon weight sign and an operand core type (N2) cannot share a chip on this tree, else None: the
+    per-axon split fixes each physical row's sign once, from the static weights (``softcore/sign_split.py``), and an
+    operand bank's payload is written per inference, so its signs move with every sample. The composition (the split
+    and ``rows_per_input`` decided per core role, on every plane that reads the pool's granularity) is not built."""
+    axon = [i for i, c in enumerate(cores) if isinstance(c, Mapping) and c.get(SIGN_GRANULARITY_FIELD) == PER_AXON]
+    operand = [i for i, c in enumerate(cores) if isinstance(c, Mapping) and c.get("operand") is not None]
+    if not axon or not operand:
+        return None
+    return (f"per-axon weight sign and an operand core type do not share a chip on this tree: cores {axon} declare "
+            f"{SIGN_GRANULARITY_FIELD} '{PER_AXON}' and cores {operand} declare operand; the per-axon split fixes "
+            "each row's sign once from static weights, and an operand bank's payload is written per inference "
+            f"(declare '{PER_SYNAPSE}' on every core type, or no operand core type)")
 
 
 def rows_per_input(granularity: str) -> int:

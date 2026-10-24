@@ -8,6 +8,7 @@ import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.packing.canonical import OPERAND_ROLE
 from mimarsinan.mapping.packing.softcore.matrix_placement import materialize_signed
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON
 from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns
@@ -43,6 +44,11 @@ def is_sign_split(core: Any) -> bool:
 
 
 def _require_integer_grid(core: Any, matrix: np.ndarray) -> None:
+    if getattr(core, "core_role", None) == OPERAND_ROLE:  # N2: a NaN placeholder until the payload is written
+        raise SignSplitError(
+            f"soft core {getattr(core, 'name', None) or getattr(core, 'id', '?')} holds a dynamic operand bank, whose "
+            "payload is written per inference, and per-axon weight sign fixes each row's sign once from static "
+            "weights: the two are not composed on this tree (platform_constraints.operand_sign_conflict)")
     w = np.asarray(matrix)
     if np.issubdtype(w.dtype, np.integer):
         return

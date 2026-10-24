@@ -14,7 +14,9 @@ from mimarsinan.config_schema.registry.types import (
 )
 from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set, schema_of, value_errors
 from mimarsinan.data_handling.preprocessing import PreprocessingSpec, interpolation_mode_names
-from mimarsinan.mapping.platform.platform_constraints import PER_AXON, PER_SYNAPSE, WEIGHT_SIGN_GRANULARITIES
+from mimarsinan.mapping.platform.platform_constraints import (
+    PER_AXON, PER_SYNAPSE, WEIGHT_SIGN_GRANULARITIES, operand_sign_conflict,
+)
 from mimarsinan.mapping.support.period_census import (
     OPERAND_WRITE_SOURCES,
     WRITE_GRANULARITIES,
@@ -234,17 +236,16 @@ def platform_bias_errors(config: Mapping[str, Any], bias_entry: _E) -> List[str]
 def platform_sign_errors(config: Mapping[str, Any]) -> List[str]:
     """Why a per-axon core type refuses, else [] (the one rule both doors call over the layout they judge, beside the
     bias rule): under float weights (``pipeline_mode`` 'vanilla' or ``weight_quantization`` false, the derivation's
-    reading) a per-axon core type cannot hold its weights, since the split stores each in sign pairs, exact only on
-    the integer grid (``sign_split.SignSplitError`` would name it at hard-core mapping, after training)."""
-    cores = config.get("cores")
+    reading) its split stores each weight in sign pairs, exact only on the integer grid (``SignSplitError`` names it at
+    hard-core mapping, after training); beside an operand core type it is not composed (``operand_sign_conflict``)."""
+    cores = declared if isinstance(declared := config.get("cores"), (list, tuple)) else ()
     float_weights = config.get("pipeline_mode") == "vanilla" or config.get("weight_quantization") is False
-    if not float_weights or not isinstance(cores, (list, tuple)):
-        return []
-    return [f"cores[{i}].weight_sign_granularity='{PER_AXON}' needs weights on the integer grid, and the run "
-            "declares float weights (pipeline_mode 'vanilla' or weight_quantization false): a per-axon core stores "
-            f"each weight in sign pairs; declare weight quantization or a {PER_SYNAPSE} core type"
-            for i, core in enumerate(cores)
-            if isinstance(core, Mapping) and core.get("weight_sign_granularity") == PER_AXON]
+    named = [f"cores[{i}].weight_sign_granularity='{PER_AXON}' needs weights on the integer grid, and the run "
+             "declares float weights (pipeline_mode 'vanilla' or weight_quantization false): a per-axon core stores "
+             f"each weight in sign pairs; declare weight quantization or a {PER_SYNAPSE} core type"
+             for i, core in enumerate(cores)
+             if float_weights and isinstance(core, Mapping) and core.get("weight_sign_granularity") == PER_AXON]
+    return named + [c for c in (operand_sign_conflict(cores),) if c is not None]
 
 
 WRITE_OVERLAP_SCHEMA = ValueSchema(
