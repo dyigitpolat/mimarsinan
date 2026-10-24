@@ -194,8 +194,11 @@ def register_routes(app: FastAPI) -> None:
                 softcores, core_types, runs=layout_result.runs,
                 **ChipCapabilities.from_platform_constraints(body).layout_kwargs(),
             )
+            packed = result.get("packing_result")
             stats_out = {
                 **(result.get("stats") or {}),
+                # total_cores counts allocated crossbars (a fused core once); this, the physical cores they occupy
+                "physical_cores": sum(s.tiles for s in (packed.used_core_snapshots or ())) if packed else 0,
                 "host_side_segment_count": layout_result.host_side_segment_count,
                 "layout_preview": layout_result.layout_preview,
             }

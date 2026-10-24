@@ -174,13 +174,11 @@ class ReadoutLawStep(PipelineStep):
         return self.trainer.test()
 
     @staticmethod
-    def _calibrated(model, perceptrons, quantizers, batches, lanes=None) -> List[float]:
-        names = [p.name for p in perceptrons]
-        if lanes is None:
-            measured = measure_seam_quantiles(model, quantizers, batches)
-        else:  # WI-5e: each lane's range at its end (after its clamp or fused add); pool lanes by FX name
-            measured = measure_lane_ranges(model, quantizers, batches, CALIBRATION_QUANTILE)
-            names += [name for name, _ in lanes]
+    def _calibrated(model, perceptrons, quantizers, batches, lanes) -> List[float]:
+        """WI-5e, with executed lanes only (N2's calibration covers the rest): each lane's range at its end (after
+        its clamp or fused add); pool lanes by FX name."""
+        names = [p.name for p in perceptrons] + [name for name, _ in lanes]
+        measured = measure_lane_ranges(model, quantizers, batches, CALIBRATION_QUANTILE)
         unseen = [names[i] for i, value in enumerate(measured) if value == 0.0]
         if unseen:
             raise ReadoutLawCalibrationError(

@@ -2,8 +2,10 @@
 outputs equal digests captured on the base 75998141 before the declarations were added
 (``RA/11_wave2/lanes/identity/program_digests_base.json``, by ``RA/11_wave2/lanes/scripts/program_digests.py``).
 Integration re-pin (tcad/wave1-merged, lanes onto pack): conv1d's packed cores are the pack head b777e3a1's, where the
-pack unit's neuron split before coalescing (WI-5f) packs it on 7 hard cores instead of 12; every output digest stays
-the base's (``RA/11_wave2/integration/lanes/logs/identity_digests_by_head.jsonl``)."""
+pack unit's W04 class 6 (a neuron-split fragment keeps its parent's residency class) lets its six 7-row fragments share
+one core, so it packs on 7 hard cores instead of 12; reverting class 6 alone restores the base's packed digest
+(``RA/11_wave2/integration/fix_round/logs/conv1d_class6.json``); every output digest stays the base's
+(``RA/11_wave2/integration/lanes/logs/identity_digests_by_head.jsonl``)."""
 
 from __future__ import annotations
 

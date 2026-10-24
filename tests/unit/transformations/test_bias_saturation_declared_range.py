@@ -236,6 +236,59 @@ class TestBoundaryGridValueRange:
         assert torch.isclose(p.layer.bias.data[1], hulled[1], atol=1e-5)
 
 
+class TestLanesDeclaredBoundaryGrid:
+    """The D19 and lanes seam (integration D19 conflict row 2): the lanes unit's ``DeclaredBoundaryGrid`` (WI-5a),
+    installed by ``ValueGridQuantizer.declare``, is the declared input range the clip reads, through its own
+    ``code_range``, ``step`` and ``entry_offset()`` overrides (moved here from the integration's seam script)."""
+
+    SEAM_WEIGHTS = torch.tensor([[0.5, -0.25, 0.25, -0.5], [0.3, 0.2, -0.1, 0.4]])
+
+    def _floored(self, grid, bias=-40.0, affine=False) -> Perceptron:
+        p = Perceptron(2, 4, normalization=nn.Identity())
+        if affine:
+            as_affine_package(p)
+        else:
+            p.activation = LeakyGradReLU()
+        with torch.no_grad():
+            p.layer.weight.copy_(self.SEAM_WEIGHTS)
+            p.layer.bias.copy_(torch.tensor([bias, 0.1]))
+        quantizer = ValueGridQuantizer(grid.bits)
+        quantizer.declare(grid)
+        p.append_input_wire_op(quantizer)
+        return p.eval()
+
+    def test_declared_grid_value_range_follows_its_offset_and_codes(self):
+        from mimarsinan.models.nn.activations.value_quantizer import DeclaredBoundaryGrid
+
+        g = DeclaredBoundaryGrid(scale=1.5, bits=5, offset=0.5, code_min=-3, code_max=12)
+        assert g.value_range == (-3 * g.step - 0.5, 12 * g.step - 0.5)
+        u = DeclaredBoundaryGrid(scale=3.1, bits=4, offset=0.0, code_min=0, code_max=15, unsigned_dac=True)
+        assert u.unsigned and u.value_range == (0.0, 15 * (3.1 / 15))
+
+    def test_the_clip_reads_the_declared_grid_hulled_with_zero(self):
+        from mimarsinan.models.nn.activations.value_quantizer import DeclaredBoundaryGrid, wire_output_grid
+        from mimarsinan.transformations.perceptron.bias_saturation import declared_input_range
+
+        g = DeclaredBoundaryGrid(scale=1.5, bits=5, offset=-1.0, code_min=0, code_max=15)  # values [1.0, 2.5]
+        p = self._floored(g)
+        assert wire_output_grid(p.input_activation) is g
+        _low, high = g.value_range
+        rng = declared_input_range(p)
+        assert rng is not None and float(rng.low) == 0.0 and float(rng.high) == high  # hulled with 0
+        assert clip_off_saturated_effective_bias(p) == 1
+        expected = -torch.maximum(self.SEAM_WEIGHTS * 0.0, self.SEAM_WEIGHTS * high).sum(dim=1)
+        assert torch.isclose(p.layer.bias.data[0], expected[0], atol=1e-6)
+
+    def test_an_affine_reader_of_a_declared_grid_is_never_clipped(self):
+        from mimarsinan.models.nn.activations.value_quantizer import DeclaredBoundaryGrid
+
+        g = DeclaredBoundaryGrid(scale=1.5, bits=5, offset=0.0, code_min=-15, code_max=15)
+        p = self._floored(g, affine=True)
+        before = _effective_bias(p).clone()
+        assert clip_off_saturated_effective_bias(p) == 0
+        assert torch.equal(_effective_bias(p), before)
+
+
 class TestOffBoundOnARange:
     def test_bound_is_the_largest_preactivation_over_the_box(self):
         from mimarsinan.transformations.perceptron.bias_saturation import InputRange, off_saturation_bias_bound

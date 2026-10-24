@@ -296,6 +296,28 @@ class TestEveryLayoutPlaneCountsPhysicalRows:
         response = TestClient(app).post("/api/hw_config_verify", json=body).json()
         assert response["stats"]["total_cores"] == cores, response
 
+    def test_the_hardware_verify_route_reports_the_physical_cores(self, monkeypatch):
+        """[merge review m7] Beside the allocated crossbars (``total_cores``, a fused core once) the route reports the
+        physical cores the same packing occupies: the probe network's 4 ODIN cores, as on the pricing planes."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from mimarsinan.gui.server import routes_layout
+        from mimarsinan.mapping.verification import layout_mapping_service as service_module
+        from mimarsinan.mapping.verification.verifier.mapping_verifier_hw import clear_verify_hardware_config_memo
+
+        _rows, cores, tiles = self._candidate()
+        service = service_module.LayoutMappingService()
+        monkeypatch.setattr(service, "_build_model_repr", lambda request: _lif_mlp_repr())
+        monkeypatch.setattr(service_module, "DEFAULT_LAYOUT_MAPPING_SERVICE", service)
+        app = FastAPI()
+        routes_layout.register_routes(app)
+        clear_verify_hardware_config_memo()
+        body = {"model_repr_json": {"model_type": "probe", "input_shape": [300], "num_classes": 10},
+                "core_types": self.PLATFORM["cores"], "allow_coalescing": True}
+        response = TestClient(app).post("/api/hw_config_verify", json=body).json()
+        assert (response["stats"]["total_cores"], response["stats"]["physical_cores"]) == (cores, tiles) == (2, 4)
+
     def test_the_hardware_suggester_walks_the_candidate_rows(self, monkeypatch):
         from mimarsinan.mapping.verification.suggester import hw_config_suggester_scheduled as suggester
 
