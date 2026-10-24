@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
+from mimarsinan.chip_simulation.activation_semantics import effective_legacy_spiking_mode
+from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics, resolve_core_semantics
 from mimarsinan.config_schema.registry.decision_classes import COST_ONLY
 from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
@@ -13,6 +16,7 @@ from mimarsinan.config_schema.registry.types import (
 )
 from mimarsinan.config_schema.registry.value_schema import RequiredIff, ValueSchema
 from mimarsinan.mapping.support.period_census import RESIDENCY_STEP_RULES, STEP_INDEX
+from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
 RESIDENCY_PLAN_SCHEMA = ValueSchema(
     kind=T.JSON,
@@ -55,9 +59,27 @@ ENTRIES = (
 _UNSEEN_BY_THE_SHAPE_ONLY_PLANE = ("pruning", "lif_depth_balancing_relays")
 
 
+def _run_value(cfg, key: str) -> Any:
+    """``key`` as the run reads it: the declared value, else the conversion recipe's for the run's mode (the
+    ConversionPolicy SSOT that ``recipe_fold`` folds beneath the declarations: the LIF recipe arms the depth-balancing
+    relays); a value-domain run folds no spiking recipe, and an unknown mode (its own schema's keyed error) none."""
+    declared = cfg.get(key)
+    if declared is not None or is_mvm_core_semantics(resolve_core_semantics(cfg)):
+        return declared
+    try:
+        recipe = ConversionPolicy.derive(effective_legacy_spiking_mode(cfg), cfg.get("ttfs_cycle_schedule"),
+                                         spiking_variant=cfg.get("spiking_variant"))
+    except ValueError:
+        return declared
+    return recipe.knobs.get(key)
+
+
 def _multiplexing_legal(cfg):
-    """Only false where a declaration changes the executed cores the shape-only plane plans: both planes refuse it.
-    An operand core type (N2) is one: the shape-only plane keeps a product as a host op that the executed plane lowers
-    onto operand cores, whose payload is rewritten every pass, so no run of passes serves one copy of it."""
+    """Only false where the run changes the executed cores the shape-only plane plans: both planes refuse it. Each
+    such key is judged as the run reads it (``_run_value``; carried minor N1 of the pack verify: a LIF document that
+    leaves the relays undeclared runs them). An operand core type (N2) is one too: the shape-only plane keeps a product
+    as a host op that the executed plane lowers onto operand cores, whose payload is rewritten every pass, so no run of
+    passes serves one copy of it."""
     operand = any(isinstance(c, Mapping) and c.get("operand") is not None for c in cfg.get("cores") or ())
-    return (False,) if operand or any(cfg.get(key) for key in _UNSEEN_BY_THE_SHAPE_ONLY_PLANE) else (False, True)
+    unseen = any(_run_value(cfg, key) for key in _UNSEEN_BY_THE_SHAPE_ONLY_PLANE)
+    return (False,) if operand or unseen else (False, True)

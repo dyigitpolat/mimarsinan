@@ -68,8 +68,9 @@ class TestTheCombinationsTheShapeOnlyPlaneCannotSee:
     @pytest.mark.parametrize("key", ["pruning", "lif_depth_balancing_relays"])
     def test_the_declaration_admits_only_false_with_it(self, key):
         entry = REGISTRY["position_multiplexing"]
-        assert tuple(entry.legal_values({"allow_scheduling": True, key: True})) == (False,)
-        assert tuple(entry.legal_values({"allow_scheduling": True, key: False})) == (False, True)
+        state = {"allow_scheduling": True, "lif_depth_balancing_relays": False}  # relays off unless the key is them
+        assert tuple(entry.legal_values({**state, key: True})) == (False,)
+        assert tuple(entry.legal_values({**state, key: False})) == (False, True)
 
     def test_a_document_declaring_it_with_pruning_is_a_keyed_error(self):
         from mimarsinan.config_schema.resolve import resolve_draft
@@ -81,6 +82,40 @@ class TestTheCombinationsTheShapeOnlyPlaneCannotSee:
         rows = [e for e in resolve_draft(document).errors if e["key"] == "position_multiplexing"]
         assert [r["rule_id"] for r in rows] == ["legal_value_set"]
         document["platform_constraints"]["position_multiplexing"] = False
+        assert not [e for e in resolve_draft(document).errors if e["key"] == "position_multiplexing"]
+
+    @pytest.mark.parametrize("variant", ["streamed", "synchronized"])
+    def test_a_lif_run_leaving_the_relays_to_its_recipe_admits_only_false(self, variant):
+        """Carried minor N1 (pack verify): the legal set read the relays off the declarations alone, while a LIF run
+        that leaves them undeclared takes its conversion recipe's value, which arms them (``recipe_fold``). Such a
+        document was admitted with position_multiplexing true; the executed plane then refused by name where relays
+        were inserted while the shape-only plane planned. The set now judges the relays the run derives."""
+        entry = REGISTRY["position_multiplexing"]
+        state = {"allow_scheduling": True, "spiking_family": "lif", "spiking_variant": variant}
+        assert tuple(entry.legal_values(state)) == (False,)
+        assert tuple(entry.legal_values({**state, "lif_depth_balancing_relays": False})) == (False, True)
+
+    @pytest.mark.parametrize("variant", ["analytical", "quantized", "synchronized", "cascaded"])
+    def test_a_ttfs_run_whose_recipe_arms_no_relays_admits_both(self, variant):
+        entry = REGISTRY["position_multiplexing"]
+        state = {"allow_scheduling": True, "spiking_family": "ttfs", "spiking_variant": variant}
+        assert tuple(entry.legal_values(state)) == (False, True)
+        assert tuple(entry.legal_values({**state, "lif_depth_balancing_relays": True})) == (False,)
+
+    def test_a_value_domain_run_folds_no_relays_and_admits_both(self):
+        entry = REGISTRY["position_multiplexing"]
+        assert tuple(entry.legal_values({"allow_scheduling": True, "core_semantics": "mvm"})) == (False, True)
+
+    def test_a_lif_document_leaving_the_relays_undeclared_is_a_keyed_error(self):
+        from mimarsinan.config_schema.resolve import resolve_draft
+
+        from unit.config_schema.test_legality import _document
+
+        document = _document(spiking_family="lif", spiking_variant="streamed")
+        document["platform_constraints"] = {"allow_scheduling": True, "position_multiplexing": True}
+        rows = [e for e in resolve_draft(document).errors if e["key"] == "position_multiplexing"]
+        assert [r["rule_id"] for r in rows] == ["legal_value_set"]
+        document["deployment_parameters"]["lif_depth_balancing_relays"] = False
         assert not [e for e in resolve_draft(document).errors if e["key"] == "position_multiplexing"]
 
     def test_the_builder_refuses_it_on_an_ir_whose_bank_instances_elimination_compacted(self):

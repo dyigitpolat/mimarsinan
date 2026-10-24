@@ -89,7 +89,11 @@ def _factor(block: LaneBlock, dimension: str, target: TargetNode) -> Tuple[float
     rule = block.scaling.get(dimension)
     node, home = target.technology_node_nm, block.technology_node_nm
     if node is not None and home is not None and float(node) == float(home):
-        return 1.0, f"at the target's node {float(node):g} nm, unscaled"
+        there, own = target.supply_v, block.supply_v
+        if rule != "node*V^2" or there is None or own is None or float(there) == float(own):
+            return 1.0, f"at the target's node {float(node):g} nm, unscaled"
+        volts = (float(there) / float(own)) ** 2  # node ratio 1: the supply still scales energy
+        return volts, f"at the target's node {float(node):g} nm; scaled by V^2 = ({there:g}/{own:g})^2 = {volts:.4g}"
     if rule == "none":
         return 1.0, f"{dimension} unscaled (rule none)"
     if rule is None or node is None or home is None:

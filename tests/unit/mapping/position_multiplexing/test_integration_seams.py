@@ -60,8 +60,9 @@ class _Semantics:
 class TestPositionMultiplexingBesideAnOperandCoreType:
     def test_the_declaration_admits_only_false_beside_an_operand_core_type(self):
         entry = REGISTRY["position_multiplexing"]
-        assert tuple(entry.legal_values({"allow_scheduling": True, "cores": [STATIC, OPERAND]})) == (False,)
-        assert tuple(entry.legal_values({"allow_scheduling": True, "cores": [STATIC]})) == (False, True)
+        state = {"allow_scheduling": True, "lif_depth_balancing_relays": False}  # relays off (carried minor N1)
+        assert tuple(entry.legal_values({**state, "cores": [STATIC, OPERAND]})) == (False,)
+        assert tuple(entry.legal_values({**state, "cores": [STATIC]})) == (False, True)
 
     def test_every_door_refuses_it_by_name(self, tmp_path):
         doc = _document([{**STATIC, **SYNAPSE}, OPERAND])

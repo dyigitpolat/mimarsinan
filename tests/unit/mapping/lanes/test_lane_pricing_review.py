@@ -12,7 +12,12 @@ import pytest
 
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
 from mimarsinan.deployment_record.cost.absolute.output_stage import CHIP_ONLY_TERM, output_stage_note
-from mimarsinan.deployment_record.platform_physics.lane_blocks import LaneBlockError, load_lane_block
+from mimarsinan.deployment_record.platform_physics.lane_blocks import (
+    LaneBlockError,
+    TargetNode,
+    lane_block_rows,
+    load_lane_block,
+)
 from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
 from mimarsinan.deployment_record.quantities.lanes import NO_LANE_COUNT
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
@@ -196,6 +201,28 @@ class TestNodeScaling:
         rows = {k: {"nominal": 1.0, "unit": u, "note": "operator lane row"}
                 for k, u in (("area_per_lane", "um^2"), ("e_lane_op", "pJ"), ("t_lane_op", "ns"))}
         assert resolve_platform_physics("", {**mac, **rows}, lane_block=BLOCK) is not None, "declared rows: no block"
+
+    def test_a_target_at_the_blocks_node_and_another_supply_scales_energy_by_v_squared(self):
+        """Carried minor N5 (lanes verify, equal-node short-circuit): a target at the block's own node returned 1.0
+        before reading the supplies, so at another supply it kept the block's 1.1 V energy. The node factor is 1 there,
+        and node x V^2 still scales energy by the supply ratio; area (node^2) and time (none) stay unscaled."""
+        block = load_lane_block(BLOCK)
+        rows = lane_block_rows(BLOCK, {}, TargetNode(technology_node_nm=block.technology_node_nm, supply_v=0.9))
+        energy = block.constants["e_lane_op"]
+        for key in ("low", "nominal", "high"):
+            assert math.isclose(rows["e_lane_op"][key], energy[key] * (0.9 / 1.1) ** 2, rel_tol=1e-12), key
+        assert "(0.9/1.1)^2" in rows["e_lane_op"]["note"] and "45 nm" in rows["e_lane_op"]["note"]
+        for key in ("area_per_lane", "t_lane_op"):
+            assert rows[key]["nominal"] == block.constants[key]["nominal"], key
+            assert "unscaled" in rows[key]["note"], key
+
+    @pytest.mark.parametrize("supply", [1.1, None])
+    def test_a_target_at_the_blocks_node_and_supply_or_no_supply_is_unscaled(self, supply):
+        block = load_lane_block(BLOCK)
+        rows = lane_block_rows(BLOCK, {}, TargetNode(technology_node_nm=block.technology_node_nm, supply_v=supply))
+        for key in ("area_per_lane", "e_lane_op", "t_lane_op"):
+            assert rows[key]["nominal"] == block.constants[key]["nominal"], key
+            assert "at the target's node 45 nm, unscaled" in rows[key]["note"], key
 
     def test_the_scaled_lane_keeps_the_toggles_share_of_a_node_scaled_tile(self):
         """arith_toggle.md section 6.1: L+E with its 64 x 64 macro table is 13,048 um^2, 11.3% of the 45 nm G3 tile
