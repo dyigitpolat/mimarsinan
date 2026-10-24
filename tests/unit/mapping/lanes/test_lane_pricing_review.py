@@ -241,6 +241,30 @@ class TestChipOnlyEnergyNamesItsUnpriced:
         pricing = price_absolute(Quantities({k: QuantityValue(float(v), "static") for k, v in plain.items()}), physics)
         assert CHIP_ONLY_TERM not in {r.name for r in pricing.refusals}, "no lane block, no chip-only term"
 
+    def test_a_refused_write_energy_refuses_the_chip_only_term_where_the_host_refuses(self):
+        """Carried minor N4 (lanes verify2, reproducer V4): where the host refuses the headline, a declared write
+        policy whose write energy is refused refuses the chip-only term by that reason, as the host-priced branch
+        does, instead of pricing the chip without its writes."""
+        from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
+        from mimarsinan.deployment_record.quantities.write_law import WritePolicy
+
+        rows = {k: {"nominal": v, "unit": u, "note": "test lane row"}
+                for k, v, u in (("area_per_lane", 1.0, "um^2"), ("e_lane_op", 1.0, "pJ"), ("t_lane_op", 1.0, "ns"))}
+        declared = {"e_mac": {"nominal": 0.1, "unit": "pJ", "note": "test compute energy"},
+                    "host_compute_rate": {"nominal": 1e9, "unit": "1", "note": "test host rate"}, **rows}
+        physics = resolve_platform_physics("", declared, lane_block=BLOCK)
+        values = {"synaptic_events": 1e6, "cells_used": 1e6, "macs": 1e6, "lane_ops": 1e5, "lanes_per_tile": 4.0,
+                  "tiles": 10.0, "host_macs": 1e6, "compute_op_count": 1}
+        quantities = Quantities({k: QuantityValue(float(v), "static") for k, v in values.items()})
+        priced = price_absolute(quantities, physics)
+        assert CHIP_ONLY_TERM in {t.name for t in priced.terms}, "control: no writes declared, the term is priced"
+        writes = WriteInputs(census=None, policy=WritePolicy(batch_k=4), unavailable="no census (test)")
+        pricing = price_absolute(quantities, physics, writes=writes)
+        refused = {r.name: r.reason for r in pricing.refusals}
+        assert "energy_per_inference_mj" in refused and "energy_write_mj" in refused
+        assert CHIP_ONLY_TERM not in {t.name for t in pricing.terms}
+        assert "the write energy is refused" in refused[CHIP_ONLY_TERM] and "no census (test)" in refused[CHIP_ONLY_TERM]
+
 
 def test_operand_axon_counts_are_absent_without_lanes():
     program = _resnet(None)

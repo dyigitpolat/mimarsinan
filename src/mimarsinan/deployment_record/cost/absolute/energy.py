@@ -45,8 +45,13 @@ def _refuse(ctx: PricingContext, reason: str) -> None:
 def _chip_only(ctx: PricingContext, components: List[Band], evidence: List[str], writes: Optional[Any],
                unpriced: List[str]) -> None:
     """The chip's own sum, naming every chip component of it the target cannot price (``unpriced``: the dynamic
-    sum's, never a host item), as the dynamic and headline terms do."""
+    sum's, never a host item), as the dynamic and headline terms do. A declared write whose energy is refused refuses
+    the term by that reason on every branch (the host-priced branch refuses it in ``_refuse``)."""
     if not _prices_lane_block(ctx):
+        return
+    if writes is not None and writes.energy is None:
+        reason = next(r.reason for r in writes.refusals if r.name == "energy_write_mj")
+        ctx.refuse(ENERGY_CHIP_ONLY, f"the write energy is refused: {reason}")
         return
     parts, sources = list(components), list(evidence)
     if writes is not None and writes.energy is not None:
