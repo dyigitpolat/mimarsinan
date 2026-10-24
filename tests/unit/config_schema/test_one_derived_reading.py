@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from mimarsinan.common.workload_profile import ModelWorkloadProfile
-from mimarsinan.config_schema.deployment_derivation import legality_bearing_keys
+from mimarsinan.config_schema.deployment_derivation import derive_platform_constraints, legality_bearing_keys
 from mimarsinan.config_schema.registry import REGISTRY, parse_deployment_document
 from mimarsinan.config_schema.registry.entries_write import RECIPE_SCHEMA
 import mimarsinan.config_schema.resolve as resolve_module
@@ -186,6 +186,40 @@ class TestThePlatformDerivationAtEveryDoor:
         document = _load(LIF)
         document[PC]["target_tq"] = 6
         _refused_everywhere(document, UNTILED_WINDOW, tmp_path)
+
+
+def _shipped_documents():
+    root = _FIXTURES.parents[2]
+    for path in sorted({*root.glob("templates/**/*.json"), *root.glob("examples/**/*.json"),
+                        *root.glob("tests/fixtures/**/*.json")}):
+        document = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(document, dict) and isinstance(document.get(PC), dict):
+            yield str(path.relative_to(root)), document
+
+
+class TestTheShippedCoreMaxima:
+    """[M1, owner sign-off of 2026-10-22, option (a)] The platform derivation refuses a declared core maximum that
+    contradicts the cores at every door. The shipped documents' stale scalars are dropped in one named edit (the run
+    derives them from the cores), so the three examples the base ran run again."""
+
+    def test_no_shipped_document_declares_a_core_maximum_its_cores_contradict(self):
+        refused = {}
+        for name, document in _shipped_documents():
+            platform = copy.deepcopy(document[PC])
+            try:
+                derive_platform_constraints(platform, cores_declared="cores" in platform)
+            except ValueError as refusal:
+                refused[name] = str(refusal)
+        assert refused == {}
+
+    @pytest.mark.parametrize("name", ["cifar100_run.json", "cifar10_run.json", "mnist_run.json"])
+    def test_the_examples_the_base_ran_are_admitted_at_every_door(self, name, tmp_path):
+        document = json.loads((_FIXTURES.parents[2] / "examples" / name).read_text(encoding="utf-8"))
+        _admitted_everywhere(document, tmp_path)
+        cores = document[PC]["cores"]
+        flat = merge_pipeline_config(copy.deepcopy(document[DP]), copy.deepcopy(document[PC]))
+        assert (flat["max_axons"], flat["max_neurons"]) == (max(c["max_axons"] for c in cores),
+                                                            max(c["max_neurons"] for c in cores))
 
 
 def _lif(edit):

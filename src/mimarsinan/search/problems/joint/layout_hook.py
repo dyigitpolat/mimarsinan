@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -18,12 +18,13 @@ from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSof
 from mimarsinan.mapping.packing.infeasibility_proofs import ensure_verdict_tag
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
+from mimarsinan.mapping.support.residency_rules import spec_runs
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
 from mimarsinan.mapping.verification.layout_verification_types import (
     LayoutVerificationStats,
 )
 from .candidate_fragments import (
-    StageSemantics, candidate_fragments, compute_onchip_census,
+    CandidateWalk, StageSemantics, candidate_fragments, compute_onchip_census,
     make_core_types, stage_semantics_of,
 )
 from .model_build import build_raw_model, convert_to_mapper_repr
@@ -107,8 +108,13 @@ class JointLayoutMixin(JointHostContract):
         *,
         collect_census: bool = False,
     ) -> Tuple[List[LayoutSoftCoreSpec], int, Optional[Any]]:
-        """Collect layout softcores, host segments, and (opt-in — collection
-        materialises the deferred views) the walk's wire census."""
+        """Layout softcores, host segments and (opt-in) the wire census of :meth:`_walk_candidate`."""
+        walk = self._walk_candidate(model, pcfg, collect_census=collect_census)
+        return list(walk.softcores), walk.host_segments, walk.census
+
+    def _walk_candidate(self, model, pcfg: Dict, *, collect_census: bool = False) -> CandidateWalk:
+        """Walk the candidate's layout: softcores, host segments, (opt-in — collection
+        materialises the deferred views) the wire census, and the walk's runs."""
         cores = pcfg["cores"]
         pmap = resolve_platform_mapping_params(
             cores,
@@ -120,6 +126,7 @@ class JointLayoutMixin(JointHostContract):
             allow_coalescing=pmap.allow_coalescing,
             hardware_bias=pmap.hardware_bias,
             collect_wire_census=collect_census,
+            rows_per_input=pmap.rows_per_input,
         )
         mapper_repr = model.get_mapper_repr()
         if hasattr(mapper_repr, "assign_perceptron_indices"):
@@ -127,7 +134,7 @@ class JointLayoutMixin(JointHostContract):
         softcores = layout_mapper.collect_layout_softcores(mapper_repr)
         host_segments = getattr(layout_mapper, "host_side_segment_count", 0)
         census = census_of_walk(layout_mapper) if collect_census else None
-        return softcores, host_segments, census
+        return CandidateWalk(tuple(softcores), host_segments, census, spec_runs(layout_mapper))
 
     def _ensure_hw_only_cache(self, placement: str) -> HwOnlyCache:
         """Build the candidate-independent model once for a hardware-only search.
@@ -181,18 +188,20 @@ class JointLayoutMixin(JointHostContract):
         return obj
 
     def _pack_candidate(
-        self, softcores: List[LayoutSoftCoreSpec], pcfg: Dict,
+        self, softcores: List[LayoutSoftCoreSpec], pcfg: Dict, *, runs: Optional[Sequence[int]] = None,
     ) -> Tuple[LayoutVerificationStats, Optional[str]]:
         """Pack the candidate's softcores onto the chip it declares.
 
         The capability declaration is forwarded WHOLE (``layout_kwargs``): the
         pass structure is not a property of the permission bits alone, so a
         census computed without the platform's pass budget would score the
-        candidate against a program its chip never runs.
+        candidate against a program its chip never runs. [U1 W9] ``runs``: the
+        walk's (``CandidateWalk.runs``), so the census plans the builder's segments.
         """
         return compute_mapping_stats(
             softcores=softcores,
             core_types=self._make_core_types(pcfg),
+            runs=runs,
             **ChipCapabilities.from_platform_constraints(pcfg).layout_kwargs(),
         )
 

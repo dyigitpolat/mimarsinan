@@ -65,26 +65,22 @@ def partition_ir_graph(ir_graph, *, per_hop: bool = False) -> List[Segment]:
 
 def segment_depth_groups(nodes: List[NeuralCore]) -> List[List[NeuralCore]] | None:
     """Intra-segment depth levels in topological order, or ``None`` when the
-    segment must stay whole (single node, or coalescing/psum groups — those
-    transfer membrane partial sums, NOT decodable counts)."""
+    segment must stay whole (a single node, or psum groups — those transfer
+    membrane partial sums, NOT decodable counts).
+
+    [H0] A coalescing group levels as one unit: its cores are whole-fan-in
+    neurons (the fan-in is fused on the chip, one dot product per neuron), so
+    each emits a decodable count, and every member takes the group's depth (the
+    deepest member's). A windowed segment holding one is re-timed per hop like
+    any other, as its identity program (no coalescing) is."""
     if len(nodes) <= 1:
         return None
-    if any(
-        getattr(n, "coalescing_group_id", None) is not None
-        or getattr(n, "psum_group_id", None) is not None
-        for n in nodes
-    ):
+    if any(getattr(n, "psum_group_id", None) is not None for n in nodes):
         return None
 
-    ids = {node.id for node in nodes}
-    depth: Dict[int, int] = {}
-    for node in nodes:
-        upstream = [
-            depth[src.node_id]
-            for src in node.input_sources.flatten()
-            if getattr(src, "node_id", -1) in ids and src.node_id in depth
-        ]
-        depth[node.id] = (max(upstream) + 1) if upstream else 0
+    depth = _unit_depths(nodes)
+    if depth is None:
+        return None
 
     groups: Dict[int, List[NeuralCore]] = {}
     for node in nodes:
@@ -92,6 +88,33 @@ def segment_depth_groups(nodes: List[NeuralCore]) -> List[List[NeuralCore]] | No
     # Depths are contiguous from 0 by construction (each depth d>0 requires an
     # upstream at d-1), so list position == depth level.
     return [groups[d] for d in sorted(groups)]
+
+
+def _unit_depths(nodes: List[NeuralCore]) -> Dict[int, int] | None:
+    """Per node, its unit's longest-path depth over the segment's edges between units (a coalescing group is one
+    unit, every other node its own); None when the units' graph has a cycle (the segment then stays whole)."""
+    ids = {node.id for node in nodes}
+    unit_of: Dict[int, object] = {
+        node.id: ("coalescing", group) if (group := getattr(node, "coalescing_group_id", None)) is not None
+        else ("node", node.id)
+        for node in nodes
+    }
+    reads: Dict[object, set] = {unit: set() for unit in unit_of.values()}
+    for node in nodes:
+        for src in node.input_sources.flatten():
+            producer = getattr(src, "node_id", -1)
+            if producer in ids and unit_of[producer] != unit_of[node.id]:
+                reads[unit_of[node.id]].add(unit_of[producer])
+    unit_depth: Dict[object, int] = {}
+    pending = set(reads)
+    while pending:
+        ready = [u for u in pending if reads[u] <= unit_depth.keys()]
+        if not ready:
+            return None
+        for unit in ready:
+            unit_depth[unit] = max((unit_depth[p] + 1 for p in reads[unit]), default=0)
+        pending.difference_update(ready)
+    return {node.id: unit_depth[unit_of[node.id]] for node in nodes}
 
 
 def _split_segment_per_hop(segment: NeuralSegment) -> List[NeuralSegment]:

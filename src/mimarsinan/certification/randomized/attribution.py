@@ -27,7 +27,7 @@ from mimarsinan.certification.randomized.runner import (
     instance_for,
     reference_nodes,
 )
-from mimarsinan.certification.randomized.cost_draws import platform_constraints
+from mimarsinan.certification.randomized.cost_draws import platform_constraints, settled
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.models.spiking.signal_spans import SpanFillPlan
@@ -44,33 +44,38 @@ WALK_ORDERED = (SYNCHRONIZED_LIF, ANALYTICAL_TTFS, SYNCHRONIZED_TTFS, VALUE)
 #: The run-error message of a pass holding cached trains for some input slices and none for another, and the
 #: rule it breaks per semantics (``u1_design.md`` section 3); under any other semantics it names no rule.
 CACHED_TRAINS = "cached spike trains"
+#: [MN8] A counterexample only the int64 golden sees: identity program and deployment agree and both depart from it.
+GOLDEN_DEPARTURE = "golden_departure"
 CACHED_TRAINS_RULE: Mapping[str, str] = {STREAMED_LIF: "mixed_input_pass", WINDOWED_LIF: "windowed_cached_trains"}
 #: A rebuilt count within this distance of an integer is read as that integer by the ``counts`` ablation
 #: (float64 rebuild dust is about 1e-15; a TTFS level ``k/S`` is at least ``1/S`` from any non-equal integer).
 COUNT_DUST = 1e-9
 #: Mechanism tags, each with the plan item that owns it (G5: plan section 21 item 1, rules R1 to R6).
 MECHANISMS: Mapping[str, str] = {
-    "u1_cut": "G5 pass projection (R1 pins, R2 delivery delays; u1_design.md section 3, class 'Pass timing')",
+    "u1_cut": "G5 pass projection (R1 pins, R2 delivery delays; u1_design.md section 3, class 'Pass timing'); met "
+              "on the integrated tree (CL1), so the class arises where the H5-skew arm switches pins and delays off",
     "latency_order_walk": "R6 dependency-ordered walks: G5 for ttfs_segment.py and G2 for value_execution.py "
-                          "(plan section 21 item 1); the synchronized LIF count walk "
-                          "(models/spiking/hybrid/executors/sync_counts.py:36-39) is on no group's list: "
-                          "owner to be named by the conductor",
-    "retiming_dropped": "H0 semantics fidelity, finding for the conductor: segment_depth_groups "
-                        "(mapping/layout/segmentation.py:72-77) returns no levels for a segment holding a "
-                        "coalescing group, so a windowed segment runs streamed",
+                          "(plan section 21 item 1), the synchronized LIF count walk by merge fix 75998141; met on "
+                          "the integrated tree (CL1), so the class arises where the R6 arm switches the walks off",
+    "retiming_dropped": "H0 semantics fidelity (sign-off P1 (a), CL1 fix round): segment_depth_groups "
+                        "(mapping/layout/segmentation.py) levels a coalescing group as one unit; met on the "
+                        "integrated tree, so the class (a windowed segment holding a coalescing group runs "
+                        "streamed) arises where the H0 arm switches the leveling off",
     "mixed_input_pass": "G5 R4 per-slice input kinds (u1_design.md section 3, 'Crash: mixed-input pass "
-                        "under VERBATIM'; spiking/segment_boundary.py raises on cached plus missing slices)",
+                        "under VERBATIM'; spiking/segment_boundary.py raises on cached plus missing slices); fixed "
+                        "on the integrated tree (CL1)",
     "position_dependent_encode": "G5 R4 fused channel positions (u1_design.md section 3, 'Position-dependent "
                                  "encodes'): the dithered comb rotates by the slice's channel index in the deployed "
                                  "stage input (chip_simulation/recording/spike_modes.py uniform_phase_offsets)",
     "windowed_cached_trains": "G5 R5 level units (u1_design.md section 3, 'Crash: windowed LIF, cached spike "
                               "trains'; mapping/packing/retimed_levels.py gives a single-level chunk no levels)",
-    "count_rebuild": "H8 exact accumulation, finding for the conductor: the synchronized LIF count executor "
-                     "rebuilds each core's count as stair*T/theta in float64 "
-                     "(models/spiking/hybrid/executors/sync_counts.py:56-59), off the integer lattice for (T, "
-                     "theta) beyond the screen's declared T in 1-8; sync_counts.py is on no group's list: owner to be "
-                     "named by the conductor",
+    "count_rebuild": "H8 exact accumulation (sign-off P1 (a), CL1 fix round): the synchronized LIF count executor "
+                     "reads each core's count off its window charge (wire_semantics.lif_window_count, exact on the "
+                     "integer lattice); the base rebuilt it as stair*T/theta in float64, off the lattice for (T, "
+                     "theta) beyond T in 1-8, so the class arises only on that base",
     "relabel": "finding for the conductor: the program depends on IR node ids or order",
+    "golden_departure": "the identity program and the deployment agree and both depart from G2's int64 golden "
+                        "(an executor off its integer readout law): a defect both programs share",
 }
 
 
@@ -145,6 +150,8 @@ def attribute(verdict: Verdict) -> Tuple[str, ...]:
         return (CACHED_TRAINS_RULE.get(verdict.semantics, "run_error"),)
     if verdict.outcome != COUNTEREXAMPLE:
         return ()
+    if not verdict.mismatches and verdict.golden_mismatches:
+        return (GOLDEN_DEPARTURE,)
     arm = ARMS[verdict.arm]
     instance = instance_for(verdict.seed, arm)
     constraints = platform_constraints(verdict.declaration, hardware_bias=instance.hardware_bias)
@@ -223,8 +230,8 @@ def _walk_sides(instance, constraints, seed, arm, ref_map) -> List[str]:
 
 
 def _first_restoring_layer(instance, constraints, seed, arm, ref_ir, ref_nodes) -> str:
-    unscheduled = dict(constraints, allow_scheduling=False,
-                       cores=[dict(core, count=max(int(core["count"]), 4096)) for core in constraints["cores"]])
+    unscheduled = settled(dict(constraints, allow_scheduling=False,
+                               cores=[dict(core, count=max(int(core["count"]), 4096)) for core in constraints["cores"]]))
     trials = (
         ("relabel", lambda: deployment(instance, constraints, seed, arm, relabel=False)),
         ("geometry", lambda: deployment(instance, constraints, seed, arm, relabel=False, identity=True)),

@@ -7,7 +7,7 @@ import torch
 from mimarsinan.chip_simulation.value_run.value_execution import dependency_order
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
-from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
+from mimarsinan.models.spiking.wire_semantics import lif_window_count
 
 
 def runs_synchronized_counts(flow, *, recording: bool) -> bool:
@@ -25,7 +25,7 @@ def run_neural_segment_counts(
     neuron_count_recorder: dict | None = None,
 ) -> torch.Tensor:
     """The synchronized count-domain reference: per core, memb = W·counts +
-    bias·T (+ V0·θ) and the emitted count is the strict staircase — bit-equal
+    bias·T (+ V0·θ) and the emitted count is the staircase's count of that charge — bit-equal
     to two-window execution for ANY arrival (§16 theorem), and latch-correct
     for level-gapped consumers (counts have no windows)."""
     cores = seg["cores"]
@@ -62,13 +62,9 @@ def run_neural_segment_counts(
         theta = seg["thresholds"][i]
         if v0:
             total = total + v0 * theta
-        stair = lif_count_staircase(
-            total / float(T), theta, T, compare_mode=flow.thresholding_mode,
-        )
-        buffers[i] = stair * float(T) / torch.clamp(
-            torch.as_tensor(theta, dtype=stair.dtype, device=stair.device),
-            min=1e-12,
-        )
+        # The emitted count read off the window charge (``lif_window_count``): exact on the integer chip, where
+        # the staircase rebuilt as ``stair * T / theta`` left the lattice beyond T <= 8 (H8's count_rebuild).
+        buffers[i] = lif_window_count(total, theta, T, compare_mode=flow.thresholding_mode)
         if neuron_count_recorder is not None:
             neuron_count_recorder[i] = buffers[i].detach()
 

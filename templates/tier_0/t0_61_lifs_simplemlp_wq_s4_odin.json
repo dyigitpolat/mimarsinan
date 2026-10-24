@@ -11,15 +11,16 @@
     "target_overrides": {
       "allow_coalescing": {
         "value": true,
-        "note": "the MLP's fan-ins exceed one ODIN core's 128 logical axons, and ODIN has no inter-core partial-sum transfer: the cell declares coalescing, a departure from the chip"
+        "note": "the MLP's fan-ins exceed one ODIN core's 127 logical inputs (256 rows, per-axon sign), and ODIN has no inter-core partial-sum transfer: the cell declares coalescing, a departure from the chip"
       },
       "cores": {
         "value": [
           {
-            "max_axons": 128,
+            "max_axons": 256,
             "max_neurons": 256,
             "count": 64,
-            "has_bias": false
+            "has_bias": false,
+            "weight_sign_granularity": "per_axon"
           }
         ],
         "note": "64 ODIN cores: ODIN is one core, and the MNIST cell needs a pool of them"

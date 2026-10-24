@@ -236,21 +236,45 @@ class TestTheBuildRefusalClasses:
 
     COALESCE = dict(allow_coalescing=True, allow_neuron_splitting=True)
 
+    @staticmethod
+    def _psum_tagged(ir):
+        """The coalescing vehicle with its coalescing groups tagged as psum groups: a psum group transfers membrane
+        partial sums, so it keeps its fused segment whole (one level), the class the refusal names."""
+        for node in ir.nodes:
+            group = getattr(node, "coalescing_group_id", None)
+            if group is not None:
+                node.psum_group_id = int(group)
+        return ir
+
     def test_a_streaming_windowed_segment_cut_with_a_carried_wire_refuses(self):
-        """Coalescing family seed 3 C 2 (fan-in up to 40 on 25-axon cores): psum groups keep the fused segment whole
-        (one level), so its passes cannot run as level units, and a count transfer cannot carry its raster."""
-        ir = V.ir_of(V.wide_rep(3), coalescing=True)
+        """Coalescing family seed 3 C 2 (fan-in up to 40 on 25-axon cores) with psum groups: they keep the fused
+        segment whole (one level), so its passes cannot run as level units, and a count transfer cannot carry its
+        raster."""
+        ir = self._psum_tagged(V.ir_of(V.wide_rep(3), coalescing=True))
         with pytest.raises(PassTimingError, match="streams under per-hop re-timing"):
             V.build(ir, 2, None, retimed_level_stages=True, **self.COALESCE)
 
     def test_without_that_refusal_the_windowed_run_differs(self, monkeypatch):
-        ir = V.ir_of(V.wide_rep(3), coalescing=True)
+        ir = self._psum_tagged(V.ir_of(V.wide_rep(3), coalescing=True))
         monkeypatch.setattr(hybrid_build_scheduled, "_pass_levels", _lenient_levels(hybrid_build_scheduled._pass_levels))
         u1 = V.build(ir, 2, None, retimed_level_stages=True, **self.COALESCE)
         identity = build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=True)
         x = torch.rand(6, V.IN, generator=torch.Generator().manual_seed(0))
         with torch.no_grad():
             assert not torch.equal(R.flow(u1, **R.WINDOWED_LIF)(x), R.flow(identity, **R.WINDOWED_LIF)(x))
+
+    def test_a_coalescing_group_levels_as_one_unit_and_the_windowed_run_is_the_identity_run(self):
+        """[H0] The same vehicle with its coalescing groups as built: a coalescing group's cores are whole-fan-in
+        neurons that emit decodable counts, so the fused segment levels with each group as one unit and the
+        multi-pass windowed run equals the identity run (before the fix it refused, as the psum form still does)."""
+        ir = V.ir_of(V.wide_rep(3), coalescing=True)
+        assert any(getattr(n, "coalescing_group_id", None) is not None for n in ir.nodes)
+        u1 = V.build(ir, 2, None, retimed_level_stages=True, **self.COALESCE)
+        assert len(V.neural_passes(u1)) > 1
+        identity = build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=True)
+        x = torch.rand(6, V.IN, generator=torch.Generator().manual_seed(0))
+        with torch.no_grad():
+            assert torch.equal(R.flow(u1, **R.WINDOWED_LIF)(x), R.flow(identity, **R.WINDOWED_LIF)(x))
 
     @pytest.mark.parametrize("count,scheduled", [(2, True), (8, True), (8, False)],
                              ids=["multi_pass", "single_pass", "single_pool"])

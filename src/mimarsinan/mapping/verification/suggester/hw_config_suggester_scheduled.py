@@ -121,14 +121,17 @@ def suggest_hardware_config_for_model(
     neuron_granularity: int = 1,
     safety_margin: float = 0.15,
     allow_neuron_splitting: bool = False,
+    rows_per_input: int = 1,
 ) -> HardwareSuggestion:
-    """Convenience wrapper: run layout mapping then suggest hardware config."""
+    """Convenience wrapper: run layout mapping then suggest hardware config (``rows_per_input``: the declared
+    pool's physical rows per logical input, 2 under per-axon weight sign)."""
     result = verify_soft_core_mapping(
         model_repr,
         max_axons=max_axons,
         max_neurons=max_neurons,
         allow_coalescing=allow_coalescing,
         hardware_bias=hardware_bias,
+        rows_per_input=rows_per_input,
     )
 
     if not result.feasible:

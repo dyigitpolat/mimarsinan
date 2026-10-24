@@ -41,14 +41,15 @@ GEOMETRY_KEYS = ("cores", "weight_bits", "max_axons", "max_neurons")
 #: The keys only the bundle form carries.
 TARGET_KEYS = ("target", "target_claim_class", "target_faithfulness_class")
 #: The five hand-written declarations, written out: the registry geometries (``imc_platforms_literature.py``:
-#: truenorth_like, loihi_dense_equiv_128x1024, isaac_like), ODIN's from frenkel2019odin as the odin-fpga-infra
-#: declaration states it (f08c8efa: 128 logical axons x 256 neurons, 4-bit synapses, no bias lane, no coalescing
-#: or neuron splitting), the 22 nm point's from its profile's validity text (256 x 256, 8-bit; 1000 cores, the
+#: truenorth_like, loihi_dense_equiv_128x1024, isaac_like), ODIN's from frenkel2019odin (256 x 256 physical
+#: rows with one sign per axon row, CL-SG; 4-bit synapses, no bias lane, no coalescing or neuron splitting, as
+#: the odin-fpga-infra declaration states them, f08c8efa), the 22 nm point's from its profile's validity text (256 x 256, 8-bit; 1000 cores, the
 #: default grid's count), TrueNorth's floorplan from its profile's validity text (4096 cores, 64 x 64 mesh), and
 #: each profile's core semantics.
 HAND = {
     "odin": {DP: {"core_semantics": "spiking"}, PC: {
-        "cores": [{"max_axons": 128, "max_neurons": 256, "count": 1, "has_bias": False}], "weight_bits": 4,
+        "cores": [{"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": False,
+                   "weight_sign_granularity": "per_axon"}], "weight_bits": 4,
         "allow_coalescing": False, "allow_neuron_splitting": False, "platform_physics_profile": "odin"}},
     "truenorth": {DP: {"core_semantics": "spiking"}, PC: {
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 4096, "has_bias": True}], "weight_bits": 1,
@@ -66,7 +67,8 @@ HAND = {
         "allow_neuron_splitting": True}},
 }
 PHYSICS = tuple(sorted(HAND))
-ODIN_CORES = {"value": [{"max_axons": 128, "max_neurons": 256, "count": 64, "has_bias": False}],
+ODIN_CORES = {"value": [{"max_axons": 256, "max_neurons": 256, "count": 64, "has_bias": False,
+                         "weight_sign_granularity": "per_axon"}],
               "note": "a 64-core array of the ODIN core for a pool-sized study"}
 
 

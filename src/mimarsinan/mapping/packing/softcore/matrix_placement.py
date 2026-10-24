@@ -15,6 +15,14 @@ def materialize_compacted(source, keep_rows, keep_cols) -> np.ndarray:
     return mat[np.ix_(keep_rows, keep_cols)]
 
 
+def materialize_signed(source, keep_rows, keep_cols, row_signs) -> np.ndarray:
+    """The compaction recipe, then each signed row keeps only its sign's entries (a per-axon W+ or W- row);
+    a row of sign 0 (all zero) is kept as is."""
+    mat = materialize_compacted(source, keep_rows, keep_cols)
+    signs = np.asarray(row_signs)[:, None]
+    return np.where((signs == 0) | (np.sign(mat) == signs), mat, 0.0)
+
+
 class MatrixPlacement:
     """One softcore weight block placed on a hard core.
 
@@ -66,6 +74,27 @@ class MatrixPlacement:
             None if self.keep_cols is None else self.keep_cols.tobytes(),
             self.axon_offset, self.neuron_offset, self.axons, self.neurons,
         )
+
+
+class SignedRowPlacement(MatrixPlacement):
+    """A per-axon soft core's block: the descriptor's rows repeat each mixed row, ``row_signs`` keeps one sign
+    per row. A subclass, so a per-synapse placement keeps its slots and its pickle."""
+
+    __slots__ = ("row_signs",)
+
+    def __init__(self, *, row_signs, **placement) -> None:
+        super().__init__(**placement)
+        assert self.keep_rows is not None and len(row_signs) == len(self.keep_rows)
+        self.row_signs = row_signs
+
+    def is_plain(self) -> bool:
+        return False
+
+    def materialize(self):
+        return materialize_signed(self.source, self.keep_rows, self.keep_cols, self.row_signs)
+
+    def content_key(self) -> tuple:
+        return (*super().content_key(), np.asarray(self.row_signs).tobytes())
 
 
 def _is_exact_fit(placements, axons_per_core: int, neurons_per_core: int) -> bool:

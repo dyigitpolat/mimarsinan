@@ -238,16 +238,28 @@ def carried_nodes(stages: Sequence[HybridStage], stage: HybridStage) -> Set[int]
     return set()
 
 
+def executed_core_latencies(hcm) -> List[int]:
+    """Per hard core, the latency it executes at (``ChipLatency``, pins honoured); the cores' stored latencies are
+    kept, so a judgement of the executed timing never rewrites the built program (its pickle, its record)."""
+    stored = [core.latency for core in hcm.cores]
+    try:
+        ChipLatency(hcm).calculate()
+        return [int(core.latency or 0) for core in hcm.cores]
+    finally:
+        for core, latency in zip(hcm.cores, stored):
+            core.latency = latency
+
+
 def off_clock_readers(stage: HybridStage, carried: Set[int]) -> List[Tuple[int, int]]:
     """``(core, latency)`` per hard core of ``stage`` that reads a carried slice and starts above latency 0 as executed
-    (``ChipLatency``, pins honoured): a backend that reads a stage input at the global cycle sees that slice
+    (``executed_core_latencies``): a backend that reads a stage input at the global cycle sees that slice
     ``latency`` cycles late, where the fused segment (and the HCM's core-local read) delivers it on time."""
     if not carried:
         return []
     slice_of = _slice_index(stage)
     rows = {k for k, s in enumerate(stage.input_map) if int(s.node_id) in carried}
     hcm = stage.hard_core_mapping
-    ChipLatency(hcm).calculate()
-    return [(h, int(core.latency)) for h, core in enumerate(hcm.cores) if int(core.latency or 0) > 0
+    executed = executed_core_latencies(hcm)
+    return [(h, latency) for h, (core, latency) in enumerate(zip(hcm.cores, executed)) if latency > 0
             and any(getattr(src, "is_input_", False) and not _special(src) and slice_of[int(src.neuron_)] in rows
                     for src in core.axon_sources)]

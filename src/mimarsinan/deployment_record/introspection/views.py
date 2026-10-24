@@ -109,12 +109,15 @@ class CandidateLayoutView:
         *,
         host_side_segment_count: Optional[int] = None,
         total_params: Optional[float] = None,
+        runs: Optional[Sequence[int]] = None,
     ) -> "CandidateLayoutView":
         """Lay the candidate out exactly as deployment would read the platform.
 
         For a caller that holds softcores and a chip but no packing yet. The
         capability declaration is forwarded WHOLE (``layout_kwargs``), so the
-        pass structure this view reports is the one the builder will compose.
+        pass structure this view reports is the one the builder will compose,
+        given the walk's ``runs`` (``residency_rules.spec_runs``) on a program
+        whose builder segments and depth segments group the specs differently.
         A caller that ALREADY packed this candidate uses :meth:`packed` instead,
         so the channel never re-answers a question the producer answered.
         """
@@ -126,6 +129,7 @@ class CandidateLayoutView:
             stats, error = compute_mapping_stats(
                 softcores=list(softcores),
                 core_types=list(core_types),
+                runs=runs,
                 **capabilities.layout_kwargs(),
             )
         return cls.packed(

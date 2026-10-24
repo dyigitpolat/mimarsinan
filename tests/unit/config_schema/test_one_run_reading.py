@@ -427,6 +427,8 @@ WEIGHT_BITS_READERS = {
     "search/problems/joint/model_build.py": "every run",
     "search/problems/joint/validate.py": "every run",
     "mapping/platform/target_bundles.py": "every run",
+    # CL-SG: the per-axon register bound (a sign and a (bits - 1)-bit magnitude) on every per-axon run.
+    "pipelining/core/simulation_factory.py": "every run",
 }
 _READ = re.compile(r"\.get\(\s*[\"']weight_bits[\"']|\[\s*[\"']weight_bits[\"']\s*\]|for key in \(\s*\"weight_bits\"")
 

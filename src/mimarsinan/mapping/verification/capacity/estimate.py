@@ -7,10 +7,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Sequence
 
 from mimarsinan.mapping.layout.segmentation import NeuralSegment, partition_ir_graph
-from mimarsinan.mapping.packing.softcore import compacted_core_extent
+from mimarsinan.mapping.packing.softcore import deployed_core_extent
 from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.platform.platform_constraints import (
+    pool_sign_granularity,
     resolve_platform_mapping_params,
 )
 
@@ -97,19 +98,20 @@ class _SegmentBound:
 
 
 def _segment_lower_bound(
-    segment: NeuralSegment, max_axons: int, max_neurons: int
+    segment: NeuralSegment, max_axons: int, max_neurons: int, *, sign_granularity: str, graph: Any = None,
 ) -> _SegmentBound:
     """Diagonal-packing lower bound on hard cores for one neural segment.
 
     max(ceil(Σ axons / max_axons), ceil(Σ neurons / max_neurons), max per-core
-    frags·groups) over POST-compaction extents; the per-core max is also the
-    segment's atomic-unit cost.
+    frags·groups) over POST-compaction deployed extents (physical rows under
+    per-axon sign, against the rows of a full tile); the per-core max is also
+    the segment's atomic-unit cost.
     """
     total_axons = 0
     total_neurons = 0
     max_per_core = 0
     for core in segment.nodes:
-        in_count, out_count = compacted_core_extent(core)
+        in_count, out_count = deployed_core_extent(core, sign_granularity, graph=graph)
         total_axons += in_count
         total_neurons += out_count
         frags = coalescing_fragment_count(in_count, max_axons)
@@ -126,7 +128,8 @@ def _segment_lower_bound(
 def _resolve_budget(
     platform_constraints: Mapping[str, Any],
 ) -> tuple[int, int, int]:
-    """Return ``(effective_max_axons, effective_max_neurons, total_core_count)`` via the mapping step's resolver."""
+    """Return ``(row capacity, effective_max_neurons, total_core_count)`` via the mapping step's resolver (the
+    row capacity is the effective axon limit under per-synapse sign)."""
     cores: Sequence[dict[str, Any]] = platform_constraints.get("cores") or []
     if not cores:
         raise ValueError(
@@ -136,7 +139,7 @@ def _resolve_budget(
     params = resolve_platform_mapping_params(cores, allow_coalescing=allow_coalescing)
     total_count = sum(int(ct["count"]) for ct in cores)
     return (
-        int(params.effective_max_axons),
+        int(params.row_capacity),
         int(params.effective_max_neurons),
         int(total_count),
     )
@@ -164,13 +167,14 @@ def estimate_cores_needed(
     """
     max_axons, max_neurons, cores_available = _resolve_budget(platform_constraints)
     scheduled = _resolve_allow_scheduling(platform_constraints, allow_scheduling)
+    granularity = pool_sign_granularity(platform_constraints.get("cores") or [])
 
     per_segment: Dict[str, int] = {}
     bounds: list[tuple[str, _SegmentBound]] = []
     for segment in partition_ir_graph(ir_graph):
         if not isinstance(segment, NeuralSegment):
             continue
-        sb = _segment_lower_bound(segment, max_axons, max_neurons)
+        sb = _segment_lower_bound(segment, max_axons, max_neurons, sign_granularity=granularity, graph=ir_graph)
         per_segment[segment.label] = sb.bound
         bounds.append((segment.label, sb))
 

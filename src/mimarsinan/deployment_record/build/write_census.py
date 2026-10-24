@@ -33,7 +33,7 @@ from fractions import Fraction
 from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.deployment_record.build.payload_sizes import params_bytes
+from mimarsinan.deployment_record.build.payload_sizes import core_payload_bytes
 from mimarsinan.mapping.support.period_census import PassBoundaryCensus, PassCensus, PassPeriodCensus
 
 
@@ -64,6 +64,13 @@ class PassRow:
     stage_latencies: Optional[Tuple[int, ...]] = None
     #: The core type of each core, where the plane states it (a one-type chip states it for every plane).
     core_types: Optional[Tuple[CoreType, ...]] = None
+    #: [CL-SG] Per core, the rows its per-row sign register signs (0 on a per-synapse core); empty: none.
+    core_sign_rows: Tuple[int, ...] = ()
+
+    def core_bytes(self, i: int, weight_bits: int) -> int:
+        """Core ``i``'s payload by the one rule (``core_payload_bytes``): its cells and its sign register."""
+        signs = self.core_sign_rows[i] if i < len(self.core_sign_rows) else 0
+        return core_payload_bytes(self.core_cells[i], weight_bits, signs)
 
 
 @dataclass(frozen=True)
@@ -256,7 +263,7 @@ def period_census(passes: ProgramPasses, *, weight_bits: int,
             cores=len(row.core_cells), resident_cores=len(row.core_cells) - len(written),
             written_cells_backing_store=sum(row.core_cells[i] for i in written),
             written_cells_producer=0,
-            payload_bytes=sum(params_bytes(row.core_cells[i], weight_bits) for i in written),
+            payload_bytes=sum(row.core_bytes(i, weight_bits) for i in written),
             compute_steps=row.compute_steps or 0,
         ))
         if row.core_extents is not None:

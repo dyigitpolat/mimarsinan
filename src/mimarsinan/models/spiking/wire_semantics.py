@@ -34,6 +34,29 @@ def ttfs_quantized_staircase_np(
     return out.astype(np.float64, copy=False)
 
 
+def ttfs_quantized_staircase_lattice_np(
+    m: np.ndarray,
+    threshold,
+    simulation_length: int,
+    *,
+    comparator_half_step: bool = False,
+) -> np.ndarray:
+    """``ttfs_quantized_staircase_np`` on the integer chip's membrane lattice, decided in integers.
+
+    ``m`` holds integral membrane numerators over ``2S`` (``V = m / (2S)``) and ``threshold`` is an integer >= 1, so
+    ``ceil(S (1 - V/θ) - h) = S - floor((m + 2θh) / (2θ))`` exactly (``h`` is 1/2 under the comparator half step,
+    else 0): a membrane on a staircase step fires at that step, where the float quotient lets rounding decide."""
+    s = int(simulation_length)
+    theta = np.rint(np.asarray(threshold, dtype=np.float64)).astype(np.int64)
+    numerator = np.rint(np.asarray(m, dtype=np.float64)).astype(np.int64)
+    if comparator_half_step:
+        numerator = numerator + theta
+    k_fire_raw = s - np.floor_divide(numerator, 2 * theta)
+    fires = k_fire_raw < s
+    k_fire = np.clip(k_fire_raw, 0, s - 1)
+    return np.where(fires, (s - k_fire) / s, 0.0).astype(np.float64, copy=False)
+
+
 def ttfs_quantized_staircase(
     V: torch.Tensor,
     threshold: torch.Tensor,
@@ -119,6 +142,23 @@ def lif_count_staircase(
     r = z / safe
     c = torch.ceil(t * r) - 1.0 if compare_mode == "<" else torch.floor(t * r)
     return safe * c.clamp(0.0, float(t)) / t
+
+
+def lif_window_count(
+    charge: torch.Tensor, threshold, window: int, *, compare_mode: str = "<=",
+) -> torch.Tensor:
+    """The window count the LIF staircase emits, ``clamp(F(Q/θ), 0, T)``, read off the window charge ``Q`` itself.
+
+    ``F = floor`` for inclusive ``'<='``, ``ceil − 1`` for strict ``'<'``. On the integer chip ``Q`` and ``θ`` are
+    integers below 2^52, so the one quotient decides exactly (an integer ``Q/θ`` is exact in float64 and any other
+    lies at least ``1/θ`` from an integer): ``lif_count_staircase``'s ``θ·c/T`` rebuilt as ``c`` (``·T/θ``) and its
+    ``T·((Q/T)/θ)`` both leave the lattice where rounding lands below an integer."""
+    _require_lif_compare_mode(compare_mode)
+    t = int(window)
+    safe = torch.as_tensor(threshold, dtype=charge.dtype, device=charge.device).clamp(min=1e-12)
+    r = charge / safe
+    c = torch.ceil(r) - 1.0 if compare_mode == "<" else torch.floor(r)
+    return c.clamp(0.0, float(t))
 
 
 def floor_staircase(x: torch.Tensor, levels) -> torch.Tensor:

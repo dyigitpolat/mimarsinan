@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
+from mimarsinan.mapping.support.residency_rules import spec_runs
 from mimarsinan.mapping.verification.verifier.mapping_verifier_types import MappingVerificationResult
 
 _logger = logging.getLogger(__name__)
@@ -13,11 +14,13 @@ def verify_soft_core_mapping(
     *,
     allow_coalescing: bool = False,
     hardware_bias: bool = False,
+    rows_per_input: int = 1,
 ) -> MappingVerificationResult:
     """Verify that a mapper-graph model representation can be laid out as soft cores.
 
     ``model_repr`` is a native ``ModelRepresentation`` or a torch-converted
-    ``mapper_repr``; returns feasibility plus the collected softcores.
+    ``mapper_repr``; returns feasibility plus the collected softcores
+    (``rows_per_input`` rows per input: 2 under per-axon weight sign).
     """
     try:
         layout = LayoutIRMapping(
@@ -25,6 +28,7 @@ def verify_soft_core_mapping(
             max_neurons=max_neurons,
             allow_coalescing=allow_coalescing,
             hardware_bias=hardware_bias,
+            rows_per_input=rows_per_input,
         )
         softcores = layout.collect_layout_softcores(model_repr)
     except Exception as exc:
@@ -104,5 +108,6 @@ def verify_soft_core_mapping(
         total_area=total_area,
         host_side_segment_count=getattr(layout, "host_side_segment_count", 0),
         layout_preview=getattr(layout, "layout_preview", None),
+        runs=spec_runs(layout),
     )
 

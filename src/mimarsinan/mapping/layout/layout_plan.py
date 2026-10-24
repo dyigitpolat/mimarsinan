@@ -176,7 +176,7 @@ def build_layout_plan(
     Routes through :func:`verify_hardware_config` (which packs and computes
     stats via the shared ``build_stats_from_packing_result``), so the wizard
     miniview consumes exactly the same stats engine — and, under scheduling,
-    the same pass planner — as the deployment path.
+    the same pass planner, given the walk's ``runs`` — as the deployment path.
     """
     hw = verify_hardware_config(
         verification.softcores,
@@ -186,6 +186,7 @@ def build_layout_plan(
         allow_scheduling=allow_scheduling,
         max_schedule_passes=max_schedule_passes,
         residency_plan=residency_plan,
+        runs=getattr(verification, "runs", None),
     )
 
     stats_dict = dict(hw.get("stats") or {})

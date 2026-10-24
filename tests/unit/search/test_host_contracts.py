@@ -40,6 +40,7 @@ JOINT_CONTRACT_METHODS = [
     "_candidate_model",
     "_ensure_mapper_repr",
     "_collect_softcores",
+    "_walk_candidate",
     "_pack_candidate",
     "_packing_failure",
     "_static_view",

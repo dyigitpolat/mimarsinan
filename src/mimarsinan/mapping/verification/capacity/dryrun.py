@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
 )
@@ -32,8 +33,9 @@ def dryrun_pack_feasible(
 ) -> PackFeasibility:
     """Run the real hybrid hard-core packer on ``ir_graph`` and report feasibility.
 
-    Weight-independent (structural residency classing), so an untrained model's
-    dry-run is bit-identical to the trained deployment's packing.
+    Weight-independent on a per-synapse pool (structural residency classing), so an
+    untrained model's dry-run is bit-identical to the trained deployment's packing; a
+    per-axon pool's sign split reads the integer weights' signs, so it needs them.
     """
     strategy = MappingStrategy.resolve(
         ChipCapabilities.from_platform_constraints(platform_constraints)
@@ -52,6 +54,14 @@ def dryrun_pack_feasible(
             hard_cores=None,
             overflowing_segment=match.group(1) if match else None,
             error=message,
+        )
+    except ToolchainRefusal as exc:
+        # [MN6] Any other refusal by name (the per-axon split of float weights, a ValueError) is the verdict, named.
+        return PackFeasibility(
+            feasible=False,
+            hard_cores=None,
+            overflowing_segment=None,
+            error=f"{type(exc).__name__}: {exc}",
         )
 
     hard_cores = sum(

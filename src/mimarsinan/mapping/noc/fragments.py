@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import (
@@ -13,6 +13,7 @@ from mimarsinan.mapping.layout.layout_types import (
 from mimarsinan.mapping.noc.wire_census import LayoutWireCensus
 from mimarsinan.mapping.packing.pass_timing import project_planned_passes
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
+from mimarsinan.mapping.platform.platform_constraints import carries_sign_register
 from mimarsinan.mapping.support.residency_rules import ProgramGraph, check_pinned_fit, declared_pool
 from mimarsinan.mapping.support.schedule.pass_planner import (
     plan_program_passes,
@@ -46,7 +47,7 @@ def execution_stage_latencies(
     latencies; with the walk's ``runs`` (``spec_runs``), the builder's segments
     (its fused segments) group the specs, else their depth segments do.
     """
-    segment_of = _segments_of(softcores, runs)
+    segment_of = spec_segments(softcores, runs)
     pinned = (project_planned_passes([int(s.output_count) for s in softcores],
                                      [[i for i, _ in p] for p in pass_placements], census.pair_wires,
                                      segment_of).pinned_spans
@@ -76,6 +77,7 @@ def execution_stage_placements(
     pass_placements: Sequence[Sequence[Tuple[int, int]]],
     *,
     retimed: bool,
+    runs: Optional[Sequence[int]] = None,
 ) -> Tuple[Tuple[Tuple[int, int], ...], ...]:
     """[R3] Per-EXECUTION-STAGE placements with stage-local hardcore indices.
 
@@ -87,14 +89,15 @@ def execution_stage_placements(
     :func:`execution_stage_latencies` — one stage per (pass, segment, level)
     when re-timing is armed, else one per (pass, segment) — and hardcore
     indices are re-based per stage in placement order, the runner's own
-    packing order.
+    packing order. ``runs``: as :func:`execution_stage_latencies`.
     """
+    segment_of = spec_segments(softcores, runs)
     stages: List[Tuple[Tuple[int, int], ...]] = []
     for placements in pass_placements:
         by_group: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
         for softcore_index, hardcore in placements:
             spec = softcores[softcore_index]
-            segment = int(spec.segment_id or 0)
+            segment = segment_of[softcore_index]
             level = int(spec.latency_tag or 0) if retimed else 0
             by_group.setdefault((segment, level), []).append(
                 (softcore_index, hardcore)
@@ -118,6 +121,8 @@ class PassProgram:
     resident: bool
     #: [E85] Indices of this pass's cores pinned across periods by an executed residency plan; None: no plan.
     schedule_resident_cores: Optional[FrozenSet[int]] = None
+    #: [CL-SG] Per core, the used rows its per-row sign register signs (0 on a per-synapse core); empty: none.
+    core_sign_rows: Tuple[int, ...] = ()
 
     @property
     def cores(self) -> int:
@@ -145,6 +150,9 @@ class LayoutNocFragments:
     #: what the runner actually maps; None until the caller that knows the
     #: firing semantics derives them (``execution_stage_placements``).
     stage_placements: Optional[Tuple[Tuple[Tuple[int, int], ...], ...]] = None
+    #: [U1 W9] Per spec, the builder segment (IR run, ``spec_runs``) the passes were planned in; None: planned by
+    #: the specs' depth segments. Every consumer of the fragments reads this one segmentation (``spec_segments``).
+    runs: Optional[Tuple[int, ...]] = None
 
 
 def collect_noc_fragments(
@@ -159,6 +167,7 @@ def collect_noc_fragments(
     residency_plan: Optional[dict] = None,
     program: Optional[ProgramGraph] = None,
     runs: Optional[Sequence[int]] = None,
+    declared_cores: Sequence[Mapping[str, Any]] = (),
 ) -> LayoutNocFragments:
     """Place every pass of the candidate program and seal the placements.
 
@@ -172,12 +181,16 @@ def collect_noc_fragments(
     grouped by the builder's segments and each is planned as the builder plans
     it; without them by their depth segments, which equals the builder wherever
     the two segmentations group the specs alike (every tier-0 template).
+    [CL-SG] ``declared_cores`` (the platform's ``cores``) signs each packed core
+    of a per-axon type (``carries_sign_register``): its used rows ride the pass
+    program for the payload rule.
     """
     softcores = list(softcores)
     global_index = {id(sc): i for i, sc in enumerate(softcores)}
     if residency_plan is not None and not allow_scheduling:
         raise ResidencyPlanError("residency_plan is declared but allow_scheduling is not")
     residency: Optional[ResidencyComposition] = None
+    runs = tuple(int(r) for r in runs) if runs is not None else walk_runs(program, len(softcores))
 
     if allow_scheduling:
         plan = plan_program_passes(
@@ -187,7 +200,7 @@ def collect_noc_fragments(
             max_schedule_passes=max_schedule_passes,
             residency=None if residency_plan is None else ShapeOnlyResidency(
                 residency_plan, census, program),
-            runs=runs if runs is not None else walk_runs(program, len(softcores)),
+            runs=runs,
         )
         residency = plan.residency
         if not plan.feasible:
@@ -222,12 +235,14 @@ def collect_noc_fragments(
             (global_index[id(pass_softcores[local])], hardcore)
             for local, hardcore in pack.placements
         ))
+        snapshots = tuple(pack.used_core_snapshots or ())
         programs.append(PassProgram(
-            core_cells=tuple(
-                int(snapshot.used_axons) * int(snapshot.used_neurons)
-                for snapshot in (pack.used_core_snapshots or ())
-            ),
+            core_cells=tuple(int(snap.used_axons) * int(snap.used_neurons) for snap in snapshots),
             resident=bool(resident),
+            core_sign_rows=tuple(
+                int(snap.used_axons) if carries_sign_register(snap.axons_per_core, snap.neurons_per_core,
+                                                              declared_cores) else 0
+                for snap in snapshots) if declared_cores else (),
         ))
         if residency is not None:
             pass_types.append(tuple(
@@ -238,19 +253,20 @@ def collect_noc_fragments(
         programs = _pinned_programs(programs, pass_types, residency, core_types)
     return LayoutNocFragments(
         pass_placements=tuple(per_pass), census=census,
-        pass_programs=tuple(programs),
+        pass_programs=tuple(programs), runs=runs,
     )
 
 
 def delayed_carry_wires(softcores: Sequence[LayoutSoftCoreSpec], frag: LayoutNocFragments,
                         runs: Optional[Sequence[int]] = None) -> Tuple[Tuple[int, int, int], ...]:
     """[U1 W10] ``(producer, width, consuming pass)`` per delayed carried slice the builder adds beyond one per
-    producer and pass: each crosses the chip boundary once more (the boundary-in term)."""
+    producer and pass: each crosses the chip boundary once more (the boundary-in term). ``runs``: the fragments'
+    own when not given."""
     if frag.census is None:
         return ()
     projection = project_planned_passes(
         [int(s.output_count) for s in softcores], [[i for i, _ in p] for p in frag.pass_placements],
-        frag.census.pair_wires, _segments_of(softcores, runs))
+        frag.census.pair_wires, spec_segments(softcores, getattr(frag, "runs", None) if runs is None else runs))
     return tuple((p, w, q) for q, extra in enumerate(projection.extra_slices) for p, w in extra)
 
 
@@ -259,7 +275,7 @@ def walk_runs(program: Optional[ProgramGraph], count: int) -> Optional[Tuple[int
     return None if program is None else program.spec_runs(count)
 
 
-def _segments_of(softcores: Sequence[LayoutSoftCoreSpec], runs: Optional[Sequence[int]]) -> List[int]:
+def spec_segments(softcores: Sequence[LayoutSoftCoreSpec], runs: Optional[Sequence[int]]) -> List[int]:
     """The fused segment of each spec: its builder segment (``runs``), else its depth segment (``segment_id``)."""
     return [int(r) for r in runs] if runs is not None else [int(s.segment_id or 0) for s in softcores]
 

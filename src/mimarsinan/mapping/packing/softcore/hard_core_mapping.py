@@ -6,6 +6,11 @@ import numpy as np
 
 from mimarsinan.mapping.packing.softcore.fragments import make_real_fragments
 from mimarsinan.mapping.packing.softcore.hard_core import HardCore
+from mimarsinan.mapping.platform.platform_constraints import (
+    PER_AXON,
+    SIGN_GRANULARITY_FIELD,
+    pool_sign_granularity,
+)
 from mimarsinan.mapping.support.spike_source_spans import (
     compress_spike_sources,
     pack_output_sources_state,
@@ -46,6 +51,12 @@ class RuntimeMaterializer:
             fused.hardware_bias = template.hardware_bias
             if getattr(template, "readout_law", None) is not None:
                 fused.readout_law = template.readout_law
+            # A fused core is per-axon when any component is (the pool's fold): the per-axon row gate then checks
+            # every component's rows, whichever core type the pool declared first.
+            declared = [{SIGN_GRANULARITY_FIELD: g} for hc in components
+                        if (g := getattr(hc, "weight_sign_granularity", None)) is not None]
+            if declared and pool_sign_granularity(declared) == PER_AXON:
+                fused.weight_sign_granularity = PER_AXON
             fused.fused_component_axons = [
                 int(hc.axons_per_core) for hc in components
             ]

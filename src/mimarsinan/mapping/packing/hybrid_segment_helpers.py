@@ -8,19 +8,23 @@ import numpy as np
 from mimarsinan.mapping.ir import IRGraph, IRNode, IRSource, NeuralCore
 from mimarsinan.mapping.packing.softcore import HardCore
 from mimarsinan.mapping.packing.hybrid_types import SegmentIOSlice
+from mimarsinan.mapping.platform.platform_constraints import PER_AXON, SIGN_GRANULARITY_FIELD
 
 
 def _make_available_hardware_cores(cores_config: Sequence[dict]) -> list[HardCore]:
+    """One HardCore per declared core; a per-axon type's cores carry the declared-only ``weight_sign_granularity``."""
     available_hardware_cores: list[HardCore] = []
     for core_type in cores_config:
         count = int(core_type["count"])
         max_axons = int(core_type["max_axons"])
         max_neurons = int(core_type["max_neurons"])
         has_bias = bool(core_type.get("has_bias", True))
+        per_axon = core_type.get(SIGN_GRANULARITY_FIELD) == PER_AXON
         for _ in range(count):
-            available_hardware_cores.append(
-                HardCore(max_axons, max_neurons, has_bias_capability=has_bias)
-            )
+            core = HardCore(max_axons, max_neurons, has_bias_capability=has_bias)
+            if per_axon:
+                core.weight_sign_granularity = PER_AXON
+            available_hardware_cores.append(core)
     return available_hardware_cores
 
 

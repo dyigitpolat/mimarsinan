@@ -7,6 +7,7 @@ import pytest
 import mimarsinan.certification.randomized.cost_draws as cd
 from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.config_schema.registry.decision_classes import COMPOSITE, COST_ONLY, FUNCTION_BEARING
+from mimarsinan.mapping.support.period_census import RESIDENCY_STEP_RULES, STEP_INDEX
 
 
 class TestPartition:
@@ -14,7 +15,7 @@ class TestPartition:
         parts = cd.partition()
         listed = {p for paths in parts.values() for p in paths}
         assert listed == cd.cost_only_set()
-        assert len(cd.cost_only_set()) == 26
+        assert len(cd.cost_only_set()) == 27
 
     @pytest.mark.parametrize("change", ["add", "drop"])
     def test_registry_drift_breaks_the_partition(self, monkeypatch, change):
@@ -70,8 +71,81 @@ class TestDraws:
         report = coverage([])
         assert set(report["pricing_only"]) == set(cd.PRICING_ONLY)
         assert set(report["pricing_only"].values()) == {cd.PRESERVED_BY_CONSTRUCTION}
-        assert set(report["deferred_to_cl1"]) == {"residency_plan", "residency_plan.index", "residency_plan.step"}
+        assert set(report["drawn_by_fields"]) == {"residency_plan"} and "deferred_to_cl1" not in report
 
     def test_the_registry_cost_only_keys_exist(self):
-        for path in cd.PROGRAM_CHANGING + cd.PRICING_ONLY + cd.DERIVED_GEOMETRY + cd.DEFERRED:
+        for path in cd.PROGRAM_CHANGING + cd.PRICING_ONLY + cd.DERIVED_GEOMETRY + cd.DRAWN_BY_FIELDS:
             assert path.split(".")[0] in REGISTRY, path
+
+
+class TestResidencyDraws:
+    """CL1: G5's residency_plan is drawn, field by field, wherever the registry's relevance holds."""
+
+    SCHEDULED = {"allow_scheduling": True}
+
+    def test_residency_plan_is_drawn_field_by_field(self):
+        draws = [cd.draw_declaration(seed, pinned=self.SCHEDULED) for seed in range(200)]
+        plans = [d["residency_plan"] for d in draws if "residency_plan" in d]
+        assert 60 < len(plans) < 140
+        assert {p["step"] for p in plans} == set(RESIDENCY_STEP_RULES)
+        for plan in plans:
+            assert ("index" in plan) == (plan["step"] == STEP_INDEX), plan
+            assert cd.DEFAULT_DRAWS.residency_index[0] <= plan.get("index", 0) <= cd.DEFAULT_DRAWS.residency_index[1]
+        paths = set().union(*(cd.drawn_paths(d) for d in draws))
+        assert {"residency_plan.step", "residency_plan.index"} <= paths and "residency_plan" not in paths
+
+    def test_residency_plan_is_absent_where_scheduling_is_off(self):
+        for seed in range(100):
+            drawn = cd.draw_declaration(seed)
+            assert "residency_plan" not in drawn or drawn["allow_scheduling"], drawn
+            assert "residency_plan" not in cd.draw_declaration(seed, pinned={"allow_scheduling": False})
+        assert "residency_plan" not in cd.settled({"allow_scheduling": False, "residency_plan": {"step": "floor"}})
+
+    def test_the_residency_draw_moves_no_other_field_of_a_seed(self):
+        """Drawn after every other field, consuming the same values whether present or absent."""
+        for seed in range(100):
+            with_plan = cd.draw_declaration(seed, pinned=self.SCHEDULED)
+            without = cd.draw_declaration(seed, cd.DrawSpace(residency_rate=0.0), pinned=self.SCHEDULED)
+            with_plan.pop("residency_plan", None)
+            assert with_plan == without, seed
+
+    @pytest.mark.parametrize("seed", range(20))
+    def test_a_drawn_residency_plan_is_a_legal_declaration(self, seed):
+        declaration = cd.platform_constraints(cd.draw_declaration(seed, pinned=self.SCHEDULED), hardware_bias=False)
+        assert cd.legal(declaration) == []
+
+
+class TestSignDraws:
+    """CL-SG: a core type's weight sign granularity is drawn per core type, after every other field, at the draw
+    space's rate (0 for the declared strata, so their seeds are unchanged; the sign-split strata draw it)."""
+
+    SPLIT = cd.DrawSpace(sign_split_rate=1.0)
+
+    def test_the_sign_granularity_is_a_program_changing_path(self):
+        assert "cores.weight_sign_granularity" in cd.PROGRAM_CHANGING
+        assert "cores.weight_sign_granularity" in cd.cost_only_set()
+
+    @pytest.mark.parametrize("seed", range(30))
+    def test_the_declared_strata_draw_no_sign_granularity(self, seed):
+        assert all("weight_sign_granularity" not in core for core in cd.draw_declaration(seed)["cores"])
+
+    def test_the_sign_split_strata_declare_per_axon_on_every_core_type(self):
+        for seed in range(50):
+            drawn = cd.draw_declaration(seed, self.SPLIT)
+            assert {core["weight_sign_granularity"] for core in drawn["cores"]} == {"per_axon"}
+            assert "cores.weight_sign_granularity" in cd.drawn_paths(drawn)
+
+    def test_the_sign_draw_moves_no_other_field_of_a_seed(self):
+        for seed in range(100):
+            for pinned in ({}, {"allow_scheduling": True}):
+                split = cd.draw_declaration(seed, self.SPLIT, pinned=pinned)
+                plain = cd.draw_declaration(seed, pinned=pinned)
+                for core in split["cores"]:
+                    core.pop("weight_sign_granularity")
+                assert split == plain, seed
+
+    @pytest.mark.parametrize("seed", range(20))
+    def test_a_sign_split_draw_is_a_legal_declaration(self, seed):
+        declaration = cd.platform_constraints(cd.draw_declaration(seed, self.SPLIT), hardware_bias=seed % 2 == 0)
+        assert cd.legal(declaration) == []
+

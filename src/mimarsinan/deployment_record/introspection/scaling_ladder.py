@@ -23,7 +23,7 @@ import resource
 import time
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
-from mimarsinan.deployment_record.build.payload_sizes import params_bytes
+from mimarsinan.deployment_record.build.program_census import pass_program_bytes
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 import mimarsinan.deployment_record.introspection.scaling_ladder_law as law
 from mimarsinan.deployment_record.introspection.scaling_ladder_types import (
@@ -80,7 +80,7 @@ def shape_census(network: LadderNetwork, platform: Mapping[str, Any], *, wire_ce
     layout = LayoutIRMapping(
         max_axons=geometry.effective_max_axons, max_neurons=geometry.effective_max_neurons,
         allow_coalescing=geometry.allow_coalescing, hardware_bias=geometry.hardware_bias,
-        collect_wire_census=wire_census,
+        collect_wire_census=wire_census, rows_per_input=geometry.rows_per_input,
     )
     if hasattr(network.mapper_repr, "assign_perceptron_indices"):
         network.mapper_repr.assign_perceptron_indices()
@@ -160,7 +160,7 @@ def price_program(
                    "reason": error or "the planner reports the program infeasible"}
         return PricedProgram(platform=platform, packed_tiles=tiles, refusal=refusal, wall_s=time.time() - start)
     noc = collect_noc_fragments(softcores=census.softcores, core_types=core_types,
-                                census=census.wire_census, **kwargs)
+                                census=census.wire_census, declared_cores=platform["cores"], **kwargs)
     stage("price")
     noc, facts = program_facts(census.softcores, noc, platform)
     host = dict(network.host_census or {})
@@ -178,7 +178,7 @@ def price_program(
     ).quantities
     bits = platform.get("weight_bits")
     once_cells = [c for p in noc.pass_programs for c in p.core_cells]
-    once_bytes = None if bits is None else sum(int(params_bytes(c, int(bits))) for c in once_cells)
+    once_bytes = None if bits is None else sum(b for p in noc.pass_programs for b in pass_program_bytes(p, int(bits)))
     written = sum(1 for p in noc.pass_programs if p.cores and not p.resident)
     if _MAX_WRITES in QUANTITY_SPECS and q.has(_MAX_WRITES):
         max_writes = (q.get(_MAX_WRITES).value, "the period census quantity")

@@ -563,13 +563,11 @@ class TestPlanTimeRefusals:
         with pytest.raises(C.PassReplayRefusal, match="Stochastic"):
             nevresim_emit.prepare_all_segments(runner, u1)
 
-    @pytest.mark.xfail(strict=True, reason="integration edit (report 23.6, IE-2): hard_core_mapping_step.py:121 passes "
-                                           "the built program, run_pass_transfer(config, hybrid_mapping=hybrid_mapping)")
     def test_the_hard_core_mapping_step_refuses_a_stochastic_multi_pass_program_before_any_simulation(self,
                                                                                                     monkeypatch):
-        """[Review round 2] The step holds the built program and the run's declaration before it simulates anything:
-        with the integration edit, a streamed Stochastic multi-pass run refuses there. Strict: it passes, and must lose
-        this marker, once the edit lands."""
+        """[Review round 2; integration edit IE-2, report 23.6] The step holds the built program and the run's
+        declaration before it simulates anything (``run_pass_transfer(config, hybrid_mapping=hybrid_mapping)``), so a
+        streamed Stochastic multi-pass run refuses there."""
         from mimarsinan.pipelining.pipeline_steps.mapping import hard_core_mapping_step as step_module
 
         class _Reached(Exception):

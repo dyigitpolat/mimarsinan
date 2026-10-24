@@ -149,21 +149,21 @@ class JointValidateMixin(JointHostContract):
 
         want_noc = self._requires_fragment("noc_fragments")
         try:
-            softcores, host_segments, wire_census = self._collect_softcores(
-                mapped_model, pcfg, collect_census=want_noc,
-            )
+            walk = self._walk_candidate(mapped_model, pcfg, collect_census=want_noc)
         except Exception as exc:
             return None, self._failure(
                 HW_CONVERSION_PHASE, "Softcore collection failed", exc,
             )
+        softcores, host_segments = list(walk.softcores), walk.host_segments
 
-        stats, error = self._pack_candidate(softcores, pcfg)
+        # [U1 W9] Every plane plans the builder's segments: the walk's runs.
+        stats, error = self._pack_candidate(softcores, pcfg, runs=walk.runs)
         if not stats.feasible:
             return None, self._packing_failure(stats, error, softcores, pcfg)
 
         noc = collect_candidate_noc(
             softcores=softcores, core_types=self._make_core_types(pcfg),
-            census=wire_census, pcfg=pcfg,
+            census=walk.census, pcfg=pcfg, runs=walk.runs,
         )
         noc = with_stage_placements(softcores, noc, self.stage_semantics)
         census = self._onchip_census(model, placement)

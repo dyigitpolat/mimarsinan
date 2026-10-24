@@ -27,6 +27,7 @@ from mimarsinan.certification.randomized.instance import (
     Network,
 )
 from mimarsinan.certification.randomized.runner import (
+    COUNTEREXAMPLE,
     EQUAL,
     OUTCOMES,
     REFUSED,
@@ -165,12 +166,10 @@ def _float_staircase_departs(semantics: str, T: int, k: int) -> bool:
     return False
 
 
-_IDENTITY_CELLS = [
-    pytest.param(semantics, T, k, marks=pytest.mark.xfail(
-        strict=True, reason="H8-staircase: the base's floating-point staircase loses this exact tie "
-                            "(wire_semantics.py, owner to be named by the conductor)"))
-    if _float_staircase_departs(semantics, T, k) else (semantics, T, k)
-    for semantics in SPIKING for T in range(1, 9) for k in range(T + 1)]
+_IDENTITY_CELLS = [(semantics, T, k) for semantics in SPIKING for T in range(1, 9) for k in range(T + 1)]
+#: The cells where the base's floating-point staircase departed from N (the strict xfails before the CL1 fix round:
+#: H8-staircase's base violation, fixed by the staircases on the integer charge, sign-off P1 (a)).
+_FLOAT_DEPARTED = [cell for cell in _IDENTITY_CELLS if _float_staircase_departs(*cell)]
 
 
 @functools.lru_cache(maxsize=None)
@@ -196,10 +195,13 @@ class TestTheInputPath:
     @pytest.mark.parametrize("semantics, T, k", _IDENTITY_CELLS)
     def test_every_spiking_identity_layer_reports_every_declared_count(self, semantics, T, k):
         """End to end at theta 1 (one hop, the identity weights): the executor that defines y reports N's count
-        (or level) for every count k <= T <= 8. The cells where the base's floating-point staircase departs from
-        N are strict xfails (H8-staircase's base violation; an owner's integer staircase flips them)."""
+        (or level) for every count k <= T <= 8, the cells where the base's floating-point staircase departed from
+        N included (``_FLOAT_DEPARTED``: strict xfails until the CL1 fix round's integer staircases)."""
         got, want = _identity_layer(semantics, T)
         assert got[k] == want[k], (semantics, T, k, got, want)
+
+    def test_the_float_staircase_departed_on_a_cell_the_executor_now_reports(self):
+        assert (SYNCHRONIZED_TTFS, 7, 6) in _FLOAT_DEPARTED
 
 
 class TestTheNetworkRelation:
@@ -219,13 +221,13 @@ class TestTheNetworkRelation:
         assert summed["h"].tolist() == [[4, 2]]  # min(3 + 3, 4), 1 + 1
 
     @pytest.mark.parametrize("semantics, mismatches", [
-        (STREAMED_LIF, 0), (WINDOWED_LIF, 0), (SYNCHRONIZED_LIF, 2), (SYNCHRONIZED_TTFS, 1)])
-    def test_an_exact_tie_witnesses_the_synchronized_staircase_defect(self, semantics, mismatches):
+        (STREAMED_LIF, 0), (WINDOWED_LIF, 0), (SYNCHRONIZED_LIF, 0), (SYNCHRONIZED_TTFS, 0)])
+    def test_an_exact_tie_keeps_the_synchronized_staircases_on_n(self, semantics, mismatches):
         """One input count 3 at T = 5 into two neurons of theta 3 with weights 1 and 2: Q = 3 and 6, and N
-        gives 1 and 2. The synchronized LIF count staircase floor(T ((Q / T) / theta)) loses both exact ties
-        (floor(0.999...)), the TTFS ladder ceil(S (1 - V / theta)) loses Q = 6 (level 1 for 2); streamed and
-        windowed LIF count spikes and keep both (wire_semantics.py, a base defect stated as Proposition 2's
-        boundary). Re-pin when an owner computes the staircase on the integer charge."""
+        gives 1 and 2. On the base the synchronized LIF count staircase floor(T ((Q / T) / theta)) lost both exact
+        ties (floor(0.999...)) and the TTFS ladder ceil(S (1 - V / theta)) lost Q = 6 (level 1 for 2), 2 and 1
+        mismatches; re-pinned in the CL1 fix round (sign-off P1 (a)), where both staircases decide on the integer
+        charge (``lif_window_count``, ``ttfs_quantized_staircase_lattice_np``) and every semantics keeps both."""
         instance = _eye(semantics, 5, (3,), theta=3, weights=((1,), (2,)))
         claim, windows, found, _first = network_relation(instance, reference(instance, ON))
         assert (windows, found) == (2, mismatches)
@@ -272,3 +274,99 @@ class TestStrata:
         assert len(windows) > 10
         assert all(instance_for(seed, ARMS[a]).timesteps <= 8 for seed in range(40)
                    for a in ("on", "on_scheduled", "on_values_classes", "R6"))
+
+
+def _value_net(layers, outputs, inputs) -> Instance:
+    return Instance(seed=0, semantics=VALUE, timesteps=1, hardware_bias=False,
+                    network=Network(4, tuple(layers), tuple(outputs)), inputs=tuple(inputs))
+
+
+def _deep_value_chain() -> Instance:
+    """input(4) -> a(4) -> b(4) -> c(2), every weight 8 at theta 1: a reaches 256, b 8,192, c 262,144 > 32,767."""
+    def dense(name, source, width, fan_in):
+        return Layer(name, NEURAL, (source,), width, weights=tuple((8,) * fan_in for _ in range(width)),
+                     bias=(0,) * width, theta=1)
+
+    return _value_net((dense("a", "input", 4, 4), dense("b", "a", 4, 4), dense("c", "b", 2, 4)), ("a", "b", "c"),
+                      ((8, 8, 8, 8), (1, 0, 0, 0), (0, 2, 0, 1), (3, 0, 1, 0)))
+
+
+class TestTheIntegerValueRegime:
+    """CL1 (plan section 10.4 acceptance 7): the value semantics runs G2's integer readout law (E283) on every core,
+    its node outputs compared at atol 0, and every value run against the int64 golden (``int64_golden``)."""
+
+    def test_every_value_core_carries_the_law_and_every_host_fed_core_its_grid(self):
+        ref = reference(_chain(VALUE, host=True), ON)
+        cores = list(ref.ir.get_neural_cores())
+        by_id = {int(n.id): n for n in ref.ir.nodes}
+        assert cores and all(getattr(c, "readout_law", None) is not None for c in cores)
+        for core in cores:
+            fed = any(not isinstance(by_id.get(int(s.node_id)), type(core)) for s in core.input_sources.flatten()
+                      if not (s.is_off() or s.is_always_on()))
+            grid = getattr(core, "boundary_grid", None)
+            assert (grid is not None and grid.armed and grid.step == 1.0) == fed, core.name
+
+    def test_the_value_runs_equal_the_int64_golden_and_n_at_atol_0(self):
+        instance = _deep_value_chain()
+        ref = reference(instance, ON)
+        x = ex.input_tensor(instance, torch.float64).numpy()
+        assert program.golden_relation(ref.mapping, x, ref.nodes) == (4 * 10, 0)
+        assert network_relation(instance, ref)[1:3] == (4 * 10, 0)
+        ir, mapping = deployment(instance, _constraints(neurons=2, allow_neuron_splitting=True), 3, ON)
+        nodes = ex.run_nodes(mapping, instance)
+        assert program.golden_relation(mapping, x, nodes) == (4 * 10, 0)
+        assert compare(ref.ir, ref.nodes, ir, nodes)[1] == 0
+
+    def test_the_law_saturates_where_the_affine_core_would_not(self):
+        """The grid binds: c's charge 262,144 clamps at 32,767 on the program and in N; the affine N departs."""
+        instance = _deep_value_chain()
+        levels = program.law_levels(program.VALUE_LAW)
+        assert ex.RUNS[VALUE].law is program.VALUE_LAW
+        ref = reference(instance, ON)
+        got = ex.per_neuron(ref.ir, ref.nodes)[program.mapper_graph(instance).perceptron_of["c"]]
+        assert got[0].tolist() == [float(levels)] * 2
+        assert network.evaluate(instance, levels=levels)["c"][0].tolist() == [levels] * 2
+        assert network.evaluate(instance)["c"][0].tolist() == [262144] * 2
+
+    def test_a_core_reading_host_and_core_values_is_refused_by_name(self):
+        """One DAC grid per core (G2's law grids): a core over concat(host ReLU, core) is refused, never run."""
+        from mimarsinan.common.refusal import ToolchainRefusal
+        from mimarsinan.mapping.export.law_grids import ReadoutLawGridError
+
+        a = Layer("a", NEURAL, ("input",), 2, weights=((1, 0, 0, 0), (0, 1, 0, 0)), bias=(0, 0), theta=1)
+        h = Layer("h", HOST, ("a",), 2, op="relu")
+        b = Layer("b", NEURAL, ("h", "a"), 1, weights=((1, 1, 1, 1),), bias=(0,), theta=1)
+        with pytest.raises(ReadoutLawGridError) as caught:
+            reference(_value_net((a, h, b), ("a", "b"), ((1, 2, 3, 4),)), ON)
+        assert isinstance(caught.value, ToolchainRefusal)
+
+    def test_the_golden_edge_finds_an_executor_off_its_law(self, monkeypatch):
+        """An executor whose law output is one code off on every core: identity and deployment still agree (both
+        run it), and the int64 golden, which evaluates the stamped law itself, finds every output."""
+        from mimarsinan.chip_simulation.value_run import value_execution
+
+        instance = _deep_value_chain()
+        law = value_execution.run_core_law
+        monkeypatch.setattr(value_execution, "run_core_law", lambda signal, prepared: law(signal, prepared) + 1.0)
+        ref = reference(instance, ON)
+        x = ex.input_tensor(instance, torch.float64).numpy()
+        windows, mismatches = program.golden_relation(ref.mapping, x, ref.nodes)
+        assert windows == 4 * 10 and mismatches == windows
+        ir, mapping = deployment(instance, _constraints(neurons=2, allow_neuron_splitting=True), 3, ON)
+        assert compare(ref.ir, ref.nodes, ir, ex.run_nodes(mapping, instance))[1] == 0
+
+    def test_a_golden_mismatch_is_a_counterexample(self, monkeypatch):
+        """[MN8] A defect the identity program and the deployment share (an executor one code off its law) makes no
+        mismatch between them, and the int64 golden finds it: the verdict counts it as a counterexample of the
+        line it runs on, attributed to the shared departure (never left to a line of its own)."""
+        from mimarsinan.certification.randomized.attribution import attribute
+        from mimarsinan.chip_simulation.value_run import value_execution
+
+        clean = run_instance(7, "H8", control=True)
+        assert clean.semantics == VALUE and clean.outcome == EQUAL and clean.golden_windows > 0
+        law = value_execution.run_core_law
+        monkeypatch.setattr(value_execution, "run_core_law", lambda signal, prepared: law(signal, prepared) + 1.0)
+        shared = run_instance(7, "H8", control=True)
+        assert shared.mismatches == 0 and shared.golden_mismatches > 0
+        assert shared.outcome == COUNTEREXAMPLE, shared.to_dict()
+        assert attribute(shared) == ("golden_departure",)

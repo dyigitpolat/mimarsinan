@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
@@ -22,4 +22,7 @@ class MappingVerificationResult:
     layout_preview: Optional[Dict[str, Any]] = None
 
     error: Optional[str] = None
+
+    #: [U1 W9] Per softcore, the walk's builder segment (``residency_rules.spec_runs``); every plane plans with it.
+    runs: Optional[Tuple[int, ...]] = None
 

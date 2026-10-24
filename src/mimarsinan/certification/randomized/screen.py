@@ -19,7 +19,7 @@ from mimarsinan.common.refusal import ToolchainRefusal
 ON_ARMS = (ON, ON_SCHEDULED, ON_VALUES)
 #: The hypothesis-on strata that run the toolchain as shipped (no harness setting): the zero line's pool.
 SHIPPED_ON_ARMS = tuple(a for a in ON_ARMS if not ARMS[a].harness_setting)
-STRUCTURE = ("multipass", "carried", "coresident", "coalesced", "split")
+STRUCTURE = ("multipass", "carried", "coresident", "coalesced", "split", "sign_split")
 #: Admitted outcomes: the deployment was built and run, so it either matched or it is a counterexample.
 ADMITTED = (EQUAL, COUNTEREXAMPLE, "vacuous")
 #: Function-bearing axes the code level holds fixed (every instance; the box prints them as its limit).
@@ -30,7 +30,8 @@ FIXED_AXES = {
     "encoder": "Uniform comb, no phase dither (deterministic); the R4 arm alone declares the phase-dithered "
                "Uniform encode, on both programs",
     "granularity": "per-cycle cores (per-event cores are the FPGA branch's)",
-    "value_law": "the base tree's affine value core at theta 1",
+    "value_law": "G2's integer readout law (E283, from CL1): a 16-bit activation grid at step 1 (codes +-32,767), the "
+                 "identity ADC (32 bits), a 16-bit multiplier; every value run also against the int64 golden at atol 0",
 }
 
 
@@ -114,6 +115,16 @@ def network_relation(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
             "claimed_and_differing": sorted(s for s, c in out.items() if c["claim"] == CLAIMED and c["differ"])}
 
 
+def golden_relation(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
+    """The law-carrying runs against G2's int64 golden at atol 0 (identity program and deployment of every admitted
+    value instance): instances compared, output windows, mismatching windows and instances with any."""
+    compared = [r for r in rows if r["outcome"] in ADMITTED and r.get("golden_windows")]
+    return {"instances": len(compared), "windows": sum(int(r["golden_windows"]) for r in compared),
+            "differing_windows": sum(int(r.get("golden_mismatches", 0)) for r in compared),
+            "differ": sum(1 for r in compared if r.get("golden_mismatches")),
+            "upper_bound_95": one_sided_upper(sum(1 for r in compared if r.get("golden_mismatches")), len(compared))}
+
+
 def weights_and_dependence(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     """Per semantics: per neural-layer index, all-zero layers and the largest weight magnitude drawn; and the
     input dependence of the identity programs (the fraction of neurons whose output varies over the batch)."""
@@ -145,8 +156,8 @@ def coverage(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
         "drawn_paths": {p: drawn.get(p, 0) for p in parts["program_changing"]},
         "derived_geometry": {p: "derived from cores.max_axons / cores.max_neurons, drawn through them"
                              for p in parts["derived_geometry"]},
-        "deferred_to_cl1": {p: "consumer is G5's residency plan; drawn from CL1 on the integrated tree"
-                            for p in parts["deferred_to_cl1"]},
+        "drawn_by_fields": {p: f"drawn through its fields; present in {_present(admitted, p)} admitted declarations "
+                               f"(where the registry's relevance holds)" for p in parts["drawn_by_fields"]},
         "pricing_only": {p: PRESERVED_BY_CONSTRUCTION for p in parts["pricing_only"]},
         "motifs": {m: motifs.get(m, 0) for m in MOTIFS},
         "semantics": dict(Counter(r["semantics"] for r in admitted)),
@@ -156,6 +167,10 @@ def coverage(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
         "weights_and_input_dependence": weights_and_dependence(admitted),
         "fixed_function_bearing_axes": dict(FIXED_AXES),
     }
+
+
+def _present(rows: Sequence[Mapping[str, Any]], key: str) -> int:
+    return sum(1 for r in rows if key in (r.get("declaration") or {}))
 
 
 def _declared(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -176,6 +191,7 @@ def _declared(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
         "flags_true": {k: sum(1 for d in decls if d.get(k)) for k in
                        ("allow_coalescing", "allow_neuron_splitting", "allow_scheduling")},
         "core_value_granularity": dict(Counter(json_key(d.get("core_value_granularity")) for d in decls)),
+        "residency_plan": dict(Counter(json_key(d.get("residency_plan")) for d in decls)),
     }
 
 
@@ -242,6 +258,9 @@ def report(rows: Sequence[Mapping[str, Any]], *, table: Mapping[str, Any],
         # Over every hypothesis-on seed whose identity program ran (refused deployments included): the
         # relation is the identity program's, and the three strata draw disjoint networks.
         "network_relation": network_relation(on_rows),
+        # The value programs' integer readout law against G2's int64 golden: the on strata, and every arm's rows.
+        "golden_relation": golden_relation(on_rows),
+        "golden_relation_all_arms": golden_relation(rows),
         # Beyond the generator's declared window range: its own line, never pooled into the declared range's.
         "hypothesis_on_beyond_declared_window": arm_summary(beyond) if beyond else None,
         "hypothesis_on_beyond_declared_window_scope": (

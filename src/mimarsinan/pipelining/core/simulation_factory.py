@@ -21,7 +21,9 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
     build_identity_hybrid_mapping,
 )
+from mimarsinan.mapping.export.sign_rows import assert_sign_rows
 from mimarsinan.mapping.ir import IRGraph
+from mimarsinan.mapping.platform.platform_constraints import PER_AXON, pool_sign_granularity
 from mimarsinan.mapping.platform.mapping_structure import (
     ChipCapabilities,
     MappingStrategy,
@@ -71,6 +73,9 @@ def build_hybrid_mapping_for_pipeline(
         retimed_level_stages=_per_hop_retiming_enabled(pipeline_config),
         max_schedule_passes=int(platform_constraints.get("max_schedule_passes", 8) or 8),
     )
+    if pool_sign_granularity(platform_constraints["cores"]) == PER_AXON:
+        bits = platform_constraints.get("weight_bits", (pipeline_config or {}).get("weight_bits"))
+        assert_sign_rows(hybrid_mapping, weight_bits=None if bits is None else int(bits))
     propagate_negative_shifts_to_hybrid(ir_graph, hybrid_mapping)
     # Provenance stamp (dynamic attribute) for staleness detection when the ir_graph is regenerated.
     setattr(hybrid_mapping, "source_ir_build_token", getattr(ir_graph, "build_token", None))

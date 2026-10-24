@@ -11,11 +11,12 @@ import pytest
 
 from mimarsinan.certification.randomized.arms import ARMS, HYPOTHESIS_ARMS
 from mimarsinan.certification.randomized.cost_draws import cost_only_set
+from mimarsinan.certification.randomized.screen import FIXED_AXES
 
 ROOT = Path(__file__).resolve().parents[4]
 TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: Changing the fixture changes the box: re-pin deliberately (and regenerate RA/10_wave1/thm/).
-TABLE_SHA256 = "e627d9aaaf4ec4a1608d4086e0dd471781b1d42f092c23b9ebdaea429c49ced9"
+TABLE_SHA256 = "20ab2aeb960af5c7a543cf9a05ebf9a276a2602479526380a58067235bbc6825"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -31,7 +32,7 @@ def test_the_fixture_is_the_pinned_one():
 
 def test_the_class_list_is_the_registry_cost_only_set(table):
     assert set(table["cost_only"]) == cost_only_set()
-    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 26
+    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 27
 
 
 #: The proof check's split (PC1): conditions on the two deployments, and conditions on every run (the
@@ -80,13 +81,14 @@ def _row(table, hid):
 def test_theorem_1_takes_only_h8s_accumulation_clause(table):
     """Review round 2: a staircase is a deterministic function of the same integer charge in every deployment,
     so decision invariance needs exact accumulation only; the staircase and saturation clauses bind Proposition 2
-    alone (the base's synchronized executors violate the staircase clause on every run)."""
+    alone (the base's synchronized executors violated the staircase clause; met on the CL1 fix round's tree)."""
     h8, stair = _row(table, "H8"), _row(table, "H8-staircase")
     assert (h8["kind"], h8["relation"]) == ("executor", "both")
     assert "staircase" not in h8["statement"] and "saturat" not in h8["statement"]
-    # Re-check PC27: under synchronized TTFS the level sum is not integer arithmetic; the lattice snap recovers it.
-    assert "1/(2S) lattice" in h8["statement"]
-    assert any(s["site"].endswith("SegmentTtfsArrays.integer_lattice") for s in h8["sites"])
+    # Re-check PC27: the TTFS level sum is not integer arithmetic; the per-neuron 1/(2S) lattice recovers it.
+    assert "1/(2S) lattice" in h8["statement"] and "per neuron" in h8["statement"]
+    assert any(s["site"].endswith("SegmentTtfsArrays.integral_neurons") for s in h8["sites"])
+    assert any(s["site"].endswith("membrane_lattice:lattice_membrane") for s in h8["sites"])
     assert (stair["kind"], stair["relation"]) == ("network", "network")
     assert "integer charge" in stair["statement"] and "saturat" in stair["statement"]
     assert all("staircase" not in w for w in h8["witness"])
@@ -96,18 +98,20 @@ def test_theorem_1_takes_only_h8s_accumulation_clause(table):
     assert not any("H8-staircase" in labels for labels in table["cost_only_hypotheses"].values())
 
 
-def test_h8_states_the_synchronized_count_rebuild_as_a_base_violation(table):
-    """Targeted pass: the synchronized LIF executor rebuilds each core's count as stair*T/theta in float64
+def test_h8_states_the_synchronized_count_rebuild_and_its_fix(table):
+    """Targeted pass: the base's synchronized LIF executor rebuilt each core's count as stair*T/theta in float64
     (sync_counts.py:56-59), exact on the screen's declared range (T in 1-8, theta in 1-16) and off the integer
-    lattice beyond it, so the base violates H8 there and a pass cut changes outputs where R6 holds. H8 states it
-    as a boundary with its witness, a defect row requests its owner, and every key that moves a pass cut rests
-    on H8."""
+    lattice beyond it, so a pass cut changed outputs where R6 holds. The CL1 fix round (sign-off P1 (a) item 1)
+    reads the count off the window charge; H8 states the base class and the fix with their witnesses, the defect
+    row names its owner and status, and every key that moves a pass cut rests on H8."""
     h8 = _row(table, "H8")
     assert "sync_counts.py:56-59" in h8["gap"] and "count_rebuild" in h8["gap"] and "T in 1-8" in h8["gap"]
+    assert "lif_window_count" in h8["gap"]
     assert any("TestTheCountRebuild" in w for w in h8["witness"])
     defect = next(d for d in table["defects"] if d["id"] == "count_rebuild")
     assert defect["hypothesis"] == "H8" and "sync_counts.py:56-59" in defect["statement"]
-    assert "conductor" in defect["owner"] and defect["probe_arm"] == "on_long_window"
+    assert "P1 (a)" in defect["owner"] and defect["probe_arm"] == "on_long_window"
+    assert defect["status"].startswith("fixed on the integrated tree")
     # Proposition 2's third base cause on synchronized LIF: a rebuilt count off N with no staircase tie involved.
     assert "count_rebuild" in _row(table, "H8-staircase")["gap"]
     for key, labels in table["cost_only_hypotheses"].items():
@@ -141,6 +145,45 @@ def test_h1_latency_is_the_identity_program_latency_with_no_cycle_check_site(tab
     assert "identity-program" in h["statement"]
     assert not any("_compute_all_delays" in s["site"] for s in h["sites"])
     assert any(s["tree"] == "CL1" for s in h["sites"]) and "executed-latency" in h["gap"]
+
+
+def _base_sites(table, hid):
+    return {s["site"] for s in _row(table, hid)["sites"] if s["tree"] == "base"}
+
+
+def test_cl1_states_the_integrated_trees_sites_and_retires_what_it_asserts(table):
+    """CL1: H1-latency is asserted at run time by the pass projection's refusal (no code arm, the reason stated);
+    H5-skew and R6 are met by G5's projection and the dependency-ordered walks, which their arms switch off; the
+    value path's H8 bound is the law solver's refusal; the code level's value law is G2's readout law."""
+    h1 = _row(table, "H1-latency")
+    assert "mimarsinan.mapping.packing.pass_timing:_core_latencies" in _base_sites(table, "H1-latency")
+    assert h1["arms"]["code"] is None and "asserted at run time" in h1["code_level"]
+    assert not ARMS["H1-latency"].exercisable
+    assert "mimarsinan.mapping.packing.pass_timing:project_passes" in _base_sites(table, "H5-skew")
+    assert {"mimarsinan.chip_simulation.value_run.value_execution:dependency_order",
+            "mimarsinan.chip_simulation.ttfs.ttfs_segment:dependency_order"} <= _base_sites(table, "R6")
+    for hid in ("H5-skew", "R6"):
+        assert ARMS[_row(table, hid)["arms"]["code"]].changes_a_field, hid
+        assert _row(table, hid)["gap"].startswith("met on the integrated tree (CL1)"), hid
+    assert "mimarsinan.mapping.export.law_solver:solve_core_law" in _base_sites(table, "H8")
+    assert table["statement"]["fixed_at_code_level"]["value_law"] == FIXED_AXES["value_law"]
+    assert "integer readout law" in table["statement"]["relations"]["network"]
+    fixed = {d["id"] for d in table["defects"] if d.get("status", "").startswith("fixed on the integrated tree")}
+    assert fixed == {"latency_order_walk", "mixed_input_pass", "synchronized_cached_trains", "retiming_dropped",
+                     "synchronized_staircase", "count_rebuild"}
+
+
+def test_the_cl1_fix_round_meets_h0_and_h8_staircase_with_their_arms(table):
+    """Sign-off P1 (a) items 1 to 3 at CL1: H0 is met by leveling a coalescing group as one unit, and its arm now
+    switches that rule off (a paired control, no base violation); H8-staircase is met by the staircases on the
+    integer charge, measured on the network relation."""
+    h0 = _row(table, "H0")
+    assert h0["gap"].startswith("met on the integrated tree (CL1 fix round") and h0["arms"]["code"] == "H0"
+    assert ARMS["H0"].changes_a_field and not ARMS["H0"].mechanism
+    assert any(s["tree"] == "CL1" and "_unit_depths" in s["site"] for s in h0["sites"])
+    stair = _row(table, "H8-staircase")
+    assert "Met on the integrated tree (CL1 fix round" in stair["gap"]
+    assert "lif_window_count" in stair["gap"] and "ttfs_quantized_staircase_lattice_np" in stair["gap"]
 
 
 def test_the_pass_projection_rules_take_their_sites_from_g5_at_cl1(table):
@@ -192,6 +235,15 @@ def test_the_model_level_labels_are_the_tables(table):
     for h in hyps:
         if not h["arms"]["model"]:
             assert h.get("model_level"), h["id"]
+
+
+def test_the_sign_granularity_rests_on_the_packing_hypotheses_and_exact_accumulation(table):
+    """CL-SG (S0 amendment, owner answer L1 = a): the per-axon split changes a soft core's rows as a narrower core
+    does, so the path rests on cores.max_axons' hypotheses; its own exactness is H8's exact accumulation (W = W+ + W-
+    on the integer grid) per cycle and H7's per-event order (the pair lemma) on per-event cores."""
+    labels = table["cost_only_hypotheses"]["cores.weight_sign_granularity"]
+    assert labels == table["cost_only_hypotheses"]["cores.max_axons"]
+    assert {"H8", "H7"} <= set(labels)
 
 
 def test_every_cost_only_path_names_known_hypotheses(table):

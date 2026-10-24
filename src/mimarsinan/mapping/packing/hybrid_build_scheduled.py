@@ -102,7 +102,7 @@ def _flush_scheduled_subsegments(
     planes plan the same passes given the walk's runs (``spec_runs``).
     """
     from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
-    from mimarsinan.mapping.packing.hybrid_build_pool import _segment_specs
+    from mimarsinan.mapping.packing.hybrid_build_pool import segment_specs_for
     from mimarsinan.mapping.packing.schedule_bank_clustered import (
         dedup_resident_stage_matrices,
         mark_bank_residency,
@@ -121,7 +121,7 @@ def _flush_scheduled_subsegments(
     if planned_chunks is not None:
         chunks = [list(chunk) for chunk in planned_chunks]
     else:
-        specs, spec_to_core, coalescing_group_ids = _segment_specs(
+        specs, spec_to_core, coalescing_group_ids = segment_specs_for(cores_config)(
             cores, ir_graph=ir_graph, hardware_bias=hardware_bias,
         )
         hw_types = [
@@ -221,7 +221,7 @@ def _build_scheduled(
     single-pass segments included, is projected onto the fused timing
     (``project_passes``); under per-hop re-timing passes run as level units.
     """
-    from mimarsinan.mapping.packing.hybrid_build_pool import _segment_specs
+    from mimarsinan.mapping.packing.hybrid_build_pool import segment_specs_for
 
     segment_index = 0
     segments = partition_ir_graph(ir_graph, per_hop=per_hop_neural_segments)
@@ -234,7 +234,7 @@ def _build_scheduled(
         segments = depth_partition(ir_graph)
         builder = compose_builder_program(
             [s for s in segments if isinstance(s, NeuralSegment)], ir_graph=ir_graph,
-            cores_config=cores_config, residency_plan=residency_plan, segment_specs=_segment_specs,
+            cores_config=cores_config, residency_plan=residency_plan, segment_specs=segment_specs_for(cores_config),
             allow_coalescing=allow_coalescing, allow_splitting=allow_neuron_splitting,
             max_schedule_passes=max_schedule_passes,
         )

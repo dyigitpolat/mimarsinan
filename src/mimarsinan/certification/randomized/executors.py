@@ -19,6 +19,7 @@ from mimarsinan.certification.randomized.instance import (
     WINDOWED_LIF,
     Instance,
 )
+from mimarsinan.certification.randomized.program import VALUE_LAW
 from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.recording.spike_modes import comb_spike_count
@@ -41,6 +42,9 @@ class SemanticsRun:
     name: str
     config: Mapping[str, Any]
     flow: Mapping[str, Any] = field(default_factory=dict)
+    #: The integer readout law the semantics' programs carry (``activation_bits``, ``readout_law``): a
+    #: function-bearing platform declaration held fixed (``screen.FIXED_AXES``), never drawn.
+    law: Optional[Mapping[str, Any]] = None
 
     @property
     def transfer(self) -> str:
@@ -81,7 +85,7 @@ RUNS: Dict[str, SemanticsRun] = {
     ANALYTICAL_TTFS: SemanticsRun(ANALYTICAL_TTFS, dict(spiking_family="ttfs", spiking_variant="analytical",
                                                         spiking_mode="ttfs"),
                                   dict(spiking_mode="ttfs", **_TTFS_FLOW)),
-    VALUE: SemanticsRun(VALUE, dict(core_semantics="mvm")),
+    VALUE: SemanticsRun(VALUE, dict(core_semantics="mvm"), law=VALUE_LAW),
 }
 
 

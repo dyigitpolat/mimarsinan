@@ -75,9 +75,12 @@ SegmentCoreRecord:                   # one per hard core of a neural segment
     axons: int; neurons: int         # physical geometry
     axons_used: int; neurons_used: int
     cells_used: int                  # programmed weight cells (CoreOccupancy semantics)
-    params_bytes: int                # ceil(cells_used × weight_bits / 8) — exact, derived
+    params_bytes: int                # ceil(cells_used × weight_bits / 8) — exact, derived; a per-axon
+                                     # core adds its sign register, ceil(sign_register_rows / 8)
     connectivity_entries: int        # compressed axon-source span count
     static_delay_levels: Optional[int]
+    sign_register_rows: Optional[int]  # declared-only: the used rows a per-axon core's per-row sign
+                                     # register signs (unset, and absent from the JSON, per-synapse)
 
 SegmentRecord:                       # one per (neural segment × pass)
     stage_index: int; segment_index: int; pass_index: int

@@ -166,6 +166,7 @@ def verify_layout_for_model_repr(
     max_neurons: int,
     allow_coalescing: bool = False,
     hardware_bias: bool = False,
+    rows_per_input: int = 1,
 ) -> MappingVerificationResult:
     return verify_soft_core_mapping(
         model_repr,
@@ -173,6 +174,7 @@ def verify_layout_for_model_repr(
         max_neurons=max_neurons,
         allow_coalescing=allow_coalescing,
         hardware_bias=hardware_bias,
+        rows_per_input=rows_per_input,
     )
 
 
@@ -198,6 +200,7 @@ def verify_planned_mapping_performance(
         max_neurons=pmap.effective_max_neurons,
         allow_coalescing=pmap.allow_coalescing,
         hardware_bias=pmap.hardware_bias,
+        rows_per_input=pmap.rows_per_input,
     )
     if not soft.feasible:
         return {"feasible": False}

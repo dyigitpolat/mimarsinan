@@ -106,6 +106,7 @@ class LayoutMappingService:
             max_neurons=request.max_neurons,
             allow_coalescing=request.allow_coalescing,
             hardware_bias=request.hardware_bias,
+            rows_per_input=request.rows_per_input,
         )
 
 

@@ -9,6 +9,7 @@ import torch
 
 from mimarsinan.mapping.packing.softcore.matrix_placement import (
     materialize_compacted,
+    materialize_signed,
 )
 
 if TYPE_CHECKING:
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
 class SoftCore:
     #: Declared-only: set only when the platform declares a readout law (pickles stay unchanged otherwise).
     readout_law: "CoreLaw"
+    #: Declared-only: one sign per physical row of a per-axon core's descriptor (``sign_split``), else absent.
+    compact_row_signs: np.ndarray
 
     def __init__(
         self,
@@ -109,6 +112,11 @@ class SoftCore:
         if self.core_matrix is not None:
             return self.core_matrix
         if self.compact_keep_rows is not None:
+            signs = getattr(self, "compact_row_signs", None)
+            if signs is not None:
+                return materialize_signed(
+                    self.compact_source_matrix, self.compact_keep_rows, self.compact_keep_cols, signs,
+                )
             return materialize_compacted(
                 self.compact_source_matrix,
                 self.compact_keep_rows,

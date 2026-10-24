@@ -16,8 +16,6 @@
         "count": 100
       }
     ],
-    "max_axons": 2049,
-    "max_neurons": 2049,
     "target_tq": 64,
     "simulation_steps": 64,
     "weight_bits": 8

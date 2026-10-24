@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
+from mimarsinan.mapping.packing.softcore.sign_split import is_sign_split, logical_view, split_soft_core
 from mimarsinan.mapping.packing.softcore.soft_core import SoftCore
 
 
@@ -18,14 +19,16 @@ def build_real_fragment(
     fragment_index,
     group_id,
     original_neurons,
+    axon_sources=None,
 ):
-    """The fragment of ``parent`` computing its columns ``window = (lo, hi)``."""
+    """The fragment of ``parent`` computing its columns ``window = (lo, hi)`` over ``axon_sources`` (the
+    parent's, by default)."""
     lo, hi = window
     frag = SoftCore(
         core_matrix=matrix_slice,
         axon_sources=[
             SpikeSource(s.core_, s.neuron_, s.is_input_, s.is_off_, s.is_always_on_)
-            for s in parent.axon_sources
+            for s in (parent.axon_sources if axon_sources is None else axon_sources)
         ],
         id=parent.id,
         activation_scale=parent.activation_scale,
@@ -60,7 +63,8 @@ def build_real_fragment(
 
 
 def make_real_fragments(*, softcore, first_neurons, remaining_neurons, group_id):
-    """The two fragments of a neuron split at ``first_neurons``."""
+    """The two fragments of a neuron split at ``first_neurons``. A per-axon parent's fragments are cut from its
+    logical rows and each re-derives its own split, so a row mixed only outside a fragment takes one row there."""
     total = first_neurons + remaining_neurons
     hb = getattr(softcore, "hardware_bias", None)
     bns = None
@@ -70,9 +74,10 @@ def make_real_fragments(*, softcore, first_neurons, remaining_neurons, group_id)
             (int(bns_parent[0]), int(bns_parent[0] + first_neurons)),
             (int(bns_parent[0] + first_neurons), int(bns_parent[1])),
         )
-    parent_dense = softcore.get_core_matrix()
+    signed = is_sign_split(softcore)
+    parent_dense, sources = logical_view(softcore) if signed else (softcore.get_core_matrix(), None)
     windows = ((0, first_neurons), (first_neurons, total))
-    return tuple(
+    fragments = tuple(
         build_real_fragment(
             softcore,
             window=(lo, hi),
@@ -82,6 +87,11 @@ def make_real_fragments(*, softcore, first_neurons, remaining_neurons, group_id)
             fragment_index=index,
             group_id=group_id,
             original_neurons=total,
+            axon_sources=sources,
         )
         for index, (lo, hi) in enumerate(windows)
     )
+    if signed:
+        for fragment in fragments:
+            split_soft_core(fragment)
+    return fragments

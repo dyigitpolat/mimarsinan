@@ -5,14 +5,15 @@
     "name": "odin_stock_core",
     "cores": [
       {
-        "max_axons": 128,
+        "max_axons": 256,
         "max_neurons": 256,
         "count": 1,
-        "has_bias": false
+        "has_bias": false,
+        "weight_sign_granularity": "per_axon"
       }
     ],
     "weight_bits": 4,
-    "provenance": "frenkel2019odin: \"ODIN is based on a single 256-neuron 64k-synapse crossbar neurosynaptic core ... each synapse occupies 4 bits\" (Trans. BioCAS 13(1), pp.145-158; upstream doc/README.md Sec.1 and Sec.3.2), transcribed from the RTL at ChFrenkel/ODIN @ 1781931. The DECLARED max_axons is the LOGICAL twin of the quoted 256 physical rows: weight_sign_granularity='per_axon' spends an excitatory/inhibitory row pair per logical slot (SPI_SYN_SIGN, src/synaptic_core.v:128), so 128 logical x 2 = the 256 quoted rows and 128 x 256 x 2 = the quoted 64k synapses. Transcribed from the odin_stock_core declaration of the odin-fpga-infra branch (f08c8efa, mapping/platform/imc_platforms.py).",
+    "provenance": "frenkel2019odin: \"ODIN is based on a single 256-neuron 64k-synapse crossbar neurosynaptic core ... each synapse occupies 4 bits\" (Trans. BioCAS 13(1), pp.145-158; upstream doc/README.md Sec.1 and Sec.3.2), transcribed from the RTL at ChFrenkel/ODIN @ 1781931. The declared core is the physical one, 256 rows x 256 neurons, with one static sign bit per presynaptic row for all 256 neurons of the core (SPI_SYN_SIGN, src/synaptic_core.v:128): weight_sign_granularity 'per_axon'. A logical input whose weights onto a core mix signs takes two rows (W+ then W-), so dense layers use the rows in sign pairs (127 logical inputs and the bias row per core). Permissions transcribed from the odin_stock_core declaration of the odin-fpga-infra branch (f08c8efa, mapping/platform/imc_platforms.py).",
     "claim_class": "quarantined"
   },
   "keys": {
@@ -27,7 +28,7 @@
       "per-cycle soma law",
       "unbounded membrane for the 8-bit saturating one"
     ],
-    "note": "ODIN integrates and fires per event (the serial fold of the odin-fpga-infra branch) into a saturating 8-bit membrane (membrane_bits 8 in the same declaration); this tree has neither a per-event soma law nor a membrane width, so a deployment on the bundle runs the declared per-cycle spiking law, with an unbounded membrane, on ODIN's geometry, weights, permissions and physics. ODIN's per-axon weight sign (weight_sign_granularity 'per_axon') is carried by the geometry, not named as a departure: each of the 128 declared logical axons is an excitatory and inhibitory row pair, so a per-synapse sign maps onto the pair."
+    "note": "ODIN integrates and fires per event (the serial fold of the odin-fpga-infra branch) into a saturating 8-bit membrane (membrane_bits 8 in the same declaration); this tree has neither a per-event soma law nor a membrane width, so a deployment on the bundle runs the declared per-cycle spiking law, with an unbounded membrane, on ODIN's geometry, weights, permissions and physics. ODIN's per-axon weight sign is declared (weight_sign_granularity 'per_axon') and is exact, not a departure: the mapper splits each mixed-sign row into an excitatory and an inhibitory row (W = W+ + W- on the integer grid)."
   },
   "notes": "Population 1 is the degenerate single-core case the curated table quarantines, so the claim class is quarantined; a multi-core study declares the core count through target_overrides with a note. allow_coalescing and allow_neuron_splitting are false as the odin_stock_core declaration states (odin-fpga-infra f08c8efa, mapping/platform/imc_platforms.py capabilities: 'No inter-core partial-sum transfer and no re-thresholding of a partial sum'); a deployment that needs either declares it through target_overrides with a note, and its faithfulness names it. The declaration's allow_scheduling false is not bundled: the config registry defines allow_scheduling as a deployment choice, and its default is false."
 }

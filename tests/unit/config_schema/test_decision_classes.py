@@ -103,10 +103,14 @@ class TestCoverage:
 #: polish round moved ``sanafe_arch_preset`` and ``sanafe_custom_arch_path`` out: both choose the
 #: architecture the SANA-FE parity refusal simulates (plan section 20 item 4, TestClassEvidence). The
 #: owner's S0 review moved ``decompose_leaf_modules`` out (strongest consumer: on spiking cores the moved
-#: projection rides the activation grid), leaving the 26 rows the owner confirmed.
+#: projection rides the activation grid), leaving the 26 rows the owner confirmed. The S0 amendment for
+#: CL-SG (owner answer L1 = a, sign-off sheet section 5) adds ``cores.weight_sign_granularity``: the per-axon
+#: sign split is exact per cycle (W = W+ + W- on the integer grid) and per event (the pair lemma), and a
+#: float weight on a per-axon target is refused by name, so the set has 27 rows.
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",
+    "cores.weight_sign_granularity",
     "cores.write_granularity", "cores.write_units_in_parallel", "cores_per_tile",
     "inference_batch_K", "max_axons", "max_neurons",
     "max_schedule_passes", "platform_physics_overrides", "platform_physics_profile",
@@ -172,7 +176,7 @@ class TestPlanClasses:
 
     def test_the_cost_only_set_is_the_owner_reviewed_set(self):
         cost_only = {path for path, cls in _every_path_class() if cls == COST_ONLY}
-        assert len(FROZEN_COST_ONLY) == 26
+        assert len(FROZEN_COST_ONLY) == 27
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 
@@ -272,11 +276,22 @@ class TestPlanClasses:
 
     def test_core_fields(self):
         classes = {path: s.decision_class for path, s in _nested(REGISTRY["cores"])}
-        for field in ("max_axons", "max_neurons", "count", "write_granularity",
+        for field in ("max_axons", "max_neurons", "count", "weight_sign_granularity", "write_granularity",
                       "write_units_in_parallel"):
             assert classes[f"cores.{field}"] == COST_ONLY, field
         assert classes["cores.has_bias"] == FUNCTION_BEARING
         assert REGISTRY["cores"].decision_class == FUNCTION_BEARING
+
+    def test_the_weight_sign_granularity_field_takes_its_consumers_legal_set(self):
+        """The S0 amendment for CL-SG: a core type's sign granularity, per synapse (absent, today's behaviour) or
+        one sign per axon row; the legal set is the mapper's (``WEIGHT_SIGN_GRANULARITIES``), cost-only."""
+        from mimarsinan.mapping.platform.platform_constraints import PER_SYNAPSE, WEIGHT_SIGN_GRANULARITIES
+
+        schema = {path: s for path, s in _nested(REGISTRY["cores"])}["cores.weight_sign_granularity"]
+        assert schema.decision_class == COST_ONLY
+        assert tuple(schema.options) == WEIGHT_SIGN_GRANULARITIES == ("per_synapse", "per_axon")
+        assert schema.absent_means.startswith(PER_SYNAPSE)
+        assert "rows" in schema.doc
 
 
 class TestClassEvidence:
@@ -408,7 +423,7 @@ class TestJoin:
         }
         assert declared_paths(values) == (
             "cores.count", "cores.has_bias", "cores.max_axons", "cores.max_neurons",
-            "cores.write_granularity", "cores.write_units_in_parallel",
+            "cores.weight_sign_granularity", "cores.write_granularity", "cores.write_units_in_parallel",
             "weight_bits", "write_overlap.mode", "write_overlap.shadow_capacity_fraction",
         )
         assert effective_class(declared_paths(values)) == FUNCTION_BEARING

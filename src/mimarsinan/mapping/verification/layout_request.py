@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.verification.wizard_layout_verify import (
     require_workload_fields,
     resolve_tiling_params_from_body,
@@ -42,6 +43,8 @@ class LayoutMappingRequest:
     allow_coalescing: bool
     hardware_bias: bool
     encoding_layer_placement: str = "subsume"
+    #: Physical rows one logical input takes (2 under per-axon weight sign), so the walk counts physical rows.
+    rows_per_input: int = 1
 
     @classmethod
     def from_wizard_body(
@@ -50,16 +53,23 @@ class LayoutMappingRequest:
         *,
         tiling_max_axons: int | None = None,
         tiling_max_neurons: int | None = None,
+        rows_per_input: int | None = None,
     ) -> "LayoutMappingRequest":
+        """``rows_per_input`` is the declared pool's (``resolve_platform_mapping_params``); a body declaring its core
+        types gives it, a scalar body takes the caller's (1 when none is given)."""
         max_ax_default = int(body.get("max_axons", 1024))
         max_neu_default = int(body.get("max_neurons", 1024))
 
-        if (body.get("core_types") or body.get("cores")) is not None:
+        core_types = body.get("core_types") or body.get("cores")
+        if core_types is not None:
             eff_ax, eff_neu, hw_bias, coalescing = resolve_tiling_params_from_body(
                 body,
                 tiling_max_axons=tiling_max_axons,
                 tiling_max_neurons=tiling_max_neurons,
             )
+            if rows_per_input is None and core_types:
+                rows_per_input = resolve_platform_mapping_params(
+                    core_types, allow_coalescing=bool(coalescing)).rows_per_input
         else:
             eff_ax = int(
                 tiling_max_axons
@@ -88,6 +98,7 @@ class LayoutMappingRequest:
             encoding_layer_placement=str(
                 body.get("encoding_layer_placement", "subsume")
             ),
+            rows_per_input=int(rows_per_input or 1),
         )
 
     def model_identity_key(self) -> tuple:
@@ -109,6 +120,7 @@ class LayoutMappingRequest:
             self.max_neurons,
             self.allow_coalescing,
             self.hardware_bias,
+            self.rows_per_input,
         )
 
     def to_body(self) -> dict:

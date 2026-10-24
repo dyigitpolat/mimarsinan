@@ -43,6 +43,12 @@ class TrainingRecipe:
 DEFAULT_RECIPE_FIELDS = {f.name for f in TrainingRecipe.__dataclass_fields__.values()}
 
 
+def clip_norm_of(norm: Optional[float]) -> Optional[float]:
+    """The gradient clipping a declared ``grad_clip_norm`` asks for, one reading for every trainer: None (no
+    clipping) for an absent or non-positive norm, which ``TrainingRecipe`` defaults to."""
+    return None if norm is None or float(norm) <= 0.0 else float(norm)
+
+
 def build_recipe(config: dict, key: str = "training_recipe") -> Optional[TrainingRecipe]:
     """Return a ``TrainingRecipe`` from ``config[key]``, or ``None`` for legacy behavior.
 

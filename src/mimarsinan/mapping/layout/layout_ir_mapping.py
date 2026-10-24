@@ -32,6 +32,8 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
     # cost LayoutSourceView defers), so it is opt-in: only a walk whose caller
     # needs NoC traffic pays it.
     collect_wire_census: bool = False
+    # Rows per logical input (2 under per-axon sign): no weights, so the worst case.
+    rows_per_input: int = 1
 
     def __post_init__(self):
         self.max_axons = int(self.max_axons) if self.max_axons is not None else None
@@ -95,7 +97,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
 
         self.layout_softcores.append(
             LayoutSoftCoreSpec(
-                input_count=int(input_count),
+                input_count=int(input_count) * self.rows_per_input,
                 output_count=int(output_count),
                 residency_class_id=0,
                 latency_tag=None,
@@ -293,5 +295,6 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             input_sources=input_sources,
             perceptron_index=perceptron_index,
         )
-        self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
+        if self.rows_per_input == 1:  # a per-axon split instance is not its bank's region: no bank residency
+            self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
         return result

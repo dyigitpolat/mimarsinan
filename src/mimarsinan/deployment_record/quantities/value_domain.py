@@ -15,6 +15,7 @@ from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.build.write_census import stage_latency
 from mimarsinan.deployment_record.quantities.spec import QuantityValue
+from mimarsinan.mapping.noc.value_traffic import stage_value_noc_wire_hops
 from mimarsinan.mapping.support.period_census import natural
 
 #: The resolved-surface key naming the value domain, and the value grid beside it.
@@ -25,7 +26,7 @@ RASTER_ONLY = ("carried_raster_bytes",)
 #: Why a value carry or value NoC census that is not zero has no size without the declared grid.
 NO_VALUE_GRID = "activation_bits undeclared: the value carry has no grid"
 NO_VALUE_NOC_GRID = "activation_bits undeclared: the value NoC traffic has no grid"
-#: Why a sealed record states no value NoC census (KA-G3-1: no wire census is sealed).
+#: Why a sealed record states no value NoC census (it seals no ``value_noc_wire_hops``: every archived record).
 NO_RECORD_WIRES = "the sealed record keeps no wire census (KA-G3-1)"
 _CARRY_KEYS = (("carry_out_bytes", "boundary_out_bytes"), ("carry_in_bytes", "boundary_in_bytes"))
 
@@ -48,6 +49,27 @@ def value_bits(platform: Mapping[str, Any]) -> Optional[int]:
     """The declared value grid (``activation_bits``), or None when the run declares none."""
     bits = platform.get(VALUE_BITS_KEY)
     return None if bits is None else natural(bits, VALUE_BITS_KEY, error=ValueDomainCensusError)
+
+
+def record_value_noc_wire_hops(hybrid_mapping: Any, platform: Mapping[str, Any]) -> Optional[int]:
+    """[KA-G3-1] The value-hops a value-domain build seals (``ScheduleRecord.value_noc_wire_hops``): the built
+    stages' wire census on the resolved floorplan (``stage_value_noc_wire_hops``); None for a spiking run or a
+    platform that resolves no floorplan."""
+    cores_per_tile = int(platform.get("cores_per_tile_resolved", 0) or 0)
+    rows = int(platform.get("tile_grid_rows_resolved", 0) or 0)
+    if not names_value_domain(platform) or cores_per_tile <= 0 or rows <= 0:
+        return None
+    return stage_value_noc_wire_hops(hybrid_mapping.stages, cores_per_tile=cores_per_tile, mesh_height=rows)
+
+
+def value_noc_reading(hops: Optional[int], bits: Optional[int]) -> Tuple[Optional[float], Optional[str]]:
+    """``(noc_value_bytes, withheld reason)`` of a value NoC census, one rule on both planes: the byte-hops at the
+    declared grid; zero traffic is zero whatever the grid; other traffic without the grid is withheld by name."""
+    if hops is None:
+        return None, None
+    if bits:
+        return hops * int(bits) / 8.0, None
+    return (0.0, None) if hops == 0 else (None, NO_VALUE_NOC_GRID)
 
 
 def refuse_spiking_activity(platform: Mapping[str, Any]) -> None:
@@ -124,6 +146,8 @@ class ValueDomainFacts:
     carry_in_bytes: Optional[int]
     #: Quantities whose work may exist but which this plane cannot size, with the reason.
     withheld: Tuple[Tuple[str, str], ...] = ()
+    #: [KA-G3-1] The record's value NoC byte-hops (the candidate plane states them on its view).
+    noc_value_bytes: Optional[float] = None
 
 
 def apply_value_rule(values: Dict[str, QuantityValue], facts: ValueDomainFacts) -> Dict[str, str]:
@@ -133,7 +157,8 @@ def apply_value_rule(values: Dict[str, QuantityValue], facts: ValueDomainFacts) 
         values.pop(key, None)
     values["timesteps"] = QuantityValue(1.0, "static")
     for key, value in (("synaptic_events", facts.mac_events), ("latency_steps", facts.latency_steps),
-                       ("carry_out_bytes", facts.carry_out_bytes), ("carry_in_bytes", facts.carry_in_bytes)):
+                       ("carry_out_bytes", facts.carry_out_bytes), ("carry_in_bytes", facts.carry_in_bytes),
+                       ("noc_value_bytes", facts.noc_value_bytes)):
         if value is not None:
             values[key] = QuantityValue(float(value), "static")
     return {key: reason for key, reason in facts.withheld if key not in values}
@@ -151,11 +176,15 @@ def record_value_facts(record: Any) -> ValueDomainFacts:
          "boundary_in_bytes": 0 if carry is None else carry.boundary_in_bytes},
         None if carry is None else carry.timesteps, value_bits(record.identity.platform),
     )
-    if any(len(segment.cores) > 1 for segment in segments):
-        withheld["noc_value_bytes"] = NO_RECORD_WIRES
+    sealed = getattr(record.schedule, "value_noc_wire_hops", None)
+    noc_value, noc_withheld = value_noc_reading(sealed, value_bits(record.identity.platform))
+    if sealed is None and any(len(segment.cores) > 1 for segment in segments):
+        noc_withheld = NO_RECORD_WIRES
+    if noc_withheld is not None:
+        withheld["noc_value_bytes"] = noc_withheld
     return ValueDomainFacts(
         mac_events=sum(c.cells_used for s in segments for c in s.cores),
         latency_steps=None if latencies is None else value_window(latencies),
         carry_out_bytes=sized.get("carry_out_bytes"), carry_in_bytes=sized.get("carry_in_bytes"),
-        withheld=tuple(sorted(withheld.items())),
+        withheld=tuple(sorted(withheld.items())), noc_value_bytes=noc_value,
     )

@@ -11,6 +11,7 @@ from mimarsinan.model_training.training_recipe import (
     TrainingRecipe,
     build_optimizer,
     build_scheduler,
+    clip_norm_of,
 )
 from mimarsinan.model_training import basic_trainer_subsample
 from mimarsinan.model_training import basic_trainer_steps
@@ -242,10 +243,10 @@ class BasicTrainer:
     def _optimize(self, x, y, optimizer, scaler):
         optimizer.zero_grad()
         loss = self._backward_pass_on_loss(x, y, scaler)
-        clip = getattr(self.recipe, "grad_clip_norm", 0.0) if self.recipe is not None else 0.0
-        if clip and clip > 0:
+        clip = clip_norm_of(None if self.recipe is None else self.recipe.grad_clip_norm)
+        if clip is not None:
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(self._params_to_optimize(), float(clip))
+            torch.nn.utils.clip_grad_norm_(self._params_to_optimize(), clip)
         scaler.step(optimizer)
         scaler.update()
 

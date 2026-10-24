@@ -4,22 +4,27 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Tuple
+from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.config_schema.registry.decision_classes import COST_ONLY
 from mimarsinan.config_schema.registry.value_schema import judge_declaration, nested_schemas, value_errors
+from mimarsinan.mapping.platform.platform_constraints import PER_AXON, SIGN_GRANULARITY_FIELD
+from mimarsinan.mapping.support.period_census import RESIDENCY_STEP_RULES, STEP_INDEX
 
 #: Cost-only paths whose value changes the deployed program, drawn by the code-level runner.
 PROGRAM_CHANGING: Tuple[str, ...] = (
     "allow_coalescing", "allow_neuron_splitting", "allow_scheduling", "max_schedule_passes",
     "cores.count", "cores.max_axons", "cores.max_neurons", "core_value_granularity",
+    "residency_plan.step", "residency_plan.index", f"cores.{SIGN_GRANULARITY_FIELD}",
 )
 #: Flat geometry keys the resolver derives from ``cores``; drawn through the core-type fields only.
 DERIVED_GEOMETRY: Tuple[str, ...] = ("max_axons", "max_neurons")
-#: Program-changing, but its consumer (G5's executed residency plan) is not on this tree; drawn from CL1.
-DEFERRED: Tuple[str, ...] = ("residency_plan", "residency_plan.index", "residency_plan.step")
+#: Optional keys drawn through their fields, never as whole keys: each is present or absent (absent is the
+#: toolchain's default program) and set only where the registry's relevance holds (``settled``). G5's executed
+#: residency plan (its step changes the pass partition and the pinned set), drawn from CL1 on the integrated tree.
+DRAWN_BY_FIELDS: Tuple[str, ...] = ("residency_plan",)
 #: Cost-only paths no program reads: pricing constants, the priced floorplan and the write law.
 PRICING_ONLY: Tuple[str, ...] = (
     "activity_factor", "cores.write_granularity", "cores.write_units_in_parallel", "cores_per_tile",
@@ -53,7 +58,7 @@ def cost_only_set() -> FrozenSet[str]:
 def partition() -> Dict[str, Tuple[str, ...]]:
     """The cost-only set split by what the code-level runner does with each path; refuses any drift."""
     parts = {"program_changing": PROGRAM_CHANGING, "derived_geometry": DERIVED_GEOMETRY,
-             "deferred_to_cl1": DEFERRED, "pricing_only": PRICING_ONLY}
+             "drawn_by_fields": DRAWN_BY_FIELDS, "pricing_only": PRICING_ONLY}
     listed = [p for paths in parts.values() for p in paths]
     registry = cost_only_set()
     if len(listed) != len(set(listed)) or set(listed) != registry:
@@ -73,14 +78,25 @@ class DrawSpace:
     count: Tuple[int, int] = (1, 32)
     passes: Tuple[int, int] = (1, 8)
     granularities: Tuple[Mapping[str, str], ...] = ({}, {"threshold": "per_core"}, {"threshold": "per_neuron"})
+    #: ``residency_plan``: the share of draws that declare one, and the ``index`` range of its ``index`` step.
+    residency_rate: float = 0.5
+    residency_index: Tuple[int, int] = (0, 1)
+    #: CL-SG: the share of core types declaring per-axon weight sign (0 on the declared strata, whose seeds keep
+    #: their declarations; the sign-split strata set it).
+    sign_split_rate: float = 0.0
 
 
 DEFAULT_DRAWS = DrawSpace()
 
 
-def draw_declaration(seed: int, space: DrawSpace = DEFAULT_DRAWS) -> Dict[str, Any]:
+def draw_declaration(seed: int, space: DrawSpace = DEFAULT_DRAWS, *,
+                     pinned: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """The program-changing cost-only fields, each drawn on its own; every value judged by its schema.
 
+    ``pinned`` fields (an arm's targeting) replace the drawn ones before the optional keys are settled, so an
+    optional key is set where the registry's relevance holds under the declaration that runs. The optional keys
+    are drawn after every other field, so the other fields of a seed are those of the draw without them.
+    Each core type's weight sign granularity is drawn last (one value per core type, consumed whatever the rate).
     ``cores.has_bias`` is function-bearing: it belongs to the instance, never to a draw
     (:func:`platform_constraints` adds it).
     """
@@ -97,9 +113,35 @@ def draw_declaration(seed: int, space: DrawSpace = DEFAULT_DRAWS) -> Dict[str, A
         "max_schedule_passes": rng.randint(*space.passes),
         "core_value_granularity": dict(rng.choice(space.granularities)),
     }
+    residency = _draw_residency(rng, space)
+    for core in cores:
+        if rng.random() < space.sign_split_rate:
+            core[SIGN_GRANULARITY_FIELD] = PER_AXON
+    declaration.update(pinned or {})
+    if residency is not None:
+        declaration["residency_plan"] = residency
+    declaration = settled(declaration)
     for key, value in declaration.items():
         judge_declaration(REGISTRY[key], value, run_domain=None)
     return declaration
+
+
+def _draw_residency(rng: random.Random, space: DrawSpace) -> Optional[Dict[str, Any]]:
+    """``residency_plan`` field by field (``step``, then ``index`` where the step needs one), or None (absent).
+    Every draw consumes the same three values, so presence never shifts another field's draw."""
+    present = rng.random() < space.residency_rate
+    step = rng.choice(RESIDENCY_STEP_RULES)
+    index = rng.randint(*space.residency_index)
+    if not present:
+        return None
+    return {"step": step, **({"index": index} if step == STEP_INDEX else {})}
+
+
+def settled(declaration: Mapping[str, Any]) -> Dict[str, Any]:
+    """``declaration`` without the optional keys the registry's relevance drops under it (``residency_plan``
+    without ``allow_scheduling``): an irrelevant optional key is absent, never a refusal waiting to happen."""
+    return {key: value for key, value in declaration.items()
+            if key not in DRAWN_BY_FIELDS or REGISTRY[key].relevant.evaluate(declaration)}
 
 
 def platform_constraints(declaration: Mapping[str, Any], *, hardware_bias: bool) -> Dict[str, Any]:
@@ -115,6 +157,8 @@ def drawn_paths(declaration: Mapping[str, Any]) -> FrozenSet[str]:
     for key, value in declaration.items():
         if key == "cores":
             paths.update(f"cores.{field}" for core in value for field in core)
+        elif key in DRAWN_BY_FIELDS:
+            paths.update(f"{key}.{field}" for field in value)
         else:
             paths.add(key)
     return frozenset(paths)

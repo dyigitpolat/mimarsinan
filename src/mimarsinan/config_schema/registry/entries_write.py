@@ -14,6 +14,7 @@ from mimarsinan.config_schema.registry.types import (
 )
 from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set, schema_of, value_errors
 from mimarsinan.data_handling.preprocessing import PreprocessingSpec, interpolation_mode_names
+from mimarsinan.mapping.platform.platform_constraints import PER_AXON, PER_SYNAPSE, WEIGHT_SIGN_GRANULARITIES
 from mimarsinan.mapping.support.period_census import WRITE_GRANULARITIES, WRITE_OVERLAP_MODES
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_EXPLICIT,
@@ -27,7 +28,7 @@ from mimarsinan.tuning.orchestration.temporal_allocation import (
 _PC = "platform_constraints"
 _OWNER = "deployment_record.cost"
 
-#: The fields of one ``cores`` entry (geometry, bias, write); open: the parser flags the rest.
+#: The fields of one ``cores`` entry (geometry, bias, weight sign, write); open: the parser flags the rest.
 CORE_TYPE_SCHEMA = ValueSchema(
     kind=T.JSON,
     fields={
@@ -44,6 +45,12 @@ CORE_TYPE_SCHEMA = ValueSchema(
                                 doc="the bias mode changes the weight-quantization grid",
                                 absent_means="the platform bias mode: the flat has_bias, else the nested "
                                              "platform_constraints.has_bias, else true (a bias lane)"),
+        "weight_sign_granularity": ValueSchema(
+            kind=T.ENUM, options=WEIGHT_SIGN_GRANULARITIES, decision_class=COST_ONLY,
+            doc="one sign per synapse, or one per axon row: a mixed-sign input then takes two rows (W+ then W-, "
+                "exact on the integer grid under every integer semantics; analytical TTFS, outside the integer "
+                "scope, equal up to float rounding), so rows, packing and cost only",
+            absent_means=f"{PER_SYNAPSE} (every synapse carries its own sign)"),
         "write_granularity": ValueSchema(kind=T.ENUM, options=WRITE_GRANULARITIES,
                                          decision_class=COST_ONLY,
                                          doc="the unit one write commits: write time only",
@@ -191,6 +198,22 @@ def platform_bias_errors(config: Mapping[str, Any], bias_entry: _E) -> List[str]
               if value is not None and schema is not None for message in value_errors(schema, value, path)]
     conflict = conflicting_platform_bias_error(config)
     return errors if conflict is None else [*errors, conflict]
+
+
+def platform_sign_errors(config: Mapping[str, Any]) -> List[str]:
+    """Why a per-axon core type refuses, else [] (the one rule both doors call over the layout they judge, beside the
+    bias rule): under float weights (``pipeline_mode`` 'vanilla' or ``weight_quantization`` false, the derivation's
+    reading) a per-axon core type cannot hold its weights, since the split stores each in sign pairs, exact only on
+    the integer grid (``sign_split.SignSplitError`` would name it at hard-core mapping, after training)."""
+    cores = config.get("cores")
+    float_weights = config.get("pipeline_mode") == "vanilla" or config.get("weight_quantization") is False
+    if not float_weights or not isinstance(cores, (list, tuple)):
+        return []
+    return [f"cores[{i}].weight_sign_granularity='{PER_AXON}' needs weights on the integer grid, and the run "
+            "declares float weights (pipeline_mode 'vanilla' or weight_quantization false): a per-axon core stores "
+            f"each weight in sign pairs; declare weight quantization or a {PER_SYNAPSE} core type"
+            for i, core in enumerate(cores)
+            if isinstance(core, Mapping) and core.get("weight_sign_granularity") == PER_AXON]
 
 
 WRITE_OVERLAP_SCHEMA = ValueSchema(

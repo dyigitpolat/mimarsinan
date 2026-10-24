@@ -317,6 +317,42 @@ class TestRungGradClip:
         finally:
             tuner.close()
 
+    @pytest.mark.parametrize("recipe_norm", [0.0, "omitted"])
+    def test_a_recipe_norm_of_zero_stays_unclipped(self, tmp_path, monkeypatch, recipe_norm):
+        """[C4] A norm of 0, declared or supplied by ``TrainingRecipe`` when the recipe omits the field, reads as no
+        clipping, as ``BasicTrainer`` reads it; clipping to norm 0 zeroed every gradient of every rung."""
+        calls = self._spy_clip(monkeypatch)
+        cfg_recipe = dict(DEFAULT_TUNING_RECIPE)
+        if recipe_norm == "omitted":
+            del cfg_recipe["grad_clip_norm"]
+        else:
+            cfg_recipe["grad_clip_norm"] = recipe_norm
+        tuner = _clamp_tuner(
+            tmp_path, optimization_driver="fast", tuning_recipe=cfg_recipe,
+            spiking_mode="ttfs_quantized", activation_quantization=True,
+            clamp_fast_rates=[0.5], clamp_fast_steps_per_rate=2,
+        )
+        try:
+            tuner._ensure_fast_optimizer()
+            tuner._fast_train_rung(0.5)
+            assert calls == []
+        finally:
+            tuner.close()
+
+    def test_an_explicit_caller_norm_of_zero_stays_unclipped(self, tmp_path, monkeypatch):
+        calls = self._spy_clip(monkeypatch)
+        tuner = _clamp_tuner(
+            tmp_path, optimization_driver="fast",
+            spiking_mode="ttfs_quantized", activation_quantization=True,
+            clamp_fast_rates=[0.5], clamp_fast_steps_per_rate=2,
+        )
+        try:
+            tuner._ensure_fast_optimizer()
+            tuner._fast_train_rung(0.5, grad_clip_norm=0.0)
+            assert calls == []
+        finally:
+            tuner.close()
+
     def test_explicit_caller_clip_wins(self, tmp_path, monkeypatch):
         calls = self._spy_clip(monkeypatch)
         tuner = _clamp_tuner(

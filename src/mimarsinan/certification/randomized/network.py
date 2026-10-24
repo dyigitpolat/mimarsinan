@@ -5,7 +5,9 @@
 - a spiking layer (LIF counts, TTFS levels) takes the window charge ``Q = W c + T b`` of its sources' counts
   and emits ``clamp(floor(Q / theta), 0, T)`` (the inclusive comparator ``<=`` and the subtractive reset the
   code level fixes; LIF memo section 2, calculus section 16.3, TTFS closure section 3.1);
-- a value layer emits the integer affine charge ``W x + b`` (the base tree's value core at theta 1);
+- a value layer emits the integer affine charge ``W x + b`` (the affine value core at theta 1); under the integer
+  readout law (G2's E283, ``levels`` the activation grid's codes at step 1) every core reads its sources' codes
+  clamped onto the grid (the entry snap; a core's own codes lie on it) and emits ``clamp(W x + b, -levels, levels)``;
 - host operations act on decoded values: identity and ReLU pass a count or value through, the residual
   ``sum`` adds its two halves (under a spiking semantics the next segment entry clamps the rate, so the
   count is ``min(a + b, T)``).
@@ -16,7 +18,7 @@ synchronized TTFS and the integer under the value semantics (``observable``).
 
 from __future__ import annotations
 
-from typing import Dict, Mapping
+from typing import Dict, Mapping, Optional
 
 import numpy as np
 
@@ -52,8 +54,9 @@ def claim(semantics: str) -> str:
     return CLAIMS.get(semantics, NOT_CLAIMED)
 
 
-def evaluate(instance: Instance) -> Dict[str, np.ndarray]:
-    """``{layer name: (B, width) int64}``: N on the document's inputs, every layer (neural and host)."""
+def evaluate(instance: Instance, *, levels: Optional[int] = None) -> Dict[str, np.ndarray]:
+    """``{layer name: (B, width) int64}``: N on the document's inputs, every layer (neural and host); ``levels``
+    is the integer readout law's grid under the value semantics (None: the affine value core)."""
     net, T = instance.network, int(instance.timesteps)
     spiking = instance.semantics != VALUE
     values: Dict[str, np.ndarray] = {INPUT: np.asarray(instance.inputs, dtype=np.int64)}
@@ -67,8 +70,10 @@ def evaluate(instance: Instance) -> Dict[str, np.ndarray]:
         if spiking:
             charge = x @ weights.T + T * bias
             values[layer.name] = np.clip(np.floor_divide(charge, int(layer.theta)), 0, T)
-        else:
+        elif levels is None:
             values[layer.name] = x @ weights.T + bias
+        else:
+            values[layer.name] = np.clip(np.clip(x, -levels, levels) @ weights.T + bias, -levels, levels)
     return values
 
 

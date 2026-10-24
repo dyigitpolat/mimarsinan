@@ -35,6 +35,8 @@ UNNAMED_FAILURES = (ValueError, AssertionError, RuntimeError, KeyError, IndexErr
                     ZeroDivisionError, AttributeError, NotImplementedError)
 
 EQUAL, COUNTEREXAMPLE, REFUSED, REFUSED_UNNAMED = "equal", "counterexample", "refused", "refused_unnamed"
+#: Draw-space fields an arm's declaration narrows (ranges, and CL-SG's per-axon sign rate), not registry keys.
+DRAW_TARGETS = ("axons", "neurons", "count", "sign_split_rate")
 REFERENCE_ERROR, RUN_ERROR, VACUOUS = "reference_error", "run_error", "vacuous"
 OUTCOMES = (EQUAL, COUNTEREXAMPLE, REFUSED, REFUSED_UNNAMED, REFERENCE_ERROR, RUN_ERROR, VACUOUS)
 
@@ -55,6 +57,8 @@ class Verdict:
     coresident: bool = False
     coalesced: bool = False
     split: bool = False
+    #: CL-SG: a mixed-sign row placed as a W+ then W- pair.
+    sign_split: bool = False
     windows: int = 0
     mismatches: int = 0
     first: Optional[Tuple[int, int, int]] = None
@@ -70,6 +74,9 @@ class Verdict:
     input_dependent: float = 0.0
     #: Per neural layer in document order, the largest weight magnitude (0: an all-zero layer).
     weight_ranges: Tuple[int, ...] = field(default_factory=tuple)
+    #: A law-carrying program's run against G2's int64 golden at atol 0, identity program and deployment summed.
+    golden_windows: int = 0
+    golden_mismatches: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -88,12 +95,11 @@ def semantics_for(seed: int, arm: Arm) -> str:
 
 
 def targeted_declaration(seed: int, arm: Arm, space: DrawSpace = DEFAULT_DRAWS) -> Dict[str, Any]:
-    """The field-by-field draw, inside the ranges an arm targets (``axons``, ``neurons``, ``count``) and with
-    the flags it pins; a targeting narrows the drawn ranges, it never sets a field the registry forbids."""
-    narrowed = {k: v for k, v in arm.declaration.items() if k in ("axons", "neurons", "count")}
-    declaration = draw_declaration(stratum_seed(seed, arm), space.__class__(**{**asdict(space), **narrowed}))
-    declaration.update({k: v for k, v in arm.declaration.items() if k not in narrowed})
-    return declaration
+    """The field-by-field draw, inside the ranges and rates an arm targets (``DRAW_TARGETS``) and with the flags
+    it pins; a targeting narrows the drawn ranges, it never sets a field the registry forbids."""
+    narrowed = {k: v for k, v in arm.declaration.items() if k in DRAW_TARGETS}
+    return draw_declaration(stratum_seed(seed, arm), space.__class__(**{**asdict(space), **narrowed}),
+                            pinned={k: v for k, v in arm.declaration.items() if k not in narrowed})
 
 
 def instance_for(seed: int, arm: Arm, space: GeneratorSpace = DEFAULT_SPACE) -> Instance:
@@ -115,9 +121,9 @@ class Reference:
 
 
 def reference(instance: Instance, arm: Arm) -> Reference:
-    mapped = program.mapper_graph(instance)
+    mapped = program.mapper_graph(instance, arm.encoding_placement)
     ir = program.integer_ir(mapped, max_axons=None, max_neurons=None, allow_coalescing=False,
-                            hardware_bias=instance.hardware_bias)
+                            hardware_bias=instance.hardware_bias, law=ex.RUNS[instance.semantics].law)
     mapping = build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=ex.RUNS[instance.semantics].retimed)
     return Reference(ir, mapping, _run(mapping, instance, arm, identity=True), dict(mapped.perceptron_of))
 
@@ -137,7 +143,8 @@ def network_relation(instance: Instance, ref: Reference) -> Tuple[str, int, int,
     status = network.claim(instance.semantics)
     if status == network.NOT_CLAIMED:
         return status, 0, 0, None
-    want = network.evaluate(instance)
+    law = ex.RUNS[instance.semantics].law
+    want = network.evaluate(instance, levels=None if law is None else program.law_levels(law))
     got = ex.per_neuron(ref.ir, ref.nodes)
     windows, mismatches, first = 0, 0, None
     for layer in instance.network.neural_layers():
@@ -160,12 +167,13 @@ def deployment(instance: Instance, constraints: Mapping[str, Any], seed: int, ar
     """The IR at the declared geometry (relabelled), built through the pipeline's own entry point."""
     geometry = resolve_platform_mapping_params(constraints["cores"],
                                                allow_coalescing=bool(constraints["allow_coalescing"]))
-    ir = program.integer_ir(program.mapper_graph(instance), max_axons=geometry.effective_max_axons,
+    run = ex.RUNS[instance.semantics]
+    ir = program.integer_ir(program.mapper_graph(instance, arm.encoding_placement),
+                            max_axons=geometry.effective_max_axons,
                             max_neurons=geometry.effective_max_neurons, allow_coalescing=geometry.allow_coalescing,
-                            hardware_bias=geometry.hardware_bias)
+                            hardware_bias=geometry.hardware_bias, law=run.law)
     if relabel:
         program.relabel(ir, seed)
-    run = ex.RUNS[instance.semantics]
     if identity:
         return ir, build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=run.retimed)
     return ir, build_hybrid_mapping_for_pipeline(ir, dict(constraints), pipeline_config=dict(run.config))
@@ -218,7 +226,15 @@ def structure(mapping) -> Dict[str, bool]:
                 seen_slices[key] = seen_slices.get(key, 0) + 1
     split = any(n > 1 for n in seen_slices.values())
     return {"multipass": any(n > 1 for n in passes.values()), "carried": bool(carried_outputs_by_stage(mapping.stages)),
-            "coresident": coresident, "coalesced": coalesced, "split": split}
+            "coresident": coresident, "coalesced": coalesced, "split": split, "sign_split": _sign_split(mapping)}
+
+
+def _sign_split(mapping) -> bool:
+    """Whether the deployment placed a mixed-sign row as a W+ then W- pair (CL-SG's per-axon sign)."""
+    return any(len(set(map(int, p.keep_rows))) < len(p.keep_rows)
+               for stage in mapping.stages if stage.kind == "neural"
+               for core in stage.hard_core_mapping.cores for p in core.matrix_placements
+               if getattr(p, "row_signs", None) is not None)
 
 
 def run_instance(seed: int, arm_id: str = "on", *, control: bool = False, space: GeneratorSpace = DEFAULT_SPACE,
@@ -253,6 +269,12 @@ def run_instance(seed: int, arm_id: str = "on", *, control: bool = False, space:
         try:
             dep_nodes = _run(dep_map, instance, arm)
             verdict.windows, verdict.mismatches, verdict.first = compare(ref_ir, ref_nodes, dep_ir, dep_nodes)
+            if ex.RUNS[instance.semantics].law is not None:
+                x = ex.input_tensor(instance, torch.float64).numpy()
+                for mapping, nodes in ((ref.mapping, ref_nodes), (dep_map, dep_nodes)):
+                    windows, mismatches = program.golden_relation(mapping, x, nodes)
+                    verdict.golden_windows += windows
+                    verdict.golden_mismatches += mismatches
         except UNNAMED_FAILURES + (ToolchainRefusal,) as exc:
             return _close(verdict, RUN_ERROR, exc, started)
     placed = ex.per_neuron(ref_ir, ref_nodes)
@@ -260,7 +282,10 @@ def run_instance(seed: int, arm_id: str = "on", *, control: bool = False, space:
     verdict.active = float((flat != 0).double().mean()) if flat.numel() else 0.0
     varying = torch.cat([(v != v[:1]).any(dim=0) for v in placed.values()])
     verdict.input_dependent = float(varying.double().mean()) if varying.numel() else 0.0
-    outcome = COUNTEREXAMPLE if verdict.mismatches else (EQUAL if verdict.active > 0 else VACUOUS)
+    # [MN8] A golden mismatch is a counterexample too: a departure the identity program and the deployment share
+    # makes no mismatch between them, and only the int64 golden sees it.
+    departs = verdict.mismatches or verdict.golden_mismatches
+    outcome = COUNTEREXAMPLE if departs else (EQUAL if verdict.active > 0 else VACUOUS)
     return _close(verdict, outcome, None, started)
 
 

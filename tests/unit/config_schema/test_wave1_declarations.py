@@ -161,7 +161,7 @@ class TestRegistryEntries:
 
     def test_core_type_fields_include_the_write_fields(self):
         assert CORE_FIELDS == {
-            "max_axons", "max_neurons", "count", "has_bias",
+            "max_axons", "max_neurons", "count", "has_bias", "weight_sign_granularity",
             "write_granularity", "write_units_in_parallel",
         }
 
@@ -188,6 +188,20 @@ class TestRoundTrip:
         resolution = resolve_draft(config)
         assert any(row["key"] == key for row in resolution.errors)
         assert key not in emit_deployment_config(config)["platform_constraints"]
+
+    @pytest.mark.parametrize("value", ["per_synapse", "per_axon"])
+    def test_a_core_type_s_weight_sign_granularity_round_trips(self, value):
+        config = _load("mvm_aq_lenet5.json")
+        for core in config["platform_constraints"]["cores"]:
+            core["weight_sign_granularity"] = value
+        assert parse_deployment_document(config).unknown == []
+        assert validate_deployment_config(config) == []
+        assert all(core["weight_sign_granularity"] == value for core in _resolve(config)["cores"])
+
+    def test_an_unknown_weight_sign_granularity_is_refused_by_name(self):
+        config = _load("mvm_aq_lenet5.json")
+        config["platform_constraints"]["cores"][0]["weight_sign_granularity"] = "per_row"
+        assert any("weight_sign_granularity" in m and "per_row" in m for m in validate_deployment_config(config))
 
     def test_an_unknown_core_type_field_is_still_flagged(self):
         config = _load("mvm_aq_lenet5.json")

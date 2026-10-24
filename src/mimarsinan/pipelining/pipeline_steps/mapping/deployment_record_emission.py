@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from mimarsinan.deployment_record.build.partition import compute_partition_record
+from mimarsinan.deployment_record.quantities.value_domain import record_value_noc_wire_hops
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.deployment_record.build.from_mapping import (
@@ -61,6 +62,7 @@ def emit_deployment_record_hcm(
         # The run's discipline, not one backend's: every enabled backend executes
         # the same one, or the record would name a computation only some of them ran.
         pass_transfer=run_pass_transfer(step.pipeline.config),
+        value_noc_wire_hops=record_value_noc_wire_hops(hybrid_mapping, platform_constraints),
     )
     placement = placement_record_from_mapping(hybrid_mapping)
     # The logical on-chip/host split is an ungated CENSUS sealed on every run

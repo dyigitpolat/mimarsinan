@@ -3,6 +3,8 @@
 from mimarsinan.mapping.packing.softcore.compaction import (
     compact_soft_core_mapping,
     compacted_core_extent,
+    deployed_core_extent,
+    deployed_row_counts,
     eliminated_core_extent,
 )
 from mimarsinan.mapping.packing.softcore.hard_core import HardCore
@@ -15,5 +17,7 @@ __all__ = [
     "HardCoreMapping",
     "compact_soft_core_mapping",
     "compacted_core_extent",
+    "deployed_core_extent",
+    "deployed_row_counts",
     "eliminated_core_extent",
 ]

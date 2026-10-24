@@ -10,6 +10,8 @@ from mimarsinan.mapping.packing.spike_source import (
     source_is_off,
     source_is_special,
 )
+from mimarsinan.mapping.packing.softcore.sign_split import mixed_rows
+from mimarsinan.mapping.platform.platform_constraints import PER_AXON
 
 
 def compaction_masks_apply(
@@ -64,16 +66,40 @@ def compacted_core_extent(core) -> "tuple[int, int]":
     if not compaction_masks_apply(n_axons, n_neurons, row_mask, col_mask):
         return n_axons, n_neurons
 
-    last = sources[-1] if n_axons else None
-    keep_rows, keep_cols = compaction_keep_indices(
-        n_axons=n_axons,
-        n_neurons=n_neurons,
-        pruned_row_mask=row_mask,
-        pruned_col_mask=col_mask,
-        keep_last_axon=bool(last is not None and last.is_always_on()),
-    )
+    keep_rows, keep_cols = _ir_keep_indices(core)
     # BIAS_ONLY: no axon survives, but the bias-driven columns still need one row.
     return len(keep_rows) or 1, len(keep_cols)
+
+
+def _ir_keep_indices(core) -> "tuple[list[int], list[int]]":
+    """The rows and columns of an IR ``NeuralCore`` its compaction keeps (the always-on bias row kept)."""
+    sources = core.input_sources.flatten()
+    last = sources[-1] if len(sources) else None
+    return compaction_keep_indices(
+        n_axons=int(len(sources)),
+        n_neurons=int(core.get_output_count()),
+        pruned_row_mask=getattr(core, "pruned_row_mask", None),
+        pruned_col_mask=getattr(core, "pruned_col_mask", None),
+        keep_last_axon=bool(last is not None and last.is_always_on()),
+    )
+
+
+def deployed_row_counts(core, granularity: str, *, graph=None) -> np.ndarray:
+    """Physical rows each compacted row of an IR ``NeuralCore`` takes: 1, and 2 for a mixed-sign row under
+    per-axon sign (``graph`` resolves a bank-backed matrix). A BIAS_ONLY core keeps its one zero row."""
+    keep_rows, keep_cols = _ir_keep_indices(core)
+    if granularity != PER_AXON or not keep_rows:
+        return np.ones(compacted_core_extent(core)[0], dtype=np.intp)
+    matrix = np.asarray(core.get_core_matrix(graph))
+    return 1 + mixed_rows(matrix[np.ix_(keep_rows, keep_cols)]).astype(np.intp)
+
+
+def deployed_core_extent(core, granularity: str, *, graph=None) -> "tuple[int, int]":
+    """The ``(rows, neurons)`` an IR ``NeuralCore`` deploys: compaction, then the sign split (the rows its runtime
+    soft core packs); the compacted extent under per-synapse sign."""
+    if granularity != PER_AXON:
+        return compacted_core_extent(core)
+    return int(deployed_row_counts(core, granularity, graph=graph).sum()), compacted_core_extent(core)[1]
 
 
 def eliminated_core_extent(core) -> "tuple[int, int]":

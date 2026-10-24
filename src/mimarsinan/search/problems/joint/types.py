@@ -246,8 +246,10 @@ class JointHostContract:
             self, model: Any, pcfg: Dict, *, collect_census: bool = False,
         ) -> Tuple[List[LayoutSoftCoreSpec], int, Optional[Any]]: ...
 
+        def _walk_candidate(self, model: Any, pcfg: Dict, *, collect_census: bool = False) -> Any: ...
+
         def _pack_candidate(
-            self, softcores: List[LayoutSoftCoreSpec], pcfg: Dict,
+            self, softcores: List[LayoutSoftCoreSpec], pcfg: Dict, *, runs: Optional[Sequence[int]] = None,
         ) -> Tuple[LayoutVerificationStats, Optional[str]]: ...
 
         def _packing_failure(

@@ -9,7 +9,7 @@ N0 incident (every candidate raised at extraction while the gate said yes).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.program_census import (
     CandidateProgramming, candidate_carry_census, candidate_programming_census,
@@ -58,12 +58,15 @@ def candidate_latency_steps(
 
     Requires the pass/level structure (the NoC fragments carry it) and the
     run's firing semantics. Absent when either is unknown — a latency-bearing
-    axis then refuses BY NAME rather than pricing a short wall.
+    axis then refuses BY NAME rather than pricing a short wall. [U1 W10] A pass
+    the builder pins is priced at its pinned span (the fragments' wire census),
+    in the segmentation the fragments were planned under.
     """
     if noc is None or timesteps is None:
         return None
     stages = execution_stage_latencies(
         softcores, noc.pass_placements, retimed=semantics.retimed,
+        census=noc.census, runs=getattr(noc, "runs", None),
     )
     return program_latency_steps(
         stage_max_latencies=stages, timesteps=int(timesteps),
@@ -103,7 +106,7 @@ def with_stage_placements(
     if noc is None:
         return None
     return _dc_replace(noc, stage_placements=execution_stage_placements(
-        softcores, noc.pass_placements, retimed=semantics.retimed,
+        softcores, noc.pass_placements, retimed=semantics.retimed, runs=getattr(noc, "runs", None),
     ))
 
 
@@ -182,20 +185,36 @@ def collect_candidate_noc(
     core_types,
     census,
     pcfg: Dict,
+    runs: Optional[Sequence[int]] = None,
 ) -> Optional[LayoutNocFragments]:
     """The candidate's NoC fragments, planned under its OWN capability bits.
 
     The capability declaration is forwarded WHOLE (``layout_kwargs``), the
     same discipline as the packing census — a fragment set planned under
     different scheduling permissions would place traffic on a program the
-    chip never runs.
+    chip never runs. [U1 W9] ``runs``: the walk's builder segments
+    (``CandidateWalk.runs``), which the fragments carry to every consumer.
+    [CL-SG] The declared core types sign each per-axon core's rows.
     """
     return collect_noc_fragments(
         softcores=softcores,
         core_types=core_types,
         census=census,
+        runs=runs,
+        declared_cores=pcfg.get("cores") or (),
         **ChipCapabilities.from_platform_constraints(pcfg).layout_kwargs(),
     )
+
+
+@dataclass(frozen=True)
+class CandidateWalk:
+    """One layout walk of a candidate: its specs, host segments, wire census (None unless collected) and the builder
+    segment of each spec (``residency_rules.spec_runs``), which every plane of the candidate plans with."""
+
+    softcores: Tuple[Any, ...]
+    host_segments: int
+    census: Optional[Any]
+    runs: Tuple[int, ...]
 
 
 def compute_onchip_census(

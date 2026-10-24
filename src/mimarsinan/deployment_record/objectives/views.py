@@ -31,7 +31,7 @@ from mimarsinan.deployment_record.quantities import (
     from_candidate,
     from_record,
 )
-from mimarsinan.deployment_record.quantities.value_domain import NO_VALUE_NOC_GRID
+from mimarsinan.deployment_record.quantities.value_domain import value_noc_reading
 from mimarsinan.deployment_record.schema import DeploymentRecord
 
 CORE_CAPACITY_KEYS = ("max_axons", "max_neurons", "count")
@@ -141,12 +141,9 @@ class CandidateStaticView:
                 stage_placements=getattr(fragments, "stage_placements", None) or fragments.pass_placements,
                 cores_per_tile=int(context.cores_per_tile), mesh_height=int(context.tile_mesh_height),
             )
-            if context.value_bits:
-                value = hops * int(context.value_bits) / 8.0
-            elif hops == 0:
-                value = 0.0
-            else:
-                self._derived["noc_value_withheld"] = NO_VALUE_NOC_GRID
+            value, reason = value_noc_reading(hops, context.value_bits)
+            if reason is not None:
+                self._derived["noc_value_withheld"] = reason
         self._derived["noc_value"] = value
         return value
 

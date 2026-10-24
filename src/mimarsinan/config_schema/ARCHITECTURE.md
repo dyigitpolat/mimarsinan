@@ -90,7 +90,12 @@ with NaN is False, so a bound alone would admit it; an int of any size is finite
 compares exactly with a bound); scalar entries get the schema their
 `type`/`bounds`/`exclusive_bounds`/`options` imply (`schema_of`), JSON and CORES
 entries declare `value_schema` (the core-type schema `CORE_TYPE_SCHEMA` lives in
-`entries_write.py` beside the write fields that extend it and is injected into
+`entries_write.py` beside the write fields that extend it, with the cost-only
+`weight_sign_granularity` (`per_synapse` absent, or `per_axon`: the S0 amendment for
+CL-SG, legal set from `mapping.platform.platform_constraints`; [closure fix round] the
+cross-key `entries_write.platform_sign_errors`, beside the bias rule in the judge's
+`_layout_errors`, refuses at every door a per-axon core type under float weights,
+`pipeline_mode` 'vanilla' or `weight_quantization` false), and is injected into
 `cores` by the builder, with the platform bias mode (the flat `has_bias`, then the
 nested `platform_constraints.has_bias`, else a bias lane: `platform_bias_mode`) as
 `has_bias`'s absent meaning and the census batch rule as `simulation_batch_size`'s, through

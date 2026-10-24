@@ -194,3 +194,16 @@ class TestEmptyAndEdge:
         pf = dryrun_pack_feasible(graph, {"cores": _cores(8, 8, 4)})
         with pytest.raises(Exception):
             pf.feasible = False
+
+
+class TestARefusalByName:
+    def test_a_per_axon_pool_with_float_weights_is_infeasible_and_names_the_refusal(self):
+        """[MN6] The split refuses float weights by name (``SignSplitError``, a ``ValueError``); the dry run reports
+        that refusal as its verdict instead of letting it escape."""
+        core = _core(0, "A", 4, 4)
+        core.core_matrix = np.array([[0.5, -0.25, 0.1, 0.2]] * 4, dtype=np.float64)
+        graph = IRGraph(nodes=[core], output_sources=_src([(0, 0)]))
+        cores = [dict(_cores(16, 8, 4)[0], weight_sign_granularity="per_axon")]
+        pf = dryrun_pack_feasible(graph, {"cores": cores})
+        assert not pf.feasible and pf.hard_cores is None
+        assert pf.error is not None and pf.error.startswith("SignSplitError")

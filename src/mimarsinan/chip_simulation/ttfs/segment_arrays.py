@@ -11,6 +11,9 @@ import numpy as np
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.spike_source_spans import SpikeSourceSpan, compress_spike_sources
 
+#: Detects float dust on an integral weight, bias or threshold (the integer chip's check).
+INTEGRAL_DUST = 1e-6
+
 
 @dataclass
 class SegmentTtfsArrays:
@@ -24,24 +27,33 @@ class SegmentTtfsArrays:
     n_axons_per_core: List[int]
     n_neurons_per_core: List[int]
 
-    def integer_lattice(self) -> bool:
-        """True when every weight/bias/threshold is integral (the wq chip):
-        membranes then live exactly on the 1/S grid and float dust must be
-        projected away before the staircase — a true tie at V == theta was
-        f-noise-decided on t0_15 (V=16.99999943 vs the plugin's exact 17)."""
-        cached = getattr(self, "_integer_lattice", None)
-        if cached is None:
-            def _int(a) -> bool:
+    def integral_neurons(self, ci: int) -> np.ndarray:
+        """``(N,)`` bool: the neurons of core ``ci`` on the integer chip's lattice, their weights and bias integral
+        and the core's threshold an integer >= 1. Such a neuron's membrane over inputs on the ``1/(2S)`` grid is
+        exact in integers (``membrane_lattice``), so float dust never decides a staircase tie (on t0_15 a true tie
+        at V == theta was decided by f-noise: V=16.99999943 against the plugin's exact 17)."""
+        cache = getattr(self, "_integral_neurons", None)
+        if cache is None:
+            cache = self._integral_neurons = {}
+        hit = cache.get(ci)
+        if hit is None:
+            def _int(a) -> np.ndarray:
                 arr = np.asarray(a, dtype=np.float64)
-                return bool(np.all(np.abs(arr - np.round(arr)) <= 1e-6))
+                return np.abs(arr - np.round(arr)) <= INTEGRAL_DUST
 
-            cached = (
-                all(_int(w) for w in self.core_params)
-                and all(_int(t) for t in self.thresholds)
-                and all(b is None or _int(b) for b in self.hw_biases)
-            )
-            self._integer_lattice = cached
-        return cached
+            hit = np.all(_int(self.core_params[ci]), axis=1)
+            bias = self.hw_biases[ci]
+            if bias is not None:
+                hit = hit & _int(bias)
+            theta = np.asarray(self.thresholds[ci], dtype=np.float64)
+            if not bool(np.all(_int(theta) & (theta >= 1.0))):
+                hit = np.zeros_like(hit)
+            cache[ci] = hit
+        return hit
+
+    def integer_lattice(self) -> bool:
+        """True when every neuron of every core is on the integer chip's lattice (``integral_neurons``)."""
+        return all(bool(self.integral_neurons(ci).all()) for ci in range(len(self.core_params)))
 
 
 # Keyed by mapping identity: a HardCoreMapping is not mutated after packing, so

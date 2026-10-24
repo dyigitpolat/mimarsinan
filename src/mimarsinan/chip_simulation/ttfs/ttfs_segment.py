@@ -7,8 +7,11 @@ from mimarsinan.chip_simulation.ttfs.segment_arrays import (
     SegmentTtfsArrays,
     segment_ttfs_arrays_from_mapping as segment_ttfs_arrays_from_mapping,
 )
+from mimarsinan.chip_simulation.ttfs.float_membrane import float_membrane
+from mimarsinan.chip_simulation.ttfs.membrane_lattice import lattice_membrane
 from mimarsinan.mapping.support.spike_source_spans import SpikeSourceSpan
 from mimarsinan.models.spiking.ttfs_kernels import ttfs_quantized_activation_np
+from mimarsinan.models.spiking.wire_semantics import ttfs_quantized_staircase_lattice_np
 
 def _assign_span_slice(
     out: np.ndarray,
@@ -167,13 +170,6 @@ def _run_ttfs_segment_ordered(
     n_cores = len(seg.core_params)
     quantized = forces_activation_quantization(spiking_mode)
     s = max(int(simulation_length), 1)
-    # The 1/(2S) projection is EXACT only when the lattice precondition
-    # holds: integral chip params AND on-grid inputs (raw continuous inputs
-    # — e.g. the cascaded stage-0 contract — must never be snapped). The
-    # tolerance DETECTS float dust on the lattice; it is not a budget.
-    scaled = np.asarray(input_activations, dtype=np.float64) * s
-    inputs_on_grid = bool(np.all(np.abs(scaled - np.round(scaled)) <= 1e-4))
-    snap_lattice = quantized and inputs_on_grid and seg.integer_lattice()
 
     buffers: List[np.ndarray] = [
         np.zeros((batch, seg.n_neurons_per_core[i]), dtype=np.float64)
@@ -194,22 +190,33 @@ def _run_ttfs_segment_ordered(
             buffers=buffers,
             spans=seg.axon_spans[ci],
         )
-        v = input_signals[ci] @ seg.core_params[ci].T
         hw_bias = seg.hw_biases[ci]
-        if hw_bias is not None:
-            v = v + hw_bias
-        v = v.astype(np.float64, copy=False)
-        if snap_lattice:
-            # Exact projection onto the 1/(2S) membrane grid of the integer
-            # chip (float dust must never decide a staircase tie — t0_15).
-            v = np.round(v * (2 * s)) / (2 * s)
-        membrane[ci] = v
         if quantized:
-            buffers[ci] = ttfs_quantized_activation_np(
+            # The integer chip's membrane lattice, per neuron from its own inputs (``membrane_lattice``), and every
+            # other neuron's float membrane as a fixed function of its own terms (``float_membrane``): float dust and
+            # the summation order never decide a staircase tie (t0_15; the per-axon split; co-residency; R1).
+            lattice = lattice_membrane(seg, ci, input_signals[ci], s)
+            if lattice is not None and bool(lattice[0].all()):
+                v = lattice[1] / (2 * s)
+            else:
+                v = float_membrane(input_signals[ci], seg.core_params[ci], hw_bias)
+                if lattice is not None:
+                    v = np.where(lattice[0], lattice[1] / (2 * s), v)
+            membrane[ci] = v
+            fired = ttfs_quantized_activation_np(
                 v, seg.thresholds[ci], s,
                 comparator_half_step=comparator_half_step,
             )
+            if lattice is not None:
+                fired = np.where(lattice[0], ttfs_quantized_staircase_lattice_np(
+                    lattice[1], seg.thresholds[ci], s, comparator_half_step=comparator_half_step), fired)
+            buffers[ci] = fired
         else:
+            v = input_signals[ci] @ seg.core_params[ci].T
+            if hw_bias is not None:
+                v = v + hw_bias
+            v = v.astype(np.float64, copy=False)
+            membrane[ci] = v
             safe_th = np.maximum(seg.thresholds[ci], 1e-12)
             buffers[ci] = np.clip(np.maximum(v, 0.0) / safe_th, 0.0, 1.0)
     out = _gather_segment_output(

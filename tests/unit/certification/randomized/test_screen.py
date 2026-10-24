@@ -46,8 +46,16 @@ def test_an_off_arm_counts_teeth_by_its_paired_control():
 
 
 def test_a_base_violation_counts_teeth_by_mechanism():
-    rows = [_row("R6", "counterexample", classes=["layer:packing", "latency_order_walk"]),
-            _row("R6", "counterexample", classes=["layer:pass_cut", "u1_cut"]), _row("R6", "equal")]
+    """R4 is the base violation left after the CL1 fix round (H0's arm now switches its rule off)."""
+    rows = [_row("R4", "counterexample", classes=["layer:positions", "position_dependent_encode"]),
+            _row("R4", "counterexample", classes=["layer:pass_cut", "u1_cut"]), _row("R4", "equal")]
+    assert arm_summary(rows)["teeth"] == 1
+
+
+def test_an_arm_that_switches_an_integrated_rule_off_counts_teeth_by_its_paired_control():
+    """CL1: R6 and H5-skew switch G5's walks and pass timing off; a mechanism tag alone is no tooth."""
+    rows = [_row("R6", "counterexample", classes=["layer:walk", "latency_order_walk"], control="equal"),
+            _row("R6", "counterexample", classes=["layer:walk", "latency_order_walk"]), _row("R6", "equal")]
     assert arm_summary(rows)["teeth"] == 1
 
 
@@ -62,8 +70,8 @@ def test_the_report_pools_the_shipped_on_arms_and_states_the_denominators(table)
     denominators = doc["denominators"]
     assert "H7" in denominators["not_exercisable_at_code_level"]
     assert "H8" in denominators["with_teeth"]
-    assert set(denominators["exercisable_at_code_level"]) == {"H0", "H1-theta", "H1-latency", "H5-collapse",
-                                                               "H5-skew", "H8", "R6", "R4"}
+    assert set(denominators["exercisable_at_code_level"]) == {"H0", "H1-theta", "H5-collapse", "H5-skew", "H8",
+                                                               "R6", "R4"}
 
 
 def test_the_long_window_stratum_is_reported_apart_from_the_declared_line(table):
@@ -92,14 +100,29 @@ def test_the_denominators_list_every_hypothesis_of_the_box(table):
     den = report(rows, table=table)["denominators"]
     ids = [h["id"] for h in table["hypotheses"]]
     assert den["hypotheses"] == ids and list(den["per_hypothesis"]) == ids
-    assert set(den["switched_off_with_paired_controls"]) == {"H1-theta", "H1-latency", "H5-collapse", "H8"}
-    assert set(den["violated_by_the_base"]) == {"H0", "H5-skew", "R6", "R4"}
+    assert set(den["switched_off_with_paired_controls"]) == {"H1-theta", "H5-collapse", "H8", "H5-skew", "R6",
+                                                             "H0"}
+    assert set(den["violated_by_the_base"]) == {"R4"}
+    assert "H1-latency" in den["model_level_only"]  # asserted at run time on the integrated tree (CL1)
     for hid, entry in den["per_hypothesis"].items():
         assert entry["code_arm"] or entry["model_arm"] or entry["pending"], hid
     assert den["per_hypothesis"]["R5"]["pending"] == "CL1 (G5)"
     assert {"R1", "R2", "R3"} <= set(den["model_level_only"]) and "R5" in den["not_exercised"]
     assert {"R4", "H1-theta"} <= set(den["with_teeth"])
-    assert den["restated"].startswith("4 switched off with paired controls + 4 violated by the base, of 20")
+    assert den["restated"].startswith("6 switched off with paired controls + 1 violated by the base, of 20")
+
+
+def test_the_report_states_the_value_runs_against_the_int64_golden(table):
+    """CL1: every admitted law-carrying run (identity program and deployment) against G2's int64 golden at atol 0,
+    the on strata apart from every arm's rows; a refused instance compares nothing."""
+    rows = [_row("on", "equal", semantics="value", golden_windows=40, golden_mismatches=0),
+            _row("on_scheduled", "counterexample", semantics="value", golden_windows=20, golden_mismatches=3),
+            _row("on", "reference_error", semantics="value", golden_windows=0),
+            _row("R6", "equal", semantics="value", golden_windows=10, golden_mismatches=0)]
+    doc = report(rows, table=table)
+    on = doc["golden_relation"]
+    assert (on["instances"], on["windows"], on["differing_windows"], on["differ"]) == (2, 60, 3, 1)
+    assert doc["golden_relation_all_arms"]["instances"] == 3
 
 
 def test_a_table_arm_the_registry_lacks_is_refused_by_name(table):
@@ -142,9 +165,14 @@ def test_the_coverage_reports_every_declared_variable():
 
     decl = {"cores": [{"max_axons": 20, "max_neurons": 5, "count": 3}], "allow_coalescing": True,
             "allow_neuron_splitting": False, "allow_scheduling": True, "max_schedule_passes": 4,
-            "core_value_granularity": {}}
-    rows = [_row("on", "equal", declaration=decl, drawn=["cores.count"], motifs=["chain"], timesteps=4)]
-    declared = coverage(rows)["declared"]
+            "core_value_granularity": {}, "residency_plan": {"step": "floor"}}
+    rows = [_row("on", "equal", declaration=decl, drawn=["cores.count", "residency_plan.step"], motifs=["chain"],
+                 timesteps=4)]
+    cov = coverage(rows)
+    assert cov["drawn_paths"]["residency_plan.step"] == 1 and "present in 1 " in cov["drawn_by_fields"]["residency_plan"]
+    assert "deferred_to_cl1" not in cov
+    assert cov["declared"]["residency_plan"] == {'{"step": "floor"}': 1}
+    declared = cov["declared"]
     assert declared["max_axons"] == {"17-32": 1} and declared["count"] == {"1-8": 1}
     assert declared["flags_true"] == {"allow_coalescing": 1, "allow_neuron_splitting": 0, "allow_scheduling": 1}
     assert declared["core_value_granularity"] == {"{}": 1}

@@ -8,9 +8,11 @@ from typing import Any
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.packing.softcore import (
     compacted_core_extent,
+    deployed_core_extent,
     eliminated_core_extent,
 )
 from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
+from mimarsinan.mapping.platform.platform_constraints import PER_AXON
 from mimarsinan.mapping.platform.core_residency import (
     BASIS_PROVENANCE,
     provenance_group_id,
@@ -73,6 +75,18 @@ def spec_at_compacted_extent(spec: LayoutSoftCoreSpec, core: Any) -> LayoutSoftC
         input_count=int(spec.input_count) - eliminated_axons,
         output_count=int(spec.output_count) - eliminated_neurons,
     )
+
+
+def spec_at_deployed_extent(spec: LayoutSoftCoreSpec, core: Any, granularity: str, *,
+                            graph: Any = None) -> LayoutSoftCoreSpec:
+    """``spec`` at the rows ``core`` deploys: unchanged under per-synapse sign; under per-axon sign the exact
+    physical rows (``deployed_core_extent``) its runtime soft core packs after the sign split, where the layout
+    walk, holding no weights, planned two rows per input, and no bank (a split instance is not its bank's
+    region, so no plane plans bank residency for it)."""
+    if granularity != PER_AXON:
+        return spec
+    rows, neurons = deployed_core_extent(core, granularity, graph=graph)
+    return replace(spec, input_count=int(rows), output_count=int(neurons), bank_id=None)
 
 
 def spec_from_softcore(

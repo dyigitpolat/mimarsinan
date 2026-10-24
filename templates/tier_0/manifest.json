@@ -819,7 +819,7 @@
       },
       "tags": [],
       "expected_wall_min": 7,
-      "note": "ODIN bundle (4-bit weights, 128 x 256 logical cores, no bias lane, no coalescing or neuron splitting), the minimal pair of t0_45; the core count and coalescing are declared overrides, so the faithfulness names both ('...; allow_coalescing declared; cores declared')"
+      "note": "ODIN bundle (4-bit weights, 256 x 256 cores with one sign per axon row, so dense layers use the rows in sign pairs; no bias lane, no coalescing or neuron splitting), the minimal pair of t0_45; the core count and coalescing are declared overrides, so the faithfulness names both ('...; allow_coalescing declared; cores declared')"
     },
     {
       "name": "t0_62_lifs_simplemlp_fp_s8_truenorth",

@@ -85,7 +85,9 @@ class TestShippedRegistry:
     def test_odin_and_the_22nm_point_declare_their_geometry_with_claim_classes(self):
         odin, point = target_bundles()["odin"], target_bundles()["generic_estimated_22nm"]
         assert odin.geometry not in imc_platform_names() and point.geometry not in imc_platform_names()
-        assert odin.values["cores"] == [{"max_axons": 128, "max_neurons": 256, "count": 1, "has_bias": False}]
+        # CL-SG (owner 2026-10-20, "256 x 256, per-row sign"): the physical core, one static sign per axon row.
+        assert odin.values["cores"] == [{"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": False,
+                                         "weight_sign_granularity": "per_axon"}]
         assert odin.values["weight_bits"] == 4 and odin.claim_class == "quarantined"
         # The chip's permissions as the odin-fpga-infra declaration states them (f08c8efa): no inter-core
         # partial-sum transfer, no re-thresholding of a partial sum.
@@ -271,7 +273,8 @@ class TestBundlesAreImmutable:
     """A bundle read never hands out the cached bundle's own objects (review round 2): a caller that edits what a
     read returns, a report formatter normalizing cores for instance, changes no later read or expansion."""
 
-    ODIN_POOL = {"value": [{"max_axons": 128, "max_neurons": 256, "count": 64, "has_bias": False}], "note": "a pool"}
+    ODIN_POOL = {"value": [{"max_axons": 256, "max_neurons": 256, "count": 64, "has_bias": False,
+                            "weight_sign_granularity": "per_axon"}], "note": "a pool"}
 
     def test_a_departure_s_bundle_value_is_a_copy(self):
         before = copy.deepcopy(target_bundles()["odin"].values)

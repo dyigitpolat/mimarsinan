@@ -59,6 +59,28 @@ def value_noc_wire_hops(
     return value_hops
 
 
+def stage_value_noc_wire_hops(stages: Sequence[Any], *, cores_per_tile: int, mesh_height: int) -> int:
+    """[KA-G3-1] The value-hops of a BUILT program: per neural stage (each mapped from core 0, as the runner maps
+    it), every distinct (source core, neuron) a hard core reads from another core of the stage, over the XY hops
+    between their tiles. The record twin of :func:`value_noc_wire_hops` over hard cores: each core is its own
+    placement, and its distinct sources are its wires."""
+    value_hops = 0
+    for stage in stages:
+        mapping = getattr(stage, "hard_core_mapping", None)
+        if getattr(stage, "kind", None) != "neural" or mapping is None:
+            continue
+        wires: Dict[Tuple[int, int], int] = {}
+        for consumer, core in enumerate(mapping.cores):
+            read = {(int(s.core_), int(s.neuron_)) for s in core.axon_sources
+                    if not (s.is_input_ or s.is_off_ or s.is_always_on_) and int(s.core_) != consumer}
+            for producer, _neuron in read:
+                wires[(producer, consumer)] = wires.get((producer, consumer), 0) + 1
+        cores = tuple((index, index) for index in range(len(mapping.cores)))
+        value_hops += value_noc_wire_hops(pair_wires=wires, stage_placements=(cores,),
+                                          cores_per_tile=cores_per_tile, mesh_height=mesh_height)
+    return value_hops
+
+
 def value_noc_bytes(
     *,
     pair_wires: Any,

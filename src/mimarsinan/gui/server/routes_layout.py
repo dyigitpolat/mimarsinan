@@ -17,8 +17,10 @@ def get_layout_result_from_request(
     *,
     tiling_max_axons: int | None = None,
     tiling_max_neurons: int | None = None,
+    rows_per_input: int | None = None,
 ):
-    """Build model repr and run layout-mapping verification (cached per identical body)."""
+    """Build model repr and run layout-mapping verification (cached per identical body); ``rows_per_input`` is the
+    declared pool's physical rows per logical input (2 under per-axon weight sign)."""
     from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )
@@ -28,6 +30,7 @@ def get_layout_result_from_request(
         body,
         tiling_max_axons=tiling_max_axons,
         tiling_max_neurons=tiling_max_neurons,
+        rows_per_input=rows_per_input,
     )
     result = DEFAULT_LAYOUT_MAPPING_SERVICE.get_verification(request)
     if not result.feasible:
@@ -164,6 +167,7 @@ def register_routes(app: FastAPI) -> None:
                 resolve_platform_mapping_params,
             )
 
+            rows_per_input = 1
             if core_types:
                 pmap = resolve_platform_mapping_params(
                     core_types,
@@ -171,6 +175,7 @@ def register_routes(app: FastAPI) -> None:
                 )
                 tile_max_ax = pmap.effective_max_axons
                 tile_max_neu = pmap.effective_max_neurons
+                rows_per_input = pmap.rows_per_input
                 mr["allow_coalescing"] = pmap.allow_coalescing
                 mr["hardware_bias"] = pmap.hardware_bias
             else:
@@ -182,10 +187,11 @@ def register_routes(app: FastAPI) -> None:
                 mr,
                 tiling_max_axons=tile_max_ax,
                 tiling_max_neurons=tile_max_neu,
+                rows_per_input=rows_per_input,
             )
             softcores = layout_result.softcores
             result = verify_hardware_config(
-                softcores, core_types,
+                softcores, core_types, runs=layout_result.runs,
                 **ChipCapabilities.from_platform_constraints(body).layout_kwargs(),
             )
             stats_out = {

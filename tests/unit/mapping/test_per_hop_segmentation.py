@@ -120,14 +120,22 @@ class TestPartitionPerHop:
         segments = partition_ir_graph(graph, per_hop=True)
         assert [type(s) for s in segments] == [NeuralSegment, HostSegment, NeuralSegment]
 
-    def test_coalescing_groups_keep_segment_whole(self):
-        """Partial-sum / coalescing groups must not be split across boundaries
-        (membrane transfer is not a decode/re-encode); the segment stays whole."""
+    def test_psum_groups_keep_segment_whole(self):
+        """Partial-sum groups must not be split across boundaries (membrane
+        transfer is not a decode/re-encode); the segment stays whole."""
         graph = _chain_graph()
-        graph.nodes[1].coalescing_group_id = 7
+        graph.nodes[1].psum_group_id = 7
         segments = partition_ir_graph(graph, per_hop=True)
         assert len(segments) == 1
         assert len(segments[0].nodes) == 3
+
+    def test_a_coalescing_group_levels_as_one_unit(self):
+        """[H0] A coalescing group's cores are whole-fan-in neurons (decodable
+        counts): the segment splits per hop, the group's members at one depth."""
+        graph = _chain_graph()
+        graph.nodes[1].coalescing_group_id = 7
+        segments = partition_ir_graph(graph, per_hop=True)
+        assert [len(s.nodes) for s in segments] == [1, 1, 1]
 
 
 class TestPerHopBuildAndExecution:
@@ -258,11 +266,19 @@ class TestRetimedLevelStages:
         hybrid = self._build(graph, retimed=True)
         assert hybrid.stages[0].retimed_level_stages is None
 
-    def test_coalescing_groups_refuse_levels_like_the_split(self):
+    def test_psum_groups_refuse_levels_like_the_split(self):
         graph = _chain_graph()
-        graph.nodes[1].coalescing_group_id = 7
+        graph.nodes[1].psum_group_id = 7
         hybrid = self._build(graph, retimed=True)
         assert hybrid.stages[0].retimed_level_stages is None
+
+    def test_a_coalescing_group_takes_level_stages_like_the_split(self):
+        """[H0] The fused segment holding a coalescing group re-times per hop
+        as the split does, counts and logits bit-equal."""
+        graph = _chain_graph()
+        graph.nodes[1].coalescing_group_id = 7
+        assert self._build(graph, retimed=True).stages[0].retimed_level_stages is not None
+        self._assert_differential(graph, self._random_inputs())
 
     def _assert_differential(self, graph, inputs):
         split = _flow_for(self._build(graph, per_hop=True))

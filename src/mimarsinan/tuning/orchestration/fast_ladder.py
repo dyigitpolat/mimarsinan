@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
+from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe, clip_norm_of
 from mimarsinan.models.nn.layers import freeze_batchnorm_running_stats
 from mimarsinan.tuning.orchestration.fast_lr_schedule import (
     build_fast_lr_schedule,
@@ -184,14 +184,13 @@ class FastLadderMixin(_FastLadderHost):
         """The one rung training loop: apply T at ``rate``, then ``steps_per_rate``
         steps of ``_fast_loss`` under the shared optimizer + spanning cosine.
 
-        ``grad_clip_norm`` clips per step (``None`` falls back to the tuning
-        recipe's declared value); ``keep_best_probe`` snapshots the entry
+        ``grad_clip_norm`` clips per step (``None``: the tuning recipe's; <= 0:
+        none, ``clip_norm_of``); ``keep_best_probe`` snapshots the entry
         state, probes on every ``keep_best_interval``-th and the last step, and
         restores the best probed state — the rung can never end below its entry.
         """
         device = self.pipeline.config["device"]
-        if grad_clip_norm is None:
-            grad_clip_norm = self._rung_grad_clip_norm()
+        grad_clip_norm = clip_norm_of(self._rung_grad_clip_norm() if grad_clip_norm is None else grad_clip_norm)
         self._fast_set_rate(float(rate))
         optimizer, schedule = self._fast_optimizer, self._fast_lr_schedule
         assert optimizer is not None and schedule is not None, (
@@ -226,7 +225,7 @@ class FastLadderMixin(_FastLadderHost):
                 capture_rung_nonzero_grad_fraction(self)
             if grad_clip_norm is not None:
                 torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), float(grad_clip_norm)
+                    self.model.parameters(), grad_clip_norm
                 )
             optimizer.step()
             if not hold_schedule:

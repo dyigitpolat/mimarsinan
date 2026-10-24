@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 from typing import Sequence
 
 import numpy as np
@@ -27,6 +28,7 @@ from mimarsinan.mapping.platform.mapping_structure import (
     ChipCapabilities,
     MappingStrategy,
 )
+from mimarsinan.mapping.platform.platform_constraints import PER_AXON, PER_SYNAPSE, pool_sign_granularity
 from mimarsinan.mapping.layout.segmentation import (
     NeuralSegment,
     partition_ir_graph,
@@ -173,6 +175,7 @@ def _build_single_pool(
     shared_pool: list[HardCore] = (
         [] if identity else _make_available_hardware_cores(cores_config)
     )
+    sign_granularity = pool_sign_granularity(cores_config)
     first_stage = len(stages)
 
     for segment in partition_ir_graph(ir_graph, per_hop=per_hop_neural_segments):
@@ -189,6 +192,7 @@ def _build_single_pool(
                 allow_neuron_splitting=allow_neuron_splitting,
                 allow_coalescing=allow_coalescing,
                 identity=identity,
+                sign_granularity=sign_granularity,
             )
             if retimed_level_stages:
                 attach_retimed_level_stages(
@@ -218,13 +222,20 @@ def _build_single_pool(
 _SPLIT_FALLBACK_LOGGED = False
 
 
+def segment_specs_for(cores_config: Sequence[dict]):
+    """``_segment_specs`` at the declared pool's weight-sign granularity (the planner's spec reader)."""
+    return functools.partial(_segment_specs, sign_granularity=pool_sign_granularity(cores_config))
+
+
 def _segment_specs(
     cores: list[NeuralCore],
     *,
     ir_graph: IRGraph | None = None,
     hardware_bias: bool = False,
+    sign_granularity: str = PER_SYNAPSE,
 ) -> "tuple[list, dict[int, NeuralCore], list[int | None]]":
-    """Shape-only specs for one segment's IR cores, sized POST-compaction.
+    """Shape-only specs for one segment's IR cores, sized POST-compaction (and, under per-axon sign, at the
+    exact physical rows the runtime soft cores pack: ``spec_at_deployed_extent``).
 
     [U1] The pass PLANNING moved to ``pass_planner`` (one planner, both
     planes); this only produces its inputs: the specs, the spec→core map the
@@ -241,6 +252,7 @@ def _segment_specs(
 
     from mimarsinan.mapping.layout.softcore_spec_adapter import (
         spec_at_compacted_extent,
+        spec_at_deployed_extent,
         spec_from_neural_core,
     )
     from mimarsinan.mapping.platform.core_residency import ungrouped_fallback_id
@@ -273,7 +285,8 @@ def _segment_specs(
                 hardware_bias=hardware_bias,
                 fallback_residency_class_id=ungrouped_fallback_id(idx),
             )
-        bank_id = getattr(core, "weight_bank_id", None)
+        spec = spec_at_deployed_extent(spec, core, sign_granularity, graph=ir_graph)
+        bank_id = None if sign_granularity == PER_AXON else getattr(core, "weight_bank_id", None)
         if spec.bank_id is None and bank_id is not None:
             # The core is the authority on bank identity: a layout spec that
             # predates bank stamping must not silently disqualify residency.

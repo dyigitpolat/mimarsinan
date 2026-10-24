@@ -43,7 +43,7 @@ from mimarsinan.config_schema.registry.declaration_places import (
     section_placement_errors,
 )
 from mimarsinan.config_schema.registry.domain_rules import mvm_document_errors
-from mimarsinan.config_schema.registry.entries_write import platform_bias_errors
+from mimarsinan.config_schema.registry.entries_write import platform_bias_errors, platform_sign_errors
 from mimarsinan.config_schema.registry.types import Category
 from mimarsinan.config_schema.registry.value_schema import domain_errors, entry_value_errors, value_errors
 
@@ -88,12 +88,13 @@ def _once(*messages: str) -> List[str]:
 
 def _layout_errors(config: Mapping[str, Any], run_domain: Optional[str]) -> List[str]:
     """``declaration_errors``, then the cross-key rules of a layout's declarations: the platform bias rule (which
-    judges each bias declaration by its schema itself) and the floorplan pairing over the declarations their
-    schemas admit (a value outside its schema is the schema's to name, once)."""
+    judges each bias declaration by its schema itself), and the floorplan pairing and the per-axon sign rule
+    (``platform_sign_errors``) over the declarations their schemas admit (a value outside its schema is the
+    schema's to name, once)."""
     admitted = {key: value for key, value in config.items()
                 if key not in REGISTRY or not entry_value_errors(REGISTRY[key], value)}
     return _once(*declaration_errors(config, run_domain), *platform_bias_errors(config, REGISTRY["has_bias"]),
-                 *floorplan_config_errors(admitted))
+                 *floorplan_config_errors(admitted), *platform_sign_errors(admitted))
 
 
 def run_door_errors(pipeline_config: Mapping[str, Any]) -> List[str]:

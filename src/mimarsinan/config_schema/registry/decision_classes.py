@@ -101,7 +101,8 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "tile_grid_rows": _FLOORPLAN,
     "tile_grid_cols": _FLOORPLAN,
     "pass_buffer_capacity_bytes": (_AB, "a schedule whose carried rasters exceed the buffer is refused"),
-    "cores": (_FB, "join of its fields: has_bias is function-bearing, geometry and write fields cost-only"),
+    "cores": (_FB, "join of its fields: has_bias is function-bearing, geometry, weight-sign and write fields "
+                   "cost-only"),
     "max_axons": _GEOMETRY,
     "max_neurons": _GEOMETRY,
     "has_bias": (_FB, "the bias mode changes the weight-quantization grid; a core type without its own "

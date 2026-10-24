@@ -21,6 +21,7 @@ from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_types import HybridStage
+from mimarsinan.mapping.platform.platform_constraints import pool_sign_granularity
 
 
 def attach_retimed_level_stages(
@@ -65,6 +66,7 @@ def attach_retimed_level_stages(
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
             identity=identity,
+            sign_granularity=pool_sign_granularity(cores_config),
         )
         level_reindex.update(seg_reindex)
         # [nevresim parity] a retimed hop's input is the COUNT re-encode by

@@ -15,6 +15,7 @@ from mimarsinan.deployment_record.objectives import OBJECTIVES, CandidateStaticV
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
+from mimarsinan.search.problems.joint.candidate_fragments import CandidateWalk
 from mimarsinan.search.problems.joint.constrain import JointConstrainMixin
 from mimarsinan.search.problems.joint.evaluate import JointEvaluateMixin
 from mimarsinan.search.problems.joint.layout_hook import JointLayoutMixin
@@ -98,10 +99,10 @@ class _ValidateHarness(_Harness):
     def _ensure_mapper_repr(self, model, _placement):
         raise AssertionError("should not be reached")
 
-    def _collect_softcores(self, model, pcfg, *, collect_census=False):
+    def _walk_candidate(self, model, pcfg, *, collect_census=False):
         raise AssertionError("should not be reached")
 
-    def _pack_candidate(self, softcores, pcfg):
+    def _pack_candidate(self, softcores, pcfg, *, runs=None):
         raise AssertionError("should not be reached")
 
 
@@ -235,7 +236,7 @@ class _InnerHarness(_Harness):
             raise self._mapper_error
         return model
 
-    def _collect_softcores(self, model, pcfg, *, collect_census=False):
+    def _walk_candidate(self, model, pcfg, *, collect_census=False):
         raise AssertionError("should not be reached")
 
 
@@ -250,12 +251,12 @@ class _LayoutInnerHarness(_InnerHarness):
 class _UnpackableHarness(_LayoutInnerHarness):
     """A candidate whose facts resolve but whose softcores do not fit the chip."""
 
-    def _collect_softcores(self, model, pcfg, *, collect_census=False):
-        return [
+    def _walk_candidate(self, model, pcfg, *, collect_census=False):
+        return CandidateWalk((
             LayoutSoftCoreSpec(
                 input_count=64, output_count=64, residency_class_id=0, name="sc",
-            )
-        ], 0, None
+            ),
+        ), 0, None, (0,))
 
 
 TOO_SMALL_CHIP = {"cores": [{"max_axons": 8, "max_neurons": 8, "count": 1}]}
@@ -283,7 +284,7 @@ class TestEvaluateInnerRaiseSiteClassification:
             harness._evaluate_inner({}, {}, harness.encoding_placement)
 
     def test_a_layoutless_objective_set_never_touches_the_mapping(self):
-        # ``_collect_softcores`` asserts it is unreachable: with no layout-bearing
+        # ``_walk_candidate`` asserts it is unreachable: with no layout-bearing
         # axis active, the candidate view is built without the mapping at all.
         harness = _InnerHarness()
         assert harness._evaluate_inner({}, {}, harness.encoding_placement) == {"total_params": 1.0}

@@ -396,15 +396,17 @@ T0 = [
          target_overrides={
              "allow_coalescing": {
                  "value": True,
-                 "note": "the MLP's fan-ins exceed one ODIN core's 128 logical axons, "
-                         "and ODIN has no inter-core partial-sum transfer: the cell "
-                         "declares coalescing, a departure from the chip"},
+                 "note": "the MLP's fan-ins exceed one ODIN core's 127 logical inputs "
+                         "(256 rows, per-axon sign), and ODIN has no inter-core partial-sum "
+                         "transfer: the cell declares coalescing, a departure from the chip"},
              "cores": {
-                 "value": [{"max_axons": 128, "max_neurons": 256, "count": 64, "has_bias": False}],
+                 "value": [{"max_axons": 256, "max_neurons": 256, "count": 64, "has_bias": False,
+                            "weight_sign_granularity": "per_axon"}],
                  "note": "64 ODIN cores: ODIN is one core, and the MNIST cell needs a pool of them"}},
-         note="ODIN bundle (4-bit weights, 128 x 256 logical cores, no bias lane, no "
-              "coalescing or neuron splitting), the minimal pair of t0_45; the core count "
-              "and coalescing are declared overrides, so the faithfulness names both "
+         note="ODIN bundle (4-bit weights, 256 x 256 cores with one sign per axon row, so "
+              "dense layers use the rows in sign pairs; no bias lane, no coalescing or neuron "
+              "splitting), the minimal pair of t0_45; the core count and coalescing are "
+              "declared overrides, so the faithfulness names both "
               "('...; allow_coalescing declared; cores declared')"),
     dict(n=62, mode="lifs", quant="fp", s=8, vehicle="simplemlp", target="truenorth",
          target_overrides={

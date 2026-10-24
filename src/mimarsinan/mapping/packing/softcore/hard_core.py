@@ -11,6 +11,7 @@ from mimarsinan.mapping.packing.softcore.matrix_memo import (
 )
 from mimarsinan.mapping.packing.softcore.matrix_placement import (
     MatrixPlacement,
+    SignedRowPlacement,
     core_matrix_content_key,
     core_matrix_dtype,
     core_matrix_payloads,
@@ -25,6 +26,8 @@ from mimarsinan.mapping.platform.core_residency import (
 class HardCore:
     #: Declared-only: the per-column readout law, set only when a law-carrying soft core is placed.
     readout_law: CoreLaw
+    #: Declared-only: ``per_axon`` on a core whose type keeps one static sign per axon row, else absent.
+    weight_sign_granularity: str
 
     def __init__(self, axons_per_core, neurons_per_core, has_bias_capability=True):
         self.axons_per_core = axons_per_core
@@ -124,11 +127,18 @@ class HardCore:
                 f"HardCore.add_softcore: softcore id={softcore.id} carries "
                 f"neither a core_matrix nor a compaction descriptor."
             )
+        axons, neurons = int(softcore.get_input_count()), int(softcore.get_output_count())
+        signs = getattr(softcore, "compact_row_signs", None)
+        if signs is not None and rows is not None:
+            return SignedRowPlacement(
+                row_signs=signs, source=source, keep_rows=rows, keep_cols=cols,
+                axon_offset=axon_offset, neuron_offset=neuron_offset, axons=axons, neurons=neurons,
+            )
         return MatrixPlacement(
             source=source, keep_rows=rows, keep_cols=cols,
             axon_offset=axon_offset, neuron_offset=neuron_offset,
-            axons=softcore.get_input_count(),
-            neurons=softcore.get_output_count(),
+            axons=axons,
+            neurons=neurons,
         )
 
     def has_core_matrix(self) -> bool:

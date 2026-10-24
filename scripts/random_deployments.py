@@ -15,12 +15,13 @@ in seed order whatever the worker count, and writes ``DIR/<arm>.jsonl`` (one ver
 counterexample and run error is root-caused by ablation (``attribution``); an off arm's counterexample is
 re-run as its paired control (the same instance with the arm's field on). Each verdict also carries the
 identity program against the integer network N (Proposition 2's relation), the input dependence of the
-identity program and the weight range of every layer. At most 8 workers.
+identity program and the weight range of every layer; a value run (G2's integer readout law, from CL1) also
+carries its identity program and deployment against the int64 golden at atol 0. At most 8 workers.
 
 ``report`` pools the hypothesis-on strata that run the toolchain as shipped, prints the harness-setting stratum
 and the stratum beyond the declared window range (``on_long_window``, T in 9-64) apart, and adds the network
-relation per semantics, the coverage report and the denominators over every hypothesis of the theorem box
-(``--table``, default the in-tree fixture).
+relation per semantics, the int64 golden relation of the value runs, the coverage report and the denominators
+over every hypothesis of the theorem box (``--table``, default the in-tree fixture).
 """
 
 from __future__ import annotations

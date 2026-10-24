@@ -25,7 +25,8 @@ from mimarsinan.pipelining.session import parse_deployment_config
 DP, PC = "deployment_parameters", "platform_constraints"
 _FIXTURES = os.path.join(os.path.dirname(__file__), "..", "..", "fixtures", "deployment_configs")
 SPIKING, VALUE = "sync_simplemlp.json", "mvm_aq_lenet5.json"
-ODIN_CORE = {"max_axons": 128, "max_neurons": 256, "count": 1, "has_bias": False}
+ODIN_CORE = {"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": False,
+             "weight_sign_granularity": "per_axon"}
 READOUT_LAW = {"adc_bits": 6, "range": "fixed", "range_value": 4.0, "mult_bits": 16}
 LABELS = ("target_claim_class", "target_faithfulness_class")
 
@@ -94,7 +95,7 @@ class TestTypeStrictDeclarations:
         ("odin", "weight_bits", 4.0),
         ("truenorth", "weight_bits", True),
         ("odin", "cores", [{**ODIN_CORE, "has_bias": 0}]),
-        ("odin", "cores", [{**ODIN_CORE, "max_axons": 128.0, "count": 1.0}]),
+        ("odin", "cores", [{**ODIN_CORE, "max_axons": 256.0, "count": 1.0}]),
     ], ids=["int_as_float", "int_as_bool", "bool_as_int", "ints_as_floats"])
     def test_a_type_differing_value_refuses_by_name_at_every_door(self, tmp_path, name, key, value):
         doc = _document(name)
@@ -448,3 +449,46 @@ class TestNotApplied:
         assert flat["target_faithfulness_class"] == (
             "approximate: 1-bit weights for the axon-type weight law; allow_coalescing declared; "
             "weight grid not applied")
+
+
+class TestAPerAxonCoreUnderFloatWeights:
+    """[MN4] CL-SG design section 4 step A, door strictness "Strict, stated": a per-axon core type stores each weight
+    in sign pairs, exact only on the integer grid, so under float weights (``pipeline_mode: vanilla`` or
+    ``weight_quantization: false``, the derivation's reading) it refuses by name at every door, before any training
+    spend, where the split's ``SignSplitError`` would name it only at hard-core mapping."""
+
+    NAMED = "weight_sign_granularity='per_axon' needs weights on the integer grid"
+
+    @staticmethod
+    def _per_axon(doc):
+        doc[PC] = {**{k: v for k, v in doc[PC].items() if k not in ("cores", "max_axons", "max_neurons")},
+                   "cores": [dict(ODIN_CORE)]}
+        return doc
+
+    @pytest.mark.parametrize("explicit_false", [True, False], ids=["vanilla_and_false", "vanilla_alone"])
+    def test_a_per_axon_core_type_under_float_weights_refuses_at_every_door(self, tmp_path, explicit_false):
+        """The float-weight mechanism (``pipeline_mode: vanilla``, with or without the explicit
+        ``weight_quantization: false`` the derivation writes)."""
+        doc = self._per_axon(_load(SPIKING))
+        doc["pipeline_mode"] = "vanilla"
+        if explicit_false:
+            doc[DP]["weight_quantization"] = False
+        else:
+            doc[DP].pop("weight_quantization")
+        _refused_by_name(doc, tmp_path, self.NAMED)
+
+    def test_the_odin_target_under_float_weights_refuses_alike(self, tmp_path):
+        doc = _document("odin")
+        doc["pipeline_mode"], doc[DP]["weight_quantization"] = "vanilla", False
+        _refused_by_name(doc, tmp_path, self.NAMED)
+
+    def test_a_per_axon_core_type_under_weight_quantization_passes_every_door(self, tmp_path):
+        doc = self._per_axon(_load(SPIKING))
+        assert doc[DP]["weight_quantization"] is True
+        assert _verdicts(doc, tmp_path) == ([], [], None)
+
+    def test_a_per_synapse_core_type_under_float_weights_passes(self, tmp_path):
+        doc = self._per_axon(_load(SPIKING))
+        doc[PC]["cores"] = [{k: v for k, v in ODIN_CORE.items() if k != "weight_sign_granularity"}]
+        doc["pipeline_mode"], doc[DP]["weight_quantization"] = "vanilla", False
+        assert not any(self.NAMED in m for m in _verdicts(doc, tmp_path)[0])

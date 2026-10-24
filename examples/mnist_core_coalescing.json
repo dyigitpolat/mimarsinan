@@ -25,7 +25,6 @@
   },
   "platform_constraints": {
     "max_axons": 128,
-    "max_neurons": 1024,
     "target_tq": 32,
     "simulation_steps": 32,
     "weight_bits": 8,

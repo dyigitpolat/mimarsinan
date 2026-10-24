@@ -115,10 +115,11 @@ class HardCoreMappingStep(PipelineStep):
             )
 
         # [B] The declared pass-buffer ceiling gates HERE, with the schedule in
-        # hand and no simulation spent yet (0 = undeclared, metric only).
+        # hand and no simulation spent yet (0 = undeclared, metric only); [U1]
+        # the built program's replay refusals run with it, before any simulation.
         enforce_declared_buffer_capacity(
             hybrid_mapping, sim_len,
-            run_pass_transfer(self.pipeline.config),
+            run_pass_transfer(self.pipeline.config, hybrid_mapping=hybrid_mapping),
             self.pipeline.config.get("pass_buffer_capacity_bytes", 0),
         )
 

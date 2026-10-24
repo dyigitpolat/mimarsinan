@@ -9,7 +9,7 @@ boundary and always collapses.
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.support.schedule.pass_cut import (
     COLLAPSE,
@@ -76,12 +76,37 @@ def carried_wire_spans(stages: Sequence) -> Tuple[Tuple[int, int, int, int], ...
     return tuple(spans)
 
 
+def delayed_input_slices(stages: Sequence) -> Tuple[Tuple[int, int, int], ...]:
+    """[U1 W10] ``(node_id, width, reading stage)`` per carried input slice a pass reads beyond its first slice of
+    that producer: the builder replays a carried producer once per delivery delay (``pass_timing``), and each slice
+    beyond the first crosses the chip boundary once more, at the producer's width (G5 report 23.6), the width the
+    dense crossing counts too, also where the pass reads only part of the producer. The record twin of
+    ``noc.fragments.delayed_carry_wires``."""
+    produced: Dict[Optional[int], Dict[int, int]] = {}
+    out = []
+    for index, stage in enumerate(stages):
+        segment = _segment_of(stage)
+        if segment is None:
+            continue
+        carried = produced.setdefault(segment, {})
+        seen: set = set()
+        for slice_ in getattr(stage, "input_map", ()) or ():
+            node_id = int(slice_.node_id)
+            if node_id in carried and node_id in seen:
+                out.append((node_id, carried[node_id], index))
+            seen.add(node_id)
+        for s in getattr(stage, "output_map", ()) or ():
+            carried[int(s.node_id)] = carried.get(int(s.node_id), 0) + int(s.size)
+    return tuple(out)
+
+
 def carry_census_from_spans(
     spans: Sequence[Tuple[int, int, int, int]],
     *,
     boundary_count: int,
     timesteps: int,
     transfer: str,
+    extra_in: Sequence[Tuple[int, int, int]] = (),
 ) -> Dict[str, int]:
     """The carry census of ANY pass structure that can state its spans.
 
@@ -91,7 +116,9 @@ def carry_census_from_spans(
     numbers because this is the same function. Wires whose live ranges do not
     overlap share the buffer, so the peak is the worst boundary rather than
     the total — the register-allocation shape, priced under whichever
-    discipline the run actually executes.
+    discipline the run actually executes. ``extra_in``: ``(node, width, pass)``
+    per delayed slice beyond one per producer and pass (:func:`delayed_input_slices`,
+    ``delayed_carry_wires``), each one more boundary-in crossing of the buffered raster.
     """
     total = sum(carried_wire_bytes(w, timesteps, transfer) for _, w, _, _ in spans)
     peak = 0
@@ -105,6 +132,7 @@ def carry_census_from_spans(
         boundary_transfer_bytes(width=w, timesteps=timesteps)
         for _, w, _, _ in spans
     )
+    replayed = sum(boundary_transfer_bytes(width=w, timesteps=timesteps) for _, w, _ in extra_in)
     return {
         "carried_wires": len(spans),
         "carried_bytes": total,
@@ -112,17 +140,18 @@ def carry_census_from_spans(
         # [E3] Charged per DIRECTION: the two crossings ride different
         # channels and are priced by different constants.
         "boundary_out_bytes": crossing,
-        "boundary_in_bytes": crossing,
+        "boundary_in_bytes": crossing + replayed,
     }
 
 
 def pass_carry_census(
     stages: Sequence, timesteps: int, transfer: str
 ) -> Dict[str, int]:
-    """The sealed program's census — spans from its own hybrid stages."""
+    """The sealed program's census — spans and delayed slices from its own hybrid stages."""
     return carry_census_from_spans(
         carried_wire_spans(stages),
         boundary_count=len(stages), timesteps=timesteps, transfer=transfer,
+        extra_in=delayed_input_slices(stages),
     )
 
 
@@ -130,6 +159,7 @@ def carried_softcore_spans(
     softcores: Sequence,
     pass_placements: Sequence[Sequence[Tuple[int, int]]],
     pair_wires,
+    segment_of: Optional[Sequence[int]] = None,
 ) -> Tuple[Tuple[int, int, int, int], ...]:
     """[H2] A candidate's carried-wire spans, from its planned pass structure.
 
@@ -139,7 +169,12 @@ def carried_softcore_spans(
     its last consuming pass. Adjacency comes from the wire-census walk
     (``pair_wires``); membership from the planner's own placements — the same
     membership the NoC estimator prices carried re-entry traffic with [E5].
+    ``segment_of``: each spec's segment the passes were planned in (the
+    fragments' builder segments, ``noc.fragments.spec_segments``), else its
+    depth segment.
     """
+    if segment_of is None:
+        segment_of = [_softcore_segment(softcore) for softcore in softcores]
     membership: Dict[int, int] = {}
     for pass_index, placements in enumerate(pass_placements):
         for softcore_index, _hardcore in placements:
@@ -150,8 +185,7 @@ def carried_softcore_spans(
         consumed = membership.get(int(consumer))
         if produced is None or consumed is None or consumed <= produced:
             continue
-        if _softcore_segment(softcores[int(producer)]) != _softcore_segment(
-                softcores[int(consumer)]):
+        if segment_of[int(producer)] != segment_of[int(consumer)]:
             continue  # a later SEGMENT is a host boundary, never a carry
         key = int(producer)
         last_read[key] = max(last_read.get(key, consumed), consumed)

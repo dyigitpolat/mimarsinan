@@ -100,8 +100,11 @@ to the kept channels. Pruning is NEVER a decision variable: `option_axes.
 REFUSED_OPTION_AXES` refuses `pruning`/`pruning_fraction`/`prune_sparsity`
 by name at declaration time (accuracy impact unmodeled at candidate time),
 and the dead searched-pruning reader (`candidate_pruning_fraction`) is gone. [N3] When a NoC axis
-is active (`_requires_fragment("noc_fragments")`), `_collect_softcores` walks
-with `collect_wire_census=True` and `candidate_fragments.collect_candidate_noc`
+is active (`_requires_fragment("noc_fragments")`), `_walk_candidate` walks
+with `collect_wire_census=True` (its `CandidateWalk` also carries the walk's
+runs, `residency_rules.spec_runs`, which `_pack_candidate` and the NoC plan
+read, so every plane plans the builder's segments [U1 W9]) and
+`candidate_fragments.collect_candidate_noc`
 plans+packs every pass under the candidate's OWN capability bits
 (`layout_kwargs()`, the packing-census discipline) — the resulting
 `LayoutNocFragments` ride `CandidateLayout.noc` and the view's `noc_fragments`

@@ -10,8 +10,11 @@ from mimarsinan.mapping.packing.softcore import (
     HardCoreMapping,
     compact_soft_core_mapping,
     compacted_core_extent,
+    deployed_row_counts,
 )
+from mimarsinan.mapping.packing.softcore.sign_split import apply_sign_split
 from mimarsinan.mapping.packing.hybrid_types import HybridStage, SegmentIOSlice
+from mimarsinan.mapping.platform.platform_constraints import PER_SYNAPSE, pool_sign_granularity
 
 from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _check_no_split_coalescing_groups,
@@ -30,11 +33,14 @@ def _flush_neural_segment(
     allow_coalescing: bool = True,
     skip_coalescing_check: bool = False,
     identity: bool = False,
+    sign_granularity: str = PER_SYNAPSE,
 ) -> tuple[HybridStage, dict[int, dict[int, int]]]:
     """Pack a neural segment using cores drawn from shared_pool.
 
     ``identity=True`` skips the pool entirely: each soft core gets its own
-    exactly-sized hard core (``HardCoreMapping.map_identity``).
+    exactly-sized hard core (``HardCoreMapping.map_identity``). Under per-axon
+    ``sign_granularity`` each compacted soft core splits its mixed-sign rows
+    before packing (packing is block-diagonal, so the split is per soft core).
     """
     segment_node_ids = {n.id for n in current_neural}
 
@@ -72,6 +78,7 @@ def _flush_neural_segment(
     soft = neural_segment_to_soft_core_mapping(seg_graph, weight_banks)
 
     reindex_maps = compact_soft_core_mapping(soft.cores, soft.output_sources)
+    apply_sign_split(soft.cores, sign_granularity)
 
     output_map = []
     current_offset = 0
@@ -133,17 +140,19 @@ def _validate_coalescing_budget(
     allow_neuron_splitting: bool,
 ) -> None:
     """Verify every wide NeuralCore's coalescing group, at its POST-compaction
-    extent, fits in one core type's count."""
+    deployed extent (physical rows under per-axon sign), fits in one core type's count."""
+    granularity = pool_sign_granularity(cores_config)
     for core in cores:
         if core.core_matrix is None:
             continue
-        n_weight_axons, n_neurons = compacted_core_extent(core)
+        rows = deployed_row_counts(core, granularity)
+        n_weight_axons, n_neurons = int(rows.sum()), compacted_core_extent(core)[1]
         if core.hardware_bias is None:
             src_flat = core.input_sources.flatten()
             if (len(src_flat) > 0
                     and isinstance(src_flat[-1], IRSource)
                     and src_flat[-1].is_always_on()):
-                n_weight_axons -= 1
+                n_weight_axons -= int(rows[-1])
 
         fits_any = False
         best_needed = 0
@@ -201,6 +210,7 @@ def _flush_scheduled_segment(
         allow_neuron_splitting=allow_neuron_splitting,
         allow_coalescing=allow_coalescing,
         skip_coalescing_check=True,
+        sign_granularity=pool_sign_granularity(cores_config),
     )
     stage.schedule_segment_index = segment_index
     stage.schedule_pass_index = pass_index

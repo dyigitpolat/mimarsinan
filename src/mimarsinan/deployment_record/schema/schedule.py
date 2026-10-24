@@ -54,9 +54,12 @@ class SegmentCoreRecord:
     params_bytes: int
     connectivity_entries: int
     static_delay_levels: Optional[int]
+    #: [CL-SG] The used rows a per-axon core's sign register signs (its payload counts one bit each, in
+    #: ``params_bytes``); unset on a per-synapse core, so its record keeps its bytes.
+    sign_register_rows: Optional[int] = declared_only()
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return without_unset_declared(self, asdict(self))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SegmentCoreRecord":
@@ -94,7 +97,10 @@ class SegmentRecord:
             )
 
     def to_dict(self) -> Dict[str, Any]:
-        return without_unset_declared(self, asdict(self))
+        data = without_unset_declared(self, asdict(self))
+        # Each core by its own rule, so an unset declared-only core field stays out of the bytes.
+        data["cores"] = tuple(core.to_dict() for core in self.cores)
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SegmentRecord":
@@ -242,6 +248,9 @@ class ScheduleRecord:
     carry: Optional["PassCarryRecord"] = None
     #: The executed residency plan; declared-only, so a record without one keeps its bytes.
     residency_plan: Optional[ResidencyPlanRecord] = declared_only()
+    #: [KA-G3-1] A value-domain build's NoC wire census (value-hops on the resolved floorplan; the value rule reads
+    #: it at ``activation_bits`` as ``noc_value_bytes``); declared-only, so a record without one keeps its bytes.
+    value_noc_wire_hops: Optional[int] = declared_only()
 
     def segments(self) -> Tuple[SegmentRecord, ...]:
         return tuple(s for s in self.stages if isinstance(s, SegmentRecord))

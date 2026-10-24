@@ -61,3 +61,30 @@ class TestRecipeRequiredForRecipeStepBuilders:
         recipe_trainer_optimizer = trainer.build_step_optimizer(1e-3)
         with pytest.raises(RuntimeError, match="recipe"):
             trainer._build_recipe_step_scheduler(recipe_trainer_optimizer, 10)
+
+
+class TestOneReadingOfTheClipNorm:
+    """[C4] ``grad_clip_norm`` has one reading for every trainer: an absent or non-positive norm is no clipping
+    (``TrainingRecipe`` supplies 0 when a declared recipe omits the field; clipping to norm 0 zeroes every
+    gradient, and a negative norm reverses it)."""
+
+    @pytest.mark.parametrize("norm,expected", [(None, None), (0, None), (0.0, None), (-1.0, None),
+                                               (0.25, 0.25), (1, 1.0)])
+    def test_the_clip_norm_a_declaration_asks_for(self, norm, expected):
+        from mimarsinan.model_training.training_recipe import clip_norm_of
+
+        assert clip_norm_of(norm) == expected
+
+    def test_the_trainer_reads_the_one_rule(self, monkeypatch):
+        import torch
+        from mimarsinan.model_training import basic_trainer
+
+        seen = []
+        monkeypatch.setattr(basic_trainer, "clip_norm_of", lambda norm: seen.append(norm) or None)
+        trainer = _make_recipeless_trainer()
+        trainer.recipe = TrainingRecipe(grad_clip_norm=0.5)
+        optimizer = torch.optim.SGD(trainer.model.parameters(), lr=0.1)
+        scaler = torch.amp.GradScaler("cpu", enabled=False)
+        x, y = torch.zeros(2, 1, 8, 8), torch.zeros(2, dtype=torch.long)
+        trainer._optimize(x, y, optimizer, scaler)
+        assert seen == [0.5]

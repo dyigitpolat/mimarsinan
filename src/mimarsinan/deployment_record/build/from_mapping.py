@@ -106,12 +106,14 @@ def _compute_op_record(stage_index: int, stage: Any) -> ComputeOpRecord:
 
 def schedule_record_from_mapping(
     hybrid_mapping: Any, *, weight_bits: Any, params_reloaded: int,
-    timesteps: Any = None, pass_transfer: Any = None,
+    timesteps: Any = None, pass_transfer: Any = None, value_noc_wire_hops: Optional[int] = None,
 ) -> ScheduleRecord:
     """Mirror ``HybridHardCoreMapping.stages`` 1:1 into the schedule fragment.
 
     ``params_reloaded`` is the IR-level plan figure from
-    ``weight_reuse_plan_from_graph`` (provenance "planned@scm").
+    ``weight_reuse_plan_from_graph`` (provenance "planned@scm");
+    ``value_noc_wire_hops`` the value-domain wire census the run seals
+    (``value_domain.record_value_noc_wire_hops``), None for none.
     """
     bits = require_weight_bits(weight_bits)
     neural = {
@@ -144,6 +146,7 @@ def schedule_record_from_mapping(
         compute_op_count=len(stages_out) - len(segments),
         carry=carry_record_from_mapping(hybrid_mapping, timesteps, pass_transfer),
         residency_plan=residency_plan_record(hybrid_mapping),
+        value_noc_wire_hops=None if value_noc_wire_hops is None else int(value_noc_wire_hops),
     )
 
 
