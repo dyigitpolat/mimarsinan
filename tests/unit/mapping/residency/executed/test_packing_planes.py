@@ -3,7 +3,8 @@ cores of a pass are each plane's own packing: the composition packs each phase w
 on the plane's specs, as ``collect_noc_fragments`` packs a pass), the builder each pass's IR cores with the hard-core
 packer. Per-core cells, programmed bytes and pins therefore agree only where both packers pack a phase alike, and each
 executed pass records its difference from the composition with the cause (``schedule_residency_pass``); the record's
-bytes are the marks'.
+bytes are the marks'. [W04] The layout packer takes the hard-core packer's decisions on the same cores, so the
+two pack a phase alike wherever their cores agree (t0_53 below).
 
 A phase packed on the declared (bounded) pool can need more tiles than its layers packed alone, so the executed
 program is admitted against the declared pool (the physical bound), never refused for a layer-granular count or for
@@ -69,41 +70,39 @@ def _executed_bytes(passes, bits: int) -> int:
                for i, core in enumerate(s.hard_core_mapping.cores) if i not in s.schedule_resident_cores)
 
 
-class TestThePackersDivergeOnT053AtSixCores:
-    """t0_53 at C 6 (x2.0): the layout packer neuron-splits a 128x64 tile of layer 2 and places 128x54 of it on the
-    core that holds layer 3 (256x10), a 384x64-cell rectangle; the builder's hard-core packer keeps every layer on its
-    own cores. One pass partition, two packings."""
+class TestThePackersAgreeOnT053AtSixCores:
+    """t0_53 at C 6 (x2.0). Before W04 the layout packer neuron-split a 128x64 tile of layer 2 into the core holding
+    layer 3 (256x10), a core of another latency: its split into a used core read the core's ``latency`` and a layout
+    core carries ``latency_tag``, so it saw none. The hard-core packer kept every layer on its own cores, and the two
+    planes priced 11,040 against 11,840 bytes (floor) and 52,000 against 42,560 (stateless). The layout packer now
+    reads the latency as the hard-core packer does: one pass partition, one packing, one byte count."""
 
     BITS = 5
 
-    @pytest.mark.parametrize("step, planned, executed", [("floor", 11_040, 11_840), ("stateless", 52_000, 42_560)])
-    def test_one_pass_partition_and_the_stated_byte_difference(self, step, planned, executed):
+    @pytest.mark.parametrize("step, nbytes", [("floor", 11_840), ("stateless", 42_560)])
+    def test_one_pass_partition_one_packing_one_byte_count(self, step, nbytes):
         vehicle, comp, frag, mapping, passes = _planes("t0_53", 2.0, step)
         assert int(vehicle.config["weight_bits"]) == self.BITS
         built, plan_layers = _layers(vehicle, comp, passes)
         assert built == plan_layers and len(passes) == comp.step[2] == 2           # the pass partition: equal
-        assert comp.facts.programmed_bytes(lambda c: params_bytes(c, self.BITS)) == planned       # the planner's
-        assert _executed_bytes(passes, self.BITS) == executed                                     # the record's
+        assert comp.facts.programmed_bytes(lambda c: params_bytes(c, self.BITS)) == nbytes        # the planner's
+        assert _executed_bytes(passes, self.BITS) == nbytes                                       # the record's
         assert [p.core_cells for p in frag.pass_programs] == [tuple(c for c, _ in p) for p in comp.facts.pass_cores]
 
-    def test_the_floor_pins_different_cores_on_the_two_planes(self):
+    def test_the_floor_pins_the_same_cores_on_the_two_planes(self):
         _vehicle, comp, frag, _mapping, passes = _planes("t0_53", 2.0, "floor")
-        assert list(comp.facts.pass_resident_cores) == [frozenset({0}), frozenset({0, 1, 2, 3})]
+        assert list(comp.facts.pass_resident_cores) == [frozenset({0}), frozenset({1, 2, 3, 4})]
         assert [p.schedule_resident_cores for p in frag.pass_programs] == list(comp.facts.pass_resident_cores)
-        assert [s.schedule_resident_cores for s in passes] == [frozenset({0}), frozenset({1, 2, 3, 4})]
+        assert [s.schedule_resident_cores for s in passes] == list(comp.facts.pass_resident_cores)
 
     @pytest.mark.parametrize("step", ["floor", "stateless"])
-    def test_each_executed_pass_records_its_difference_with_the_cause(self, step):
+    def test_no_executed_pass_records_a_difference(self, step):
         _vehicle, comp, _frag, _mapping, passes = _planes("t0_53", 2.0, step)
         census = [getattr(s, SCHEDULE_RESIDENCY_PASS) for s in passes]
         assert [c.pass_index for c in census] == [0, 1]
-        assert census[0].plane_differences() == ()                                   # layer 1 alone: one packing
+        assert all(c.plane_differences() == () for c in census)
         assert census[1].planned_cores == comp.facts.pass_cores[1]
         assert census[1].executed_cells == (2560, 8192, 8192, 8192, 8192)
-        differences = " | ".join(census[1].plane_differences())
-        assert "packer divergence" in differences and "(24576, 8192 x3, 1280)" in differences
-        if step == "floor":
-            assert "pinned cores differ" in differences
         assert all(c.planned_resident == comp.facts.pass_resident_cores[q] for q, c in enumerate(census))
         assert all(c.executed_resident == s.schedule_resident_cores for c, s in zip(census, passes))
 

@@ -215,20 +215,21 @@ class TestTheVerdictAPackCarries:
         assert not result.feasible
         assert result.verdict == VERDICT_HEURISTIC_FAILED
 
-    def test_the_fusion_the_engine_always_performs_is_never_proven_away(self):
-        """The placement engine fuses hardcores whatever the declared coalescing
-        flag says, so the axon dimension is never tight at this seam."""
-        packed = pack_layout(
-            softcores=WIDE_SPECS, core_types=WIDE_TYPES, allow_coalescing=False,
-        )
-        assert packed.feasible and packed.verdict == VERDICT_FEASIBLE
+    def test_fusion_is_the_declared_coalescing_and_its_absence_is_proven(self):
+        """[W04] The layout packer fuses hardcores only under declared coalescing, as the hard-core packer
+        (``run_placement``) does: with it the wide spec packs on a fused core; without it nothing spreads its
+        axons, so the refusal is proven by the axon-shaped proof."""
+        fused = pack_layout(softcores=WIDE_SPECS, core_types=WIDE_TYPES, allow_coalescing=True)
+        assert fused.feasible and fused.verdict == VERDICT_FEASIBLE
+        refused = pack_layout(softcores=WIDE_SPECS, core_types=WIDE_TYPES, allow_coalescing=False)
+        assert not refused.feasible and refused.verdict == VERDICT_PROVEN_INFEASIBLE
         assert no_core_type_fits(
             WIDE_SPECS, WIDE_TYPES, neurons_may_split=False, axons_may_spread=False,
-        ), "the axon-shaped proof this pack would have contradicted"
+        ), "the axon-shaped proof the refusal states"
 
     def test_an_axon_demand_past_fusion_is_refused_rather_than_misproven(self):
         result = pack_layout(
-            softcores=TOO_WIDE_SPECS, core_types=WIDE_TYPES, allow_coalescing=False,
+            softcores=TOO_WIDE_SPECS, core_types=WIDE_TYPES, allow_coalescing=True,
         )
         assert not result.feasible
         assert result.verdict == VERDICT_HEURISTIC_FAILED

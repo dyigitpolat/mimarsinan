@@ -306,9 +306,9 @@ class TestSuggestHardwareConfig:
     def test_combined_coalescing_and_splitting_128x256_on_16x16(self):
         """128×256 softcore on 16×16 hw cores using both coalescing + splitting.
 
-        Coalescing splits 128 axons into 8 fragments of 16.
-        Splitting splits 256 neurons into 16 fragments of 16.
-        Total: 8 × 16 = 128 hardware cores.
+        Splitting cuts 256 neurons into 16 windows of 16; [W04] coalescing fuses 8 cores of 16 axons for each
+        window, the 128-axon softcore kept whole as the hard-core packer keeps it.
+        Total: 16 fused cores of 8 = 128 hardware cores.
         """
         from mimarsinan.mapping.layout.layout_packer import pack_layout
         from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
@@ -322,7 +322,8 @@ class TestSuggestHardwareConfig:
             allow_coalescing=True,
         )
         assert result.feasible, f"Combined coalescing+splitting failed: {result.error}"
-        assert result.cores_used == 128  # 8 coalescing × 16 splits
+        assert result.cores_used == 16  # 16 windows, each a fused core
+        assert sum(s.axons_per_core // 16 for s in result.used_core_snapshots) == 128  # 8 coalescing × 16 splits
 
     def test_combined_coalescing_and_splitting_suggest_and_verify(self):
         """Auto-suggest with both features produces a feasible config."""
@@ -411,11 +412,12 @@ class TestSuggestHardwareConfig:
                 )
                 for ct in suggestion.core_types
             ]
-            result = pack_layout(softcores=softcores, core_types=hw_types)
+            # [W04] the declaration the suggestion assumed: fusion only under declared coalescing
+            result = pack_layout(softcores=softcores, core_types=hw_types, allow_coalescing=allow_coalescing)
             assert result.feasible, (
                 f"allow_coalescing={allow_coalescing}: pack_layout failed: {result.error}"
             )
-            v = verify_hardware_config(softcores, suggestion.core_types)
+            v = verify_hardware_config(softcores, suggestion.core_types, allow_coalescing=allow_coalescing)
             assert v["feasible"], (
                 f"allow_coalescing={allow_coalescing}: verify failed: {v['errors']}"
             )

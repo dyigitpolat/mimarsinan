@@ -110,10 +110,10 @@ def shape_census(network: LadderNetwork, platform: Mapping[str, Any], *, wire_ce
 def packed_tiles(census: ShapeCensus, platform: Mapping[str, Any]) -> int:
     """Physical cores the whole program packs into with an unbounded count of each declared core type.
 
-    With coalescing declared, the layout packer pre-splits a softcore wider than one core
-    into fragments of one core each. Without it, the packer places such a softcore on a
-    fused instance of several cores and reports the instance as one used core, so a fused
-    instance counts its member cores here.
+    With coalescing declared, the layout packer keeps a softcore wider than one core whole on a
+    fused instance of ceil(a / A) cores, as the hard-core packer does, and reports the instance
+    as one used core, so a fused instance counts its member cores here (``LayoutCoreSnapshot.tiles``).
+    Without it, nothing fuses and such a softcore does not pack (refused by name).
     """
     kwargs = ChipCapabilities.from_platform_constraints(platform).layout_kwargs()
     declared = core_types_from_declaration(platform["cores"])
@@ -178,6 +178,7 @@ def price_program(
     ).quantities
     bits = platform.get("weight_bits")
     once_cells = [c for p in noc.pass_programs for c in p.core_cells]
+    once_tiles = sum(p.tiles for p in noc.pass_programs)  # physical cores: a fused core counts its members
     once_bytes = None if bits is None else sum(b for p in noc.pass_programs for b in pass_program_bytes(p, int(bits)))
     written = sum(1 for p in noc.pass_programs if p.cores and not p.resident)
     if _MAX_WRITES in QUANTITY_SPECS and q.has(_MAX_WRITES):
@@ -188,7 +189,7 @@ def price_program(
     refusals: Dict[str, Dict[str, str]] = {}
     if physics is not None:
         compute = _variant(q, _CARRY + _PROGRAMMING + ("sync_count", "compute_op_count"), {"host_macs": 0})
-        once = {"reprogrammed_cores": len(once_cells), **({} if once_bytes is None else
+        once = {"reprogrammed_cores": once_tiles, **({} if once_bytes is None else
                                                           {"reprogrammed_bytes": once_bytes})}
         for name, variant in (("program", q), ("compute_only", compute), ("once", _variant(compute, (), once)),
                               ("no_host", _variant(q, ("compute_op_count",), {"host_macs": 0}))):
@@ -199,7 +200,7 @@ def price_program(
     return PricedProgram(
         platform=platform, packed_tiles=tiles, passes=len(noc.pass_placements), latency_steps=facts.latency_steps,
         reprogram_passes=int(programming.reprogram_passes), written_passes=written, carry=facts.carry,
-        period_bytes=programming.reprogrammed_bytes, once_bytes=once_bytes, once_cores=len(once_cells),
+        period_bytes=programming.reprogrammed_bytes, once_bytes=once_bytes, once_cores=once_tiles,
         max_writes=max_writes, terms=terms, refusals=refusals, wall_s=time.time() - start,
         endurance=physics.band(_ENDURANCE).nominal if physics is not None and physics.has(_ENDURANCE) else None,
     )

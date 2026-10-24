@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import functools
 from typing import Sequence
 
 import numpy as np
@@ -11,7 +10,7 @@ from mimarsinan.mapping.support.activation_scales import (
     compute_node_input_scales as _compute_node_input_activation_scales,
     compute_node_output_scales as _compute_node_activation_scales,
 )
-from mimarsinan.mapping.ir import IRGraph, NeuralCore
+from mimarsinan.mapping.ir import IRGraph
 from mimarsinan.mapping.ir.dynamic_bank import carry_bindings
 from mimarsinan.mapping.packing.softcore import HardCore
 from mimarsinan.mapping.packing.hybrid_segment import _flush_neural_segment
@@ -23,13 +22,16 @@ from mimarsinan.mapping.packing.hybrid_segment_helpers import (
 from mimarsinan.mapping.packing.hybrid_build_scheduled import _build_scheduled
 from mimarsinan.mapping.packing.pass_timing import project_passes
 from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
+from mimarsinan.mapping.packing.segment_specs import (  # moved there: re-exported for the scheduler and tests
+    _segment_specs as _segment_specs, segment_specs_for as segment_specs_for,
+)
 from mimarsinan.mapping.packing.hybrid_types import HybridHardCoreMapping, HybridStage
 from mimarsinan.mapping.support.period_census import SCHEDULE_RESIDENCY_PLAN
 from mimarsinan.mapping.platform.mapping_structure import (
     ChipCapabilities,
     MappingStrategy,
 )
-from mimarsinan.mapping.platform.platform_constraints import PER_AXON, PER_SYNAPSE, pool_sign_granularity
+from mimarsinan.mapping.platform.platform_constraints import pool_sign_granularity
 from mimarsinan.mapping.layout.segmentation import (
     NeuralSegment,
     partition_ir_graph,
@@ -79,6 +81,7 @@ def build_hybrid_hard_core_mapping(
             retimed_level_stages=retimed_level_stages,
             max_schedule_passes=max_schedule_passes,
             residency_plan=strategy.capabilities.residency_plan,
+            position_multiplexing=strategy.capabilities.position_multiplexing,
         )
     else:
         _build_single_pool(
@@ -218,83 +221,3 @@ def _build_single_pool(
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
     if not identity and not retimed_level_stages:
         project_passes(stages[first_stage:])
-
-
-_SPLIT_FALLBACK_LOGGED = False
-
-
-def segment_specs_for(cores_config: Sequence[dict]):
-    """``_segment_specs`` at the declared pool's weight-sign granularity (the planner's spec reader)."""
-    return functools.partial(_segment_specs, sign_granularity=pool_sign_granularity(cores_config))
-
-
-def _segment_specs(
-    cores: list[NeuralCore],
-    *,
-    ir_graph: IRGraph | None = None,
-    hardware_bias: bool = False,
-    sign_granularity: str = PER_SYNAPSE,
-) -> "tuple[list, dict[int, NeuralCore], list[int | None]]":
-    """Shape-only specs for one segment's IR cores, sized POST-compaction (and, under per-axon sign, at the
-    exact physical rows the runtime soft cores pack: ``spec_at_deployed_extent``).
-
-    [U1] The pass PLANNING moved to ``pass_planner`` (one planner, both
-    planes); this only produces its inputs: the specs, the spec→core map the
-    materialization walks back through, and the coalescing group ids that
-    keep a wide fan-in's fragments in one pass. Every spec is sized by the
-    post-compaction extent: elimination reaches the pass ladder only if a
-    pruned instance is budgeted for what it occupies.
-    """
-    global _SPLIT_FALLBACK_LOGGED
-    if not cores:
-        return [], {}, []
-
-    from dataclasses import replace
-
-    from mimarsinan.mapping.layout.softcore_spec_adapter import (
-        spec_at_compacted_extent,
-        spec_at_deployed_extent,
-        spec_from_neural_core,
-    )
-    from mimarsinan.mapping.platform.core_residency import ungrouped_fallback_id
-
-    layout_specs = list(getattr(ir_graph, "layout_softcores", None) or [])
-    use_layout = bool(layout_specs) and all(
-        getattr(c, "layout_softcore_index", None) is not None for c in cores
-    )
-
-    specs: list = []
-    coalescing_group_ids: list[int | None] = []
-    spec_to_core: dict[int, NeuralCore] = {}
-    for idx, core in enumerate(cores):
-        if use_layout:
-            sc_idx = int(core.layout_softcore_index)  # type: ignore[arg-type]
-            spec = spec_at_compacted_extent(layout_specs[sc_idx], core)
-        else:
-            if not _SPLIT_FALLBACK_LOGGED:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "Scheduled split: reconstructing LayoutSoftCoreSpec from NeuralCore "
-                    "(missing IRGraph.layout_softcores); input_count may diverge from SCM, "
-                    "and residency classes fall back to the source-perceptron proxy "
-                    "(residency_basis=provenance_fallback) rather than the core values."
-                )
-                _SPLIT_FALLBACK_LOGGED = True
-            spec = spec_from_neural_core(
-                core,
-                hardware_bias=hardware_bias,
-                fallback_residency_class_id=ungrouped_fallback_id(idx),
-            )
-        spec = spec_at_deployed_extent(spec, core, sign_granularity, graph=ir_graph)
-        bank_id = None if sign_granularity == PER_AXON else getattr(core, "weight_bank_id", None)
-        if spec.bank_id is None and bank_id is not None:
-            # The core is the authority on bank identity: a layout spec that
-            # predates bank stamping must not silently disqualify residency.
-            spec = replace(spec, bank_id=int(bank_id))
-        specs.append(spec)
-        coalescing_group_ids.append(getattr(core, "coalescing_group_id", None))
-        spec_to_core[id(spec)] = core
-
-    return specs, spec_to_core, coalescing_group_ids
-

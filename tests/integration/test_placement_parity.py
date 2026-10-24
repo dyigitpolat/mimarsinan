@@ -49,6 +49,9 @@ def test_layout_and_runtime_packers_agree(name):
     builder, kwargs = CONFIGS[name]
     cores_config = kwargs["cores_config"]
     allow_neuron_splitting = kwargs.get("allow_neuron_splitting", False)
+    # [W04] Both packers under the config's declaration: the layout packer fuses only under declared coalescing, as
+    # the runtime packer does (before, it fused whatever was declared, and this test passed the declaration to neither).
+    allow_coalescing = kwargs.get("allow_coalescing", False)
 
     core_types = [
         LayoutHardCoreType(
@@ -69,12 +72,13 @@ def test_layout_and_runtime_packers_agree(name):
         softcores=specs,
         core_types=core_types,
         allow_neuron_splitting=allow_neuron_splitting,
+        allow_coalescing=allow_coalescing,
     )
 
     # Runtime packer over the same compacted soft cores.
     soft_runtime = _compacted_soft_mapping(builder())
     hcm = HardCoreMapping(_make_available_hardware_cores(cores_config))
-    hcm.map(soft_runtime, allow_neuron_splitting=allow_neuron_splitting)
+    hcm.map(soft_runtime, allow_neuron_splitting=allow_neuron_splitting, allow_coalescing=allow_coalescing)
 
     assert layout_result.feasible
     assert layout_result.cores_used == len(hcm.cores), (

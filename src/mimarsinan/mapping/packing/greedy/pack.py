@@ -12,10 +12,12 @@ from mimarsinan.mapping.packing.greedy.pool import CorePool, ListCorePool
 from mimarsinan.mapping.packing.greedy.remaining import RemainingSoftcores
 from mimarsinan.mapping.packing.greedy.split import (
     _is_splittable,
+    _try_split_into_fused,
     _try_split_into_used,
     _try_split_into_unused,
 )
 from mimarsinan.mapping.packing.greedy.used_index import UsedBuckets
+from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 from mimarsinan.mapping.packing.pick_index import PickBestIndex
 from mimarsinan.mapping.packing.placement_cost import placement_cost
 
@@ -38,6 +40,37 @@ def _soft_tg(sc) -> int | None:
     return int(tg) if tg is not None else None
 
 
+def _best_used_core(core, core_tg, used: UsedBuckets, used_hardcores, is_mapping_possible) -> int | None:
+    """The used core of least ``placement_cost`` that accepts ``core``, the first in candidate order on a tie.
+
+    A bank-affine softcore costs 0 on a core hosting its bank and its area on any other, so with a nonzero area the
+    best core is the tightest feasible host when one exists and otherwise the bankless best fit. [W04] On the
+    state index (``used.indexed``) that is one host of its bank per state (``bank_hosts``), then one core per state:
+    the decisions of a scan over every core, reading one core per state the cost can prefer.
+    """
+
+    def scan(indices) -> int | None:
+        target, best = None, None
+        for idx in indices:
+            hc = used_hardcores[idx]
+            if is_mapping_possible(core, hc):
+                cost = placement_cost(core, hc, remaining_capacity=_remaining_capacity(core, hc))
+                if best is None or cost < best:
+                    best, target = cost, idx
+        return target
+
+    bank = getattr(core, "weight_bank_id", None)
+    if bank is None:
+        return scan(used.scan_order(core_tg, every_core=False))
+    if not used.indexed:
+        return scan(used.scan_order(core_tg, every_core=True))
+    if int(core.get_input_count()) * int(core.get_output_count()) > 0:
+        host = scan(used.bank_hosts(core_tg, bank))
+        if host is not None:
+            return host
+    return scan(used.scan_order(core_tg, every_core=False))
+
+
 def greedy_pack_softcores(
     *,
     softcores: List[SoftT],
@@ -54,7 +87,8 @@ def greedy_pack_softcores(
     """Greedy bin-packing loop shared by the runtime and layout-only packers.
 
     Priority per softcore: exact fit in a used core, split into a used core,
-    exact fit in an unused core, fusion, split into an unused core, else raise.
+    exact fit in an unused core, fusion, split into an unused core, a neuron
+    split onto a fused core (WI-5f), else ``CoreCapacityRefusal`` (W04).
     Mutates ``softcores``/``used_hardcores``/``unused_hardcores`` in place.
     ``pick_softcore=None`` (the default) keeps the canonical
     ``pick_best_softcore`` order, accelerated (sorted fast path without
@@ -89,19 +123,7 @@ def greedy_pack_softcores(
                 core = pick_softcore(softcores)
 
             core_tg = _soft_tg(core)
-            bank_affine = getattr(core, "weight_bank_id", None) is not None
-
-            target_idx = None
-            best_cost: tuple[int, int] | None = None
-            for idx in used.scan_order(core_tg, every_core=bank_affine):
-                hc = used_hardcores[idx]
-                if is_mapping_possible(core, hc):
-                    cost = placement_cost(
-                        core, hc, remaining_capacity=_remaining_capacity(core, hc)
-                    )
-                    if best_cost is None or cost < best_cost:
-                        best_cost = cost
-                        target_idx = idx
+            target_idx = _best_used_core(core, core_tg, used, used_hardcores, is_mapping_possible)
 
             if (
                 target_idx is None
@@ -120,7 +142,7 @@ def greedy_pack_softcores(
 
             if target_idx is None:
                 if not pool.total():
-                    raise RuntimeError("No more hard cores available")
+                    raise CoreCapacityRefusal("No more hard cores available")
 
                 chosen: tuple[tuple[int, int], HardT] | None = None
                 chosen_score = float("inf")
@@ -166,12 +188,24 @@ def greedy_pack_softcores(
                         ):
                             continue
 
+                    if (
+                        fused_hc is None
+                        and split_softcore is not None
+                        and fuse_hardcores is not None
+                        and _is_splittable(core)
+                        and _try_split_into_fused(
+                            core, used_hardcores, pool, split_softcore, fuse_hardcores,
+                            is_mapping_possible, place, remaining, pick_index=pick_index,
+                        )
+                    ):
+                        continue
+
                     if fused_hc is not None:
                         used_hardcores.append(fused_hc)
                         target_idx = len(used_hardcores) - 1
                         used.register(target_idx)
                     else:
-                        raise RuntimeError(
+                        raise CoreCapacityRefusal(
                             f"No more hard cores available: softcore ({s_a} axons, "
                             f"{s_n} neurons) does not fit any unused type "
                             f"even with coalescing. Remaining types: {avail}"

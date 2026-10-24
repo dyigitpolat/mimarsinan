@@ -2,7 +2,31 @@
 
 from __future__ import annotations
 
+import re
 from typing import Optional, Protocol, Sequence, Tuple
+
+from mimarsinan.common.refusal import ToolchainRefusal
+
+
+class CoreCapacityRefusal(ToolchainRefusal, RuntimeError):
+    """[W04] The declared cores cannot hold a soft core (or a planned pass): the packer has no core left for it, its
+    coalescing needs more cores than any type declares, or no pass plan packs its segment. One name on both planes:
+    the executed plane raises it, the shape-only plane's message states it (``refusal_name_of_message``)."""
+
+
+#: A message's stated refusal: ``[verdict] Name: reason`` or ``Name: reason`` (``named_message``).
+_NAMED = re.compile(r"^(?:\[[a-z_]+\] )?([A-Z][A-Za-z0-9]*(?:Refusal|Error)): ")
+
+
+def named_message(exc: BaseException) -> str:
+    """The message of a raised refusal, its class name first, so a shape-only answer states the refusal by name."""
+    return f"{type(exc).__name__}: {exc}" if isinstance(exc, ToolchainRefusal) else str(exc)
+
+
+def refusal_name_of_message(message: str) -> Optional[str]:
+    """The refusal a shape-only message states by name (``named_message``), or ``None`` when it names none."""
+    found = _NAMED.match(message or "")
+    return found.group(1) if found else None
 
 #: Every softcore was placed.
 VERDICT_FEASIBLE = "feasible"

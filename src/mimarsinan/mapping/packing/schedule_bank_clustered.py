@@ -4,6 +4,7 @@ planner's streamed composition (the composition itself lives in
 
 from __future__ import annotations
 
+from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError
 from mimarsinan.mapping.support.schedule.pass_planner import resident_passes
 
 
@@ -91,3 +92,36 @@ def mark_bank_residency(pass_stages: list) -> None:
                 f"from pass 0 — weights would silently reprogram."
             )
         stage.schedule_weights_resident = resident
+
+
+def _stage_copies(stage) -> list:
+    """Per physical core: its shape and the bank regions it holds (bank, bank ranges, extent, offsets)."""
+    segment = stage.hard_core_mapping
+    return [
+        (int(core.axons_per_core), int(core.neurons_per_core), frozenset(
+            (placement.get("weight_bank_id"), placement.get("bank_axon_range"), placement.get("bank_neuron_range"),
+             int(placement["axons"]), int(placement["neurons"]), int(placement["axon_offset"]),
+             int(placement["neuron_offset"]))
+            for placement in placements))
+        for core, placements in zip(segment.cores, segment.soft_core_placements_per_hard_core)
+    ]
+
+
+def mark_multiplexed_residency(pass_stages: list, run_heads) -> None:
+    """[W02] A pass that is not its run's first executes on the copies the first programmed: verify that every
+    physical core holds exactly the head's bank regions, each bank-backed, then mark the pass weight-resident; any
+    divergence is refused by name, never claimed as residency."""
+    if len(pass_stages) != len(run_heads):
+        raise PositionMultiplexingError(
+            f"position_multiplexing: {len(pass_stages)} executed passes for {len(run_heads)} planned ones")
+    head = None
+    for stage, is_head in zip(pass_stages, run_heads):
+        copies = _stage_copies(stage)
+        if is_head:
+            head = copies
+            continue
+        if copies != head or any(region[0] is None for _a, _n, regions in copies for region in regions):
+            raise PositionMultiplexingError(
+                f"position_multiplexing: pass {stage.schedule_pass_index} of segment {stage.schedule_segment_index} "
+                f"places other weights than the first pass of its run, so it cannot execute on that pass's copies")
+        stage.schedule_weights_resident = True

@@ -1,6 +1,7 @@
 """The packing engine, pack_layout and the capacity splitter as they stood before U1 planner scaling: the oracle.
 
-A verbatim copy (renamed) of ``mapping/packing/greedy/{pack,split}.py``, ``layout_packer.pack_layout`` with
+A verbatim copy (renamed) of ``mapping/packing/greedy/{pack,split}.py`` (plus the WI-5f neuron split onto a fused
+core, the one decision added after the copy, where both engines raised before), ``layout_packer.pack_layout`` with
 ``_make_instances``, ``schedule_split.split_softcores_by_capacity`` and
 ``schedule_partitioner.estimate_passes_for_layout_validated`` on the U1 pass-projection tree. The accelerated
 engine and splitter must take exactly these decisions; the equivalence tests compare them call for call.
@@ -10,9 +11,10 @@ from __future__ import annotations
 
 import copy
 from collections import Counter, defaultdict
+from dataclasses import replace
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from mimarsinan.mapping.layout.layout_packer import LayoutMaterializer, _expand_for_axon_coalescing
+from mimarsinan.mapping.layout.layout_packer import LayoutMaterializer
 from mimarsinan.mapping.layout.layout_types import (
     LayoutCoreSnapshot,
     LayoutHardCoreInstance,
@@ -20,8 +22,10 @@ from mimarsinan.mapping.layout.layout_types import (
     LayoutPackingResult,
     LayoutSoftCoreSpec,
 )
-from mimarsinan.mapping.packing.canonical import HardT, SoftCoreLike, SoftT, _placement_waste, _remaining_capacity
-from mimarsinan.mapping.packing.infeasibility_proofs import failed_pack_verdict, tag_with_verdict
+from mimarsinan.mapping.packing.canonical import (
+    HardT, SoftCoreLike, SoftT, _placement_waste, _read_latency, _remaining_capacity)
+from mimarsinan.mapping.packing.infeasibility_proofs import (
+    CoreCapacityRefusal, failed_pack_verdict, named_message, tag_with_verdict)
 from mimarsinan.mapping.packing.pick_index import PickBestIndex
 from mimarsinan.mapping.packing.placement_cost import placement_cost
 from mimarsinan.mapping.support.schedule.schedule_budget import _coalescing_bundles
@@ -37,6 +41,22 @@ def _swap_in_pick_index(pick_index, removed, added) -> None:
 def _is_splittable(core: SoftCoreLike) -> bool:
     """A soft core is splittable unless it is a coalescing-group fragment (already a partial result)."""
     return getattr(core, "coalescing_group_id", None) is None
+
+
+class _Window:
+    """The first neuron window of a split as the feasibility predicate reads it (WI-5f)."""
+
+    def __init__(self, core, neurons):
+        self._core, self._neurons = core, int(neurons)
+
+    def get_input_count(self):
+        return int(self._core.get_input_count())
+
+    def get_output_count(self):
+        return self._neurons
+
+    def __getattr__(self, name):
+        return getattr(self._core, name)
 
 
 def _try_split_into_used(
@@ -58,7 +78,7 @@ def _try_split_into_used(
     best_idx = None
     best_avail_n = -1
     core_tg = getattr(core, "residency_class_id", None)
-    core_latency = getattr(core, "latency", None)
+    core_latency = _read_latency(core)
     core_in = core.get_input_count()
     core_out = core.get_output_count()
 
@@ -81,7 +101,7 @@ def _try_split_into_used(
             hc_tg = getattr(hc, "residency_class_id", None)
             if hc_tg is not None and core_tg is not None and int(hc_tg) != int(core_tg):
                 continue
-            hc_latency = getattr(hc, "latency", None)
+            hc_latency = _read_latency(hc)
             if hc_latency is not None:
                 if core_latency is None or core_latency != hc_latency:
                     continue
@@ -293,7 +313,7 @@ def reference_greedy_pack_softcores(
 
         if target_idx is None:
             if not unused_hardcores:
-                raise RuntimeError("No more hard cores available")
+                raise CoreCapacityRefusal("No more hard cores available")
 
             chosen: tuple[tuple[int, int], HardT] | None = None
             chosen_score = float("inf")
@@ -347,13 +367,50 @@ def reference_greedy_pack_softcores(
                     ):
                         continue
 
+                if (
+                    fused_hc is None
+                    and split_softcore is not None
+                    and fuse_hardcores is not None
+                    and _is_splittable(core)
+                ):
+                    # [WI-5f] neuron split before coalescing: the widest coalescing type whose fused core
+                    # accepts the window cuts the first window.
+                    candidates = sorted(
+                        (-c_n, position, (c_a, c_n))
+                        for position, (c_a, c_n) in enumerate(unused_by_type)
+                        if c_a > 0 and 0 < c_n < s_n and (s_a + c_a - 1) // c_a <= len(unused_by_type[(c_a, c_n)])
+                    )
+                    split_done = False
+                    for _, _, hc_type in candidates:
+                        needed = (s_a + hc_type[0] - 1) // hc_type[0]
+                        bucket = unused_by_type[hc_type]
+                        fusing_hcs = bucket[-needed:]
+                        fused = fuse_hardcores(fusing_hcs)
+                        if not is_mapping_possible(_Window(core, hc_type[1]), fused):
+                            continue
+                        frag1, frag2 = split_softcore(core, hc_type[1])
+                        for hc in fusing_hcs:
+                            _identity_remove(unused_hardcores, hc)
+                        del bucket[-needed:]
+                        if not bucket:
+                            del unused_by_type[hc_type]
+                        used_hardcores.append(fused)
+                        place(len(used_hardcores) - 1, fused, frag1)
+                        softcores.remove(core)
+                        softcores.append(frag2)
+                        _swap_in_pick_index(pick_index, core, frag2)
+                        split_done = True
+                        break
+                    if split_done:
+                        continue
+
                 if fused_hc is not None:
                     used_hardcores.append(fused_hc)
                     new_idx = len(used_hardcores) - 1
                     _register_used(new_idx, fused_hc)
                     target_idx = new_idx
                 else:
-                    raise RuntimeError(
+                    raise CoreCapacityRefusal(
                         f"No more hard cores available: softcore ({s_a} axons, "
                         f"{s_n} neurons) does not fit any unused type "
                         f"even with coalescing. Remaining types: {avail}"
@@ -413,7 +470,7 @@ def reference_pack_layout(
     """Pack layout-only softcores into a limited pool of hardware cores.
 
     ``allow_neuron_splitting`` splits along the neuron dimension; ``allow_coalescing``
-    pre-expands over-wide softcores into axon-coalescing fragments before packing.
+    fuses cores for a wide softcore, which stays whole (W04: the driver of ``pack_layout``).
     ``collect_placements`` additionally seals which hardcore each input softcore
     landed on (``result.placements``: ``(origin index, hardcore index)`` per
     placed unit; fragments repeat their origin)."""
@@ -421,32 +478,12 @@ def reference_pack_layout(
     used_hardcores: List[LayoutHardCoreInstance] = []
     unused_hardcores: List[LayoutHardCoreInstance] = _make_instances(core_types)
 
-    unmapped = list(copy.deepcopy(list(softcores)))
-    pre_coalesce_count = len(unmapped)
-
-    origins = list(range(pre_coalesce_count))
-    coalescing_group_sizes: Tuple[int, ...] = ()
-    if allow_coalescing:
-        unmapped, coalescing_group_sizes, origins = _expand_for_axon_coalescing(
-            unmapped, core_types,
-        )
-    coalesced_fragment_count = len(unmapped) - pre_coalesce_count
-
-    for i, sc in enumerate(unmapped):
-        if sc.name is None:
-            unmapped[i] = LayoutSoftCoreSpec(
-                input_count=sc.input_count,
-                output_count=sc.output_count,
-                residency_class_id=sc.residency_class_id,
-                latency_tag=sc.latency_tag,
-                name=f"__sc_{i}",
-            )
+    unmapped = [sc if sc.name is not None else replace(sc, name=f"__sc_{i}")
+                for i, sc in enumerate(copy.deepcopy(list(softcores)))]
 
     materializer = LayoutMaterializer(collect_placements=collect_placements)
     if collect_placements:
-        materializer.origin_of = {
-            id(sc): origins[i] for i, sc in enumerate(unmapped)
-        }
+        materializer.origin_of = {id(sc): i for i, sc in enumerate(unmapped)}
 
     try:
         reference_run_placement(
@@ -455,13 +492,12 @@ def reference_pack_layout(
             unused_hardcores=unused_hardcores,
             materializer=materializer,
             allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
         )
     except RuntimeError as e:
-        # ``run_placement`` fuses hardcores whatever ``allow_coalescing`` declared,
-        # so the axon dimension is never tight enough here to prove anything.
         verdict = failed_pack_verdict(
             softcores, core_types,
-            neurons_may_split=allow_neuron_splitting, axons_may_spread=True,
+            neurons_may_split=allow_neuron_splitting, axons_may_spread=allow_coalescing,
         )
         return LayoutPackingResult(
             feasible=False,
@@ -472,7 +508,7 @@ def reference_pack_layout(
             avg_unused_area_per_core=float("inf"),
             unusable_space_total=0,
             avg_unusable_space_per_core=0.0,
-            error=tag_with_verdict(verdict, str(e)),
+            error=tag_with_verdict(verdict, named_message(e)),
             verdict=verdict,
         )
 
@@ -521,15 +557,16 @@ def reference_pack_layout(
         error=None,
         used_core_softcore_counts=tuple(hc.softcore_count for hc in used_hardcores),
         used_core_snapshots=snapshots,
-        coalesced_fragment_count=coalesced_fragment_count,
+        coalesced_fragment_count=sum(k - 1 for k in materializer.fusion_sizes),
         split_fragment_count=materializer.split_counter,
-        coalescing_group_sizes=coalescing_group_sizes if coalescing_group_sizes else None,
+        coalescing_group_sizes=tuple(materializer.fusion_sizes) or None,
         split_counts_per_sc=(
             tuple(materializer.split_lineage.values())
             if materializer.split_lineage
             else None
         ),
         placements=placements,
+        core_regions=tuple(frozenset(h.regions) for h in used_hardcores) if collect_placements else None,
     )
 
 

@@ -147,8 +147,8 @@ def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike
 #: Every hard-core attribute ``canonical_is_mapping_possible`` reads besides the core's shape (``get_input_count``,
 #: ``get_output_count``); the best fit's cost for a softcore without a weight bank and the split into a used core read
 #: no other. Two cores alike on these and on their shape answer every such softcore alike: the engine's core-state
-#: index (``greedy/used_index.py``) keys on exactly this set. A bank-affine softcore also reads the core's banks,
-#: so it scans every core.
+#: index (``greedy/used_index.py``) keys on exactly this set. A bank-affine softcore also reads the core's banks:
+#: on the index it reads the cores hosting its bank, then one core per state (``greedy/pack._best_used_core``).
 CANONICAL_CORE_READS = ("residency_class_id", "latency", "latency_tag", "available_axons", "available_neurons",
                         "accepted_roles")
 

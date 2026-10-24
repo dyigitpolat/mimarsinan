@@ -57,6 +57,7 @@ def spec_from_neural_core(
             None if perceptron_index is None else int(perceptron_index)
         ),
         name=core.name, core_role=getattr(core, "core_role", None),
+        coalescing_group_id=getattr(core, "coalescing_group_id", None),
     )
 
 
@@ -118,4 +119,5 @@ def spec_from_softcore(
             None if perceptron_index is None else int(perceptron_index)
         ),
         name=getattr(softcore, "name", None), core_role=getattr(softcore, "core_role", None),
+        coalescing_group_id=getattr(softcore, "coalescing_group_id", None),
     )

@@ -214,13 +214,16 @@ def _lif_mlp_repr(widths=(300, 100, 10), timesteps=4):
 class TestEveryLayoutPlaneCountsPhysicalRows:
     """[MJ1] The GUI hardware-verify route, the wizard's hardware suggester and the scaling ladder walk the layout at
     the per-axon rows (``rows_per_input``) the search candidate and the runtime plan, so on a per-axon pool each plane
-    packs the candidate walk's rows: the review's probe network takes 4 ODIN cores on every plane (3 before)."""
+    packs the candidate walk's rows: the review's probe network takes 4 ODIN cores on every plane (3 before).
+    [pack integration] The layout packer keeps the 602-row spec whole on one fused core of three ODIN cores (W04 class
+    1), so the stats count 2 allocated crossbars (a fused core once) and the packer's snapshots 4 physical cores."""
 
     PLATFORM = {"cores": [{"max_axons": 256, "max_neurons": 256, "count": 64, "has_bias": False,
                            "weight_sign_granularity": PER_AXON}],
                 "allow_coalescing": True, "allow_neuron_splitting": False}
 
     def _candidate(self):
+        from mimarsinan.mapping.layout.layout_packer import pack_layout
         from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
         from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
         from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
@@ -233,29 +236,32 @@ class TestEveryLayoutPlaneCountsPhysicalRows:
         stats, error = compute_mapping_stats(list(specs), core_types_from_declaration(self.PLATFORM["cores"]),
                                              **kwargs)
         assert stats.feasible, error
-        return sorted(int(s.input_count) for s in specs), int(stats.total_cores)
+        pack = pack_layout(softcores=list(specs), core_types=core_types_from_declaration(self.PLATFORM["cores"]),
+                           allow_coalescing=True)
+        tiles = sum(snap.tiles for snap in pack.used_core_snapshots or ())
+        return sorted(int(s.input_count) for s in specs), int(stats.total_cores), tiles
 
     def test_the_candidate_walk_takes_four_cores(self):
-        rows, cores = self._candidate()
-        assert (rows, cores) == ([202, 602], 4)
+        rows, cores, tiles = self._candidate()
+        assert (rows, cores, tiles) == ([202, 602], 2, 4)  # 2 allocated crossbars, 4 physical ODIN cores
 
     def test_the_scaling_ladder_packs_the_candidate_rows(self):
         from mimarsinan.deployment_record.introspection.scaling_ladder import packed_tiles, shape_census
         from mimarsinan.deployment_record.introspection.scaling_ladder_types import LadderNetwork
 
-        rows, cores = self._candidate()
+        rows, _cores, tiles = self._candidate()
         census = shape_census(LadderNetwork(name="odin_planes", mapper_repr=_lif_mlp_repr(), resolution=(300,)),
                               self.PLATFORM)
         assert sorted(int(s.input_count) for s in census.softcores) == rows
         assert all(s.bank_id is None for s in census.softcores)
         assert census.as_mapped_cells == sum(int(s.input_count) * int(s.output_count) for s in census.softcores)
-        assert packed_tiles(census, self.PLATFORM) == cores
+        assert packed_tiles(census, self.PLATFORM) == tiles  # the ladder counts physical cores (W04 fix round B1)
 
     def test_the_wizard_request_carries_the_rows_per_input(self, monkeypatch):
         from mimarsinan.mapping.verification.layout_mapping_service import LayoutMappingService
         from mimarsinan.mapping.verification.layout_request import LayoutMappingRequest
 
-        rows, _cores = self._candidate()
+        rows, _cores, _tiles = self._candidate()
         body = {"model_type": "probe", "input_shape": [300], "num_classes": 10,
                 "core_types": self.PLATFORM["cores"], "allow_coalescing": True}
         request = LayoutMappingRequest.from_wizard_body(body)
@@ -278,7 +284,7 @@ class TestEveryLayoutPlaneCountsPhysicalRows:
         from mimarsinan.mapping.verification import layout_mapping_service as service_module
         from mimarsinan.mapping.verification.verifier.mapping_verifier_hw import clear_verify_hardware_config_memo
 
-        _rows, cores = self._candidate()
+        _rows, cores, _tiles = self._candidate()
         service = service_module.LayoutMappingService()
         monkeypatch.setattr(service, "_build_model_repr", lambda request: _lif_mlp_repr())
         monkeypatch.setattr(service_module, "DEFAULT_LAYOUT_MAPPING_SERVICE", service)
@@ -293,7 +299,7 @@ class TestEveryLayoutPlaneCountsPhysicalRows:
     def test_the_hardware_suggester_walks_the_candidate_rows(self, monkeypatch):
         from mimarsinan.mapping.verification.suggester import hw_config_suggester_scheduled as suggester
 
-        rows, _cores = self._candidate()
+        rows, _cores, _tiles = self._candidate()
         seen = {}
 
         def capture(softcores, **kwargs):

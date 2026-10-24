@@ -25,6 +25,14 @@ DERIVED_GEOMETRY: Tuple[str, ...] = ("max_axons", "max_neurons")
 #: toolchain's default program) and set only where the registry's relevance holds (``settled``). G5's executed
 #: residency plan (its step changes the pass partition and the pinned set), drawn from CL1 on the integrated tree.
 DRAWN_BY_FIELDS: Tuple[str, ...] = ("residency_plan",)
+#: Program-changing, not drawn on this tree: W02's position multiplexing (added after the declared draw space;
+#: certified at atol 0 by its own suite). A later CL1 round draws it (the pack unit's follow-up P5).
+DEFERRED: Tuple[str, ...] = ("position_multiplexing",)
+#: Why each deferred key (by its root) is not drawn.
+DEFERRED_REASONS: Mapping[str, str] = {
+    "position_multiplexing": "W02's decision, added after the declared draw space; not drawn on this tree (a later "
+                             "CL1 round draws it, the pack unit's follow-up P5)",
+}
 #: Cost-only paths no program reads: pricing constants, the priced floorplan and the write law.
 PRICING_ONLY: Tuple[str, ...] = (
     "activity_factor", "cores.operand.write_source", "cores.write_granularity", "cores.write_physics",
@@ -59,7 +67,7 @@ def cost_only_set() -> FrozenSet[str]:
 def partition() -> Dict[str, Tuple[str, ...]]:
     """The cost-only set split by what the code-level runner does with each path; refuses any drift."""
     parts = {"program_changing": PROGRAM_CHANGING, "derived_geometry": DERIVED_GEOMETRY,
-             "drawn_by_fields": DRAWN_BY_FIELDS, "pricing_only": PRICING_ONLY}
+             "drawn_by_fields": DRAWN_BY_FIELDS, "deferred_to_cl1": DEFERRED, "pricing_only": PRICING_ONLY}
     listed = [p for paths in parts.values() for p in paths]
     registry = cost_only_set()
     if len(listed) != len(set(listed)) or set(listed) != registry:

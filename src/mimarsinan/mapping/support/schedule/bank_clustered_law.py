@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Any, Dict, List, Mapping, Sequence
 
+from mimarsinan.mapping.layout.layout_packer import pack_layout
+
 
 @dataclass(frozen=True)
 class BankInstance:
@@ -152,3 +154,23 @@ def compose_bank_clustered_passes(
         ):
             return None
     return chunks
+
+
+def placement_regions_hold(chunks: Sequence[Sequence[Any]], core_types: Sequence[Any], *, allow_coalescing: bool,
+                           allow_splitting: bool) -> bool:
+    """[W04] Whether the composition's passes pack as the residency law claims: every chunk packs, and every later
+    pass places, per used core, a subset of pass 0's (bank, extent, offset) regions, the check ``mark_bank_residency``
+    makes on the executed passes. The layout packer takes the hard-core packer's decisions, so the planner declines on
+    both planes exactly the compositions the executed verification would refuse."""
+    reference = None
+    for chunk in chunks:
+        pack = pack_layout(softcores=list(chunk), core_types=core_types, allow_neuron_splitting=allow_splitting,
+                           allow_coalescing=allow_coalescing, collect_placements=True)
+        if not pack.feasible:
+            return False
+        regions = pack.core_regions or ()
+        if reference is None:
+            reference = regions
+        elif len(regions) > len(reference) or any(not r <= reference[i] for i, r in enumerate(regions)):
+            return False
+    return True

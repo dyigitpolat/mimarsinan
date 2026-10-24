@@ -15,6 +15,7 @@ from mimarsinan.mapping.packing.softcore import (
 from mimarsinan.mapping.packing.softcore.sign_split import apply_sign_split
 from mimarsinan.mapping.packing.hybrid_types import HybridStage, SegmentIOSlice
 from mimarsinan.mapping.platform.platform_constraints import PER_SYNAPSE, pool_sign_granularity
+from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 
 from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _check_no_split_coalescing_groups,
@@ -124,7 +125,8 @@ def _flush_neural_segment(
             f"  Pool size: {len(shared_pool)} (types head: {hw_summary})\n"
             f"  Softcore heads:\n" + "\n".join(rows[:5])
         )
-        raise RuntimeError(diag) from e
+        # [W04] A capacity failure keeps its name (``CoreCapacityRefusal``, the shape-only plane's); any other stays.
+        raise (CoreCapacityRefusal if isinstance(e, CoreCapacityRefusal) else RuntimeError)(diag) from e
 
     return HybridStage(
         kind="neural",
@@ -173,7 +175,7 @@ def _validate_coalescing_budget(
             best_needed = max(best_needed, n_coalesce)
 
         if not fits_any and best_needed > 0:
-            raise RuntimeError(
+            raise CoreCapacityRefusal(
                 f"Core '{core.name}' has {n_weight_axons} weight axons and "
                 f"{n_neurons} neurons, requiring at least {best_needed} "
                 f"coalescing cores in a single pass. No hardware core type "

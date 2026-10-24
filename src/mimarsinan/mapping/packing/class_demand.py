@@ -10,12 +10,14 @@ pool cores, its demand, and a run on ``count`` cores follows the unbounded run u
 cannot meet, where it raises. A batch therefore packs iff no class's run raises and the class demands sum to at most
 ``count``.
 
-A class's demand is a function of its type sequence: (axons, neurons, latency) per softcore in list order, the
-latencies relabelled by first occurrence (the engine compares them only for equality and None). It is measured by
-``pack_layout`` itself on an unbounded pool and memoized, per packer, by the sequence's run-length encoding. A class of one type
-repeated k times reads a prefix table: when the coalescing fragments of the type share one engine priority, the run
-of k softcores is the first k of the run of K >= k (until a neuron split, whose remainder the k-run would place
-earlier), so one run of K gives every demand below it.
+A class's demand is a function of its type sequence: (axons, neurons, latency, bank, grouped) per softcore in list
+order, the latencies and the banks relabelled by first occurrence (the engine compares them only for equality and
+None: a bank-affine softcore prefers a core of its class holding its bank), and whether the softcore belongs to a
+coalescing group (never neuron-split). [W04] A wide softcore is one unit, fused whole as the hard-core packer fuses
+it. It is measured by ``pack_layout`` itself on an unbounded pool and memoized, per packer, by the sequence's
+run-length encoding. A class of one type repeated k times reads a prefix table: the run of k softcores is the first k
+of the run of K >= k (until a neuron split, whose remainder the k-run would place earlier), so one run of K gives
+every demand below it.
 """
 
 from __future__ import annotations
@@ -35,8 +37,8 @@ _UNBOUNDED = 1 << 40
 #: Memoized class demands kept per pool before the memo is cleared (type tables are kept).
 _MEMO_LIMIT = 1 << 16
 
-#: One softcore of a class's type sequence: (axons, neurons, latency label).
-SpecType = Tuple[int, int, Optional[int]]
+#: One softcore of a class's type sequence: (axons, neurons, latency label, bank label, in a coalescing group).
+SpecType = Tuple[int, int, Optional[int], Optional[int], bool]
 #: A class's type sequence, run-length encoded.
 Runs = Tuple[Tuple[SpecType, int], ...]
 
@@ -57,7 +59,9 @@ def _admitted(sc) -> bool:
     """A plain layout spec of integral counts and class: every attribute the engine reads is one this module keys."""
     return (type(sc) is LayoutSoftCoreSpec and _integral(sc.input_count) and _integral(sc.output_count)
             and int(sc.input_count) >= 0 and int(sc.output_count) >= 0 and _integral(sc.residency_class_id)
-            and (sc.latency_tag is None or _integral(sc.latency_tag)))
+            and (sc.latency_tag is None or _integral(sc.latency_tag))
+            and (sc.bank_id is None or _integral(sc.bank_id))
+            and (sc.coalescing_group_id is None or _integral(sc.coalescing_group_id)))
 
 
 @dataclass
@@ -65,22 +69,27 @@ class _ClassRuns:
     runs: Runs = ()
     labels: Tuple[int, ...] = ()
     demand: int = 0
+    banks: Tuple[int, ...] = ()
 
-    def extended(self, items: Sequence[LayoutSoftCoreSpec]) -> Tuple[Runs, Tuple[int, ...]]:
-        runs, labels = list(self.runs), list(self.labels)
+    def extended(self, items: Sequence[LayoutSoftCoreSpec]) -> Tuple[Runs, Tuple[int, ...], Tuple[int, ...]]:
+        runs, labels, banks = list(self.runs), list(self.labels), list(self.banks)
         for sc in items:
-            label = None
+            label = bank = None
             if sc.latency_tag is not None:
                 latency = int(sc.latency_tag)
                 if latency not in labels:
                     labels.append(latency)
                 label = labels.index(latency)
-            t = (int(sc.input_count), int(sc.output_count), label)
+            if sc.bank_id is not None:
+                if int(sc.bank_id) not in banks:
+                    banks.append(int(sc.bank_id))
+                bank = banks.index(int(sc.bank_id))
+            t = (int(sc.input_count), int(sc.output_count), label, bank, sc.coalescing_group_id is not None)
             if runs and runs[-1][0] == t:
                 runs[-1] = (t, runs[-1][1] + 1)
             else:
                 runs.append((t, 1))
-        return tuple(runs), tuple(labels)
+        return tuple(runs), tuple(labels), tuple(banks)
 
 
 def _by_class(batch: Sequence[LayoutSoftCoreSpec]) -> Dict[int, List[LayoutSoftCoreSpec]]:
@@ -99,15 +108,16 @@ class ClassDemand:
         self._pack = pack
         self.allow_coalescing = allow_coalescing
         self.allow_splitting = allow_splitting
-        # The coalescing expansion splits at the widest declared type, cores or none.
+        # The widest declared type, cores or none, stays declared as on the pool (it holds no core to take).
         self._types = [LayoutHardCoreType(shape[0], shape[1], _UNBOUNDED),
                        LayoutHardCoreType(widest_axons, shape[1], 0)]
         self._memo: Dict[Runs, int] = {}
         self._tables: Dict[SpecType, _PrefixTable] = {}
 
     def _run(self, runs: Runs, *, placements: bool):
-        specs = [LayoutSoftCoreSpec(a, n, residency_class_id=0, latency_tag=lat)
-                 for (a, n, lat), k in runs for _ in range(k)]
+        specs = [LayoutSoftCoreSpec(a, n, residency_class_id=0, latency_tag=lat, bank_id=bank,
+                                    coalescing_group_id=0 if grouped else None)
+                 for (a, n, lat, bank, grouped), k in runs for _ in range(k)]
         return self._pack(softcores=specs, core_types=self._types, allow_neuron_splitting=self.allow_splitting,
                           allow_coalescing=self.allow_coalescing, collect_placements=placements)
 
@@ -115,23 +125,13 @@ class ClassDemand:
         """Pool cores per used core: a fused core consumed its components."""
         return [int(s.axons_per_core) // self.shape[0] for s in snapshots]
 
-    def _units(self, t: SpecType) -> List[LayoutSoftCoreSpec]:
-        spec = LayoutSoftCoreSpec(t[0], t[1], residency_class_id=0, latency_tag=t[2])
-        return layout_packer._expand_for_axon_coalescing([spec], self._types)[0] if self.allow_coalescing else [spec]
-
     def _table(self, t: SpecType, k: int) -> _PrefixTable:
         table = self._tables.get(t)
         if table is not None and (k < len(table.values) or not table.growable):
             return table
-        units = self._units(t)
-        priorities = {(max(int(u.input_count), int(u.output_count)),
-                       int(u.output_count) == max(int(u.input_count), int(u.output_count))) for u in units}
-        if len(priorities) != 1:
-            table = _PrefixTable(values=(0,), growable=False)
-        else:
-            size = max(k, 2 * (len(table.values) - 1) if table is not None else 0, 32)
-            result = self._run(((t, size),), placements=True)
-            table = self._prefix(result, size, len(units)) if result.feasible else _PrefixTable((0,), False)
+        size = max(k, 2 * (len(table.values) - 1) if table is not None else 0, 32)
+        result = self._run(((t, size),), placements=True)
+        table = self._prefix(result, size, 1) if result.feasible else _PrefixTable((0,), False)
         self._tables[t] = table
         return table
 
@@ -242,8 +242,8 @@ class RunningDemand:
         total = self._total
         for c, items in _by_class(batch).items():
             old = self._classes.get(c, _ClassRuns())
-            runs, labels = old.extended(items)
-            new = _ClassRuns(runs, labels, self.pool.classes.demand(runs))
+            runs, labels, banks = old.extended(items)
+            new = _ClassRuns(runs, labels, self.pool.classes.demand(runs), banks)
             total += new.demand - old.demand
             staged[c] = new
         return staged, total

@@ -11,6 +11,7 @@ from mimarsinan.mapping.support.schedule.pass_planner import (
     plan_program_passes,
 )
 from mimarsinan.mapping.support.schedule.residency_composition import refuse_without_cut_census
+from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal, named_message
 
 
 def compute_mapping_stats(
@@ -23,6 +24,7 @@ def compute_mapping_stats(
     max_schedule_passes: int = 8,
     residency_plan: Optional[dict] = None,
     runs: Optional[Sequence[int]] = None,
+    position_multiplexing: Optional[bool] = None,
 ) -> Tuple[LayoutVerificationStats, Optional[str]]:
     """Pack softcores and compute verification statistics with scheduling support.
 
@@ -78,6 +80,7 @@ def compute_mapping_stats(
         allow_splitting=allow_neuron_splitting,
         max_schedule_passes=max_schedule_passes,
         runs=runs,
+        position_multiplexing=position_multiplexing,
     )
 
     if not plan.feasible:
@@ -86,7 +89,9 @@ def compute_mapping_stats(
         return _empty_stats(
             feasible=False, num_softcores=len(softcores),
             total_hw_cores=sum(int(ct.count) for ct in core_types),
-        ), "Scheduling infeasible: at least one softcore cannot be packed"
+        ), named_message(CoreCapacityRefusal(
+            "Scheduling infeasible: at least one softcore cannot be packed "
+            f"(segment(s) {list(plan.infeasible_segments())})"))
 
     # [R5-gate finding] A scheduled program's utilization is the AGGREGATE
     # over every pass (the record's crossbar sums per-pass allocations); the
@@ -136,7 +141,7 @@ def compute_mapping_stats(
         return _empty_stats(
             feasible=False, num_softcores=len(softcores),
             total_hw_cores=sum(int(ct.count) for ct in core_types),
-        ), "Scheduling: no pass could be packed"
+        ), named_message(CoreCapacityRefusal("Scheduling: no pass could be packed"))
 
     return replace(
         best_stats,

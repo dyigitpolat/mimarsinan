@@ -190,10 +190,10 @@ def _snapshots(census, axons: int, neurons: int, bound: int, *, splitting: bool,
 
 class TestPackedTiles:
     @pytest.mark.parametrize("axons, neurons, splitting", [(8, 16, False), (8, 8, True)])
-    def test_a_split_softcore_counts_one_tile_per_fragment(self, axons, neurons, splitting):
-        """With coalescing declared, the packer pre-splits every softcore wider than one 8-axon core
-        (10 or 11 axons) into axon-coalescing fragments of one core each, so no used core is fused;
-        with 8 neurons and neuron splitting the 10-neuron softcores also split across cores."""
+    def test_a_fused_softcore_counts_its_member_cores(self, axons, neurons, splitting):
+        """[W04] With coalescing declared, the packer fuses two 8-axon cores for every softcore wider than one core
+        (10 or 11 axons) and keeps it whole, as the hard-core packer does; with 8 neurons and neuron splitting each
+        10-neuron softcore takes two windows, each on its own fused core. The packed tile count counts the members."""
         network = _network(4)
         platform = {**_platform(64), "allow_neuron_splitting": splitting,
                     "cores": [{"max_axons": axons, "max_neurons": neurons, "count": 64, "has_bias": False}]}
@@ -203,28 +203,26 @@ class TestPackedTiles:
         assert sorted((int(s.input_count), int(s.output_count)) for s in census.softcores) == sorted(shapes)
         hand = sum(math.ceil(a / axons) * math.ceil(n / neurons) for a, n in shapes)
         snapshots = _snapshots(census, axons, neurons, hand, splitting=splitting, coalescing=True)
-        assert len(snapshots) == hand and all(int(s.axons_per_core) <= axons for s in snapshots)
-        print(f"[ladder] split point {axons}x{neurons}: packed tiles {hand} by hand, {len(snapshots)} used cores")
+        assert all(int(s.axons_per_core) == 2 * axons for s in snapshots)
+        assert sum(int(s.axons_per_core) // axons for s in snapshots) == hand
+        print(f"[ladder] fused point {axons}x{neurons}: packed tiles {hand} by hand, {len(snapshots)} fused cores")
         assert ladder.packed_tiles(census, platform) == hand
 
-    def test_a_fused_core_counts_its_member_cores(self):
-        """With coalescing undeclared, the packer places each 37-axon conv2 patch (4 channels x 9 taps
-        + bias) on one fused instance of three 16-axon cores and reports it as one used core, so the
-        packed tile count (the hand sum, 65) exceeds the used-core count (33)."""
+    def test_without_coalescing_a_wide_softcore_is_refused_by_name(self):
+        """[W04] With coalescing undeclared nothing fuses cores (on either packer), so the 37-axon conv2 patch (4
+        channels x 9 taps + bias) on 16-axon cores packs nowhere: the footprint is refused by name, with the
+        packer's refusal; declared, the patch packs fused on three cores and the tiles are the hand sum, 65."""
         network = _network(4, _WidePatch, "wide_patch")
         platform = {**_platform(64), "allow_coalescing": False, "allow_neuron_splitting": False,
                     "cores": [{"max_axons": 16, "max_neurons": 16, "count": 64, "has_bias": False}]}
         census = ladder.shape_census(network, platform)
         shapes = [(10, 4)] * _positions(4) + [(37, 4)] * _positions(4) + [(5, 2)]
         assert sorted((int(s.input_count), int(s.output_count)) for s in census.softcores) == sorted(shapes)
+        with pytest.raises(ladder.LadderGeometryError, match="CoreCapacityRefusal"):
+            ladder.packed_tiles(census, platform)
         hand = sum(math.ceil(a / 16) * math.ceil(n / 16) for a, n in shapes)
         assert hand == _positions(4) * (1 + 3) + 1 == 65
-        snapshots = _snapshots(census, 16, 16, hand, splitting=False, coalescing=False)
-        fused = [s for s in snapshots if int(s.axons_per_core) > 16]
-        assert len(snapshots) == len(shapes) == 33 and len(fused) == _positions(4)
-        print(f"[ladder] fused point 16x16: packed tiles {hand} by hand, {len(snapshots)} used cores, "
-              f"{len(fused)} fused")
-        assert ladder.packed_tiles(census, platform) == hand
+        assert ladder.packed_tiles(census, {**platform, "allow_coalescing": True}) == hand
 
 
 class TestReplicationAndResolution:

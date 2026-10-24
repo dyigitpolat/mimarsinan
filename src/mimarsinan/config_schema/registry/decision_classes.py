@@ -154,6 +154,8 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "inference_rate_hz": (_ND, "converts a lifetime from inferences to hours; under min_lifetime_hours "
                                "it scales the judged lifetime (flagged for the owner)"),
     "residency_plan": (_CO, "join of its fields: the executed pass partition and pinned set"),
+    "position_multiplexing": (_CO, "one copy of each shared bank serves its positions in turn: the pass "
+                                   "partition, latency, carry and programmed cells only"),
 }
 
 

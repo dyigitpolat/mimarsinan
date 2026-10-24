@@ -21,8 +21,9 @@ UNPLACEABLE = 1 << 62
 class CapacityBound:
     """Per softcore, the most cores the greedy packer can open for it on a pool of one core shape.
 
-    A softcore (after the packer's axon-coalescing expansion) opens at most 1 core when it fits a fresh one,
-    ceil(a / A) when it fits only fused, ceil(n / N) when it is neuron-split, and is unplaceable otherwise. A set
+    A softcore opens at most 1 core when it fits a fresh one, ceil(a / A) when it fits only fused (declared
+    coalescing: [W04] the packer keeps it whole), ceil(n / N) when it is neuron-split, ceil(n / N) ceil(a / A) when
+    it is neuron-split onto fused cores (WI-5f), and is unplaceable otherwise. A set
     whose bounds sum to at most ``count`` therefore packs, and so does every subset of it in any order: the greedy
     fails only when a softcore needs a core the pool has run out of.
     """
@@ -35,11 +36,14 @@ class CapacityBound:
         return sum(self.per_softcore)
 
 
-def _cores_opened(axons: int, neurons: int, A: int, N: int, splittable: bool) -> int:
+def _cores_opened(axons: int, neurons: int, A: int, N: int, splittable: bool, coalescing: bool = True) -> int:
+    if axons > A and not coalescing:
+        return UNPLACEABLE
+    fused = 1 if axons <= A else -(-axons // A)
     if neurons <= N:
-        return 1 if axons <= A else -(-axons // A)
-    if axons <= A and splittable:
-        return -(-neurons // N)
+        return fused
+    if splittable:
+        return -(-neurons // N) * fused
     return UNPLACEABLE
 
 
@@ -52,8 +56,6 @@ def capacity_bound(
 ) -> Optional[CapacityBound]:
     """The bound of every softcore on the pool ``pack_layout`` builds from ``core_types``; None unless the pool
     holds one core shape (several shapes contend for a softcore by abundance, which no per-softcore bound sees)."""
-    from mimarsinan.mapping.layout.layout_packer import _expand_for_axon_coalescing
-
     shapes = {(int(t.max_axons), int(t.max_neurons)) for t in core_types if int(t.count) > 0}
     if len(shapes) != 1:
         return None
@@ -61,14 +63,8 @@ def capacity_bound(
     if A <= 0 or N <= 0:
         return None
     count = sum(int(t.count) for t in core_types if (int(t.max_axons), int(t.max_neurons)) == (A, N))
-    if allow_coalescing:
-        packed, _, origins = _expand_for_axon_coalescing(softcores, core_types)
-    else:
-        packed, origins = list(softcores), list(range(len(softcores)))
-    per = [0] * len(softcores)
-    for spec, origin in zip(packed, origins):
-        per[origin] += _cores_opened(int(spec.input_count), int(spec.output_count), A, N,
-                                     allow_splitting and _is_splittable(spec))
+    per = [_cores_opened(int(spec.input_count), int(spec.output_count), A, N, allow_splitting and _is_splittable(spec),
+                         allow_coalescing) for spec in softcores]
     return CapacityBound(per_softcore=tuple(per), count=count)
 
 

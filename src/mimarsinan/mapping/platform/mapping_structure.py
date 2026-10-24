@@ -19,6 +19,8 @@ class ResidencyPlanError(ToolchainRefusal, ValueError):
     """A declared ``residency_plan`` the toolchain cannot plan or execute exactly; the message names why."""
 
 
+class PositionMultiplexingError(ToolchainRefusal, ValueError):
+    """A declared ``position_multiplexing`` the toolchain cannot plan or execute exactly; the message names why."""
 
 
 def residency_declaration(value: Any) -> Tuple[str, Optional[int]]:
@@ -99,6 +101,8 @@ class ChipCapabilities:
     max_schedule_passes: int = 8
     # [E85] The executed residency step ({step, index}); None = U1's pass planner.
     residency_plan: Optional[Mapping[str, Any]] = field(default=None, hash=False, metadata=DECLARED_ONLY)
+    # [W02] One copy of each shared bank serves its instances in turn; None = undeclared (one copy per instance).
+    position_multiplexing: Optional[bool] = field(default=None, metadata=DECLARED_ONLY)
 
     def __post_init__(self) -> None:
         if self.residency_plan is not None:
@@ -107,6 +111,12 @@ class ChipCapabilities:
             raise ResidencyPlanError(
                 "residency_plan is declared but allow_scheduling is not: a residency plan is a multi-pass "
                 "schedule, so the chip must declare allow_scheduling")
+        if self.position_multiplexing is not None and not isinstance(self.position_multiplexing, bool):
+            raise PositionMultiplexingError(f"position_multiplexing must be a bool, got {self.position_multiplexing!r}")
+        if self.position_multiplexing and (not self.allow_scheduling or self.residency_plan is not None):
+            raise PositionMultiplexingError(
+                "position_multiplexing serves a bank's instances in turn over passes: it needs allow_scheduling "
+                "and is not planned together with a residency_plan")
 
     @classmethod
     def from_platform_constraints(
@@ -146,6 +156,7 @@ class ChipCapabilities:
                 None if constraints.get("residency_plan") is None
                 else _declared_residency_plan(constraints["residency_plan"])
             ),
+            position_multiplexing=constraints.get("position_multiplexing"),
         )
 
     def declared_fields(self) -> dict[str, Any]:

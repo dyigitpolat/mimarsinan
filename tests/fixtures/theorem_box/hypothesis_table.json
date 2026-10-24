@@ -65,6 +65,7 @@
   "max_schedule_passes",
   "platform_physics_overrides",
   "platform_physics_profile",
+  "position_multiplexing",
   "residency_plan",
   "residency_plan.index",
   "residency_plan.step",
@@ -127,6 +128,19 @@
    "H8"
   ],
   "residency_plan.step": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "H10",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "position_multiplexing": [
    "H5-collapse",
    "H5-skew",
    "R3",

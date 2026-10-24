@@ -5,13 +5,18 @@ plane's passes as the period census reads them (``write_census.PassRow``)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps
+from mimarsinan.deployment_record.build.pass_carry import (  # candidate_carry_census moved there: re-export
+    boundary_widths_of, candidate_carry_census as candidate_carry_census,
+)
 from mimarsinan.deployment_record.build.payload_sizes import (
     core_connectivity_entries, core_payload_bytes, core_sign_rows, pass_program_bytes,
 )
-from mimarsinan.deployment_record.build.producer_census import candidate_operand_cells, operand_cells_by_core
+from mimarsinan.deployment_record.build.producer_census import (
+    candidate_operand_cells, operand_cells_by_core, operand_cells_per_tile,
+)
 from mimarsinan.deployment_record.build.write_census import (
     BoundaryWidths, PassRow, ProgramPasses, stage_latency,
 )
@@ -19,11 +24,12 @@ from mimarsinan.deployment_record.schema import SegmentCoreRecord, SegmentRecord
 from mimarsinan.deployment_record.schema.schedule import ResidencyPlanRecord
 from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
 from mimarsinan.mapping.noc.fragments import delayed_carry_wires, execution_stage_latencies, spec_segments
+from mimarsinan.mapping.packing.residency_tiles import declared_tiles, expand_to_tiles, tile_rows
 from mimarsinan.mapping.support.period_census import (
     SCHEDULE_RESIDENCY_PLAN, SCHEDULE_RESIDENT_CORES, resident_core_indices,
 )
 from mimarsinan.mapping.support.schedule.pass_carry import (
-    carried_softcore_spans, carried_wire_spans, carry_census_from_spans, delayed_input_slices,
+    carried_softcore_spans, carried_wire_spans, delayed_input_slices,
 )
 from mimarsinan.mapping.weight_programming import weight_programming_report
 
@@ -118,6 +124,8 @@ def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProg
 
     A resident pass contributes its cores to core INIT and nothing else. An undeclared
     ``weight_bits`` cannot size a payload, so the BYTES stay absent while the core counts count.
+    Every core count is of physical tiles (a fused core counts its members, ``PassProgram.tiles``); the payload is
+    sized per allocated crossbar (``pass_program_bytes``), as the record sizes ``SegmentCoreRecord.params_bytes``.
     """
     programs = () if noc is None else noc.pass_programs
     reprogrammed = tuple(cells for program in programs if not program.resident
@@ -125,47 +133,19 @@ def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProg
     payloads = None if weight_bits is None else tuple(
         b for program in programs if not program.resident for b in pass_program_bytes(program, weight_bits))
     return CandidateProgramming(
-        segment_cores=sum(program.cores for program in programs),
+        segment_cores=sum(_tiles(program) for program in programs),
         committed_cells=sum(sum(program.core_cells) for program in programs),
-        reprogrammed_cores=len(reprogrammed),
+        reprogrammed_cores=sum(_tiles(program) for program in programs if not program.resident),
         reprogrammed_bytes=None if payloads is None else sum(payloads),
         reprogram_passes=sum(1 for p in programs if not p.resident),
-        pass_cores=tuple(program.cores for program in programs),
+        pass_cores=tuple(_tiles(program) for program in programs),
         reprogrammed_cells=reprogrammed,
     )
 
 
-def candidate_carry_census(softcores: Sequence[Any], noc: Any, *, timesteps: Any,
-                           pass_transfer: Any) -> Optional[Dict[str, int]]:
-    """[H2] The candidate's carry census, or None without the wire census, discipline or window.
-
-    A pass structure with no crossing wire is a KNOWN zero, not an unknown. The spans and the delayed slices
-    (``delayed_carry_wires``) are read in the segmentation the fragments were planned under.
-    """
-    if noc is None or noc.census is None or pass_transfer is None or timesteps is None:
-        return None
-    return carry_census_from_spans(
-        carried_softcore_spans(softcores, noc.pass_placements, noc.census.pair_wires,
-                               spec_segments(softcores, getattr(noc, "runs", None))),
-        boundary_count=len(noc.pass_placements), timesteps=int(timesteps), transfer=str(pass_transfer),
-        extra_in=delayed_carry_wires(softcores, noc),
-    )
-
-
-def boundary_widths_of(crossings: Iterable[Tuple[int, int, int]],
-                       replayed: Iterable[Tuple[int, int]] = ()) -> Tuple[BoundaryWidths, ...]:
-    """Per-boundary carried widths from ``(width, producing position, last consuming position)``:
-    a wire is read out after its producing pass and re-injected before its last consuming pass
-    (one crossing per direction, as the dense census counts); ``replayed``: ``(width, reading position)``
-    per delayed slice beyond one per producer and pass, one more re-injection before its reading pass."""
-    out: Dict[int, int] = {}
-    inbound: Dict[int, int] = {}
-    for width, produced, consumed in crossings:
-        out[produced] = out.get(produced, 0) + int(width)
-        inbound[consumed - 1] = inbound.get(consumed - 1, 0) + int(width)
-    for width, reader in replayed:
-        inbound[reader - 1] = inbound.get(reader - 1, 0) + int(width)
-    return tuple((p, out.get(p, 0), inbound.get(p, 0)) for p in sorted(set(out) | set(inbound)))
+def _tiles(program: Any) -> int:
+    """A pass program's physical tiles (``PassProgram.tiles``); a program that states none counts its cores."""
+    return int(getattr(program, "tiles", program.cores))
 
 
 #: Why each plane that cannot see operand regions states none (N2): its write terms refuse under an operand core type.
@@ -183,7 +163,8 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
     is counted twice (the builder never shares one). ``semantics`` duck-types the executed-window
     branch (``retimed``, ``is_cycle``, ``is_cascade``, ``latency_group_count``, ``chip_latency``).
     A pass program that states each core's ``core_geometry`` (axons, neurons) types its cores;
-    otherwise the census types them only on a chip of one core type.
+    otherwise the census types them only on a chip of one core type. One entry per physical tile (its cells, sign
+    rows and operand cells), a fused core's members per ``PassProgram.core_tile_cells``.
     """
     if noc is None:
         return None
@@ -195,6 +176,8 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
         kept = resident_core_indices(program, program.cores)
         geometry = getattr(program, "core_geometry", None)
         signs = tuple(getattr(program, "core_sign_rows", ()) or ())
+        split = getattr(program, "core_tile_cells", ())  # one row entry per physical tile (a fused core's members)
+        split_signs = getattr(program, "core_tile_sign_rows", ())
         owner: Dict[int, int] = {}
         for softcore, hardcore in placements:
             previous = owner.get(hardcore)
@@ -205,21 +188,26 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
                 softcores, [[pl for pl in placements if segment_of[pl[0]] == segment]],
                 retimed=bool(semantics.retimed), runs=runs)
             position[(index, segment)] = len(rows)
-            operand = candidate_operand_cells(softcores, placements, cores, dynamic_banks or ())
+            tiles = [split[h] if split else (program.core_cells[h],) for h in cores]
+            first = [sum(len(t) for t in tiles[:i]) for i in range(len(cores))]
+            operand = operand_cells_per_tile(
+                candidate_operand_cells(softcores, placements, cores, dynamic_banks or ()), tiles)
             rows.append(PassRow(
                 segment_index=segment, resident=bool(program.resident),
-                core_cells=tuple(int(program.core_cells[h]) - o for h, o in zip(cores, operand)),
+                core_cells=tuple(int(c) - o for c, o in zip((c for t in tiles for c in t), operand)),
                 producer_cells=sum(operand), producer_cores=frozenset(i for i, o in enumerate(operand) if o),
                 producer_core_cells=tuple(operand) if any(operand) else None,
-                marks=frozenset(i for i, h in enumerate(cores) if h in kept), core_extents=None,
+                marks=frozenset(first[i] + j for i, h in enumerate(cores) if h in kept for j in range(len(tiles[i]))),
+                core_extents=None,
                 compute_steps=None if timesteps is None else program_latency_steps(
                     stage_max_latencies=latencies, timesteps=int(timesteps), is_cycle=semantics.is_cycle,
                     is_cascade=semantics.is_cascade, latency_group_count=semantics.latency_group_count,
                     chip_latency=semantics.chip_latency),
                 stage_latencies=tuple(latencies),
-                core_types=None if geometry is None else tuple(
-                    (int(geometry[h][0]), int(geometry[h][1])) for h in cores),
-                core_sign_rows=tuple(int(signs[h]) for h in cores) if signs else (),
+                core_types=None if geometry is None else tuple(  # a fused core's members are of one type
+                    (int(geometry[h][0]) // len(t), int(geometry[h][1])) for h, t in zip(cores, tiles) for _ in t),
+                core_sign_rows=tuple(r for h, t in zip(cores, tiles) for r in (
+                    split_signs[h] if split_signs else (int(signs[h]),) + (0,) * (len(t) - 1))) if signs else (),
             ))
     widths: Tuple[BoundaryWidths, ...] = ()
     if noc.census is not None:
@@ -251,19 +239,23 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
         span = stage_latency([getattr(c, "latency", None) for c in cores])
         latencies = None if span is None else (span,)
         position[index] = len(rows)
+        tiles = [tuple((int(a), o.neurons_physical) for a in getattr(c, "fused_component_axons", None) or ())
+                 or ((o.axons_physical, o.neurons_physical),) for c, o in zip(cores, occupancy)]
+        cells, marks, extents, types = expand_to_tiles(  # one entry per physical tile (a fused core's members)
+            [(o.cells_used, (o.axons_used, o.neurons_used), t) for o, t in zip(occupancy, tiles)],
+            resident_core_indices(stage, len(cores)) if getattr(stage, SCHEDULE_RESIDENT_CORES, None) is not None
+            else ())
+        operand = operand_cells_per_tile(operand, tiles)
         rows.append(PassRow(
             segment_index=int(stage.schedule_segment_index if stage.schedule_segment_index is not None
                               else len(rows)),
             resident=bool(getattr(stage, "schedule_weights_resident", False)),
-            core_cells=tuple(o.cells_used - c for o, c in zip(occupancy, operand)),
+            core_cells=tuple(c - p for c, p in zip(cells, operand)),
             producer_cells=sum(operand), producer_cores=frozenset(i for i, c in enumerate(operand) if c),
             producer_core_cells=tuple(operand) if any(operand) else None,
-            marks=resident_core_indices(stage, len(cores)) if getattr(stage, SCHEDULE_RESIDENT_CORES, None)
-            is not None else frozenset(),
-            core_extents=tuple((o.axons_used, o.neurons_used) for o in occupancy),
-            compute_steps=None, stage_latencies=latencies,
-            core_types=tuple((o.axons_physical, o.neurons_physical) for o in occupancy),
-            core_sign_rows=tuple(core_sign_rows(c, o) for c, o in zip(cores, occupancy)),
+            marks=marks, core_extents=extents, compute_steps=None, stage_latencies=latencies, core_types=types,
+            core_sign_rows=tuple(r for c, o, t in zip(cores, occupancy, tiles)
+                                 for r in tile_rows(core_sign_rows(c, o), t)),
         ))
     widths = boundary_widths_of(((w, position[made], position[last])
                                  for _node, w, made, last in carried_wire_spans(stages)),
@@ -280,18 +272,29 @@ def record_program_passes(record: Any) -> ProgramPasses:
     measured: Dict[int, int] = {}
     for row in record.timing.per_segment:
         measured[int(row.stage_index)] = measured.get(int(row.stage_index), 0) + int(row.timesteps_executed)
+    declared = declared_core_geometries(record.identity.platform)
     rows = []
     for segment in record.schedule.segments():
         span = stage_latency([c.static_delay_levels for c in segment.cores])
         latencies = None if span is None else (span,)
         steps = measured.get(int(segment.stage_index))
+        # One entry per physical tile; a geometry the declared types do not determine stays one entry of its own
+        # geometry, which the census refuses by name (a core type the chip does not declare).
+        tiles = [declared_tiles(c.axons, c.neurons, declared) or ((c.axons, c.neurons),) for c in segment.cores]
+        cells, marks, extents, types = expand_to_tiles(
+            [(c.cells_used, (c.axons_used, c.neurons_used), t) for c, t in zip(segment.cores, tiles)],
+            segment.resident_core_indices or ())
         rows.append(PassRow(
             segment_index=segment.segment_index, resident=segment.programming == "resident",
-            core_cells=tuple(c.cells_used for c in segment.cores),
-            marks=frozenset(segment.resident_core_indices or ()),
-            core_extents=tuple((c.axons_used, c.neurons_used) for c in segment.cores),
-            compute_steps=steps, stage_latencies=latencies,
-            core_types=tuple((c.axons, c.neurons) for c in segment.cores),
-            core_sign_rows=tuple(int(c.sign_register_rows or 0) for c in segment.cores),
+            core_cells=cells, marks=marks, core_extents=extents,
+            compute_steps=steps, stage_latencies=latencies, core_types=types,
+            core_sign_rows=tuple(r for c, t in zip(segment.cores, tiles)
+                                 for r in tile_rows(c.sign_register_rows or 0, t)),
         ))
     return ProgramPasses(rows=tuple(rows), operands_unstated=RECORD_OPERANDS_UNSTATED)
+
+
+def declared_core_geometries(platform: Any) -> Tuple[Tuple[int, int], ...]:
+    """The (axons, neurons) of every core type a record's platform declares completely."""
+    return tuple(sorted({(int(c["max_axons"]), int(c["max_neurons"])) for c in (platform or {}).get("cores") or ()
+                         if "max_axons" in c and "max_neurons" in c}))

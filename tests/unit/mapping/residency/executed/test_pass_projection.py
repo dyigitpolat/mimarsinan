@@ -185,15 +185,27 @@ class TestOneSegmentationForThePlanner:
 
 
 class TestAPlannedPassThatDoesNotPack:
-    """Where the planner's residency classes (a unique fallback per spec) and the packer's (the source perceptron's)
-    differ, a planned pass may not pack: fuzz seed 38 C 2 and 3, among the base's 29 fuzz build failures at 600 x 6
-    (an unnamed RuntimeError there), refuse by name. Only the packer's capacity failure is renamed: any other error
-    of the flush propagates as it is raised (review round 2)."""
+    """Before W04 the planner packed the IR record's residency classes (keyed on values) and the packer the source
+    perceptron's, so a planned pass could merge layers the packer keeps apart and not pack: fuzz seed 38 C 2 and 3,
+    among the base's 29 fuzz build failures at 600 x 6 (an unnamed RuntimeError there, then
+    ``PlannedPassPackingRefusal``). [W04] The planner now packs the class the packer reads, so both build and run equal
+    to the identity run. A planned pass the packer cannot place still refuses by name, and only the packer's capacity
+    failure is renamed: any other error of the flush propagates as it is raised (review round 2)."""
 
+    @pytest.mark.parametrize("semantics", R.ALL_RUNS, ids=R.RUN_IDS)
     @pytest.mark.parametrize("count", [2, 3])
-    def test_it_refuses_by_name(self, count):
+    def test_the_former_witness_builds_and_runs_equal_to_the_identity_run(self, count, semantics):
+        R.assert_runs_equal_to_the_identity_run(_fuzz(38), count, semantics)
+
+    def test_a_capacity_failure_of_a_planned_pass_refuses_by_name(self, monkeypatch):
+        from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
+        from mimarsinan.mapping.packing.softcore import HardCoreMapping
+
+        def full(self, *args, **kwargs):
+            raise CoreCapacityRefusal("No more hard cores available")
+        monkeypatch.setattr(HardCoreMapping, "map", full)
         with pytest.raises(hybrid_build_scheduled.PlannedPassPackingRefusal, match="does not pack") as caught:
-            V.build(_fuzz(38), count, None)
+            V.build(_fuzz(38), 3, None)
         assert isinstance(caught.value, ToolchainRefusal) and isinstance(caught.value, RuntimeError)
         assert "No more hard cores available" in str(caught.value)
 

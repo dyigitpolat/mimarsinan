@@ -19,15 +19,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.packing.canonical import OPERAND_ROLE
 from mimarsinan.mapping.layout.layout_types import (
     LayoutHardCoreType,
     LayoutSoftCoreSpec,
 )
+from mimarsinan.mapping.support.position_multiplexing import multiplexed_segment_passes, shares_a_bank
 from mimarsinan.mapping.support.schedule.bank_clustered_law import (
     BankInstance,
     compose_bank_clustered_passes,
+    placement_regions_hold,
 )
 from mimarsinan.mapping.support.schedule.residency_composition import (
     ResidencyComposition, ShapeOnlyResidency, compose_shape_only_program)
@@ -100,14 +101,8 @@ def bank_clustered_layout_passes(
     if _has_intra_segment_dependency(softcores):
         return None
 
-    instances = [
-        BankInstance(
-            bank_id=int(sc.bank_id or 0),
-            axons=int(sc.input_count),
-            neurons=int(sc.output_count),
-        )
-        for sc in softcores
-    ]
+    instances = [BankInstance(bank_id=int(sc.bank_id or 0), axons=int(sc.input_count), neurons=int(sc.output_count))
+                 for sc in softcores]
     cores_config = [
         {"max_axons": ct.max_axons, "max_neurons": ct.max_neurons, "count": ct.count}
         for ct in core_types
@@ -127,6 +122,8 @@ class SegmentPassPlan:
     pass_lists: Tuple[Tuple[LayoutSoftCoreSpec, ...], ...]
     feasible: bool
     residency_applied: bool
+    #: [W02] Under position multiplexing, per pass: True where it programs its weights (a run's first pass).
+    run_heads: Optional[Tuple[bool, ...]] = None
 
     @property
     def pass_count(self) -> int:
@@ -134,9 +131,9 @@ class SegmentPassPlan:
 
     @property
     def resident_flags(self) -> Tuple[bool, ...]:
-        return resident_passes(
-            self.pass_count, policy_applied=self.residency_applied
-        )
+        if self.run_heads is not None:
+            return tuple(not head for head in self.run_heads)
+        return resident_passes(self.pass_count, policy_applied=self.residency_applied)
 
 
 def plan_segment_passes(
@@ -148,30 +145,37 @@ def plan_segment_passes(
     allow_splitting: bool = False,
     max_schedule_passes: int = 8,
     coalescing_group_ids: "Optional[Sequence[Optional[int]]]" = None,
+    position_multiplexing: Optional[bool] = None,
+    shares: Optional[Sequence[bool]] = None,
 ) -> SegmentPassPlan:
     """One segment's passes: the residency composition whenever the law
     composes one and every chunk packs, else the validated capacity split.
+    [W02] Declared ``position_multiplexing``: one copy per shared bank serves its instances
+    in turn (``shares``: which instances read their bank's copy; default all).
 
     A composition that cannot pack is not the program deployment runs;
     it is declined rather than reported as an infeasible layout.
     ``coalescing_group_ids`` (aligned with *softcores*) keeps a coalesced
-    wide-fan-in's fragments in ONE pass on the capacity path — the caller
-    holding real cores passes them; the shape-only planes have none. A segment
-    holding a dynamic operand bank's instances takes the capacity split (N2).
+    wide-fan-in's fragments in ONE pass on the capacity path; [W04] absent, the
+    specs' own groups (``coalescing_group_id``), so both planes keep them alike.
+    A segment holding a dynamic operand bank's instances takes the capacity split (N2), under a declared
+    ``position_multiplexing`` too.
     """
-    # N2: an operand bank's payload is rewritten every pass (design §2.7), so residency never composes over one.
+    if coalescing_group_ids is None and any(getattr(s, "coalescing_group_id", None) is not None for s in softcores):
+        coalescing_group_ids = [getattr(s, "coalescing_group_id", None) for s in softcores]
+    # N2: an operand bank's payload is rewritten every pass (design §2.7), so residency never composes over one, and
+    # neither does W02's one copy serving positions in turn (a run's later passes are weight-resident).
     operand = any(getattr(s, "core_role", None) == OPERAND_ROLE for s in softcores)
+    if position_multiplexing and not operand and shares_a_bank(softcores, shares):
+        mux = multiplexed_segment_passes(
+            softcores, core_types, budget=budget, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
+            max_schedule_passes=max_schedule_passes, shares=shares, coalescing_group_ids=coalescing_group_ids)
+        return SegmentPassPlan(mux.pass_lists, mux.feasible, False, run_heads=mux.run_heads)
     chunks = None if operand else bank_clustered_layout_passes(
         softcores, core_types, max_schedule_passes=max_schedule_passes,
     )
-    if chunks is not None and all(
-        pack_layout(
-            softcores=chunk,
-            core_types=core_types,
-            allow_neuron_splitting=allow_splitting,
-            allow_coalescing=allow_coalescing,
-        ).feasible
-        for chunk in chunks
+    if chunks is not None and placement_regions_hold(
+        chunks, core_types, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
     ):
         return SegmentPassPlan(
             pass_lists=tuple(tuple(chunk) for chunk in chunks),
@@ -252,6 +256,7 @@ def plan_program_passes(
     max_schedule_passes: int = 8,
     residency: Optional[ShapeOnlyResidency] = None,
     runs: Optional[Sequence[int]] = None,
+    position_multiplexing: Optional[bool] = None,
 ) -> ProgramPassPlan:
     """Group by the specs' own ``segment_id`` and plan each segment. [U1 W9] ``runs`` (aligned with *softcores*: the
     walk's IR-run segment of each spec, ``residency_rules.spec_runs``) groups them by the builder's segments
@@ -283,6 +288,7 @@ def plan_program_passes(
                     allow_coalescing=allow_coalescing,
                     allow_splitting=allow_splitting,
                     max_schedule_passes=max_schedule_passes,
+                    position_multiplexing=position_multiplexing,
                 ),
             )
             for sid in sorted(seg_softcores.keys())

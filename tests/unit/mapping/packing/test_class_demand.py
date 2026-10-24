@@ -36,7 +36,10 @@ def _specs(rng, n):
                                 (rng.randint(0, 600), rng.randint(0, 300))),
                               residency_class_id=rng.randrange(classes),
                               latency_tag=rng.choice([None, 0, 1, 2, 7]),
-                              name=None if rng.random() < 0.5 else f"p{rng.randrange(5)}")
+                              name=None if rng.random() < 0.5 else f"p{rng.randrange(5)}",
+                              # [W04] banks (bank affinity) and coalescing groups (never split): what the packer reads
+                              bank_id=rng.choice([None, None, 0, 1, 2]),
+                              coalescing_group_id=rng.choice([None, None, None, 0]))
            for _ in range(n)]
     if rng.random() < 0.5:
         out.sort(key=lambda s: s.latency_tag or 0)
@@ -89,7 +92,7 @@ class TestTheVerdictIsThePackersVerdict:
         for a, n in PALETTE:
             for k in (1, 2, 3, 5, 17, 33, 70):
                 items = [LayoutSoftCoreSpec(a, n, latency_tag=0) for _ in range(k)]
-                runs = (((a, n, 0), k),)
+                runs = (((a, n, 0, None, False), k),)
                 assert demand.classes.demand(runs) == _unbounded_consumption(items, types, split, coalesce), (a, n, k)
         rng = random.Random(7)
         for _ in range(40):

@@ -71,7 +71,7 @@ class TestTheKeyIsDeclaredOnly:
 
     def test_one_metadata_rule_with_no_branch_on_a_key_name(self):
         declared_only = [f.name for f in fields(ChipCapabilities) if f.metadata.get("declared_only")]
-        assert declared_only == ["residency_plan"]
+        assert declared_only == ["residency_plan", "position_multiplexing"]
         for method in (ChipCapabilities.declared_fields, ChipCapabilities.capability_bits,
                        ChipCapabilities.layout_kwargs):
             assert "residency" not in inspect.getsource(method)

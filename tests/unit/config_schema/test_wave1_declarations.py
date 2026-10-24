@@ -152,8 +152,9 @@ class TestRegistryEntries:
         assert REGISTRY["readout_law"].domain == "value"
 
     def test_the_passthrough_set_is_the_wave1_platform_keys(self):
-        # N2 (Wave 2) key amendment: readout_ranges joins the platform passthrough (design §2.9).
-        assert set(passthrough_keys()) == set(PLATFORM_KEYS) | {"readout_ranges"}
+        # N2 (Wave 2) key amendment: readout_ranges joins the platform passthrough (design §2.9); W02 (pack) adds
+        # position_multiplexing (registry/entries_residency.py).
+        assert set(passthrough_keys()) == set(PLATFORM_KEYS) | {"readout_ranges", "position_multiplexing"}
 
     def test_derived_keys_are_not_declarable(self):
         for key in DERIVED_KEYS:

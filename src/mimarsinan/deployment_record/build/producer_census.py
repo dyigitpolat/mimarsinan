@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any, List, Mapping, Sequence, Tuple
 
+from mimarsinan.deployment_record.build.write_census import WriteCensusError
+
 
 def operand_cells_by_core(hard_core_mapping: Any, banks: Mapping) -> List[int]:
     """Per hard core of one built segment, the cells of its bound-bank regions (0 for a static core)."""
@@ -34,3 +36,14 @@ def placed_operand_cells(banks: int, instances: int, bank_cells: int) -> int:
     """The cells a product's operand regions take per inference on the packed program: every streamed instance
     holds its whole bank (the deployment model above)."""
     return int(banks) * int(instances) * int(bank_cells)
+
+
+def operand_cells_per_tile(operand: Sequence[int], tiles: Sequence[Sequence[Any]]) -> Tuple[int, ...]:
+    """Per physical tile of a pass's cores (``tiles`` per core: a fused core's members), its operand cells. A core's
+    operand regions sit on its one tile: no fused core takes the operand role (``canonical.fused_core_roles``), and a
+    fused core holding them would leave each region's tile unstated, which is refused by name."""
+    fused = [i for i, (cells, t) in enumerate(zip(operand, tiles)) if cells and len(t) > 1]
+    if fused:
+        raise WriteCensusError(f"cores {fused} hold operand regions and are fused of several physical tiles, so the "
+                               "tile of each region is not stated (no fused core takes the operand role)")
+    return tuple(c for cells, t in zip(operand, tiles) for c in (int(cells),) + (0,) * (len(t) - 1))

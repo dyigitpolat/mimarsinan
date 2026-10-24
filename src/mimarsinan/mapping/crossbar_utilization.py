@@ -27,6 +27,8 @@ class CoreOccupancy:
     neurons_used: int
     neurons_physical: int
     unusable_space: int
+    #: The physical cores this crossbar occupies: a fused core counts its members (``fused_component_axons``).
+    tiles: int = 1
 
     @property
     def cells_physical(self) -> int:
@@ -51,6 +53,7 @@ class CoreOccupancy:
             neurons_used=neurons - int(getattr(core, "available_neurons", 0) or 0),
             neurons_physical=neurons,
             unusable_space=int(getattr(core, "unusable_space", 0) or 0),
+            tiles=len(getattr(core, "fused_component_axons", None) or ()) or 1,
         )
 
 
@@ -89,7 +92,13 @@ class CrossbarUtilizationReport:
 
     @property
     def cores_allocated(self) -> int:
+        """Allocated crossbars (a fused core once): the sealed field."""
         return len(self.cores)
+
+    @property
+    def physical_cores(self) -> int:
+        """Physical cores (a fused core counts its members): the count the pricing reads."""
+        return sum(c.tiles for c in self.cores)
 
     @property
     def axons_used(self) -> int:
@@ -177,7 +186,7 @@ def summarize_utilization(report: CrossbarUtilizationReport) -> str:
     """One-line run log, mirroring the weight-programming report's shape."""
     bits = "n/a" if report.programming_bits is None else f"{report.programming_bits:.3e}"
     return (
-        f"[Crossbar] cores={report.cores_allocated} "
+        f"[Crossbar] cores={report.cores_allocated} physical={report.physical_cores} "
         f"axons={report.axons_used}/{report.axons_physical} "
         f"({report.axon_utilization:.3f}) "
         f"neurons={report.neurons_used}/{report.neurons_physical} "

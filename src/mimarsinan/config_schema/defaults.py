@@ -152,6 +152,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "write_ports", "inference_rate_hz", "min_lifetime_hours", "residency_plan",
     # Wave 2 N2 declaration (registry/entries_readout.py): no default, absent is G2's per-perceptron law.
     "readout_ranges",
+    # Wave 2 (registry/entries_residency.py): no default, an absent key leaves every program byte for byte.
+    "position_multiplexing",
 }
 
 

@@ -11,10 +11,10 @@ from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
-from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
+from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
 from mimarsinan.spiking.segment_boundary import BoundaryConfig
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE, validate_spiking_init
-from mimarsinan.models.spiking.hybrid.carry import refuse_stochastic_replay
+from mimarsinan.models.spiking.hybrid.carry import PassReplayRefusal, carried_output_ids, refuse_stochastic_replay
 from mimarsinan.models.spiking.hybrid.lif_step import HybridLifStepMixin
 from mimarsinan.models.spiking.hybrid.rate_forward import HybridRateForwardMixin
 from mimarsinan.models.spiking.hybrid.stage_io import HybridStageIOMixin
@@ -121,6 +121,8 @@ class SpikingHybridCoreFlow(
         )
 
         refuse_stochastic_replay(hybrid_mapping, spike_mode=spike_mode, pass_transfer=self.pass_transfer)
+        refuse_lossy_count_carry(hybrid_mapping, spiking_mode=spiking_mode, ttfs_cycle_schedule=ttfs_cycle_schedule,
+                                 spike_mode=spike_mode, pass_transfer=self.pass_transfer)
         self._segment_tensor_cache: Dict[int, dict] = {}
         self._segment_tensor_cache_key: int | None = None
 
@@ -164,3 +166,18 @@ class SpikingHybridCoreFlow(
         finally:
             self._recorder = None
         return out, record
+
+
+def refuse_lossy_count_carry(hybrid_mapping, *, spiking_mode: str, ttfs_cycle_schedule: str, spike_mode: str,
+                             pass_transfer: str) -> None:
+    """A cascaded TTFS run carries a count across a pass inside a segment through its single-spike re-encode, the time
+    code's lossless codec under the family's one legal input encoding (``spike_generation_mode`` TTFS). Any other
+    encoding re-emits an even train and changes the function, so a program that carries across a pass under it is
+    refused by name; a program that carries nothing runs."""
+    if pass_transfer != COLLAPSE or spike_mode == "TTFS" or not is_cascaded_ttfs(spiking_mode, ttfs_cycle_schedule):
+        return
+    carried = sorted(i for i, ids in carried_output_ids(hybrid_mapping).items() if ids)
+    if carried:
+        raise PassReplayRefusal(
+            f"cascaded TTFS carries counts across the passes of stages {carried[:4]} through a single-spike re-encode, "
+            f"exact only under spike_generation_mode 'TTFS' (the family's one legal value), not {spike_mode!r}")

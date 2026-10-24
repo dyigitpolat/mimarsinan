@@ -41,6 +41,10 @@ def build_real_fragment(
     )
     frag.threshold = parent.threshold
     frag.latency = parent.latency
+    # [W04] A fragment keeps its parent's residency class (its singleton values are the parent's): before, it read
+    # as an ungrouped core and shared no core with its own layer, so the deployed program used cores the shape-only
+    # plane, whose fragments keep the class, did not count.
+    frag.residency_class_id = getattr(parent, "residency_class_id", None)
     frag.neuron_offset_in_original = (
         getattr(parent, "neuron_offset_in_original", 0) + lo
     )

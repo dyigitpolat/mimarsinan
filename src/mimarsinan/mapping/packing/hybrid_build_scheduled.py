@@ -7,20 +7,22 @@ import numpy as np
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.packing.hybrid_segment import _flush_scheduled_segment
+from mimarsinan.mapping.packing.hybrid_segment import _flush_scheduled_segment, _validate_coalescing_budget
 from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _apply_reindex_to_ir_sources,
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_types import HybridStage
+from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 from mimarsinan.mapping.packing.pass_timing import PassTimingError, project_passes
 from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
+from mimarsinan.mapping.packing.softcore import eliminated_core_extent
 from mimarsinan.mapping.packing.schedule_residency_plan import (
     compose_builder_program,
     depth_partition,
     mark_residency_plan,
 )
-from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
+from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError, ResidencyPlanError
 from mimarsinan.mapping.support.period_census import ResidencySegmentPlan
 from mimarsinan.mapping.layout.segmentation import (
     NeuralSegment,
@@ -35,20 +37,11 @@ class PlannedPassPackingRefusal(ToolchainRefusal, RuntimeError):
     soft cores under theirs (the source perceptron's), so a class the planner kept apart can be merged, or not."""
 
 
-#: The packer's one capacity failure (``greedy/pack.py``), which ``hybrid_segment`` re-raises as "Hard-core packing
-#: failed" from it: both exactly ``RuntimeError``.
-_CAPACITY_FAILURE = "No more hard cores available"
-
-
 def _is_capacity_failure(exc: BaseException) -> bool:
-    """Whether ``exc`` is the packer's capacity failure: a chain of exact ``RuntimeError``s ending at the packer's
-    raise. Any other error (``NotImplementedError``, ``RecursionError``, a defect) is not, and propagates unwrapped."""
-    cause: "BaseException | None" = exc
-    while cause is not None and type(cause) is RuntimeError:
-        if str(cause).startswith(_CAPACITY_FAILURE):
-            return True
-        cause = cause.__cause__
-    return False
+    """Whether ``exc`` is the packer's capacity failure (``CoreCapacityRefusal``, which ``hybrid_segment`` re-raises
+    with its diagnosis, W04). Any other error (``NotImplementedError``, ``RecursionError``, a defect) is not, and
+    propagates unwrapped."""
+    return isinstance(exc, CoreCapacityRefusal)
 
 
 def _pass_levels(
@@ -88,6 +81,7 @@ def _flush_scheduled_subsegments(
     max_schedule_passes: int = 8,
     retimed_level_stages: bool = False,
     planned_chunks: "Sequence[Sequence[NeuralCore]] | None" = None,
+    position_multiplexing: "bool | None" = None,
 ) -> int:
     """Flush one IR segment as the planner's passes of one shared budget.
 
@@ -107,6 +101,7 @@ def _flush_scheduled_subsegments(
     from mimarsinan.mapping.packing.schedule_bank_clustered import (
         dedup_resident_stage_matrices,
         mark_bank_residency,
+        mark_multiplexed_residency,
     )
     from mimarsinan.mapping.support.schedule.pass_planner import (
         plan_segment_passes,
@@ -118,10 +113,21 @@ def _flush_scheduled_subsegments(
     if not cores:
         return segment_index_start
 
-    residency_applied = False
+    residency_applied, run_heads = False, None
     if planned_chunks is not None:
         chunks = [list(chunk) for chunk in planned_chunks]
     else:
+        if position_multiplexing and not (getattr(ir_graph, "layout_softcores", None) and all(
+                getattr(c, "layout_softcore_index", None) is not None for c in cores)):
+            raise PositionMultiplexingError(
+                f"position_multiplexing orders {segment_label_base!r}'s passes by the layout walk's dependency "
+                f"levels, and this IR carries no layout record for its cores")
+        shares = [c.weight_bank_id is not None and eliminated_core_extent(c) == (0, 0) for c in cores]
+        if position_multiplexing and any(c.weight_bank_id is not None and not ok for c, ok in zip(cores, shares)):
+            raise PositionMultiplexingError(
+                f"position_multiplexing: IR elimination compacted bank instances of {segment_label_base!r} into owned "
+                "cores, which the shape-only plane plans as sharing their bank's copy; the planes would price two "
+                "programs (declare it without pruning)")
         specs, spec_to_core, coalescing_group_ids = segment_specs_for(cores_config)(
             cores, ir_graph=ir_graph, hardware_bias=hardware_bias,
         )
@@ -142,11 +148,18 @@ def _flush_scheduled_subsegments(
             allow_splitting=allow_neuron_splitting,
             max_schedule_passes=max_schedule_passes,
             coalescing_group_ids=coalescing_group_ids,
+            position_multiplexing=position_multiplexing,
+            shares=shares,
         )
+        if not plan.feasible:  # [W04] the shape-only plane's verdict and name, before anything is materialized
+            if allow_coalescing:  # the specific cause first: a wide core needs more coalescing cores than declared
+                _validate_coalescing_budget(cores, cores_config, allow_neuron_splitting)
+            raise CoreCapacityRefusal(f"segment {segment_label_base!r} ({len(cores)} IR cores): no pass plan packs it "
+                                      "on the declared cores (a soft core or a coalescing group exceeds one pass)")
         chunks = [
             [spec_to_core[id(spec)] for spec in chunk] for chunk in plan.pass_lists
         ]
-        residency_applied = plan.residency_applied
+        residency_applied, run_heads = plan.residency_applied, plan.run_heads
     if not chunks:
         return segment_index_start
     levels = _pass_levels(segment_label_base, cores, chunks) if retimed_level_stages else None
@@ -195,6 +208,8 @@ def _flush_scheduled_subsegments(
     if residency_applied:
         mark_bank_residency(pass_stages)
         dedup_resident_stage_matrices(pass_stages)
+    if run_heads is not None:
+        mark_multiplexed_residency(pass_stages, run_heads)
 
     return segment_index_start + 1
 
@@ -212,6 +227,7 @@ def _build_scheduled(
     retimed_level_stages: bool = False,
     max_schedule_passes: int = 8,
     residency_plan: "Mapping[str, Any] | None" = None,
+    position_multiplexing: "bool | None" = None,
 ) -> "tuple[ResidencySegmentPlan, ...] | None":
     """Scheduled compilation: the planner's passes of one shared budget per segment.
 
@@ -265,6 +281,7 @@ def _build_scheduled(
                 max_schedule_passes=max_schedule_passes,
                 retimed_level_stages=retimed_level_stages,
                 planned_chunks=planned,
+                position_multiplexing=position_multiplexing,
             )
         else:
             node = segment.compute_op

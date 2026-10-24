@@ -85,7 +85,7 @@ class TestTheCapacityCertificate:
                         assert ref.reference_pack_layout(
                             softcores=subset, core_types=types, allow_neuron_splitting=allow_splitting,
                             allow_coalescing=allow_coalescing).feasible, seed
-        assert decided > 200
+        assert decided > 150  # [W04] a wide softcore without declared coalescing is unplaceable: it decides nothing
 
     def test_mixed_core_shapes_hold_no_certificate(self):
         types = [LayoutHardCoreType(256, 256, 10), LayoutHardCoreType(128, 128, 10)]
@@ -155,14 +155,14 @@ class TestTheCertificateHoldsOnlyWhereThePackerAgrees:
         assert run(split_softcores_by_capacity) == run(ref.reference_split_softcores_by_capacity)
         assert run(ref.reference_split_softcores_by_capacity)[0] == "raise"
 
-    def test_a_wider_declared_type_without_cores_widens_the_coalesced_fragments(self):
-        """The packer splits a wide softcore at the widest declared type, cores or none; fragments wider than the
-        type that has cores are fused (300 axons: two 150-axon fragments of two 100-axon cores each, 4 cores, not
-        ceil(300 / 100) = 3), so a pool of 3 does not pack it."""
+    def test_a_wider_declared_type_without_cores_takes_no_part_in_the_fusion(self):
+        """[W04] The packer keeps a wide softcore whole and fuses cores of a type that has them, as the hard-core
+        packer does (no pre-split at the widest declared type): 300 axons fuse three 100-axon cores, so a pool of 3
+        packs it, and the certificate counts ceil(300 / 100) = 3."""
         types = [LayoutHardCoreType(100, 64, 3), LayoutHardCoreType(200, 64, 0)]
         specs = [LayoutSoftCoreSpec(300, 10, latency_tag=0)]
         bound = capacity_bound(specs, types, allow_coalescing=True, allow_splitting=False)
-        assert bound is not None and bound.total == 4 > bound.count
+        assert bound is not None and bound.total == 3 == bound.count
         kw = dict(core_types=types, allow_coalescing=True)
-        assert estimate_passes_for_layout_validated(specs, 3, **kw)[2] is False
-        assert ref.reference_estimate_passes_for_layout_validated(specs, 3, **kw)[2] is False
+        assert estimate_passes_for_layout_validated(specs, 3, **kw)[2] is True
+        assert ref.reference_estimate_passes_for_layout_validated(specs, 3, **kw)[2] is True

@@ -28,7 +28,7 @@ def clear_verify_hardware_config_memo() -> None:
 
 
 def _memo_key(
-    softcores, core_types, splitting, coalescing, scheduling, max_passes, runs=None,
+    softcores, core_types, splitting, coalescing, scheduling, max_passes, runs=None, multiplexing=None,
 ) -> Tuple:
     return (
         tuple(
@@ -44,7 +44,7 @@ def _memo_key(
             for ct in core_types
         ),
         bool(splitting), bool(coalescing), bool(scheduling),
-        int(max_passes), None if runs is None else tuple(int(r) for r in runs),
+        int(max_passes), None if runs is None else tuple(int(r) for r in runs), multiplexing,
     )
 
 
@@ -58,13 +58,14 @@ def verify_hardware_config(
     max_schedule_passes: int = 8,
     residency_plan: Optional[dict] = None,
     runs: Optional[Sequence[int]] = None,
+    position_multiplexing: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Memoizing front of :func:`_verify_hardware_config_uncached` (LRU, deep-copied). ``runs``: the walk's builder
     segments (``residency_rules.spec_runs``), so the preview plans the deployed passes [U1 W9]."""
     refuse_without_cut_census("verify_hardware_config (the wizard layout preview)", residency_plan)
     key = _memo_key(
         softcores, core_types, allow_neuron_splitting, allow_coalescing,
-        allow_scheduling, max_schedule_passes, runs,
+        allow_scheduling, max_schedule_passes, runs, position_multiplexing,
     )
     hit = _MEMO.get(key)
     if hit is None:
@@ -76,6 +77,7 @@ def verify_hardware_config(
             allow_scheduling=allow_scheduling,
             max_schedule_passes=max_schedule_passes,
             runs=runs,
+            position_multiplexing=position_multiplexing,
         )
         _MEMO[key] = copy.deepcopy(hit)
         while len(_MEMO) > _MEMO_MAX:
@@ -94,6 +96,7 @@ def _verify_hardware_config_uncached(
     allow_scheduling: bool = False,
     max_schedule_passes: int = 8,
     runs: Optional[Sequence[int]] = None,
+    position_multiplexing: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Check whether a hardware core configuration can pack the given softcores.
 
@@ -174,6 +177,7 @@ def _verify_hardware_config_uncached(
             allow_splitting=allow_neuron_splitting,
             max_schedule_passes=max_schedule_passes,
             runs=runs,
+            position_multiplexing=position_multiplexing,
         )
         per_segment_passes = plan.per_segment_passes
         per_segment_pass_lists = {

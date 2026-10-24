@@ -1,4 +1,4 @@
-"""Registry entries: the executed residency plan selection."""
+"""Registry entries: the executed residency plan selection and position multiplexing."""
 
 from __future__ import annotations
 
@@ -35,4 +35,24 @@ ENTRIES = (
        value_schema=RESIDENCY_PLAN_SCHEMA, passthrough=True,
        relevant=R.when_true("allow_scheduling"),
        empty_means="U1's pass planner, byte for byte"),
+    _E("position_multiplexing", section="platform_constraints", group="mapping_strategy",
+       owner="mapping/support/position_multiplexing", type=T.BOOL,
+       category=Category.ADVANCED, exposure="user", label="Position Multiplexing",
+       effect="One copy of each shared weight bank serves its output positions in turn, pass by pass",
+       doc="Mapping decision: true holds one copy of every shared weight bank (a conv's kernel, a token-wise "
+           "layer's weights) and serves its output positions in turn over passes on that copy, so the chip "
+           "commits each weight once per run at the cost of passes, latency and carry; false or absent "
+           "gives every position its own copy wherever the chip holds them. Outputs are unchanged.",
+       passthrough=True, relevant=R.when_true("allow_scheduling"),
+       legal_values=lambda cfg: _multiplexing_legal(cfg),
+       empty_means="every position its own copy, the planner byte for byte"),
 )
+
+#: Declarations whose cores the shape-only plane cannot see: IR elimination compacts bank instances into owned cores
+#: (no shared copy on the executed plane), and depth balancing inserts relay cores the layout walk does not record.
+_UNSEEN_BY_THE_SHAPE_ONLY_PLANE = ("pruning", "lif_depth_balancing_relays")
+
+
+def _multiplexing_legal(cfg):
+    """Only false where a declaration changes the executed cores the shape-only plane plans: both planes refuse it."""
+    return (False,) if any(cfg.get(key) for key in _UNSEEN_BY_THE_SHAPE_ONLY_PLANE) else (False, True)

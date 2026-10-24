@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from scipy.stats import beta
 
 from mimarsinan.certification.randomized.arms import ARMS, ON, ON_LONG_WINDOW, ON_SCHEDULED, ON_VALUES
-from mimarsinan.certification.randomized.cost_draws import PRESERVED_BY_CONSTRUCTION, partition
+from mimarsinan.certification.randomized.cost_draws import DEFERRED_REASONS, PRESERVED_BY_CONSTRUCTION, partition
 from mimarsinan.certification.randomized.generator import DEFAULT_SPACE, MOTIFS
 from mimarsinan.certification.randomized.network import CLAIMED
 from mimarsinan.certification.randomized.runner import COUNTEREXAMPLE, EQUAL, OUTCOMES, REFUSED, REFUSED_UNNAMED
@@ -158,6 +158,7 @@ def coverage(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
                              for p in parts["derived_geometry"]},
         "drawn_by_fields": {p: f"drawn through its fields; present in {_present(admitted, p)} admitted declarations "
                                f"(where the registry's relevance holds)" for p in parts["drawn_by_fields"]},
+        "deferred_to_cl1": {p: DEFERRED_REASONS[p.split(".")[0]] for p in parts["deferred_to_cl1"]},
         "pricing_only": {p: PRESERVED_BY_CONSTRUCTION for p in parts["pricing_only"]},
         "motifs": {m: motifs.get(m, 0) for m in MOTIFS},
         "semantics": dict(Counter(r["semantics"] for r in admitted)),

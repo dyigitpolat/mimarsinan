@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
+from mimarsinan.deployment_record.build.write_census import BoundaryWidths
+from mimarsinan.mapping.noc.fragments import delayed_carry_wires, spec_segments
 from mimarsinan.mapping.support.schedule.pass_carry import (
+    carried_softcore_spans,
     carried_wire_spans,
+    carry_census_from_spans,
     pass_carry_census,
 )
 from mimarsinan.deployment_record.schema import PassCarryRecord
@@ -59,3 +63,36 @@ def enforce_declared_buffer_capacity(
             f"schedule (fewer passes / smaller cuts) or declare the buffer "
             f"the chip actually has"
         )
+
+
+def candidate_carry_census(softcores: Sequence[Any], noc: Any, *, timesteps: Any,
+                           pass_transfer: Any) -> Optional[Dict[str, int]]:
+    """[H2] The candidate's carry census, or None without the wire census, discipline or window.
+
+    A pass structure with no crossing wire is a KNOWN zero, not an unknown. The spans and the delayed slices
+    (``delayed_carry_wires``) are read in the segmentation the fragments were planned under.
+    """
+    if noc is None or noc.census is None or pass_transfer is None or timesteps is None:
+        return None
+    return carry_census_from_spans(
+        carried_softcore_spans(softcores, noc.pass_placements, noc.census.pair_wires,
+                               spec_segments(softcores, getattr(noc, "runs", None))),
+        boundary_count=len(noc.pass_placements), timesteps=int(timesteps), transfer=str(pass_transfer),
+        extra_in=delayed_carry_wires(softcores, noc),
+    )
+
+
+def boundary_widths_of(crossings: Iterable[Tuple[int, int, int]],
+                       replayed: Iterable[Tuple[int, int]] = ()) -> Tuple[BoundaryWidths, ...]:
+    """Per-boundary carried widths from ``(width, producing position, last consuming position)``:
+    a wire is read out after its producing pass and re-injected before its last consuming pass
+    (one crossing per direction, as the dense census counts); ``replayed``: ``(width, reading position)``
+    per delayed slice beyond one per producer and pass, one more re-injection before its reading pass."""
+    out: Dict[int, int] = {}
+    inbound: Dict[int, int] = {}
+    for width, produced, consumed in crossings:
+        out[produced] = out.get(produced, 0) + int(width)
+        inbound[consumed - 1] = inbound.get(consumed - 1, 0) + int(width)
+    for width, reader in replayed:
+        inbound[reader - 1] = inbound.get(reader - 1, 0) + int(width)
+    return tuple((p, out.get(p, 0), inbound.get(p, 0)) for p in sorted(set(out) | set(inbound)))

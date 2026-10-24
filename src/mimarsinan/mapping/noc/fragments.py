@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import (
     LayoutHardCoreType,
     LayoutSoftCoreSpec,
 )
+from mimarsinan.mapping.noc.pass_program import PassProgram, packed_pass_program
 from mimarsinan.mapping.noc.wire_census import LayoutWireCensus
+from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 from mimarsinan.mapping.packing.pass_timing import project_planned_passes
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
-from mimarsinan.mapping.platform.platform_constraints import carries_sign_register
 from mimarsinan.mapping.support.residency_rules import ProgramGraph, check_pinned_fit, declared_pool
 from mimarsinan.mapping.support.schedule.pass_planner import (
     plan_program_passes,
@@ -23,7 +24,6 @@ from mimarsinan.mapping.support.schedule.residency_composition import (
     ShapeOnlyResidency,
     pin_program,
 )
-from mimarsinan.mapping.packing.residency_tiles import core_type_tiles
 
 
 def execution_stage_latencies(
@@ -113,23 +113,6 @@ def execution_stage_placements(
 
 
 @dataclass(frozen=True)
-class PassProgram:
-    """[E2] One pass's install cost: per-core committed rectangles + the
-    residency law's answer (a resident pass installs nothing)."""
-
-    core_cells: Tuple[int, ...]
-    resident: bool
-    #: [E85] Indices of this pass's cores pinned across periods by an executed residency plan; None: no plan.
-    schedule_resident_cores: Optional[FrozenSet[int]] = None
-    #: [CL-SG] Per core, the used rows its per-row sign register signs (0 on a per-synapse core); empty: none.
-    core_sign_rows: Tuple[int, ...] = ()
-
-    @property
-    def cores(self) -> int:
-        return len(self.core_cells)
-
-
-@dataclass(frozen=True)
 class LayoutNocFragments:
     """Shape-only pass structure of one candidate.
 
@@ -168,6 +151,7 @@ def collect_noc_fragments(
     program: Optional[ProgramGraph] = None,
     runs: Optional[Sequence[int]] = None,
     declared_cores: Sequence[Mapping[str, Any]] = (),
+    position_multiplexing: Optional[bool] = None,
 ) -> LayoutNocFragments:
     """Place every pass of the candidate program and seal the placements.
 
@@ -201,10 +185,11 @@ def collect_noc_fragments(
             residency=None if residency_plan is None else ShapeOnlyResidency(
                 residency_plan, census, program),
             runs=runs,
+            position_multiplexing=position_multiplexing,
         )
         residency = plan.residency
-        if not plan.feasible:
-            raise ValueError(
+        if not plan.feasible:  # [W04] the capacity refusal both planes name
+            raise CoreCapacityRefusal(
                 f"NoC fragments need a schedulable candidate; segment(s) "
                 f"{list(plan.infeasible_segments())} hold a softcore no "
                 f"pass can pack"
@@ -228,27 +213,18 @@ def collect_noc_fragments(
             collect_placements=True,
         )
         if not pack.feasible or pack.placements is None:
-            raise ValueError(
+            raise CoreCapacityRefusal(
                 f"NoC fragments: a planned pass does not pack ({pack.error})"
             )
         per_pass.append(tuple(
             (global_index[id(pass_softcores[local])], hardcore)
             for local, hardcore in pack.placements
         ))
-        snapshots = tuple(pack.used_core_snapshots or ())
-        programs.append(PassProgram(
-            core_cells=tuple(int(snap.used_axons) * int(snap.used_neurons) for snap in snapshots),
-            resident=bool(resident),
-            core_sign_rows=tuple(
-                int(snap.used_axons) if carries_sign_register(snap.axons_per_core, snap.neurons_per_core,
-                                                              declared_cores) else 0
-                for snap in snapshots) if declared_cores else (),
-        ))
+        pass_program, tiles = packed_pass_program(pack.used_core_snapshots or (), resident=bool(resident),
+                                                  core_types=core_types, declared_cores=declared_cores)
+        programs.append(pass_program)
         if residency is not None:
-            pass_types.append(tuple(
-                core_type_tiles(snap.axons_per_core, snap.neurons_per_core, core_types)
-                for snap in (pack.used_core_snapshots or ())
-            ))
+            pass_types.append(tiles)
     if residency is not None:
         programs = _pinned_programs(programs, pass_types, residency, core_types)
     return LayoutNocFragments(

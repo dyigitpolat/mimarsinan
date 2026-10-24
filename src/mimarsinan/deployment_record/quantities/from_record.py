@@ -16,6 +16,8 @@ from mimarsinan.deployment_record.quantities.write_law import (
     write_quantities,
 )
 from mimarsinan.deployment_record.schema import DeploymentRecord
+from mimarsinan.deployment_record.build.program_census import declared_core_geometries
+from mimarsinan.mapping.packing.residency_tiles import declared_tiles
 
 
 def _measured(value: float) -> QuantityValue:
@@ -93,8 +95,7 @@ def from_record(record: DeploymentRecord) -> Quantities:
         float(0 if carry is None else carry.boundary_in_bytes), "static")
     segments = list(schedule.segments())
     reprogrammed = [s for s in segments if s.programming == "reprogram"]
-    values["segment_cores"] = _measured(sum(len(s.cores) for s in segments))
-    values["reprogrammed_cores"] = _measured(sum(len(s.cores) for s in reprogrammed))
+    counts_withheld = _physical_core_counts(values, record, segments, reprogrammed)
     values["reprogrammed_bytes"] = _measured(sum(s.params_bytes for s in reprogrammed))
     values["connectivity_entries"] = _measured(
         sum(s.connectivity_entries for s in reprogrammed)
@@ -148,4 +149,30 @@ def from_record(record: DeploymentRecord) -> Quantities:
                                        written_extents=writes.census.written_extents,
                                        most_written=writes.census.most_written_core,
                                        producer_slots=writes.census.producer_slots))
-    return Quantities(values, withheld=withheld)
+    return Quantities(values, withheld={**counts_withheld, **withheld})
+
+
+_CORE_COUNTS = ("segment_cores", "reprogrammed_cores", "cores_allocated")
+
+
+def _physical_core_counts(values: Dict[str, QuantityValue], record: DeploymentRecord, segments, reprogrammed
+                          ) -> Dict[str, str]:
+    """The core counts in physical tiles: a sealed core of a fused geometry (several declared cores of one type,
+    its axons summed) counts its members, read against the declared core types. ``cores_allocated`` is the sealed
+    allocated crossbars plus every fused core's further members. A geometry the declared types do not determine
+    withholds the three counts by name; a platform that declares no core geometry counts each core once."""
+    declared = declared_core_geometries(record.identity.platform)
+    cores = [c for s in segments for c in s.cores]
+    tiles = {id(c): 1 if not declared else len(declared_tiles(c.axons, c.neurons, declared) or ()) for c in cores}
+    undetermined = sorted({(int(c.axons), int(c.neurons)) for c in cores if tiles[id(c)] == 0})
+    if undetermined:
+        values.pop("cores_allocated", None)
+        reason = (f"sealed cores of {', '.join(f'{a} x {n}' for a, n in undetermined)} are of no declared core type "
+                  f"and no unique fused core of one (declared: {', '.join(f'{a} x {n}' for a, n in declared)}): "
+                  "their physical cores are not determined")
+        return {key: reason for key in _CORE_COUNTS}
+    values["segment_cores"] = _measured(sum(tiles[id(c)] for c in cores))
+    values["reprogrammed_cores"] = _measured(sum(tiles[id(c)] for s in reprogrammed for c in s.cores))
+    values["cores_allocated"] = _measured(
+        record.utilization.crossbar.cores_allocated + sum(tiles[id(c)] - 1 for c in cores))
+    return {}

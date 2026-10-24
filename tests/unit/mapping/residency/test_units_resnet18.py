@@ -118,7 +118,10 @@ def test_live_sets_of_the_lif_deep_cnn_of_t0_03_equal_the_fx_widths():
     specs = vehicle.specs
     units = residency_units(specs, cut_nodes_from_census(specs, vehicle.census),
                             [LayoutHardCoreType(int(vehicle.config["max_axons"]), int(vehicle.config["max_neurons"]), 1)],
-                            segments=[s.segment_id or 0 for s in specs])
+                            segments=[s.segment_id or 0 for s in specs],
+                            # [W04] the template's declaration: the packer fuses only under declared coalescing
+                            allow_coalescing=bool(vehicle.config.get("allow_coalescing", False)),
+                            allow_splitting=bool(vehicle.config.get("allow_neuron_splitting", False)))
     by_name = {name.replace(".", "_"): name for name, _ in vehicle.model.named_modules()}
     module_names = [by_name[_unit_name(specs[m[0]].name)] for m in units.members]
     # LIF conversion: BatchNorm and the activation fold into the unit; pooling runs on the host

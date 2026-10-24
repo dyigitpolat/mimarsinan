@@ -143,13 +143,16 @@ class TestPackerPlacements:
         assert [origin for origin, _ in r.placements] == [0, 0]
         assert len({hc for _, hc in r.placements}) == 2
 
-    def test_coalescing_fragments_carry_their_origin(self):
+    def test_a_coalesced_softcore_is_one_placement_on_its_fused_core(self):
+        """[W04] Under coalescing a wide softcore stays whole on one fused core (the hard-core packer's placement),
+        so it is one placement of its origin, not one per pre-split fragment."""
         r = pack_layout(
             softcores=[_spec(12, 4)], core_types=_types(count=2),
             allow_coalescing=True, collect_placements=True,
         )
         assert r.feasible
-        assert [origin for origin, _ in r.placements] == [0, 0]
+        assert [origin for origin, _ in r.placements] == [0]
+        assert [int(s.axons_per_core) for s in r.used_core_snapshots] == [16]
 
 
 class TestNocFragmentsCollection:

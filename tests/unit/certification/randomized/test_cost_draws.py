@@ -16,8 +16,8 @@ class TestPartition:
         listed = {p for paths in parts.values() for p in paths}
         assert listed == cd.cost_only_set()
         # closure amendment: cores.weight_sign_granularity; N2 amendment: cores.operand.write_source; N2b amendment:
-        # cores.write_physics (the last two pricing-only)
-        assert len(cd.cost_only_set()) == 29
+        # cores.write_physics (the last two pricing-only); W02 (pack): position_multiplexing (deferred by name)
+        assert len(cd.cost_only_set()) == 30
 
     @pytest.mark.parametrize("change", ["add", "drop"])
     def test_registry_drift_breaks_the_partition(self, monkeypatch, change):
@@ -73,10 +73,13 @@ class TestDraws:
         report = coverage([])
         assert set(report["pricing_only"]) == set(cd.PRICING_ONLY)
         assert set(report["pricing_only"].values()) == {cd.PRESERVED_BY_CONSTRUCTION}
-        assert set(report["drawn_by_fields"]) == {"residency_plan"} and "deferred_to_cl1" not in report
+        assert set(report["drawn_by_fields"]) == {"residency_plan"}
+        # residency_plan is drawn by its fields (CL1); W02's position_multiplexing stays deferred by name
+        assert set(report["deferred_to_cl1"]) == {"position_multiplexing"}
+        assert set(report["deferred_to_cl1"].values()) == {cd.DEFERRED_REASONS["position_multiplexing"]}
 
     def test_the_registry_cost_only_keys_exist(self):
-        for path in cd.PROGRAM_CHANGING + cd.PRICING_ONLY + cd.DERIVED_GEOMETRY + cd.DRAWN_BY_FIELDS:
+        for path in cd.PROGRAM_CHANGING + cd.PRICING_ONLY + cd.DERIVED_GEOMETRY + cd.DRAWN_BY_FIELDS + cd.DEFERRED:
             assert path.split(".")[0] in REGISTRY, path
 
 

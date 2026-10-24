@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Tuple
+from typing import Callable, FrozenSet, List, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.packing.canonical import declared_core_roles as _declared_core_roles
 
 from mimarsinan.mapping.packing.infeasibility_proofs import VERDICT_FEASIBLE
+from mimarsinan.mapping.packing.placement_cost import note_resident_bank
 from mimarsinan.mapping.platform.core_residency import BASIS_VALUES
 
 
@@ -40,12 +41,20 @@ class LayoutSoftCoreSpec:
     name: Optional[str] = None
     # N2: the role of the soft core (``packing.canonical.OPERAND_ROLE`` for a dynamic operand bank's instance).
     core_role: Optional[str] = None
+    # [W04] The IR core's coalescing group (``None`` = none): the packer never neuron-splits a group's core and the
+    # planner keeps the group in one pass, on this plane as on the builder's.
+    coalescing_group_id: Optional[int] = None
 
     def get_input_count(self) -> int:
         return int(self.input_count)
 
     def get_output_count(self) -> int:
         return int(self.output_count)
+
+    @property
+    def weight_bank_id(self) -> Optional[int]:
+        """[W04] The bank under the name the packer reads on every soft core: a bank-backed spec is bank-affine."""
+        return self.bank_id
 
     @property
     def area(self) -> int:
@@ -78,6 +87,10 @@ class LayoutHardCoreInstance:
     unusable_space: int = 0
     used_area: int = 0
     softcore_count: int = 0
+    #: [W04] Per placed spec (bank, axons, neurons, axon offset, neuron offset), as ``HardCore`` records placements.
+    regions: List[Tuple] = field(default_factory=list, compare=False, repr=False)
+    #: A fused core's member axons in order (``HardCore.fused_component_axons``); None for one physical core.
+    component_axons: Optional[Tuple[int, ...]] = field(default=None, compare=False, repr=False)
 
     def __post_init__(self):
         self.available_axons = int(self.axons_per_core)
@@ -105,6 +118,7 @@ class LayoutHardCoreInstance:
 
         # Packing-inefficiency formula must stay identical to HardCore.add_softcore().
         self.unusable_space += (neuron_offset * in_c) + (axon_offset * out_c)
+        self.regions.append((getattr(softcore, "bank_id", None), in_c, out_c, axon_offset, neuron_offset))
 
         self.available_axons -= in_c
         self.available_neurons -= out_c
@@ -117,6 +131,7 @@ class LayoutHardCoreInstance:
 
         if self.latency_tag is None:
             self.latency_tag = softcore.latency_tag
+        note_resident_bank(self, softcore)  # [W04] as HardCore.add_softcore: later specs of the bank prefer this core
 
 
 @dataclass(frozen=True)
@@ -129,10 +144,17 @@ class LayoutCoreSnapshot:
     used_neurons: int
     used_area: int
     softcore_count: int
+    #: A fused core's member axons in order; None for one physical core.
+    component_axons: Optional[Tuple[int, ...]] = field(default=None, compare=False)
 
     @property
     def capacity(self) -> int:
         return self.axons_per_core * self.neurons_per_core
+
+    @property
+    def tiles(self) -> int:
+        """The physical cores this used core occupies: a fused core counts its members."""
+        return len(self.component_axons) if self.component_axons else 1
 
     @property
     def wasted_axons(self) -> int:
@@ -201,6 +223,8 @@ class LayoutPackingResult:
     # when the pack was asked to collect placements (the NoC estimator input);
     # split/coalescing fragments repeat their origin index.
     placements: Optional[Tuple[Tuple[int, int], ...]] = None
+    # [W04] With placements: per used core, its placed regions (``LayoutHardCoreInstance.regions``).
+    core_regions: Optional[Tuple[FrozenSet[Tuple], ...]] = None
 
     # [TS4] Why the pack ended this way, additive beside ``feasible``: a refusal
     # is either PROVEN (``infeasibility_proofs``, scoped to this one pack — a

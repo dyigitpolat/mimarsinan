@@ -80,9 +80,10 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         name: Optional[str],
         input_sources,
         perceptron_index: Optional[int],
+        coalescing_group_id: Optional[int] = None,
     ) -> LayoutSourceView:
         """Record a softcore shape under ``node_id`` and return a 1-D
-        ``LayoutSourceView`` over its outputs."""
+        ``LayoutSourceView`` over its outputs ([W04] with the IR core's coalescing group)."""
         self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
         if self.collect_wire_census:
             record_emission_census(
@@ -95,15 +96,9 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             int(perceptron_index) if perceptron_index is not None else None
         )
 
-        self.layout_softcores.append(
-            LayoutSoftCoreSpec(
-                input_count=int(input_count) * self.rows_per_input,
-                output_count=int(output_count),
-                residency_class_id=0,
-                latency_tag=None,
-                name=name,
-            )
-        )
+        self.layout_softcores.append(LayoutSoftCoreSpec(
+            input_count=int(input_count) * self.rows_per_input, output_count=int(output_count), residency_class_id=0,
+            latency_tag=None, name=name, coalescing_group_id=coalescing_group_id))
         return LayoutSourceView.from_producer(
             producer_node_id=node_id,
             shape=(int(output_count),),
@@ -246,6 +241,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             name=name,
             input_sources=input_sources,
             perceptron_index=perceptron_index,
+            coalescing_group_id=coalescing_group_id,
         )
 
     def add_shared_neural_core(
@@ -294,6 +290,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             name=name,
             input_sources=input_sources,
             perceptron_index=perceptron_index,
+            coalescing_group_id=coalescing_group_id,
         )
         if self.rows_per_input == 1:  # a per-axon split instance is not its bank's region: no bank residency
             self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
