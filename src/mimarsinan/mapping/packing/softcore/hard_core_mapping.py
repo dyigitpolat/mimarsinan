@@ -11,6 +11,7 @@ from mimarsinan.mapping.platform.platform_constraints import (
     SIGN_GRANULARITY_FIELD,
     pool_sign_granularity,
 )
+from mimarsinan.mapping.support.spike_source_columns import PlacementNeuronMap, SpikeSourceColumns
 from mimarsinan.mapping.support.spike_source_spans import (
     compress_spike_sources,
     pack_output_sources_state,
@@ -85,8 +86,9 @@ class HardCoreMapping:
         self.unused_cores = chip_cores
 
         self.cores = []
-        self.output_sources: "np.ndarray | list" = []
-        self.neuron_mapping = {}
+        self.output_sources: "np.ndarray | list | SpikeSourceColumns" = []
+        # (soft core id, neuron) -> (hard core index, neuron), held per placement (coverage W9).
+        self.neuron_mapping = PlacementNeuronMap()
         self.soft_core_placements_per_hard_core = []
         self.weight_banks: dict[int, "object"] = {}
 
@@ -153,7 +155,11 @@ class HardCoreMapping:
         self.soft_core_placements_per_hard_core[target_core_idx].append(placement)
 
         orig_neuron_offset = getattr(softcore, "neuron_offset_in_original", 0)
-        for local_idx in range(softcore.get_output_count()):
+        if isinstance(self.neuron_mapping, PlacementNeuronMap):
+            self.neuron_mapping.place(softcore.id, orig_neuron_offset, softcore.get_output_count(),
+                                      target_core_idx, prev_output_count)
+            return
+        for local_idx in range(softcore.get_output_count()):  # a mapping unpickled from a per-neuron dict
             original_neuron_idx = local_idx + orig_neuron_offset
             target_neuron_idx = prev_output_count + local_idx
             self.neuron_mapping[(softcore.id, original_neuron_idx)] = \
@@ -208,19 +214,38 @@ class HardCoreMapping:
                     self.neuron_mapping[(source.core_, source.neuron_)]
 
         for hardcore in self.cores:
-            remap_sources(hardcore.axon_sources)
+            if isinstance(hardcore.axon_sources, SpikeSourceColumns):
+                hardcore.axon_sources = hardcore.axon_sources.remapped(self._lookup)
+            else:
+                remap_sources(hardcore.axon_sources)
             hardcore._axon_source_spans = None
 
-        self.output_sources = np.array(softcore_mapping.output_sources)
-        remap_sources(self.output_sources)
+        if isinstance(softcore_mapping.output_sources, SpikeSourceColumns):
+            self.output_sources = softcore_mapping.output_sources.remapped(self._lookup)
+        else:
+            self.output_sources = np.array(softcore_mapping.output_sources)
+            remap_sources(self.output_sources)
         self._output_source_spans = None
 
         for hardcore in self.cores:
+            if isinstance(hardcore.axon_sources, SpikeSourceColumns):
+                hardcore.axon_sources = hardcore.axon_sources.padded(hardcore.axons_per_core)
+                hardcore._axon_source_spans = None
+                continue
             axon_count = len(hardcore.axon_sources)
             for _ in range(hardcore.axons_per_core - axon_count):
                 hardcore.axon_sources.append(
                     SpikeSource(-1, 0, is_input=False, is_off=True))
             hardcore._axon_source_spans = None
+
+    def _lookup(self, cores, neurons):
+        """``remapped``'s lookup through ``neuron_mapping``: every entry mapped, else the first missing key's
+        ``KeyError``, as the per-source lookup raises it."""
+        if isinstance(self.neuron_mapping, PlacementNeuronMap):
+            return self.neuron_mapping.lookup(cores, neurons)
+        pairs = [self.neuron_mapping[key] for key in zip(cores.tolist(), neurons.tolist())]
+        return (np.array([p[0] for p in pairs], dtype=np.int64), np.array([p[1] for p in pairs], dtype=np.int64),
+                np.ones(len(pairs), dtype=bool))
 
     def __getstate__(self) -> dict:
         """Pickle output_sources range-compressed; drop the span cache."""
@@ -233,7 +258,8 @@ class HardCoreMapping:
     def get_output_source_spans(self):
         """Cached range-compressed output_sources."""
         if self._output_source_spans is None:
+            sources = self.output_sources
             self._output_source_spans = compress_spike_sources(
-                np.asarray(self.output_sources).flatten().tolist()
+                sources if isinstance(sources, SpikeSourceColumns) else np.asarray(sources).flatten().tolist()
             )
         return self._output_source_spans

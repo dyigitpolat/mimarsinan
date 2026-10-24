@@ -3,7 +3,7 @@ metadata of a node it adds."""
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional, Set
+from typing import Any, Mapping, Optional, Set, cast
 
 import torch
 import torch.fx as fx
@@ -68,21 +68,38 @@ class StaticExtents:
         self._layouts = None
 
 
+def _meta_tensor(meta: Any) -> Any:
+    if isinstance(meta, (tuple, list)) and not hasattr(meta, "shape"):
+        return type(meta)(_meta_tensor(item) for item in meta)
+    found = cast(Any, meta)
+    return torch.empty_strided(tuple(found.shape), tuple(found.stride), dtype=found.dtype, device="meta")
+
+
 def _meta_value(arg: Any) -> Any:
     meta = arg.meta.get("tensor_meta")
-    if meta is None or not hasattr(meta, "shape"):
+    if meta is None or not (hasattr(meta, "shape") or isinstance(meta, (tuple, list))):
         raise ValueError(f"FX node {arg.name!r} has no traced tensor metadata")
-    return torch.empty_strided(tuple(meta.shape), tuple(meta.stride), dtype=meta.dtype, device="meta")
+    return _meta_tensor(meta)
 
 
-def trace_meta(node: fx.Node) -> None:
+def _metadata(result: Any) -> Any:
+    if isinstance(result, (tuple, list)):
+        return type(result)(_metadata(item) for item in result)
+    return _extract_tensor_metadata(result)
+
+
+def trace_meta(node: fx.Node, module: Optional[nn.Module] = None) -> None:
     """``node``'s traced metadata, from its call on meta tensors of its operands' traced metadata (no data, no random
-    state): the shape and stride the shape propagation would record."""
+    state): the shape and stride the shape propagation would record; a tuple operand or result is a tuple of them.
+    ``module``: a ``call_module`` node's module, called on meta copies of its state."""
     args = map_arg(node.args, _meta_value)
     kwargs = map_arg(node.kwargs, _meta_value)
     if node.op == "call_method":
         result = getattr(args[0], str(node.target))(*args[1:], **kwargs)
+    elif node.op == "call_module" and module is not None:
+        state = {name: value.to("meta") for name, value in (*module.named_parameters(), *module.named_buffers())}
+        result = torch.func.functional_call(module, state, tuple(args), dict(kwargs))
     else:
         result = node.target(*args, **kwargs)  # type: ignore[operator]  # a call_function node's callable
-    node.meta["tensor_meta"] = _extract_tensor_metadata(result)
+    node.meta["tensor_meta"] = _metadata(result)
     node.meta["type"] = type(result)

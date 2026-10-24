@@ -19,6 +19,7 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     mean_source_scale,
     present_source_scales,
 )
+from mimarsinan.mapping.support.batch_free_value import deployed_payload
 from mimarsinan.mapping.support.compute_modules import (
     ComputeAdapter,
     ScaleNormalizingWrapper,
@@ -219,14 +220,16 @@ class ComputeOpMapper(Mapper):
 
     def _map_to_ir(self, ir_mapping):
         source_arrays = [src.map_to_ir(ir_mapping) for src in self._sources_list]
-        module = self._maybe_wrap_for_scales()
+        # The deployed program holds a batch-free operand as a constant (``batch_free_value.deployed_payload``).
+        module = self._maybe_wrap_for_scales(deployed_payload(self.module))
         if len(source_arrays) == 1:
             return self._emit_unary(ir_mapping, source_arrays[0], module)
         return self._emit_multi(ir_mapping, source_arrays, module)
 
-    def _maybe_wrap_for_scales(self) -> nn.Module:
+    def _maybe_wrap_for_scales(self, payload: nn.Module | None = None) -> nn.Module:
+        payload = self.module if payload is None else payload
         if self.per_source_scales is None or self.output_scale is None:
-            return self.module
+            return payload
         if len(self.per_source_scales) != len(self._sources_list):
             raise ValueError(
                 f"ComputeOpMapper: per_source_scales length "
@@ -234,7 +237,7 @@ class ComputeOpMapper(Mapper):
                 f"({len(self._sources_list)})"
             )
         return ScaleNormalizingWrapper(
-            self.module, self.per_source_scales, self.output_scale,
+            payload, self.per_source_scales, self.output_scale,
             output_offset=self.output_value_offset,
             module_kwargs=self.module_kwargs or None,
             output_index=self.output_index,

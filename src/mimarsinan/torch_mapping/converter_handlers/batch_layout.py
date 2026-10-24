@@ -18,7 +18,7 @@ from typing import Any, Optional, Tuple
 
 import torch.fx as fx
 
-from mimarsinan.torch_mapping.converter_handlers.symbolic.batch_domain import BATCH, Opaque, describe
+from mimarsinan.torch_mapping.converter_handlers.symbolic.batch_domain import BATCH, Affine, Opaque, describe
 from mimarsinan.torch_mapping.converter_handlers.symbolic.pass_result import DATA_DEPENDENT
 from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import Impurity, ProgramPurity, program_purity
 from mimarsinan.torch_mapping.converter_handlers.symbolic.symbolic_batch import (
@@ -160,6 +160,20 @@ class BatchLayouts:
         traced = [shape for shape in observed if shape is not None and len(shape) == len(one)]
         return tuple(d if type(d) is int and all(shape[axis] == d for shape in traced) else BATCH_SIZE
                      for axis, d in enumerate(symbolic.dims))
+
+    def extents(self, node: fx.Node) -> Optional[Tuple[Any, ...]]:
+        """Per axis the domain's proved extent of ``node``, an ``int`` or an affine form ``a*B + c`` (coverage W7: the
+        batch-merge push-forward reads a merged axis's ``a``); ``None`` when no proof covers the value, an extent is
+        opaque, or a seeded trace that shows the value disagrees with it."""
+        symbolic = self._symbolic(node)
+        if symbolic is None or not self._pass().proved(node) or any(isinstance(d, Opaque) for d in symbolic.dims):
+            return None
+        dims = tuple(symbolic.dims)
+        for batch, shape in zip(TRACE_BATCHES, self._observed(node)):
+            if shape is not None and (len(shape) != len(dims) or any(
+                    (d.at(batch) if isinstance(d, Affine) else d) != n for d, n in zip(dims, shape))):
+                return None
+        return dims
 
     def violation(self, node: fx.Node) -> Optional[str]:
         """Why ``node``'s value does not carry the batch on axis 0 alone; ``None`` when nothing shows it."""

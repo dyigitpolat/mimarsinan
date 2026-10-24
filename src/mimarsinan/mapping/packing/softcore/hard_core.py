@@ -21,6 +21,21 @@ from mimarsinan.mapping.platform.core_residency import (
     adopt_or_check,
     ungrouped_fallback_id,
 )
+from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns
+
+
+def _extended(sources, more):
+    """``sources`` followed by ``more``: columns stay columns (an empty core adopts a soft core's, coverage W9); a list
+    is extended in place, as before (a columnar soft core's entries read back read only)."""
+    if isinstance(more, SpikeSourceColumns):
+        if isinstance(sources, SpikeSourceColumns):
+            return SpikeSourceColumns.concatenate([sources, more])
+        if not sources:
+            return more.copy()
+    if isinstance(sources, SpikeSourceColumns):
+        return SpikeSourceColumns.concatenate([sources, SpikeSourceColumns.of(more)])
+    sources.extend(more)
+    return sources
 
 
 class HardCore:
@@ -85,7 +100,7 @@ class HardCore:
         else:
             self.matrix_placements.append(placement)
 
-        self.axon_sources.extend(softcore.axon_sources)
+        self.axon_sources = _extended(self.axon_sources, softcore.axon_sources)
         self._axon_source_spans = None
 
         self.available_axons -= softcore.get_input_count()

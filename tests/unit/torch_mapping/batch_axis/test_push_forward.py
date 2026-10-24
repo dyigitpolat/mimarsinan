@@ -120,7 +120,8 @@ def test_any_other_consumer_still_refuses_by_name(factory, contract):
 
 def test_no_reshape_mapper_is_emitted_for_an_activation_permute():
     """The ``ReshapeMapper`` branch of a permute whose dims do not start at 0 is gone: every such activation permute
-    refuses by name before it (Wave 0's ``_require_batch_leading``), and a parameter's refuses by name too."""
+    refuses by name before it (Wave 0's ``_require_batch_leading``), and a parameter's is a batch-free value, computed
+    at every call, with no layout mapper. [changed in coverage W6: a parameter's permute refused by name]"""
 
     class ParamPermute(nn.Module):
         def __init__(self):
@@ -131,4 +132,5 @@ def test_no_reshape_mapper_is_emitted_for_an_activation_permute():
         def forward(self, x):
             return self.a(x) + self.p.permute(1, 0, 2)
 
-    assert_refused_by_name(lambda: convert(native(ParamPermute), (N, D), "mvm"), BatchAxisLayoutError, "permute")
+    flow = assert_converted_exact(native(ParamPermute), (N, D), "mvm")
+    assert not any(isinstance(m, ReshapeMapper) for m in flow.get_mapper_repr().execution_order())

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Literal, Sequence
+from typing import Iterable, Literal, Sequence, cast
 
 import numpy as np
 
@@ -42,8 +42,12 @@ def _classify(s: SpikeSource) -> tuple[SpikeSourceKind, int, int]:
 
 def compress_spike_sources(sources: Sequence[SpikeSource] | Iterable[SpikeSource]) -> list[SpikeSourceSpan]:
     """
-    Compress a list of per-index SpikeSource objects into contiguous spans where possible.
+    Compress a list of per-index SpikeSource objects into contiguous spans where possible; sources that hold their
+    own spans (``SpikeSourceColumns.compressed_spans``, the same spans, vectorized) give those.
     """
+    own = getattr(sources, "compressed_spans", None)
+    if callable(own):
+        return cast("list[SpikeSourceSpan]", own())
     if not isinstance(sources, Sequence):
         sources = list(sources)
 
@@ -152,7 +156,11 @@ def _decode_spike_sources_dense(cores, neurons, flags) -> list[SpikeSource]:
 
 
 def encode_spike_sources_packed(sources: Sequence[SpikeSource]) -> tuple:
-    """Tagged pickle payload: spans when lossless AND compressive, dense (always lossless) otherwise."""
+    """Tagged pickle payload: spans when lossless AND compressive, dense (always lossless) otherwise; sources that hold
+    their own payload (``SpikeSourceColumns.packed_payload``, the same payload, vectorized) give it."""
+    own = getattr(sources, "packed_payload", None)
+    if callable(own):
+        return cast(tuple, own())
     if not isinstance(sources, Sequence):
         sources = list(sources)
     if all(span_round_trip_exact(s) for s in sources):
@@ -175,7 +183,11 @@ def decode_spike_sources_packed(payload: tuple) -> list[SpikeSource]:
 
 
 def pack_source_array(sources) -> tuple:
-    """Range-compress an object array/list of SpikeSources for pickling."""
+    """Range-compress an object array/list of SpikeSources for pickling (sources that hold their own payload, as
+    ``SpikeSourceColumns``, give it, at their one-dimensional shape)."""
+    own = getattr(sources, "packed_payload", None)
+    if callable(own):
+        return ("packed_output_sources", tuple(sources.shape), own())
     array = np.asarray(sources)
     return (
         "packed_output_sources", array.shape,

@@ -51,12 +51,17 @@ def strip_batch(shape: Optional[Tuple[int, ...]]) -> Optional[Tuple[int, ...]]:
 def broadcasts_to(operands, node: fx.Node) -> bool:
     """The traced operands broadcast to ``node``'s traced shape (an elementwise op, whose operands the mapper checks for
     broadcasting at run time); ``y @ eye(6)`` does not, nor an attention's query and a key/value of another length,
-    and their operands need not broadcast at any batch."""
+    and their operands need not broadcast at any batch. They must broadcast with a batch of 2 too: at the trace's batch
+    of 1 the batch axis of ``(1, 4, 4)`` aligns with any axis of ``(1, 4, 4, 4)`` (``torch.select_scatter``'s source
+    and input; coverage W8: the run-time check then failed loudly from batch 2)."""
     shapes, out = [node_output_shape(arg) for arg in operands], node_output_shape(node)
     if out is None or any(shape is None for shape in shapes):
         return True
+    at_two = [tuple(shape) if not shape or shape[0] != 1 else (2, *shape[1:]) for shape in cast(
+        List[Tuple[int, ...]], [*shapes, out])]
     try:
-        return tuple(torch.broadcast_shapes(*shapes)) == tuple(out)
+        return tuple(torch.broadcast_shapes(*shapes)) == tuple(out) and tuple(
+            torch.broadcast_shapes(*at_two[:-1])) == at_two[-1]
     except RuntimeError:
         return False
 

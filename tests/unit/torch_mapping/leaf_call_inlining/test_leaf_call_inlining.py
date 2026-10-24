@@ -31,9 +31,11 @@ from torchvision.ops import StochasticDepth
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
 from mimarsinan.torch_mapping.converter import convert_torch_model
+from mimarsinan.torch_mapping.converter_handlers.symbolic.batch_free import batch_free_nodes
 from mimarsinan.torch_mapping.converter_handlers.symbolic.declared_operators import OPAQUE_BODY
 from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import program_purity
-from mimarsinan.torch_mapping.torch_graph_tracer import TracingError, trace_model
+from mimarsinan.torch_mapping.graph_normalization import normalize_fx_graph
+from mimarsinan.torch_mapping.torch_graph_tracer import trace_model
 from operand_completeness.harness import (
     CONTRACTS,
     assert_converted_exact,
@@ -541,24 +543,37 @@ def test_the_value_program_of_a_container_literal_program_is_exact(name):
 
 
 @pytest.mark.timeout(240)
-@pytest.mark.parametrize("builder,side,refusal", [("swin_t", 224, "BatchAxisLayoutError"),
-                                                  ("swin_v2_t", 256, "ModuleCallArgumentError")])
-def test_swin_traces_and_its_conversion_is_refused_by_name(builder, side, refusal):
+@pytest.mark.parametrize("builder,side", [("swin_t", 224), ("swin_v2_t", 256)])
+def test_swin_traces_with_every_leaf_call_inlined_and_every_value_batch_leading(builder, side):
     """torchvision Swin calls ``_get_relative_position_bias`` with a list literal (its window size): inlined, it
-    traces, and the conversion is refused by name, never a ``TracingError`` [review round 1: the flattened output made
-    shape propagation fail on every Swin and Swin V2]. The refusal is a boundary inlining moves: on the base the bias
-    was an opaque host op and Swin-T's stage 1 exact; inlined, root code's rule for a permute of a parameter-derived
-    value refuses it (``BatchAxisLayoutError``; Swin V2's coordinate MLP on a buffer, ``ModuleCallArgumentError``, as
-    on the base; batch-free values are work item W6)."""
+    traces, never a ``TracingError`` [review round 1: the flattened output made shape propagation fail on every Swin
+    and Swin V2]. [changed in coverage W6: the bias permute and Swin V2's coordinate MLP are batch-free values]
+    [changed in coverage W7 and W8: Swin-T was refused at its window partition (``x_3``, the batch merged into the
+    window axis) and Swin V2-T's attention calls stayed opaque (``zero_``; Swin-T's shifted blocks, ``setitem``). Now
+    every leaf call is inlined (writes to tensors a body allocates computed out of place), the program is pure, and
+    after normalization every value computed from the input carries the batch on axis 0 (the merged regions carried
+    split). The refusal witnesses of a merged value an op mixes are in ``batch_merge/``; both stages of torchvision's
+    Swin and Swin V2 at toy size, in ``batch_merge/test_swin_family.py``; the census sides, in the coverage
+    reproducers]"""
     torch.manual_seed(0)
     model = getattr(tvm, builder)(weights=None).double().eval()
-    shape = (3, side, side)
-    gm = trace_model(copy.deepcopy(model), shape)
+    gm = trace_model(copy.deepcopy(model), (3, side, side))
     names = {getattr(node.target, "__name__", "") for node in gm.graph.nodes if node.op == "call_function"}
-    assert "_get_relative_position_bias" not in names, sorted(names)
-    with pytest.raises(ToolchainRefusal) as refused:
-        quietly(convert_torch_model, model, shape, 1000, packaging=MVM_PACKAGING)
-    assert not isinstance(refused.value, TracingError) and type(refused.value).__name__ == refusal, refused.value
+    assert "_get_relative_position_bias" not in names and "shifted_window_attention" not in names, sorted(names)
+    assert not [node.name for node in gm.graph.nodes if OPAQUE_BODY in node.meta]
+    purity = program_purity(gm)
+    assert purity.pure, purity.impurity
+    gm = normalize_fx_graph(gm, purity.foreign_modules)
+    free = batch_free_nodes(gm)  # the attention masks: metadata reads of an activation, batch-free
+    reached, merged = set(), []
+    for node in gm.graph.nodes:
+        if node not in free and (node.op == "placeholder" or any(arg in reached for arg in node.all_input_nodes)):
+            reached.add(node)
+            shape = getattr(node.meta.get("tensor_meta"), "shape", None)
+            if shape and shape[0] != 1:
+                merged.append((node.name, tuple(shape)))
+    assert not merged, merged
+    assert any(node.op == "call_method" and node.target == "new_zeros" for node in free)
 
 
 @pytest.mark.parametrize("contract", CONTRACTS)

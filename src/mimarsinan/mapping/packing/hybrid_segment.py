@@ -38,7 +38,8 @@ def _flush_neural_segment(
     """Pack a neural segment using cores drawn from shared_pool.
 
     ``identity=True`` skips the pool entirely: each soft core gets its own
-    exactly-sized hard core (``HardCoreMapping.map_identity``). Under per-axon
+    exactly-sized hard core (``HardCoreMapping.map_identity``), its axon
+    sources columnar (``SpikeSourceColumns``, coverage W9). Under per-axon
     ``sign_granularity`` each compacted soft core splits its mixed-sign rows
     before packing (packing is block-diagonal, so the split is per soft core).
     """
@@ -75,7 +76,7 @@ def _flush_neural_segment(
         neural_segment_to_soft_core_mapping,
     )
 
-    soft = neural_segment_to_soft_core_mapping(seg_graph, weight_banks)
+    soft = neural_segment_to_soft_core_mapping(seg_graph, weight_banks, columnar=identity)
 
     reindex_maps = compact_soft_core_mapping(soft.cores, soft.output_sources)
     apply_sign_split(soft.cores, sign_granularity)

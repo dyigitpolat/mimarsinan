@@ -9,8 +9,9 @@ import torch.nn as nn
 import torch.fx as fx
 
 from mimarsinan.mapping.platform.packaging_contract import PackagingContract
-from mimarsinan.mapping.support.call_template import CallPartition
+from mimarsinan.mapping.support.call_template import BoundArg, CallPartition
 from mimarsinan.torch_mapping.converter_handlers.batch_layout import BatchLayouts
+from mimarsinan.torch_mapping.converter_handlers.symbolic.batch_free import BatchFreeValues
 from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
 
 
@@ -24,6 +25,7 @@ class ConverterContract:
         _node_to_attr: Dict[fx.Node, Any]
         _shape_values: Dict[fx.Node, Any]
         _batch_layouts: BatchLayouts
+        _batch_free: BatchFreeValues
         _absorbed: Set[str]
         _packaging: PackagingContract
 
@@ -40,6 +42,8 @@ class ConverterContract:
         def _get_constant_tensor(self, node: fx.Node) -> Optional[torch.Tensor]: ...
 
         def _get_expanded_constant_tensor(self, node: fx.Node) -> Optional[torch.Tensor]: ...
+
+        def _batch_free_operand(self, arg: fx.Node) -> BoundArg: ...
 
         def _static_shape_value(self, node: fx.Node) -> Tuple[bool, Any]: ...
 

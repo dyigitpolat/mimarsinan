@@ -138,7 +138,8 @@ def _apply_reindex_to_ir_sources(
     sources: np.ndarray,
     reindex_maps: dict[int, dict[int, int]],
 ) -> None:
-    """Apply compaction reindex maps to IRSource objects in place."""
+    """Apply compaction reindex maps to IRSource objects in place; an entry the map keeps at its index keeps its object
+    (no IRSource is written in place anywhere, so sharing it is sharing a value: coverage W9)."""
     for i, src in enumerate(sources.flatten()):
         if not isinstance(src, IRSource) or src.node_id < 0:
             continue
@@ -146,8 +147,8 @@ def _apply_reindex_to_ir_sources(
         if remap is None:
             continue
         new_idx = remap.get(src.index)
-        if new_idx is not None:
-            sources.flat[i] = IRSource(node_id=src.node_id, index=new_idx)
-        else:
+        if new_idx is None:
             sources.flat[i] = IRSource(node_id=-1, index=0)
+        elif new_idx != src.index:
+            sources.flat[i] = IRSource(node_id=src.node_id, index=new_idx)
 

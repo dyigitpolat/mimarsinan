@@ -6,6 +6,24 @@ import numpy as np
 PINNED_LATENCIES = "pinned_latencies"
 
 
+def _source_arrays(sources):
+    """``(core, neuron, off, input, always on)`` of a core's axon sources, one array each: a columnar sequence's own
+    (``SpikeSourceColumns.source_arrays``, coverage W9), else read source by source as the walks below read them."""
+    own = getattr(sources, "source_arrays", None)
+    if callable(own):
+        return own()
+    listed = list(sources)
+    count = len(listed)
+
+    def column(read, dtype):
+        return np.fromiter((read(s) for s in listed), dtype=dtype, count=count)
+
+    return (column(lambda s: int(s.core_), np.int64), column(lambda s: int(s.neuron_), np.int64),
+            column(lambda s: bool(getattr(s, "is_off_", False)), bool),
+            column(lambda s: bool(getattr(s, "is_input_", False)), bool),
+            column(lambda s: bool(getattr(s, "is_always_on_", False)), bool))
+
+
 class ChipLatency:
     def __init__(self, mapping):
         self.mapping = mapping
@@ -13,6 +31,20 @@ class ChipLatency:
         # Padded composites materialize per call, so the recursive walk (one
         # column read per neuron) resolves each core at most once per instance.
         self._matrix_cache = {}
+        # Each core's axon sources as arrays, read once per instance (coverage W9).
+        self._arrays_cache = {}
+
+    def _arrays(self, core_idx):
+        cached = self._arrays_cache.get(core_idx)
+        if cached is None:
+            cached = _source_arrays(self.mapping.cores[core_idx].axon_sources)
+            self._arrays_cache[core_idx] = cached
+        return cached
+
+    def _live_source_cores(self, core_idx):
+        """Source core of every axon that is not off, always on or a segment input (a cross-core reference)."""
+        cores, _neurons, off, is_input, on = self._arrays(core_idx)  # pyright: ignore[reportGeneralTypeIssues] -- a 5-tuple of arrays (_source_arrays)
+        return cores[~(off | is_input | on)]
 
     def _core_matrix(self, core_idx):
         cached = self._matrix_cache.get(core_idx)
@@ -80,14 +112,14 @@ class ChipLatency:
                 )
             src_core = np.full(n_rows, -1, dtype=np.int64)
             src_neuron = np.zeros(n_rows, dtype=np.int64)
-            for ai, src in enumerate(core.axon_sources[:n_rows]):
-                if getattr(src, "is_off_", False):
-                    live[ai, :] = False
-                    continue
-                src_core[ai] = int(src.core_)
-                src_neuron[ai] = int(src.neuron_)
-                if src_core[ai] >= 0 and bool(live[ai].any()):
-                    deps[ci].add(int(src_core[ai]))
+            source_cores, source_neurons, off, _input, _on = self._arrays(ci)  # pyright: ignore[reportGeneralTypeIssues] -- a 5-tuple of arrays (_source_arrays)
+            rows = min(n_rows, n_src)
+            off_rows = off[:rows]
+            live[:rows][off_rows] = False
+            src_core[:rows] = np.where(off_rows, -1, source_cores[:rows])
+            src_neuron[:rows] = np.where(off_rows, 0, source_neurons[:rows])
+            read = (src_core[:rows] >= 0) & live[:rows].any(axis=1)
+            deps[ci].update(int(c) for c in np.unique(src_core[:rows][read]))
             live_masks.append(live)
             axon_meta.append((src_core, src_neuron))
 
@@ -142,6 +174,7 @@ class ChipLatency:
             return max((int(p) for p in pins), default=-1) + 1
         self.memo = {}
         self._matrix_cache = {}
+        self._arrays_cache = {}
         if len(self.mapping.output_sources) == 0:
             raise ValueError(
                 "ChipLatency.calculate: mapping has no output_sources (empty list). "
@@ -166,36 +199,19 @@ class ChipLatency:
         self._matrix_cache = {}
         return result
 
-    @staticmethod
-    def _live_cross_core_sources(core):
-        """Yield (axon_idx, src) for cross-core refs (not off / always-on / segment input)."""
-        for axon_idx, src in enumerate(core.axon_sources):
-            if getattr(src, "is_off_", False):
-                continue
-            if getattr(src, "is_always_on_", False):
-                continue
-            if getattr(src, "is_input_", False):
-                continue
-            yield axon_idx, src
-
     def _classify_shiftable(self):
         """Cores with only shiftable or dead cross-core inputs (fixed-point over cores)."""
         cores = self.mapping.cores
-        shiftable: set[int] = set()
-        for core_idx, core in enumerate(cores):
-            if not any(True for _ in self._live_cross_core_sources(core)):
-                shiftable.add(core_idx)
+        live = [np.unique(self._live_source_cores(i)) for i in range(len(cores))]
+        shiftable: set[int] = {i for i in range(len(cores)) if not live[i].size}
 
         changed = True
         while changed:
             changed = False
-            for core_idx, core in enumerate(cores):
-                if core_idx in shiftable:
+            for core_idx in range(len(cores)):
+                if core_idx in shiftable or not live[core_idx].size:
                     continue
-                live = list(self._live_cross_core_sources(core))
-                if not live:
-                    continue
-                if all(int(src.core_) in shiftable for _, src in live):
+                if all(int(c) in shiftable for c in live[core_idx]):
                     shiftable.add(core_idx)
                     changed = True
         return shiftable
@@ -203,9 +219,9 @@ class ChipLatency:
     def _build_consumer_map(self):
         """Return ``{src_core_idx: set(consumer_core_idx)}`` for the mapping."""
         consumers: dict[int, set[int]] = defaultdict(set)
-        for core_idx, core in enumerate(self.mapping.cores):
-            for _, src in self._live_cross_core_sources(core):
-                consumers[int(src.core_)].add(core_idx)
+        for core_idx in range(len(self.mapping.cores)):
+            for c in np.unique(self._live_source_cores(core_idx)):
+                consumers[int(c)].add(core_idx)
         return consumers
 
     def _align_shiftable_cores(self, current_max_latency):
@@ -248,27 +264,18 @@ class ChipLatency:
         passes = 0
         max_passes = len(cores) + 1
         new_max = max(int(c.latency or 0) for c in cores)
+        sources = []
+        for core_idx in range(len(cores)):
+            ids = self._live_source_cores(core_idx)
+            sources.append(np.unique(ids[ids >= 0]).tolist())
         while changed and passes < max_passes:
             changed = False
             passes += 1
             for core_idx, core in enumerate(cores):
                 current_lat = int(core.latency or 0)
-                max_src_lat = -1
-                for axon in core.axon_sources:
-                    if getattr(axon, "is_off_", False):
-                        continue
-                    if getattr(axon, "is_always_on_", False):
-                        continue
-                    if getattr(axon, "is_input_", False):
-                        continue
-                    src_core_idx = int(axon.core_)
-                    if src_core_idx < 0:
-                        continue
-                    src_lat = int(cores[src_core_idx].latency or 0)
-                    if src_lat > max_src_lat:
-                        max_src_lat = src_lat
-                if max_src_lat < 0:
+                if not sources[core_idx]:
                     continue
+                max_src_lat = max(int(cores[s].latency or 0) for s in sources[core_idx])
                 required = max_src_lat + 1
                 if current_lat < required:
                     core.latency = required

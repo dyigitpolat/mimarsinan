@@ -5,7 +5,8 @@ size its declared batch rule states; every other such size is ``Opaque``. ``rule
 are in ``kernel_rules.py``, ``layouts.py`` and ``selections.py``):
 
 - ``SAME``: the first tensor operand's shape (activations, dropout, softmax, the norms, casts, ``*_like`` factories,
-  cumulative and flipping kernels, an encoder or decoder layer and stack, whose first operand is ``src`` or ``tgt``);
+  cumulative and flipping kernels, ``slice_scatter`` and ``select_scatter`` (their input with a part replaced), an
+  encoder or decoder layer and stack, whose first operand is ``src`` or ``tgt``);
   ``OPERAND``: a named operand's shape (``nn.Transformer``: ``tgt``'s); ``GLU``: the input's with axis ``dim`` halved;
 - ``BROADCAST``: the broadcast of the tensor operands' shapes (torch's pointwise operators: the ``pointwise`` tag of
   the aten operator of the same name, and Python's arithmetic and comparison operators on tensors);
@@ -73,8 +74,8 @@ _SAME = frozenset("""dropout dropout1d dropout2d dropout3d alpha_dropout feature
 softmin layer_norm batch_norm group_norm instance_norm local_response_norm normalize rms_norm cumsum cumprod
 logcumsumexp flip fliplr flipud roll contiguous clone detach float double half bfloat16 long int short bool byte char
 to type type_as cpu cuda requires_grad_ zeros_like ones_like empty_like full_like rand_like randn_like tril triu sort
-argsort nan_to_num leaky_relu hardswish log_sigmoid logsigmoid _threshold threshold relu6 rrelu softplus softshrink
-hardshrink tanhshrink softsign silu mish gelu elu selu celu prelu data""".split())
+argsort slice_scatter select_scatter nan_to_num leaky_relu hardswish log_sigmoid logsigmoid _threshold threshold relu6
+rrelu softplus softshrink hardshrink tanhshrink softsign silu mish gelu elu selu celu prelu data""".split())
 _REDUCE = frozenset("""sum mean nansum nanmean amax amin max min argmax argmin prod std var norm logsumexp all any
 count_nonzero median nanmedian""".split())
 _FACTORY = frozenset("zeros ones empty full rand randn new_zeros new_ones new_empty new_full".split())

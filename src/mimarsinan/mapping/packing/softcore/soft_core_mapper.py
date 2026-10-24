@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns
+
 
 class SoftCoreMapping:
     def __init__(
@@ -12,7 +17,8 @@ class SoftCoreMapping:
         max_neurons: int | None = None,
     ):
         self.cores = []
-        self.output_sources = []
+        # A list of SpikeSource, or columns in the identity build (coverage W9).
+        self.output_sources: "list | SpikeSourceColumns" = []
 
         self.q_max = q_max
         self.firing_mode = firing_mode

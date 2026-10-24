@@ -12,6 +12,7 @@ from mimarsinan.mapping.packing.spike_source import (
 )
 from mimarsinan.mapping.packing.softcore.sign_split import mixed_rows
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON
+from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns, dict_lookup
 
 
 def compaction_masks_apply(
@@ -142,6 +143,21 @@ def _compact_readout_law(core, keep_cols) -> None:
         core.readout_law = law.take_columns(keep_cols)
 
 
+def _compact_output_columns(output_sources: SpikeSourceColumns, reindex_maps: dict) -> None:
+    """The output-source compaction below, columnar: off sources dropped, inputs and always-on kept, a core entry its
+    map holds moved and any other dropped; the same refusal when every output is dropped."""
+    had_output_refs = bool((output_sources.kinds() != 0).any())
+    remapped = output_sources.remapped(dict_lookup(reindex_maps))
+    kept = remapped.take(np.flatnonzero(remapped.kinds() != 0))
+    if had_output_refs and len(kept) == 0:
+        raise ValueError(
+            "compact_soft_core_mapping: all output_sources were dropped by compaction "
+            "(every output neuron was pruned). At least one output must remain; check pruning masks "
+            "and initial mask assignment (e.g. 1:1 vs tiled layer matching)."
+        )
+    output_sources.assign(kept)
+
+
 def compact_soft_core_mapping(cores, output_sources):
     """Compact soft cores from IR pruning masks; return core_id → neuron reindex maps.
 
@@ -185,7 +201,11 @@ def compact_soft_core_mapping(cores, output_sources):
                 core.compact_keep_rows = rows_arr
                 core.compact_keep_cols = cols_arr
                 core.core_matrix = None
-                core.axon_sources = [core.axon_sources[r] for r in keep_rows]
+                core.axon_sources = (
+                    core.axon_sources.take(np.asarray(keep_rows, dtype=np.int64))
+                    if isinstance(core.axon_sources, SpikeSourceColumns)
+                    else [core.axon_sources[r] for r in keep_rows]
+                )
                 core.hardware_bias = compact_hardware_bias_columns(
                     core.hardware_bias, keep_cols
                 )
@@ -193,7 +213,10 @@ def compact_soft_core_mapping(cores, output_sources):
             elif keep_cols:
                 # BIAS_ONLY core: collapse to a single OFF-source axon but keep the live bias-driven columns; collapsing to (1,1) would silently delete live neurons still referenced downstream.
                 core.core_matrix = np.zeros((1, len(keep_cols)), dtype=np.float64)
-                core.axon_sources = [SpikeSource(-1, 0, False, True)]
+                off = [SpikeSource(-1, 0, False, True)]
+                core.axon_sources = (
+                    SpikeSourceColumns.of(off) if isinstance(core.axon_sources, SpikeSourceColumns) else off
+                )
                 core.hardware_bias = compact_hardware_bias_columns(
                     core.hardware_bias, keep_cols
                 )
@@ -216,6 +239,11 @@ def compact_soft_core_mapping(cores, output_sources):
         core._axon_source_spans = None
 
     for core in cores:
+        if isinstance(core.axon_sources, SpikeSourceColumns):
+            # The same reindex, columnar (coverage W9): a core entry its map holds moves, any other becomes off.
+            core.axon_sources = core.axon_sources.remapped(dict_lookup(reindex_maps))
+            core._axon_source_spans = None
+            continue
         new_sources = []
         for s in core.axon_sources:
             if source_is_off(s):
@@ -231,6 +259,9 @@ def compact_soft_core_mapping(cores, output_sources):
         core.axon_sources = new_sources
         core._axon_source_spans = None
 
+    if isinstance(output_sources, SpikeSourceColumns):
+        _compact_output_columns(output_sources, reindex_maps)
+        return reindex_maps
     had_output_refs = any(
         not source_is_off(s) for s in output_sources
     )

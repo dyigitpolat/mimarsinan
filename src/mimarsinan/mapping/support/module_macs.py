@@ -2,19 +2,25 @@
 
 Every rule counts the multiply-accumulates of one invocation at the shapes it is given (batch axis leading, one
 sample), every output position included: a convolution at every output position, a Linear at every leading position,
-an attention, transformer-encoder or recurrent leaf over its whole sequence. A module that declares its own count (``forward_macs()``, the
-Contraction host op and the decomposed recurrence) is counted by that declaration; element-wise and shape ops carry
-no MACs. No other module dispatches on ``nn.Module`` type to compute MACs.
+an attention, transformer-encoder or recurrent leaf over its whole sequence, a product in functional form (``F.linear``,
+``matmul``, ``mm``, ``bmm``, a two-operand ``einsum``, as a host op evaluates it: coverage W10) at every output element.
+A module that declares its own count (``forward_macs()``, the Contraction host op and the decomposed recurrence) is
+counted by that declaration; element-wise and shape ops carry no MACs. No other module dispatches on ``nn.Module`` type
+to compute MACs.
 """
 
 from __future__ import annotations
 
 import math
+import operator
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, cast
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter
+from mimarsinan.mapping.support.contraction import contraction_macs
 from mimarsinan.mapping.support.scale_wrapper import is_scale_wrapper
 
 Shape = Optional[Tuple[int, ...]]
@@ -126,7 +132,60 @@ def module_macs(module: nn.Module, in_shape: Shape, out_shape: Shape, input_shap
         return _encoder_macs(module, in_shape)
     if _weight_op_package(module):
         return module_macs(cast(nn.Sequential, module)[0], in_shape, out_shape)
+    if isinstance(module, ComputeAdapter):
+        return _functional_product_macs(module, in_shape, out_shape, input_shapes)
     return 0
+
+
+#: The products a host op evaluates in functional form: the requirement table's product row (``op_kinds``), a tensor
+#: method by the torch function of its name.
+_PRODUCTS = (F.linear, torch.matmul, operator.matmul, torch.mm, torch.bmm, torch.einsum)
+
+
+def _product(fn: Any) -> Any:
+    name = getattr(fn, "__name__", None)
+    if isinstance(name, str) and not name.startswith("_") and getattr(torch.Tensor, name, None) is fn:
+        fn = getattr(torch, name, None)
+    return next((product for product in _PRODUCTS if fn is product), None)
+
+
+def _product_macs(product: Any, args: Sequence[Any], kwargs: Dict[str, Any], out_shape: Tuple[int, ...]) -> int:
+    """Every output element times the extent the call sums over: a Linear's ``in_features`` (its weight's last axis),
+    a matrix product's inner axis (its first operand's last), a two-operand einsum's summed axes
+    (``contraction_macs``); 0 for an einsum of other than two operands (no single product) or an operand of rank 0."""
+    if product is torch.einsum:
+        operands = list(args[1:])
+        if len(operands) == 1 and isinstance(operands[0], (tuple, list)):
+            operands = list(operands[0])
+        if len(operands) != 2 or not isinstance(args[0], str):
+            return 0
+        return contraction_macs(args[0], [tuple(t.shape) for t in operands], out_shape)
+    key, position = ("weight", 1) if product is F.linear else ("input", 0)
+    operand = kwargs.get(key, args[position] if len(args) > position else None)
+    if not isinstance(operand, torch.Tensor) or operand.dim() == 0:
+        return 0
+    return _numel(out_shape) * int(operand.shape[-1])
+
+
+def _functional_product_macs(adapter: ComputeAdapter, in_shape: Shape, out_shape: Shape,
+                             input_shapes: Sequence[Shape]) -> int:
+    """A host op evaluating a product (``_PRODUCTS``), with a bound weight or not (``_product_macs``), the operands'
+    shapes read through the adapter's own call: its argument template on meta stand-ins of its inputs and bound
+    tensors, a batch-free slot by its stored shape, never evaluated. 0 for any other call, or where a shape is
+    unknown."""
+    product = _product(adapter.fn)
+    shapes = list(input_shapes) or [in_shape]
+    if product is None or out_shape is None or any(shape is None for shape in shapes):
+        return 0
+    inputs = [torch.empty(tuple(cast(Tuple[int, ...], shape)), device="meta") for shape in shapes]
+    bound = [torch.empty(tuple(getattr(adapter, f"bound_{i}").shape), device="meta")
+             for i in range(int(adapter._bound_count))]
+    if adapter.arg_template is None:
+        args, kwargs = (*inputs, *bound, *adapter.extra_args), dict(adapter.kwargs)
+    else:
+        args, slots = adapter.arg_template.resolve(inputs, bound, adapter.extra_args)
+        kwargs = {**adapter.kwargs, **slots}
+    return _product_macs(product, args, kwargs, tuple(out_shape))
 
 
 def _weight_op_package(module: nn.Module) -> bool:

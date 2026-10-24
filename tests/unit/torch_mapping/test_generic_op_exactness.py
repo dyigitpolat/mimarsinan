@@ -438,7 +438,7 @@ class BoundOutranksActivation(nn.Module):
 
 
 class DerivedConstantOperand(nn.Module):
-    """``y * gamma[None, :]``: the operand is computed from a parameter, not read from one."""
+    """``y * gamma[None, :]``: the operand is computed from a parameter, not read from one (a batch-free value)."""
 
     def __init__(self):
         super().__init__()
@@ -447,6 +447,19 @@ class DerivedConstantOperand(nn.Module):
 
     def forward(self, x):
         return self.front(x) * self.gamma[None, :]
+
+
+class RandomOperand(nn.Module):
+    """``y * torch.rand_like(gamma)``: an operand drawn at random at every call, which no conversion rule carries (a
+    factory of literals alone, ``torch.rand(C)``, FX evaluates once while tracing)."""
+
+    def __init__(self):
+        super().__init__()
+        self.front = _Front(2)
+        self.gamma = nn.Parameter(_rand(C))
+
+    def forward(self, x):
+        return self.front(x) * torch.rand_like(self.gamma)
 
 
 @pytest.mark.parametrize("packaging", PACKAGINGS)
@@ -461,13 +474,22 @@ def test_an_op_that_moves_the_batch_axis_is_refused_by_name(packaging):
 
 @pytest.mark.parametrize("packaging", PACKAGINGS)
 def test_an_unresolvable_operand_is_refused_by_name(packaging):
+    """[changed in coverage W6: the witness was ``DerivedConstantOperand``, a value computed from a parameter, which is
+    now a batch-free operand (``test_an_operand_computed_from_a_parameter_is_exact``)]"""
     with pytest.raises(GenericOpArgumentError) as info:
-        _convert(_native(DerivedConstantOperand), _input_shape(2), packaging)
+        _convert(_native(RandomOperand), _input_shape(2), packaging)
     message = str(info.value)
     assert "generic op 'mul' (FX node 'mul')" in message
-    assert "argument 'getitem'" in message
+    assert "argument 'rand_like'" in message
     assert info.value.node_name == "mul"
-    assert info.value.argument_name == "getitem"
+    assert info.value.argument_name == "rand_like"
+
+
+@pytest.mark.parametrize("packaging", PACKAGINGS)
+def test_an_operand_computed_from_a_parameter_is_exact(packaging):
+    """Coverage W6: ``gamma[None, :]`` is a batch-free value, computed at every call from the converted model's copy
+    of ``gamma`` (on the base: ``GenericOpArgumentError`` naming ``getitem``)."""
+    assert_converted_exact(DerivedConstantOperand, _input_shape(2), packaging)
 
 
 class DeadShapeArithmetic(nn.Module):

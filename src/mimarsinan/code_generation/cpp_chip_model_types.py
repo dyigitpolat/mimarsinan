@@ -7,12 +7,23 @@ from typing import List
 
 
 class SpikeSource:
+    """One axon's source on a chip core: off, network input, always on, or a core's neuron. Slotted (coverage W9):
+    72 B per object instead of 152 B with an instance dict (Python 3.10); a legacy instance-dict pickle still loads."""
+
+    __slots__ = ("is_input_", "is_off_", "is_always_on_", "core_", "neuron_")
+
     def __init__(self, core, neuron, is_input = False, is_off = False, is_always_on = False):
         self.is_input_: bool = is_input
         self.is_off_: bool = is_off
         self.is_always_on_: bool = is_always_on
         self.core_: int = core
         self.neuron_: int = neuron
+
+    def __setstate__(self, state) -> None:
+        """A slot state ``(None, {slot: value})``, or a legacy instance-dict state ``{slot: value}``."""
+        slots = state[1] if isinstance(state, tuple) else state
+        for key, value in slots.items():
+            setattr(self, key, value)
 
     def get_string(self) -> str:
         if(self.is_off_):

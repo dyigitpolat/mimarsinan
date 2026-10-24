@@ -28,6 +28,7 @@ import torch.nn as nn
 
 from mimarsinan.torch_mapping.conversion_probe import guarded
 from mimarsinan.torch_mapping.converter_handlers.refusals import node_operator
+from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import attribute_at
 
 __all__ = ["NodeRecord", "program_difference", "program_record", "state_differences"]
 
@@ -105,7 +106,7 @@ def program_record(gm: fx.GraphModule) -> Tuple[NodeRecord, ...]:
         if node.op == "call_module" and target in modules:
             module, reads = _configuration(modules[target], target), tuple(_tensors(modules[target], target))
         elif node.op == "get_attr":  # a parameter or buffer by shape (its value: ``state_differences``), an FX tensor
-            value = guarded(lambda: _attribute(gm, target))[0]  # constant or other attribute by value (round 14)
+            value = guarded(lambda: attribute_at(gm, target))[0]  # constant or other attribute by value (round 14)
             if _registered(gm, target) and isinstance(value, torch.Tensor):
                 value = tuple(value.shape)
             module, reads = ((target, ("attribute", value)),), (target,)
@@ -120,13 +121,6 @@ def _registered(root: nn.Module, target: str) -> bool:
     owner_path, _, name = target.rpartition(".")
     owner, exc = guarded(lambda: root.get_submodule(owner_path))
     return exc is None and isinstance(owner, nn.Module) and (name in owner._parameters or name in owner._buffers)
-
-
-def _attribute(root: nn.Module, target: str) -> Any:
-    value: Any = root
-    for part in target.split("."):
-        value = getattr(value, part)
-    return value
 
 
 def _leaf_difference(a: Any, b: Any) -> bool:

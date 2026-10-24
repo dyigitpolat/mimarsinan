@@ -8,6 +8,18 @@ import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
 
+#: One int object per index value, shared by every materialised ``IRSource`` (coverage W9), as Python shares its own
+#: small ints: an IR holds about one source per input-source entry, and a fresh index int cost each one 32 B more. The
+#: table grows to the largest view materialised in the process and is never shrunk (8 B + 32 B per index).
+_INDEX_INTS: list = []
+
+
+def shared_indices(size: int) -> list:
+    """The shared int objects ``0 .. size - 1`` (at least; the table may be longer)."""
+    if len(_INDEX_INTS) < size:
+        _INDEX_INTS.extend(range(len(_INDEX_INTS), size))
+    return _INDEX_INTS
+
 
 class LayoutSourceView:
     """Duck-typed numpy object-array of ``IRSource`` that defers allocation."""
@@ -48,8 +60,9 @@ class LayoutSourceView:
 
         def _materialise() -> np.ndarray:
             arr = np.empty(size, dtype=object)
+            indices = shared_indices(size)
             for i in range(size):
-                arr[i] = IRSource(node_id, i)
+                arr[i] = IRSource(node_id, indices[i])
             return arr.reshape(shape_t)
 
         node_ids = (node_id,) if node_id >= 0 else ()

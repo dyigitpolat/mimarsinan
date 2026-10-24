@@ -93,7 +93,7 @@ class LastAxisSuffix(nn.Module):
 
 
 class DerivedToken(nn.Module):
-    """A token computed from a parameter only (``2 * p``, then expanded): an operand with no conversion rule."""
+    """A token computed from a parameter only (``2 * p``, then expanded): a batch-free value (coverage W6)."""
 
     def __init__(self):
         super().__init__()
@@ -165,10 +165,35 @@ def test_parameter_operand_on_the_last_axis_is_exact(contract):
     assert_converted_exact(native(LastAxisSuffix), (8,), contract)
 
 
+class RandomToken(nn.Module):
+    """A token drawn at random at every call (``rand_like`` of a parameter), then expanded: an operand with no
+    conversion rule."""
+
+    def __init__(self):
+        super().__init__()
+        self.embed = nn.Linear(6, 8)
+        self.extra = nn.Parameter(torch.randn(1, 1, 8))
+        self.head = nn.Linear(8, 3)
+
+    def forward(self, x):
+        t = self.embed(x)
+        token = torch.rand_like(self.extra).expand(x.shape[0], -1, -1)
+        return self.head(torch.cat([t, token], dim=1).mean(dim=1))
+
+
 @pytest.mark.parametrize("contract", CONTRACTS)
 def test_operand_without_a_rule_is_refused_by_name(contract):
-    model = native(DerivedToken)
+    """[changed in coverage W6: the witness was ``DerivedToken``, a token computed from a parameter, which is now a
+    batch-free operand (``test_token_computed_from_a_parameter_is_exact``)]"""
+    model = native(RandomToken)
     assert_refused_by_name(lambda: convert(model, (5, 6), contract), GenericOpArgumentError, "'cat'", "expand")
+
+
+@pytest.mark.parametrize("contract", CONTRACTS)
+def test_token_computed_from_a_parameter_is_exact(contract):
+    """Coverage W6: ``(2 * p).expand(B, -1, -1)`` concatenated, one sample's slice computed at every call from the
+    converted model's copy of ``p`` (on the base: ``GenericOpArgumentError`` naming ``cat`` and ``expand``)."""
+    assert_converted_exact(native(DerivedToken), (5, 6), contract)
 
 
 @pytest.mark.parametrize("contract", CONTRACTS)

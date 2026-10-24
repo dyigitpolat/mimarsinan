@@ -90,13 +90,17 @@ def _residency_class_of(neural_core: NeuralCore, graph, pi):
     return int(pi) if pi is not None else None
 
 
-def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = None):
-    """Convert NeuralCore to SoftCore (graph required for bank-backed cores)."""
+def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = None, *, columnar: bool = False):
+    """Convert NeuralCore to SoftCore (graph required for bank-backed cores); ``columnar``: its axon sources as
+    ``SpikeSourceColumns`` (coverage W9: the identity build), the same sources ``ir_source_to_spike_source`` gives."""
     from mimarsinan.mapping.packing.softcore import SoftCore
+    from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns
 
-    axon_sources = [
-        ir_source_to_spike_source(src) for src in neural_core.input_sources.flatten()
-    ]
+    flat_sources = neural_core.input_sources.flatten()
+    axon_sources = (
+        SpikeSourceColumns.from_ir_sources(flat_sources) if columnar
+        else [ir_source_to_spike_source(src) for src in flat_sources]
+    )
 
     core_matrix = neural_core.get_core_matrix(graph)
 

@@ -104,10 +104,12 @@ class SourceArg:
 
 @dataclass(frozen=True)
 class BoundArg:
-    """Classification of an FX argument as a bound tensor stored as ``tensor``, natively ``native_shape``."""
+    """Classification of an FX argument as a bound tensor stored as ``tensor``, natively ``native_shape``; ``value``:
+    the module computing it at every call (a batch-free value, ``batch_free_value``), ``tensor`` its value now."""
 
     tensor: torch.Tensor
     native_shape: tuple[int, ...]
+    value: Any = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,11 @@ class CallPartition:
     unresolved: list[fx.Node] = field(default_factory=list)
     positional: tuple[Any, ...] = ()
     slot_kwargs: tuple[tuple[str, Any], ...] = ()
+    computed: dict[int, Any] = field(default_factory=dict)
+
+    def payloads(self) -> list[Any]:
+        """The bound operands as an adapter holds them: each tensor, or the module computing it (``computed``)."""
+        return [self.computed.get(index, tensor) for index, tensor in enumerate(self.bound)]
 
     @property
     def strips_bound_shapes(self) -> bool:
@@ -199,6 +206,8 @@ def partition_call(
         if isinstance(kind, BoundArg):
             part.bound.append(kind.tensor)
             part.bound_native_shapes.append(tuple(kind.native_shape))
+            if kind.value is not None:
+                part.computed[len(part.bound) - 1] = kind.value
             return BoundSlot(len(part.bound) - 1)
         part.unresolved.append(node)
         return None

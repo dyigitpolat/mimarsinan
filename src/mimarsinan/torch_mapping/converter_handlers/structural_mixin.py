@@ -121,8 +121,16 @@ class StructuralConvertMixin(ConverterContract):
         return False, mapper
 
     def _per_sample_constant(self, arg: fx.Node):
-        """A parameter or buffer operand (raw or ``expand``ed per batch) as one sample's slice; None otherwise (an
+        """A parameter or buffer operand (raw or ``expand``ed per batch) as one sample's slice; a batch-free value
+        (``symbolic/batch_free.py``) so as the module computing that slice at every call; None otherwise (an
         ``expand`` converted to a host op of its own, an impure program's, is an activation)."""
+        free, traced = self._batch_free_source(arg), node_output_shape(arg)
+        if free is not None and traced:
+            try:
+                self._batch_free.evaluate(free).broadcast_to((1, *traced[1:]))
+            except RuntimeError:
+                return None
+            return self._batch_free.value(free, traced[1:])
         tensor = self._get_constant_tensor(arg)
         traced = tuple(tensor.shape) if tensor is not None else None
         if tensor is None and self._node_to_mapper.get(arg) is None:
@@ -134,6 +142,14 @@ class StructuralConvertMixin(ConverterContract):
             return tensor.detach().broadcast_to((1, *traced[1:]))[0].clone()
         except RuntimeError:
             return None
+
+    def _batch_free_source(self, arg: fx.Node):
+        """The batch-free value a concatenation operand is: itself, or the receiver of its ``expand`` (no mapper)."""
+        if arg in self._batch_free.nodes:
+            return arg
+        expanded = arg.op == "call_method" and arg.target == "expand" and self._node_to_mapper.get(arg) is None
+        receiver = arg.args[0] if expanded and arg.args else None
+        return receiver if isinstance(receiver, fx.Node) and receiver in self._batch_free.nodes else None
 
     _perceptron_normalization = staticmethod(perceptron_normalization)
 

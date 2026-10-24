@@ -16,21 +16,23 @@ converter's batch domain proves for every extent before the call is inlined (``l
 returns the body (``CapturedBody``) only when:
 
 - (a) the capture is one graph;
-- (b) every guard, deferred runtime assert, replacement and range of the capture holds for every batch B >= 1 with
-  each symbol at its form, and every operand's captured sizes, strides and offset reproduce every sample;
+- (b) every guard, deferred runtime assert, replacement, range, symbolic operation, static evaluation, ``guard_or``
+  decision and Dynamo fold of the capture is proved in the affine batch domain, each symbol at its form
+  (``body_rules``, coverage W8), and every operand's captured sizes, strides and offset reproduce every sample;
 - (c) at batch 1 and at every batch B >= 1 where a symbol's form is 0 or 1, a capture with every extent static is the
   same program as the first at that B (Dynamo assumes a batch symbol is not 0 or 1, and a squeeze escapes every
   guard; ``body_comparison``; review round 2: ``B - 1`` is 1 at batch 2);
-- (d) nothing is written in place (a write torch declares or names, ``__imul__``): a write the body makes stays the
-  opaque call's effect, which the probe observes (T3), never one of the program's own writes;
+- (d) nothing is written in place (a write torch declares or names, ``__imul__``) once every assignment of a literal
+  to a tensor the body allocates is computed out of place (``body_rules.local_writes``, coverage W8): any other write
+  stays the opaque call's effect, which the probe observes (T3), never one of the program's own writes;
 - (e) after the normalization every node is a declared operator (``declared_operators.opaque_reason``);
 
 else the reason the call stays opaque. Normalization (``body_output``): a dead call is dropped only when it has no
 node operand (trace-time Python) or a schema with no write or alias; a dunder method is its ``operator`` function.
-The output structure is rebuilt by Dynamo's own residual code, run on inert
-operands under a profile hook that refuses any call it makes other than Dynamo's helpers and the graph's stand-in, so
-a user class is never constructed (``body_output``). Any failure of the machinery, a missing private API included,
-leaves the call opaque with its reason; nothing is inlined on a failure.
+The output structure is rebuilt by Dynamo's own residual code, run on inert operands under a profile hook that refuses
+any call it makes other than Dynamo's helpers and the graph's stand-in, so a user class is never constructed
+(``body_output``). Any failure of the machinery, a missing private API included, leaves the call opaque with its
+reason; nothing is inlined on a failure.
 """
 
 from __future__ import annotations
@@ -47,21 +49,14 @@ from torch._dynamo import convert_frame, source as dynamo_source
 from torch._dynamo import utils as dynamo_utils
 from torch.fx.experimental import _config as fx_config
 from torch.utils._sympy.numbers import int_oo
-from torch.utils._sympy.value_ranges import ValueRanges, bound_sympy
 
 from mimarsinan.torch_mapping.conversion_probe import guarded
 from mimarsinan.torch_mapping.fx_rewrites.body_comparison import differs_at_batch
 from mimarsinan.torch_mapping.fx_rewrites.body_output import BodyRefusal as _Opaque
 from mimarsinan.torch_mapping.fx_rewrites.body_output import CapturedBody, extract, first_line
+from mimarsinan.torch_mapping.fx_rewrites.body_rules import prove, recorded, rewrite_assignments, unproved_record
 from mimarsinan.torch_mapping.fx_rewrites.operand_samples import (
-    TRACE_BATCHES,
-    TensorSample,
-    affine_fit,
-    code_function,
-    code_signature,
-    identity_reason,
-    sample_at,
-    stand_ins,
+    TRACE_BATCHES, TensorSample, affine_fit, code_function, code_signature, identity_reason, sample_at, stand_ins,
 )
 
 __all__ = ["CAPTURE_CONFIG", "BATCH", "capture_body", "capture_unavailable"]
@@ -85,8 +80,6 @@ SHAPE_CONFIG = dict(backed_size_oblivious=True, use_duck_shape=False)
 BATCH = sympy.Symbol("B", integer=True, positive=True)
 """The batch in a symbol's form ``a*B + c``."""
 
-_DOMAIN = ValueRanges(1, int_oo)
-
 _PRIVATE_API = (
     (convert_frame, ("fullgraph_capture", "CaptureOutput")),
     (dynamo_utils, ("get_metrics_context", "call_size", "call_stride", "call_storage_offset")),
@@ -108,8 +101,7 @@ def capture_unavailable() -> Optional[str]:
 
 
 def _globals_copy(function: types.FunctionType) -> types.FunctionType:
-    """``function``'s code function (``code_function``) with a shallow copy of its globals: Dynamo installs its names
-    into the copy."""
+    """``function``'s code function (``code_function``) with a copy of its globals, where Dynamo installs its names."""
     copy = code_function(function, dict(function.__globals__))
     copy.__qualname__, copy.__module__ = function.__qualname__, function.__module__
     return copy
@@ -127,12 +119,13 @@ def _run_capture(function: types.FunctionType, arguments: Dict[str, Any], operan
         stack.enter_context(cast(Any, dynamo_config).patch(**CAPTURE_CONFIG))
         stack.enter_context(cast(Any, fx_config).patch(**SHAPE_CONFIG))
         stack.enter_context(dynamo_utils.get_metrics_context())
+        records = stack.enter_context(recorded())  # torch's symbolic folds, re-proved in ``_judge``
         captured, exc = guarded(lambda: convert_frame.fullgraph_capture(target, tuple(bound.args), dict(bound.kwargs)))
     if isinstance(exc, RecursionError):
         raise _Opaque(f"its body calls itself deeper than Dynamo's interpretation reaches ({first_line(exc)})")
     if exc is not None or captured is None:  # Dynamo's refusal of the body, whatever its class
         raise _Opaque(f"Dynamo does not capture its body as one graph ({first_line(exc) if exc else 'no capture'})")
-    return captured, target
+    return captured, target, records
 
 
 def _form(values: Sequence[int]) -> Optional[sympy.Expr]:
@@ -182,15 +175,9 @@ def _forms(shape_env, samples) -> Dict[sympy.Symbol, sympy.Expr]:
     return forms
 
 
-def _holds(statement: sympy.Basic) -> bool:
-    if statement is sympy.true or statement is True:
-        return True
-    found, _ = guarded(lambda: bound_sympy(cast(sympy.Expr, statement), {BATCH: _DOMAIN}))
-    return found is not None and bool(found.is_singleton() and found.lower is sympy.true)  # unbounded: not shown
-
-
-def _judge(shape_env, forms: Dict[sympy.Symbol, sympy.Expr]) -> None:
-    """(b): every guard, runtime assert, replacement and range holds for every batch B >= 1; ``_Opaque`` else."""
+def _judge(shape_env, forms: Dict[sympy.Symbol, sympy.Expr], records: list) -> None:
+    """(b): every guard, runtime assert, replacement, range, symbolic operation and static evaluation (``records``)
+    of the capture is proved for every batch B >= 1 in the affine batch domain (``body_rules``); ``_Opaque`` else."""
     statements: List[Tuple[str, sympy.Basic]] = [("guard", g.expr) for g in shape_env.guards]
     statements += [("runtime assert", ra.expr) for ras in shape_env.deferred_runtime_asserts.values() for ra in ras]
     statements += [("replacement", sympy.Eq(sym, rep)) for sym, rep in shape_env.replacements.items()]
@@ -205,10 +192,13 @@ def _judge(shape_env, forms: Dict[sympy.Symbol, sympy.Expr]) -> None:
         if unknown:
             raise _Opaque(f"its capture states {kind} {statement} on a value outside the batch domain "
                           f"({', '.join(sorted(map(str, unknown)))})")
-        if not _holds(statement.xreplace(forms) if hasattr(statement, "xreplace") else statement):
+        if not prove(statement, forms, BATCH):
             shown = ", ".join(f"{s} = {forms[s]}" for s in sorted(free, key=str))
-            raise _Opaque(f"its body decides on the batch: Dynamo's {kind} {statement} ({shown}) does not hold for "
-                          "every batch B >= 1")
+            raise _Opaque(f"its body decides on the batch: Dynamo's {kind} {statement} ({shown}) is not proved for "
+                          "every batch B >= 1 in the affine batch domain")
+    unproved = unproved_record(records, forms, BATCH, _comparison_batches(forms))
+    if unproved is not None:
+        raise _Opaque(unproved)
 
 
 def _value_at(value: Any, forms: Dict[sympy.Symbol, sympy.Expr], batch: int) -> Any:
@@ -272,17 +262,26 @@ def capture_body(function: types.FunctionType, arguments: Dict[str, Any],
     return found
 
 
+def _extract(*capture: Any) -> CapturedBody:
+    """``extract``, then rule (d)'s rewrite of the body's assignments (``body_rules.local_writes``)."""
+    body = extract(*capture)
+    reason = rewrite_assignments(body.gm)
+    if reason is not None:
+        raise _Opaque(reason)
+    return body
+
+
 def _capture(function: types.FunctionType, arguments: Dict[str, Any],
              samples: Dict[str, Tuple[TensorSample, ...]]) -> CapturedBody:
     marks = _marks(samples)
     reason = identity_reason(samples)
     if reason is not None:
         raise _Opaque(reason)
-    captured, target = _run_capture(function, arguments, stand_ins(samples, len(TRACE_BATCHES) - 1), marks)
-    body = extract(captured, target, function, arguments, samples)
+    captured, target, records = _run_capture(function, arguments, stand_ins(samples, len(TRACE_BATCHES) - 1), marks)
+    body = _extract(captured, target, function, arguments, samples)
     shape_env = captured.graph_capture_output.output_graph.shape_env
     forms = _forms(shape_env, samples)
-    _judge(shape_env, forms)
+    _judge(shape_env, forms, records)
     _reproduces(body, forms, samples)
     body.check_declared()
     for batch in _comparison_batches(forms):
@@ -291,10 +290,11 @@ def _capture(function: types.FunctionType, arguments: Dict[str, Any],
         if missing is not None:
             raise _Opaque(f"its operand {missing!r} has no affine metadata at batch {batch}, where a batch symbol of "
                           "its capture is 0 or 1")
-        one, one_target = _run_capture(function, arguments, stand_ins(cast(Any, at), 0), {})
-        other = extract(one, one_target, function, arguments, samples)
+        one, one_target, folds = _run_capture(function, arguments, stand_ins(cast(Any, at), 0), {})
+        other = _extract(one, one_target, function, arguments, samples)
         other.check_declared()
-        found = differs_at_batch(body, other, {s: f.subs(BATCH, batch) for s, f in forms.items()})
+        found = unproved_record(folds, {}, BATCH, []) or differs_at_batch(  # its folds the helper's own answers too
+            body, other, {s: f.subs(BATCH, batch) for s, f in forms.items()})
         if found is not None:
             raise _Opaque(f"its body takes another path at batch {batch} ({found})")
     return body

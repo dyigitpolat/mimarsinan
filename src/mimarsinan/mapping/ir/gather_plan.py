@@ -1,10 +1,16 @@
-"""Precomputed, weakly-cached gather plans for IR nodes: bit-equal to the per-source ``IRNode.gather_inputs`` walk but built once as index arrays instead of one torch op per axon per forward."""
+"""Precomputed, weakly-cached gather plans for IR nodes: bit-equal to the per-source ``IRNode.gather_inputs`` walk but built once as index arrays instead of one torch op per axon per forward.
+
+The index arrays are columnar (coverage W9): int64 arrays built in one pass over the sources, which a CPU device's
+index tensors share (``torch.as_tensor``), 16 B per gathered entry instead of two tuples of Python ints and their
+tensor copies (about 64 B).
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
+import numpy as np
 import torch
 
 from mimarsinan.common.instance_memo import InstanceMemo
@@ -14,13 +20,13 @@ _PLANS: InstanceMemo["GatherPlan"] = InstanceMemo()
 
 @dataclass
 class GatherPlan:
-    """Index arrays for one node's flattened ``input_sources``."""
+    """Index arrays (int64) for one node's flattened ``input_sources``."""
 
     n_sources: int
-    input_dst: Tuple[int, ...]
-    input_src: Tuple[int, ...]
-    on_dst: Tuple[int, ...]
-    buffer_groups: Tuple[Tuple[int, Tuple[int, ...], Tuple[int, ...]], ...]
+    input_dst: np.ndarray
+    input_src: np.ndarray
+    on_dst: np.ndarray
+    buffer_groups: Tuple[Tuple[int, np.ndarray, np.ndarray], ...]
     _device_cache: Dict[torch.device, dict] = field(default_factory=dict)
 
     @property
@@ -31,15 +37,11 @@ class GatherPlan:
         cached = self._device_cache.get(device)
         if cached is None:
             cached = {
-                "input_dst": torch.tensor(self.input_dst, dtype=torch.long, device=device),
-                "input_src": torch.tensor(self.input_src, dtype=torch.long, device=device),
-                "on_dst": torch.tensor(self.on_dst, dtype=torch.long, device=device),
+                "input_dst": torch.as_tensor(self.input_dst, device=device),
+                "input_src": torch.as_tensor(self.input_src, device=device),
+                "on_dst": torch.as_tensor(self.on_dst, device=device),
                 "buffers": [
-                    (
-                        nid,
-                        torch.tensor(dst, dtype=torch.long, device=device),
-                        torch.tensor(src, dtype=torch.long, device=device),
-                    )
+                    (nid, torch.as_tensor(dst, device=device), torch.as_tensor(src, device=device))
                     for nid, dst, src in self.buffer_groups
                 ],
             }
@@ -59,9 +61,9 @@ class GatherPlan:
         # ``dtype`` (the value-domain fp64 path) widens the buffer instead.
         result = torch.zeros(batch_size, self.n_sources, device=device, dtype=dtype)
         idx = self._indices(device)
-        if self.input_dst:
+        if self.input_dst.size:
             result[:, idx["input_dst"]] = input_tensor[:, idx["input_src"]].to(result.dtype)
-        if self.on_dst:
+        if self.on_dst.size:
             result[:, idx["on_dst"]] = 1.0
         for nid, dst, src in idx["buffers"]:
             buf = buffers[nid]
@@ -82,31 +84,29 @@ class GatherPlan:
 
 
 def build_gather_plan(node) -> GatherPlan:
+    """The plan of ``node.input_sources`` (flattened): off (-1) skipped, network input (-2) and always-on (-3) entries,
+    and every other node id's entries as one group, groups in the order of their first entry, entries in order."""
     sources = node.input_sources.flatten()
-    input_dst: List[int] = []
-    input_src: List[int] = []
-    on_dst: List[int] = []
-    by_node: Dict[int, Tuple[List[int], List[int]]] = {}
-    for idx, src in enumerate(sources):
-        if src.is_off():
-            continue
-        if src.is_input():
-            input_dst.append(idx)
-            input_src.append(int(src.index))
-        elif src.is_always_on():
-            on_dst.append(idx)
-        else:
-            dst_list, src_list = by_node.setdefault(int(src.node_id), ([], []))
-            dst_list.append(idx)
-            src_list.append(int(src.index))
+    count = len(sources)
+    ids = np.fromiter((src.node_id for src in sources), dtype=np.int64, count=count)
+    indices = np.fromiter((src.index for src in sources), dtype=np.int64, count=count)
+    is_input, is_on = ids == -2, ids == -3
+    positions = np.flatnonzero((ids != -1) & ~is_input & ~is_on)
+    by_id = np.argsort(ids[positions], kind="stable")
+    grouped, ordered = positions[by_id], ids[positions][by_id]
+    starts = np.flatnonzero(np.r_[True, ordered[1:] != ordered[:-1]]) if ordered.size else np.zeros(0, np.int64)
+    groups: List[Tuple[int, np.ndarray, np.ndarray]] = []
+    for start, end in zip(starts.tolist(), [*starts[1:].tolist(), int(ordered.size)]):
+        dst = grouped[start:end]
+        groups.append((int(ordered[start]), dst, indices[dst]))
+    groups.sort(key=lambda group: int(group[1][0]))
+    input_dst = np.flatnonzero(is_input)
     return GatherPlan(
-        n_sources=len(sources),
-        input_dst=tuple(input_dst),
-        input_src=tuple(input_src),
-        on_dst=tuple(on_dst),
-        buffer_groups=tuple(
-            (nid, tuple(dst), tuple(src)) for nid, (dst, src) in by_node.items()
-        ),
+        n_sources=count,
+        input_dst=input_dst,
+        input_src=indices[input_dst],
+        on_dst=np.flatnonzero(is_on),
+        buffer_groups=tuple(groups),
     )
 
 

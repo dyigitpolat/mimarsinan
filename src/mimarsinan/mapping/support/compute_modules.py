@@ -131,7 +131,7 @@ class ComputeAdapter(nn.Module):
         self,
         fn,
         *,
-        bound_tensors: Sequence[torch.Tensor] = (),
+        bound_tensors: Sequence[torch.Tensor | nn.Module] = (),
         extra_args: Sequence[Any] = (),
         kwargs: Mapping[str, Any] | None = None,
         arg_template: ArgTemplate | None = None,
@@ -142,6 +142,9 @@ class ComputeAdapter(nn.Module):
         self.kwargs = dict(kwargs) if kwargs else {}
         self._bound_count = len(bound_tensors)
         for i, tensor in enumerate(bound_tensors):
+            if isinstance(tensor, nn.Module):  # computed at every call from its own state (``batch_free_value``)
+                self.add_module(f"bound_{i}", tensor)
+                continue
             self.register_parameter(
                 f"bound_{i}",
                 nn.Parameter(tensor.detach().clone(), requires_grad=False),
@@ -159,7 +162,7 @@ class ComputeAdapter(nn.Module):
             template = partition.explicit_template(restore_native_shapes=True)
         return cls(
             fn,
-            bound_tensors=partition.bound,
+            bound_tensors=partition.payloads(),
             extra_args=partition.literals,
             kwargs=partition.literal_kwargs,
             arg_template=template,
@@ -175,7 +178,8 @@ class ComputeAdapter(nn.Module):
         return f"{module}.{name}" if module and module != "builtins" else name
 
     def _bound_tensors(self) -> list[torch.Tensor]:
-        return [getattr(self, f"bound_{i}") for i in range(self._bound_count)]
+        found = [getattr(self, f"bound_{i}") for i in range(self._bound_count)]
+        return [value() if isinstance(value, nn.Module) else value for value in found]
 
     @staticmethod
     def _leading_tensor(obj) -> torch.Tensor | None:

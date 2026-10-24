@@ -2,8 +2,10 @@
 
 A method with one tensor output is the generic host op of ``torch.Tensor.<method>`` (bit for bit the method), a product
 method (``matmul``, ``bmm``) the contraction rule; one with a tuple output (``split``, ``unbind``, a ``chunk`` the
-rewrite leaves) is refused by name (``TupleMethodError``, N6). A method with no torch function of its name (``float``,
-``to``), an in-place method and one whose value is not a tensor (``numel``) have no rule.
+rewrite leaves) is refused by name (``TupleMethodError``, N6). So is a factory of the receiver's dtype and device
+(``RECEIVER_FACTORIES``: ``new_zeros``, ``new_ones``, ``new_full``; coverage W8), which reads nothing else of the
+receiver. A method with no torch function of its name (``float``, ``to``), an in-place method and one whose value is
+not a tensor (``numel``) have no rule.
 """
 
 from __future__ import annotations
@@ -14,6 +16,11 @@ import torch
 import torch.fx as fx
 
 from mimarsinan.common.refusal import ToolchainRefusal
+
+
+RECEIVER_FACTORIES = frozenset({"new_zeros", "new_ones", "new_full"})
+"""Tensor methods whose value is a new tensor of their literal sizes and fill, of the receiver's dtype and device: they
+read the receiver's dtype and device only (``new_empty`` is excluded: its values are whatever memory holds)."""
 
 
 def torch_function_of(method: str) -> Optional[Any]:
@@ -36,7 +43,9 @@ def _traced_tuple(node: fx.Node) -> bool:
 def has_method_rule(node: fx.Node) -> bool:
     """A tensor method the method rule converts or refuses by name: a torch function of its name, and a traced tensor
     or tuple value (the analyzer's test for a conversion rule)."""
-    return torch_function_of(str(node.target)) is not None and (traced_tensor(node) or _traced_tuple(node))
+    method = str(node.target)
+    return (torch_function_of(method) is not None or method in RECEIVER_FACTORIES) and (
+        traced_tensor(node) or _traced_tuple(node))
 
 
 class TupleMethodError(ToolchainRefusal, RuntimeError):

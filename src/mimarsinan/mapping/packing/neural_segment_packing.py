@@ -5,13 +5,17 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore, ir_source_to_spike_source
+from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns
 
 
 def neural_segment_to_soft_core_mapping(
     seg_graph: IRGraph,
     weight_banks: Dict[int, Any],
+    *,
+    columnar: bool = False,
 ):
-    """Convert a neural-only segment ``IRGraph`` to ``SoftCoreMapping`` via ``neural_core_to_soft_core``."""
+    """Convert a neural-only segment ``IRGraph`` to ``SoftCoreMapping`` via ``neural_core_to_soft_core``
+    (``columnar``: every soft core's axon sources and the segment's output sources as ``SpikeSourceColumns``)."""
     from mimarsinan.mapping.ir import neural_core_to_soft_core
     from mimarsinan.mapping.packing.softcore.soft_core_mapper import SoftCoreMapping
 
@@ -30,12 +34,14 @@ def neural_segment_to_soft_core_mapping(
 
     for node in seg_graph.nodes:
         if isinstance(node, NeuralCore):
-            sc = neural_core_to_soft_core(node, graph=seg_graph)
+            sc = neural_core_to_soft_core(node, graph=seg_graph, columnar=columnar)
             sc.threshold = node.threshold
             sc.latency = node.latency
             soft.cores.append(sc)
 
-    soft.output_sources = [
-        ir_source_to_spike_source(src) for src in seg_graph.output_sources.flatten()
-    ]
+    outputs = seg_graph.output_sources.flatten()
+    soft.output_sources = (
+        SpikeSourceColumns.from_ir_sources(outputs) if columnar
+        else [ir_source_to_spike_source(src) for src in outputs]
+    )
     return soft

@@ -39,6 +39,7 @@ from mimarsinan.torch_mapping.converter_handlers.module_call_mixin import Module
 from mimarsinan.torch_mapping.converter_handlers.refusals import BatchAxisLayoutError
 from mimarsinan.torch_mapping.converter_handlers.rules.method_rule_mixin import MethodRuleMixin
 from mimarsinan.torch_mapping.converter_handlers.shape_value_mixin import ShapeValueMixin
+from mimarsinan.torch_mapping.converter_handlers.symbolic.batch_free import BatchFreeValues
 from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import ProgramPurity
 from mimarsinan.torch_mapping.fx_shape_utils import fx_literal_int
 
@@ -95,6 +96,7 @@ class MapperGraphConverter(
         self._node_to_attr: Dict[fx.Node, Any] = {}
         self._shape_values: Dict[fx.Node, Any] = {}
         self._batch_layouts = BatchLayouts(graph_module, purity)
+        self._batch_free = BatchFreeValues(graph_module)
         self._absorbed: Set[str] = set()
 
     def convert(self, report: RepresentabilityReport) -> ModelRepresentation:
@@ -107,6 +109,9 @@ class MapperGraphConverter(
 
         output_mapper = None
         for node in self.gm.graph.nodes:
+            if node in self._batch_free.nodes:  # every reader takes it as a bound operand (``_batch_free_operand``)
+                self._node_to_mapper[node] = None
+                continue
             if self._guarded_copy(node):
                 pass  # a copy the rule of a write relies on: a host op checking it (review round 16)
             elif node.op == "placeholder":
@@ -147,6 +152,9 @@ class MapperGraphConverter(
             isinstance(args, (tuple, list)) and args and isinstance(args[0], fx.Node)) else None
         if returned is None:
             return None
+        if returned in self._batch_free.nodes or returned.op == "get_attr":
+            raise BatchAxisLayoutError(returned, "the output is computed from parameters, buffers and literals only, so "
+                                                 "it has no batch axis")
         self._native_operands(node, [returned])
         return self._get_mapper(returned)
 
@@ -245,12 +253,15 @@ class MapperGraphConverter(
                 dims[d0], dims[d1] = dims[d1], dims[d0]
                 dims = tuple(dims)
             if not dims or dims[0] != 0:  # an activation's refused before (``_require_batch_leading``)
-                raise BatchAxisLayoutError(node, "it moves axis 0 of a value that is not an activation (a parameter "
-                                                 "or buffer), which has no per-sample layout")
+                raise BatchAxisLayoutError(node, "it moves axis 0 of a value that is neither an activation nor "
+                                                 "batch-free (computed from the state by a computation the batch-free "
+                                                 "rule excludes), which has no per-sample layout")
             self._node_to_mapper[node] = PermuteMapper(source, dims)
 
         else:  # unsqueeze, squeeze, expand: the source carried as an alias
             self._node_to_mapper[node] = source
+        if source is None:  # a value of the state the batch-free rule excludes: no mapper, its readers refuse it by name
+            self._node_to_mapper[node] = None
 
     def _get_mapper(self, node: fx.Node):
         if node in self._node_to_mapper:

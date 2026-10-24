@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from typing import Any, FrozenSet, Mapping, Optional
 
 import torch.fx as fx
+import torch.nn as nn
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.torch_mapping.converter_handlers.refusals import node_operator
@@ -53,7 +54,8 @@ from mimarsinan.torch_mapping.converter_handlers.symbolic.imported_code import t
 from mimarsinan.torch_mapping.converter_handlers.symbolic.module_call import call_code_change
 
 __all__ = [
-    "ImpureShapeProgramError", "Impurity", "ProgramPurity", "declared_code_change", "node_impurity", "program_purity",
+    "ImpureShapeProgramError", "Impurity", "ProgramPurity", "attribute_at", "declared_code_change", "node_impurity",
+    "program_purity", "receiver_type",
 ]
 
 _CALLS = ("call_function", "call_method", "call_module")
@@ -85,14 +87,15 @@ class ProgramPurity:
         return self.impurity is None
 
 
-def _attribute(gm: fx.GraphModule, target: str) -> Any:
-    value: Any = gm
+def attribute_at(root: nn.Module, target: str) -> Any:
+    """The attribute of ``root`` at the dotted path ``target`` (a ``get_attr`` or ``call_module`` target)."""
+    value: Any = root
     for part in target.split("."):
         value = getattr(value, part)
     return value
 
 
-def _receiver_type(node: fx.Node) -> Optional[type]:
+def receiver_type(node: fx.Node) -> Optional[type]:
     """The run-time type of ``node``'s first argument, as the tracer's shape propagation recorded it."""
     receiver = node.args[0] if node.args and isinstance(node.args[0], fx.Node) else None
     return receiver.meta.get("type") if receiver is not None else None
@@ -108,7 +111,7 @@ def node_impurity(gm: fx.GraphModule, node: fx.Node, receiver_type: Optional[typ
     """Why ``node`` makes ``gm`` impure (P1, P2; ``receiver_type``: the run-time type of its first argument,
     ``rebound``: ``declared_code_change()``); ``None`` when it does not."""
     if node.op == "get_attr":
-        found = foreign_value(_attribute(gm, str(node.target)))
+        found = foreign_value(attribute_at(gm, str(node.target)))
         return None if found is None else f"a get_attr value that is {found}"
     if node.op not in _CALLS:
         return None
@@ -125,7 +128,7 @@ def program_purity(gm: fx.GraphModule) -> ProgramPurity:
     first: Optional[Impurity] = None
     foreign_modules = set()
     for node in gm.graph.nodes:
-        reason = node_impurity(gm, node, _receiver_type(node), modules, rebound)
+        reason = node_impurity(gm, node, receiver_type(node), modules, rebound)
         module = modules.get(str(node.target)) if node.op == "call_module" else None
         if module is not None and (rebound is not None or foreign_module(module) is not None):
             foreign_modules.add(str(node.target))

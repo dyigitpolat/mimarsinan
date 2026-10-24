@@ -63,8 +63,8 @@ class _Comparison:
             return self.valued(a, True) and not isinstance(b, fx.Node) and _equal(self.value(a), b)
         if isinstance(b, fx.Node):
             return False
-        if type(a) in (tuple, list, torch.Size):
-            return type(b) in (tuple, list, torch.Size) and len(a) == len(b) and all(map(self.same, a, b))
+        if isinstance(a, (tuple, list)):  # FX holds a node's list operand as an ``immutable_list``, a list subclass
+            return isinstance(b, (tuple, list)) and len(a) == len(b) and all(map(self.same, a, b))
         if isinstance(a, dict):
             return isinstance(b, dict) and a.keys() == b.keys() and all(self.same(a[k], b[k]) for k in a)
         if isinstance(a, slice):

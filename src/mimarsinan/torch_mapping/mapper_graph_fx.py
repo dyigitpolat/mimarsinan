@@ -131,12 +131,21 @@ class MapperGraphFxMixin(ConverterContract):
             const = self._get_constant_tensor(arg)
             if const is not None:
                 return BoundArg(_normalize_bound_tensor(const), tuple(const.shape))
+            if arg in self._batch_free.nodes:
+                return self._batch_free_operand(arg)
             mapper = self._get_mapper(arg)
             return None if mapper is None else SourceArg((mapper, arg))
 
         return partition_call(
             node.target if fn is None else fn, node.args, node.kwargs, classify,
         )
+
+    def _batch_free_operand(self, arg: fx.Node) -> BoundArg:
+        """A batch-free value (``symbolic/batch_free.py``) as a bound operand computed at every call, stored as a bound
+        tensor is (``_normalize_bound_tensor``)."""
+        value = self._batch_free.evaluate(arg)
+        stored = _normalize_bound_tensor(value)
+        return BoundArg(stored, tuple(value.shape), self._batch_free.value(arg, tuple(stored.shape)))
 
     def _emit_generic_compute_op(self, node: fx.Node, fn) -> None:
         self._native_operands(node)
@@ -198,7 +207,7 @@ class MapperGraphFxMixin(ConverterContract):
         a host op of the value its shapes were read from, as on w0-base: the anchor is its operand in name only (the
         template reads literals and bound tensors), so the call runs at run time and never at conversion time."""
         template = partition.explicit_template(restore_native_shapes=True)
-        adapter = ComputeAdapter(fn, bound_tensors=partition.bound, extra_args=partition.literals,
+        adapter = ComputeAdapter(fn, bound_tensors=partition.payloads(), extra_args=partition.literals,
                                  kwargs=partition.literal_kwargs, arg_template=template)
         return ComputeOpMapper(self._get_mapper(anchor), adapter, input_shapes=strip_batch(node_output_shape(anchor)),
                                output_shape=strip_batch(node_output_shape(node)), name=node.name)
@@ -216,7 +225,7 @@ class MapperGraphFxMixin(ConverterContract):
         """
         if partition.bound and self._batch_layouts.impurity is not None:
             template = partition.explicit_template(every_bound=True)
-            return ComputeAdapter(fn, bound_tensors=partition.bound, extra_args=partition.literals,
+            return ComputeAdapter(fn, bound_tensors=partition.payloads(), extra_args=partition.literals,
                                   kwargs=partition.literal_kwargs, arg_template=template)
         adapter = ComputeAdapter.from_partition(fn, partition)
         traced = node_output_shape(node)

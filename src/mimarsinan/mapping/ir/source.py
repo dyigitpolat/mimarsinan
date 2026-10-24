@@ -5,6 +5,11 @@ An ``IRSource`` is a pair of ints, so an object array of them pickles at
 ~9.4M of them. Encoding is lossless by construction and refuses anything that
 is not a pure ``IRSource`` array, so a mixed array degrades to the object form
 instead of silently losing entries.
+
+In memory an ``IRSource`` is slotted (coverage W9): 48 B per object instead of
+152 B with an instance dict (Python 3.10), the IR holding about one object per
+input-source entry. A pickle written before the slots (an instance-dict state)
+still loads (``__setstate__``).
 """
 
 from __future__ import annotations
@@ -21,11 +26,17 @@ __all__ = [
 _TAG = "ir_sources_v1"
 
 
-@dataclass
+@dataclass(slots=True)
 class IRSource:
     """Input source: node output, off (-1), network input (-2), or always-on (-3)."""
     node_id: int
     index: int
+
+    def __setstate__(self, state) -> None:
+        """A slot state ``(None, {field: value})``, or a legacy instance-dict state ``{field: value}``."""
+        slots = state[1] if isinstance(state, tuple) else state
+        for key, value in slots.items():
+            object.__setattr__(self, key, value)
 
     def is_off(self) -> bool:
         return self.node_id == -1

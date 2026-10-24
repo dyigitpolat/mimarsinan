@@ -10,6 +10,7 @@ import torch.fx as fx
 
 from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes import RUN_AFTER, observable_write
 from mimarsinan.torch_mapping.fx_rewrites.batch_axis_push_forward import push_batch_axis_forward
+from mimarsinan.torch_mapping.fx_rewrites.batch_merge import push_batch_merge_forward
 from mimarsinan.torch_mapping.fx_rewrites.chunk_to_narrow import split_chunks
 from mimarsinan.torch_mapping.fx_rewrites.rewrite_support import write_ordered
 from mimarsinan.torch_mapping.fx_rewrites.sdpa_decomposition import decompose_sdpa
@@ -143,6 +144,7 @@ def normalize_fx_graph(gm: fx.GraphModule, foreign_modules: frozenset[str] = fro
     if decompose_leaf_modules:
         decompose_sdpa(gm, writes)
     split_chunks(gm, writes)
+    push_batch_merge_forward(gm, writes)  # a batch merged into a window axis, carried split (coverage W7)
     push_batch_axis_forward(gm, writes)
     modules: dict[str, nn.Module] = dict(gm.named_modules())
     graph = gm.graph
