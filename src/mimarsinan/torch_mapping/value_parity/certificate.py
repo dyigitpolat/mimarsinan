@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
-CONVERTER_VERSION = "wave2-cov-w78"
+CONVERTER_VERSION = "wave2-cov-w78-int1"
 """Bumped whenever a conversion rule changes the converted function: a flow stamped otherwise is stale."""
 
 CERTIFICATE_HYPOTHESES: Tuple[str, ...] = (

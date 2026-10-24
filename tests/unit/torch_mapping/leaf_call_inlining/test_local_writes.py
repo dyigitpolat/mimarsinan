@@ -222,6 +222,17 @@ def write_batch_tail(x):
 
 
 @torch.fx.wrap
+def half_overflow(x):
+    """A finite literal beyond float16's range assigned to a float16 local tensor: ``setitem`` rounds it to an
+    infinity, where ``fill_`` and ``full_like`` raise, so no out-of-place form computes it (soundness review S3)."""
+    m = x.new_zeros((4, 4), dtype=torch.float16)
+    m[0] = 70000.0
+    m[1:3, ::2] = -1e10
+    m[3, 1] = 65505.0
+    return x + torch.isinf(m).to(x.dtype).unsqueeze(-1) + m[3:, 1:2].to(x.dtype).unsqueeze(-1)
+
+
+@torch.fx.wrap
 def write_batch_step(x):
     y = x * 2.0
     y[::2, 0] = 1.0
@@ -244,7 +255,8 @@ KEPT = {helper.__name__: (helper, reason) for helper, reason in [
     (write_contiguous_alias, "writes in place"), (write_type_as_alias, "writes in place"),
     (write_to_dense_alias, "writes in place"), (view_read_after_write, "writes in place"),
     (view_kept_across_write, "writes in place"), (tensor_value, "writes in place"),
-    (in_place_arithmetic, "writes in place"), (batch_index, ""), (batch_value, "writes in place")]}
+    (in_place_arithmetic, "writes in place"), (batch_index, ""), (batch_value, "writes in place"),
+    (half_overflow, "holds only by rounding")]}
 
 
 def _traced(factory) -> fx.GraphModule:

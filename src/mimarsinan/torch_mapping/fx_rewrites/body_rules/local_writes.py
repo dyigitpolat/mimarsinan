@@ -4,8 +4,9 @@ A write in place in a body stays the opaque call's own effect (``body_capture`` 
 here: an ASSIGNMENT to a LOCAL tensor. An assignment is ``operator.setitem(t, index, value)``, ``t[index].zero_()``,
 ``t[index].fill_(value)``, ``t.zero_()`` or ``t.fill_(value)``, whose result is not read, with ``index`` a literal
 basic index (integers and slices whose bounds and steps are integer literals or ``None``, at most one per axis) and
-``value`` a literal number. A tensor ``t`` is local when the body allocates it: a call whose aten schema declares no
-alias and no write (``operand_writes.schema_declares_no_alias``: a factory, ``clone``, an arithmetic kernel) or a
+``value`` a literal number (of a floating tensor's range, for ``setitem``: beyond it ``setitem`` rounds where ``fill_``
+raises). A tensor ``t`` is local when the body allocates it: a call whose aten schema declares no alias and no write
+(``operand_writes.schema_declares_no_alias``: a factory, ``clone``, an arithmetic kernel) or a
 Python arithmetic operator on tensors, and whose value in the capture (a FakeTensor, which keeps storage identity)
 holds the storage of no value before it (``x.type_as(x)`` is ``x``). Every assignment to ``t`` is
 rewritten when no node reads ``t``, or a view of it, before ``t``'s last assignment, other than the assignments
@@ -20,10 +21,11 @@ never scatters along the batch axis of ``y[:, k] = v``). Every later read of ``t
 
 Lemma. Under T1 (torch as shipped), the rewritten body computes, at every node the original body's later nodes read,
 the value the original computes there. ``t[index] = v`` with a basic index writes ``v``, converted to ``t``'s dtype as
-``fill_`` converts it, into the view ``t[index]`` and changes no other element of ``t``; ``full_like`` converts ``v`` as
-``fill_`` does, and ``slice_scatter`` (``select_scatter``) returns its input with the slice (the index) along ``dim``
-replaced by its source, the same normalization of bounds as indexing, so the nested form equals ``t`` after the write
-(induction over the entries, from the innermost). No other node observes ``t`` between its allocation and its last
+``fill_`` converts it (``v`` within a floating ``t``'s range, where the two convert alike), into the view ``t[index]``
+and changes no other element of ``t``; ``full_like`` converts ``v`` as ``fill_`` does, and ``slice_scatter``
+(``select_scatter``) returns its input with the slice (the index) along ``dim`` replaced by its source, the same
+normalization of bounds as indexing, so the nested form equals ``t`` after the write (induction over the entries, from
+the innermost). No other node observes ``t`` between its allocation and its last
 assignment, ``t`` holds no storage of an operand, and the assignment's own result is not read, so no read is of a value
 the original wrote and the rewrite does not; reads after the last assignment read the rewritten value. Nothing is
 written in place any more, so rule (d) holds for the rewritten body.
@@ -32,6 +34,7 @@ written in place any more, so rule (d) holds for the rewritten body.
 from __future__ import annotations
 
 import contextlib
+import math
 import operator
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple, cast
 
@@ -164,7 +167,9 @@ def _plan(gm: fx.GraphModule) -> Tuple[Dict[fx.Node, List[Assignment]], Optional
         where = f"its body writes in place ({assignments[0].node.name}: {_name(assignments[0].node)}"
         if not _local(base, [node for node in gm.graph.nodes if order[node] < order[base]]):
             return {}, f"{where}, a tensor the body does not allocate)"
-        rank = len(base.meta["example_value"].shape)
+        dtype, rank = base.meta["example_value"].dtype, len(base.meta["example_value"].shape)
+        if any(a.node.target is operator.setitem and not _holds(dtype, a.value) for a in assignments):
+            return {}, f"{where}, of a literal {dtype} holds only by rounding)"
         if any(len(a.where) > rank or a.node.users or (a.view is not None and len(a.view.users) != 1)
                for a in assignments):
             return {}, f"{where}, at an index or through a view the rewrite does not take)"
@@ -174,6 +179,16 @@ def _plan(gm: fx.GraphModule) -> Tuple[Dict[fx.Node, List[Assignment]], Optional
         if early:
             return {}, f"{where}, and {early[0].name} reads it before its last write)"
     return planned, None
+
+
+def _holds(dtype: torch.dtype, value: Any) -> bool:
+    """``value`` within ``dtype``'s range, or ``dtype`` not floating: ``setitem`` rounds a finite number beyond a
+    floating dtype's range (to an infinity or its largest value), where ``fill_`` and ``full_like`` raise."""
+    if not dtype.is_floating_point or isinstance(value, bool):
+        return True
+    if isinstance(value, float) and not math.isfinite(value):
+        return True
+    return abs(value) <= torch.finfo(dtype).max
 
 
 def _name(node: fx.Node) -> str:

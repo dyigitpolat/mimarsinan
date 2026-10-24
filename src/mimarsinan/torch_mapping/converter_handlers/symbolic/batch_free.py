@@ -20,10 +20,10 @@ and of the receiver's dtype and device alone, which are the program's (the conve
 on its device, and a body Dynamo captured is specialized to them). Its receiver is not part of the computation: a
 metadata read is batch-free whatever declared operators compute its receiver (a receiver a call outside the declared
 set reaches may change its dtype at run time, so it does not count), and the converted model computes it on a
-zero-element
-stand-in of the receiver's traced dtype on the program's device, a buffer of the shared state, so it follows the
-converted model's casts and moves as the state does (Swin's attention mask, ``x.new_zeros((pad_H, pad_W))`` filled at
-literal indices, computed out of place by ``fx_rewrites/body_rules/local_writes``).
+zero-element stand-in of the receiver's traced dtype on the program's device, a buffer of the shared state in a child
+named apart from every attribute of the program (no copied value shares its path), so it follows the converted model's
+casts and moves as the state does (Swin's attention mask, ``x.new_zeros((pad_H, pad_W))`` filled at literal indices,
+computed out of place by ``fx_rewrites/body_rules/local_writes``).
 
 Lemma. Under the trust base (T1-T3) and trace fidelity, a batch-free value is, at every batch and input of a call, the
 value its traced operators compute from the state as it stands at the start of the call (and from the program's dtype
@@ -265,11 +265,15 @@ class BatchFreeValues:
         return self._programs[value]
 
     def _stand_in(self, node: fx.Node) -> str:
-        """The shared state's stand-in buffer of the dtype ``node`` (a metadata read) reads, made on first use."""
+        """The stand-in of the dtype the metadata read ``node`` reads, in a child no attribute of the program names."""
+        holder = "_receivers"
+        while hasattr(self._gm, holder):
+            holder += "_"
+        child = cast(nn.Module, self._state._modules.setdefault(holder, nn.Module()))
         name = f"_receiver_{str(node.args[0].meta['tensor_meta'].dtype).split('.')[-1]}"  # type: ignore[union-attr]
-        if name not in self._state._buffers:
-            self._state.register_buffer(name, stand_in(node, graph_device(self._gm)))
-        return name
+        if name not in child._buffers:
+            child.register_buffer(name, stand_in(node, graph_device(self._gm)))
+        return f"{holder}.{name}"
 
     def _install(self, target: str, *, module: bool) -> None:
         """A copy of the program's ``target`` in the shared state, at its path (one memo, so a tie stays one tensor);
@@ -280,10 +284,12 @@ class BatchFreeValues:
             if not isinstance(getattr(parent, part, None), nn.Module):
                 parent.add_module(part, nn.Module())
             parent = getattr(parent, part)
-        existing = getattr(parent, last, None)
+        existing, source = getattr(parent, last, None), attribute_at(self._gm, target)
         if existing is not None and not (module and type(existing) is nn.Module):
+            if isinstance(source, (torch.Tensor, nn.Module)) and self._memo.get(id(source)) is not existing:
+                raise RuntimeError(f"BatchFreeValues: the copied state holds at {target!r} a value not the copy of it")
             return
-        copied = copy.deepcopy(attribute_at(self._gm, target), self._memo)
+        copied = copy.deepcopy(source, self._memo)
         if isinstance(copied, nn.Parameter):
             parent.register_parameter(last, copied)
         elif isinstance(copied, torch.Tensor):

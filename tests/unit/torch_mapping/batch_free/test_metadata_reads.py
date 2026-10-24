@@ -91,7 +91,35 @@ class OpaqueReceiver(_Base):
         return self.finish(y + y.new_ones(C))
 
 
+class CollideMetaFirst(_Base):
+    """A root parameter with the name a float64 stand-in would take (``_receiver_float64``), read by a batch-free
+    value after the metadata read: the value reads the parameter, never the stand-in (soundness review S1)."""
+
+    def __init__(self):
+        super().__init__()
+        self._receiver_float64 = nn.Parameter(torch.randn(C))
+
+    def forward(self, x):
+        y = self.a(x)
+        return self.finish((y + y.new_ones(C)) * self._receiver_float64.sum())
+
+
+class CollideConeFirst(_Base):
+    """The same name on a parameter a batch-free value reads before the metadata read: the stand-in is still a
+    zero-element tensor of its receiver's dtype, beside the parameter (S1)."""
+
+    def __init__(self):
+        super().__init__()
+        self._receiver_float64 = nn.Parameter(torch.arange(C, dtype=torch.float32), requires_grad=False)
+
+    def forward(self, x):
+        y = self.a(x)
+        y = y + self._receiver_float64 * 2.0
+        return self.finish(y + y.new_full((4, 1), 0.5))
+
+
 READS = {"zeros": Zeros, "ones": Ones, "full": Full}
+COLLIDING = {"meta_first": CollideMetaFirst, "cone_first": CollideConeFirst}
 
 
 def _free(factory) -> tuple:
@@ -138,8 +166,44 @@ def test_the_stand_in_follows_the_converted_models_cast():
     gm, found = _free(Full)
     values = BatchFreeValues(gm)
     assert torch.equal(values.evaluate(found[0]), torch.full((4, 1), 0.1, dtype=torch.float64))
-    stand_ins = {name: (b.dtype, b.numel()) for name, b in values._state.named_buffers() if "_receiver_" in name}
+    stand_ins = {name.rsplit(".", 1)[-1]: (b.dtype, b.numel()) for name, b in values._state.named_buffers()
+                 if "_receiver_" in name}
     assert stand_ins == {"_receiver_float64": (torch.float64, 0)}, stand_ins
+
+
+@pytest.mark.parametrize("name", sorted(COLLIDING))
+@pytest.mark.parametrize("contract", CONTRACTS)
+def test_a_state_value_named_as_a_stand_in_converts_exactly(name, contract):
+    _, found = _free(COLLIDING[name])
+    assert len(found) == 1, found
+    assert_converted_exact(native(COLLIDING[name]), SHAPE, contract, batches=(1, 2, 3, 9, 20))
+
+
+@pytest.mark.parametrize("name", sorted(COLLIDING))
+def test_the_value_program_of_a_state_value_named_as_a_stand_in_is_exact(name):
+    assert_value_program_exact(native(COLLIDING[name]), SHAPE, batches=(2, 3))
+
+
+def test_the_stand_ins_live_apart_from_every_copied_value():
+    """The stand-in's path is named apart from every attribute of the program; the parameter of its name is copied at
+    its own path, unchanged (S1)."""
+    gm, found = _free(CollideMetaFirst)
+    values = BatchFreeValues(gm)
+    values.evaluate(found[0])
+    [read] = [node for node in batch_free_nodes(gm) if node.op == "call_method" and node.target == "sum"]
+    assert torch.equal(values.evaluate(read), gm._receiver_float64.detach().sum())
+    stand_ins = [name for name, b in values._state.named_buffers() if b.numel() == 0]
+    assert len(stand_ins) == 1 and "." in stand_ins[0] and not hasattr(gm, stand_ins[0].split(".")[0]), stand_ins
+
+
+def test_a_copied_path_holding_another_value_is_refused():
+    """``_install`` keeps an attribute already at a path only when it is the copy of the program's value there."""
+    gm, found = _free(CollideMetaFirst)
+    values = BatchFreeValues(gm)
+    values._state.register_buffer("_receiver_float64", torch.zeros(0, dtype=torch.float64))
+    [read] = [node for node in batch_free_nodes(gm) if node.op == "call_method" and node.target == "sum"]
+    with pytest.raises(RuntimeError, match="not the copy"):
+        values.evaluate(read)
 
 
 def test_a_factory_reading_the_input_keeps_the_base_path_and_stage_2_is_refused_by_name():
