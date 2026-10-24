@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from mimarsinan.config_schema.registry.decision_classes import COST_ONLY
 from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
@@ -54,5 +56,8 @@ _UNSEEN_BY_THE_SHAPE_ONLY_PLANE = ("pruning", "lif_depth_balancing_relays")
 
 
 def _multiplexing_legal(cfg):
-    """Only false where a declaration changes the executed cores the shape-only plane plans: both planes refuse it."""
-    return (False,) if any(cfg.get(key) for key in _UNSEEN_BY_THE_SHAPE_ONLY_PLANE) else (False, True)
+    """Only false where a declaration changes the executed cores the shape-only plane plans: both planes refuse it.
+    An operand core type (N2) is one: the shape-only plane keeps a product as a host op that the executed plane lowers
+    onto operand cores, whose payload is rewritten every pass, so no run of passes serves one copy of it."""
+    operand = any(isinstance(c, Mapping) and c.get("operand") is not None for c in cfg.get("cores") or ())
+    return (False,) if operand or any(cfg.get(key) for key in _UNSEEN_BY_THE_SHAPE_ONLY_PLANE) else (False, True)

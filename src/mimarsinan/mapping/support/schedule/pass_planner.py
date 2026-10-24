@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.packing.canonical import OPERAND_ROLE
+from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError
 from mimarsinan.mapping.layout.layout_types import (
     LayoutHardCoreType,
     LayoutSoftCoreSpec,
@@ -157,16 +158,18 @@ def plan_segment_passes(
     it is declined rather than reported as an infeasible layout.
     ``coalescing_group_ids`` (aligned with *softcores*) keeps a coalesced
     wide-fan-in's fragments in ONE pass on the capacity path; [W04] absent, the
-    specs' own groups (``coalescing_group_id``), so both planes keep them alike.
-    A segment holding a dynamic operand bank's instances takes the capacity split (N2), under a declared
-    ``position_multiplexing`` too.
+    specs' own groups (``coalescing_group_id``), so both planes keep them alike. A segment holding a dynamic
+    operand bank's instances takes the capacity split (N2) and refuses a declared ``position_multiplexing``.
     """
     if coalescing_group_ids is None and any(getattr(s, "coalescing_group_id", None) is not None for s in softcores):
         coalescing_group_ids = [getattr(s, "coalescing_group_id", None) for s in softcores]
     # N2: an operand bank's payload is rewritten every pass (design §2.7), so residency never composes over one, and
-    # neither does W02's one copy serving positions in turn (a run's later passes are weight-resident).
+    # neither does W02's one copy serving positions in turn (a run's later passes are weight-resident): refused.
     operand = any(getattr(s, "core_role", None) == OPERAND_ROLE for s in softcores)
-    if position_multiplexing and not operand and shares_a_bank(softcores, shares):
+    if position_multiplexing and operand:
+        raise PositionMultiplexingError("position_multiplexing serves one copy of a bank over passes, and a dynamic "
+                                        "operand bank's payload is rewritten every pass (N2): refused beside one")
+    if position_multiplexing and shares_a_bank(softcores, shares):
         mux = multiplexed_segment_passes(
             softcores, core_types, budget=budget, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
             max_schedule_passes=max_schedule_passes, shares=shares, coalescing_group_ids=coalescing_group_ids)
