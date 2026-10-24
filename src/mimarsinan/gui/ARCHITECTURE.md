@@ -213,6 +213,14 @@ review evidence set: per-section shots, the Co-Design interaction sequence,
 per-mode switches, the locked/legal-subset fields, the concrete green derived
 values, the template flow, and both error/remedy flows.
 
+## Layout verification on the walk's segments (Wave 2 closure)
+
+From the closure unit's step 1 (IE-1). `server/routes_layout.py` (`/api/hw_config_verify`) passes the layout walk's
+builder segments to the verifier (`verify_hardware_config(runs=layout_result.runs)`), so the preview plans the
+segments the build plans. The wizard posts every field a core type declares (`static/js/wizard/hw_request.js`,
+`hwVerifyBody`; carried minor m1 of the closure), so a per-axon or bias-free core type previews as the deployment packs
+it.
+
 ## Key files
 | File | Purpose |
 |---|---|

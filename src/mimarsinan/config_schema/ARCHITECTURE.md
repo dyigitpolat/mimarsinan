@@ -180,6 +180,24 @@ function-bearing; a list of `{layers: [glob, ...], weight_bits}`), and `entries_
 function-bearing core-type field `weight_bits` (absent: the platform `weight_bits`); the consumer is
 `mapping/support/core_types.py`.
 
+## Position multiplexing and the core-type door rules (Wave 2 pack and integration)
+
+From the pack unit and the integration steps (fragments `11_wave2/pack/arch_fragments/config_schema.md`,
+`11_wave2/integration/pack/arch_fragments.md`, `11_wave2/integration/lanes/arch_fragments.md`).
+`registry/entries_residency.py` adds `position_multiplexing` (platform_constraints, group mapping_strategy, BOOL,
+passthrough, relevant under `allow_scheduling`, no default: `defaults.py` lists it with the keys whose absence leaves
+every program byte for byte). Decision class (`registry/decision_classes.py`): cost_only (owner approval 2026-10-23,
+W02); the cost-only set has 32 paths on the integrated tree (`FROZEN_COST_ONLY` in
+`tests/unit/config_schema/test_decision_classes.py`, the theorem box fixture's `cost_only` list). Its legal set
+(`_multiplexing_legal`) admits only false where the run changes the executed cores the shape-only plane plans: an
+operand core type (pack integration), and `pruning` or `lif_depth_balancing_relays` as the run reads them
+(`_run_value`: the declared value, else the conversion recipe's for the run's mode, which arms the relays on LIF), so
+both planes refuse a declared true there by name (`legal_value_set`).
+`registry/core_type_doors.py` holds the core-type door rules both doors call over the layout they judge, beside the
+platform bias rule: `platform_sign_errors` (per-axon weight sign under float weights or beside an operand core type;
+moved from `entries_write`, which re-exports it) and `platform_lane_errors` (executed lanes beside an operand core type,
+`mapping/lanes/declaration.lane_operand_conflict`); `declaration_judge._layout_errors` calls both.
+
 ## Key files
 | File | Purpose |
 |---|---|

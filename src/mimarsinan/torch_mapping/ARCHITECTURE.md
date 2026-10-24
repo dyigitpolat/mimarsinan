@@ -43,6 +43,71 @@ other op flows through one generic host `ComputeOpMapper` path.
 (a lane absorbs it) as on chip: a perceptron reading it reads a core, so it is no segment entry. The default (empty)
 is the walk as before.
 
+## Batch-free values, batch-merge push-forward and shape-specialized inlining (Wave 2 coverage W6 to W8)
+
+From the Swin unit (coverage W6 to W8; fragments `11_wave2/swin/arch_fragments/torch_mapping.md` and
+`11_wave2/swin/w78/arch_fragments/torch_mapping.md`). No new direct child; new files under
+`converter_handlers/symbolic/` (`batch_free.py`) and two subpackages under `fx_rewrites/` (`batch_merge/`,
+`body_rules/`).
+
+**Batch-free values (W6).** `converter_handlers/symbolic/batch_free.py`, `batch_free_nodes`, names every call node
+with no placeholder upstream whose every node upstream, itself included, is a `get_attr` of a declared value or a
+declared call (`purity.node_impurity`) that writes in place no value of the state and draws no random number (an aten
+operator tagged `nondeterministic_seeded`, or any change of the random state while it runs on the program's state at
+conversion), and that no node of the program touches otherwise than by reading it (no write of the state it reads or
+of a view of it, no call outside the declared set reading that state, no `read_after` of one of its values, no
+`RUN_AFTER`, `KEPT_OPERANDS` or `COPY_GUARD` mark naming one); its module docstring states the lemma (under T1-T3 and
+trace fidelity, computing the value again from the same state when any reader runs gives the value that reader reads
+natively). `BatchFreeValues` (the converter's `_batch_free`) holds the tensor-valued ones, which
+`MapperGraphConverter.convert` maps to no mapper: every reader takes one as a bound operand computed at every call
+(`MapperGraphFxMixin._batch_free_operand`, a `BoundArg` with its `value`; `StructuralConvertMixin._per_sample_constant`
+for a concatenation operand), so every rule that accepts a parameter or buffer operand accepts it. The computing
+module is `mapping/support/batch_free_value.BatchFreeValue` over an `fx.GraphModule` of the traced operators, built on
+one copy of the state the batch-free values read (one deep-copy memo), so gradients reach that copy (Swin's and
+MaxViT's relative-position tables, Swin V2's position-bias MLP). An output computed from the state alone is refused by
+name (`BatchAxisLayoutError`). `mapper_graph_converter.py`: a permute or transpose moving axis 0 of a value that is
+neither an activation nor batch-free is refused by name (`BatchAxisLayoutError`); a batch-free node has no mapper, and
+any other value with no mapper (a value of the state the rule excludes) is refused by its reader as an unresolved
+operand. A METADATA READ (W8), a receiver factory (`method_rules.RECEIVER_FACTORIES`: `new_zeros`, `new_ones`,
+`new_full`) whose operands but the receiver are literals, reads only the receiver's dtype and device: it is batch-free
+whatever declared operators compute its receiver, and `BatchFreeValues` computes it on a zero-element stand-in buffer
+of the receiver's traced dtype, `_receiver_<dtype>` in a child of the shared state named apart from every attribute of
+the program (`_receivers`, extended by underscores until free); `_install` keeps an attribute at a copied path only when
+it is the copy of the program's value there (integration fix of the soundness review's S1). A receiver factory converts
+by the method rule as the host op of `torch.Tensor.<method>`; a value of it without a batch axis is refused at stage 2.
+`value_parity/certificate.py`: `CONVERTER_VERSION` is `wave2-cov-w78-int1` (W6 set `wave2-cov-w6`, W7/W8
+`wave2-cov-w78`, the Swin integration the S1 and S3 fixes); `value_parity/program_binding.py` reads a `get_attr` value
+through `symbolic.purity.attribute_at`.
+
+**Batch-merge push-forward (W7).** `fx_rewrites/batch_merge/`: a `view`, `reshape` or `flatten` of a batch-leading value
+whose proved output extents are `(a*B, m...)`, `a >= 2`, merges the batch into another axis, sample-major; the region of
+values computed from it by operations independent along the merged axis is carried split, `(B, a, m...)`, until a
+reshape of a value merged on axis 0 restores a batch-leading value (`push_forward.py`, its lemma). The axis rules are
+`axes.py` and `layouts.py` (layouts by the proved output extents, pointwise operations with torch's `pointwise` tag,
+operations on trailing axes, matrix products, operations along a named axis other than the merged one, concatenation
+along another axis, extent, dtype and device reads); a region is rewritten when every reader of every merged value in
+it is taken, no node of it is ordered by a write in place, every merged value's proved extents agree with its rule and
+every split value runs on metadata (`rewrite_support.trace_meta`, under `conversion_probe.guarded`; any failure rolls the
+region back). The batch domain's proof (`BatchLayouts`, `BatchLayouts.extents`) is computed only when a reshape of a
+value computed from the input changes its traced leading extent; a merged value read by an op mixing the merged axis
+stays refused by name. Then `batch_axis_push_forward.py` moves the batch back to axis 0 of the split heads.
+
+**Shape-specialized inlining (W8, sign-off L8).** Leaf-call inlining rule (b): every guard, deferred runtime assert,
+replacement and range of the capture, and every symbolic operation and static evaluation torch makes during it, is
+proved for every batch B >= 1 in the converter's own affine batch domain (`fx_rewrites/body_rules/guard_proof.py`
+translates a statement into `batch_domain.evaluate` and proves it only when the domain's value is `True`;
+`body_rules/symbolic_record.py` records every `SymNode` operation, static evaluation and guard decision of one capture
+under a lock; `body_rules/folds.py` records every value Dynamo folds into the body's Python by one of its handlers and
+requires each to be the helper's own native answer; a handler this torch does not have makes the capture fail, so every
+call stays opaque). Rule (d): the body writes nothing in place once every assignment of a literal number to a tensor
+the body allocates is computed out of place (`body_rules/local_writes.py`: `setitem` at a literal basic index, or
+`zero_`/`fill_` of the tensor or of one literal index of it, nested `torch.slice_scatter` and `torch.select_scatter` of
+`torch.full_like` of the indexed view); a `setitem` of a finite literal beyond a floating base's range keeps the call
+opaque, since `setitem` rounds it where `fill_` and `full_like` raise (integration fix of the soundness review's S3).
+`body_comparison.py` compares a list operand element by element. `fx_shape_utils.broadcasts_to` holds only where the
+operands broadcast to the output at the trace batch and with a batch of 2. The `slice_scatter` and `select_scatter`
+kernels have the batch rule `SAME` (`converter_handlers/symbolic/batch_domain/kernels.py`).
+
 ## Dependencies
 - **common** — `common.refusal`: `ToolchainRefusal`, the base every refusal here inherits (keeping its
   builtin base), `is_toolchain_refusal` and `refusal_in_chain`, which the probes use to pass a refusal on by

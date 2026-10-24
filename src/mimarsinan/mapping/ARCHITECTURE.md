@@ -153,6 +153,30 @@ its bank's whole block), carried by its soft core and every fragment and summed 
 crossbar census subtracts them (`crossbar_utilization.CoreOccupancy`: the operand is the lane's operand port, priced
 as lane work, not as cells, MACs or programming bytes), and the output stage names the residual array overhead.
 
+## Lanes beside per-axon sign, operand core types and pruning (Wave 2 integration)
+
+From the lanes integration (fragment `11_wave2/integration/lanes/arch_fragments.md`) and the N7 consolidation step.
+`lanes/declaration.lane_operand_conflict` states why executed lanes (`onchip_arithmetic` classes on the integer path)
+and an operand core type (N2) do not share a chip on this tree (the lane law solver binds no operand bank's payload
+grid, groups or stamp); the doors, `support/operand_lowering.operand_declaration` and
+`export/law_solver.install_readout_laws` read it. `lanes/law/lane_grids.assign_lane_grids` keys each lane owner on N2's
+grid key `(owner, 0)` in the one union-find of `export/law_grids`. `packing/softcore/sign_split.physical_law` is a split
+core's lane law in its physical rows (each fused operand row on the first physical row of its origin), passed by
+`HardCore` to `ir/core_law.merge_core_law` (`law=`); soft cores keep laws in logical rows.
+`packing/type_binding.refuse_typed_multi_pass` (moved from `hybrid_build_scheduled`): a segment of several passes on
+cores bound to their type's width refuses by name. `export/law_solver.solve_ir_laws` takes N2's grids and floors and
+the lanes' real bias and identity outputs in one call; an identity output whose operand product absorbed a ReLU refuses
+by name (`OutputLawError`).
+
+**Pruned offset readers (consolidation N7).** Beside an offset grid whose value 0 is `k` whole steps of the reader's
+input grid (`export/entry_offsets.whole_step_code`, the grids' own test of value 0), the offset multiplier is
+`M_o = k M0` (`entry_offsets.offset_multipliers`), so a row reading value 0 adds exactly 0 to the accumulator; the plain
+solver's fold leaves out a bank slice's pruned rows (`entry_offsets.host_row_weight_sums`, as the lane fold does);
+compaction records the per-column magnitude of the rows it drops (`pruning/pruning_apply.record_dropped_rows`,
+`PRUNED_ROW_MAGNITUDE`), which the reader's accumulator bounds include (`entry_offsets.offset_reader_bounds`); and a
+reader whose ADC rounds or clamps the dropped rows' term is refused by name
+(`entry_offsets.refuse_inexact_offset_readers`, `PrunedOffsetReaderError`), at the end of both law solvers.
+
 ## Core types with their own weight bits (Wave 2 WI-5g)
 
 A core type of `cores` may declare `weight_bits`, the width of its cells, and `layer_core_types` is the layer-to-type
@@ -173,6 +197,129 @@ keys on it), `HardCoreMapping.map` packs each width's soft cores from that width
 their width, and a multi-pass plan on typed cores is refused by name (`hybrid_build_scheduled`: the pass planner plans
 shape-only specs against one core budget, blind to each type's width). The layout packer and the capacity dry run
 stay width-blind (a bound on the declared cores, not a placement).
+
+## Builder segments, delayed carry slices and the value NoC census (Wave 2 closure)
+
+From the closure unit's step 1 (G5 IE-1 to IE-3, KA-G3-1). `noc/fragments.py`: `LayoutNocFragments.runs` holds, per
+spec, the builder segment (IR run, `support/residency_rules.spec_runs`) the passes were planned in;
+`collect_noc_fragments` sets it from `runs=` or the walk's program graph, and leaves it None for a caller that passes
+neither (the specs' depth segments, as before). `spec_segments(softcores, runs)` is the one reading of a spec's segment
+for every consumer of the fragments: `execution_stage_latencies` (with the wire census, a pinned pass at its pinned
+span), `execution_stage_placements(runs=)` and `delayed_carry_wires` (the fragments' own runs when none is given).
+`support/schedule/pass_carry.py`: `delayed_input_slices(stages)` names, on a built program, each carried input slice a
+pass reads beyond its first slice of that producer (one per delivery delay, `packing/pass_timing.py`);
+`carry_census_from_spans` counts such slices (`extra_in=`) as extra boundary-in crossings at the producer's width, so
+`pass_carry_census` (the record) and the candidate census (`delayed_carry_wires`) count the same crossings;
+`carried_softcore_spans(segment_of=)` reads the fragments' segmentation. `packing/pass_timing.py`:
+`executed_core_latencies(hcm)` gives each hard core's executed latency (`ChipLatency`, pins honoured) and restores the
+stored latencies, so `off_clock_readers` (the plan-time nevresim clock refusal, run by the hard-core mapping step) never
+rewrites the built program. `noc/value_traffic.py`: `stage_value_noc_wire_hops(stages, cores_per_tile, mesh_height)` is
+the built program's value NoC census (per neural stage, every distinct (source core, neuron) a core reads from another
+core of the stage, over the XY hops of the SANA-FE geometry), the record twin of `value_noc_wire_hops`.
+`verification/verifier/mapping_verifier_types.py`: `MappingVerificationResult.runs` (filled by
+`verify_soft_core_mapping` from its walk); `layout/layout_plan.build_layout_plan` passes it to `verify_hardware_config`.
+
+## Batch-free values, columnar axon sources and functional weight-op MACs (Wave 2 coverage W6 to W10)
+
+From the Swin unit (coverage W6, W9 and W10; fragments `11_wave2/swin/arch_fragments/mapping.md` and
+`11_wave2/swin/w910/arch_fragments/mapping.md`). No new direct child; new files `support/batch_free_value.py` and
+`support/spike_source_columns.py`.
+
+`support/`: a bound slot of a `ComputeAdapter` may be a module instead of a tensor, called at every call, its value the
+bound operand (W6: `batch_free_value.BatchFreeValue` runs the traced operators computing the value, in eval mode, from
+its own copy of the state they read, and returns the stored form of a bound tensor); `call_template.BoundArg.value`
+carries such a module through `partition_call` (`CallPartition.computed`, `CallPartition.payloads()`).
+`batch_free_value.deployed_payload` is the deployed program's form of a payload: an adapter with a `BatchFreeValue`
+slot gets a copy whose every such slot is its value at lowering, a frozen bound tensor; any other module is itself.
+`mappers/`: `ComputeOpMapper._map_to_ir` emits `deployed_payload(self.module)`, so the IR's host op holds a batch-free
+operand as a constant while the converted model keeps computing it (gradients reach its state); every other IR is
+unchanged. `support/spike_source_columns.py` (W9): `SpikeSourceColumns` holds a core's per-axon spike sources as three
+columns (`core`, `neuron` int64, `flags` uint8 with the packed pickle's bits), 17 B per axon against about 104 B for a
+slotted `SpikeSource` and its neuron int; it reads like a list of `SpikeSource` (an index gives a read-only
+`ColumnSpikeSource`) and like the object array a segment's output sources were, rewrites whole (`remapped`, `padded`,
+`concatenate`, `assign`), and its spans and packed pickle payload equal `compress_spike_sources` and
+`encode_spike_sources_packed` of the same sources. `PlacementNeuronMap` is the hard-core mapping's `(soft core, neuron)
+-> (hard core, neuron)` map held per placement, a `Mapping` equal to the per-neuron dict it replaces, with a vectorized
+`lookup`. The forward-MAC SSOT (`module_macs.py`, W10) counts a host op evaluating a product in functional form
+(`F.linear`, `matmul` in every spelling, `mm`, `bmm`, a two-operand `einsum`) at every output element times the extent
+the call sums over, its operand shapes read through the adapter's own argument template on meta stand-ins, so
+`count_host_ops` and `estimate_onchip_fraction(metric='macs')` both count Swin's projections.
+
+`ir/`: `IRSource` is a slotted dataclass (W9, 48 B per object instead of 152 B); a legacy instance-dict pickle still
+loads (`__setstate__`). A materialised view's sources share one int object per index value
+(`layout/layout_source_view.shared_indices`), and a gather plan (`gather_plan.py`) holds int64 index columns built in
+one vectorized pass. `packing/`: the identity build (`build_identity_hybrid_mapping`, `_flush_neural_segment(identity=
+True)`) builds every soft core's axon sources and the segment's output sources columnar
+(`neural_segment_to_soft_core_mapping(columnar=True)`, `neural_core_to_soft_core(columnar=True)`); compaction
+(`softcore/compaction.py`), `HardCore.add_softcore` and `HardCoreMapping._finalize_sources` rewrite columns whole with
+the same values as their per-source loops; a packed build keeps lists. Under per-axon sign
+(`softcore/sign_split.split_soft_core`) a columnar soft core's physical rows take their origin's entry
+(`SpikeSourceColumns.take`), so the split core stays columnar (the seam the Swin integration fixed); a listed soft core
+duplicates each pair's second source as a distinct object, as before. `latency/`: `ChipLatency` (`latency/chip.py`, W9)
+reads each core's axon sources once per instance as five arrays (`_source_arrays`: core, neuron, off, input, always
+on; a columnar core's own `SpikeSourceColumns.source_arrays`), and its delays, shiftable classification, consumer map
+and latency invariant read those arrays (`_arrays`, `_live_source_cores`).
+
+## Neuron split, position multiplexing, plane parity and physical tiles (Wave 2 pack)
+
+From the pack unit (WI-5f, W02, W04 and its fix round; fragments `11_wave2/pack/arch_fragments/mapping.md` and
+`11_wave2/integration/pack/arch_fragments.md`). No direct child of `mapping/` is added, removed or renamed.
+
+**Neuron split before axon coalescing (WI-5f).** `packing/greedy/split.py` `_try_split_into_fused`, the engine's last
+decision before its refusal in `greedy/pack.py`: a soft core wider than every core and holding more neurons than every
+type that can coalesce its axons is cut at the neurons of the widest coalescing type whose fused core accepts the window
+(`_Window`, checked before any split is made), the fragment is placed on a fused core of ceil(a / A) cores and the
+remainder returns to the queue. It runs only where the engine raised before, under `allow_neuron_splitting` and
+`allow_coalescing`, so every program that packed before packs as before (the oracle
+`tests/unit/mapping/packing/reference_engine.py` carries the same branch). Fragments keep their bank and neuron window
+(`bank_neuron_slice`); `support/schedule/schedule_split.CapacityBound` counts such a core as ceil(n / N) x ceil(a / A)
+cores, under declared coalescing only.
+
+**Position multiplexing (W02).** `support/position_multiplexing.py`: the declared cost-only decision
+`position_multiplexing` composes a segment that holds a shared bank's instances as one copy per bank served in turn:
+per dependency level, the level's owned cores take the validated capacity split, and its copy keys (bank, extent) of
+one instance count run together while one instance of each packs on the declared cores; a run of n instances is n
+passes of identical shape multisets, the first programs the copies (`run_heads`), every later one is resident.
+`support/schedule/pass_planner.SegmentPassPlan.run_heads` carries it to both planes (`resident_flags`), to the builder
+(`packing/hybrid_build_scheduled._flush_scheduled_subsegments`, with the bank-sharing flags of
+`packing/schedule_bank_clustered.multiplexing_shares`) and to the shape-only answers (`plan_program_passes`,
+`collect_noc_fragments`, `compute_mapping_stats`, `verify_hardware_config`, `build_layout_plan` take the keyword).
+`packing/schedule_bank_clustered.mark_multiplexed_residency` verifies, per physical core, that a pass after its run's
+first holds exactly the first pass's bank regions before marking it weight-resident. Refused by name
+(`platform/mapping_structure.PositionMultiplexingError`): more passes than `max_schedule_passes`, a copy that packs on
+no declared core, a declaration without `allow_scheduling` or with a `residency_plan`, a segment whose bank instances
+IR elimination compacted into owned cores, and a segment holding a dynamic operand bank's instances (the pass planner,
+at the pack integration: an operand bank's payload is rewritten every pass, so no run of passes serves one copy of it).
+`ChipCapabilities.position_multiplexing` is declared-only.
+
+**Plane parity (W04).** `layout/`: `pack_layout` is the hard-core packer on shapes: it runs the one greedy engine with
+fusion wired only under declared coalescing (`run_placement(allow_coalescing=)`, as `HardCoreMapping.map` does) and
+keeps a wide spec whole, so a fused core is one used core of k x A axons on both planes. A spec carries what the engine
+reads on a soft core (`LayoutSoftCoreSpec.weight_bank_id`, `LayoutSoftCoreSpec.coalescing_group_id`); a layout core
+notes the banks it hosts (`note_resident_bank`) and its placed regions (`LayoutPackingResult.core_regions`).
+`packing/infeasibility_proofs.CoreCapacityRefusal` (a `ToolchainRefusal` and `RuntimeError`, with `named_message` and
+`refusal_name_of_message`) is the one capacity refusal of both planes: the greedy engine raises it where it had no core
+left, `_validate_coalescing_budget` for a wide core no declared count can coalesce, the scheduled builder for a segment
+the planner reports infeasible, and `collect_noc_fragments` for an unschedulable candidate (was `ValueError`);
+`PlannedPassPackingRefusal` remains the guard for a planned pass the packer cannot place. The builder's pass planner
+packs each IR core under the class the packer reads on its soft core (`packing/segment_specs._segment_specs`, moved
+from `hybrid_build_pool` at the pack integration and re-exported there, beside `segment_specs_for`; `BASIS_PROVENANCE`).
+The greedy engine's core-state index (`greedy/used_index.UsedBuckets`) holds its states per (group, class), the group
+being every core or one weight bank among the cores hosting it (`greedy/pack._best_used_core`). The bank-clustered
+composition is adopted only when its later passes place regions inside pass 0's
+(`support/schedule/bank_clustered_law.placement_regions_hold`), so the planner declines on both planes the
+compositions the executed verification would refuse.
+
+**Physical tiles (fix round).** A fused core states its members (`LayoutHardCoreInstance.component_axons`,
+`LayoutCoreSnapshot.component_axons` and `.tiles`, as `HardCore.fused_component_axons` does on the runtime packer);
+`LayoutPackingResult.cores_used` stays the count of allocated crossbars. `noc/pass_program.py` holds `PassProgram` and
+`packed_pass_program` (moved from `noc/fragments.py`, which imports both): every `PassProgram` states per core the cells
+of each physical tile it occupies (`core_tile_cells`, a fused core's used rows filling its members in order), the
+closure's `core_sign_rows`, and the signed rows per tile (`core_tile_sign_rows`); `PassProgram.cores` counts allocated
+crossbars and `PassProgram.tiles` physical cores, the count every priced quantity reads. `packing/residency_tiles.py` is
+the physical-tile SSOT of both planes: `declared_tiles`, `core_type_tiles`, `tile_extents`, `tile_rows` (a core's used
+rows over its tiles) and `expand_to_tiles`. `crossbar_utilization.py`: `CoreOccupancy.tiles` and
+`CrossbarUtilizationReport.physical_cores` beside `cores_allocated` (allocated crossbars, the sealed field).
 
 ## Dependencies
 - `code_generation` — `cpp_chip_model` chip types (`SpikeSource`, chip model) for export, softcore packing, and spike-source spans.

@@ -110,6 +110,8 @@ class TestCoverage:
 #: ``position_multiplexing`` (owner approval of 2026-10-23, a cost-only mapping decision) is a further row.
 #: Wave 2 W08 (owner Q9, 2026-10-23: lanes declared as a priced chip block) adds the lane block's two pricing-only
 #: fields, read by the lane rows of the physics and the record's lane quantities only (a program never reads them).
+#: CL9 final re-pin: the 32 rows are the union of the units' amendments (closure, N2, N2b, pack, lanes), equal to the
+#: theorem box fixture's ``cost_only`` list (test_hypothesis_table.py) and to the X3a partition (test_cost_draws.py).
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",

@@ -25,6 +25,9 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: (X3a ``DEFERRED``, its ``cost_only_hypotheses`` row residency_plan's), 30 cost-only rows.
 #: Integration re-pin (tcad/wave1-merged, lanes onto pack): W08's two lane-block pricing-only fields
 #: (``onchip_arithmetic.lane_block``, ``onchip_arithmetic.lanes_per_core``) join the cost-only list, 32 rows.
+#: CL9 final re-pin (the six Wave 2 units on tcad/wave1-merged): the fixture is, byte for byte, the three-way JSON union
+#: of the units' own fixtures over 75998141's (closure, N2 with N2b, pack, lanes; Swin and D19 leave it unchanged), with
+#: no conflict (RA/11_wave2/integration/cl9/scripts/fixture_union.py); RA/10_wave1/thm/ is regenerated from it.
 TABLE_SHA256 = "c7ae72daaccee49632e32d90a19accc0e65c8c072d5f80b03a530b1320e8a854"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")

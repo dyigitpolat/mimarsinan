@@ -58,6 +58,15 @@ pickle unchanged. `ReadoutStamp.evaluate` reads a lane's input offset, its opera
 unsigned declared code range there is the unsigned lane grid of its bits (`DeclaredBoundaryGrid.unsigned`, `step =
 scale / (2^b - 1)`, the step a lane's readout range of the same value writes).
 
+## Lossless count carry under cascaded TTFS (Wave 2 pack)
+
+From the pack unit's fix round (fragment `11_wave2/pack/arch_fragments/models.md`). `spiking/hybrid/flow.py`: beside
+`refuse_stochastic_replay`, the constructor runs `refuse_lossy_count_carry`. A cascaded TTFS run carries a count across
+a pass inside a segment through its single-spike re-encode under the collapse transfer, the time code's lossless codec
+under the family's one legal input encoding (`spike_generation_mode` TTFS); under any other encoding (not a legal
+declaration, reachable only by constructing the hybrid executor directly) a program that carries across a pass is
+refused by name (`PassReplayRefusal`), and a program that carries nothing runs.
+
 ## Dependencies
 - **`mapping`** — `HybridHardCoreMapping`/`HybridStage` and `IRSource` consumed by the
   spiking flow; core geometry and spike-source spans for stage IO; IR/chip latency for

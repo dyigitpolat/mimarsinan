@@ -50,6 +50,15 @@ its layer's type before quantization and after the law hook and checks every cor
 (`core/simulation_factory.build_hybrid_mapping_for_pipeline`) hands the packer each type with its width written out.
 Absent, every step is the base's.
 
+## Pass replay refusals and the sealed value NoC census (Wave 2 closure)
+
+From the closure unit's step 1 (IE-2, KA-G3-1). `pipeline_steps/mapping/hard_core_mapping_step.py` runs the built
+program's replay refusals (`models/spiking/hybrid/carry.run_pass_transfer(config, hybrid_mapping=hybrid_mapping)`:
+stochastic multi-pass, the nevresim clock refusal, delayed value-mode slices) before any simulation; the judgement
+leaves the built cores' latencies as built. `pipeline_steps/mapping/deployment_record_emission.py`: the schedule
+fragment seals `value_noc_wire_hops` (`deployment_record/quantities/value_domain.record_value_noc_wire_hops`) on
+value-domain runs.
+
 ## Dependencies
 - `chip_simulation` — spiking-mode semantics and `SpikingDeploymentContract` read by `DeploymentPlan`; `BACKEND_REGISTRY` splices the simulation-step tail; simulation runners, cost extraction, and record comparison for the verification steps and parity gates.
 - `deployment_record` — fragment converters (`build.from_mapping`, `build.from_certificates`) and schema types the mapping steps and the spike-count gate use to persist deployment-record fragments; the direction is one-way (`deployment_record` never imports `pipelining`).

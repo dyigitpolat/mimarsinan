@@ -21,6 +21,13 @@ and `resolve_exec_policy`, which delegates the spiking-mode → C++
 | `main_cpp_template_real_valued_exec.py` | Non-spiking (real-valued compute/execution) main for ANN-equivalent reference runs. |
 | `mapping_spans_export.py` | Writes `chip_spans.txt` (consumed by nevresim `mapping_loader.hpp`) and emits the dimensions-only `RuntimeChipConfig` header for runtime chips. |
 
+## Slotted spike sources (Wave 2 coverage W9)
+
+From the Swin unit (coverage W9, fragment `11_wave2/swin/w910/arch_fragments/mapping.md`). `SpikeSource`
+(`cpp_chip_model_types.py`) is slotted (72 B per object instead of 152 B); a legacy instance-dict pickle still loads.
+A columnar core's sources (`mapping/support/spike_source_columns.SpikeSourceColumns`) reach the exporters by duck typing
+(`compressed_spans`, `packed_payload`).
+
 ## Dependencies
 - `chip_simulation` — `spiking_mode_policy` (`ExecPolicySpec`, `NevresimExecParams`, `policy_for_spiking_mode`): the SSOT deciding which C++ compute/execution types a spiking mode compiles to.
 - `common` — `file_utils` (`prepare_containing_directory`) for writing generated files.

@@ -23,6 +23,13 @@ paths and the opt-in recipe-driven step recovery consume.
 | `perceptron_transform_trainer.py` | `PerceptronTransformTrainer`: same aux-model scheme but applies a per-`Perceptron` module transformation through preallocated temp slots, with NaN-sanitized gradient transfer. |
 | `weight_loading.py` | Pretrained-weight strategies (`TorchvisionWeightStrategy`, `CheckpointWeightStrategy`, `URLWeightStrategy`), `resolve_weight_strategy` (raises typed `UnsupportedPreloadError` early for builders without a pretrained source), and the non-raising `torchvision_source_supported` predicate. |
 
+## Declared gradient clip norm (Wave 2 closure)
+
+From the closure unit's step 1 (C4). `training_recipe.py`: `clip_norm_of(norm)` is the one reading of a declared
+`grad_clip_norm`: None (no clipping) for an absent or non-positive norm (`TrainingRecipe` defaults the field to 0).
+`BasicTrainer._optimize` and the fast ladder's rung loop (`tuning/orchestration/fast_ladder.py`, `_fast_train_rung`)
+both read it, so a norm of 0 no longer clips every rung gradient to zero.
+
 ## Dependencies
 - `data_handling` — `shutdown_data_loader` for clean loader teardown in `BasicTrainer.close()`.
 - `chip_simulation` — `compute_test_subsample_indices` so `test_on_subsample` picks the exact indices the simulator runners use.

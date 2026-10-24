@@ -349,6 +349,17 @@ cheap and numerous, so a per-candidate stream would be a thousand-frame flood
 that costs more than the silence it replaces. Emission is telemetry and rides
 `best_effort` — a dead monitor never takes a search down.
 
+## Builder segments on the candidate plane (Wave 2 closure)
+
+From the closure unit's step 1 (IE-1). `problems/joint/layout_hook.py`: `_walk_candidate` walks the candidate's layout
+once (`problems/joint/candidate_fragments.CandidateWalk`: softcores, host segments, wire census, and the walk's runs,
+`mapping/support/residency_rules.spec_runs`); `_collect_softcores` is its three-field view, and `_pack_candidate(runs=)`
+plans the builder's segments. `problems/joint/validate.py`: `_resolve_layout` passes the walk's runs to the packing
+census and to `candidate_fragments.collect_candidate_noc(runs=)`; the fragments carry them to the latency (the wire
+census prices a pinned pass at its pinned span), the stage placements, the carry and the period census. Not wired here:
+`deployment_record/introspection/scaling_ladder.py` (G8's ladder) calls `compute_mapping_stats` and
+`collect_noc_fragments` without runs; its `ShapeCensus` walk can carry them.
+
 ## Dependencies
 - `deployment_record` — the objectives registry (`OBJECTIVES`, `ObjectiveSpecV2`, `CandidateStaticView`, `candidate_probe_without`) that `results.py` projects and resolves through, the `chip_param_capacity`/`declared_core_capacity` formulas the joint layout hook computes candidate chip capacity with, and the introspection registry (`INTROSPECTION_REGISTRY`, `CandidateLayoutView`) the compilagent backend serves every agent-visible payload from — fed from the problem's own `candidate_layout` census via `CandidateLayoutView.packed`, so the agent surface is a projection of the scored layout rather than a second one. One-way: `deployment_record` never imports `search`.
 - `mapping` — layout types (`LayoutSoftCoreSpec`, `LayoutHardCoreType`), `LayoutVerificationStats`, `ChipCapabilities`, `compute_mapping_stats`, and platform mapping params, used by the joint problem's layout hook/validation. Coalescing-config normalization is NOT among them: a candidate platform is normalized once, by the deployment resolver the problem is handed. `optimizers/compilagent` imports none of it (AST-pinned): it reaches the same facts through `deployment_record.introspection`.
