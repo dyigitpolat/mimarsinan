@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any, List, Mapping
 
+from mimarsinan.mapping.lanes.declaration import lane_operand_conflict
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON, PER_SYNAPSE, operand_sign_conflict
 
 
@@ -22,3 +23,8 @@ def platform_sign_errors(config: Mapping[str, Any]) -> List[str]:
              if float_weights and isinstance(core, Mapping) and core.get("weight_sign_granularity") == PER_AXON]
     return named + [c for c in (operand_sign_conflict(cores),) if c is not None]
 
+
+def platform_lane_errors(config: Mapping[str, Any]) -> List[str]:
+    """Why executed lanes refuse beside the chip's core types, else [] (both doors, beside the per-axon rule): an
+    operand core type is not composed with lanes on the integer path (``lane_operand_conflict``)."""
+    return [c for c in (lane_operand_conflict(config),) if c is not None]

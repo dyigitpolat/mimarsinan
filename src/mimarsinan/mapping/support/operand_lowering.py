@@ -17,6 +17,7 @@ from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.operand.followers import absorbable_follower
 from mimarsinan.mapping.mappers.operand.gather_chain import gather_chain, mapper_output_shapes
 from mimarsinan.mapping.mappers.operand.operand_mapper import OperandContractionMapper
+from mimarsinan.mapping.lanes.declaration import lane_operand_conflict
 from mimarsinan.mapping.platform.platform_constraints import operand_sign_conflict
 from mimarsinan.mapping.support.contraction import Contraction
 from mimarsinan.mapping.support.operand_form import (
@@ -78,6 +79,9 @@ def operand_declaration(platform: Mapping[str, Any]) -> Optional[OperandDeclarat
     conflict = operand_sign_conflict(list(platform.get("cores") or ()))
     if conflict is not None:  # the closure's per-axon weight sign is not composed with operand banks
         raise OperandDeclarationError(conflict)
+    lanes = lane_operand_conflict(platform)
+    if lanes is not None:  # executed lanes (WI-5e) are not composed with operand banks
+        raise OperandDeclarationError(lanes)
     if any("payload_bits" not in d for d in declared):
         raise OperandDeclarationError("cores[i].operand needs payload_bits: the payload grid width")
     widths = sorted({int(d["payload_bits"]) for d in declared})

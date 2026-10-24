@@ -17,6 +17,7 @@ from mimarsinan.mapping.packing.softcore.matrix_placement import (
     core_matrix_dtype,
     core_matrix_payloads,
 )
+from mimarsinan.mapping.packing.softcore.sign_split import physical_law
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
     adopt_or_check,
@@ -123,7 +124,8 @@ class HardCore:
             if self.hardware_bias is None:
                 self.hardware_bias = np.zeros(self.neurons_per_core)
             self.hardware_bias[neuron_offset:neuron_offset + softcore.get_output_count()] = softcore.hardware_bias
-        merge_core_law(self, softcore, axon_offset=axon_offset, neuron_offset=neuron_offset)
+        merge_core_law(self, softcore, axon_offset=axon_offset, neuron_offset=neuron_offset,
+                       law=physical_law(softcore))  # a split core's lane operand rows in its physical rows
         operand_axons = getattr(softcore, OPERAND_AXONS, None)
         if operand_axons:  # [W08] fused-add operand rows on this core's axons (absent on a lane-free core)
             setattr(self, OPERAND_AXONS, int(getattr(self, OPERAND_AXONS, 0)) + int(operand_axons))

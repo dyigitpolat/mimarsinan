@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, fields
-from typing import ClassVar, FrozenSet, Iterable, List, Sequence
+from typing import Any, ClassVar, FrozenSet, Iterable, List, Sequence
 
 import numpy as np
 
@@ -122,12 +122,13 @@ class ReadoutLawMixedCoreError(ToolchainRefusal, ValueError):
     """A hard core asked to hold soft cores with and without a readout law: one readout per hard core."""
 
 
-def merge_core_law(hard_core, softcore, *, axon_offset: int, neuron_offset: int) -> None:
+def merge_core_law(hard_core, softcore, *, axon_offset: int, neuron_offset: int, law: Any = None) -> None:
     """Merge ``softcore``'s law into ``hard_core`` over the neuron range it occupies (``hardware_bias``'s rule).
 
-    A soft core filling the whole hard core shares its law object; nothing is set when neither carries one.
+    A soft core filling the whole hard core shares its law object; nothing is set when neither carries one. ``law``
+    (default: the soft core's own) is the law in the soft core's physical rows (``sign_split.physical_law``).
     """
-    law = getattr(softcore, "readout_law", None)
+    law = getattr(softcore, "readout_law", None) if law is None else law
     current = getattr(hard_core, "readout_law", None)
     placed_before = axon_offset > 0 or neuron_offset > 0
     if (law is None) != (current is None) and (law is None or placed_before):

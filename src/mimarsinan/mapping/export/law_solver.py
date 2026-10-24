@@ -39,7 +39,7 @@ from mimarsinan.mapping.export.operand_laws import (
 from mimarsinan.mapping.export.output_law import OutputLawError, identity_output_indices, solve_identity_law
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.ir.core_law import CoreLaw
-from mimarsinan.mapping.lanes.declaration import lanes_executed
+from mimarsinan.mapping.lanes.declaration import LaneDeclarationError, lane_operand_conflict, lanes_executed
 from mimarsinan.mapping.lanes.install import install_lane_laws
 from mimarsinan.mapping.support.grid_declarations import ParameterGrids, identity_output_law
 from mimarsinan.models.nn.activations.integer_law import (
@@ -177,6 +177,10 @@ def install_readout_laws(ir_graph, model, platform_constraints: Mapping[str, Any
     )
     lanes = lanes_executed(platform_constraints)
     if lanes is not None:  # WI-5e: the declared lanes fuse first, then every core takes its lane law
+        if getattr(ir_graph, "dynamic_bank_bindings", None):  # N2's operand banks take the per-core law path
+            raise LaneDeclarationError(lane_operand_conflict(platform_constraints) or
+                                       "executed on-chip lanes and an operand core type do not share a chip on "
+                                       "this tree: the program carries dynamic operand banks")
         return install_lane_laws(ir_graph, model, platform_constraints, spec, lanes, weight_bits=weight_bits)
     model_repr = model.get_mapper_repr()
     quantizers = readout_quantizers_by_perceptron(model_repr)

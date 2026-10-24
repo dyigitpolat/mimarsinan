@@ -91,6 +91,24 @@ def lanes_executed(config: Mapping[str, Any]) -> Optional[LaneDeclaration]:
     return declaration
 
 
+def lane_operand_conflict(config: Mapping[str, Any]) -> Optional[str]:
+    """Why executed lanes and an operand core type (N2) cannot share a chip on this tree, else None: the lane fusion,
+    the lane grids and the lane law solver read the static perceptrons' readout ranges only, while N2's operand banks
+    take their payload grids, consumer groups, thresholds and stamps on the per-core law path, which a lane program
+    does not take. Lane laws over operand banks are not built; a malformed lane declaration is its own rule's."""
+    try:
+        declaration = lanes_executed(config)
+    except LaneDeclarationError:
+        return None
+    operand = [i for i, c in enumerate(config.get("cores") or ()) if isinstance(c, Mapping) and c.get("operand")]
+    if declaration is None or not operand:
+        return None
+    return (f"executed on-chip lanes and an operand core type do not share a chip on this tree: {LANE_KEY} declares "
+            f"classes {sorted(declaration.classes)} on the integer path (readout_law) and cores {operand} declare "
+            "operand; the lane law solver reads no operand bank's payload grid, consumer groups or stamp (declare "
+            f"{LANE_KEY} classes [], the off ablation, or no operand core type)")
+
+
 def declared_lane_block(config: Mapping[str, Any]) -> Optional[str]:
     """The lane block a chip with lanes prices (W08), on or off the integer path; ``None`` without lanes."""
     declaration = lane_declaration(config)

@@ -115,6 +115,20 @@ def apply_sign_split(cores: Iterable[Any], granularity: str) -> None:
         split_soft_core(core, memo)
 
 
+def physical_law(core: Any) -> Any:
+    """``core``'s readout law in its physical rows, for placement: a lane law (WI-5e) names each column's fused operand
+    row by the logical row it was solved on, and a split core's rows are its physical ones, so each operand row lands
+    on the first physical row of its origin (an operand row has zero weights, so it is never mixed and takes one row).
+    The soft core keeps its law in logical rows (fragments of a split parent are cut from its logical view)."""
+    law = getattr(core, "readout_law", None)
+    if law is None or not is_sign_split(core) or not getattr(law, "has_operands", False):
+        return law
+    rows = np.asarray(core.compact_keep_rows)
+    first = np.flatnonzero(np.concatenate(([True], rows[1:] != rows[:-1])))
+    logical = np.asarray(law.operand_row)
+    return law.with_operand_rows(np.where(logical >= 0, first[np.maximum(logical, 0)], -1))
+
+
 def logical_view(core: Any) -> Tuple[np.ndarray, List[SpikeSource]]:
     """The logical matrix and sources of a split core: the rows of one origin summed (one of each pair is zero
     per entry, so the sum is exact), each origin's first source."""
