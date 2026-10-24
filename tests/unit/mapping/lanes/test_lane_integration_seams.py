@@ -152,3 +152,31 @@ class TestLanesBesideAnOperandCoreType:
         with pytest.raises(LaneDeclarationError, match=NAMED):
             install_readout_laws(program.ir, program.model, _operand_lane_platform(), weight_quantization=True,
                                  weight_bits=8)
+
+
+class TestIdentityOutputBesideAnAbsorbedRelu:
+    """The lanes unit's identity output law (WI-5d) has no clamp; N2's operand floors put an absorbed ReLU into a
+    bank perceptron's law as its floor. The per-core solver refuses the two on one perceptron by name rather than
+    dropping the ReLU."""
+
+    def test_an_identity_output_whose_operand_product_absorbed_a_relu_is_refused_by_name(self):
+        from mimarsinan.mapping.export.law_grids import assign_core_grids
+        from mimarsinan.mapping.export.law_solver import ReadoutLawSpec, solve_ir_laws
+        from mimarsinan.mapping.export.law_stamp import readout_quantizers_by_perceptron
+        from mimarsinan.mapping.export.operand_laws import operand_floors, operand_ranges, output_groups_of
+        from mimarsinan.mapping.export.output_law import OutputLawError
+
+        program = attention_program("relu")
+        model_repr = program.model.get_mapper_repr()
+        floors = operand_floors(model_repr)
+        assert floors, "the ReLU attention program's bank perceptrons carry the absorbed ReLU as floor 0"
+        ranges = {**{i: float(e[2].range) for i, e in readout_quantizers_by_perceptron(model_repr).items()},
+                  **operand_ranges(model_repr)}
+        spec = ReadoutLawSpec.from_declaration(program.platform["readout_law"],
+                                               activation_bits=program.platform["activation_bits"], weight_bits=8)
+        grids, _steps = assign_core_grids(program.ir, ranges, spec.activation_bits,
+                                          groups=output_groups_of(model_repr))
+        assert solve_ir_laws(program.ir, ranges, spec, grids=grids, floors=floors)
+        with pytest.raises(OutputLawError, match="absorbed a ReLU"):
+            solve_ir_laws(program.ir, ranges, spec, grids=grids, floors=floors,
+                          identity_outputs=frozenset({next(iter(floors))}))
