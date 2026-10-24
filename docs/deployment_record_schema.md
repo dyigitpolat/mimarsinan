@@ -129,6 +129,8 @@ CrossbarUtilizationRecord:  # typed mirror of CrossbarUtilizationReport.to_dict(
     neurons_used, neurons_physical, neuron_utilization,
     cells_used, cells_physical, cell_occupancy,
     unusable_space, macs, weight_bits, programming_bits
+    # programming_bits = cells_used × weight_bits: the weight cells only. A per-axon core's per-row
+    # sign register is not in it; SegmentCoreRecord.params_bytes carries it (ceil(sign_register_rows / 8)).
 
 LayoutStatsRecord:          # typed mirror of LayoutVerificationStats — all 34 fields, same names
 

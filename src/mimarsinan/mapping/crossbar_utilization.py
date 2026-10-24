@@ -137,6 +137,8 @@ class CrossbarUtilizationReport:
 
     @property
     def programming_bits(self) -> int | None:
+        """The weight cells' bits, ``cells_used * weight_bits``; a per-axon core's sign register is not in
+        it (``SegmentCoreRecord.params_bytes`` carries the register)."""
         if self.weight_bits is None:
             return None
         return self.cells_used * self.weight_bits

@@ -21,13 +21,14 @@ export function capabilityDeclaration(read) {
 }
 
 /** The `/api/hw_config_verify` request body: the model repr, the declared core
-    grid, and the WHOLE capability declaration alongside them. */
+    grid, and the WHOLE capability declaration alongside them. Each core type
+    travels with every field it declares: the server resolves the layout from
+    them (`has_bias`, and `weight_sign_granularity`, whose per-axon pool takes
+    two rows per input), so a client-side subset would preview another chip. */
 export function hwVerifyBody(modelBody, cores, capabilities) {
   return {
     model_repr_json: modelBody,
-    core_types: (cores || []).map((c) => ({
-      max_axons: c.max_axons, max_neurons: c.max_neurons, count: c.count,
-    })),
+    core_types: (cores || []).map((c) => ({ ...c })),
     ...capabilities,
   };
 }

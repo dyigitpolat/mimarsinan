@@ -10,8 +10,10 @@ Here every input and weight is split into windows of ``WINDOW_BITS`` bits on one
 product sum of an input window and a weight window is a multiple of ``2^(16 (j + l))`` below
 ``2^(16 (j + l) + 53)`` for at most ``MAX_TERMS`` terms, so float64 holds it exactly in any order and with any
 zeros. Those exact window sums are added in one global window order. A neuron's membrane is so a fixed function of
-its own ``(input, weight)`` terms and bias, bit for bit the same in every packing of one IR. It is the exact sum
-where float64 holds every partial sum (float32 codes on integer weights), else within a few roundings of it.
+its own ``(input, weight)`` terms and bias, bit for bit the same in every packing of one IR, for every finite input.
+It is the exact sum where float64 holds every partial sum (float32 codes on integer weights), else within a few
+roundings of it. A non-finite term hands its whole sample row (or neuron) to the dot product, so a NaN or infinity
+on a co-resident core's axon can reach this neuron; executor inputs are finite (data, and TTFS signals in [0, 1]).
 """
 
 from __future__ import annotations

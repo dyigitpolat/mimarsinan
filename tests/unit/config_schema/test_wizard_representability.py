@@ -125,6 +125,33 @@ class TestRepresentabilityCanary:
         assert emitted["deployment_parameters"]["endpoint_floor_wall_s"] == 60
 
 
+@pytest.mark.parametrize("granularity", ["per_synapse", "per_axon"])
+def test_a_weight_sign_granularity_declaring_config_is_representable(granularity):
+    """The core-type field ``weight_sign_granularity`` (S0 amendment L1) round-trips through the wizard schema.
+
+    No fixture declares it, so representability is asserted directly, as for the physics keys: parsed with no
+    unknown key, emitted losslessly, resolved with zero errors, and its value inside the field's own legal set
+    [closure carried minor m1].
+    """
+    from mimarsinan.config_schema.registry.entries_write import CORE_TYPE_SCHEMA
+
+    config = _load(os.path.join(
+        _REPO_ROOT, "tests", "fixtures", "deployment_configs", "mvm_aq_lenet5.json"))
+    for core in config["platform_constraints"]["cores"]:
+        core["weight_sign_granularity"] = granularity
+
+    parsed = parse_deployment_document(config)
+    assert parsed.unknown == []
+    assert granularity in (CORE_TYPE_SCHEMA.fields["weight_sign_granularity"].options or ())
+
+    emitted = emit_deployment_config(config)
+    assert json.dumps(emitted, sort_keys=True) == json.dumps(config, sort_keys=True)
+
+    resolution = resolve_draft(config)
+    assert resolution.errors == []
+    assert resolution.unknown_keys == []
+
+
 def test_a_physics_declaring_config_is_representable():
     """The physics keys must be buildable and viewable in the wizard like any other.
 

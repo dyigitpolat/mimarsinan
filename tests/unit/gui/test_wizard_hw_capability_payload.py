@@ -97,6 +97,51 @@ class TestTheSchedulingDeclarationSurvivesTheRoundTrip:
         assert ChipCapabilities.from_platform_constraints(body).max_schedule_passes == 8
 
 
+def _a_legal_value(schema):
+    """One value the core-type field's own schema admits (its last option, its lower bound, or false)."""
+    if schema.options:
+        return schema.options[-1]
+    if schema.kind == "bool":
+        return False
+    return int(schema.low or 1) + 2
+
+
+class TestTheDeclaredCoreFieldsSurviveTheRoundTrip:
+    """The server reads a core type's own fields (``has_bias``, ``weight_sign_granularity``) when it resolves the
+    layout, so a field the client drops previews a program the chip never runs [closure carried minor m1]."""
+
+    VALUES = {"allow_coalescing": True, "allow_scheduling": True, "max_schedule_passes": 4}
+
+    def test_a_per_axon_pool_reaches_the_server_with_two_rows_per_input(self):
+        from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
+
+        core = {"max_axons": 256, "max_neurons": 256, "count": 4, "weight_sign_granularity": "per_axon"}
+        body = _verify_body(self.VALUES, [core])
+        assert body["core_types"] == [core]
+        pmap = resolve_platform_mapping_params(body["core_types"], allow_coalescing=True)
+        assert pmap.rows_per_input == 2
+        assert pmap.effective_max_axons == 256 // 2
+
+    def test_a_core_without_a_bias_lane_reaches_the_server_without_one(self):
+        from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
+
+        core = {"max_axons": 64, "max_neurons": 32, "count": 2, "has_bias": False}
+        body = _verify_body(self.VALUES, [core])
+        assert resolve_platform_mapping_params(body["core_types"]).hardware_bias is False
+
+    def test_every_core_type_field_a_core_declares_is_posted_unchanged(self):
+        """Generic over the registry's core-type schema: a field added there reaches the server, or this fails."""
+        from mimarsinan.config_schema.registry.entries_write import CORE_TYPE_SCHEMA
+
+        core = {name: _a_legal_value(schema) for name, schema in CORE_TYPE_SCHEMA.fields.items()}
+        assert set(core) >= {"max_axons", "max_neurons", "count", "has_bias", "weight_sign_granularity"}
+        assert _verify_body(self.VALUES, [core])["core_types"] == [core]
+
+    def test_the_client_invents_no_field_a_core_does_not_declare(self):
+        core = {"max_axons": 16, "max_neurons": 8, "count": 3}
+        assert _verify_body(self.VALUES, [core])["core_types"] == [core]
+
+
 class TestTheModulesParse:
     @pytest.mark.parametrize("name", ["hw_request.js", "hw.js"])
     def test_node_checks_the_wizard_hardware_modules(self, name):
