@@ -4,9 +4,17 @@ at the declared pool's weight-sign granularity through ``segment_specs_for``).""
 from __future__ import annotations
 
 import functools
+import logging
+from dataclasses import replace
 from typing import Sequence
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
+from mimarsinan.mapping.layout.softcore_spec_adapter import (
+    spec_at_compacted_extent,
+    spec_at_deployed_extent,
+    spec_from_neural_core,
+)
+from mimarsinan.mapping.platform.core_residency import BASIS_PROVENANCE, provenance_group_id, ungrouped_fallback_id
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON, PER_SYNAPSE, pool_sign_granularity
 
 
@@ -39,16 +47,6 @@ def _segment_specs(
     if not cores:
         return [], {}, []
 
-    from dataclasses import replace
-
-    from mimarsinan.mapping.layout.softcore_spec_adapter import (
-        spec_at_compacted_extent,
-        spec_at_deployed_extent,
-        spec_from_neural_core,
-    )
-    from mimarsinan.mapping.platform.core_residency import (
-        BASIS_PROVENANCE, provenance_group_id, ungrouped_fallback_id)
-
     layout_specs = list(getattr(ir_graph, "layout_softcores", None) or [])
     use_layout = bool(layout_specs) and all(
         getattr(c, "layout_softcore_index", None) is not None for c in cores
@@ -68,8 +66,6 @@ def _segment_specs(
                 getattr(core, "perceptron_index", None), fallback=ungrouped_fallback_id(sc_idx)))
         else:
             if not _SPLIT_FALLBACK_LOGGED:
-                import logging
-
                 logging.getLogger(__name__).warning(
                     "Scheduled split: reconstructing LayoutSoftCoreSpec from NeuralCore "
                     "(missing IRGraph.layout_softcores); input_count may diverge from SCM, "
