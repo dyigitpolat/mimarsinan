@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Set
 import numpy as np
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.pruning.pruning_apply import compact_hardware_bias_columns
+from mimarsinan.mapping.pruning.pruning_apply import compact_hardware_bias_columns, record_dropped_rows
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 def _validate_outputs_remain(graph: IRGraph) -> None:
     if not graph.output_sources.size:
@@ -31,6 +31,7 @@ def _compact_node(
         f"_compact_node: NeuralCore id={node.id} ({node.name}) has no owned "
         "core_matrix; the caller must filter to owned-matrix cores."
     )
+    keep_cols = None
     if pruned_cols:
         keep_cols = [c for c in range(mat.shape[1]) if c not in pruned_cols]
         assert keep_cols, (
@@ -45,6 +46,7 @@ def _compact_node(
             node.hardware_bias, keep_cols
         )
 
+    record_dropped_rows(node, mat, sorted(r for r in pruned_rows if r < mat.shape[0]), keep_cols)
     if pruned_rows:
         n_axons = mat.shape[0]
         keep_row_idx = np.fromiter(

@@ -14,7 +14,13 @@ from typing import Callable, Dict, Hashable, Mapping, Optional, Tuple
 
 import numpy as np
 
-from mimarsinan.mapping.export.entry_offsets import FoldRefit, offset_multipliers, refit_folded_laws
+from mimarsinan.mapping.export.entry_offsets import (
+    FoldRefit,
+    offset_multipliers,
+    offset_reader_bounds,
+    refit_folded_laws,
+    refuse_inexact_offset_readers,
+)
 from mimarsinan.mapping.export.law_rules import (
     ReadoutLawSpec,
     adc_step_exponent,
@@ -133,12 +139,15 @@ def solve_lane_laws(ir_graph: IRGraph, owners: Mapping[int, LaneGrid], spec: Rea
     memo: Dict[tuple, LaneLaw] = {}
     laws: Dict[int, LaneLaw] = {}
     folds: Dict[int, FoldRefit[LaneLaw]] = {}
+    readers: Dict[int, Tuple[NeuralCore, Tuple[int, ...], float]] = {}
     for node in ir_graph.nodes:
         if not isinstance(node, NeuralCore):
             continue
         bias, weights = core_bias_and_data_weights(node, ir_graph, real_bias=real_bias)
         grid = grids[int(node.id)]
         bounds = tuple(accumulator_bounds(weights, grid.inputs.levels))
+        if grid.inputs.offset != 0.0:  # N7: the bounds cover the rows pruning dropped, read by the model at a code
+            bounds = offset_reader_bounds(node, ir_graph, bounds, grid.inputs.levels)
         identity = node.perceptron_index is not None and node.perceptron_index in identity_outputs
         rows: Optional[np.ndarray] = getattr(node, OPERAND_ROWS, None)
         key = (node.weight_bank_id, node.weight_row_slice, float(node.threshold), bias.tobytes(), bounds, grid,
@@ -149,6 +158,7 @@ def solve_lane_laws(ir_graph: IRGraph, owners: Mapping[int, LaneGrid], spec: Rea
                    else solve_lane_law(core=node, bias=bias, acc_bounds=bounds, grid=grid, spec=spec))
             memo[key] = law
         if law.columns and float(law.input_offset[0]) != 0.0:
+            readers[int(node.id)] = (node, bounds, float(law.input_offset[0]))
             fold_key = (id(law), data_row_weight_sums(node, ir_graph).tobytes())
             if fold_key not in memo:
                 memo[fold_key] = fold_input_offset(law, node, ir_graph)
@@ -160,4 +170,5 @@ def solve_lane_laws(ir_graph: IRGraph, owners: Mapping[int, LaneGrid], spec: Rea
                 extra=operand_term(law, grid))
         laws[int(node.id)] = law
     laws.update(refit_folded_laws(folds))  # per channel: a conv's position cores keep one law per channel
+    refuse_inexact_offset_readers(readers, laws, ir_graph)
     return laws

@@ -11,7 +11,9 @@ from mimarsinan.mapping.export.entry_offsets import (
     core_entry_offset,
     fold_entry_offset,
     host_row_weight_sums,
+    offset_reader_bounds,
     refit_folded_laws,
+    refuse_inexact_offset_readers,
 )
 from mimarsinan.mapping.export.law_grids import CoreGrid, assign_core_grids
 from mimarsinan.mapping.export.law_rules import (  # the law's public names stay importable from here
@@ -129,11 +131,15 @@ def solve_ir_laws(ir_graph, perceptron_ranges: Mapping[int, float], spec: Readou
     memo: Dict[tuple, CoreLaw] = {}
     laws: Dict[int, CoreLaw] = {}
     folds: Dict[int, FoldRefit[CoreLaw]] = {}
+    readers: Dict[int, Tuple[NeuralCore, Tuple[int, ...], float]] = {}
     for node in ir_graph.nodes:
         if not isinstance(node, NeuralCore):
             continue
         grid = grids[int(node.id)]
         bias, bounds = _bias_and_bounds(node, ir_graph, grid, real_bias=real_bias)
+        offset = core_entry_offset(node)
+        if offset != 0.0:  # N7: the bounds cover the rows pruning dropped, which the model reads at a grid code
+            bounds = offset_reader_bounds(node, ir_graph, bounds, grid.input_levels)
         floor = floors.get(int(node.perceptron_index)) if node.perceptron_index is not None else None
         identity = node.perceptron_index in identity_outputs
         if identity and floor is not None:
@@ -151,7 +157,8 @@ def solve_ir_laws(ir_graph, perceptron_ranges: Mapping[int, float], spec: Readou
                 law = solve_core_law(core=node.name, theta=float(node.threshold), bias=bias, acc_bounds=bounds,
                                      grid=grid, spec=spec, floor=floor)
             memo[key] = law
-        if core_entry_offset(node) != 0.0:
+        if offset != 0.0:
+            readers[int(node.id)] = (node, bounds, offset)
             fold_key = (id(law), host_row_weight_sums(node, ir_graph).tobytes())
             if fold_key not in memo:
                 memo[fold_key] = fold_entry_offset(law, node, ir_graph)
@@ -161,6 +168,7 @@ def solve_ir_laws(ir_graph, perceptron_ranges: Mapping[int, float], spec: Readou
                 reach_hi=grid_levels(spec.activation_bits) if narrow and not identity else None)
         laws[int(node.id)] = law
     laws.update(refit_folded_laws(folds))  # per channel: a conv's position cores keep one law per channel
+    refuse_inexact_offset_readers(readers, laws, ir_graph)
     return laws
 
 
