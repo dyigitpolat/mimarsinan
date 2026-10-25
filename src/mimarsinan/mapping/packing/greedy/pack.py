@@ -208,7 +208,8 @@ def greedy_pack_softcores(
                         raise CoreCapacityRefusal(
                             f"No more hard cores available: softcore ({s_a} axons, "
                             f"{s_n} neurons) does not fit any unused type "
-                            f"even with coalescing. Remaining types: {avail}"
+                            f"{'even with coalescing' if fuse_hardcores is not None else 'and the chip declares no coalescing'}. "
+                            f"Remaining types: {avail}"
                         )
                 else:
                     chosen_type, chosen_hc = chosen

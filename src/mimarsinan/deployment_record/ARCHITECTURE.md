@@ -237,7 +237,8 @@ registry directly (W5.1).
   use (`write_law.plane_writes`, the executed rotation of finding 4 (a)): each tile of a pass is one physical core,
   and where the program fits its budget (F <= C) the residency floor marks every tile kept, so it is programmed
   once and writes 0 B per inference (W03); a dynamic product's stationary operand joins the census as
-  producer-sourced cells per inference. A value-domain target reads the value rule (one evaluation per stage,
+  producer-sourced cells per inference, on producer-written tiles stated as cores of no static cells
+  (`PassRow.producer_cells`, `producer_cores`), so N2's one slot rule places them as on the other planes. A value-domain target reads the value rule (one evaluation per stage,
   MAC events = committed cells plus on-chip operator MACs, carry at `activation_bits`, else withheld by name); a
   spiking target is priced on the time axis only, at its declared LIF window (`synaptic_events` withheld: no
   record of a census member gives an activity factor). The level places no core on the mesh, so the traffic

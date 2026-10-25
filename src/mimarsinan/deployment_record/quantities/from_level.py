@@ -7,7 +7,8 @@ budget, its schedule (``level_schedule``: passes, tiles, cut widths). This view 
 - the period census comes from G3's one rule through the seam both other planes use (``write_law.plane_writes``,
   the executed rotation of finding 4 (a)): every tile of a pass is one physical core of the chip's one core type,
   and where the program fits its budget the residency floor marks every tile kept (programmed once, 0 B per
-  inference); a dynamic product's stationary operand joins it as producer-sourced cells per inference;
+  inference); a dynamic product's stationary operand joins it as producer-sourced cells per inference, on its
+  producer-written tiles (cores of no static cells), which N2's one slot rule places as on the other planes;
 - a value-domain target reads the value rule: one evaluation per stage (``value_window``), MAC events = committed
   cells plus on-chip operator MACs, carry at the value grid (``activation_bits``);
 - a spiking target's events need a measured record's switching activity, which no census member has, so

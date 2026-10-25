@@ -44,6 +44,15 @@ class TestWithoutDeclaredCoalescing:
         pack = pack_layout(softcores=_specs(), core_types=CORES, allow_coalescing=False)
         assert not pack.feasible and refusal_name_of_message(pack.error or "") == "CoreCapacityRefusal"
 
+    def test_the_refusal_states_that_the_chip_declares_no_coalescing(self):
+        """The refusal's reason names the declaration that decided it: with coalescing undeclared no fusion was
+        tried, so it never reads "even with coalescing" (the text of a chip whose fused cores were too few)."""
+        reason = pack_layout(softcores=_specs(), core_types=CORES, allow_coalescing=False).error or ""
+        assert "declares no coalescing" in reason and "even with coalescing" not in reason
+        few = pack_layout(softcores=_specs(), core_types=[LayoutHardCoreType(AXONS, NEURONS, 1)],
+                          allow_coalescing=True).error or ""
+        assert "even with coalescing" in few
+
     @pytest.mark.parametrize("scheduling", [False, True])
     def test_the_mapping_stats_refuse_by_name(self, scheduling):
         stats, error = compute_mapping_stats(_specs(), CORES, **_kwargs(False, scheduling))
