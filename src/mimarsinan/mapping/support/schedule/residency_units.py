@@ -268,9 +268,9 @@ def facts_period_census(facts: PlanPeriodFacts, *, forced: Sequence[int] = (), b
         cores, kept = list(facts.pass_tiles), list(facts.pass_pinned)
         cells = [(t - k) * int(tile_cells) for t, k in zip(cores, kept)]
         payload = [(t - k) * int(bytes_of_cells(int(tile_cells))) for t, k in zip(cores, kept)]
-    else:
-        cores = [len(c) for c in facts.pass_cores]
-        kept = [len(k) for k in facts.pass_resident_cores]
+    else:  # physical tiles, as the record and candidate planes count them (a fused core counts its members)
+        cores = [sum(int(t) for _, t in c) for c in facts.pass_cores]
+        kept = [sum(int(c[i][1]) for i in k) for c, k in zip(facts.pass_cores, facts.pass_resident_cores)]
         cells = [sum(w) for w in facts.written_cells]
         payload = [sum(int(bytes_of_cells(c)) for c in w) for w in facts.written_cells]
     if not rotation_rewrites(sum(1 for c, k in zip(cores, kept) if c > k)):
