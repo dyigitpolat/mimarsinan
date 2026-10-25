@@ -125,3 +125,30 @@ def test_member_census_places_an_emitted_attention_member_on_every_level(key):
     assert census.verdict.status == AGREEMENT, census.verdict
     assert census.census_refusal is None, census.census_refusal
     assert {row.level for row in census.rows} == {level.name for level in LADDER}
+
+
+class _ConstantMaskAttention(torch.nn.Module):
+    """Explicit attention with a constant (buffer) causal mask, in the method or the function form of masked_fill."""
+
+    def __init__(self, form, d=8, n=4):
+        super().__init__()
+        self.form = form
+        self.q, self.k, self.v = torch.nn.Linear(d, d), torch.nn.Linear(d, d), torch.nn.Linear(d, d)
+        self.register_buffer("mask", torch.triu(torch.ones(n, n, dtype=torch.bool), 1))
+        self.head = torch.nn.Linear(n * d, 3)
+
+    def forward(self, x):
+        s = self.q(x) @ self.k(x).transpose(-2, -1)
+        s = s.masked_fill(self.mask, -1e9) if self.form == "method" else torch.masked_fill(s, self.mask, -1e9)
+        return self.head(torch.flatten(s.softmax(-1) @ self.v(x), 1))
+
+
+@pytest.mark.parametrize("form", ["method", "function"])
+def test_a_constant_mask_attention_member_gets_rows_with_its_mask_on_the_host(form):
+    """The merge's verify minor: masked_fill had no kind, so the census refused the member; it is the host-only mask
+    kind now, named in every row, and the rest of the attention is placed as before."""
+    torch.manual_seed(0)
+    census = member_census(_ConstantMaskAttention(form).eval(), (4, 8), 3, packaging=MVM_PACKAGING, value_bits=BITS)
+    assert census.verdict.status == AGREEMENT and census.census_refusal is None
+    assert {row.level for row in census.rows} == {level.name for level in LADDER}
+    assert all(row.host_kinds.get("mask") == 1 for row in census.rows), "a host op at every level"

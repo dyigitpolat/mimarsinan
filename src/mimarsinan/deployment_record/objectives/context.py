@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Mapping, Optional
 
+import mimarsinan.mapping.platform.target_bundles as target_bundles
 from mimarsinan.deployment_record.cost.absolute.validity import declared_geometry
 from mimarsinan.deployment_record.quantities.lanes import lane_block_quantities
 from mimarsinan.mapping.lanes.declaration import lane_declaration, lanes_executed
@@ -57,7 +58,8 @@ def candidate_context_from_platform(
     )
     context = replace(context, core_geometry=declared_geometry(list(pcfg.get("cores") or ())),
                       writes=plane_writes(passes, pcfg, weight_bits=pcfg.get("weight_bits"),
-                                          timesteps=context.timesteps, label="candidate", carry=carry))
+                                          timesteps=context.timesteps, label="candidate", carry=carry),
+                      pricing_refusal=target_bundles.absolute_pricing_refusal(pcfg))
     context = _lane_context(context, pcfg, lane_ops)
     if not names_value_domain(pcfg):
         return context

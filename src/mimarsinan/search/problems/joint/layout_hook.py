@@ -49,7 +49,7 @@ class JointLayoutMixin(JointHostContract):
             prune_sparsity=float(self.prune_sparsity), pruning=bool(self.pruning),
             prune_criterion=str(self.prune_criterion),
             pruning_fraction=float(self.pruning_fraction),
-            firing_mode=str(self.firing_mode),
+            firing_mode=str(self.firing_mode), conversion=self.conversion,
         )
 
     def _convert_to_mapper_repr(self, model, placement: str):
@@ -60,7 +60,7 @@ class JointLayoutMixin(JointHostContract):
             num_classes=self.num_classes,
             device=self.device,
             target_tq=self.target_tq,
-            placement=placement,
+            placement=placement, conversion=self.conversion,
         )
 
     def _ensure_mapper_repr(self, model, placement: str):

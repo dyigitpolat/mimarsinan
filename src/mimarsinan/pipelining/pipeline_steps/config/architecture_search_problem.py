@@ -16,6 +16,7 @@ from mimarsinan.deployment_record.platform_physics.resolve import (
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
     declared_int_pair,
+    deployed_conversion_of,
     firing_semantics_kwargs,
     make_platform_resolver,
     resolve_evaluation_budget,
@@ -117,6 +118,7 @@ def build_search_problem(
         firing_mode=str(config.get("firing_mode", "Default")),
         **firing_semantics_kwargs(plan, config),
         encoding_placement=str(config.get("encoding_layer_placement", "subsume")),
+        conversion=deployed_conversion_of(plan, config),
         # Deployment options the run promoted to search axes, and the floor
         # that shapes the feasible region they move through.
         option_axes=build_option_axes(arch_cfg.get("option_axes")),

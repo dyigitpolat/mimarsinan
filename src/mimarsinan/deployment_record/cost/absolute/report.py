@@ -8,9 +8,10 @@ import tempfile
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from mimarsinan.deployment_record.cost.absolute.context import AbsolutePricing
+import mimarsinan.mapping.platform.target_bundles as target_bundles
+from mimarsinan.deployment_record.cost.absolute.context import AbsolutePricing, PricingRefusal
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
-from mimarsinan.deployment_record.cost.absolute.output_stage import output_stage_note
+from mimarsinan.deployment_record.cost.output_stage import output_stage_note
 from mimarsinan.deployment_record.cost.absolute.validity import UNJUDGED, declared_geometry
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
@@ -91,16 +92,28 @@ def report_with_absolute_terms(
     )
 
 
+def refused_pricing(refusal: Tuple[str, str]) -> AbsolutePricing:
+    """No absolute term, only the ``(name, reason)`` refusal (``target_bundles.absolute_pricing_refusal``)."""
+    return AbsolutePricing(terms=(), refusals=(PricingRefusal(name=refusal[0], reason=refusal[1]),))
+
+
 def candidate_cost_report(
-    quantities: Quantities, physics: PlatformPhysics, *,
+    quantities: Quantities, physics: Optional[PlatformPhysics], *,
     writes: Optional[WriteInputs] = None, geometry: Optional[Tuple[Any, ...]] = None,
+    refusal: Optional[Tuple[str, str]] = None,
     output_stage: Optional[Mapping[str, Any]] = None,
 ) -> DeploymentCostReport:
     """A candidate's report: priced terms only — no segments, no measured plane. A candidate that
-    declares no complete core geometry prices the aggregates as declared (``UNJUDGED``); an
-    ``output_stage`` (W08, ``mapping.lanes.output_stage``) is printed beside it."""
-    pricing = price_absolute(quantities, physics, writes=writes,
-                             geometry=UNJUDGED if geometry is None else geometry)
+    declares no complete core geometry prices the aggregates as declared (``UNJUDGED``); one on a
+    target that declares no physics carries that target's ``refusal`` alone; an ``output_stage``
+    (W08, ``mapping.lanes.output_stage``) is printed beside it."""
+    if refusal is not None:
+        pricing = refused_pricing(refusal)
+    elif physics is None:
+        raise ValueError("a candidate cost report needs the candidate's physics or its pricing refusal")
+    else:
+        pricing = price_absolute(quantities, physics, writes=writes,
+                                 geometry=UNJUDGED if geometry is None else geometry)
     groups = _grouped(pricing)
     stage = () if output_stage is None else (output_stage_note(output_stage, pricing),)
     return DeploymentCostReport(
@@ -125,7 +138,10 @@ def declared_physics_of(record: DeploymentRecord) -> Optional[PlatformPhysics]:
 def absolute_pricing_for_record(
     record: DeploymentRecord,
 ) -> Optional[AbsolutePricing]:
-    """Price the sealed record's quantities with its own declared physics."""
+    """Price the sealed record's quantities with its own declared physics; a record of a target that
+    declares none carries the target's refusal by name, and one without physics or target, nothing."""
+    if (refusal := target_bundles.absolute_pricing_refusal(record.identity.platform)) is not None:
+        return refused_pricing(refusal)
     physics = declared_physics_of(record)
     if physics is None:
         return None
@@ -146,10 +162,10 @@ def record_write_inputs(record: DeploymentRecord) -> Optional[WriteInputs]:
 
 
 def emit_physics_report(record: DeploymentRecord, run_dir: str) -> Optional[str]:
-    """Write the vendor-priced report iff the record declared physics.
+    """Write the vendor-priced report iff the record declared physics or a target that declares none.
 
-    A no-profile record writes NOTHING (byte-identity); a declared one gets the
-    priced terms over the measured base when the cost model's preconditions hold
+    A no-profile record writes NOTHING (byte-identity); a geometry-only target's writes its refusal; a
+    declared one gets the priced terms over the measured base when the cost model's preconditions hold
     (measured energy + compute latency), or alone otherwise.
     """
     pricing = absolute_pricing_for_record(record)

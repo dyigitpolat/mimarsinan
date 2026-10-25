@@ -19,6 +19,11 @@ class ResidencyPlanError(ToolchainRefusal, ValueError):
     """A declared ``residency_plan`` the toolchain cannot plan or execute exactly; the message names why."""
 
 
+class PoolAdmissionError(ResidencyPlanError):
+    """[W03] The declared core pool does not admit a composition: a phase does not pack on the declared counts, or a
+    pass cannot hold the other passes' pinned cores beside its own (the floor then tries the next r)."""
+
+
 class PositionMultiplexingError(ToolchainRefusal, ValueError):
     """A declared ``position_multiplexing`` the toolchain cannot plan or execute exactly; the message names why."""
 

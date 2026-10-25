@@ -11,12 +11,13 @@ import pytest
 import torch
 
 import mimarsinan
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping import capability
 from mimarsinan.mapping.capability.census import ladder_census
 from mimarsinan.mapping.capability.ladder import LADDER, PLACEMENT_LABEL, payload_writes
 from mimarsinan.mapping.capability.mac_split import (
+    COUNTERS_DISAGREE,
     ESTIMATOR_BELOW_CORE_FLOOR,
-    MULTI_INPUT_REASON,
     UNCOUNTED_PRODUCT,
     MacCounters,
 )
@@ -31,7 +32,7 @@ from mimarsinan.mapping.capability.member import (
 from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
 from mimarsinan.torch_mapping.converter import probe_stages
 
-from .ir_fixtures import grouped_conv3d_graph, grouped_graph, lane_graph
+from .ir_fixtures import grouped_conv3d_graph, grouped_graph, lane_graph, seed_mac_gap
 
 REQUIRED_STAGES = probe_stages(MVM_PACKAGING)
 SCRIPT = Path(__file__).resolve().parents[4] / "scripts" / "requirement_census.py"
@@ -136,6 +137,8 @@ def test_a_clean_census_passes(runner, tmp_path):
     _member("refused", refusal="RuntimeError", refusal_is_toolchain_refusal=False),
     {**_member(), "census_refusal": "UnknownOpKindError: x"},
     {**_member(), "mac_counters": {"has_multi_input_op": False, "agree": False}},
+    # CL4: since G1's input_shapes rule the two counters agree on every row, a multi-input op's included.
+    {**_member(), "mac_counters": {"has_multi_input_op": True, "agree": False}},
     {**_member(), "rows": _rows()[:3]},
     {**_member(), "rows": [{**r, VERDICT_COLUMN: 0.0} if r["level"] == "C2" else r for r in _rows()]},
     {**_member(), "rows": [{**r, "label": None} for r in _rows()]},
@@ -253,8 +256,8 @@ def test_a_row_of_a_member_whose_counters_disagree_names_the_reason_and_both_num
         assert "host_macs" not in data and "host_macs" not in data["quantities"]
         assert "onchip_mac_share" not in data and "onchip_macs" not in data["quantities"]
         assert data["mac_counters_disagree"] == {
-            "reason": MULTI_INPUT_REASON, "count_host_ops": 0, "estimate_onchip_fraction_host": 40}
-        assert data["withheld"]["host_macs"] == MULTI_INPUT_REASON
+            "reason": COUNTERS_DISAGREE, "count_host_ops": 0, "estimate_onchip_fraction_host": 40}
+        assert data["withheld"]["host_macs"] == COUNTERS_DISAGREE
 
 
 def test_a_stated_boundary_carries_its_host_share_only_over_a_backed_total(runner, tmp_path):
@@ -275,15 +278,17 @@ def test_a_stated_boundary_carries_its_host_share_only_over_a_backed_total(runne
         assert _check(runner, tmp_path, {"grouped": member}) == 0
 
 
-def test_a_stated_boundary_whose_product_the_mac_ssot_counts_zero_states_no_host_macs(runner):
+def test_a_stated_boundary_whose_product_the_mac_ssot_counts_zero_states_no_host_macs(runner, monkeypatch):
+    seed_mac_gap(monkeypatch, "Conv3d")
     rows = ladder_census(grouped_conv3d_graph(), value_bits=8)
     data = runner._row_json(rows[0], MemberCensus(_agreement(), MacCounters(0, 0, 200, False), rows))
     assert "mac_total_withheld" not in data, "the total is backed; only the boundary's own count is missing"
     assert data["stated_boundaries"] == [_boundary(withheld=f"{UNCOUNTED_PRODUCT}: Conv3d")]
 
 
-def test_a_stated_boundary_share_names_every_reason_it_is_withheld(runner, tmp_path):
+def test_a_stated_boundary_share_names_every_reason_it_is_withheld(runner, tmp_path, monkeypatch):
     """Host MACs uncounted and the total withheld: the entry names both, numerator first, as the row's share does."""
+    seed_mac_gap(monkeypatch, "Conv3d")
     rows = ladder_census(grouped_conv3d_graph(), value_bits=8)
     assert rows[0].core_mac_floor == 80
     census = MemberCensus(_agreement(), MacCounters(0, 0, 10, False), rows)
@@ -294,6 +299,12 @@ def test_a_stated_boundary_share_names_every_reason_it_is_withheld(runner, tmp_p
     assert data["withheld"]["onchip_mac_share"] == both, "the row's own share joins the same two reasons"
     member = {**_member(), "rows": [runner._row_json(row, census) for row in rows]}
     assert _check(runner, tmp_path, {"grouped_conv3d": member}) == 0
+
+
+def test_a_counted_grouped_conv3d_states_its_boundary_host_macs(runner):
+    rows = ladder_census(grouped_conv3d_graph(), value_bits=8)
+    data = runner._row_json(rows[0], MemberCensus(_agreement(), MacCounters(8, 8, 200, False), rows))
+    assert data["stated_boundaries"] == [_boundary(host_macs=8, host_mac_share=0.04)]
 
 
 def _refused_verdict():
@@ -311,15 +322,26 @@ def test_a_member_without_rows_marks_the_verdict_input_on_its_c0_row_only(runner
     assert all("verdict_input_shape" not in row for row in runner._rowless(census))
 
 
+class _SharedLinear(torch.nn.Module):
+    """One Linear reached from two call sites: refused by name until call-site weight sharing (N7) exists."""
+
+    def __init__(self):
+        super().__init__()
+        self.a, self.b = torch.nn.Linear(8, 8), torch.nn.Linear(8, 3)
+
+    def forward(self, x):
+        return self.b(torch.relu(self.a(torch.relu(self.a(x)))))
+
+
 def test_a_refused_member_judged_on_another_input_is_marked_on_its_c0_row(runner, tmp_path):
     torch.manual_seed(0)
-    grouped = torch.nn.Sequential(torch.nn.Conv2d(2, 2, 3, padding=1, groups=2), torch.nn.ReLU(),
-                                  torch.nn.AdaptiveAvgPool2d(1), torch.nn.Flatten(), torch.nn.Linear(2, 3)).eval()
-    record = runner.census_record(grouped, (2, 8, 8), 3, verdict_shape=(2, 4, 4))
+    shared = _SharedLinear().eval()
+    record = runner.census_record(shared, (2, 8), 3, verdict_shape=(1, 8))
     assert record["verdict"]["status"] == REFUSED and record["verdict"]["root_refusal_is_toolchain_refusal"]
-    assert record["verdict_input_shape"] == record["rows"][0]["verdict_input_shape"] == [2, 4, 4]
+    assert record["verdict"]["root_refusal"] == "RepresentabilityError"
+    assert record["verdict_input_shape"] == record["rows"][0]["verdict_input_shape"] == [1, 8]
     assert all("verdict_input_shape" not in row for row in record["rows"][1:])
-    assert _check(runner, tmp_path, {"grouped": {"input_shape": [2, 8, 8], **record}}) == 0
+    assert _check(runner, tmp_path, {"shared": {"input_shape": [2, 8], **record}}) == 0
 
 
 def test_an_incomplete_verdict_exports_the_stages_it_misses(runner, tmp_path, capsys):
@@ -391,3 +413,56 @@ def test_the_zoo_runner_judges_the_verdict_at_the_verdict_side_and_the_rows_at_t
     assert record["resolution"] == {"census": "declared", "verdict": "reduced from 8 to 4"}
     assert record["rows"][0]["boundary_elements"]["entry"] == 3 * 8 * 8, "the census ran at the declared side"
     assert runner.check([str(out)]) == 0
+
+
+def _pins(tmp_path, pins):
+    path = tmp_path / "pins.json"
+    path.write_text(json.dumps({"members": pins}))
+    return str(path)
+
+
+def _check_pinned(runner, tmp_path, members, pins):
+    path = tmp_path / "census.json"
+    path.write_text(json.dumps({**HEADER, "members": members}))
+    return runner.check([str(path)], pins=_pins(tmp_path, pins))
+
+
+def test_each_zoo_reading_equals_its_pinned_name(runner, tmp_path, capsys):
+    """CL4 re-pins the zoo's per-member readings (plan §11.3 acceptance 5): an agreement or the root refusal name."""
+    members = {"a": _member(), "b": _refused("RepresentabilityError")}
+    assert _check_pinned(runner, tmp_path, members, {"a": "fp64 agreement", "b": "RepresentabilityError"}) == 0
+    assert _check_pinned(runner, tmp_path, members, {"a": "fp64 agreement", "b": "GenericOpArgumentError"}) == 1
+    assert "b: pinned GenericOpArgumentError, reads RepresentabilityError" in capsys.readouterr().out
+
+
+def test_a_member_without_a_pin_and_a_pin_without_a_member_both_fail(runner, tmp_path, capsys):
+    assert _check_pinned(runner, tmp_path, {"a": _member()}, {}) == 1
+    assert "a: not pinned" in capsys.readouterr().out
+    assert _check_pinned(runner, tmp_path, {"a": _member()}, {"a": "fp64 agreement", "gone": "fp64 agreement"}) == 1
+    assert "gone: pinned but absent" in capsys.readouterr().out
+
+
+ZOO_PINS = Path(__file__).resolve().parents[3] / "fixtures" / "requirement_census" / "zoo_pins.json"
+SRC = Path(mimarsinan.__file__).resolve().parent
+
+
+def _refusal_class(name: str):
+    """The toolchain class ``name``, found by its definition in the source tree and imported from its module."""
+    for path in SRC.rglob("*.py"):
+        if f"class {name}(" in path.read_text(encoding="utf-8"):
+            module = ".".join(("mimarsinan",) + path.relative_to(SRC).with_suffix("").parts)
+            return getattr(importlib.import_module(module), name)
+    return None
+
+
+def test_every_zoo_pin_is_an_agreement_or_a_refusal_the_toolchain_defines():
+    """CL4's zoo re-pin (plan §11.3 acceptance 5): each zoo member's pinned reading, which ``check --pins`` compares
+    with its census record, is the fp64 agreement or the name of a ToolchainRefusal subclass of this toolchain (never
+    a value mismatch, which is an exactness failure to fix, and never an anonymous error)."""
+    pins = json.loads(ZOO_PINS.read_text(encoding="utf-8"))["members"]
+    assert len(pins) >= 70, "the whole in-zoo roster is pinned"
+    for member, reading in sorted(pins.items()):
+        if reading == AGREEMENT:
+            continue
+        refusal = _refusal_class(reading)
+        assert refusal is not None and issubclass(refusal, ToolchainRefusal), (member, reading)

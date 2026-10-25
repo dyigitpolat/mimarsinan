@@ -10,6 +10,13 @@ Each row states what it certifies: ``CUT`` rows cut a segment into passes (a car
 every period (W_exec > 0); ``SEGMENTS`` rows run one pass per segment, because no feasible budget cuts a segment of
 that step (t0_03 stateless: every segment's tiles fit any C that holds its 262-tile unit; t0_22: units (66, 1, 1),
 whose second segment's two tiles always fit), so they certify segment-level passes with pins, not a residency cut.
+``POSITIONS`` rows [W03] cut a segment only where nothing is carried: with tile-granular units the floor splits the
+output positions of a layer that is alone in its segment across passes (t0_26 below its 129 + 129 footprint, at x0.7:
+125 + 125 cores, 13 passes, every cut carrying 0), so they certify a cut inside a layer with cores written and no
+carry. ``FIT`` rows [fix_c] run the floor where the declared pool holds the program's unscheduled pack and the floor's
+own passes are not pinned whole (t0_26 at x1.2): the fit rule makes the floor that pack, programmed once (every core
+pinned, one pass per segment, no composition plan), so they certify the fit's single pool against the identity and U1
+runs. Where the floor pins every core itself (t0_22 at x0.7) its program stands.
 
 The tolerance is the existing certificate's: where the semantics' certification observable is counts, the
 streaming twin spike-count certificate (atol 0, the ``run_spike_count_certificate_gate`` cell); exact output
@@ -40,13 +47,14 @@ from mimarsinan.pipelining.core.simulation_factory import (
 
 from . import templates as TV
 
-CUT, SEGMENTS = "cut", "segments"
+CUT, SEGMENTS, POSITIONS, FIT = "cut", "segments", "positions", "fit"
 #: (cell, core-count scale forcing Q >= 2 with every unit within the budget, weight gain, {step: what it certifies})
 CELLS = [
     ("t0_03", 1.0, 32.0, {"floor": CUT, "stateless": SEGMENTS}),
     ("t0_08", 1.0, 0.0, {"floor": CUT}),
     ("t0_22", 0.7, 32.0, {"floor": SEGMENTS, "stateless": SEGMENTS}),
-    ("t0_26", 1.2, 32.0, {"floor": CUT}),
+    ("t0_26", 0.7, 32.0, {"floor": POSITIONS}),
+    ("t0_26", 1.2, 32.0, {"floor": FIT}),
     ("t0_53", 1.34, 32.0, {"floor": CUT, "stateless": CUT}),
 ]
 
@@ -73,13 +81,23 @@ def test_the_executed_plan_equals_the_identity_and_u1_runs(cell, scale, gain, st
     for step, kind in steps.items():
         mapping = build_hybrid_mapping_for_pipeline(
             vehicle.ir, TV.residency_platform(vehicle, scale, {"step": step}), pipeline_config=config)
-        plan = mapping.schedule_residency_plan
-        assert sum(p.passes for p in plan) >= 2
         passes = [s for s in mapping.stages if s.kind == "neural"]
         w_exec = sum(len(s.hard_core_mapping.cores) - len(s.schedule_resident_cores) for s in passes)
-        if kind == CUT:
+        if kind == FIT:  # [fix_c] the fit's single pool: no composition plan, programmed once
+            assert not hasattr(mapping, "schedule_residency_plan") and w_exec == 0
+            assert not carried_outputs_by_stage(mapping.stages)
+        elif kind == CUT:
+            assert sum(p.passes for p in mapping.schedule_residency_plan) >= 2
             assert carried_outputs_by_stage(mapping.stages) and w_exec > 0    # a residency cut, cores written
+        elif kind == POSITIONS:
+            assert sum(p.passes for p in mapping.schedule_residency_plan) >= 2
+            assert not carried_outputs_by_stage(mapping.stages) and w_exec > 0
+            layer_of = {int(n.id): n.perceptron_index for n in vehicle.ir.get_neural_cores()}
+            held = [{layer_of[int(p["ir_node_id"])] for ps in s.hard_core_mapping.soft_core_placements_per_hard_core
+                     for p in ps} for s in passes]
+            assert any(sum(layer in h for h in held) >= 2 for layer in set().union(*held))   # a layer split
         else:
+            assert sum(p.passes for p in mapping.schedule_residency_plan) >= 2
             assert not carried_outputs_by_stage(mapping.stages)               # segment-level passes only
             assert w_exec > 0 or step == "floor"                              # t0_22's floor pins every core
         executed = build_spiking_hybrid_flow(pipeline, mapping)
@@ -124,7 +142,8 @@ def test_both_planes_execute_the_step_on_the_deep_cnn_of_t0_03(step):
     built = [tuple(sorted({layer_of[int(p["ir_node_id"])] for ps in s.hard_core_mapping.soft_core_placements_per_hard_core
                            for p in ps})) for s in passes]
     shape_only = [tuple(sorted({vehicle.specs[i].perceptron_index for i, _ in pl})) for pl in frag.pass_placements]
-    planned = [tuple(sorted(comp.units.layers[u] for u in range(a, b))) for a, b in comp.facts.phases]
+    # a layer's tile groups may span phases [W03]: each phase's layers as a set
+    planned = [tuple(sorted({comp.units.layers[u] for u in range(a, b)})) for a, b in comp.facts.phases]
     assert built == shape_only == planned and len(planned) == comp.step[2] >= 2
     assert [s.schedule_resident_cores for s in passes] == [p.schedule_resident_cores for p in frag.pass_programs]
     assert [(p.rotating_tiles, p.core_budget) for p in mapping.schedule_residency_plan] == [
@@ -143,4 +162,4 @@ def test_both_planes_execute_the_step_on_the_deep_cnn_of_t0_03(step):
                                      getattr(core, "fused_component_axons", None))) for w in written for core in w)
     assert w_exec == comp.facts.written_core_tiles <= comp.facts.written_tiles
     print(f"t0_03 {step}: programmed bytes {executed_bytes}, W_exec {w_exec}, "
-          f"W {comp.facts.written_tiles} (layer-granular; the difference is joint packing of a phase)")
+          f"W {comp.facts.written_tiles} (planned; the difference is joint packing of a phase)")

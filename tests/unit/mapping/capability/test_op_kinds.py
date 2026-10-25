@@ -180,3 +180,41 @@ def test_every_host_op_of_the_tiny_swin_family_programs_has_a_kind(factory, shap
     assert set(kinds.values()) <= set(REQUIREMENTS)
     ops = {op.op_type: kinds[op.id] for op in program.ir.get_compute_ops() if op.op_type in wiring}
     assert set(ops) == wiring and set(ops.values()) == {"wire+"}
+
+
+MASK_FUNCTIONS = (
+    torch.eq, torch.ne, torch.lt, torch.le, torch.gt, torch.ge, operator.eq, operator.ne, operator.lt, operator.le,
+    operator.gt, operator.ge, torch.masked_fill, torch.where, torch.logical_not, torch.logical_and, torch.logical_or,
+    torch.logical_xor, operator.invert, operator.and_, operator.or_, operator.xor,
+)
+
+
+@pytest.mark.parametrize("fn", MASK_FUNCTIONS, ids=lambda fn: getattr(fn, "__name__", str(fn)))
+def test_mask_operators_take_the_host_only_mask_kind_in_either_operand_structure(fn):
+    assert op_kind(_unary(ComputeAdapter(fn))) == "mask"
+    assert op_kind(_binary(ComputeAdapter(fn))) == "mask"
+
+
+@pytest.mark.parametrize("method", [torch.Tensor.masked_fill, torch.Tensor.gt, torch.Tensor.eq, torch.Tensor.lt,
+                                    torch.Tensor.logical_not])
+def test_a_mask_method_takes_the_kind_of_its_torch_function(method):
+    assert op_kind(_unary(ComputeAdapter(method))) == "mask"
+
+
+def test_the_mask_kind_is_a_host_op_at_every_level_with_its_reason():
+    requirement = REQUIREMENTS["mask"]
+    assert requirement.placement == "host" and not requirement.classes and not requirement.carries_macs
+    assert "boolean mask" in requirement.reason
+
+
+@pytest.mark.parametrize("cell", [nn.RNN, nn.GRU, nn.LSTM])
+def test_a_decomposed_recurrence_takes_the_host_only_recurrence_kind(cell):
+    """G1's decomposed recurrent leaf keeps its hidden-to-hidden map and gates in one ``Recurrence`` host op; its
+    hidden state feeds its own next step, a loop no ladder class places on chip."""
+    from mimarsinan.torch_mapping.leaf_decomposition.recurrence import Recurrence
+
+    recurrence = Recurrence(cell(4, 4, batch_first=True), 0, steps=3)
+    assert op_kind(_unary(recurrence)) == "recurrence"
+    requirement = REQUIREMENTS["recurrence"]
+    assert requirement.placement == "host" and not requirement.classes and requirement.carries_macs
+    assert "feeds its own next step" in requirement.reason

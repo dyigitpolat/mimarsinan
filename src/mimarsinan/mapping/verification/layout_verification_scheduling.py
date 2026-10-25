@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import replace
-from typing import Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.verification.layout_verification_packing import (
@@ -10,7 +10,8 @@ from mimarsinan.mapping.verification.layout_verification_types import LayoutVeri
 from mimarsinan.mapping.support.schedule.pass_planner import (
     plan_program_passes,
 )
-from mimarsinan.mapping.support.schedule.residency_composition import refuse_without_cut_census
+from mimarsinan.mapping.support.residency_rules import fit_rule_applies, passes_pinned, unscheduled_pack_holds
+from mimarsinan.mapping.support.schedule.residency_composition import ShapeOnlyResidency, refuse_without_cut_census
 from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal, named_message
 
 
@@ -25,6 +26,8 @@ def compute_mapping_stats(
     residency_plan: Optional[dict] = None,
     runs: Optional[Sequence[int]] = None,
     position_multiplexing: Optional[bool] = None,
+    census: Optional[Any] = None,
+    program: Optional[Any] = None,
 ) -> Tuple[LayoutVerificationStats, Optional[str]]:
     """Pack softcores and compute verification statistics with scheduling support.
 
@@ -44,8 +47,16 @@ def compute_mapping_stats(
     segmentations group the specs alike (every tier-0 template; a branchy graph
     whose host op splits one depth segment into two builder segments, or one
     builder segment holding two depth segments, differs on the base too).
+    [W03] A declared ``residency_plan`` is planned with the layout walk's wire
+    ``census`` and ``program`` graph (the residency composition the builder
+    executes); a caller holding neither refuses it by name. [fix_b] Without
+    ``runs``, the census's runs (``spec_runs``) group the specs where it states them. Where U1's passes do not
+    fit the pool side by side (unpinned) while the unscheduled pack holds (``unscheduled_pack_holds``), that pack is
+    the program (the fit rule, as the builder builds its single pool); [fix_c] likewise under a declared plan whose
+    composition rotates tiles (r > 0), every plan but the stateless baseline (``fit_rule_applies``).
     """
-    refuse_without_cut_census("compute_mapping_stats", residency_plan)
+    if census is None or program is None:
+        refuse_without_cut_census("compute_mapping_stats", residency_plan)
     if not softcores or not core_types:
         return _empty_stats(feasible=False, num_softcores=len(softcores)), \
             "No softcores or core types"
@@ -79,7 +90,8 @@ def compute_mapping_stats(
         allow_coalescing=allow_coalescing,
         allow_splitting=allow_neuron_splitting,
         max_schedule_passes=max_schedule_passes,
-        runs=runs,
+        residency=None if residency_plan is None else ShapeOnlyResidency(residency_plan, census, program),
+        runs=runs if runs is not None else getattr(census, "spec_runs", None),
         position_multiplexing=position_multiplexing,
     )
 
@@ -101,9 +113,10 @@ def compute_mapping_stats(
     committed = allocated_capacity = allocated_axons = allocated_neurons = 0
     used_axons_total = used_neurons_total = 0
     all_feasible = True
-    for pass_scs in sorted(plan.pass_lists, key=len, reverse=True):
-        pr = pack_layout(
-            softcores=pass_scs,
+    packs = {}
+    for index in sorted(range(len(plan.pass_lists)), key=lambda q: len(plan.pass_lists[q]), reverse=True):
+        pr = packs[index] = pack_layout(
+            softcores=plan.pass_lists[index],
             core_types=core_types,
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
@@ -124,6 +137,9 @@ def compute_mapping_stats(
                 softcores=softcores, core_types=core_types,
             )
 
+    if fit_rule_applies(residency_plan) and flat_stats is not None and unscheduled_pack_holds(pack, core_types) and not (
+            _pinned_whole(plan, [packs[q] for q in range(len(packs))], all_feasible, core_types)):
+        return flat_stats, None  # [fix_b, fix_c] the fit rule: the planned passes write every period, the pack holds
     if best_stats is not None and all_feasible and allocated_capacity > 0:
         best_stats = replace(
             best_stats,
@@ -150,3 +166,11 @@ def compute_mapping_stats(
         schedule_sync_count=plan.sync_count,
         max_cores_per_pass=plan.budget,
     ), None
+
+
+def _pinned_whole(plan: Any, packs: Sequence[Any], all_feasible: bool, core_types: Sequence[LayoutHardCoreType]) -> bool:
+    """[fix_c] Whether the planned program keeps every core pinned: a declared plan's composition rotates no tile
+    (r = 0), U1's passes fit the pool side by side (``passes_pinned``)."""
+    if plan.residency is not None:
+        return int(plan.residency.r) == 0
+    return all_feasible and passes_pinned(list(packs), plan.resident_flags, core_types)

@@ -94,7 +94,13 @@ step) — a sealed structure with nothing crossing claims KNOWN ZEROS (a
 single-pass program is the best carry, never an unknown), while a missing
 census, discipline or layout keeps the quantities absent.
 Model construction lives in `joint/model_build.py` (`build_raw_model`,
-`convert_to_mapper_repr`), which the hook delegates to. [P] `build_raw_model`
+`convert_to_mapper_repr`), which the hook delegates to. [M10] Both build and
+convert under the problem's `DeployedConversion` (the run plan's packaging
+contract and `decompose_leaf_modules`, resolved by the factories' one helper
+`deployed_conversion_of`), so the program a candidate is priced as is the
+program the pipeline deploys (a value-domain LeNet-5: 983 softcores, where the
+spiking default built 198); `core_semantics`, which selects that contract, is
+not a searchable option axis (`REFUSED_OPTION_AXES`). [P] `build_raw_model`
 applies the RUN's DECLARED pruning to every candidate model
 (`joint/candidate_pruning.py`): `prune_sparsity` runs the deployed
 `prune_perceptron_chain` itself (weight-independent counts — candidate shapes

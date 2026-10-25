@@ -106,11 +106,13 @@ def test_the_payload_writes_equal_g7s_census_at_c3():
         repr_ = flow.get_mapper_repr()
         repr_.assign_perceptron_indices()
         g1_ir = IRMapping(q_max=127, firing_mode="Default").map(repr_)
-    planned = level_period_census(g1_ir, capability_level("C3"), value_bits=8, payload_write=HOST_PAYLOAD_WRITE)
+    planned = level_period_census(g1_ir, capability_level("C3"), value_bits=8, payload_write=HOST_PAYLOAD_WRITE,
+                                  bytes_of_cells=int)  # [CL4] the census's payload bytes; the cells compared here
     executed = attention_program("softmax")
     written = sum(n.params["module"].payload_cells() for n in executed.ir.get_compute_ops()
                   if isinstance(n.params.get("module"), OperandWrite))
-    assert planned.written_cells_producer == _bank_cells(executed.ir) == written
+    # [CL4] the level's period census is S0's PassPeriodCensus of its passes: their producer cells per inference
+    assert sum(p.written_cells_producer for p in planned.passes) == _bank_cells(executed.ir) == written
 
 
 def _static_row(segment, cells):
@@ -201,8 +203,11 @@ def test_operand_passes_on_a_shared_core_type_wear_its_core_once_per_inference_e
 
 def test_a_loaded_once_census_gives_each_operand_region_its_own_core():
     """One placement model per census: where every tile fits its core type, static tiles and operand regions each
-    keep a core, so each operand cell is written once per inference."""
-    rows = ProgramPasses(rows=(_static_row(0, 40), _producer_row(1), _producer_row(2), _static_row(3, 30)))
+    keep a core, so each operand cell is written once per inference. [integration of N2 with W03] A fit is loaded
+    once where the planner pins it (``mark_fit_residency``, the floor at r = 0, marks every core of every pass): the
+    rows carry those marks; the executed rotation rewrites an unmarked program of several writing passes."""
+    rows = ProgramPasses(rows=tuple(replace(row, marks=frozenset({0})) for row in (
+        _static_row(0, 40), _producer_row(1), _producer_row(2), _static_row(3, 30))))
     census = period_census(rows, weight_bits=8, capacity={(64, 64): 2, (32, 32): 2})
     assert census.most_written_core == 0 and census.producer_slots == ((0, 1),)
     wear, _ = cell_wear(census.census, _policy(16), census.most_written_core, census.producer_slots)

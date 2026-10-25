@@ -13,12 +13,12 @@ refused by name with the builder's message, on chain and non-chain graphs alike.
 cannot run is the fit of the builder's own hard-core packing (the packers differ, pre-existing; no row of the
 round-2 and round-3 sweeps differed): ``--build`` runs it.
 
-- r; W = F - C + r, the step's layer-granular writes; W_exec, the tiles of the cores the pinned rule leaves to write
-  once each phase is packed as one pass (either side of W: joint packing saves tiles, packing on the declared counts
-  can cost one);
+- r; W = F - C + r, the step's planned tile writes (units are tile groups, W03); W_exec, the tiles of the cores the
+  pinned rule leaves to write once each phase is packed as one pass (either side of W: joint packing saves tiles,
+  packing on the declared counts can cost one);
 - programmed bytes per period, defined once: the occupied-cell bytes (``params_bytes`` at ``weight_bits``) of every
-  core a pass writes; beside it, on each unit's own cores (layer-granular); W x TB, TB one full tile of the largest
-  declared core type, is printed as a bound only;
+  core a pass writes; beside it, on each unit's own cores (its tile group, the layer packed alone); W x TB, TB one
+  full tile of the largest declared core type, is printed as a bound only;
 - Q and the carried elements (both directions at every cut);
 - per row, ``period_census``: S0's ``PassPeriodCensus`` of the step (``units_period_census``, each unit's own cores,
   the carry at one byte per element), labelled with the row's label below.
@@ -206,7 +206,7 @@ def member_plan(path: Path, scale: float, executed: dict, certified_on: str, bui
         layered = plan_period_facts(units.tiles, units.live, C, step, forced=units.forced, unit_cores=units.cores)
         out.update({"r": step[0], "W_tiles": comp.facts.written_tiles, "W_exec_tiles": comp.facts.written_core_tiles,
                     "planner_bytes": comp.facts.programmed_bytes(priced),
-                    "programmed_bytes_layer_granular": layered.programmed_bytes(priced),
+                    "programmed_bytes_unit_cores": layered.programmed_bytes(priced),
                     "full_tile_bound": comp.facts.written_tiles * tile_bytes, "Q": step[2],
                     "carry_elements": step[1]})
         out["programmed_bytes"], out["bytes_basis"] = out["planner_bytes"], "planner (layout packer)"
@@ -227,7 +227,7 @@ def member_plan(path: Path, scale: float, executed: dict, certified_on: str, bui
                         f"CL3)")
         out["period_census"] = units_period_census(
             units, C, step, bytes_of_cells=priced, tile_cells=tile_cells, bytes_per_element=CARRY_BYTES_PER_ELEMENT,
-            label=f"{out['label']}; layer-granular; carry at {CARRY_BYTES_PER_ELEMENT} B per element").to_dict()
+            label=f"{out['label']}; unit cores; carry at {CARRY_BYTES_PER_ELEMENT} B per element").to_dict()
         row["rows"].append(out)
     first = row["rows"][0]
     row["programmed_bytes_at_r_star"] = first.get("programmed_bytes")          # the minimum-r step's
@@ -281,8 +281,8 @@ def main(argv=None) -> int:
                 flag = "  [cores or pins differ on the two planes, bytes equal; per-pass causes below]"
             w_exec = r.get("executed_W_exec_tiles", r["W_exec_tiles"])
             print(f"   {r['step']:<10} r {r['r']:>5}  W {r['W_tiles']:>6}  W_exec {w_exec:>6}  "
-                  f"bytes {r['programmed_bytes']:>11} ({r['bytes_basis']}; layer-granular "
-                  f"{r['programmed_bytes_layer_granular']:>11}, full-tile bound {r['full_tile_bound']:>11})  "
+                  f"bytes {r['programmed_bytes']:>11} ({r['bytes_basis']}; unit cores "
+                  f"{r['programmed_bytes_unit_cores']:>11}, full-tile bound {r['full_tile_bound']:>11})  "
                   f"Q {r['Q']:>3}  carry {r['carry_elements']:>8}  {r['label']}{flag}")
             for d in r.get("pass_differences", ()):
                 for text in d["differences"]:

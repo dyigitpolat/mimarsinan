@@ -1,0 +1,20 @@
+{
+  "name": "neurram",
+  "display_name": "NeuRRAM (130 nm RRAM CIM, Wan 2022): 48 cores of 256 x 256",
+  "geometry": "neurram_like",
+  "keys": {
+    "core_semantics": "mvm",
+    "platform_physics_profile": "neurram",
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true
+  },
+  "faithfulness": {
+    "class": "approximate",
+    "named": [
+      "analog MVM error not modeled",
+      "MVM energy read in a secondary source"
+    ],
+    "note": "The chip's MVM is analog (conductance relaxation and IR drop, wan2021edge p.5, p.9): its error is not modeled, and a deployment on the bundle runs the toolchain's exact integer value law on NeuRRAM's geometry, permissions and physics. The MVM energy is read in the HERMES paper's comparison table (gallo2022a Extended Data Table II), not in NeuRRAM's own figures (the neurram profile's e_mac row)."
+  },
+  "notes": "allow_coalescing and allow_neuron_splitting are true: \"If the height or the width of a matrix exceed the RRAM array size of a single CIM core (256×256), we split the matrix into multiple smaller conductance matrices, each with maximum height and width of 256.\" (wan2021edge, Methods 'Weight mapping strategy onto multiple CIM cores', p.14), and \"We therefore split them vertically into multiple segments, and map the segments either onto different cores that are accessed in parallel, or onto different columns within a core that are accessed sequentially.\" (wan2021edge, Methods, p.13). The chip runs MVM with 1- to 6-bit inputs (p.4) and the profile's MVM time and energy hold at 4-bit inputs; the bundle binds no activation_bits, so a run that holds that operating point declares activation_bits 4. This bundle is the physics form of the neurram_like geometry, which it bundles once."
+}

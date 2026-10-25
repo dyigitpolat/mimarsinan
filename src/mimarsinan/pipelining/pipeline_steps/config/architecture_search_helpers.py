@@ -19,7 +19,9 @@ from mimarsinan.search.optimizers.sampling_optimizer import (
     DEFAULT_GRID_CAP, GridStrategy, RandomStrategy, SamplingOptimizer,
     SamplingStrategy, SobolStrategy,
 )
+from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 from mimarsinan.search.problems.joint import PlatformResolver
+from mimarsinan.search.problems.joint.model_build import DeployedConversion
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 from mimarsinan.visualization.search_viz import (
     create_interactive_search_report,
@@ -259,6 +261,12 @@ def write_search_visualizations(result_json: Dict[str, Any], out_dir: str) -> No
             if os.path.exists(legacy_path):
                 with best_effort(f"remove legacy report {legacy}"):
                     os.remove(legacy_path)
+
+
+def deployed_conversion_of(plan, config: Mapping[str, Any]) -> DeployedConversion:
+    """[M10] How the run's pipeline builds and converts its model, for the search route and its twin."""
+    return DeployedConversion(packaging=packaging_contract_for(plan),
+                              decompose_leaf_modules=bool(config.get("decompose_leaf_modules", False)))
 
 
 def firing_semantics_kwargs(plan, config: Mapping[str, Any]) -> Dict[str, Any]:

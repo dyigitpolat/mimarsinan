@@ -44,7 +44,8 @@ def _fragments(chain, count, plan=None):
 
 
 def _step_layers(comp):
-    return [tuple(comp.units.layers[u] for u in range(a, b)) for a, b in comp.facts.phases]
+    """Per phase, the sorted layers its units hold (a layer's tile groups may span phases [W03])."""
+    return [tuple(sorted({comp.units.layers[u] for u in range(a, b)})) for a, b in comp.facts.phases]
 
 
 @pytest.fixture(scope="module")
@@ -162,10 +163,23 @@ class TestTheCompositionIsThePortWithoutForcedCuts:
 
 
 class TestRefusalsByName:
-    def test_a_unit_above_the_budget(self, chain):
-        rep, specs, census, _program, ir = chain
-        with pytest.raises(ResidencyPlanError, match="exceed the core budget"):
-            V.build(ir, 2, {"step": "floor"})                                     # a 3-tile layer, C = 2
+    def test_a_layer_above_the_budget_plans_in_tile_groups(self, chain):
+        """[W03] A 3-tile layer at C = 2 (and C = 1): the floor cuts inside the layer, as U1's capacity split does."""
+        rep, specs, census, program, ir = chain
+        for count in (2, 1):
+            assert V.neural_passes(V.build(ir, count, max_schedule_passes=64))              # U1 builds
+            hybrid = V.build(ir, count, {"step": "floor"}, max_schedule_passes=64)
+            frag = V.fragments(specs, census, count, {"step": "floor"}, program=program, max_schedule_passes=64)
+            passes = V.built_pass_layers(hybrid, ir)
+            assert passes == V.fragment_pass_layers(frag, specs)
+            assert any(sum(layer in held for held in passes) >= 2 for layer in {x for p in passes for x in p})
+
+    def test_a_unit_above_the_budget(self):
+        """A coalesced wide fan-in (40 axons on 25-axon cores) is one tile group of two tiles: above C = 1."""
+        ir = V.ir_of(V.chain_repr(seed=0, widths=(40, 8)), coalescing=True)
+        with pytest.raises(ResidencyPlanError, match="exceed the core budget") as caught:
+            V.build(ir, 1, {"step": "floor"}, allow_coalescing=True)
+        assert isinstance(caught.value, ToolchainRefusal)
 
     def test_an_index_outside_the_step_function(self, chain):
         rep, specs, census, _program, ir = chain
@@ -173,9 +187,11 @@ class TestRefusalsByName:
             V.build(ir, C_TIGHT, {"step": "index", "index": 99})
 
     def test_a_pass_count_above_max_schedule_passes(self, chain):
+        """At C = 5 the 11 tiles need 3 passes at least: a cap of 2 refuses by name, naming the fewest passes."""
         rep, specs, census, _program, ir = chain
-        with pytest.raises(ResidencyPlanError, match="max_schedule_passes"):
+        with pytest.raises(ResidencyPlanError, match="max_schedule_passes = 2 per segment") as caught:
             V.build(ir, C_TIGHT, {"step": "floor"}, max_schedule_passes=2)
+        assert "{0: 3}" in str(caught.value)
 
     def test_a_shape_only_entry_point_without_a_cut_census(self, chain):
         rep, specs, census, _program, ir = chain
@@ -190,12 +206,20 @@ class TestRefusalsByName:
             V.build(ir, 6, {"step": "index", "index": steps})
         assert isinstance(caught.value, ToolchainRefusal)
 
-    def test_exactly_max_schedule_passes_builds_and_one_fewer_refuses(self, chain):
+    def test_a_binding_cap_plans_within_it_and_one_below_the_fewest_passes_refuses(self, chain):
+        """[W03] The cap is planned, not checked after: the floor is the smallest r with a plan of at most
+        ``max_schedule_passes`` passes per segment (a larger r where the uncapped floor needs more passes)."""
         rep, specs, census, _program, ir = chain
-        Q = _composition(chain, C_TIGHT, {"step": "floor"}).step[2]
-        assert len(V.neural_passes(V.build(ir, C_TIGHT, {"step": "floor"}, max_schedule_passes=Q))) == Q
+        free = _composition(chain, C_TIGHT, {"step": "floor"})
+        fewest = free.plan.q_fit
+        assert free.step[2] > fewest                                            # the uncapped floor runs more
+        capped = V.shape_only(specs, census, _program, C_TIGHT, {"step": "floor"}, max_schedule_passes=fewest)
+        assert capped.step[2] == fewest and capped.step[0] >= free.step[0]
+        hybrid = V.build(ir, C_TIGHT, {"step": "floor"}, max_schedule_passes=fewest)
+        assert len(V.neural_passes(hybrid)) == fewest
+        assert hybrid.schedule_residency_plan[0].rotating_tiles == capped.step[0]
         with pytest.raises(ResidencyPlanError, match="max_schedule_passes"):
-            V.build(ir, C_TIGHT, {"step": "floor"}, max_schedule_passes=Q - 1)
+            V.build(ir, C_TIGHT, {"step": "floor"}, max_schedule_passes=fewest - 1)
 
     def test_the_per_hop_mapping_level_split(self, chain):
         rep, specs, census, _program, ir = chain

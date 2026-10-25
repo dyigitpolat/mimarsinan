@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
-from mimarsinan.deployment_record.cost.absolute.output_stage import CHIP_ONLY_TERM, output_stage_note
+from mimarsinan.deployment_record.cost.output_stage import CHIP_ONLY_TERM, output_stage_note
 from mimarsinan.deployment_record.platform_physics.lane_blocks import (
     LaneBlockError,
     TargetNode,

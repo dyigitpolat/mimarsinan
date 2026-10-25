@@ -8,15 +8,15 @@
     "technology_node_nm": 16.0,
     "supply_v": 0.58,
     "temperature_c": null,
-    "array_size_assumed": "128 kB of 6T in 1 kB blocks of 64 x 128 b; 8-bit weights x 4-bit inputs, 32-bit partial sums, exact digital accumulation (jiang2023a p.2-3)",
+    "array_size_assumed": "128 kB of 6T in 128 blocks of 1 kB (64 rows of 128 b); 16 SR groups of 8 blocks each compute one 128-input dot product per cycle, so the macro is one logical core of 128 inputs x 1024 weight vectors of 8-bit weights; 4-bit inputs, 32-bit partial sums, exact digital accumulation (jiang2023a p.2-3)",
     "notes": "MACRO-LEVEL constants only, measured at 20 MHz and 0.58 V (jiang2023a p.4). Chip-level rows (periphery, NoC, host, static power, the cycle time of a whole evaluation) are absent and refuse by name; the backing store is declared by a backing-store override block (CL5, CL7), so an SRAM point is never read without it.",
     "geometry": {
-      "axons": 64,
-      "neurons": 16,
+      "axons": 128,
+      "neurons": 1024,
       "cell_bits": 8,
       "core_count": [
         1,
-        128
+        1
       ],
       "scaling": null
     }
@@ -61,5 +61,15 @@
       "citation": "jiang2023a p.2-3",
       "note": "8-bit weights."
     }
-  }
+  },
+  "external_components": [
+    {
+      "name": "backing store",
+      "constants": [
+        "e_dma_per_byte",
+        "t_program_per_byte"
+      ],
+      "note": "the macro holds 128 kB of weights and no store for the rest of a program: the backing store sets the tile write cost (constants.md sec. 5: an 8 KiB tile write costs 0.62-7.7 nJ in the array and 1.33 uJ over DDR3/4 I/O), so an SRAM-CIM point is defined only with its store's transfer energy and time declared, by a named backing_store block"
+    }
+  ]
 }

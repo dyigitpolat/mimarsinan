@@ -65,26 +65,34 @@ def root_refusal(refusal: ToolchainRefusal) -> ToolchainRefusal:
 
 
 def _refused(refusal: ToolchainRefusal) -> ExactnessVerdict:
+    """A measured comparison above its bound is a value mismatch; a comparison the reference cannot decide
+    (``ValueParityResult.reference_undetermined``: ``ReferenceUndeterminedError``) is refused by that name, its
+    measured error kept beside it, because no mismatch is shown."""
     root = root_refusal(refusal)
+    result = getattr(refusal, "result", None)
     measured = getattr(refusal, "relative_error", None)
-    bound = getattr(getattr(refusal, "result", None), "bound", None)
+    bound = getattr(result, "bound", None)
+    mismatch = measured is not None and not getattr(result, "reference_undetermined", False)
     lines = str(refusal).strip().splitlines()
     return ExactnessVerdict(
-        VALUE_MISMATCH if measured is not None else REFUSED,
+        VALUE_MISMATCH if mismatch else REFUSED,
         relative_error=None if measured is None else float(measured),
         bound=None if measured is None or bound is None else float(bound),
         refusal=type(refusal).__name__, refusal_type=type(refusal), reason=lines[0] if lines else None,
-        root_refusal=type(root).__name__, root_refusal_type=type(root), value_mismatch=measured is not None,
+        root_refusal=type(root).__name__, root_refusal_type=type(root), value_mismatch=mismatch,
     )
 
 
-def c0_verdict(model: nn.Module, input_shape, *, packaging: PackagingContract) -> ExactnessVerdict:
-    """Every probe stage ``packaging`` requires (stage 2 for a value-domain contract) on an fp64 witness.
+def c0_verdict(model: nn.Module, input_shape, *, packaging: PackagingContract,
+               decompose_leaf_modules: bool = False) -> ExactnessVerdict:
+    """Every probe stage ``packaging`` requires (stage 2 for a value-domain contract) on an fp64 witness, converted
+    under ``decompose_leaf_modules`` as the census converts the member.
 
     A refusal by name becomes the verdict (a measured mismatch is marked, never counted a refusal); a verdict
     missing a required stage is incomplete; an anonymous crash propagates, loud.
     """
-    results, exc = guarded(lambda: probe_witness_conversion(model, tuple(input_shape), packaging=packaging))
+    results, exc = guarded(lambda: probe_witness_conversion(model, tuple(input_shape), packaging=packaging,
+                                                            decompose_leaf_modules=decompose_leaf_modules))
     if exc is not None:
         refusal = refusal_in_chain(exc)
         if refusal is None:
@@ -112,9 +120,12 @@ def has_multi_input_op(ir_graph: IRGraph) -> bool:
 
 def convert_for_census(
     model: nn.Module, input_shape, num_classes: int, *, packaging: PackagingContract,
+    decompose_leaf_modules: bool = False,
 ) -> ConvertedMember:
-    """The member's IR as stage 2 lowers it (unbounded cores, uncoalesced) and its two MAC counters."""
-    flow = trace_and_convert(model, tuple(input_shape), "cpu", packaging=packaging).flow
+    """The member's IR as stage 2 lowers it (unbounded cores, uncoalesced) and its two MAC counters;
+    ``decompose_leaf_modules`` replaces the registered leaves and decomposes attention calls before the lowering."""
+    flow = trace_and_convert(model, tuple(input_shape), "cpu", packaging=packaging,
+                             decompose_leaf_modules=decompose_leaf_modules).flow
     mapper_repr = flow.get_mapper_repr()
     try:
         ir = map_model_to_ir(mapper_repr)
@@ -138,13 +149,17 @@ class MemberCensus:
 def member_census(
     model: nn.Module, input_shape, num_classes: int, *, packaging: PackagingContract, value_bits: int,
     levels: Sequence[CapabilityLevel] = LADDER, verdict: Optional[ExactnessVerdict] = None,
+    decompose_leaf_modules: bool = False,
 ) -> MemberCensus:
     """The verdict first (or ``verdict``, judged by the caller, possibly on a smaller input of the same model); an
-    agreeing member is then converted once more at ``input_shape`` for its IR and placed on every level."""
-    verdict = verdict if verdict is not None else c0_verdict(model, input_shape, packaging=packaging)
+    agreeing member is then converted once more at ``input_shape`` for its IR and placed on every level. The verdict
+    and the census conversion read the same ``decompose_leaf_modules``."""
+    verdict = verdict if verdict is not None else c0_verdict(model, input_shape, packaging=packaging,
+                                                             decompose_leaf_modules=decompose_leaf_modules)
     if verdict.status != AGREEMENT:
         return MemberCensus(verdict, None, ())
-    converted = convert_for_census(model, input_shape, num_classes, packaging=packaging)
+    converted = convert_for_census(model, input_shape, num_classes, packaging=packaging,
+                                   decompose_leaf_modules=decompose_leaf_modules)
     rows, exc = guarded(lambda: ladder_census(converted.ir, value_bits=value_bits, levels=levels))
     if exc is not None:
         refusal = refusal_in_chain(exc)

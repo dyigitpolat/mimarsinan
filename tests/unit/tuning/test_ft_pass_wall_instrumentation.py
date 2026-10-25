@@ -346,9 +346,7 @@ class TestEndpointLegIsTimed:
     def test_endpoint_recovery_records_a_timed_pass(self, tmp_path, monkeypatch):
         # The endpoint legs are where the run-total ledger burns; a run whose
         # only training is endpoint recovery must still surface FT-pass walls.
-        import sys
-        sys.path.insert(0, "tests/unit/tuning")
-        from test_endpoint_recovery import _lif_tuner, _prepare_endpoint_scaffold
+        from unit.tuning.test_endpoint_recovery import _lif_tuner, _prepare_endpoint_scaffold
         from mimarsinan.tuning.orchestration import dhat_highwater
         from mimarsinan.tuning.orchestration.frontier import endpoint_recovery
         from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (

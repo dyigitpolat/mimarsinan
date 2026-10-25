@@ -78,10 +78,11 @@ def _verdict(priced):
 
 def _resident():
     """Figure 1's pair at unit scale: static tiles loaded once (3 static cores for 3 static tiles, 2 operand cores
-    for the 2 operand regions), each operand region rewritten once per inference."""
+    for the 2 operand regions), each operand region rewritten once per inference. [integration of N2b with W03] The
+    planner pins the fit (``mark_fit_residency`` marks every core of every pass), which the rows' marks state."""
     return ProgramPasses(rows=(
-        _row([100, 50, 0], [S, S, O], producer=[0, 0, 40]),
-        _row([30, 0], [S, O], producer=[0, 40], segment=1),
+        _row([100, 50, 0], [S, S, O], producer=[0, 0, 40], marks=(0, 1, 2)),
+        _row([30, 0], [S, O], producer=[0, 40], segment=1, marks=(0, 1)),
     ))
 
 

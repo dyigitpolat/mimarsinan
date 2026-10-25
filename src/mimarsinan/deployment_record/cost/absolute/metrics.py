@@ -11,8 +11,10 @@ from __future__ import annotations
 from typing import Any, List, Optional, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.context import (
+    ABSOLUTE_PRICING as ABSOLUTE_PRICING,
     AbsolutePricing,
     PricingContext,
+    external_refusals as external_refusals,
 )
 from mimarsinan.deployment_record.cost.absolute.energy import price_energy
 from mimarsinan.deployment_record.cost.absolute.formulas import (
@@ -228,8 +230,13 @@ def price_absolute(
     caller that states none is judged by what the census proves (``validity.census_geometry``): a single
     core's type, or its cell count, which a declared 'cells' scaling rule reads exactly; at a point
     validity a mean core at the point is judged there with that basis stated in the term, and refused
-    by name under ``validity.CENSUS_PROVED``. ``validity.UNJUDGED`` reads the aggregates as declared.
+    by name under ``validity.CENSUS_PROVED``. ``validity.UNJUDGED`` reads the aggregates as declared. A profile
+    whose external component is undeclared prices nothing and refuses by name, the write law's terms each by its own
+    name too (the write law's own gate, [fix_c]), so every plane states the same refusal.
     """
+    if refusals := external_refusals(physics):
+        named = () if writes is None else tuple(price_write_inputs(writes, physics).refusals)
+        return AbsolutePricing(terms=(), refusals=refusals + named)
     ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities))
     priced_writes = None if writes is None else price_write_inputs(writes, physics)
     price_area(ctx)

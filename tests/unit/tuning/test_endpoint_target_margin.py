@@ -10,11 +10,7 @@ selection are untouched, so an unreachable margin costs budget, never accuracy.
 
 from __future__ import annotations
 
-import sys
-
 import pytest
-
-sys.path.insert(0, "tests/unit/tuning")
 
 from mimarsinan.tuning.orchestration import dhat_highwater, retention_envelope
 from mimarsinan.tuning.orchestration.frontier import endpoint_recovery
@@ -22,7 +18,7 @@ from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
     run_endpoint_recovery,
 )
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
-from test_endpoint_recovery import _lif_tuner, _prepare_endpoint_scaffold
+from unit.tuning.test_endpoint_recovery import _lif_tuner, _prepare_endpoint_scaffold
 
 
 def _run(tmp_path, monkeypatch, *, margin=None, floor=None, envelope=None,

@@ -908,6 +908,78 @@
       ],
       "expected_wall_min": 10,
       "note": "estimated 22 nm digital SRAM bundle (1000 cores of 256 x 256, 8-bit weights, value domain), the minimal pair of t0_41"
+    },
+    {
+      "name": "t0_66_mvm_lenet5_wq_sched_pruned_hermes_64",
+      "config": "t0_66_mvm_lenet5_wq_sched_pruned_hermes_64.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "none",
+        "target": "hermes_64"
+      },
+      "tags": [
+        "sched",
+        "pruned"
+      ],
+      "expected_wall_min": 10,
+      "note": "HERMES-64 bundle (64 PCM cores of 256 x 256, 4-bit weights, 8-bit inputs, value domain), the minimal pair of t0_44: the program runs in scheduled passes, so the cell rewrites PCM cores between passes"
+    },
+    {
+      "name": "t0_67_mvm_lenet5_wq_sched_pruned_sram_cim_macro",
+      "config": "t0_67_mvm_lenet5_wq_sched_pruned_sram_cim_macro.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "none",
+        "target": "sram_cim_macro"
+      },
+      "tags": [
+        "sched",
+        "pruned"
+      ],
+      "expected_wall_min": 10,
+      "note": "digital SRAM-CIM macro bundle (128 x 1024 cores of 8-bit weights, 4-bit inputs, value domain), the minimal pair of t0_44 with eight macros declared; pricing refuses by name until a backing store is declared"
+    },
+    {
+      "name": "t0_68_mvm_lenet5_wq_sched_pruned_neurram",
+      "config": "t0_68_mvm_lenet5_wq_sched_pruned_neurram.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "none",
+        "target": "neurram"
+      },
+      "tags": [
+        "sched",
+        "pruned"
+      ],
+      "expected_wall_min": 10,
+      "note": "NeuRRAM bundle (48 RRAM cores of 256 x 256, 4-bit weights, 4-bit inputs, value domain), the minimal pair of t0_44: the program runs in scheduled passes, so the cell rewrites RRAM cores between passes"
     }
   ],
   "coverage_notes": [

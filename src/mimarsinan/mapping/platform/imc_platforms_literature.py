@@ -1,12 +1,16 @@
-"""The 12 literature-sourced IMC platforms (structured-elimination paper W5 handoff).
+"""The 14 literature-sourced IMC platforms (structured-elimination paper W5 handoff, two added at TCAD CL2).
 
 Pure data: every ``register_imc_platform(IMCPlatform(...))`` call below is
 transcribed EXACTLY (geometry, weight_bits, provenance quote + location) from
-``papers/structured_elimination_aaai/research_artifacts/13_chip_geometries.json``.
+the extraction cards of ``13_chip_geometries.json``: the first 12 from the
+structured-elimination workspace (research-tree tag
+``checkpoint/structured-elimination-2026-07-29``), ``hermes_64`` and
+``puma_node_like`` from the CL2 cards that extend it
+(``papers/mimarsinan_tcad_2026/research_artifacts/11_wave2/explore/cl2/chip_geometries/``).
 Do not round or invent a number here — add a new extraction card to that JSON
 and re-transcribe instead. ``claim_eligibility`` mirrors the curated table in
 the sibling ``13_chip_geometries.md`` §"S2 / allocation-claim eligibility"
-(charter gate G5, red-team VR#4/MS#2).
+(charter gate G5, red-team VR#4/MS#2), the rule every entry follows.
 
 Split out of ``imc_platforms.py`` (the registry logic + synthetic fixtures)
 purely to keep both files under the repo's per-file LOC budget; importing
@@ -169,6 +173,32 @@ register_imc_platform(
         ),
         weight_bits=2,
         provenance="moradi2017a: \"the chip comprises four cores; each core comprises 256 neurons, and each neuron has a fan-out of 4k.\" (p.7, Sec. IV 'A multi-core neuromorphic processor prototype') | moradi2017a: \"Fig. 9: Block diagram of one of the 256 computing nodes in each core. Each node comprises 64 mixed memory words, consisting of 10-bit CAM and 2-bit SRAM cells, 64 pulse generators circuits (PG), 64 pulse extenders circuits (PE), 64 pulse decoders (DECs), 64×4 digital pulse to analog current converters, 4 DPI filters, one adaptive I&F neuron circuit, and one handshaking block (HS).\" (p.9, Fig. 9 caption)",
+        capabilities={"allow_scheduling": True},
+        claim_eligibility="curve-only",
+    )
+)
+
+register_imc_platform(
+    IMCPlatform(
+        name="hermes_64",
+        cores=(
+            {"max_axons": 256, "max_neurons": 256, "count": 64, "has_bias": False},
+        ),
+        weight_bits=4,
+        provenance="gallo2022a: \"The fully-integrated chip features 64 256x256 AIMC cores interconnected via an on-chip communication network.\" (Abstract, p.1) | gallo2022a: \"Its 64 cores, each of size 1.2 mm × 1.16 mm, are placed in eight rows and eight columns.\" (Section I 'Chip architecture', p.2) | gallo2022a: \"Each core contains a PCM crossbar array capable of storing a 256 × 256 weight matrix and performing an analog MVM using the input activations provided from outside of the core.\" (Section I 'Chip architecture', p.2) | gallo2022a: \"Compared with an equivalent digital engine having 8-bit input/output precision and N-bit weight precision, the precision achieved with ODP is close to 3-bit weights. With TDP, a precision between 3-bit and 4-bit weights is achieved.\" (Section IV 'MVM accuracy', p.5)",
+        capabilities={"allow_scheduling": True},
+        claim_eligibility="headline-eligible",
+    )
+)
+
+register_imc_platform(
+    IMCPlatform(
+        name="puma_node_like",
+        cores=(
+            {"max_axons": 128, "max_neurons": 128, "count": 2208, "has_bias": False},
+        ),
+        weight_bits=16,
+        provenance="ankit2019puma: \"MVMU ... # per core 2 ... dimensions 128×128 ... Core ... # per tile 8 ... Tile ... # per node 138\" (Table 3 'PUMA Hardware Characteristics', p.9) | ankit2019puma: \"We conservatively use 2 bits per device, and realize 16-bit MVM operations by combining 8 crossbars via bit-slicing [95], illustrated in Figure 2(b).\" (Section 3.2.1 'Precision Considerations', p.5) | ankit2019puma: \"Since all eight 2-bit crossbars of a 16-bit MVM operation are used simultaneously on the same input, we co-locate these 2-bit crossbars on the same core in the same MVMU\" (Section 3.2.2 'Crossbar Co-location and Input Sharing', p.5)",
         capabilities={"allow_scheduling": True},
         claim_eligibility="curve-only",
     )

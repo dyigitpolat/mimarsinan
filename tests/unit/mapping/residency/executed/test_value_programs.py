@@ -84,7 +84,8 @@ class TestResNet18Quarter:
         hybrid = _build(ir, plan)
         frag = collect_noc_fragments(softcores=specs, core_types=[LayoutHardCoreType(AXONS, NEURONS, COUNT)],
                                      census=census, program=program, **_caps(plan).layout_kwargs())
-        step_layers = [tuple(sorted(comp.units.layers[u] for u in range(a, b))) for a, b in comp.facts.phases]
+        # a layer's tile groups may span phases [W03]: each phase's layers as a set
+        step_layers = [tuple(sorted({comp.units.layers[u] for u in range(a, b)})) for a, b in comp.facts.phases]
         frag_layers = [tuple(sorted({specs[i].perceptron_index for i, _ in pl})) for pl in frag.pass_placements]
         assert _layers_of_passes(hybrid, ir) == frag_layers == step_layers
         assert len(step_layers) == comp.step[2] >= 2
@@ -138,7 +139,9 @@ class TestResNet18Quarter:
 @pytest.mark.timeout(900)
 def test_a_t0_44_class_program_executed_equals_the_identity_value_program():
     vehicle = TV.template_vehicle("t0_44")
-    platform = TV.residency_platform(vehicle, 4.0, {"step": "floor"})        # C = 76: units (40, 66, 1, 1, 1)
+    # [fix_c] at x4 (48 + 48 cores) the program's unscheduled pack holds (its footprint is 42 + 42), so the fit rule
+    # makes the floor that single pool, programmed once; the executed multi-pass floor is checked below the footprint
+    platform = TV.residency_platform(vehicle, 3.4, {"step": "floor"})        # 40 + 40 cores
     mapping = build_hybrid_mapping_for_pipeline(vehicle.ir, platform, pipeline_config=vehicle.config)
     assert sum(p.passes for p in mapping.schedule_residency_plan) >= 2
     assert not carried_outputs_by_stage(mapping.stages)                     # segment-level passes (the boundary)

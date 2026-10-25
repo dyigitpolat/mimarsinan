@@ -22,7 +22,7 @@ from mimarsinan.deployment_record.build.program_census import (
     mapping_program_passes,
     record_program_passes,
 )
-from mimarsinan.deployment_record.build.write_census import period_census
+from mimarsinan.deployment_record.build.write_census import WriteCensusError, period_census
 from mimarsinan.deployment_record.quantities.from_record import from_record
 from mimarsinan.deployment_record.schema import SegmentRecord
 from mimarsinan.mapping.crossbar_utilization import CrossbarUtilizationReport
@@ -132,7 +132,12 @@ def test_the_build_time_record_plane_states_one_entry_per_member_of_a_declared_t
     assert sum(sum(row.core_cells) for row in passes.rows) == sum(
         (c.axons_per_core - c.available_axons) * (c.neurons_per_core - c.available_neurons) for c in cores)
     assert all(p.resident for p in period_census(passes, weight_bits=8, capacity={(16, 16): F}).census.passes)
-    assert not all(p.resident for p in period_census(passes, weight_bits=8, capacity={(16, 16): F - 1}).census.passes)
+    # [integration of W04 with W03] The build pins its fit (``mark_fit_residency``): the marks hold all F physical
+    # tiles, so on F - 1 cores (more than the allocated crossbars, fewer than the members) they cannot be held and
+    # the census refuses by name; counted as allocated crossbars they would have fit.
+    assert len(cores) <= F - 1
+    with pytest.raises(WriteCensusError, match=f"pin {F} of the {F - 1} cores"):
+        period_census(passes, weight_bits=8, capacity={(16, 16): F - 1})
 
 
 def _fused_record():

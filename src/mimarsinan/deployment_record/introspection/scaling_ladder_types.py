@@ -62,6 +62,27 @@ class ShapeCensus:
     logical_cells: int
     as_mapped_cells: int
     wall_s: float
+    #: [W03] The layout walk's program graph (``ProgramGraph.of_walk``), held with the wire census: a declared
+    #: ``residency_plan`` is planned on it as the builder plans it.
+    program: Any = None
+    #: [fix_b] Per spec, its builder segment (``residency_rules.spec_runs``: the host ops before its node in the
+    #: walk's program order); U1 plans these segments, as the builder does (``partition_ir_graph``).
+    runs: Optional[Tuple[int, ...]] = None
+
+
+@dataclass(frozen=True)
+class ScheduledProgram:
+    """One packed and scheduled program at one core budget, before pricing [CL5]: priced once per physics
+    declaration and batch size (``price_scheduled``) without scheduling again."""
+
+    platform: Mapping[str, Any]
+    packed_tiles: int
+    #: {"name": refusal class, "reason": ...} when the point does not schedule.
+    refusal: Optional[Mapping[str, str]] = None
+    stats: Any = None
+    noc: Any = None
+    facts: Any = None
+    wall_s: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -73,11 +94,15 @@ class PricedProgram:
     #: {"name": refusal class, "reason": ...} when the point does not schedule.
     refusal: Optional[Mapping[str, str]] = None
     passes: int = 0
+    #: [fix_b] The period census's (pass, segment) rows: one per executed neural stage (an unscheduled pack is one
+    #: planned pass of several segments, which the builder runs as one stage per segment).
+    census_passes: Optional[int] = None
     latency_steps: Optional[int] = None
     reprogram_passes: int = 0
-    #: Passes that place cores on non-resident weights (``law.WRITES_RULE`` reads it).
+    #: Passes the period census rewrites every period (G3's ``write_census``, the executed rotation).
     written_passes: int = 0
     carry: Optional[Mapping[str, int]] = None
+    #: The period census's rewrite bytes (``period_rewrite_bytes``), None where the census refuses.
     period_bytes: Optional[int] = None
     once_bytes: Optional[int] = None
     once_cores: int = 0
@@ -86,3 +111,8 @@ class PricedProgram:
     terms: Mapping[str, Mapping[str, Band]] = field(default_factory=dict)
     refusals: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     wall_s: float = 0.0
+    #: [CL5] The write law priced at the point's declared batch (``inference_batch_K``): its terms, refusals,
+    #: admissibility verdicts and the headlines at that batch; empty when no batch is declared.
+    write_law: Mapping[str, Any] = field(default_factory=dict)
+    #: [CL5] The endurance band (low, nominal, high) where the physics declares one.
+    endurance_band: Optional[Tuple[float, float, float]] = None

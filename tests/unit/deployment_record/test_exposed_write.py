@@ -210,9 +210,9 @@ class TestTheShadowRoomOfEachCoreType:
         assert 0 < serial["latency_write_exposed_s"].value
         assert terms["latency_write_exposed_s"].value <= serial["latency_write_exposed_s"].value
 
-    def test_an_untyped_plane_on_a_mixed_chip_refuses_the_overlap_as_loaded_once_does(self):
-        """Untyped tiles beyond every declared core provably rewrite (serial prices); the shadow room of
-        each type is unknown, so the overlapped term refuses by name."""
+    def test_an_untyped_plane_on_a_mixed_chip_refuses_the_overlap_by_name(self):
+        """Untyped passes rotate (serial prices); the shadow room of each type is unknown, so the overlapped
+        term refuses by name."""
         rows = (_typed_row([4000, 1000], None, 200), _typed_row([4000], None, 200))
         terms, refusals = _plane(rows, (1, 1), "overlapped")
         assert "latency_write_exposed_s" not in terms

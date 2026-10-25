@@ -19,6 +19,7 @@ from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stage
 from mimarsinan.mapping.packing.schedule_residency_plan import (
     compose_builder_program,
     depth_partition,
+    mark_fit_residency,
     mark_residency_plan,
 )
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
@@ -227,7 +228,7 @@ def _build_scheduled(
     on the depth segments (one pinned budget across segments) under the refusal
     rules both planes share, each segment's passes come from that composition,
     and the executed passes are pinned and checked; the plan per segment is
-    returned for the mapping. Otherwise returns None. [U1] Every packed stage,
+    returned for the mapping. Otherwise returns None, and a program that fits is pinned whole [W03]. [U1] Every packed stage,
     single-pass segments included, is projected onto the fused timing
     (``project_passes``); under per-hop re-timing passes run as level units.
     """
@@ -285,8 +286,8 @@ def _build_scheduled(
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
     if not retimed_level_stages:
         project_passes(stages[first_stage:])
+    neural = [s for s in stages[first_stage:] if s.kind == "neural"]
     if builder is None:
+        mark_fit_residency(neural, cores_config)
         return None
-    return mark_residency_plan(
-        [s for s in stages[first_stage:] if s.kind == "neural"], builder, cores_config,
-    )
+    return mark_residency_plan(neural, builder, cores_config)

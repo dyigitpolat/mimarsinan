@@ -4,7 +4,7 @@
     python scripts/requirement_census.py scout OUT.json --scout-dir RA/10_wave1/oracles
     python scripts/requirement_census.py zoo-roster OUT.json [--max-params 200000000]
     python scripts/requirement_census.py zoo OUT.json NAME[,NAME...] [--side N] [--verdict-side N]
-    python scripts/requirement_census.py check CENSUS.json [CENSUS.json ...]
+    python scripts/requirement_census.py check CENSUS.json [CENSUS.json ...] [--pins PINS.json]
 
 CPU only, random weights (seed 0), eval mode, the MVM contract at C0. Each member carries the stage-2 fp64 verdict
 of ``probe_witness_conversion`` (column "fp64 agreement (max relative error)") or its refusal by type name, and one
@@ -59,6 +59,7 @@ from mimarsinan.mapping.capability.member import (  # noqa: E402
     c0_verdict,
     member_census,
 )
+from mimarsinan.mapping.capability.census import value_bytes  # noqa: E402
 from mimarsinan.mapping.capability.pricing_inputs import level_quantities, period_census_of  # noqa: E402
 from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING  # noqa: E402
 from mimarsinan.torch_mapping.converter import probe_stages  # noqa: E402
@@ -156,7 +157,7 @@ def _row_json(row, census: MemberCensus, verdict_input_shape: Optional[Sequence[
     counters = census.mac_counters
     statement = mac_statement(row, counters)
     withheld = dict(statement.withheld)
-    period = period_census_of(row)
+    period = period_census_of(row, bytes_of_cells=lambda cells: value_bytes(cells, VALUE_BITS))
     data = {
         "level": row.level, "title": capability_level(row.level).title, "payload_write": row.payload_write,
         "label": row.label, "host_ops": row.host_ops, "host_kinds": row.host_kinds,
@@ -170,8 +171,13 @@ def _row_json(row, census: MemberCensus, verdict_input_shape: Optional[Sequence[
         "dynamic_payload_bytes_8bit": row.dynamic_payload_bytes, "lane_ops": row.lane_ops,
         "element_ops_by_kind": row.element_ops_by_kind, "latency_steps": row.latency_steps,
         "quantities": level_quantities(row, counters=counters),
-        "write_census": {"written_cells_producer": period.written_cells_producer,
-                         "producer_payload_bytes": period.producer_payload_bytes},
+        "write_census": {"rule": period.label,
+                         "writing_passes": sum(1 for p in period.passes if p.written_cells_backing_store),
+                         "written_cells_backing_store_per_period": sum(
+                             p.written_cells_backing_store for p in period.passes),
+                         "payload_bytes_per_period_8bit_weights": sum(p.payload_bytes for p in period.passes),
+                         "written_cells_producer_per_inference": sum(p.written_cells_producer for p in period.passes),
+                         "producer_payload_bytes_8bit": row.dynamic_payload_bytes},
     }
     if statement.host_macs is not None:
         data["host_macs"] = statement.host_macs
@@ -419,8 +425,28 @@ def _provenance_problems(docs: Sequence[Tuple[str, dict]]) -> List[str]:
     return problems
 
 
-def check(paths: Sequence[str]) -> int:
-    """Acceptance over census JSONs: verdict per C0 row, refusals by name, labels, rows per level, MAC counters."""
+def _reading(verdict: dict) -> str:
+    """A member's pinned reading: the agreement, or the root refusal's type name, or the status."""
+    if verdict["status"] == REFUSED:
+        return str(verdict.get("root_refusal"))
+    return str(verdict["status"])
+
+
+def _pin_problems(docs: Sequence[Tuple[str, dict]], pins_path: str) -> List[str]:
+    """Every member's reading equals its pinned one, and every pinned member is present (CL4's zoo re-pin)."""
+    with open(pins_path) as handle:
+        pins = json.load(handle)["members"]
+    read = {name: _reading(member["verdict"]) for _, doc in docs for name, member in doc["members"].items()
+            if "verdict" in member}
+    problems = [f"{name}: not pinned" for name in sorted(read) if name not in pins]
+    problems += [f"{name}: pinned {pins[name]}, reads {read[name]}" for name in sorted(read)
+                 if name in pins and pins[name] != read[name]]
+    return problems + [f"{name}: pinned but absent" for name in sorted(pins) if name not in read]
+
+
+def check(paths: Sequence[str], pins: Optional[str] = None) -> int:
+    """Acceptance over census JSONs: verdict per C0 row, refusals by name, labels, rows per level, MAC counters;
+    with ``pins`` (a ``{"members": {name: reading}}`` file), each member's reading against its pinned one."""
     problems: List[str] = []
     converting: Dict[str, float] = {}
     roots: Dict[str, int] = {}
@@ -432,6 +458,8 @@ def check(paths: Sequence[str]) -> int:
         with open(path) as handle:
             docs.append((path, json.load(handle)))
     problems.extend(_provenance_problems(docs))
+    if pins is not None:
+        problems.extend(_pin_problems(docs, pins))
     for path, doc in docs:
         total += len(doc["members"])
         for name, member in doc["members"].items():
@@ -456,8 +484,10 @@ def check(paths: Sequence[str]) -> int:
             counters = member.get("mac_counters")
             for row in member["rows"]:
                 problems.extend(_row_problems(name, row, counters))
-            if counters is not None and not counters["has_multi_input_op"] and not counters["agree"]:
-                problems.append(f"{name}: MAC counters disagree without a multi-input op")
+            if counters is not None and not counters["agree"]:
+                # CL4 (plan §11.1): since G1's input_shapes rule the counters agree on every row, multi-input too.
+                problems.append(f"{name}: MAC counters disagree"
+                                + (" (a multi-input op)" if counters["has_multi_input_op"] else ""))
     worst = max(converting.values(), default=None)
     print("Code state: " + ", ".join(f"{key} {sorted({str(doc.get(key)) for _, doc in docs})}"
                                      for key in RECORD_DIGESTS))
@@ -476,12 +506,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("paths", nargs="+")
     parser.add_argument("--scout-dir")
     parser.add_argument("--max-params", type=int, default=ZOO_MAX_PARAMS)
+    parser.add_argument("--pins", help="check: a pinned reading per member (tests/fixtures/requirement_census/"
+                                       "zoo_pins.json), each member's reading compared with it")
     parser.add_argument("--side", type=int, help="zoo: run at this input side instead of the declared one (marked)")
     parser.add_argument("--verdict-side", type=int,
                         help="zoo: judge the stage-2 verdict at this side, the census at the census side (marked)")
     args = parser.parse_args(argv)
     if args.command == "check":
-        return check(args.paths)
+        return check(args.paths, pins=args.pins)
     out = args.paths[0]
     if args.command == "scout":
         if not args.scout_dir:

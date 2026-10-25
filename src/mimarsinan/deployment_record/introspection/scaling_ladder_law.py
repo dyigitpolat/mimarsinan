@@ -4,14 +4,13 @@ Definitions (`06_parts/law.md` §1-§3; `lens_arch.md` §2.2-§2.3):
 - x_fluid = logical weight cells / capacity cells; x_packed = packed tiles / cores.
 - Two readings per point. The capacity reading compares the packed tiles with the
   cores (x_packed <= 1: the program fits by capacity). The schedule reading is the
-  priced program's: under U1 every segment's first pass is non-resident and every
-  reprogrammed pass places its cores from slot 0, so a program with two or more
-  reprogrammed passes writes weights on every inference (multiplexed), whatever
-  x_packed is, and one with at most one writes each cell once per deployment
-  (resident). The regime, the period writes in M and the per-inference write census
-  follow the schedule; M is printed for every program of two or more passes, so a
-  resident multi-pass program (residency passes after its load) prices M with no
-  period writes.
+  priced program's period census (G3's ``write_census``, the executed rotation): a
+  program whose passes rewrite cores every period is multiplexed, whatever x_packed
+  is, and one that rewrites none writes each cell once per deployment (resident).
+  The regime, the period writes in M and the per-inference write census follow the
+  schedule; M is printed for every program of two or more passes, so a resident
+  multi-pass program (residency passes after its load) prices M with no period
+  writes.
 - Pi = cost of writing every tile of the program once / compute-only cost of one
   inference, per axis (energy, time); Pi/K at the declared batch K.
 - Regime per band corner of Pi/K under caller-declared reading thresholds (the
@@ -41,12 +40,6 @@ RESIDENT = "resident (no per-inference weight writes)"
 STRADDLES = "straddles"
 FITS_BY_CAPACITY = "fits by capacity (x_packed <= 1)"
 CORNER_NOTE = "corner-aligned: each corner prices every term at that corner's constants (not a band)"
-WRITES_RULE = (
-    "U1 pass program: every reprogrammed pass places its cores from slot 0, so with two or more "
-    "reprogrammed passes slot 0 is written once per reprogrammed pass per inference; a program with at "
-    "most one (one pass, or residency passes after the load) writes each cell once per deployment, "
-    "0 per inference"
-)
 _SECONDS_PER_HOUR = 3600.0
 #: Low, nominal and high values, each priced at that corner's constants.
 Corners = Tuple[float, float, float]
@@ -68,19 +61,15 @@ class RegimeReading:
         return "informative"
 
 
-def writes_per_inference(written_passes: int) -> int:
-    """Writes of the most-written core slot per inference under ``WRITES_RULE``."""
-    return int(written_passes) if int(written_passes) >= 2 else 0
-
-
 def capacity_reading(x_packed: float) -> str:
     return FITS_BY_CAPACITY if x_packed <= 1.0 else f"exceeds capacity (x_packed = {x_packed:.6g})"
 
 
 def schedule_reading(written_passes: int, segments: int) -> str:
-    if writes_per_inference(written_passes):
+    """The schedule reading of a program whose period census rewrites ``written_passes`` passes."""
+    if written_passes:
         return f"U1: multiplexed by {written_passes} reprogrammed passes over {segments} neural segments"
-    return (f"resident: {written_passes} reprogrammed pass over {segments} neural segments, "
+    return (f"resident: no pass rewrites its cores per period over {segments} neural segments, "
             "weights written once per deployment")
 
 

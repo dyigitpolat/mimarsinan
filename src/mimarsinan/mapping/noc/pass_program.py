@@ -1,5 +1,6 @@
 """[E2] One pass's install cost as a candidate's NoC fragments state it (``fragments.collect_noc_fragments``): per
-core its committed rectangle and per physical tile its cells and signed rows, with the residency law's answer."""
+core its committed rectangle and geometry and per physical tile its cells and signed rows, with the residency law's
+answer."""
 
 from __future__ import annotations
 
@@ -28,6 +29,9 @@ class PassProgram:
     #: [CL-SG, W04] Per core, the rows each physical tile's sign register signs (a fused core's used rows fill its
     #: members in order, ``tile_extents``, and each member signs its own); empty: none.
     core_tile_sign_rows: Tuple[Tuple[int, ...], ...] = ()
+    #: [W03] Per core, the (axons, neurons) it is packed at (a fused instance: its components summed), which the
+    #: period census types the cores by; None where a caller states no geometry.
+    core_geometry: Optional[Tuple[Tuple[int, int], ...]] = None
 
     @property
     def cores(self) -> int:
@@ -63,4 +67,5 @@ def packed_pass_program(snapshots: Sequence[Any], *, resident: bool, core_types:
         core_tile_cells=tuple(tuple(rows * cols for rows, cols in e) for e in extents),
         core_tile_sign_rows=tuple(tuple(rows if s else 0 for rows, _ in e) for e, s in zip(extents, signed))
         if declared_cores else (),
+        core_geometry=tuple((int(snap.axons_per_core), int(snap.neurons_per_core)) for snap in snapshots),
     ), tiles

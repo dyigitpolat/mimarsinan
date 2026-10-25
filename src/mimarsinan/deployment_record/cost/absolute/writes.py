@@ -13,8 +13,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Optional, Sequence, Tuple
 
+from mimarsinan.deployment_record.cost.absolute.context import external_refusals
 from mimarsinan.deployment_record.cost.absolute.formulas import add_bands, mul_bands, scale_band
-from mimarsinan.deployment_record.cost.absolute.write_lifetime import (
+from mimarsinan.deployment_record.cost.write_lifetime import (
     LIFETIME_HOURS, LIFETIME_INFERENCES, LIFETIME_VERDICT, SECONDARY_MARKERS, WritePricing, join_lifetimes,
     price_lifetime,
 )
@@ -209,6 +210,8 @@ def price_write_inputs(writes: WriteInputs, physics: PlatformPhysics) -> WritePr
     without a census, or without its split, refuses by name."""
     if writes.census is None:
         return _refuse_all(writes.policy, writes.unavailable or "the plane states no period census")
+    if gate := external_refusals(physics):  # [fix_c] the one gate, before a chip's technology shares too
+        return _refuse_all(writes.policy, "; ".join(r.reason for r in gate))
     if writes.policy.core_technologies is not None:
         split = writes.by_technology
         if split is None or split.refused is not None:
@@ -274,7 +277,12 @@ def price_write_terms(census: Any, physics: PlatformPhysics, policy: WritePolicy
     provably rewrites; the lifetime is then an upper bound that can only prove inadmissibility.
     ``pass_core_types`` (``WriteCensus.pass_core_types``) gives the overlapped mode its per-type room;
     ``producer_slots`` (``WriteCensus.producer_slots``) the operand regions' placement by the same slot rule. A
-    policy of several write technologies refuses by name (``price_write_inputs`` prices their shares)."""
+    policy of several write technologies refuses by name (``price_write_inputs`` prices their shares). [fix_c] A
+    profile whose external component the run has not declared (an SRAM-CIM macro without its backing store) prices
+    no write term and refuses each by name (``external_refusals``, the gate ``price_absolute`` reads), so the
+    executed and the exploration plane read one rule."""
+    if gate := external_refusals(physics):
+        return _refuse_all(policy, "; ".join(r.reason for r in gate))
     if policy.core_technologies is not None:
         return _refuse_all(policy, _SEVERAL)
     out = WritePricing()

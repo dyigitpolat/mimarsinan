@@ -23,6 +23,7 @@ from .constrain import JointConstrainMixin
 from .encoding import JointEncodingMixin
 from .evaluate import JointEvaluateMixin
 from .layout_hook import JointLayoutMixin
+from .model_build import DeployedConversion
 from .types import (
     BuilderFactory,
     CandidatePlatformError,
@@ -107,6 +108,9 @@ class JointArchHwProblem(
     #: only the deployed model's layout if its encoder sits where deployment
     #: will put it, so the search resolves the SAME placement the run will.
     encoding_placement: str = "subsume"
+    #: [M10] The deployment's packaging contract and leaf decomposition: the
+    #: candidate model is built and converted as the pipeline builds it.
+    conversion: DeployedConversion = field(default_factory=DeployedConversion)
 
     #: Deployment options promoted to decision variables (C3). Empty = the run's
     #: declaration stands and the encoding is byte-identical to before.

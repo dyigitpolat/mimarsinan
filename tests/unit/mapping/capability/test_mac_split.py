@@ -11,7 +11,6 @@ from mimarsinan.mapping.capability.ladder import capability_level
 from mimarsinan.mapping.capability.mac_split import (
     COUNTERS_DISAGREE,
     ESTIMATOR_BELOW_CORE_FLOOR,
-    MULTI_INPUT_REASON,
     UNCOUNTED_PRODUCT,
     MacCounters,
     StatedBoundary,
@@ -21,12 +20,15 @@ from mimarsinan.mapping.capability.mac_split import (
 from mimarsinan.mapping.capability.pricing_inputs import level_quantities
 
 from .ir_fixtures import (
+    adapter_product_graph,
     biased_padded_core_graph,
+    bilinear_upsample_graph,
     contraction_graph,
     convtranspose_graph,
     grouped_conv3d_graph,
     grouped_graph,
     lane_graph,
+    seed_mac_gap,
 )
 
 BITS = 8
@@ -83,13 +85,16 @@ def test_a_stated_total_gives_on_chip_macs_net_of_host_macs():
     assert mac_statement(c2, counters).stated_boundaries == ()
 
 
-def test_disagreeing_counters_withhold_host_macs_on_every_row_with_the_multi_input_reason():
+def test_disagreeing_counters_withhold_host_macs_on_every_row_with_the_named_disagreement():
+    """CL4: since G1's input_shapes rule the two host counters agree on every row, a multi-input op's included, so a
+    disagreement is unexplained wherever it occurs: the same named reason with or without a multi-input op."""
     counters = _counters(host=0, estimator_host=40, total=500, multi=True)
+    assert counters.reason == COUNTERS_DISAGREE and _counters(multi=True).reason is None
     for row in ladder_census(lane_graph(), value_bits=BITS):
         statement = mac_statement(row, counters)
         assert statement.host_macs is None and statement.onchip_macs is None, row.level
-        assert statement.withheld["host_macs"] == MULTI_INPUT_REASON
-        assert MULTI_INPUT_REASON in statement.withheld["onchip_macs"]
+        assert statement.withheld["host_macs"] == COUNTERS_DISAGREE
+        assert COUNTERS_DISAGREE in statement.withheld["onchip_macs"]
         assert statement.total_macs == 500, "the estimator's own total is still backed by the core floor"
         quantities = level_quantities(row, counters=counters)
         assert "host_macs" not in quantities and "onchip_macs" not in quantities
@@ -98,16 +103,16 @@ def test_disagreeing_counters_withhold_host_macs_on_every_row_with_the_multi_inp
 
 
 def test_a_product_the_mac_ssot_counts_zero_is_withheld_on_the_side_that_runs_it():
-    ir = convtranspose_graph()
+    ir = bilinear_upsample_graph()
     counters = _counters(total=10**6)
     c1, c2 = _row(ir, "C1"), _row(ir, "C2")
-    assert c1.uncounted_host_products == {"mms": ("ConvTranspose2d",)} and c1.uncounted_chip_products == {}
-    assert c2.uncounted_host_products == {} and c2.uncounted_chip_products == {"mms": ("ConvTranspose2d",)}
+    assert c1.uncounted_host_products == {"mms": ("Upsample",)} and c1.uncounted_chip_products == {}
+    assert c2.uncounted_host_products == {} and c2.uncounted_chip_products == {"mms": ("Upsample",)}
     s1, s2 = mac_statement(c1, counters), mac_statement(c2, counters)
-    assert s1.host_macs is None and s1.withheld["host_macs"] == f"{UNCOUNTED_PRODUCT}: ConvTranspose2d"
+    assert s1.host_macs is None and s1.withheld["host_macs"] == f"{UNCOUNTED_PRODUCT}: Upsample"
     assert s1.synaptic_events == c1.cells_committed
     assert s2.host_macs == 0 and s2.synaptic_events is None
-    assert s2.withheld["synaptic_events"] == f"{UNCOUNTED_PRODUCT}: ConvTranspose2d"
+    assert s2.withheld["synaptic_events"] == f"{UNCOUNTED_PRODUCT}: Upsample"
     assert "synaptic_events" not in level_quantities(c2) and "synaptic_events" in level_quantities(c1)
 
 
@@ -115,6 +120,11 @@ def test_a_product_with_a_mac_rule_is_counted_on_either_side():
     for level in ("C0", "C2"):
         row = _row(grouped_graph(), level)
         assert row.uncounted_host_products == {} == row.uncounted_chip_products
+    ir = convtranspose_graph()
+    c1, c2 = _row(ir, "C1"), _row(ir, "C2")
+    assert c1.uncounted_host_products == {} == c2.uncounted_chip_products, "the SSOT's scatter-form rule"
+    assert (c1.host_macs, c2.host_macs, c2.onchip_op_macs) == (64, 0, 64), "8 input elements x 2 x 2 x 2"
+    assert mac_statement(c2, _counters(total=10**6)).synaptic_events == c2.cells_committed + 64
 
 
 def test_a_withheld_total_keeps_the_stated_boundary_host_macs():
@@ -125,7 +135,11 @@ def test_a_withheld_total_keeps_the_stated_boundary_host_macs():
     assert boundary.withheld is None and statement.total_macs is None, "only its share needs the total"
 
 
-def test_a_stated_boundary_whose_product_the_mac_ssot_counts_zero_withholds_its_host_macs():
+def test_a_stated_boundary_whose_product_the_mac_ssot_counts_zero_withholds_its_host_macs(monkeypatch):
+    counted = _row(grouped_conv3d_graph(), "C0")
+    assert counted.uncounted_host_products == {} and counted.stated_boundaries == {GROUPED_BOUNDARY: 8}, (
+        "the SSOT counts a grouped Conv3d at every output position")
+    seed_mac_gap(monkeypatch, "Conv3d")
     row = _row(grouped_conv3d_graph(), "C0")
     assert row.uncounted_host_products == {"mmg": ("Conv3d",)} and row.stated_boundaries == {GROUPED_BOUNDARY: 0}
     statement = mac_statement(row, _counters(total=200))
@@ -134,25 +148,41 @@ def test_a_stated_boundary_whose_product_the_mac_ssot_counts_zero_withholds_its_
     assert mac_statement(_row(grouped_conv3d_graph(), "C2"), _counters(total=200)).stated_boundaries == ()
 
 
-def test_withheld_host_macs_name_both_the_counter_disagreement_and_the_uncounted_product():
-    """Host MACs withheld for two reasons name both, the counters' first (vit_b_16's C0 reads "multi-input op ...;
-    uncounted_product: MultiheadAttention"); naming only the first would drop the uncounted product."""
+def test_withheld_host_macs_name_both_the_counter_disagreement_and_the_uncounted_product(monkeypatch):
+    """Host MACs withheld for two reasons name both, the counters' first (a row reading "mac_counters_disagree;
+    uncounted_product: <op type>"); naming only the first would drop the uncounted product."""
+    seed_mac_gap(monkeypatch, "Conv3d")
     row = _row(grouped_conv3d_graph(), "C0")
     statement = mac_statement(row, MacCounters(0, 8, 10**6, True))
-    assert statement.withheld["host_macs"] == f"{MULTI_INPUT_REASON}; {UNCOUNTED_PRODUCT}: Conv3d"
+    assert statement.withheld["host_macs"] == f"{COUNTERS_DISAGREE}; {UNCOUNTED_PRODUCT}: Conv3d"
     assert statement.host_macs is None and statement.onchip_macs is None
 
 
-def test_the_dynamic_product_stand_in_has_no_mac_rule_until_g1():
-    """G1's ``forward_macs()`` rule (plan §5.1) counts it at CL4; until then both sides withhold it by name."""
+def test_the_dynamic_product_is_counted_by_its_declared_macs():
+    """G1's ``forward_macs()`` rule (plan §5.1): the MAC SSOT counts a Contraction by its declaration, m x k x n."""
     ir = contraction_graph()
-    assert _row(ir, "C0").uncounted_host_products == {"dmm": ("Contraction",)}
-    assert _row(ir, "C3").uncounted_chip_products == {"dmm": ("Contraction",)}
+    c0, c3 = _row(ir, "C0"), _row(ir, "C3")
+    assert c0.uncounted_host_products == {} and c3.uncounted_chip_products == {}
+    assert (c0.host_macs, c3.host_macs, c3.onchip_op_macs) == (2 * 4 * 3, 0, 2 * 4 * 3)
+
+
+def test_a_dynamic_product_without_a_declared_count_is_withheld_on_either_side(monkeypatch):
+    """A product of two activations the SSOT has no rule for is named. [integration of CL4 with Swin W10] The SSOT
+    counts a generic host op of ``torch.matmul`` since W10 (a product in functional form), so the gap is seeded
+    (``seed_mac_gap``): the census's reaction to a gap is the behaviour under test, never which ops have one."""
+    ir = adapter_product_graph()
+    matmul = str(ir.nodes[2].op_type)
+    assert _row(ir, "C0").uncounted_host_products == {} and _row(ir, "C0").host_macs == 2 * 4 * 3   # W10's rule
+    seed_mac_gap(monkeypatch, matmul)
+    assert _row(ir, "C0").uncounted_host_products == {"dmm": (matmul,)}
+    assert _row(ir, "C3").uncounted_chip_products == {"dmm": (matmul,)}
+    assert mac_statement(_row(ir, "C3"), None).withheld["synaptic_events"] == f"{UNCOUNTED_PRODUCT}: {matmul}"
 
 
 def test_the_per_kind_host_macs_leave_out_a_kind_with_an_uncounted_product():
-    c1 = mac_statement(_row(convtranspose_graph(), "C1"), None)
-    assert c1.host_macs_by_kind == {} and c1.withheld["host_macs_by_kind"] == f"{UNCOUNTED_PRODUCT}: ConvTranspose2d"
+    c1 = mac_statement(_row(bilinear_upsample_graph(), "C1"), None)
+    assert c1.host_macs_by_kind == {} and c1.withheld["host_macs_by_kind"] == f"{UNCOUNTED_PRODUCT}: Upsample"
+    assert mac_statement(_row(convtranspose_graph(), "C1"), None).host_macs_by_kind == {"mms": 64}
     lane = mac_statement(_row(lane_graph(), "C0"), None)
     assert lane.host_macs_by_kind == {"clamp": 0, "affine": 0, "add": 0, "smooth": 0}
     assert "host_macs_by_kind" not in lane.withheld

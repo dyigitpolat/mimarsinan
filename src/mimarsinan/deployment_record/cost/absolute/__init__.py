@@ -6,6 +6,13 @@ from mimarsinan.deployment_record.cost.absolute.context import (
     PricingContext,
     PricingRefusal,
 )
+from mimarsinan.deployment_record.cost.absolute.host_split import (
+    HOST_BOUND,
+    DualVerdict,
+    HostEnergySplit,
+    dual_verdict,
+    host_energy_split,
+)
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
 from mimarsinan.deployment_record.cost.absolute.validity import CENSUS_PROVED, UNJUDGED, validity_refusals
 from mimarsinan.deployment_record.cost.absolute.writes import (
@@ -29,12 +36,17 @@ __all__ = [
     "AbsolutePricing",
     "AdmissibilityVerdict",
     "DEPLOYMENT_COST_REPORT_FILENAME",
+    "DualVerdict",
+    "HOST_BOUND",
+    "HostEnergySplit",
     "PricingContext",
     "PricingRefusal",
     "absolute_pricing_for_record",
     "candidate_cost_report",
     "declared_physics_of",
+    "dual_verdict",
     "emit_physics_report",
+    "host_energy_split",
     "price_absolute",
     "price_write_terms",
     "report_with_absolute_terms",

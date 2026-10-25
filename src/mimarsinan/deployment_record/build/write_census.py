@@ -1,22 +1,22 @@
 """The pass-period census of both planes (E49): what a schedule period rewrites, per pass and per core.
 
-One rule turns a plane's passes into ``PassPeriodCensus`` rows: a program whose programmed tiles fit
-the declared cores of their own core type is loaded once (every pass stays programmed across
-periods); otherwise each reprogram pass rewrites, once per period, the cores the residency seam does
-not keep. Endurance is a property of the physical core, so the census also counts the writes each
-physical core takes (``SlotWrites``; N2's operand regions by the same rule, ``producer_slots``).
+One rule turns a plane's passes into ``PassPeriodCensus`` rows: the executed rotation
+(``period_census.rotation_rewrites``). A pass keeps the cores the residency seam marks (an executed
+residency plan) or U1's whole-pass flag keeps; when two or more passes write, each rewrites its other
+cores once per period; a lone writing pass is never displaced, so nothing is rewritten. Endurance is a
+property of the physical core, so the census also counts the writes each physical core takes
+(``SlotWrites``; N2's operand regions by the same rule, ``producer_slots``).
 
-**Declared deployment model.** The census prices a loader that keeps a program whose tiles fit
-their core types resident, each tile on its own core (disjoint cores, nothing rewritten per period).
-A program that does not fit runs the R3 rotation of ``mapping/noc/fragments.py``: each execution
-stage's cores load from its type's first core, so the j-th rewritten core of a type sits on the
-type's j-th unpinned core. Under R3 alone a fitting multi-segment program would also reload core 0
-every period; the zero static write terms of a fit are the resident loader's, a stated boundary.
+**Deployment model: the program as executed.** The runner loads each execution stage's cores from
+its type's first core (R3, ``mapping/noc/fragments.py``), so the j-th rewritten core of a type sits on
+the type's j-th unpinned core, and a program of several writing passes rewrites them every period
+whether or not its tiles would fit the cores side by side (interaction finding 4, option (a)): a fit
+is resident only where an executed residency plan pins it (the floor at F <= C, and [W03] the planner's
+fit pins). Operand regions (N2) are written in every pass that holds them, rotating or not.
 
-**Core types.** Loaded once is decided per core type, never on the planner's 0.8x budget. A plane
-that states no core type of its cores on a chip of several types proves only what the total core
-count proves: tiles beyond every declared core rewrite (exactly as typed: every reprogram pass's
-unkept cores), placed on no physical core; tiles within it are undecidable and refuse by name.
+**Core types.** The rotation needs no core type. A plane that states no core type of its cores on a
+chip of several types states every pass's rewrite, placed on no physical core (the lifetime is then
+the pigeonhole bound).
 
 **Execution stages.** R3 loads each execution stage from its type's first core, and a pass under
 per-hop re-timing runs one stage per depth level. A rewritten row that states several execution
@@ -32,17 +32,18 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.support.core_slots import (  # SlotWrites and CoreType re-exported
+    CoreTiles, CoreType as CoreType, SlotWrites as SlotWrites, kind_name, place, stated_tiles,
+)
 from mimarsinan.deployment_record.build.payload_sizes import core_payload_bytes
-from mimarsinan.mapping.support.period_census import PassBoundaryCensus, PassCensus, PassPeriodCensus
-
-
-#: A physical core type, ``(axons, neurons)``: the geometry a core is declared and built at.
-CoreType = Tuple[int, int]
+from mimarsinan.mapping.support.period_census import (
+    PassBoundaryCensus, PassCensus, PassPeriodCensus, rotation_rewrites,
+)
 
 
 class WriteCensusError(ToolchainRefusal, ValueError):
     """A period census that cannot be stated: per-core writes no core assignment can hold, a core
-    type the chip does not declare, or a loaded-once decision the plane's core types leave open."""
+    type the chip does not declare, or a chip without a complete core geometry."""
 
 
 @dataclass(frozen=True)
@@ -75,17 +76,6 @@ class PassRow:
         """Core ``i``'s payload by the one rule (``core_payload_bytes``): its cells and its sign register."""
         signs = self.core_sign_rows[i] if i < len(self.core_sign_rows) else 0
         return core_payload_bytes(self.core_cells[i], weight_bits, signs)
-
-
-@dataclass(frozen=True)
-class SlotWrites:
-    """One core type's static writes per period per physical core. The runner loads each pass's
-    cores starting at the first core of their type (``fragments.py`` R3), so the j-th core of a type
-    that a pass rewrites sits on that type's j-th core not pinned by a residency mark: core j takes
-    one write per period of every pass whose j-th rewritten core of the type holds static cells."""
-
-    core_type: CoreType
-    writes: Tuple[int, ...]
 
 
 #: (after_pass, carried elements read out after it, carried elements re-injected before the next).
@@ -155,110 +145,56 @@ def core_capacity_of(platform: Mapping[str, Any]) -> Optional[Dict[CoreType, int
     return capacity
 
 
-def _kind(kind: CoreType) -> str:
-    return f"{kind[0]} x {kind[1]}"
-
-
-def _row_types(rows: Sequence[PassRow], capacity: Mapping[CoreType, int]
-               ) -> Optional[List[Tuple[CoreType, ...]]]:
-    """Every row's per-core types, or None when a row states none on a chip of several types; a
-    row on a core type the chip does not declare refuses by name."""
+def _row_tiles(rows: Sequence[PassRow], capacity: Mapping[CoreType, int]) -> Optional[List[CoreTiles]]:
+    """Every row's per-core declared tiles (``core_slots.stated_tiles``), or None when a row states no core type on a
+    chip of several types; a core that is no declared core and no fused one refuses by name."""
     only = next(iter(capacity)) if len(capacity) == 1 else None
-    typed: List[Tuple[CoreType, ...]] = []
+    typed: List[CoreTiles] = []
     for row in rows:
         if row.core_types is None:
             if only is None:
                 return None
-            typed.append((only,) * len(row.core_cells))
+            typed.append(((only,),) * len(row.core_cells))
             continue
-        stray = sorted({kind for kind in row.core_types if kind not in capacity})
+        tiles = [stated_tiles(kind, capacity) for kind in row.core_types]
+        stray = sorted({kind for kind, t in zip(row.core_types, tiles) if t is None})
         if stray:
             raise WriteCensusError(
-                f"the plane places cores of type {', '.join(map(_kind, stray))}, which the chip does not "
-                f"declare (declared: {', '.join(map(_kind, sorted(capacity)))})")
-        typed.append(tuple(row.core_types))
+                f"the plane places cores of type {', '.join(map(kind_name, stray))}, which the chip does not "
+                f"declare and which fuse no declared type (declared: {', '.join(map(kind_name, sorted(capacity)))})")
+        typed.append(tuple(t for t in tiles if t is not None))
     return typed
-
-
-def _slot_writes(rows: Sequence[PassRow], typed: Sequence[Tuple[CoreType, ...]], written: Sequence[Sequence[int]],
-                 capacity: Mapping[CoreType, int]) -> Tuple[Tuple[SlotWrites, ...], Tuple[Tuple[CoreType, Any], ...]]:
-    """(``SlotWrites`` per core type; per core type, per core holding operand regions, (static writes per period,
-    producer writes per inference)). One rule: the j-th rewritten core of a type sits on its j-th free core, and a
-    pass writes its operand regions once per sample, so a slot takes one producer write per inference from each pass
-    whose j-th core holds them (N2); a kept core (loaded once, resident, marked) with them is its own core."""
-    pinned: Counter = Counter()
-    static: Dict[CoreType, Counter] = {}
-    producer: Dict[CoreType, Counter] = {}
-    widest: Counter = Counter()
-    dedicated: set = set()
-    for row, types, cores in zip(rows, typed, written):
-        if not row.resident:
-            pinned.update(types[i] for i in row.marks if i < len(types))
-        rank: Counter = Counter()
-        for i in cores:
-            kind, j = types[i], rank[types[i]]
-            rank[kind] += 1
-            if i not in row.producer_cores or row.core_cells[i]:
-                static.setdefault(kind, Counter())[j] += 1
-            if i in row.producer_cores:
-                producer.setdefault(kind, Counter())[j] += 1
-        widest |= rank
-        dedicated |= {types[i] for i in set(row.producer_cores) - set(cores)}
-    out: List[SlotWrites] = []
-    for kind in sorted(capacity):
-        free = capacity[kind] - pinned[kind]
-        if widest[kind] > free:
-            raise WriteCensusError(
-                f"the residency marks pin {pinned[kind]} of the {capacity[kind]} cores of type "
-                f"{kind[0]} x {kind[1]}, leaving {free}, and a pass rewrites {widest[kind]} of them")
-        if widest[kind]:
-            out.append(SlotWrites(kind, tuple(static.get(kind, Counter())[j] for j in range(widest[kind]))))
-    pairs = {kind: {(static.get(kind, Counter())[j], n) for j, n in producer.get(kind, Counter()).items()}
-             | ({(0, 1)} if kind in dedicated else set()) for kind in sorted(set(producer) | dedicated)}
-    return tuple(out), tuple((kind, tuple(sorted(slots))) for kind, slots in pairs.items())
 
 
 def period_census(passes: ProgramPasses, *, weight_bits: int,
                   capacity: Optional[Mapping[CoreType, int]],
                   bytes_of: Optional[Callable[[int], int]] = None, label: str = "") -> WriteCensus:
-    """The steady-state period census of a pass list (the one rule, both planes).
+    """The steady-state period census of a pass list (the one rule, both planes: the executed rotation).
 
-    ``capacity`` (the declared cores per core type) decides loaded-once per type and places each
-    rewritten core on a physical core. Rows that state no core types on a chip of several types
-    prove a rewrite only when their tiles exceed every declared core (said in the label; no core is
-    placed); otherwise loaded-once is undecidable and the census refuses by name. ``bytes_of`` sizes
-    the carried elements of a boundary in this run's domain; without it the census states no boundary."""
+    ``capacity`` (the declared cores per core type) places each rewritten core on a physical core.
+    Rows that state no core types on a chip of several types are rewritten by the same rule, placed on
+    no physical core (said in the label). ``bytes_of`` sizes the carried elements of a boundary in
+    this run's domain; without it the census states no boundary. A pass is ``resident`` exactly when it
+    writes nothing per period.
+    """
     if not capacity:
         raise WriteCensusError("the platform declares no complete core geometry (max_axons and max_neurons "
-                               "of every core type), so no core type is known to hold the program's tiles")
+                               "of every core type), so no rewritten core can be placed on a declared core")
     rows = passes.rows
-    typed = _row_types(rows, capacity)
-    if typed is not None:
-        programmed = Counter(kind for row, types in zip(rows, typed) if not row.resident for kind in types)
-        loaded_once = all(count <= capacity[kind] for kind, count in programmed.items())
-    else:
-        tiles = sum(len(row.core_cells) for row in rows if not row.resident)
-        cores = sum(capacity.values())
-        untyped = f"the plane states no core type of its cores on a chip of {len(capacity)} core types"
-        if tiles <= cores:
-            raise WriteCensusError(
-                f"{untyped}, and its {tiles} programmed tiles fit the chip's {cores} cores: whether each core "
-                "type holds its own tiles (loaded once) is undecidable until the pass program states each "
-                "core's type (PassProgram.core_geometry)")
-        loaded_once = False
+    typed = _row_tiles(rows, capacity)
+    unkept = [[i for i in range(len(row.core_cells)) if not row.resident and i not in row.marks] for row in rows]
+    rotates = rotation_rewrites(sum(1 for cores in unkept if cores))
+    written_cores: List[List[int]] = unkept if rotates else [[] for _ in rows]
+    if typed is None and rotates:
         label = (f"{label}; " if label else "") + (
-            f"{untyped}: its {tiles} programmed tiles exceed the chip's {cores} cores, so it rewrites, "
-            "and no rewritten core is placed on a physical core")
+            f"the plane states no core type of its cores on a chip of {len(capacity)} core types: its passes "
+            "rewrite, and no rewritten core is placed on a physical core")
     out: List[PassCensus] = []
-    written_cores: List[List[int]] = []
     extents: List[Tuple[Tuple[int, int], ...]] = []
     for position, row in enumerate(rows):
-        kept = frozenset(range(len(row.core_cells))) if loaded_once or row.resident else row.marks
-        written = [i for i in range(len(row.core_cells)) if i not in kept]
-        written_cores.append(written)
+        written = written_cores[position]
         out.append(PassCensus(
-            position=position, segment_index=row.segment_index,
-            resident=not written and (loaded_once or row.resident),
+            position=position, segment_index=row.segment_index, resident=not written,
             cores=len(row.core_cells), resident_cores=len(row.core_cells) - len(written),
             written_cells_backing_store=sum(row.core_cells[i] for i in written),
             written_cells_producer=row.producer_cells,
@@ -267,7 +203,25 @@ def period_census(passes: ProgramPasses, *, weight_bits: int,
         ))
         if row.core_extents is not None:
             extents.append(tuple(row.core_extents[i] for i in written))
-    slots, typed_slots = (None, None) if typed is None else _slot_writes(rows, typed, written_cores, capacity)
+    # Every pass loads its unkept cores beside every pin, rotating or not: the fit reads them all; the slot rule
+    # counts the rewritten ones (N2: static cells and operand regions apart).
+    slots: Optional[Tuple[SlotWrites, ...]] = None
+    typed_slots = None
+    if typed is not None:
+        placed, typed_slots, unplaced, unfit = place(
+            [row.resident for row in rows], [sorted(row.marks) for row in rows], typed, unkept, capacity,
+            written=written_cores, producers=[row.producer_cores for row in rows],
+            static=[frozenset(i for i, cells in enumerate(row.core_cells) if cells or i not in row.producer_cores)
+                    for row in rows])
+        if unfit is not None:
+            raise WriteCensusError(unfit)
+        if unplaced is not None and rotates:
+            label = (f"{label}; " if label else "") + unplaced
+        slots = placed
+    if not rotates:
+        slots = ()
+    if any(row.producer_cells and not row.producer_cores for row in rows):
+        typed_slots = None  # operand regions on cores the plane does not state: their slots are not placed (N2)
     producer = None if typed_slots is None else tuple(sorted({pair for _, pairs in typed_slots for pair in pairs}))
     staged = [position for position, row in enumerate(rows)
               if written_cores[position] and len(row.stage_latencies or ()) > 1]
@@ -284,7 +238,8 @@ def period_census(passes: ProgramPasses, *, weight_bits: int,
         written_extents=tuple(extents) if len(extents) == len(rows) else None,
         compute_sealed=all(row.compute_steps is not None for row in rows),
         slot_writes=None if staged else slots,
-        pass_core_types=None if typed is None else tuple(tuple(sorted(Counter(types).items())) for types in typed),
+        pass_core_types=None if typed is None else tuple(
+            tuple(sorted(Counter(t for tiles in cores for t in tiles).items())) for cores in typed),
         producer_slots=None if staged else producer,
         written_cores=tuple(tuple(cores) for cores in written_cores),
         type_producer_slots=None if staged else typed_slots,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 
@@ -13,15 +13,14 @@ from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.mapping.layout.segmentation import HostSegment, NeuralSegment, Segment, compute_segment_ids
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
 from mimarsinan.mapping.support.period_census import SCHEDULE_RESIDENT_CORES, ResidencySegmentPlan
-from mimarsinan.mapping.support.residency_rules import ProgramGraph, check_pinned_fit, declared_pool
-from mimarsinan.mapping.support.schedule.pass_cut import cut_nodes_from_cores
+from mimarsinan.mapping.support.residency_rules import ProgramGraph, check_pinned_fit, declared_pool, fit_pins
+from mimarsinan.mapping.support.schedule.pass_cut import cut_nodes_from_cores, with_widths
 from mimarsinan.mapping.support.schedule.residency_composition import (
     ResidencyComposition,
     compose_residency_program,
     pin_program,
 )
-from mimarsinan.mapping.packing.residency_tiles import PackedCore, core_type_tiles
-from mimarsinan.mapping.support.schedule.residency_units import with_widths
+from mimarsinan.mapping.packing.residency_tiles import CoreTiles, PackedCore, core_type_tiles
 
 #: G5's own stage attribute (S0's rule for its two: set only on an executed plan, never as a dataclass field, so a
 #: default build pickles byte-identically): the executed pass beside the composition's plan of it.
@@ -35,7 +34,7 @@ class ResidencyPassCensus:
     its own cores by the one rule; the executed fields are the record's (its programmed bytes are the marks')."""
 
     pass_index: int
-    #: R_q: the phase's layer-granular tiles (each unit packed alone).
+    #: R_q: the phase's planned tiles (each unit's layer packed alone).
     planned_tiles: int
     planned_cores: Tuple[PackedCore, ...]
     planned_resident: FrozenSet[int]
@@ -63,14 +62,14 @@ class ResidencyPassCensus:
         return tuple(out)
 
     def differences(self) -> Tuple[str, ...]:
-        """``plane_differences`` and the pass's packed tiles against its layer-granular count, with the cause."""
+        """``plane_differences`` and the pass's packed tiles against its planned count, with the cause."""
         if self.executed_tiles == self.planned_tiles:
             return self.plane_differences()
         cause = ("joint packing of the phase saves tiles" if self.executed_tiles < self.planned_tiles else
                  "packing the phase on the declared counts costs tiles its layers packed alone do not")
         return self.plane_differences() + (
             f"the pass packs into {self.executed_tiles} tiles against the phase's {self.planned_tiles} "
-            f"layer-granular tiles ({cause})",)
+            f"planned tiles ({cause})",)
 
 
 def _runs(values) -> str:
@@ -131,9 +130,13 @@ def compose_builder_program(
     specs: List[Any] = []
     cores: List[Any] = []
     segments: List[int] = []
+    group_of: Dict[Tuple[int, int], int] = {}
+    bonds: List[Tuple[int, int]] = []
     for ordinal, segment in enumerate(neural_segments):
-        seg_specs, spec_to_core, _ = segment_specs(segment.nodes, ir_graph=ir_graph)
-        for spec in seg_specs:
+        seg_specs, spec_to_core, groups = segment_specs(segment.nodes, ir_graph=ir_graph)
+        for spec, group in zip(seg_specs, groups):
+            if group is not None:  # a coalesced wide fan-in's fragments run in one pass
+                bonds.append((group_of.setdefault((ordinal, int(group)), len(specs)), len(specs)))
             specs.append(spec)
             cores.append(spec_to_core[id(spec)])
             segments.append(ordinal)
@@ -146,7 +149,8 @@ def compose_builder_program(
     nodes = with_widths(sorted(nodes, key=lambda n: n.core_id), specs)
     composition = compose_residency_program(
         specs, nodes, core_types_from_declaration(cores_config), segments=segments, residency_plan=residency_plan,
-        program=ProgramGraph.of_ir(ir_graph, index_of), allow_coalescing=allow_coalescing, allow_splitting=allow_splitting, max_schedule_passes=max_schedule_passes)
+        program=ProgramGraph.of_ir(ir_graph, index_of), allow_coalescing=allow_coalescing,
+        allow_splitting=allow_splitting, max_schedule_passes=max_schedule_passes, bonds=bonds)
     by_segment = composition.segment_passes()
     chunks = tuple(tuple(tuple(cores[i] for i in members) for members in by_segment.get(ordinal, []))
                    for ordinal in range(len(neural_segments)))
@@ -185,3 +189,31 @@ def mark_residency_plan(pass_stages: Sequence[Any], builder: BuilderComposition,
             carried_elements=2 * sum(int(comp.units.live[c - 1]) for c in cuts),
             written_tiles=comp.facts.written_tiles, total_tiles=comp.plan.F, core_budget=comp.budget))
     return tuple(plans)
+
+
+def _stated_tiles(core: Any, declared: Sequence[Any]) -> Optional[CoreTiles]:
+    """A built core's declared tiles, or None where a fused core decomposes into the declared types ambiguously."""
+    try:
+        return core_type_tiles(core.axons_per_core, core.neurons_per_core, declared,
+                               getattr(core, "fused_component_axons", None))
+    except ResidencyPlanError:
+        return None
+
+
+def mark_fit_residency(pass_stages: Sequence[Any], cores_config: Sequence[dict]) -> bool:
+    """[W03] The planner pins a program that fits: when the executed passes that load their own cores fit the
+    declared pool side by side (``fit_pins``, the floor at r = 0), every core of every pass is marked resident, so the
+    program is written once; otherwise (or where a core's tiles are undetermined) U1's executed rotation stands.
+    Returns whether it pinned."""
+    declared = core_types_from_declaration(cores_config)
+    stated = [[_stated_tiles(core, declared) for core in stage.hard_core_mapping.cores] for stage in pass_stages]
+    if not pass_stages or any(t is None for cores in stated for t in cores):
+        return False
+    types: List[List[CoreTiles]] = [[t for t in cores if t is not None] for cores in stated]
+    pins = fit_pins(types, [bool(getattr(stage, "schedule_weights_resident", False)) for stage in pass_stages],
+                    declared_pool(declared))
+    if pins is None:
+        return False
+    for stage, pin in zip(pass_stages, pins):
+        setattr(stage, SCHEDULE_RESIDENT_CORES, pin)
+    return True

@@ -7,7 +7,7 @@ bytes are the marks'. [W04] The layout packer takes the hard-core packer's decis
 two pack a phase alike wherever their cores agree (t0_53 below).
 
 A phase packed on the declared (bounded) pool can need more tiles than its layers packed alone, so the executed
-program is admitted against the declared pool (the physical bound), never refused for a layer-granular count or for
+program is admitted against the declared pool (the physical bound), never refused for a planned unit count or for
 the type-blind planning budget: a program with F <= C gives the resident census on both planes."""
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
 from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.mapping.noc import collect_noc_fragments
 from mimarsinan.mapping.packing.schedule_residency_plan import SCHEDULE_RESIDENCY_PASS
-from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities, ResidencyPlanError
+from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities, PoolAdmissionError, ResidencyPlanError
 from mimarsinan.mapping.support.residency_rules import check_pinned_fit
 from mimarsinan.mapping.support.schedule.residency_composition import (
     ResidencySelection,
@@ -61,7 +61,7 @@ def _layers(vehicle, comp, passes):
     built = [tuple(sorted({layer_of[int(p["ir_node_id"])]
                            for ps in s.hard_core_mapping.soft_core_placements_per_hard_core for p in ps}))
              for s in passes]
-    planned = [tuple(sorted(comp.units.layers[u] for u in range(a, b))) for a, b in comp.facts.phases]
+    planned = [tuple(sorted({comp.units.layers[u] for u in range(a, b)})) for a, b in comp.facts.phases]
     return built, planned
 
 
@@ -71,11 +71,13 @@ def _executed_bytes(passes, bits: int) -> int:
 
 
 class TestThePackersAgreeOnT053AtSixCores:
-    """t0_53 at C 6 (x2.0). Before W04 the layout packer neuron-split a 128x64 tile of layer 2 into the core holding
-    layer 3 (256x10), a core of another latency: its split into a used core read the core's ``latency`` and a layout
-    core carries ``latency_tag``, so it saw none. The hard-core packer kept every layer on its own cores, and the two
-    planes priced 11,040 against 11,840 bytes (floor) and 52,000 against 42,560 (stateless). The layout packer now
-    reads the latency as the hard-core packer does: one pass partition, one packing, one byte count."""
+    """t0_53 at C 6 (x2.0). The floor cuts layer 1's two tiles across the two passes [W03]. Before W04 the layout
+    packer neuron-split a 128x64 tile of layer 2 into the core holding layer 3 (256x10), a core of another latency:
+    its split into a used core read the core's ``latency`` and a layout core carries ``latency_tag``, so it saw none.
+    The hard-core packer kept every layer on its own cores, and the two planes priced 11,040 against 11,840 bytes
+    (floor) and 52,000 against 42,560 (stateless). The layout packer now reads the latency as the hard-core packer
+    does: one pass partition, one packing, one byte count, and one set of pinned cores [integration of W03 with W04:
+    the floor's second pass pins the same five of its six cores on every plane]."""
 
     BITS = 5
 
@@ -91,7 +93,7 @@ class TestThePackersAgreeOnT053AtSixCores:
 
     def test_the_floor_pins_the_same_cores_on_the_two_planes(self):
         _vehicle, comp, frag, _mapping, passes = _planes("t0_53", 2.0, "floor")
-        assert list(comp.facts.pass_resident_cores) == [frozenset({0}), frozenset({1, 2, 3, 4})]
+        assert list(comp.facts.pass_resident_cores) == [frozenset(), frozenset({0, 2, 3, 4, 5})]
         assert [p.schedule_resident_cores for p in frag.pass_programs] == list(comp.facts.pass_resident_cores)
         assert [s.schedule_resident_cores for s in passes] == list(comp.facts.pass_resident_cores)
 
@@ -101,14 +103,15 @@ class TestThePackersAgreeOnT053AtSixCores:
         census = [getattr(s, SCHEDULE_RESIDENCY_PASS) for s in passes]
         assert [c.pass_index for c in census] == [0, 1]
         assert all(c.plane_differences() == () for c in census)
+        assert census[0].executed_cells == (16384,)                     # one tile of layer 1 alone [W03]
         assert census[1].planned_cores == comp.facts.pass_cores[1]
-        assert census[1].executed_cells == (2560, 8192, 8192, 8192, 8192)
+        assert census[1].executed_cells == (16384, 2560, 8192, 8192, 8192, 8192)
         assert all(c.planned_resident == comp.facts.pass_resident_cores[q] for q, c in enumerate(census))
         assert all(c.executed_resident == s.schedule_resident_cores for c, s in zip(census, passes))
 
 
 class TestATypeContendedPhaseIsAdmittedOnBothPlanes:
-    """t0_01 at its declared budget: two core types of 60 each, C 96, F 48 layer-granular tiles. Each layer packed
+    """t0_01 at its declared budget: two core types of 60 each, C 96, F 48 planned tiles. Each layer packed
     alone (a unit) picks its best type; the whole program packed on the declared counts needs one more tile (49)."""
 
     def test_the_resident_program_gives_the_resident_census(self):
@@ -121,7 +124,7 @@ class TestATypeContendedPhaseIsAdmittedOnBothPlanes:
         plan, = mapping.schedule_residency_plan
         assert (plan.written_tiles, plan.passes, plan.rotating_tiles) == (0, 1, 0)
 
-    def test_the_stateless_plan_writes_one_tile_more_than_its_layer_granular_count(self):
+    def test_the_stateless_plan_writes_one_tile_more_than_its_planned_count(self):
         _vehicle, comp, frag, mapping, passes = _planes("t0_01", 1.0, "stateless")
         assert comp.facts.written_tiles == 48 and comp.facts.written_core_tiles == 49
         assert passes[0].schedule_resident_cores == frozenset() and len(passes[0].hard_core_mapping.cores) == 49
@@ -130,14 +133,14 @@ class TestATypeContendedPhaseIsAdmittedOnBothPlanes:
         census = getattr(passes[0], SCHEDULE_RESIDENCY_PASS)
         assert census.executed_tiles == 49 and census.planned_tiles == 48
         assert census.differences() == (
-            "the pass packs into 49 tiles against the phase's 48 layer-granular tiles (packing the phase on the "
+            "the pass packs into 49 tiles against the phase's 48 planned tiles (packing the phase on the "
             "declared counts costs tiles its layers packed alone do not)",)
         assert frag.pass_programs[0].schedule_resident_cores == frozenset()
 
 
 class TestTheFitIsThePhysicalPool:
     """The executed program is admitted against the declared pool (``check_pinned_fit``), the physical bound, never
-    against the type-blind planning budget C or a layer-granular count."""
+    against the type-blind planning budget C or a planned unit count."""
 
     def test_a_program_within_the_planning_budget_packed_beyond_it_is_resident_on_both_planes(self):
         """t0_11 at x0.6: two types of 36, C = 57 (0.8 x 72), F = 50; the phase packs into 60 cores, which the pool
@@ -165,22 +168,46 @@ class TestTheFitIsThePhysicalPool:
     def test_more_physical_cores_than_planned_tiles_is_not_a_refusal(self):
         check_pinned_fit([[((8, 8),), ((8, 8),), ((8, 8),)]], [frozenset()], {(8, 8): 4})
 
-    def test_the_composition_refuses_by_name_what_the_builder_refuses(self):
-        """The shape-only composition runs the builder's fit check on its own phase packing: two 2-tile layers at
-        C 3 whose phases each pack into three 1-tile cores cannot hold the pins of the other pass on 3 cores."""
+    @staticmethod
+    def _two_layers():
+        """Two 2-tile layers at C 3 whose phases each pack into three 1-tile cores on a pool of three."""
         units = ResidencyUnits(tiles=(2, 2), live=(1, 0), forced=(), members=((0,), (1,)), layers=(0, 1),
                                segments=(0, 0))
 
         def pack_phase(members):
             return ((64, 1),) * 3, (((8, 8),),) * 3
+        return units, pack_phase
 
-        compose_units(units, ResidencySelection("floor"), 3, max_schedule_passes=8)          # unpacked: plans
-        with pytest.raises(ResidencyPlanError, match="declared pool") as caught:
+    def test_the_floor_is_the_smallest_r_the_declared_pool_admits(self):
+        """[W03] The composition runs the builder's fit check on its own phase packing. At r* = 1 (and r = 2) a pass
+        cannot hold the other pass's pins on 3 cores; at r = 3 nothing is pinned, so the floor is r = 3, the plan U1's
+        capacity split deploys (each pass rewritten)."""
+        units, pack_phase = self._two_layers()
+        unpacked = compose_units(units, ResidencySelection("floor"), 3, max_schedule_passes=8)
+        assert unpacked.r == unpacked.plan.step(0)[0] == 1                                  # type-blind: r* = 1
+        comp = compose_units(units, ResidencySelection("floor"), 3, max_schedule_passes=8, pack_phase=pack_phase,
+                             pool={(8, 8): 3})
+        assert comp.r == 3 and comp.facts.pass_resident_cores == (frozenset(), frozenset())
+
+    def test_a_declared_index_the_pool_does_not_admit_refuses_by_name(self):
+        units, pack_phase = self._two_layers()
+        with pytest.raises(PoolAdmissionError, match="declared pool") as caught:
+            compose_units(units, ResidencySelection("index", 0), 3, max_schedule_passes=8, pack_phase=pack_phase,
+                          pool={(8, 8): 3})
+        assert isinstance(caught.value, ResidencyPlanError) and isinstance(caught.value, ToolchainRefusal)
+
+    def test_a_program_the_pool_admits_at_no_r_refuses_by_name(self):
+        units, _ = self._two_layers()
+
+        def pack_phase(members):
+            return ((64, 1),) * 4, (((8, 8),),) * 4                                          # a pass alone needs 4
+
+        with pytest.raises(PoolAdmissionError, match="at every r from 1 to 3") as caught:
             compose_units(units, ResidencySelection("floor"), 3, max_schedule_passes=8, pack_phase=pack_phase,
                           pool={(8, 8): 3})
         assert isinstance(caught.value, ToolchainRefusal)
 
     def test_a_pass_the_declared_pool_cannot_place_refuses_by_name(self):
-        with pytest.raises(ResidencyPlanError, match="declared pool") as caught:
+        with pytest.raises(PoolAdmissionError, match="declared pool") as caught:
             check_pinned_fit([[((16, 8),), ((8, 8),)]], [frozenset()], {(8, 8): 4})
         assert isinstance(caught.value, ToolchainRefusal)

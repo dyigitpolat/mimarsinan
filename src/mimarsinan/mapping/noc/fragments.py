@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import (
@@ -14,8 +14,12 @@ from mimarsinan.mapping.noc.pass_program import PassProgram, packed_pass_program
 from mimarsinan.mapping.noc.wire_census import LayoutWireCensus
 from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 from mimarsinan.mapping.packing.pass_timing import project_planned_passes
+from mimarsinan.mapping.noc.stages import spec_segments as spec_segments  # the stage rules, re-exported
+from mimarsinan.mapping.noc.stages import execution_stage_latencies as execution_stage_latencies
+from mimarsinan.mapping.noc.stages import execution_stage_placements as execution_stage_placements
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
-from mimarsinan.mapping.support.residency_rules import ProgramGraph, check_pinned_fit, declared_pool
+from mimarsinan.mapping.support.residency_rules import (
+    ProgramGraph, check_pinned_fit, declared_pool, fit_pins, fit_rule_applies, unscheduled_pack_holds)
 from mimarsinan.mapping.support.schedule.pass_planner import (
     plan_program_passes,
 )
@@ -24,92 +28,7 @@ from mimarsinan.mapping.support.schedule.residency_composition import (
     ShapeOnlyResidency,
     pin_program,
 )
-
-
-def execution_stage_latencies(
-    softcores: Sequence[LayoutSoftCoreSpec],
-    pass_placements: Sequence[Sequence[Tuple[int, int]]],
-    *,
-    retimed: bool,
-    census: Optional[LayoutWireCensus] = None,
-    runs: Optional[Sequence[int]] = None,
-) -> Tuple[int, ...]:
-    """Per-execution-stage max core latency, one entry per stage.
-
-    The deployed program executes one stage per (pass, segment, depth level)
-    when per-hop re-timing is armed — each level re-based, so its internal
-    max latency is 0 — and otherwise one stage per (pass, segment) spanning
-    that segment's whole latency range. Feeding this to
-    ``chip_simulation.stage_timesteps.program_latency_steps`` reproduces the
-    step count the runner executes (measured: the MLP study run's 3 levels
-    at T=4 → 3 x 5 = 15, exactly its sealed ``compute_steps``). [U1 W10]
-    With the walk's wire census, a pass the fused segment pins spans its pinned
-    latencies; with the walk's ``runs`` (``spec_runs``), the builder's segments
-    (its fused segments) group the specs, else their depth segments do.
-    """
-    segment_of = spec_segments(softcores, runs)
-    pinned = (project_planned_passes([int(s.output_count) for s in softcores],
-                                     [[i for i, _ in p] for p in pass_placements], census.pair_wires,
-                                     segment_of).pinned_spans
-              if census is not None and not retimed else (None,) * len(pass_placements))
-    stages: List[int] = []
-    for placements, span in zip(pass_placements, pinned):
-        if span is not None:
-            stages.append(span)
-            continue
-        by_segment: Dict[int, List[int]] = {}
-        for softcore_index, _hardcore in placements:
-            spec = softcores[softcore_index]
-            by_segment.setdefault(int(segment_of[softcore_index]), []).append(int(spec.latency_tag or 0))
-        for _segment, latencies in sorted(by_segment.items()):
-            levels = sorted(set(latencies))
-            if retimed and len(levels) > 1:
-                # Each level is its own re-based execution stage.
-                stages.extend(0 for _ in levels)
-            else:
-                base = min(levels) if levels else 0
-                stages.append(max(latencies) - base if latencies else 0)
-    return tuple(stages)
-
-
-def execution_stage_placements(
-    softcores: Sequence[LayoutSoftCoreSpec],
-    pass_placements: Sequence[Sequence[Tuple[int, int]]],
-    *,
-    retimed: bool,
-    runs: Optional[Sequence[int]] = None,
-) -> Tuple[Tuple[Tuple[int, int], ...], ...]:
-    """[R3] Per-EXECUTION-STAGE placements with stage-local hardcore indices.
-
-    The runner maps EACH execution stage's cores from tile 0, core 0 — a
-    re-timed program runs one small remapped chip per depth level, never the
-    co-resident placement the pass planned. Pricing hops on the pass
-    placement modeled 113.6 hops where the executed program measured a true
-    0 (every level fit one tile). Grouping mirrors
-    :func:`execution_stage_latencies` — one stage per (pass, segment, level)
-    when re-timing is armed, else one per (pass, segment) — and hardcore
-    indices are re-based per stage in placement order, the runner's own
-    packing order. ``runs``: as :func:`execution_stage_latencies`.
-    """
-    segment_of = spec_segments(softcores, runs)
-    stages: List[Tuple[Tuple[int, int], ...]] = []
-    for placements in pass_placements:
-        by_group: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
-        for softcore_index, hardcore in placements:
-            spec = softcores[softcore_index]
-            segment = segment_of[softcore_index]
-            level = int(spec.latency_tag or 0) if retimed else 0
-            by_group.setdefault((segment, level), []).append(
-                (softcore_index, hardcore)
-            )
-        for _key, group in sorted(by_group.items()):
-            reindex: Dict[int, int] = {}
-            local: List[Tuple[int, int]] = []
-            for softcore_index, hardcore in group:
-                local_core = reindex.setdefault(int(hardcore), len(reindex))
-                local.append((softcore_index, local_core))
-            stages.append(tuple(local))
-    return tuple(stages)
+from mimarsinan.mapping.packing.residency_tiles import CoreTiles
 
 
 @dataclass(frozen=True)
@@ -134,7 +53,8 @@ class LayoutNocFragments:
     #: firing semantics derives them (``execution_stage_placements``).
     stage_placements: Optional[Tuple[Tuple[Tuple[int, int], ...], ...]] = None
     #: [U1 W9] Per spec, the builder segment (IR run, ``spec_runs``) the passes were planned in; None: planned by
-    #: the specs' depth segments. Every consumer of the fragments reads this one segmentation (``spec_segments``).
+    #: the specs' depth segments (no runs stated, or [fix_b] a declared plan's composition, which plans on them).
+    #: Every consumer of the fragments reads this one segmentation (``spec_segments``).
     runs: Optional[Tuple[int, ...]] = None
 
 
@@ -155,26 +75,28 @@ def collect_noc_fragments(
 ) -> LayoutNocFragments:
     """Place every pass of the candidate program and seal the placements.
 
-    Consumes the ONE planner ``compute_mapping_stats`` and the builder consume
-    [U1] but packs EVERY pass — the NoC estimate needs all placements, not
-    just the worst pass's census. Cross-pass producer/consumer pairs are carry
-    traffic, not mesh traffic; the estimator excludes them by pass membership.
-    [E85] A declared ``residency_plan`` is planned with the walk's ``program``
-    graph, under the builder's refusal rules. [U1 W9] With the walk's ``runs``
-    (``spec_runs``; read off ``program`` when only it is given) the specs are
-    grouped by the builder's segments and each is planned as the builder plans
-    it; without them by their depth segments, which equals the builder wherever
-    the two segmentations group the specs alike (every tier-0 template).
-    [CL-SG] ``declared_cores`` (the platform's ``cores``) signs each packed core
-    of a per-axon type (``carries_sign_register``): its used rows ride the pass
-    program for the payload rule.
+    Consumes the ONE planner ``compute_mapping_stats`` and the builder consume [U1] but packs EVERY pass — the NoC
+    estimate needs all placements, not just the worst pass's census. Cross-pass producer/consumer pairs are carry
+    traffic, not mesh traffic; the estimator excludes them by pass membership. [E85] A declared ``residency_plan`` is
+    planned with the walk's ``program`` graph, under the builder's refusal rules. [U1 W9] With the walk's ``runs``
+    (``spec_runs``; read off ``program``, else [fix_b] the census, when not given) the specs are grouped by the
+    builder's segments and each is planned as the builder plans it; without them by their depth segments, which
+    equals the builder wherever the two segmentations group the specs alike (every tier-0 template); the fragments
+    state the segments planned (``runs``). [fix_b] Where U1's passes are not pinned (they do not fit the pool side
+    by side) while the program's unscheduled pack holds on the declared pool (``unscheduled_pack_holds``), that pack
+    is the program, pinned, as the builder builds its single pool (``hybrid_build_fit``); [fix_c] likewise under a
+    declared plan whose passes are not pinned whole (``fit_rule_applies``: every plan but the stateless baseline).
+    [CL-SG] ``declared_cores`` (the platform's ``cores``) signs each packed core of a per-axon type
+    (``carries_sign_register``): its used rows ride the pass program for the payload rule.
     """
     softcores = list(softcores)
+    runs = runs if runs is not None else walk_runs(program, len(softcores))
+    runs = runs if runs is not None or census is None else census.spec_runs
+    runs = None if runs is None else tuple(int(r) for r in runs)
     global_index = {id(sc): i for i, sc in enumerate(softcores)}
     if residency_plan is not None and not allow_scheduling:
         raise ResidencyPlanError("residency_plan is declared but allow_scheduling is not")
     residency: Optional[ResidencyComposition] = None
-    runs = tuple(int(r) for r in runs) if runs is not None else walk_runs(program, len(softcores))
 
     if allow_scheduling:
         plan = plan_program_passes(
@@ -201,10 +123,28 @@ def collect_noc_fragments(
     else:
         pass_lists = [softcores]
         pass_resident = [False]
+    per_pass, programs = _placed_passes(pass_lists, pass_resident, global_index, core_types, residency,
+                                        allow_neuron_splitting, allow_coalescing, declared_cores)
+    fit = allow_scheduling and fit_rule_applies(residency_plan) and not all(
+        p.schedule_resident_cores == frozenset(range(p.cores)) for p in programs) and unscheduled_pack_holds(
+        pack_layout(softcores=softcores, core_types=core_types, allow_neuron_splitting=allow_neuron_splitting,
+                    allow_coalescing=allow_coalescing), core_types)
+    if fit:  # [fix_b, fix_c] the fit rule, under U1 and every declared plan but the stateless baseline
+        per_pass, programs = _placed_passes([softcores], [False], global_index, core_types, None,
+                                            allow_neuron_splitting, allow_coalescing, declared_cores)
+    return LayoutNocFragments(
+        pass_placements=tuple(per_pass), census=census, pass_programs=tuple(programs),
+        runs=None if residency_plan is not None and not fit else runs,
+    )
 
+
+def _placed_passes(pass_lists, pass_resident, global_index, core_types, residency, allow_neuron_splitting,
+                   allow_coalescing, declared_cores) -> Tuple[List[Tuple[Tuple[int, int], ...]], List[PassProgram]]:
+    """Every planned pass packed with its placements, and its programs (``packed_pass_program``: per physical tile
+    its cells and signed rows, per core its geometry) with the residency marks."""
     per_pass: List[Tuple[Tuple[int, int], ...]] = []
     programs: List[PassProgram] = []
-    pass_types: List[Tuple[Tuple[Tuple[int, int], ...], ...]] = []
+    pass_types: List[Tuple[CoreTiles, ...]] = []
     for pass_softcores, resident in zip(pass_lists, pass_resident):
         pack = pack_layout(
             softcores=pass_softcores, core_types=core_types,
@@ -223,14 +163,8 @@ def collect_noc_fragments(
         pass_program, tiles = packed_pass_program(pack.used_core_snapshots or (), resident=bool(resident),
                                                   core_types=core_types, declared_cores=declared_cores)
         programs.append(pass_program)
-        if residency is not None:
-            pass_types.append(tiles)
-    if residency is not None:
-        programs = _pinned_programs(programs, pass_types, residency, core_types)
-    return LayoutNocFragments(
-        pass_placements=tuple(per_pass), census=census,
-        pass_programs=tuple(programs), runs=runs,
-    )
+        pass_types.append(tiles)
+    return per_pass, _resident_programs(programs, pass_types, residency, core_types)
 
 
 def delayed_carry_wires(softcores: Sequence[LayoutSoftCoreSpec], frag: LayoutNocFragments,
@@ -251,17 +185,20 @@ def walk_runs(program: Optional[ProgramGraph], count: int) -> Optional[Tuple[int
     return None if program is None else program.spec_runs(count)
 
 
-def spec_segments(softcores: Sequence[LayoutSoftCoreSpec], runs: Optional[Sequence[int]]) -> List[int]:
-    """The fused segment of each spec: its builder segment (``runs``), else its depth segment (``segment_id``)."""
-    return [int(r) for r in runs] if runs is not None else [int(s.segment_id or 0) for s in softcores]
+def _resident_programs(programs: Sequence[PassProgram], pass_types: Sequence[Tuple[CoreTiles, ...]],
+                       residency: Optional[ResidencyComposition],
+                       core_types: Sequence[LayoutHardCoreType]) -> List[PassProgram]:
+    """The declared plan's pins (``_pinned_programs``), else [W03] every core of a program whose passes fit the
+    declared cores side by side (``fit_pins``, the floor at r = 0); otherwise none (U1's executed rotation)."""
+    if residency is not None:
+        return _pinned_programs(programs, pass_types, residency, core_types)
+    pins = fit_pins(list(pass_types), [p.resident for p in programs], declared_pool(core_types))
+    return list(programs) if pins is None else [replace(p, schedule_resident_cores=pin)
+                                                for p, pin in zip(programs, pins)]
 
 
-def _pinned_programs(
-    programs: Sequence[PassProgram],
-    pass_types: Sequence[Tuple[Tuple[Tuple[int, int], ...], ...]],
-    residency: ResidencyComposition,
-    core_types: Sequence[LayoutHardCoreType],
-) -> List[PassProgram]:
+def _pinned_programs(programs: Sequence[PassProgram], pass_types: Sequence[Tuple[CoreTiles, ...]],
+                     residency: ResidencyComposition, core_types: Sequence[LayoutHardCoreType]) -> List[PassProgram]:
     """[E85] The pinned rule on each planned pass's packed cells, checked against the declared pool."""
     pins = pin_program([p.core_cells for p in programs], pass_types, residency.r, residency.budget)
     check_pinned_fit(pass_types, pins, declared_pool(core_types))

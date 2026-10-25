@@ -1,7 +1,7 @@
 {
-  "name": "neurram_like",
-  "display_name": "NeuRRAM (130 nm RRAM CIM, Wan 2022): 48 cores of 256 x 256",
-  "geometry": "neurram_like",
+  "name": "puma_node_like",
+  "display_name": "PUMA node (32 nm, simulated, Ankit 2019): 2208 MVMUs of 128 x 128, 16-bit weights",
+  "geometry": "puma_node_like",
   "keys": {},
   "faithfulness": {
     "class": "refused",

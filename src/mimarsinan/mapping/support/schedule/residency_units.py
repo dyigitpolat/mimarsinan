@@ -1,4 +1,4 @@
-"""[E85] Toolchain residency units: layer-granular tiles, live sets at layer cuts, the step function and its census."""
+"""[E85/W03] Toolchain residency units: tile groups of each layer, live sets at unit cuts, the step function, its census."""
 
 from __future__ import annotations
 
@@ -6,27 +6,28 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.packing.residency_tiles import PackedCore, packed_cores
+from mimarsinan.mapping.packing.residency_tiles import PackedCore, tile_groups
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
-from mimarsinan.mapping.support.period_census import PassBoundaryCensus, PassCensus, PassPeriodCensus
+from mimarsinan.mapping.support.period_census import (
+    PassBoundaryCensus, PassCensus, PassPeriodCensus, phase_crossings, rotation_rewrites,
+)
 from mimarsinan.mapping.support.schedule.pass_cut import CutNode, PassCut
+from mimarsinan.mapping.support.schedule.pass_cut import cut_nodes_from_census as cut_nodes_from_census
 from mimarsinan.mapping.support.schedule.residency_front import (
-    Q_SPAN,
-    ResidencyStepFunction,
-    phase_partition,
-    plan_steps,
-    q_fit,
+    Q_SPAN, ResidencyStepFunction, phase_partition, plan_steps, q_fit,
 )
 
 Step = Tuple[int, int, int]
 @dataclass(frozen=True)
 class ResidencyUnits:
-    """The planner's input on one program: one unit per layer, in program order over every neural segment.
+    """The planner's input on one program: per layer its tile groups (``tile_groups``), in program order over every
+    neural segment, so a pass may hold part of a layer.
 
     ``live[u]`` is the element count live across the cut after unit ``u`` (0 at a forced cut, where the traffic is
     the host boundary priced as today, and after the last unit); ``forced`` holds the cut positions that are
-    segment boundaries; ``members[u]`` the spec indices of unit ``u``; ``cores[u]`` the cores unit ``u`` packs into
-    alone (``tiles[u]`` their tiles), empty on units stated by tile counts only.
+    segment boundaries; ``members[u]`` the spec indices of unit ``u``; ``layers[u]`` its layer; ``cores[u]`` the
+    cores it occupies in its layer packed alone (``tiles[u]`` their tiles), empty on units stated by tile counts;
+    ``spans`` each wire carried between units of a segment, (width, producing unit, last consuming unit) [W03].
     """
 
     tiles: Tuple[int, ...]
@@ -36,6 +37,7 @@ class ResidencyUnits:
     layers: Tuple[Optional[int], ...]
     segments: Tuple[int, ...]
     cores: Tuple[Tuple[PackedCore, ...], ...] = ()
+    spans: Optional[Tuple[Tuple[int, int, int], ...]] = None
 
 
 def _layer_of_each_spec(specs, nodes) -> List[Any]:
@@ -59,55 +61,61 @@ def _layer_of_each_spec(specs, nodes) -> List[Any]:
 
 def residency_units(specs: Sequence[LayoutSoftCoreSpec], nodes: Sequence[CutNode],
                     core_types: Sequence[LayoutHardCoreType], *, segments: Sequence[int],
-                    allow_coalescing: bool = False, allow_splitting: bool = False) -> ResidencyUnits:
-    """Units and live sets of a program from the plane's specs and cut nodes (``core_id`` = spec index)."""
+                    allow_coalescing: bool = False, allow_splitting: bool = False,
+                    bonds: Sequence[Tuple[int, int]] = ()) -> ResidencyUnits:
+    """Units and live sets of a program from the plane's specs and cut nodes (``core_id`` = spec index): each layer's
+    tile groups, a spec kept with every spec of its layer it shares a packed core with, reads or is read by, or that a
+    declared ``bond`` (spec index pairs: a coalescing group on the builder) ties to it."""
     layer = _layer_of_each_spec(specs, nodes)
     order: Dict[Tuple[int, Any], List[int]] = {}
     for index in range(len(specs)):
         order.setdefault((int(segments[index]), layer[index]), []).append(index)
-    keys = sorted(order, key=lambda k: (k[0], order[k][0]))
+    tied = [(int(n.core_id), int(s)) for n in nodes for s in n.sources] + [(int(a), int(b)) for a, b in bonds]
+    groups: List[Tuple[int, Any, Tuple[int, ...], Tuple[PackedCore, ...]]] = []
+    for key in sorted(order, key=lambda k: (k[0], order[k][0])):
+        local = {spec: i for i, spec in enumerate(order[key])}
+        pairs = [(local[a], local[b]) for a, b in tied if a in local and b in local]
+        for members, cores in tile_groups([specs[i] for i in order[key]], core_types, allow_coalescing=allow_coalescing,
+                                          allow_splitting=allow_splitting, bonds=pairs):
+            groups.append((key[0], key[1], tuple(order[key][m] for m in members), cores))
     by_id = {int(n.core_id): n for n in nodes}
-    live = [0] * len(keys)
-    for segment in sorted({k[0] for k in keys}):
-        units = [u for u, k in enumerate(keys) if k[0] == segment]
+    live, spans = [0] * len(groups), []
+    for segment in sorted({g[0] for g in groups}):
+        units = [u for u, g in enumerate(groups) if g[0] == segment]
         try:
-            cut = PassCut.over([by_id[i] for u in units for i in order[keys[u]]],
-                               [order[keys[u]] for u in units])
+            cut = PassCut.over([by_id[i] for u in units for i in groups[u][2]], [groups[u][2] for u in units])
         except ValueError as exc:
             raise ResidencyPlanError(f"residency_plan: layer order is not a program order in segment "
                                      f"{segment}: {exc}") from exc
         for position, unit in enumerate(units[:-1]):
             live[unit] = cut.cut_width(position)
-    forced = tuple(u for u in range(1, len(keys)) if keys[u][0] != keys[u - 1][0])
-    cores = tuple(packed_cores([specs[i] for i in order[k]], core_types, allow_coalescing=allow_coalescing,
-                               allow_splitting=allow_splitting) for k in keys)
+        spans += [(int(w.width), units[w.produced_in], units[w.last_consumed_in]) for w in cut.carried]
     return ResidencyUnits(
-        tiles=tuple(sum(t for _, t in c) for c in cores),
-        live=tuple(live), forced=forced, members=tuple(tuple(order[k]) for k in keys),
-        layers=tuple(k[1] for k in keys), segments=tuple(k[0] for k in keys), cores=cores,
+        tiles=tuple(sum(t for _, t in g[3]) for g in groups), live=tuple(live),
+        forced=tuple(u for u in range(1, len(groups)) if groups[u][0] != groups[u - 1][0]),
+        members=tuple(g[2] for g in groups), layers=tuple(g[1] for g in groups),
+        segments=tuple(g[0] for g in groups), cores=tuple(g[3] for g in groups), spans=tuple(spans),
     )
 
 
-def cut_nodes_from_census(specs: Sequence[LayoutSoftCoreSpec], census) -> List[CutNode]:
-    """The shape-only plane's cut nodes: sources from the wire census, intra-segment only."""
-    sources: Dict[int, set] = {i: set() for i in range(len(specs))}
-    for producer, consumer in getattr(census, "pair_wires", {}):
-        if (specs[int(producer)].segment_id or 0) == (specs[int(consumer)].segment_id or 0):
-            sources[int(consumer)].add(int(producer))
-    return [CutNode(core_id=i, latency=int(spec.latency_tag or 0), sources=tuple(sorted(sources[i])),
-                    out_width=int(spec.output_count)) for i, spec in enumerate(specs)]
-
-
-def residency_steps(units: Sequence[int], live: Sequence[int], C: int, *,
-                    forced: Sequence[int] = ()) -> ResidencyStepFunction:
-    """``plan_steps`` on toolchain units: the whole step function, or a refusal by name when no layer-granular
-    plan exists (a unit exceeds C). Prices nothing: the choice of step is the pricer's."""
-    plan = plan_steps(units, live, int(C), forced=forced)
-    if plan is None:
-        big = [i for i, t in enumerate(units) if int(t) > int(C)]
+def residency_steps(units: Sequence[int], live: Sequence[int], C: int, *, forced: Sequence[int] = (),
+                    max_passes: Optional[int] = None) -> ResidencyStepFunction:
+    """``plan_steps`` on toolchain units (at most ``max_passes`` phases per segment [W03]): the step function, or a
+    refusal by name when no plan exists (a unit, one tile group, exceeds C, or a segment needs more passes than the
+    cap). Prices nothing: the choice of step is the pricer's."""
+    plan = plan_steps(units, live, int(C), forced=forced, segment_cap=max_passes)
+    if plan is not None:
+        return plan
+    big = [i for i, t in enumerate(units) if int(t) > int(C)]
+    if big:
         raise ResidencyPlanError(
-            f"residency_plan: no layer-granular plan exists at C = {C}: units {big} exceed the core budget")
-    return plan
+            f"residency_plan: no plan exists at C = {C}: units {big} (each one tile group: cores its specs share, "
+            f"or one spec's tiles) exceed the core budget")
+    bounds = [0, *sorted(set(int(p) for p in forced)), len(units)]
+    need = {k: q_fit(units[a:b], int(C)) for k, (a, b) in enumerate(zip(bounds, bounds[1:]))}
+    raise ResidencyPlanError(
+        f"residency_plan: no plan exists at C = {C} within max_schedule_passes = {max_passes} per segment: the "
+        f"fewest passes per segment are {need}")
 
 
 def stateless_step(plan: ResidencyStepFunction) -> Step:
@@ -130,6 +138,8 @@ class PlanPeriodFacts:
     #: Per pass, every core it packs into (empty: facts stated by tile counts only), and the pinned rule's cores.
     pass_cores: Tuple[Tuple[PackedCore, ...], ...] = ()
     pass_resident_cores: Tuple[FrozenSet[int], ...] = ()
+    #: [W03] Per boundary, the (out, in) elements of the crossing rule (``phase_crossings``); None: stated by live sets.
+    boundary_crossings: Optional[Tuple[Tuple[int, int], ...]] = None
 
     @property
     def Q(self) -> int:
@@ -137,7 +147,7 @@ class PlanPeriodFacts:
 
     @property
     def written_tiles(self) -> int:
-        """W = F - C + r, the step's layer-granular writes (0 on a resident program)."""
+        """W = F - C + r, the step's planned tile writes (0 on a resident program)."""
         return sum(self.pass_tiles) - sum(self.pass_pinned)
 
     @property
@@ -209,23 +219,24 @@ def facts_with_cores(facts: PlanPeriodFacts, pass_cores: Sequence[Sequence[Packe
     return replace(facts, pass_cores=cores, pass_resident_cores=pin_passes(cores, facts.r, facts.budget))
 
 
-def plan_period_facts(units: Sequence[int], live: Sequence[int], C: int, step: Step, *,
-                      forced: Sequence[int] = (),
-                      unit_cores: Optional[Sequence[Sequence[PackedCore]]] = None) -> PlanPeriodFacts:
-    """The period census of one plan step (an entry of ``steps``, or ``stateless_step``); with ``unit_cores`` (each
-    unit's ``ResidencyUnits.cores``) each pass's cores are its units' cores, layer-granular."""
+def plan_period_facts(units: Sequence[int], live: Sequence[int], C: int, step: Step, *, forced: Sequence[int] = (),
+                      unit_cores: Optional[Sequence[Sequence[PackedCore]]] = None, max_passes: Optional[int] = None,
+                      unit_spans: Optional[Sequence[Tuple[int, int, int]]] = None) -> PlanPeriodFacts:
+    """The period census of one plan step (an entry of ``steps``, or ``stateless_step``, under ``max_passes``); with
+    ``unit_cores`` and ``unit_spans`` (``ResidencyUnits.cores``, ``.spans``) each pass's cores and crossings."""
     units = tuple(int(t) for t in units)
     r = int(step[0])
     qf = q_fit(units, int(C), forced)
     if qf is None:
         raise ResidencyPlanError(f"residency_plan: a unit exceeds C = {C}")
-    phases = phase_partition(units, live, int(C), r, qf + Q_SPAN, forced)
+    phases = phase_partition(units, live, int(C), r, qf + Q_SPAN, forced, segment_cap=max_passes)
     if phases is None:
         raise ResidencyPlanError(f"residency_plan: no plan at r = {r}, C = {C}")
     tiles = tuple(sum(units[a:b]) for a, b in phases)
     facts = PlanPeriodFacts(r=r, budget=int(C), phases=phases, pass_tiles=tiles,
                             pass_pinned=pinned_tiles(tiles, r, int(C)),
-                            boundary_elements=tuple(int(live[b - 1]) for _, b in phases[:-1]))
+                            boundary_elements=tuple(int(live[b - 1]) for _, b in phases[:-1]),
+                            boundary_crossings=None if unit_spans is None else phase_crossings(unit_spans, phases))
     if unit_cores is None:
         return facts
     return facts_with_cores(facts, [[c for u in range(a, b) for c in unit_cores[u]] for a, b in phases])
@@ -234,15 +245,26 @@ def plan_period_facts(units: Sequence[int], live: Sequence[int], C: int, step: S
 def plan_period_census(units: Sequence[int], live: Sequence[int], C: int, step: Step, *,
                        bytes_of_cells: Callable[[int], int], tile_cells: int, bytes_per_element: int,
                        forced: Sequence[int] = (), unit_cores: Optional[Sequence[Sequence[PackedCore]]] = None,
-                       label: str = "") -> PassPeriodCensus:
+                       label: str = "", max_passes: Optional[int] = None,
+                       unit_spans: Optional[Sequence[Tuple[int, int, int]]] = None) -> PassPeriodCensus:
     """S0's period census of one plan step (``plan_period_facts``, priced). With ``unit_cores`` a pass's cores are
     its packed cores and its payload their occupied-cell bytes (A1); stated by tiles, each written tile is a full
-    tile of ``tile_cells`` cells (W x TB in all). A boundary inside a segment carries its live set each way at
-    ``bytes_per_element``; a forced cut starts a segment. A plan step states no compute steps (0)."""
-    facts = plan_period_facts(units, live, C, step, forced=forced, unit_cores=unit_cores)
+    tile of ``tile_cells`` cells (W x TB in all). A boundary inside a segment carries (``bytes_per_element``) the
+    crossings of ``unit_spans`` (the record's rule [W03]), else its live set each way; a forced cut starts a segment.
+    No compute steps (0). Writes by the executed rotation: a lone writing pass (a fit's one pass) writes nothing."""
+    facts = plan_period_facts(units, live, C, step, forced=forced, unit_cores=unit_cores, max_passes=max_passes,
+                              unit_spans=unit_spans)
+    return facts_period_census(facts, forced=forced, bytes_of_cells=bytes_of_cells, tile_cells=tile_cells,
+                               bytes_per_element=bytes_per_element, label=label)
+
+
+def facts_period_census(facts: PlanPeriodFacts, *, forced: Sequence[int] = (), bytes_of_cells: Callable[[int], int],
+                        tile_cells: int, bytes_per_element: int, label: str = "") -> PassPeriodCensus:
+    """``PassPeriodCensus`` of any plan step's facts: the unit facts of ``plan_period_facts`` or a plane's
+    composition, whose passes carry the cores that plane packs (``facts_with_cores``)."""
     cuts = sorted(int(p) for p in forced)
     segment = [sum(1 for p in cuts if p <= a) for a, _ in facts.phases]
-    if unit_cores is None:
+    if not facts.pass_cores:
         cores, kept = list(facts.pass_tiles), list(facts.pass_pinned)
         cells = [(t - k) * int(tile_cells) for t, k in zip(cores, kept)]
         payload = [(t - k) * int(bytes_of_cells(int(tile_cells))) for t, k in zip(cores, kept)]
@@ -251,26 +273,24 @@ def plan_period_census(units: Sequence[int], live: Sequence[int], C: int, step: 
         kept = [len(k) for k in facts.pass_resident_cores]
         cells = [sum(w) for w in facts.written_cells]
         payload = [sum(int(bytes_of_cells(c)) for c in w) for w in facts.written_cells]
+    if not rotation_rewrites(sum(1 for c, k in zip(cores, kept) if c > k)):
+        kept, cells, payload = list(cores), [0] * len(cores), [0] * len(cores)
     passes = tuple(PassCensus(position=q, segment_index=segment[q], resident=kept[q] == cores[q], cores=cores[q],
                               resident_cores=kept[q], written_cells_backing_store=cells[q], written_cells_producer=0,
                               payload_bytes=payload[q], compute_steps=0) for q in range(facts.Q))
-    boundaries = tuple(PassBoundaryCensus(after_pass=q, carry_out_bytes=int(live_q) * int(bytes_per_element),
-                                          carry_in_bytes=int(live_q) * int(bytes_per_element))
-                       for q, live_q in enumerate(facts.boundary_elements) if segment[q] == segment[q + 1])
+    crossing = (facts.boundary_crossings if facts.boundary_crossings is not None   # [W03] stated, else live each way
+                else tuple((v, v) for v in facts.boundary_elements))
+    boundaries = tuple(PassBoundaryCensus(after_pass=q, carry_out_bytes=int(o) * int(bytes_per_element),
+                                          carry_in_bytes=int(i) * int(bytes_per_element))
+                       for q, (o, i) in enumerate(crossing) if segment[q] == segment[q + 1])
     return PassPeriodCensus(passes=passes, boundaries=boundaries, label=label)
 
 
 def units_period_census(units: ResidencyUnits, C: int, step: Step, *, bytes_of_cells: Callable[[int], int],
-                        tile_cells: int, bytes_per_element: int, label: str = "") -> PassPeriodCensus:
+                        tile_cells: int, bytes_per_element: int, label: str = "",
+                        max_passes: Optional[int] = None) -> PassPeriodCensus:
     """``plan_period_census`` of a step on a program's own units (their tiles, live sets, forced cuts and packed
-    cores): the layer-granular census a planned step carries."""
+    cores): the unit census a planned step carries."""
     return plan_period_census(units.tiles, units.live, C, step, bytes_of_cells=bytes_of_cells, tile_cells=tile_cells,
                               bytes_per_element=bytes_per_element, forced=units.forced, unit_cores=units.cores,
-                              label=label)
-
-
-def with_widths(nodes: Sequence[CutNode], specs: Sequence[LayoutSoftCoreSpec]) -> List[CutNode]:
-    """Cut nodes carrying each spec's output width and latency tag, the facts both planes state alike (a bank-backed
-    IR core holds no matrix to read a width from, and an IR core's latency is unset until the latency pass)."""
-    return [replace(n, out_width=int(specs[int(n.core_id)].output_count),
-                    latency=int(specs[int(n.core_id)].latency_tag or 0)) for n in nodes]
+                              label=label, max_passes=max_passes, unit_spans=units.spans)

@@ -183,6 +183,33 @@ class PlatformPhysicsValidity:
 
 
 @dataclass(frozen=True)
+class ExternalComponent:
+    """[CL2] A component the priced system needs and the profile does not describe (an SRAM-CIM macro's backing
+    store): a run declares its ``constants`` beside the profile, or nothing absolute is read."""
+
+    name: str
+    constants: Tuple[str, ...]
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.name or self.name.isspace():
+            raise ValueError("ExternalComponent needs a name")
+        if not self.constants:
+            raise ValueError(f"external component {self.name!r} names no constant")
+        for key in self.constants:
+            spec_for(key)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"name": self.name, "constants": list(self.constants), "note": self.note}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ExternalComponent":
+        kwargs = strict_kwargs(cls, data)
+        kwargs["constants"] = tuple(kwargs.get("constants") or ())
+        return cls(**kwargs)
+
+
+@dataclass(frozen=True)
 class PlatformPhysics:
     """A named target's physics. An undeclared constant is ABSENT, never defaulted."""
 
@@ -195,6 +222,8 @@ class PlatformPhysics:
     #: conversions). Absent = the digital model, which converts nothing.
     conversion_model: Mapping[str, Any] = field(default_factory=dict)
     format_version: int = PHYSICS_FORMAT_VERSION
+    #: [CL2] Components the profile leaves out; serialized only when present.
+    external_components: Tuple[ExternalComponent, ...] = ()
 
     def __post_init__(self) -> None:
         if self.format_version != PHYSICS_FORMAT_VERSION:
@@ -229,6 +258,10 @@ class PlatformPhysics:
         """The availability predicate every absolute objective gates on."""
         return not self.missing(keys)
 
+    def undeclared_external(self) -> Tuple[ExternalComponent, ...]:
+        """The external components with a constant this physics does not declare yet."""
+        return tuple(component for component in self.external_components if self.missing(component.constants))
+
     def evidence_kinds(self) -> Dict[str, str]:
         """Per-constant evidence, for reports that must disclose what is estimated."""
         return {key: value.evidence_kind for key, value in self.constants.items()}
@@ -246,11 +279,15 @@ class PlatformPhysics:
             "validity": self.validity.to_dict(),
             "conversion_model": dict(self.conversion_model),
             "constants": {k: v.to_dict() for k, v in sorted(self.constants.items())},
+            **({"external_components": [c.to_dict() for c in self.external_components]}
+               if self.external_components else {}),
         }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "PlatformPhysics":
         kwargs = strict_kwargs(cls, data)
+        kwargs["external_components"] = tuple(
+            ExternalComponent.from_dict(c) for c in kwargs.get("external_components") or ())
         kwargs["validity"] = PlatformPhysicsValidity.from_dict(kwargs["validity"])
         kwargs["constants"] = {
             key: PhysicsConstantValue.from_dict(value)

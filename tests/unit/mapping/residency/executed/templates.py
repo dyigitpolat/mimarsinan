@@ -123,7 +123,13 @@ def layout_walk(vehicle: TemplateVehicle):
 
 def activate(ir, gain: float, bits: int = 0) -> None:
     """Make the seeded random vehicle fire: every core's weights (owned or bank) scaled so its mean absolute column
-    sum is ``gain`` thresholds; ``bits`` > 0 then puts it on the chip grid as the pipeline does (``quantize_ir_graph``)."""
+    sum is ``gain`` thresholds; ``bits`` > 0 then puts it on the chip grid as the pipeline does (``quantize_ir_graph``).
+
+    [fix_c] A random vehicle carries no trained grid: the converted model's placeholder scale (1) read as a trained
+    NAPQ scale rounded the scaled weights (|w| below 0.5) to 0, so every layer of the Loihi and ODIN vehicles (integer
+    chips) was silent or input-independent (W09, fix_b). On the grid its scales are cleared, so quantization takes the
+    mapping-time rule (the largest integer scale keeping max |w| on q_max, which the threshold then carries) and the
+    weights keep their ratio to the threshold."""
     def scaled(matrix):
         m = np.asarray(matrix, dtype=np.float64)
         return m * (float(gain) / max(float(np.abs(m).sum(axis=0).mean()), 1e-12))
@@ -134,6 +140,8 @@ def activate(ir, gain: float, bits: int = 0) -> None:
         if core.core_matrix is not None:
             core.core_matrix = scaled(core.core_matrix)
     if bits > 0:
+        for owner in list(ir.weight_banks.values()) + list(ir.get_neural_cores()):
+            owner.parameter_scale = torch.tensor(0.0)
         quantize_ir_graph(ir, int(bits), weight_quantization=True)
 
 

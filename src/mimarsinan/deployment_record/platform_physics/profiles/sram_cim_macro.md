@@ -7,8 +7,14 @@ inputs with 32-bit partial sums and exact digital accumulation (p.2-3); 12.6 TOP
 
 ## Validity
 
-Macro-level constants only. The structured validity geometry is one 1 kB block read as 64 axons x 16 neurons of
-8-bit weights, up to 128 blocks; no aggregate constant is declared, so the geometry bounds nothing priced.
+Macro-level constants only. The structured validity geometry is the macro's logical core (CL2 reading of p.2-3):
+the 128 blocks of 64 rows x 128 b form 16 SR groups of 8 blocks; each group computes one dot product of the 128
+4-bit inputs per cycle over one address (one row in each of its 8 blocks, 16 weights each) and holds 64 addresses,
+so the macro is one core of 128 axons x 1024 neurons of 8-bit weights (1024 x 128 x 1 B = 128 kB); a fan-in above
+128 takes several addresses with a full-precision partial sum (p.3). One macro was measured, so the core count is
+1. No aggregate constant is declared, so the geometry bounds nothing priced. (Wave 1 declared one 1 kB block as 64
+axons x 16 neurons, up to 128 blocks; a block's 64 rows are addresses read one per cycle against 16 inputs, not 64
+inputs, so CL2 corrected it to the group-level core the `sram_cim_macro` target bundle declares.)
 
 ## Rows
 
@@ -24,7 +30,9 @@ Macro-level constants only. The structured validity geometry is one 1 kB block r
 
 Every chip-level row: periphery, NoC, host, static power, area, and the cycle time of a whole evaluation (the
 macro is bit-serial over its 4-bit inputs at 20 MHz, and the cycles per evaluation are not stated). The
-**backing store** is not part of the macro: CL5 and CL7 declare it as a named `backing_store` override block
+**backing store** is not part of the macro: the profile names it as an external component (`external_components`:
+`e_dma_per_byte`, `t_program_per_byte`), and `price_absolute` refuses every absolute term by name
+(`absolute_pricing`) until a run declares both, which CL5 and CL7 do as a named `backing_store` override block
 (`merge_override_blocks`), so this point is never read without it. houshmand2023benchmarking (Table II and
 Fig. 7, p.6) carries an analytical weight-write term that was not read in this round; it is the cross-check the
 derived write bracket waits on.

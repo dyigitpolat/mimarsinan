@@ -13,8 +13,8 @@ without building an IR (the ``LayoutStatsView`` precedent).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
+from dataclasses import dataclass, replace
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 #: The raster crosses unchanged — streamed LIF, where rhythm is the signal.
 VERBATIM = "verbatim"
@@ -230,3 +230,22 @@ def cut_nodes_from_cores(cores: Iterable, segment_ids: Iterable[int]) -> List[Cu
             else 0,
         ))
     return nodes
+
+
+def cut_nodes_from_census(specs: Sequence[Any], census: Any) -> List[CutNode]:
+    """The shape-only plane's cut nodes (``core_id`` = spec index): sources from the wire census
+    (``pair_wires``), intra-segment only; duck-typed on the specs' ``segment_id``, ``latency_tag`` and
+    ``output_count``."""
+    sources: Dict[int, set] = {i: set() for i in range(len(specs))}
+    for producer, consumer in getattr(census, "pair_wires", {}):
+        if (specs[int(producer)].segment_id or 0) == (specs[int(consumer)].segment_id or 0):
+            sources[int(consumer)].add(int(producer))
+    return [CutNode(core_id=i, latency=int(spec.latency_tag or 0), sources=tuple(sorted(sources[i])),
+                    out_width=int(spec.output_count)) for i, spec in enumerate(specs)]
+
+
+def with_widths(nodes: Sequence[CutNode], specs: Sequence[Any]) -> List[CutNode]:
+    """Cut nodes carrying each spec's output width and latency tag, the facts both planes state alike (a bank-backed
+    IR core holds no matrix to read a width from, and an IR core's latency is unset until the latency pass)."""
+    return [replace(n, out_width=int(specs[int(n.core_id)].output_count),
+                    latency=int(specs[int(n.core_id)].latency_tag or 0)) for n in nodes]

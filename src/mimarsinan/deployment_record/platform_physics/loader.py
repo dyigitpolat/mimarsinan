@@ -13,6 +13,7 @@ from mimarsinan.deployment_record.platform_physics.conversion import (
 )
 from mimarsinan.deployment_record.platform_physics.profile import (
     PHYSICS_FORMAT_VERSION,
+    ExternalComponent,
     PhysicsConstantValue,
     PlatformPhysics,
     PlatformPhysicsValidity,
@@ -130,6 +131,11 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
     # Validate the dataflow HERE: an undescribable one must fail at declaration,
     # not as a conversion count nobody can defend at pricing time.
     conversion_model_for(conversion_model)
+    external = tuple(ExternalComponent.from_dict(c) for c in data.get("external_components") or ())
+    for component in external:
+        if declared := [key for key in component.constants if key in constants]:
+            raise ValueError(f"{data['name']}: external component {component.name!r} names {declared}, which the "
+                             "profile declares itself; an external component's constants come from beside it")
     return PlatformPhysics(
         name=str(data["name"]),
         display_name=str(data["display_name"]),
@@ -137,6 +143,7 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         validity=PlatformPhysicsValidity.from_dict(data["validity"]),
         constants=constants,
         conversion_model=conversion_model,
+        external_components=external,
     )
 
 
@@ -195,4 +202,5 @@ def apply_overrides(
         validity=physics.validity,
         constants=constants,
         conversion_model=physics.conversion_model,
+        external_components=physics.external_components,
     )

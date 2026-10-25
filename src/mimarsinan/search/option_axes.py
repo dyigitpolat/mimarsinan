@@ -40,6 +40,9 @@ REFUSED_OPTION_AXES: Mapping[str, str] = {
     "ttfs_scale_aware_boundaries":
         "it shapes a step's declared contract (TTFSCycleAdaptationStep.requires), "
         "which is fixed at pipeline assembly — before any search runs",
+    "core_semantics":
+        "it selects the deployment's packaging contract (the program every candidate is "
+        "built and priced as) and the pipeline's steps, both fixed before any search runs",
 }
 
 

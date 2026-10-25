@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
 import json
 from pathlib import Path
 
 import pytest
+import torch
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.capability.requirements import (
@@ -26,8 +28,9 @@ SRC = REPO / "src" / "mimarsinan"
 FIXTURES = REPO / "tests" / "fixtures" / "requirement_census"
 TABLE_MODULE = "mapping/capability/requirements.py"
 
-#: Exempt by name until CL4, when G1's conversion predicate reads this table (plan §11.3 acceptance 2, §13 rule 6).
-SECOND_MAP_EXEMPTIONS = frozenset({"core_lowering_requirement"})
+#: No exemption since CL4: G1's conversion predicate (``core_lowering_requirement``) reads this table (plan §11.3
+#: acceptance 2, §13 rule 6).
+SECOND_MAP_EXEMPTIONS: frozenset = frozenset()
 
 
 def _oracle_map() -> dict:
@@ -145,15 +148,35 @@ def test_the_second_map_scan_sees_the_oracle_shape():
     assert _second_maps(ast.parse(
         "def needs_class(m):\n    if isinstance(m, Conv):\n        return frozenset('G')\n    return frozenset()\n"))
     assert _second_maps(ast.parse('KIND_CLASSES = (("mmg", "G"), ("dmm", {"D"}))'))
-    assert not _second_maps(ast.parse("def core_lowering_requirement(m):\n    return 'G'\n"))
+    assert _second_maps(ast.parse("def core_lowering_requirement(m):\n    return 'G'\n")), (
+        "no exemption since CL4: the conversion's predicate returning its own class letter is a second map")
     assert not _second_maps(ast.parse('NAMES = dict(mmg="grouped", dmm="dynamic")'))
 
 
 def test_the_mac_carrying_kinds_are_the_products():
-    assert {kind for kind, r in REQUIREMENTS.items() if r.carries_macs} == {"mm", "mmg", "mms", "dmm", "leaf"}
+    assert {kind for kind, r in REQUIREMENTS.items() if r.carries_macs} == {
+        "mm", "mmg", "mms", "dmm", "leaf", "recurrence"}, "CL4: a decomposed recurrence carries its W_hh products"
     assert all(r.carries_macs for r in REQUIREMENTS.values() if r.placement == CROSSBAR)
 
 
 def test_only_declared_kinds_carry_a_stated_host_boundary():
     boundaries = {kind: r.host_boundary for kind, r in REQUIREMENTS.items() if r.host_boundary}
     assert boundaries == {"mmg": "grouped convolution on the host until N5"}
+
+
+def test_the_conversion_time_capability_rule_reads_the_table(monkeypatch):
+    """G1's ``core_lowering_requirement`` states the class and the boundary of the table's grouped-convolution row:
+    a change to the row reaches the conversion's reason, so the table is the one source."""
+    from mimarsinan.mapping.capability import requirements
+    from mimarsinan.torch_mapping.representability_analyzer import core_lowering_requirement
+
+    grouped = torch.nn.Conv2d(4, 4, 3, groups=2)
+    found = core_lowering_requirement(grouped)
+    row = requirement_of(requirements.GROUPED_CONVOLUTION)
+    assert found is not None and found.capability == "".join(sorted(row.classes)) == "G"
+    assert row.host_boundary in found.reason and "groups=2" in found.reason
+    assert core_lowering_requirement(torch.nn.Conv2d(4, 4, 3)) is None
+    edited = dict(requirements.REQUIREMENTS)
+    edited[requirements.GROUPED_CONVOLUTION] = dataclasses.replace(row, host_boundary="a seeded boundary")
+    monkeypatch.setattr(requirements, "REQUIREMENTS", edited)
+    assert "a seeded boundary" in core_lowering_requirement(grouped).reason

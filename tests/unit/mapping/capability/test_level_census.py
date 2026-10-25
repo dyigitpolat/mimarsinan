@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
-
 import pytest
 
 from mimarsinan.deployment_record.quantities.spec import QUANTITY_SPECS
@@ -12,10 +10,11 @@ from mimarsinan.mapping.capability.mac_split import MacCounters
 from mimarsinan.mapping.capability.pricing_inputs import (
     FIELD_MAP_FIELDS,
     PENDING_CATALOG_FIELDS,
-    PassWrites,
+    ROTATION_LABEL,
     level_period_census,
     level_quantities,
 )
+from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensus
 from mimarsinan.mapping.capability.ladder import (
     HOST_PAYLOAD_WRITE,
     LADDER,
@@ -35,12 +34,6 @@ from .ir_fixtures import (
 )
 
 BITS = 8
-#: S0's draft ``PassCensus`` fields, in order (RA/10_wave1/s0_declarations/code.patch, new
-#: ``mapping/support/period_census.py``): the adapter at S0's staging is a field-for-field copy.
-S0_PASS_CENSUS_FIELDS = (
-    "position", "segment_index", "resident", "cores", "resident_cores", "written_cells_backing_store",
-    "written_cells_producer", "payload_bytes", "compute_steps",
-)
 
 
 def _row(ir, level, payload_write=ON_CHIP_WRITE_BACK):
@@ -112,32 +105,63 @@ def test_the_ladder_census_carries_both_d_rows_and_the_placement_label():
         assert row.label == (None if row.level == "C0" else PLACEMENT_LABEL)
 
 
-def test_the_period_census_passes_carry_s0s_pass_census_fields():
-    assert tuple(f.name for f in fields(PassWrites)) == S0_PASS_CENSUS_FIELDS
+def _one_byte_per_cell(cells: int) -> int:
+    return int(cells)
+
+
+def _period(ir, level, payload_write=ON_CHIP_WRITE_BACK, bytes_of_cells=_one_byte_per_cell):
+    return level_period_census(ir, capability_level(level), value_bits=BITS, payload_write=payload_write,
+                               bytes_of_cells=bytes_of_cells)
+
+
+def test_the_level_period_census_is_s0s_pass_period_census():
+    census = _period(contraction_graph(), "C3")
+    assert isinstance(census, PassPeriodCensus) and all(isinstance(p, PassCensus) for p in census.passes)
+
+
+def test_the_period_census_rewrites_every_pass_by_the_executed_rotation():
+    """Finding 4 (a): each execution stage loads its cores from its type's first core, so a level of two or more
+    neural segments rewrites every pass's cores once per period (no residency plan pins them), while a level of one
+    neural segment (a lone writing pass) is never displaced and writes nothing."""
+    ir = contraction_graph()
+    c0, c3 = _period(ir, "C0"), _period(ir, "C3")
+    assert [(p.cores, p.written_cells_backing_store, p.payload_bytes, p.resident) for p in c0.passes] == [
+        (2, 8 * 8 + 8 * 12, 8 * 8 + 8 * 12, False), (1, 6 * 2, 6 * 2, False)], "[Q K] P [O]: both passes rewrite"
+    assert all(p.resident_cores == 0 for p in c0.passes)
+    assert [(p.cores, p.written_cells_backing_store, p.resident) for p in c3.passes] == [(3, 0, True)], (
+        "one neural segment at C3: a lone writing pass, loaded once")
+    lane = [_period(lane_graph(), level) for level in ("C0", "C1", "C5")]
+    assert [len(c.passes) for c in lane] == [4, 2, 1]
+    assert [sum(p.written_cells_backing_store for p in c.passes) for c in lane] == [56, 56, 0]
+    assert ROTATION_LABEL in c0.label and "C0" in c0.label
+
+
+def test_the_payload_bytes_are_priced_core_by_core_by_the_callers_rule():
+    census = _period(contraction_graph(), "C0", bytes_of_cells=lambda cells: -(-cells * 4 // 8))
+    assert [p.payload_bytes for p in census.passes] == [32 + 48, 6], "4-bit weights, each core rounded up"
 
 
 def test_the_period_census_carries_producer_sourced_payload_only_where_d_is_on_chip():
     ir = contraction_graph()
-    c0 = level_period_census(ir, capability_level("C0"), value_bits=BITS)
-    c3 = level_period_census(ir, capability_level("C3"), value_bits=BITS)
-    assert c0.written_cells_producer == 0 and all(p.written_cells_producer == 0 for p in c0.passes)
-    assert c3.written_cells_producer == 12, "the stationary K (4 x 3), from the operand shapes"
-    assert c3.producer_payload_bytes == 12
-    assert c3.written_cells_backing_store == 0
+    c0 = _period(ir, "C0")
+    c3 = _period(ir, "C3")
+    assert sum(p.written_cells_producer for p in c0.passes) == 0
+    assert sum(p.written_cells_producer for p in c3.passes) == 12, "the stationary K (4 x 3), from the operand shapes"
+    assert sum(p.written_cells_backing_store for p in c3.passes) == 0
     assert sum(p.cores for p in c3.passes) == 3
     for census in (c0, c3):
         assert [p.position for p in census.passes] == list(range(len(census.passes)))
         assert [p.segment_index for p in census.passes] == list(range(len(census.passes)))
-        assert all(p.resident and p.resident_cores == p.cores and p.payload_bytes == 0 for p in census.passes)
         assert census.boundaries == (), "a host-op boundary crosses segments: it is carry, in the field map"
-    assert c3.label == "C3 on_chip_write_back" and c0.label == "C0"
+    assert c3.label.startswith("C3 on_chip_write_back") and c0.label.startswith("C0")
 
 
 def test_the_period_census_under_a_host_payload_write():
     ir = contraction_graph()
-    census = level_period_census(ir, capability_level("C3"), value_bits=BITS, payload_write=HOST_PAYLOAD_WRITE)
-    assert census.written_cells_producer == 12, "the same stationary K, written by the host op before P"
+    census = _period(ir, "C3", HOST_PAYLOAD_WRITE)
+    assert sum(p.written_cells_producer for p in census.passes) == 12, "the same stationary K, written by the host"
     assert [(p.cores, p.compute_steps) for p in census.passes] == [(2, 1), (1, 2)]
+    assert all(not p.resident for p in census.passes), "the payload write splits the level into two writing passes"
 
 
 def test_the_field_map_names_every_field_of_the_plan():

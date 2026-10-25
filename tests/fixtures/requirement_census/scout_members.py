@@ -15,6 +15,8 @@ from mimarsinan.models.cifar_models import CifarBasicBlock
 
 NC = 10
 VSHAPE = (3, 32, 32)
+SEQ_T, SEQ_F = 16, 32
+SSHAPE = (SEQ_T, SEQ_F)
 
 class ExplicitAttention(nn.Module):
     """timm-style attention: fused qkv Linear, explicit Q K^T and A V products."""
@@ -107,6 +109,24 @@ class ExplicitViT(nn.Module):
         x = self.embed(x).flatten(2).transpose(1, 2) + self.pos
         x = self.blocks(x)
         return self.head(self.norm(x).mean(dim=1))
+
+
+class UnrolledElman(nn.Module):
+    """h_t = ReLU(W_x x_t + W_h h_{t-1}), unrolled over a fixed T; weights shared across steps."""
+
+    def __init__(self, hidden=32, steps=SEQ_T, act="relu"):
+        super().__init__()
+        self.wx = nn.Linear(SEQ_F, hidden)
+        self.wh = nn.Linear(hidden, hidden, bias=False)
+        self.act = nn.ReLU() if act == "relu" else nn.Tanh()
+        self.steps = steps
+        self.head = nn.Linear(hidden, NC)
+
+    def forward(self, x):
+        h = self.act(self.wx(x[:, 0]))
+        for t in range(1, self.steps):
+            h = self.act(self.wx(x[:, t]) + self.wh(h))
+        return self.head(h)
 
 
 class InvertedResidual(nn.Module):
@@ -230,4 +250,5 @@ MEMBERS = (
     ("vit_lite_7_4_softmax_ln_gelu", lambda: vit_lite(softmax="bf"), VSHAPE),
     ("vit_lite_7_4_bn_relu_reluattn", lambda: vit_lite(softmax="bf", norm="bn", act="relu", score_act="relu"), VSHAPE),
     ("unet_level_convtranspose", lambda: UNetBlock(up="transpose"), VSHAPE),
+    ("elman_unrolled_relu", lambda: M.UnrolledElman(), M.SSHAPE),
 )

@@ -14,6 +14,9 @@ The builder (IR cores) and the shape-only plane (the layout walk's specs and wir
   (``partition_ir_graph``: runs of consecutive neural cores between host ops, which the identity and U1 builders
   execute).
 - ``check_pinned_fit``: every pass with the other passes' pins fits the declared pool (each plane on its own packing).
+- ``unscheduled_pack_holds`` [fix_b]: the fit rule with scheduling allowed or not; a program whose unscheduled pack
+  holds on the declared pool is built so and pinned (each plane on its own packer); ``fit_rule_applies`` [fix_c]:
+  under U1 and every declared plan but the stateless reload baseline.
 """
 
 from __future__ import annotations
@@ -26,8 +29,9 @@ import numpy as np
 from mimarsinan.mapping.ir import IRSource, NeuralCore
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
 from mimarsinan.mapping.layout.segmentation import compute_segment_ids
-from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
-from mimarsinan.mapping.packing.residency_tiles import CoreTiles
+from mimarsinan.mapping.platform.mapping_structure import PoolAdmissionError, ResidencyPlanError, residency_declaration
+from mimarsinan.mapping.support.period_census import STEP_STATELESS
+from mimarsinan.mapping.packing.residency_tiles import CoreTiles, core_type_tiles
 
 
 @dataclass(frozen=True)
@@ -201,10 +205,53 @@ def check_pinned_fit(pass_core_types: Sequence[Sequence[CoreTiles]], pins: Seque
                     need[t] = need.get(t, 0) + n
         placed = dominance_matching(need, type_counts)
         if placed < sum(need.values()):
-            raise ResidencyPlanError(
+            raise PoolAdmissionError(
                 f"residency_plan: pass {q} with the other passes' pinned cores needs {dict(sorted(need.items()))} "
                 f"(axons, neurons) tiles; the declared pool {dict(sorted(type_counts.items()))} holds {placed} of "
                 f"them, a tile on a core at least its size in both dimensions")
+
+
+def fit_pins(pass_core_types: Sequence[Sequence[CoreTiles]], whole: Sequence[bool],
+             type_counts: Mapping[Any, int]) -> Optional[Tuple[FrozenSet[int], ...]]:
+    """[W03] The floor at a fit (r = 0, the pinned rule then pins every tile): every core of every pass, when the
+    cores of the passes that load their own fit the declared pool side by side (a dominance matching), else None. A
+    wholly resident pass (``whole``, U1's bank-clustered passes after the first) runs on cores already loaded."""
+    need: Dict[Any, int] = {}
+    for cores, resident in zip(pass_core_types, whole):
+        if not resident:
+            for types in cores:
+                for t in types:
+                    need[t] = need.get(t, 0) + 1
+    if dominance_matching(need, type_counts) < sum(need.values()):
+        return None
+    return tuple(frozenset(range(len(cores))) for cores in pass_core_types)
+
+
+def passes_pinned(packs: Sequence[Any], whole: Sequence[bool], core_types: Sequence[LayoutHardCoreType]) -> bool:
+    """[fix_b] Whether the fit rule pins planned passes (``fit_pins`` over their packs' tiles, a fused core's members
+    as its snapshot states them, ``LayoutCoreSnapshot.component_axons``; undetermined tiles: no)."""
+    try:
+        tiles = [[core_type_tiles(c.axons_per_core, c.neurons_per_core, core_types,
+                                  getattr(c, "component_axons", None)) for c in p.used_core_snapshots or ()]
+                 for p in packs]
+    except ResidencyPlanError:
+        return False
+    return fit_pins(tiles, list(whole), declared_pool(core_types)) is not None
+
+
+def unscheduled_pack_holds(pack: Any, core_types: Sequence[LayoutHardCoreType]) -> bool:
+    """[fix_b] The fit rule on the shape-only plane: the program's unscheduled pack (one pack of every spec on the
+    declared cores, ``pack_layout``) is feasible and its cores' tiles fit the declared pool. Where U1's passes do not fit
+    side by side, that pack is the program with every core pinned, as the builder builds its single pool
+    (``hybrid_build_fit``): a chip that holds the program programs it once (K27). Each plane judges its own pack."""
+    return bool(getattr(pack, "feasible", False)) and passes_pinned([pack], [False], core_types)
+
+
+def fit_rule_applies(residency_plan: Optional[Mapping[str, Any]]) -> bool:
+    """[fix_c] Whether the fit rule judges a program planned under ``residency_plan``: U1 (no plan) and every declared
+    plan (the floor, a step index) but the stateless reload baseline, which pins no core by definition (r = C, every
+    core rewritten each period; plan section 9.3), on both planes."""
+    return residency_plan is None or residency_declaration(residency_plan)[0] != STEP_STATELESS
 
 
 def dominance_matching(need: Mapping[Tuple[int, int], int], pool: Mapping[Tuple[int, int], int]) -> int:

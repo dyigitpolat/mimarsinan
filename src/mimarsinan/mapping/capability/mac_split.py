@@ -21,8 +21,8 @@ from mimarsinan.mapping.capability.requirements import requirement_of
 
 #: The estimator total is below the cores' MAC floor (the reviewed-delta cause: one position per on-chip conv).
 ESTIMATOR_BELOW_CORE_FLOOR = "estimator_conv_one_position"
-MULTI_INPUT_REASON = "multi-input op counted by the forward estimator only until G1's input_shapes rule"
-#: Host counters that disagree on an IR with no multi-input op (the acceptance checker fails it).
+#: Host counters that disagree (the acceptance checker fails it): since G1's input_shapes rule the forward estimator
+#: and ``count_host_ops`` count a multi-input op alike, so a disagreement is unexplained on every IR (CL4).
 COUNTERS_DISAGREE = "mac_counters_disagree"
 UNCOUNTED_PRODUCT = "uncounted_product"
 
@@ -42,7 +42,7 @@ class MacCounters:
 
     @property
     def reason(self) -> Optional[str]:
-        return MULTI_INPUT_REASON if self.has_multi_input_op else None
+        return self.host_withheld
 
     @property
     def estimator_onchip_macs(self) -> int:
@@ -54,9 +54,7 @@ class MacCounters:
 
     @property
     def host_withheld(self) -> Optional[str]:
-        if self.agree:
-            return None
-        return MULTI_INPUT_REASON if self.has_multi_input_op else COUNTERS_DISAGREE
+        return None if self.agree else COUNTERS_DISAGREE
 
 
 @dataclass(frozen=True)

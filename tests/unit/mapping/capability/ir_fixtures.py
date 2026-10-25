@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from mimarsinan.mapping.capability import census as census_module
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 
@@ -77,7 +78,8 @@ def lane_graph() -> IRGraph:
 
 
 class Contraction(nn.Module):
-    """Stand-in for G1's ``mapping/support/contraction.py`` payload, the §5.1 interface G7 reads (duck-typed)."""
+    """Stand-in for G1's ``mapping/support/contraction.py`` payload, the §5.1 interface G7 reads (duck-typed); the MAC
+    SSOT counts it by its ``forward_macs()`` declaration, as it counts G1's payload."""
 
     def __init__(self, einsum_spec: str, operand_roles, operand_shapes):
         super().__init__()
@@ -127,9 +129,10 @@ def grouped_graph() -> IRGraph:
 def grouped_conv3d_graph() -> IRGraph:
     """A(core, 8 from input) G(grouped 1x1x1 Conv3d, 2 groups, on 2x2x2x1) B(core, 2 logits).
 
-    G is the stated-boundary kind (class G, "grouped convolution on the host until N5"), but the MAC SSOT has no
-    Conv3d rule, so ``count_host_ops`` counts it 0: its stated boundary has no host MACs to state. Core MAC floor
-    8 x 8 + 8 x 2 = 80.
+    G is the stated-boundary kind (class G, "grouped convolution on the host until N5"); the MAC SSOT counts it at
+    every output position, 2 output channels x 4 positions x 1 input channel per group = 8 MACs (with
+    ``seed_mac_gap(monkeypatch, "Conv3d")`` it counts 0, and the stated boundary has no host MACs to state). Core
+    MAC floor 8 x 8 + 8 x 2 = 80.
     """
     grouped = nn.Conv3d(2, 2, 1, groups=2)
     return graph([core(0, outputs(INPUT, 8), 8),
@@ -140,13 +143,55 @@ def grouped_conv3d_graph() -> IRGraph:
 def convtranspose_graph() -> IRGraph:
     """A(core, 8 from input) T(ConvTranspose2d 2->2, k2 s2, on 2x2x2 to 2x4x4) B(core, 2 logits).
 
-    T is a static-linear operator (class S): host at C0 and C1, on chip from C2. The MAC SSOT has no
-    ConvTranspose rule, so it counts T as 0 MACs on whichever side runs it.
+    T is a static-linear operator (class S): host at C0 and C1, on chip from C2. The MAC SSOT counts it in its
+    scatter form, every input element times every kernel weight of its group: 2 x 2 x 2 input elements x 2 output
+    channels x a 2 x 2 kernel = 64 MACs, on whichever side runs it.
     """
     up = nn.ConvTranspose2d(2, 2, 2, stride=2)
     return graph([core(0, outputs(INPUT, 8), 8),
                   op(1, up, outputs(0, 8), input_shape=(2, 2, 2), output_shape=(2, 4, 4)),
                   core(2, outputs(1, 32), 2)], outputs(2, 2))
+
+
+def bilinear_upsample_graph() -> IRGraph:
+    """A(core, 8 from input) U(bilinear Upsample x2, on 2x2x2 to 2x4x4) B(core, 2 logits).
+
+    U is a static-linear operator (class S: each output a fixed weighted sum of its input neighbours): host at C0
+    and C1, on chip from C2. The MAC SSOT has no interpolation rule, so it counts U as 0 MACs on whichever side
+    runs it: a MAC-carrying product the SSOT cannot count.
+    """
+    up = nn.Upsample(scale_factor=2, mode="bilinear")
+    return graph([core(0, outputs(INPUT, 8), 8),
+                  op(1, up, outputs(0, 8), input_shape=(2, 2, 2), output_shape=(2, 4, 4)),
+                  core(2, outputs(1, 32), 2)], outputs(2, 2))
+
+
+def adapter_product_graph() -> IRGraph:
+    """The shape of ``contraction_graph`` with P = Q @ K a generic host op of ``torch.matmul`` (a ``ComputeAdapter``,
+    no ``forward_macs`` declaration): a dynamic product (class D). The MAC SSOT counts it in functional form since
+    Swin's W10; a test of the census's reaction to a product it cannot count seeds the gap (``seed_mac_gap``)."""
+    nodes = [
+        core(0, outputs(INPUT, 8), 8),
+        core(1, outputs(INPUT, 8), 12),
+        op(2, ComputeAdapter(torch.matmul), outputs(0, 8) + outputs(1, 12), input_shapes=((2, 4), (4, 3)),
+           output_shape=(2, 3)),
+        core(3, outputs(2, 6), 2),
+    ]
+    return graph(nodes, outputs(3, 2))
+
+
+def seed_mac_gap(monkeypatch, op_type: str) -> None:
+    """The census's MAC SSOT (``count_host_ops``, read through ``mapping.capability.census``) with no rule for
+    ``op_type``: every op of that type counts 0 MACs, every other op its SSOT count. Since integration every grouped
+    convolution has a MAC rule, so the stated-boundary kind reaches the uncounted-product path only through this
+    seeded gap; the census's reaction to a gap is the behaviour under test, never which ops have one."""
+    real = census_module.count_host_ops
+
+    def without_rule(ir_graph: IRGraph) -> int:
+        return sum(0 if str(node.op_type) == op_type else real(IRGraph(nodes=[node], output_sources=sources(())))
+                   for node in ir_graph.get_compute_ops())
+
+    monkeypatch.setattr(census_module, "count_host_ops", without_rule)
 
 
 def shared_readout_graph() -> IRGraph:

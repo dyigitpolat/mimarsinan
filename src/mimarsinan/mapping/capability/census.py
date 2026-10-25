@@ -44,6 +44,8 @@ class SegmentCensus:
     cells_committed: int
     written_cells_producer: int
     latency_steps: int
+    #: Cells of each of the segment's cores, in IR order (``cells_committed`` is their sum).
+    core_cells: Tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -145,7 +147,7 @@ def _payload_elements(node: CensusNode) -> int:
     return size
 
 
-def _resolved_dependencies(nodes: Sequence[CensusNode]) -> Dict[int, set]:
+def resolved_dependencies(nodes: Sequence[CensusNode]) -> Dict[int, set]:
     """Producer node ids per non-transparent node, wiring passed through, the network input left out."""
     through: Dict[int, set] = {}
     deps: Dict[int, set] = {}
@@ -162,7 +164,7 @@ def _resolved_dependencies(nodes: Sequence[CensusNode]) -> Dict[int, set]:
     return deps
 
 
-def _in_order_segments(nodes: Sequence[CensusNode]) -> List[List[CensusNode]]:
+def in_order_segments(nodes: Sequence[CensusNode]) -> List[List[CensusNode]]:
     """``partition_ir_graph``'s rule over placed nodes: chip runs between host ops, each host op its own segment."""
     runs: List[List[CensusNode]] = []
     current: List[CensusNode] = []
@@ -185,11 +187,13 @@ def _segment_census(run: Sequence[CensusNode], deps: Mapping[int, set]) -> Segme
     # Execution order keeps the SSOT's memoized walk one frame deep per node, whatever the chain length.
     latencies = compute_node_latencies({node.id: deps[node.id] & members for node in run}, crossbar)
     steps = 1 + max((latencies[i] for i, is_crossbar in crossbar.items() if is_crossbar), default=0)
+    core_cells = tuple(_cells(node) for node in run if isinstance(node.ir_node, NeuralCore))
     return SegmentCensus(
-        cores=sum(isinstance(node.ir_node, NeuralCore) for node in run),
-        cells_committed=sum(_cells(node) for node in run),
+        cores=len(core_cells),
+        cells_committed=sum(core_cells),
         written_cells_producer=sum(_payload_elements(node) for node in run),
         latency_steps=steps,
+        core_cells=core_cells,
     )
 
 
@@ -205,8 +209,8 @@ def level_census(
                         payload_write=payload_write, columns=columns)
     host = [n for n in nodes if n.side == HOST]
     chip = [n for n in nodes if n.side == CHIP]
-    runs = _in_order_segments(nodes)
-    deps = _resolved_dependencies(nodes)
+    runs = in_order_segments(nodes)
+    deps = resolved_dependencies(nodes)
     is_chip = {n.id: n.side == CHIP for n in nodes if n.side != TRANSPARENT}
     segment_ids = compute_segment_ids(deps, is_chip)
     neural_runs = [run for run in runs if run[0].side == CHIP]

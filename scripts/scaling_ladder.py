@@ -9,7 +9,8 @@ priced by the absolute pricer; ``deployment_record.introspection.scaling_ladder`
 turns each priced program into law rows (x_fluid, x_packed, the capacity and schedule
 readings, replication, Pi, Pi/K, regime per band corner, M, K*). Budgets are
 fractions of the network's packed tile count F on the target geometry, plus the
-target's declared core count. The regime thresholds below are ESTIMATE-derived
+target's declared core count; a budget c:<count> is an absolute core count (one chip for every
+network, the chip space of a chip-first census). The regime thresholds below are ESTIMATE-derived
 reading constants of this script, never framework constants.
 
 Rows are written as they complete (a cell stopped at its wall or memory cap keeps
@@ -17,9 +18,18 @@ every completed point), and each point runs under a declared per-point wall budg
 a point whose stage (convert, layout, pack, schedule or price) runs past it leaves
 one row per K naming the stage and the elapsed wall, never a dropped point.
 
+Targets are the shipped target bundles by name (their geometry, keys and permissions; CL5),
+plus the G8 point generic_22nm_on_imc_256x256. A geometry-only bundle (no physics profile)
+gives the capacity columns only, its pricing refused by name. ``--variant`` prices one
+schedule under several named override-block sets (a host block and a backing-store block,
+merged by ``merge_override_blocks``); ``--arms`` schedules each point under U1 (key absent)
+and under declared residency plans; ``--x-only`` stops after the layout and the pack on
+unbounded cores (x_fluid, x_packed and replication at the declared core count).
+
     python scripts/scaling_ladder.py --out RUN.jsonl [--smoke] [--networks resnet20,...]
         [--targets truenorth,...] [--budgets 1,0.5] [--ks 1,64] [--resolution 32]
-        [--point-budget-s 3600] [--declare allow_scheduling=false]
+        [--point-budget-s 3600] [--declare allow_scheduling=false] [--core-field write_granularity=cell]
+        [--variant LABEL=BLOCK:PATH[,BLOCK:PATH]] [--arms absent,floor,stateless] [--x-only]
 """
 
 from __future__ import annotations
@@ -31,6 +41,7 @@ import io
 import json
 import math
 import os
+import resource
 import signal
 import sys
 import time
@@ -47,11 +58,14 @@ from mimarsinan.deployment_record.introspection.scaling_ladder import (  # noqa:
     certificate_record,
     ladder_row,
     packed_tiles,
-    price_program,
+    price_scheduled,
+    schedule_program,
     shape_census,
 )
+from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks  # noqa: E402
 from mimarsinan.deployment_record.introspection.scaling_ladder_law import RegimeReading  # noqa: E402
 from mimarsinan.mapping.platform.imc_platforms import get_imc_platform  # noqa: E402
+from mimarsinan.mapping.platform.target_bundles import target_bundles  # noqa: E402
 from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING, SPIKING_PACKAGING  # noqa: E402
 from mimarsinan.mapping.support.schedule.pass_cut import transfer_for  # noqa: E402
 from mimarsinan.mapping.verification.onchip_fraction import estimate_onchip_fractions  # noqa: E402
@@ -67,8 +81,14 @@ from mimarsinan.search.problems.joint.candidate_fragments import (  # noqa: E402
 from mimarsinan.torch_mapping.converter import convert_torch_model  # noqa: E402
 
 PREACT_BOTTLENECK = {"block_kind": "bottleneck", "block_order": "pre_activation"}
-#: name -> (registered builder, model config, classes); a member without a registered builder is listed absent.
+CIFAR, MNIST, IMAGENET = (3, 32, 32), (1, 28, 28), (3, 224, 224)
+#: name -> (builder, model config, classes[, input shape]); a member without a builder is listed absent. A builder
+#: is a registered key, "torchvision:<constructor>" (random weights, no download) or "factory:<module>:<callable>"
+#: (a module importable from the repository's src or tests). The shape defaults to CIFAR's; ``--resolution``
+#: replaces the side of every image member.
 ROSTER: Dict[str, Optional[tuple]] = {
+    "lenet5": ("lenet5", {}, 10, MNIST),
+    "resnet18_w1q": ("factory:unit.chip_simulation.value_run.integer_programs:resnet18_quarter", {}, 10),
     "resnet20": ("cifar_resnet20", {"blocks_per_stage": 3}, 10),
     "resnet56": ("cifar_resnet20", {"blocks_per_stage": 9}, 10),
     "resnet110": ("cifar_resnet20", {"blocks_per_stage": 18}, 10),
@@ -78,14 +98,19 @@ ROSTER: Dict[str, Optional[tuple]] = {
     "vgg16_bn": ("torch_vgg16", {}, 10),
     "densenet_bc100": ("cifar_densenet_bc", {"depth": 100, "growth_rate": 12}, 10),
     "vit_leaf": ("cifar_vit_leaf", {}, 10),
+    "vit_lite_cct": ("vit_lite_cct", {}, 10),
+    "vit_b16": ("torch_vit", {}, 1000, IMAGENET),
+    **{f"tv_{name}": (f"torchvision:{name}", kwargs, 1000, IMAGENET) for name, kwargs in (
+        ("resnet18", {}), ("resnet50", {}), ("resnet152", {}), ("wide_resnet50_2", {}), ("vgg11_bn", {}),
+        ("vgg16", {}), ("densenet121", {}), ("googlenet", {"aux_logits": False, "init_weights": True}),
+        ("inception_v3", {"aux_logits": False, "init_weights": True}), ("squeezenet1_1", {}),
+        ("mobilenet_v2", {}), ("efficientnet_b0", {}), ("regnet_x_400mf", {}), ("convnext_tiny", {}),
+        ("swin_t", {}))},
 }
-#: G8's targets (CL5: G4's bundle names): physics profile, registered geometry, packaging contract.
-TARGETS = {
-    "truenorth": ("truenorth", "truenorth_like", "spiking"),
-    "loihi": ("loihi", "loihi_dense_equiv_128x1024", "spiking"),
-    "isaac_like": ("isaac_like", "isaac_like", "value"),
-    "generic_22nm_on_imc_256x256": ("generic_estimated_22nm", "imc_256x256", "value"),
-}
+#: The G8 targets that are not bundles: physics profile, registered geometry, packaging contract.
+LEGACY_TARGETS = {"generic_22nm_on_imc_256x256": ("generic_estimated_22nm", "imc_256x256", "value")}
+#: Every target: the shipped bundles by name (CL5) and the legacy points.
+TARGETS: Dict[str, Any] = {**{name: name for name in target_bundles()}, **LEGACY_TARGETS}
 PACKAGINGS = {"spiking": SPIKING_PACKAGING, "value": MVM_PACKAGING}
 BUDGET_FRACTIONS = (1.0, 2 ** -0.25, 2 ** -0.5, 2 ** -0.75, 0.5, 0.25, 0.125, 0.0625)
 KS = (1, 16, 64)
@@ -99,9 +124,12 @@ SMOKE = {"networks": ("vit_leaf", "resnet20", "vgg16_bn"), "targets": ("truenort
          "budgets": (1.0, 0.5, 0.25), "ks": (1, 64)}
 #: The declared per-point wall budget (``--point-budget-s`` replaces it; 0 declares none).
 POINT_BUDGET_S = 3600.0
-#: The chip capabilities this script declares on every target (``--declare KEY=VALUE`` replaces one).
+#: The chip capabilities this script declares on every target (``--declare KEY=VALUE`` replaces one); a bundle's
+#: own keys (its coalescing and neuron-splitting permissions among them) replace these.
 CAPABILITIES = {"allow_scheduling": True, "max_schedule_passes": 4096, "allow_coalescing": True,
                 "allow_neuron_splitting": True}
+#: ``--arms``: the residency declaration of each arm (absent: U1's pass planner, the key undeclared).
+ARMS = {"absent": None, "floor": {"step": "floor"}, "stateless": {"step": "stateless"}}
 
 
 class PointAboveBudget(BaseException):
@@ -159,6 +187,15 @@ def attempt(seconds: Optional[float], work: Callable[[StageClock], Any]) -> Tupl
     except ToolchainRefusal as refused:
         reason = str(refused).splitlines()[0][:400] if str(refused) else ""
         return None, {"refusal": {"name": type(refused).__name__, "stage": clock.stage, "reason": reason}}
+    except ValueError as refused:
+        # [CL5] A toolchain error class that refuses by name without deriving from ToolchainRefusal (for example
+        # WideFanInUnsupportedError on a chip that cannot coalesce) is recorded as that refusal, marked so; any other
+        # error propagates.
+        if not type(refused).__module__.startswith("mimarsinan."):
+            raise
+        reason = str(refused).splitlines()[0][:400] if str(refused) else ""
+        return None, {"refusal": {"name": type(refused).__name__, "stage": clock.stage, "reason": reason,
+                                  "toolchain_refusal": False}}
 
 
 def marked_rows(name: str, target: str, budget, ks: Sequence[int], mark: Dict[str, Any],
@@ -179,26 +216,96 @@ def program_facts(softcores, noc, platform):
     )
 
 
+def declared_values(items: Sequence[str]) -> Dict[str, Any]:
+    """``--declare KEY=VALUE`` items: true or false in any case a boolean, otherwise the JSON value (an integer, or an
+    object such as ``residency_plan={"step": "floor"}``, the residency planner's key [W03]); refuses by name."""
+    out: Dict[str, Any] = {}
+    for item in items:
+        key, value = item.split("=", 1)
+        if value.lower() in ("true", "false"):
+            out[key] = value.lower() == "true"
+            continue
+        try:
+            out[key] = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"--declare {key}: {value!r} is neither true, false nor a JSON value") from exc
+    return out
+
+
+def target_spec(target: str) -> Dict[str, Any]:
+    """A target's geometry and declared keys: {geometry, cores, weight_bits, keys, packaging, bundle}. A target
+    "declared:<axons>x<neurons>x<count>:<packaging>[:<profile>]" is a declared geometry of one core type
+    (8-bit weights, no on-core bias) under a packaging contract and an optional physics profile."""
+    if target.startswith("declared:"):
+        _, shape, packaging, *profile = target.split(":")
+        axons, neurons, count = (int(v) for v in shape.split("x"))
+        return {"geometry": shape, "cores": [{"max_axons": axons, "max_neurons": neurons, "count": count,
+                                              "has_bias": False}], "weight_bits": 8,
+                "keys": {"platform_physics_profile": profile[0]} if profile else {}, "packaging": packaging,
+                "bundle": {"name": target, "claim_class": "declared", "faithfulness": "declared geometry",
+                           "physics": bool(profile), "packaging_note": None}}
+    if target in LEGACY_TARGETS:
+        profile, geometry, packaging = LEGACY_TARGETS[target]
+        chip = get_imc_platform(geometry)
+        return {"geometry": geometry, "cores": [dict(c) for c in chip.cores], "weight_bits": chip.weight_bits,
+                "keys": {"platform_physics_profile": profile}, "packaging": packaging, "bundle": None}
+    bundle = target_bundles()[TARGETS[target]]
+    values = bundle.values
+    cores, bits = values.pop("cores"), values.pop("weight_bits")
+    semantics = values.get("core_semantics")
+    return {"geometry": bundle.geometry, "cores": cores, "weight_bits": bits, "keys": values,
+            "packaging": "spiking" if semantics not in (None, "mvm") else "value",
+            "bundle": {"name": bundle.name, "claim_class": bundle.claim_class,
+                       "faithfulness": bundle.faithfulness.label(), "physics": "platform_physics_profile" in values,
+                       "packaging_note": None if semantics else "no core_semantics declared: MVM packaging read"}}
+
+
 def resolved_platform(target: str, fraction_or_declared, packed: Optional[int],
-                      declared: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    profile, geometry, _ = TARGETS[target]
-    chip = get_imc_platform(geometry)
+                      declared: Optional[Dict[str, Any]] = None, core_fields: Optional[Dict[str, Any]] = None,
+                      overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The resolved platform of one point: the target's cores at the budget (a fraction of the packed tiles F, or the
+    declared count), the script's capabilities, the target's keys, ``--declare`` and the merged override blocks."""
+    spec = target_spec(target)
     cores = []
-    for ct in chip.cores:
-        count = int(ct["count"]) if fraction_or_declared == "declared" else max(
-            1, math.floor(float(fraction_or_declared) * int(packed or 0)))
-        cores.append({**ct, "count": count})
+    for ct in spec["cores"]:
+        if fraction_or_declared == "declared":
+            count = int(ct.get("count", 1))
+        elif isinstance(fraction_or_declared, str) and fraction_or_declared.startswith("c:"):
+            count = int(fraction_or_declared[2:])  # an absolute core count, the same chip for every network
+        else:
+            count = max(1, math.floor(float(fraction_or_declared) * int(packed or 0)))
+        cores.append({**ct, **(core_fields or {}), "count": count})
     return build_platform_constraints_resolved({
-        **CAPABILITIES, **(declared or {}), "cores": cores,
-        "weight_bits": chip.weight_bits, "platform_physics_profile": profile,
+        **CAPABILITIES, **spec["keys"], **(declared or {}), "cores": cores, "weight_bits": spec["weight_bits"],
+        **({"platform_physics_overrides": overrides} if overrides else {}),
     })
 
 
-def build_network(name: str, resolution: int, packaging: str) -> LadderNetwork:
-    builder_key, config, classes = ROSTER[name]  # type: ignore[misc]
-    shape = (3, resolution, resolution)
+def _builder(key: str) -> Callable[..., Any]:
+    """The model factory of a roster builder: registered, torchvision constructor or an importable callable."""
+    kind, _, rest = key.partition(":")
+    if kind == "torchvision":
+        import torchvision.models as tvm
+        return lambda shape, classes, config: getattr(tvm, rest)(weights=None, num_classes=classes, **config)
+    if kind == "factory":
+        import importlib
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tests"))
+        module, _, name = rest.partition(":")
+        return lambda shape, classes, config: getattr(importlib.import_module(module), name)(**config)
+    return lambda shape, classes, config: BUILDERS_REGISTRY[key]("cpu", shape, classes, {}).build(config)
+
+
+def member_shape(name: str, resolution: Optional[int]) -> Tuple[int, ...]:
+    entry = ROSTER[name]
+    shape = tuple(entry[3]) if len(entry) > 3 else CIFAR  # type: ignore[arg-type,index]
+    return shape if resolution is None or len(shape) != 3 else (shape[0], int(resolution), int(resolution))
+
+
+def build_network(name: str, resolution: Optional[int], packaging: str) -> LadderNetwork:
+    builder_key, config, classes = ROSTER[name][:3]  # type: ignore[index]
+    shape = member_shape(name, resolution)
     torch.manual_seed(0)
-    model = BUILDERS_REGISTRY[builder_key]("cpu", shape, classes, {}).build(config).eval()
+    model = _builder(builder_key)(shape, classes, config).eval()
     with warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):
         warnings.simplefilter("ignore")
         flow = convert_torch_model(model, shape, classes, packaging=PACKAGINGS[packaging], strict=False).eval()
@@ -212,10 +319,53 @@ def build_network(name: str, resolution: int, packaging: str) -> LadderNetwork:
     )
 
 
+def x_rows(network: LadderNetwork, target: str, chip: Dict[str, Any], *, point_budget_s: Optional[float],
+           wire_census: bool) -> Iterator[Dict[str, Any]]:
+    """The capacity columns at the declared core count: one layout and one pack on unbounded cores. A pack the
+    toolchain refuses keeps the layout's columns (x_fluid needs the logical cells only) beside the refusal."""
+
+    def layout(clock: StageClock):
+        clock.enter("layout")
+        return shape_census(network, chip, wire_census=wire_census)
+
+    census, mark = attempt(point_budget_s, layout)
+    packed, pack_mark = (None, None)
+    if census is not None:
+        packed, pack_mark = attempt(point_budget_s, lambda clock: (clock.enter("pack"), packed_tiles(census, chip))[1])
+    shared = None if census is None else (census, packed)
+    cores = sum(int(c.get("count", 1)) for c in chip["cores"])
+    capacity = sum(int(c.get("count", 1)) * int(c["max_axons"]) * int(c["max_neurons"]) for c in chip["cores"])
+    row: Dict[str, Any] = {"network": network.name, "target": target, "budget": "declared", "x_only": True,
+                           "resolution": list(network.resolution), "cores": cores, "capacity_cells": capacity,
+                           "conversion": dict(network.conversion or certificate_record(None)),
+                           "host_census": dict(network.host_census or {}), "point_budget_s": point_budget_s}
+    if shared is None:
+        yield {**row, **(mark or {})}
+        return
+    census, packed = shared
+    onchip = (network.host_census or {}).get("onchip_macs")
+    if pack_mark:
+        row["pack_refusal"] = pack_mark.get("refusal") or pack_mark.get("above_budget")
+    row.update(softcores=len(census.softcores), segments=census.segments, logical_cells=census.logical_cells,
+               as_mapped_cells=census.as_mapped_cells, replication=census.as_mapped_cells / census.logical_cells,
+               packed_tiles=packed, x_fluid=census.logical_cells / capacity,
+               x_packed=None if packed is None else packed / cores,
+               macs_per_weight=None if onchip is None else onchip / census.logical_cells,
+               layout_wall_s=census.wall_s,
+               peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024)
+    yield row
+
+
 def cell_rows(network: LadderNetwork, target: str, packaging: str, chip: Dict[str, Any],
-              platform_at: Callable[[Any, int], Dict[str, Any]], *, budgets: Sequence, ks: Sequence[int],
-              point_budget_s: Optional[float], wire_census: bool) -> Iterator[Dict[str, Any]]:
-    """Rows of one (network, target) cell: one shape-only layout and pack, then every budget point."""
+              platform_at: Callable[..., Dict[str, Any]], *, budgets: Sequence, ks: Sequence[int],
+              point_budget_s: Optional[float], wire_census: bool,
+              variants: Optional[Dict[str, Optional[Dict[str, Any]]]] = None,
+              arms: Sequence[str] = ("absent",)) -> Iterator[Dict[str, Any]]:
+    """Rows of one (network, target) cell: one shape-only layout and pack, then every budget point, each scheduled
+    once per arm and priced once per override-block variant and batch K. ``platform_at(budget, packed)`` gives the
+    point's platform; with variants or arms it is called ``platform_at(budget, packed, residency, overrides)``."""
+    variants = variants or {"shipped": None}
+    plain = list(variants) == ["shipped"] and variants["shipped"] is None and list(arms) == ["absent"]
 
     def layout(clock: StageClock):
         clock.enter("layout")
@@ -223,37 +373,67 @@ def cell_rows(network: LadderNetwork, target: str, packaging: str, chip: Dict[st
         clock.enter("pack")
         return census, packed_tiles(census, chip)
 
+    def point(budget, packed, arm, overrides):
+        return (platform_at(budget, packed) if plain else
+                platform_at(budget, packed, ARMS[arm], overrides))
+
     shared, mark = attempt(point_budget_s, layout)
     for budget in budgets:
-        if shared is None:
-            yield from marked_rows(network.name, target, budget, ks, mark or {})
-            continue
-        census, packed = shared
-        platform = platform_at(budget, packed)
-        priced, point_mark = attempt(point_budget_s, lambda clock: price_program(
-            network, census, platform, program_facts, tiles=packed, on_stage=clock.enter))
-        if priced is None:
-            known = {"cores": sum(int(c.get("count", 1)) for c in platform["cores"]), "packed_tiles": packed}
-            yield from marked_rows(network.name, target, budget, ks, point_mark or {}, known)
-            continue
-        for k in ks:
-            point = {**platform, "inference_batch_K": int(k), "inference_rate_hz": RATE_HZ,
-                     "min_lifetime_hours": LIFETIME_HOURS}
-            row = ladder_row(network, census, priced, point, READING)
-            row.update(target=target, packaging=packaging, budget=budget, point_budget_s=point_budget_s)
-            yield row
+        for arm in arms:
+            labels = {} if plain else {"arm": arm}
+            if shared is None:
+                for variant in variants:
+                    yield from marked_rows(network.name, target, budget, ks, {**(mark or {}), **labels,
+                                                                              **({} if plain else {"variant": variant})})
+                continue
+            census, packed = shared
+            # a platform the toolchain refuses to declare at this budget (a floorplan too small for the cores, say)
+            # is a point refused by name at the "declare" stage, like any later stage
+            base, point_mark = attempt(None, lambda clock: (clock.enter("declare"),
+                                                            point(budget, packed, arm, None))[1])
+            scheduled = None
+            if base is not None:
+                scheduled, point_mark = attempt(point_budget_s, lambda clock: schedule_program(
+                    network, census, base, program_facts, tiles=packed, on_stage=clock.enter))
+            for variant, overrides in variants.items():
+                tags = {**labels, **({} if plain else {"variant": variant})}
+                if scheduled is None:
+                    known = {"packed_tiles": packed, **({} if base is None else {
+                        "cores": sum(int(c.get("count", 1)) for c in base["cores"])})}
+                    yield from marked_rows(network.name, target, budget, ks, {**(point_mark or {}), **tags}, known)
+                    continue
+                for k in ks:
+                    variant_platform, price_mark = attempt(None, lambda clock: (clock.enter("declare"), point(
+                        budget, packed, arm, overrides))[1])
+                    if variant_platform is None:
+                        yield from marked_rows(network.name, target, budget, (k,), {**(price_mark or {}), **tags})
+                        continue
+                    platform = {**variant_platform, "inference_batch_K": int(k),
+                                "inference_rate_hz": RATE_HZ, "min_lifetime_hours": LIFETIME_HOURS}
+                    priced, price_mark = attempt(point_budget_s, lambda clock: price_scheduled(
+                        network, census, scheduled, platform, on_stage=clock.enter))
+                    if priced is None:
+                        yield from marked_rows(network.name, target, budget, (k,), {**(price_mark or {}), **tags})
+                        continue
+                    row = ladder_row(network, census, priced, platform, READING)
+                    row.update(target=target, packaging=packaging, budget=budget, point_budget_s=point_budget_s,
+                               **tags)
+                    yield row
 
 
 def run(networks: Sequence[str], targets: Sequence[str], budgets: Sequence, ks: Sequence[int],
-        resolution: int, wire_census: bool, declared: Optional[Dict[str, Any]] = None,
-        point_budget_s: Optional[float] = POINT_BUDGET_S) -> Iterator[Dict[str, Any]]:
+        resolution: Optional[int], wire_census: bool, declared: Optional[Dict[str, Any]] = None,
+        point_budget_s: Optional[float] = POINT_BUDGET_S, core_fields: Optional[Dict[str, Any]] = None,
+        variants: Optional[Dict[str, Optional[Dict[str, Any]]]] = None, arms: Sequence[str] = ("absent",),
+        x_only: bool = False) -> Iterator[Dict[str, Any]]:
     for name in networks:
         if ROSTER[name] is None:
             yield {"network": name, "absent": "no registered builder"}
             continue
         built: Dict[str, Tuple[Optional[LadderNetwork], Optional[Dict[str, Any]]]] = {}
         for target in targets:
-            packaging = TARGETS[target][2]
+            spec = target_spec(target)
+            packaging = spec["packaging"]
 
             def convert(clock: StageClock, name=name, packaging=packaging) -> LadderNetwork:
                 clock.enter("convert")
@@ -262,15 +442,45 @@ def run(networks: Sequence[str], targets: Sequence[str], budgets: Sequence, ks: 
             if packaging not in built:
                 built[packaging] = attempt(point_budget_s, convert)
             network, mark = built[packaging]
+            labels = {"geometry": spec["geometry"], "bundle": spec["bundle"]}
             if network is None:
-                for budget in budgets:
-                    yield from marked_rows(name, target, budget, ks, mark or {})
+                for budget in (("declared",) if x_only else budgets):
+                    for row in marked_rows(name, target, budget, ks, mark or {}):
+                        yield {**row, **labels, "resolution": list(member_shape(name, resolution))}
                 continue
-            chip = resolved_platform(target, "declared", None, declared)
-            yield from cell_rows(
-                network, target, packaging, chip,
-                lambda budget, packed, target=target: resolved_platform(target, budget, packed, declared),
-                budgets=budgets, ks=ks, point_budget_s=point_budget_s, wire_census=wire_census)
+            chip = resolved_platform(target, "declared", None, declared, core_fields)
+            if x_only or (spec["bundle"] is not None and not spec["bundle"]["physics"]):
+                for row in x_rows(network, target, chip, point_budget_s=point_budget_s, wire_census=wire_census):
+                    yield {**row, **labels, "packaging": packaging}
+                continue
+
+            def platform_at(budget, packed, residency=None, overrides=None, target=target):
+                plan = {} if residency is None else {"residency_plan": dict(residency)}
+                return resolved_platform(target, budget, packed, {**(declared or {}), **plan}, core_fields,
+                                         overrides)
+
+            for row in cell_rows(network, target, packaging, chip, platform_at, budgets=budgets, ks=ks,
+                                 point_budget_s=point_budget_s, wire_census=wire_census, variants=variants,
+                                 arms=arms):
+                yield {**row, **labels}
+
+
+def variant_blocks(items: Sequence[str]) -> Optional[Dict[str, Optional[Dict[str, Any]]]]:
+    """``--variant LABEL=BLOCK:PATH[,BLOCK:PATH]`` items: label -> the merged override value of its named blocks (each
+    a JSON file of constant declarations); ``LABEL=`` declares none (the shipped physics)."""
+    if not items:
+        return None
+    out: Dict[str, Optional[Dict[str, Any]]] = {}
+    for item in items:
+        label, _, spec = item.partition("=")
+        blocks: Dict[str, Any] = {}
+        for part in filter(None, spec.split(",")):
+            block, _, path = part.partition(":")
+            with open(path, encoding="utf-8") as handle:
+                data = json.load(handle)
+            blocks[block] = data.get("platform_physics_overrides", data)
+        out[label] = merge_override_blocks(blocks) if blocks else None
+    return out
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -279,14 +489,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--networks")
     parser.add_argument("--targets")
-    parser.add_argument("--budgets", help="comma-separated fractions of F, or 'declared'")
+    parser.add_argument("--budgets", help="comma-separated fractions of F, 'declared', or c:<count> (absolute cores)")
     parser.add_argument("--ks")
-    parser.add_argument("--resolution", type=int, default=32)
+    parser.add_argument("--resolution", type=int, default=None,
+                        help="replace the side of every image member (default: each member's own shape)")
     parser.add_argument("--no-wire-census", action="store_true")
     parser.add_argument("--point-budget-s", type=float, default=POINT_BUDGET_S,
                         help="declared per-point wall budget in seconds (0: none)")
     parser.add_argument("--declare", action="append", default=[], metavar="KEY=VALUE",
                         help="replace one declared capability, e.g. allow_scheduling=false")
+    parser.add_argument("--core-field", action="append", default=[], metavar="KEY=VALUE",
+                        help="declare one field on every core type, e.g. write_granularity=cell")
+    parser.add_argument("--variant", action="append", default=[], metavar="LABEL=BLOCK:PATH[,BLOCK:PATH]",
+                        help="price each schedule under these merged override blocks too (LABEL= : shipped)")
+    parser.add_argument("--arms", default="absent", help="comma-separated residency arms: absent, floor, stateless")
+    parser.add_argument("--x-only", action="store_true", help="capacity columns only, at the declared core count")
     args = parser.parse_args(argv)
     chosen = dict(SMOKE) if args.smoke else {"networks": tuple(ROSTER), "targets": tuple(TARGETS),
                                              "budgets": BUDGET_FRACTIONS + ("declared",), "ks": KS}
@@ -295,11 +512,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.targets:
         chosen["targets"] = tuple(args.targets.split(","))
     if args.budgets:
-        chosen["budgets"] = tuple(b if b == "declared" else float(b) for b in args.budgets.split(","))
+        chosen["budgets"] = tuple(b if b == "declared" or b.startswith("c:") else float(b)
+                                  for b in args.budgets.split(","))
     if args.ks:
         chosen["ks"] = tuple(int(k) for k in args.ks.split(","))
-    declared = {k: (v.lower() == "true") if v.lower() in ("true", "false") else int(v)
-                for k, v in (item.split("=", 1) for item in args.declare)}
+    declared = declared_values(args.declare)
+    core_fields = {}
+    for item in args.core_field:  # a JSON value, else the text itself (an enum such as write_granularity=cell)
+        key, value = item.split("=", 1)
+        try:
+            core_fields[key] = json.loads(value)
+        except json.JSONDecodeError:
+            core_fields[key] = value
+    variants = variant_blocks(args.variant)
+    arms = tuple(args.arms.split(","))
     start = time.time()
     with open(os.path.abspath(__file__), "rb") as handle:
         script_sha = hashlib.sha256(handle.read()).hexdigest()[:16]
@@ -307,19 +533,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               "resolution": args.resolution, "capabilities": {**CAPABILITIES, **declared},
               "wire_census": not args.no_wire_census, "assumptions": {"inference_rate_hz": RATE_HZ,
                                                              "min_lifetime_hours": LIFETIME_HOURS},
-              "reading": READING.__dict__, "point_budget_s": args.point_budget_s or None}
+              "reading": READING.__dict__, "point_budget_s": args.point_budget_s or None,
+              "core_fields": core_fields, "variants": variants, "arms": list(arms), "x_only": args.x_only}
     count = 0
     with open(args.out, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(header, sort_keys=True, default=str) + "\n")
         handle.flush()
         for row in run(chosen["networks"], chosen["targets"], chosen["budgets"], chosen["ks"], args.resolution,
                        wire_census=not args.no_wire_census, declared=declared,
-                       point_budget_s=args.point_budget_s or None):
+                       point_budget_s=args.point_budget_s or None, core_fields=core_fields, variants=variants,
+                       arms=arms, x_only=args.x_only):
             handle.write(json.dumps(row, sort_keys=True, default=str) + "\n")
             handle.flush()
             count += 1
-            print(json.dumps({k: row.get(k) for k in ("network", "target", "budget", "cores", "inference_batch_K",
-                                                       "x_packed", "passes", "refusal", "above_budget")},
+            print(json.dumps({k: row.get(k) for k in ("network", "target", "budget", "arm", "variant", "cores",
+                                                       "inference_batch_K", "x_packed", "passes", "refusal",
+                                                       "above_budget")},
                              default=str), flush=True)
         handle.write(json.dumps({"trailer": True, "rows": count, "run_wall_s": time.time() - start}) + "\n")
     print(f"wrote {count} rows to {args.out} in {time.time() - start:.1f} s")

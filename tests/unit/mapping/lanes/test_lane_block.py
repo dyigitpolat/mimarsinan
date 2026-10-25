@@ -70,10 +70,17 @@ class TestResolution:
         assert declared_lanes_per_tile({}) is None
 
 
+#: [integration of W08 with CL2] Claim classes of a design-space value chip, whose bundle adds the estimated lane
+#: block; a bundle of a published chip's page-sourced geometry (headline-eligible, quarantined) declares what its
+#: sources state, and they state no output-stage lane block.
+DESIGN_SPACE_CLAIMS = frozenset({"synthetic", "curve-only"})
+
+
 class TestBundles:
     def test_every_value_domain_bundle_declares_lanes_with_a_block(self):
         bundles = target_bundles()
-        value = [b for b in bundles.values() if b.values.get("core_semantics") == "mvm"]
+        value = [b for b in bundles.values() if b.values.get("core_semantics") == "mvm"
+                 and b.claim_class in DESIGN_SPACE_CLAIMS]
         assert {b.name for b in value} >= {"generic_estimated_22nm", "isaac_like"}
         for bundle in value:
             declaration = lane_declaration(bundle.values)
@@ -81,6 +88,15 @@ class TestBundles:
             assert declaration.lane_block in lane_block_names() and declaration.lanes_per_core, bundle.name
             assert "output-stage lanes estimated" in bundle.faithfulness.named, bundle.name
             assert any("per-array ADC not built" in label for label in bundle.faithfulness.named), bundle.name
+
+    def test_a_published_value_chip_declares_no_lane_block(self):
+        """The CL2 chips (HERMES-64, NeuRRAM, the SRAM-CIM macro) are bundled as their pages state them: no lanes, so
+        their programs keep the output stage's ops on the host and price no lane block."""
+        published = [b for b in target_bundles().values() if b.values.get("core_semantics") == "mvm"
+                     and b.claim_class not in DESIGN_SPACE_CLAIMS]
+        assert {b.name for b in published} >= {"hermes_64", "neurram", "sram_cim_macro"}
+        for bundle in published:
+            assert lane_declaration(bundle.values) is None and LANE_KEY not in bundle.values, bundle.name
 
     def test_no_other_bundle_declares_lanes(self):
         for bundle in target_bundles().values():

@@ -114,6 +114,9 @@ class CandidateQuantityContext:
     lane_withheld: Tuple[Tuple[str, str], ...] = ()
     #: [W08] The candidate's output stage, printed beside its priced point (``output_stage_note``).
     output_stage: Optional[Mapping[str, Any]] = None
+    #: [CL2] The ``(name, reason)`` pair of a target that declares no physics
+    #: (``target_bundles.absolute_pricing_refusal``): the candidate's report carries it alone.
+    pricing_refusal: Optional[Any] = None
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],

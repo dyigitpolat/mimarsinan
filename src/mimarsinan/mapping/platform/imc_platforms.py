@@ -4,11 +4,11 @@ The geometry model is already generic — ``platform_constraints["cores"]`` is a
 list of heterogeneous core types ``{max_axons, max_neurons, count}``. This module
 only makes concrete chips *addressable by name* with traceable provenance.
 
-The 12 literature-sourced platforms registered below are transcribed verbatim
-(geometry, weight_bits, provenance quote + location) from the extraction-card
-pipeline in the structured-elimination paper workspace:
-``papers/structured_elimination_aaai/research_artifacts/13_chip_geometries.json``
-(see the sibling ``13_chip_geometries.md`` for the curated eligibility table).
+The 14 literature-sourced platforms registered below are transcribed verbatim
+(geometry, weight_bits, provenance quote + location) from the extraction cards of
+``13_chip_geometries.json`` (12 from the structured-elimination paper workspace, two
+added at TCAD CL2; ``imc_platforms_literature`` names both locations, and the sibling
+``13_chip_geometries.md`` holds the curated eligibility table).
 Every registered platform's ``provenance`` must name a citation (or, for
 synthetic capability-exercise platforms, say so explicitly) before it can be
 retrieved via ``get_imc_platform`` — see the PLACEHOLDER_PROVENANCE ratchet
@@ -207,8 +207,8 @@ register_imc_platform(
 )
 
 
-# The 12 literature-sourced platforms live in their own module (data only,
+# The 14 literature-sourced platforms live in their own module (data only,
 # registered via the seams above) purely to stay under this file's LOC budget
 # — see `imc_platforms_literature.py`. Importing it here is what makes those
 # registrations happen: anyone importing `imc_platforms` gets the full roster.
-import mimarsinan.mapping.platform.imc_platforms_literature  # noqa: E402,F401  # pyright: ignore[reportUnusedImport] — registers the 12 literature platforms
+import mimarsinan.mapping.platform.imc_platforms_literature  # noqa: E402,F401  # pyright: ignore[reportUnusedImport] — registers the 14 literature platforms

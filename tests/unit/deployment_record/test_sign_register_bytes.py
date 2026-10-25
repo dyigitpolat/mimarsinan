@@ -264,9 +264,10 @@ class TestThePeriodCensusPlanes:
 
 class TestTheLadder:
     def test_the_write_once_payload_reads_the_one_rule(self):
-        """The ladder's write-once variant prices every tile of the program once (``pass_program_bytes``)."""
+        """The ladder's write-once variant prices every tile of the program once (``pass_program_bytes``). [CL5]
+        ``price_program`` is ``schedule_program`` then ``price_scheduled``, which prices the variants."""
         from mimarsinan.deployment_record.introspection import scaling_ladder
 
-        source = inspect.getsource(scaling_ladder.price_program)
+        source = inspect.getsource(scaling_ladder.price_scheduled)
         assert "pass_program_bytes" in source and "params_bytes(" not in source
         assert "declared_cores" in inspect.getsource(scaling_ladder)

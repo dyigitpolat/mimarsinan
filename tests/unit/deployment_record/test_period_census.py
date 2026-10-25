@@ -71,12 +71,14 @@ class TestTheRule:
         assert [p.payload_bytes for p in census.passes] == [150, 50]
         assert not any(p.resident for p in census.passes)
 
-    def test_a_residency_streamed_program_that_fits_rewrites_nothing(self):
-        """t0_44-class: pass 0 programs the bank, later passes reuse it (U1's flag); F <= C."""
+    def test_a_residency_streamed_program_with_a_second_segment_rotates_its_two_writing_passes(self):
+        """t0_44-class: pass 0 programs the bank, later passes reuse it (U1's flag), and the head segment's pass
+        loads from the first core too, so the bank and the head rewrite every period although F <= C (finding 4,
+        option (a): the program as executed; before, a fit was priced as loaded once)."""
         rows = [_row([60, 60])] + [_row([60, 60], resident=True) for _ in range(3)] + [_row([8], segment_index=1)]
         census = _census(rows, cores=19)
-        assert sum(p.payload_bytes for p in census.passes) == 0
-        assert all(p.resident for p in census.passes)
+        assert [p.payload_bytes for p in census.passes] == [120, 0, 0, 0, 8]
+        assert [p.resident for p in census.passes] == [False, True, True, True, False]
 
     def test_residency_marks_keep_their_cores(self):
         census = _census([_row([100, 50], marks={0}), _row([30, 20], marks={1})], cores=3)
@@ -89,6 +91,57 @@ class TestTheRule:
         assert [p.payload_bytes for p in census.passes] == [2, 3]
 
 
+class TestTheExecutedRotation:
+    """Interaction finding 4, option (a): a program is priced by the rotation it executes (R3: every execution
+    stage loads its cores from its core type's first core), never by a loaded-once fit. Two or more writing passes
+    rewrite their unkept cores every period; a lone writing pass is never displaced; the resident case is priced
+    only where residency marks (an executed residency plan) or U1's whole-pass flag keep the cores."""
+
+    def test_several_writing_passes_rotate_although_their_tiles_fit_the_cores(self):
+        written = _typed([_row([10, 10]), _row([10])], capacity={_T: 8})
+        assert [p.payload_bytes for p in written.census.passes] == [20, 10]
+        assert [p.resident for p in written.census.passes] == [False, False]
+        assert written.slot_writes == (SlotWrites(_T, (2, 1)),) and written.most_written_core == 2
+
+    def test_a_segment_multiplexed_program_prices_alike_at_c_equal_f_and_below(self):
+        """The finding's witness shape: three segments of one pass each, 33 tiles at C = F = 33 and at C = 32."""
+        rows = [_row([100] * 16), _row([110] * 16, segment_index=1), _row([44], segment_index=2)]
+        at_f, below = _typed(rows, capacity={_T: 33}), _typed(rows, capacity={_T: 32})
+        assert at_f.census == below.census and at_f.slot_writes == below.slot_writes
+        assert at_f.most_written_core == 3
+        assert sum(p.payload_bytes for p in at_f.census.passes) == 16 * 100 + 16 * 110 + 44
+
+    def test_a_lone_writing_pass_is_never_displaced(self):
+        """U1's bank passes after the first stay resident, so one pass writes: nothing is rewritten per period."""
+        rows = [_row([60, 60])] + [_row([60, 60], resident=True) for _ in range(3)]
+        written = _typed(rows, capacity={_T: 2})
+        assert sum(p.payload_bytes for p in written.census.passes) == 0
+        assert all(p.resident for p in written.census.passes)
+        assert written.slot_writes == () and written.most_written_core == 0
+
+    def test_marks_that_keep_every_core_give_the_resident_census(self):
+        """A residency plan's floor at F <= C pins every tile of every pass: the resident census."""
+        rows = [_row([10, 10], marks={0, 1}), _row([10], marks={0}, segment_index=1)]
+        written = _typed(rows, capacity={_T: 3})
+        assert sum(p.payload_bytes for p in written.census.passes) == 0
+        assert [p.resident_cores for p in written.census.passes] == [2, 1]
+        assert all(p.resident for p in written.census.passes) and written.slot_writes == ()
+
+    def test_a_pass_is_resident_exactly_when_it_writes_nothing(self):
+        written = _typed([_row([10, 10], marks={0, 1}), _row([10]), _row([10])], capacity={_T: 3})
+        assert [(p.resident, p.resident_cores, p.payload_bytes) for p in written.census.passes] == [
+            (True, 2, 0), (False, 0, 10), (False, 0, 10)]
+
+    def test_the_rotation_is_decided_without_core_types(self):
+        """Untyped rows on a chip of several core types: the rotation needs only the writing passes, so the census
+        is stated; only the physical core of a rewritten tile is unknown."""
+        rotating = _typed([_row([10, 10]), _row([10])], capacity={_A: 1, _B: 6})
+        assert [p.payload_bytes for p in rotating.census.passes] == [20, 10]
+        assert rotating.slot_writes is None and "no core type" in rotating.census.label
+        lone = _typed([_row([10, 10])], capacity={_A: 1, _B: 6})
+        assert sum(p.payload_bytes for p in lone.census.passes) == 0 and lone.most_written_core == 0
+
+
 class TestTheMostWrittenCore:
     """Endurance is a property of the physical core: every pass that rewrites a core in the period wears it."""
 
@@ -98,8 +151,13 @@ class TestTheMostWrittenCore:
         assert written.slot_writes == (SlotWrites(_T, (3, 2, 2)),)
         assert written.most_written_core == 3
 
-    def test_a_flat_fit_writes_no_core(self):
+    def test_two_passes_that_fit_side_by_side_rotate_on_the_first_cores(self):
+        """Finding 4, option (a): both passes load from the first core (before: a fit, no core written)."""
         written = _typed([_row([10, 10]), _row([10])], capacity={_T: 3})
+        assert written.slot_writes == (SlotWrites(_T, (2, 1)),) and written.most_written_core == 2
+
+    def test_a_flat_fit_writes_no_core(self):
+        written = _typed([_row([10, 10, 10])], capacity={_T: 3})
         assert written.slot_writes == () and written.most_written_core == 0
 
     def test_each_core_type_rotates_on_its_own_cores(self):
@@ -123,7 +181,7 @@ class TestTheMostWrittenCore:
         """Three untyped tiles on a chip of two cores provably rewrite, but on no stated core."""
         written = _typed([_row([10]), _row([10]), _row([10])], capacity={_A: 1, _B: 1})
         assert written.slot_writes is None and written.most_written_core is None
-        assert "no core type" in written.census.label and "exceed" in written.census.label
+        assert "no core type" in written.census.label and "no rewritten core is placed" in written.census.label
 
     def test_a_pin_is_counted_on_its_own_core_type(self):
         """A mark on the 512 x 256 core of a two-type pass pins that type, never the first core's."""
@@ -132,36 +190,81 @@ class TestTheMostWrittenCore:
         assert written.slot_writes == (SlotWrites(_A, (2,)),)
         assert [p.resident_cores for p in written.census.passes] == [1, 0]
 
-    def test_a_reprogram_pass_whose_every_core_is_pinned_keeps_the_whole_pass_flag_off(self):
-        """``resident`` is U1's whole-pass flag (or a flat fit); per-core pins count in resident_cores."""
+    def test_a_reprogram_pass_whose_every_core_is_pinned_reads_resident(self):
+        """``resident`` means the pass writes nothing per period (the plan census's meaning; before, it was U1's
+        whole-pass flag or a flat fit only); per-core pins count in resident_cores."""
         written = _typed([_row([10, 10], marks={0, 1}), _row([10]), _row([10])], capacity={_T: 3})
         first = written.census.passes[0]
-        assert (first.resident, first.resident_cores, first.payload_bytes) == (False, 2, 0)
+        assert (first.resident, first.resident_cores, first.payload_bytes) == (True, 2, 0)
         assert written.slot_writes == (SlotWrites(_T, (2,)),)
 
 
-class TestPerTypeCapacity:
-    """Loaded once exactly when every core type holds the tiles programmed on it."""
+class TestThePhysicalCores:
+    """CL3 (d) on the executed programs: a fused core (``canonical_fuse_hardcores``: axons summed over cores of one
+    declared type) occupies its component cores, and pins the builder fits by its dominance matching (a tile on a
+    core at least its size, ``residency_rules.check_pinned_fit``) never refuse the census."""
 
-    @pytest.mark.parametrize("capacity, tiles", [({_A: 1, _B: 6}, [_A] + [_B] * 6),
-                                                 ({_A: 6, _B: 3}, [_A] * 4 + [_B] * 3)])
-    def test_seven_tiles_that_fit_their_types_are_loaded_once(self, capacity, tiles):
-        """Both builds of seven tiles fit their own core types (the 0.8x budget says 5 for the first)."""
+    _F = (2048, 512)  # two fused 1024 x 512 cores
+
+    def test_a_fused_core_occupies_its_component_cores(self):
+        rows = [_row([300, 10], types=[self._F, (512, 256)]), _row([20], types=[(1024, 512)])]
+        written = _typed(rows, capacity={(1024, 512): 4, (512, 256): 4})
+        assert [p.payload_bytes for p in written.census.passes] == [310, 20]
+        assert set(written.slot_writes) == {SlotWrites((1024, 512), (2, 1)), SlotWrites((512, 256), (1,))}
+        assert written.pass_core_types == ((((512, 256), 1), ((1024, 512), 2)), (((1024, 512), 1),))
+
+    def test_a_pinned_fused_core_pins_every_component(self):
+        """Two of four cores pinned by one fused core: the two rotating passes share the other two."""
+        pinned = _row([300], types=[self._F], marks={0})
+        written = _typed([pinned, _row([20, 20], types=[(1024, 512)] * 2), _row([20], types=[(1024, 512)])],
+                         capacity={(1024, 512): 4})
+        assert written.slot_writes == (SlotWrites((1024, 512), (2, 1)),)
+        with pytest.raises(WriteCensusError):
+            _typed([pinned, _row([20] * 3, types=[(1024, 512)] * 3), _row([20], types=[(1024, 512)])],
+                   capacity={(1024, 512): 4})
+
+    def test_a_core_that_decomposes_into_no_declared_core_refuses_by_name(self):
+        with pytest.raises(WriteCensusError) as info:
+            _typed([_row([10], types=[(3000, 512)])], capacity={(1024, 512): 4, (512, 256): 4})
+        assert "3000 x 512" in str(info.value)
+
+    def test_pins_the_builder_fits_on_larger_cores_state_the_census_without_placing_its_rewrites(self):
+        """The t0_44r floor shape: 512 x 256 pins and a pass's 512 x 256 tiles exceed that type's cores, while the
+        idle 784 x 512 cores hold the excess (a dominance matching): the census is stated, no rewrite is placed."""
+        small, large = (512, 256), (784, 512)
+        rows = [_row([10] * 3, types=[small] * 3, marks={0, 1}), _row([10] * 3, types=[small] * 3),
+                _row([10], types=[large])]
+        written = _typed(rows, capacity={small: 4, large: 4})
+        assert [p.payload_bytes for p in written.census.passes] == [10, 30, 10]
+        assert written.slot_writes is None and "at least its size" in written.census.label
+        with pytest.raises(WriteCensusError):
+            _typed(rows, capacity={small: 4, large: 0})
+
+
+class TestPerTypeCapacity:
+    """Each core type rotates on its own cores; capacity places the rewritten cores and never makes a program of
+    several writing passes loaded once (finding 4, option (a); before, tiles that fit their types were loaded once)."""
+
+    @pytest.mark.parametrize("capacity, tiles, slots", [
+        ({_A: 1, _B: 6}, [_A] + [_B] * 6, {SlotWrites(_A, (1,)), SlotWrites(_B, (3, 2, 1))}),
+        ({_A: 6, _B: 3}, [_A] * 4 + [_B] * 3, {SlotWrites(_A, (2, 2)), SlotWrites(_B, (2, 1))})])
+    def test_seven_tiles_that_fit_their_types_rotate_on_each_type(self, capacity, tiles, slots):
         rows = [_row([10] * 2, types=tiles[:2]), _row([10] * 3, types=tiles[2:5]), _row([10] * 2, types=tiles[5:])]
         written = _typed(rows, capacity=capacity)
-        assert sum(p.payload_bytes for p in written.census.passes) == 0
-        assert all(p.resident for p in written.census.passes)
+        assert [p.payload_bytes for p in written.census.passes] == [20, 30, 20]
+        assert not any(p.resident for p in written.census.passes)
+        assert set(written.slot_writes) == slots
 
-    def test_tiles_equal_to_the_cores_are_a_flat_fit(self):
+    def test_tiles_equal_to_the_cores_rotate(self):
         written = _typed([_row([10, 10]), _row([10])], capacity={_T: 3})
-        assert sum(p.payload_bytes for p in written.census.passes) == 0
+        assert [p.payload_bytes for p in written.census.passes] == [20, 10]
 
     def test_two_declared_entries_of_one_geometry_pool_their_cores(self):
         platform = {"cores": [{"max_axons": 256, "max_neurons": 256, "count": 2},
                               {"max_axons": 256, "max_neurons": 256, "count": 1}]}
         assert core_capacity_of(platform) == {_T: 3}
         written = _typed([_row([10, 10]), _row([10])], capacity=core_capacity_of(platform))
-        assert sum(p.payload_bytes for p in written.census.passes) == 0
+        assert written.slot_writes == (SlotWrites(_T, (2, 1)),)
 
     def test_one_overflowing_type_rewrites_the_program(self):
         """Three tiles fit the 0.8x budget of 8, but two 784 x 512 tiles share one such core."""
@@ -173,34 +276,30 @@ class TestPerTypeCapacity:
 
 
 class TestAPlaneWithoutCoreTypes:
-    """On a chip of several core types, untyped rows prove only what the total core count proves:
-    tiles beyond every declared core rewrite; tiles within it are undecidable, never judged on the
-    planner's 0.8x budget."""
+    """On a chip of several core types, untyped rows rotate by the same rule as typed ones (the rotation needs
+    no core type); only the physical core of a rewritten tile is unknown, so no core is placed. Before finding 4,
+    option (a), tiles within the declared cores were undecidable (loaded once or not) and refused by name."""
 
     @pytest.mark.parametrize("capacity, tiles", [({_A: 1, _B: 6}, 6), ({_A: 1, _B: 6}, 7),
                                                  ({_A: 2, _B: 2}, 3)])
-    def test_untyped_tiles_that_fit_the_declared_cores_refuse_by_name(self, capacity, tiles):
-        """0.8C < F <= C (6 and 7 tiles on 7 cores) and F <= 0.8C (3 tiles on 4): both undecidable."""
+    def test_untyped_tiles_that_fit_the_declared_cores_rotate_on_no_stated_core(self, capacity, tiles):
         rows = [_row([10] * (tiles - 1)), _row([10])]
-        with pytest.raises(WriteCensusError) as info:
-            _typed(rows, capacity=capacity)
-        assert isinstance(info.value, ToolchainRefusal)
-        assert "no core type" in str(info.value) and "undecidable" in str(info.value)
-        assert "core_geometry" in str(info.value)
+        written = _typed(rows, capacity=capacity)
+        assert [p.payload_bytes for p in written.census.passes] == [10 * (tiles - 1), 10]
+        assert written.slot_writes is None and "no core type" in written.census.label
 
-    def test_untyped_tiles_within_the_budget_refuse_although_one_type_overflows(self):
-        """Three tiles on 1 + 9 cores fit the 0.8x budget of 8, but typed they rewrite (two 784 x 512 tiles)."""
-        with pytest.raises(WriteCensusError):
-            _typed([_row([10, 10]), _row([10])], capacity={_A: 1, _B: 9})
+    def test_untyped_rows_rewrite_what_typed_rows_rewrite(self):
+        untyped = _typed([_row([10, 10]), _row([10])], capacity={_A: 1, _B: 9})
         typed = _typed([_row([10, 10], types=[_A, _B]), _row([10], types=[_A])], capacity={_A: 1, _B: 9})
         assert [p.payload_bytes for p in typed.census.passes] == [20, 10]
+        assert untyped.census.passes == typed.census.passes and untyped.slot_writes is None
 
     def test_untyped_tiles_beyond_every_declared_core_rewrite_exactly_as_typed(self):
         untyped = _typed([_row([10, 10]), _row([10])], capacity={_A: 1, _B: 1})
         typed = _typed([_row([10, 10], types=[_A, _B]), _row([10], types=[_B])], capacity={_A: 1, _B: 1})
         assert [p.payload_bytes for p in untyped.census.passes] == [20, 10]
         assert untyped.census.passes == typed.census.passes
-        assert "exceed" in untyped.census.label and "no core type" not in typed.census.label
+        assert "no core type" in untyped.census.label and "no core type" not in typed.census.label
 
     def test_a_row_on_an_undeclared_core_type_refuses_by_name(self):
         with pytest.raises(WriteCensusError) as info:
@@ -213,13 +312,11 @@ class TestAPlaneWithoutCoreTypes:
             period_census(ProgramPasses(rows=(_row([10]),)), weight_bits=8, capacity=capacity)
         assert "core geometry" in str(info.value)
 
-    def test_resident_tiles_never_count_toward_the_untyped_fit(self):
-        """Targeted pass: five programmed tiles on 1 + 6 cores are undecidable; three resident (U1) tiles
-        program nothing, so they never push F past C into a proved rewrite."""
+    def test_resident_rows_program_nothing_on_an_untyped_plane(self):
+        """Three resident (U1) tiles program nothing; the two writing passes rotate."""
         rows = [_row([10] * 4), _row([10]), _row([10] * 3, resident=True)]
-        with pytest.raises(WriteCensusError) as info:
-            _typed(rows, capacity={_A: 1, _B: 6})
-        assert "5 programmed tiles" in str(info.value) and "undecidable" in str(info.value)
+        written = _typed(rows, capacity={_A: 1, _B: 6})
+        assert [(p.resident, p.payload_bytes) for p in written.census.passes] == [(False, 40), (False, 10), (True, 0)]
 
     def test_an_incomplete_core_list_refuses_by_name_through_the_plane(self):
         """Targeted pass: a declared core type without max_axons reaches ``plane_writes`` as a refusal by
@@ -276,15 +373,20 @@ def _priced(rows, platform, label="candidate"):
 
 
 class TestUndecidableWritesArePricedNowhere:
-    """The reviewer's reverse witness: an untyped plane never derives loaded-once or admitted."""
+    """The reviewer's reverse witness: an untyped plane never derives admitted. Under the executed rotation
+    (finding 4, option (a)) it states its rewrite, so its write terms price as the typed rows do and its lifetime
+    is the pigeonhole upper bound, which can prove inadmissibility only (before, the whole census was refused as
+    undecidable)."""
 
-    def test_an_untyped_mixed_chip_refuses_every_write_term_and_the_verdict(self):
+    def test_an_untyped_mixed_chip_prices_the_writes_and_bounds_the_lifetime(self):
         writes, pricing = _priced([_row([1000, 10]), _row([1000])], _mixed_platform())
-        assert writes.census is None and "undecidable" in writes.unavailable
-        refused = {r.name: r.reason for r in pricing.refusals}
-        for name in ("energy_write_mj", "latency_write_exposed_s", "lifetime_inferences", "lifetime_admissible"):
-            assert "undecidable" in refused[name], name
-        assert not pricing.terms and not pricing.verdicts
+        typed, exact = _priced([_row([1000, 10], types=[_A, _B]), _row([1000], types=[_A])], _mixed_platform())
+        assert writes.census is not None and writes.census.most_written_core is None
+        terms, typed_terms = {t.name: t for t in pricing.terms}, {t.name: t for t in exact.terms}
+        assert terms["energy_write_mj"].to_dict() == typed_terms["energy_write_mj"].to_dict()
+        assert "upper bound" in terms["lifetime_inferences"].source
+        verdict, = pricing.verdicts
+        assert verdict.verdict == "inadmissible" and "upper bound" in verdict.reason
 
     def test_typed_rows_on_the_same_chip_price_the_rewrite(self):
         _, pricing = _priced([_row([1000, 10], types=[_A, _B]), _row([1000], types=[_A])], _mixed_platform())
@@ -410,8 +512,9 @@ class TestBothPlanes:
         assert sum(p.payload_bytes for p in candidate.passes) == 180
 
     @pytest.mark.parametrize("count", [3, 8])
-    def test_candidate_equals_record_on_a_flat_fit(self, count):
-        """Three programmed tiles on a chip of 3 or 8 cores: loaded once on both planes."""
+    def test_candidate_equals_record_on_two_passes_that_fit(self, count):
+        """Three programmed tiles in two passes on a chip of 3 or 8 cores: the executed rotation on both planes
+        (finding 4, option (a); before, loaded once on both planes)."""
         platform = _platform(cores=[{"max_axons": 256, "max_neurons": 256, "count": count}],
                              core_semantics="mvm", activation_bits=8)
         candidate = plane_write_census(
@@ -420,8 +523,8 @@ class TestBothPlanes:
         built = plane_write_census(mapping_program_passes(_hybrid()), platform, weight_bits=8,
                                    timesteps=32, label="")[0]
         assert candidate.census == built.census
-        assert all(p.resident and p.payload_bytes == 0 for p in built.census.passes)
-        assert candidate.slot_writes == built.slot_writes == ()
+        assert [(p.resident, p.payload_bytes) for p in built.census.passes] == [(False, 150), (False, 30)]
+        assert candidate.slot_writes == built.slot_writes == (SlotWrites((256, 256), (2, 1)),)
 
     def test_candidate_equals_record_on_a_residency_streamed_program(self):
         """t0_44-class: the bank stays programmed, so a chip of two cores rewrites nothing per period."""

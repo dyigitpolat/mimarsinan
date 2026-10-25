@@ -216,11 +216,14 @@ def _neural_stage(stage, values, codes, steps, offsets: "Dict[int, np.ndarray] |
             trace.core_codes[id(hcm.cores[index])] = core_codes
 
 
-def run_golden(program, x, *, trace: Optional[GoldenTrace] = None) -> Tuple[np.ndarray, np.ndarray]:
+def run_golden(program, x, *, trace: Optional[GoldenTrace] = None,
+               keep: Optional[Dict[str, Dict[int, np.ndarray]]] = None) -> Tuple[np.ndarray, np.ndarray]:
     """``(output codes int64, output steps)`` of ``program`` on the host input ``x`` (integer or real values:
     the entry snap rounds each host value onto its boundary grid, as the executor does; never truncated). Host
     ops are replayed segment by segment in fp64 by the executor's seam; bound banks read their payload codes
-    per sample (N2). ``trace`` collects the payloads, host values and core codes the certificate compares."""
+    per sample (N2). ``trace`` collects the payloads, host values and core codes the certificate compares.
+    ``keep`` (a dict) receives every node output the program materializes, by node id: ``codes``, ``steps`` and
+    ``values`` (codes x steps) of segment outputs, and ``values`` of host ops, for per-operator censuses [CL7]."""
     bindings = getattr(program, "dynamic_bank_bindings", None) or None
     x = np.asarray(x, dtype=np.float64)
     flat = x.reshape(x.shape[0], -1)
@@ -242,6 +245,8 @@ def run_golden(program, x, *, trace: Optional[GoldenTrace] = None) -> Tuple[np.n
                 ).numpy()
             if trace is not None:
                 trace.host_values[int(op.id)] = values[int(op.id)]
+    if keep is not None:
+        keep.update(codes=codes, steps=steps, values={k: v for k, v in values.items() if k != _RAW_INPUT})
     out = np.asarray(program.output_sources).flatten()
     out_codes = np.zeros((flat.shape[0], out.size), dtype=np.int64)
     out_steps = np.zeros(out.size)

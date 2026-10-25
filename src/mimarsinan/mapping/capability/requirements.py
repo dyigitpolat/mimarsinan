@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import AbstractSet, Mapping
 
+import torch.nn as nn
+
 from mimarsinan.common.refusal import ToolchainRefusal
 
 #: Capability classes of the ladder (scout_network.md §3.3; L A E P C W are the arithmetic toggle's, arith_toggle.md §3.1).
@@ -90,9 +92,26 @@ REQUIREMENTS: Mapping[str, Requirement] = {r.kind: r for r in (
          "a torch leaf module (attention, recurrent or encoder layer) stays one host op until N1 decomposes it",
          carries_macs=True),
     _row("data_division", "", HOST_ONLY, NO_WORK, "division by an activation is not a law of on-chip integers"),
+    _row("mask", "", HOST_ONLY, NO_WORK,
+         "a boolean mask (a comparison or a logical operator) and the select it drives (masked_fill, where) are no "
+         "value of the on-chip integer grid and no law of the table: a host op at every level"),
+    _row("recurrence", "", HOST_ONLY, NO_WORK,
+         "a recurrence (a decomposed recurrent leaf's hidden-to-hidden map and gates, G1) feeds its own next step: "
+         "a loop no ladder class places on chip, so it is one host op at every level, its input projections cores",
+         carries_macs=True),
     _row("payload_write", "", HOST_ONLY, NO_WORK,
          "host-side write of a dynamic operand into its crossbar (the design note's bank_program op)"),
 )}
+
+
+#: The kind of a convolution whose ``groups`` exceed 1: the one row both the census and the conversion read.
+GROUPED_CONVOLUTION = "mmg"
+_GROUPABLE_CONVOLUTIONS = (nn.Conv1d, nn.Conv2d, nn.Conv3d)
+
+
+def is_grouped_convolution(module: object) -> bool:
+    """A (non-transposed) convolution with ``groups > 1``: the module test of the ``GROUPED_CONVOLUTION`` kind."""
+    return isinstance(module, _GROUPABLE_CONVOLUTIONS) and int(module.groups) > 1
 
 
 def requirement_of(kind: str) -> Requirement:

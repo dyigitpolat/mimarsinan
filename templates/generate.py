@@ -439,6 +439,35 @@ T0 = [
          target="generic_estimated_22nm",
          note="estimated 22 nm digital SRAM bundle (1000 cores of 256 x 256, 8-bit "
               "weights, value domain), the minimal pair of t0_41"),
+    # [CL2] the three page-sourced physics bundles. LeNet-5's unrolled program exceeds each
+    # chip (64, 48 and one core), so each cell is the minimal pair of t0_44 (scheduled passes,
+    # boundary AQ) with platform H replaced by the target and activation_bits at the chip's
+    # input width (the bundles bind none; their notes cite the width).
+    dict(n=66, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["sched", "pruned"],
+         scheduling=True, target="hermes_64",
+         extra_pc={"activation_bits": 8, "max_schedule_passes": 128},
+         note="HERMES-64 bundle (64 PCM cores of 256 x 256, 4-bit weights, 8-bit inputs, value "
+              "domain), the minimal pair of t0_44: the program runs in scheduled passes, so "
+              "the cell rewrites PCM cores between passes"),
+    dict(n=67, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["sched", "pruned"],
+         scheduling=True, target="sram_cim_macro",
+         extra_pc={"activation_bits": 4, "max_schedule_passes": 128},
+         target_overrides={
+             "cores": {
+                 "value": [{"max_axons": 128, "max_neurons": 1024, "count": 8, "has_bias": False}],
+                 "note": "eight macros: one macro is one 128-input core, and the toolchain places "
+                         "the fragments of a coalesced fan-in on separate cores, so LeNet-5's "
+                         "widest fan-in needs eight in one pass (one macro accumulates them "
+                         "across its own addresses, jiang2023a p.3)"}},
+         note="digital SRAM-CIM macro bundle (128 x 1024 cores of 8-bit weights, 4-bit inputs, "
+              "value domain), the minimal pair of t0_44 with eight macros declared; pricing "
+              "refuses by name until a backing store is declared"),
+    dict(n=68, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["sched", "pruned"],
+         scheduling=True, target="neurram",
+         extra_pc={"activation_bits": 4, "max_schedule_passes": 128},
+         note="NeuRRAM bundle (48 RRAM cores of 256 x 256, 4-bit weights, 4-bit inputs, value "
+              "domain), the minimal pair of t0_44: the program runs in scheduled passes, so "
+              "the cell rewrites RRAM cores between passes"),
 ]
 
 

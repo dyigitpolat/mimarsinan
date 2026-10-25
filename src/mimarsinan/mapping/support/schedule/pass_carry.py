@@ -170,11 +170,11 @@ def carried_softcore_spans(
     (``pair_wires``); membership from the planner's own placements — the same
     membership the NoC estimator prices carried re-entry traffic with [E5].
     ``segment_of``: each spec's segment the passes were planned in (the
-    fragments' builder segments, ``noc.fragments.spec_segments``), else its
-    depth segment.
+    fragments' builder segments, ``noc.fragments.spec_segments``; [fix_b] the
+    walk's runs), else its depth segment.
     """
-    if segment_of is None:
-        segment_of = [_softcore_segment(softcore) for softcore in softcores]
+    segment_of = ([int(s) for s in segment_of] if segment_of is not None
+                  else [_softcore_segment(softcore) for softcore in softcores])
     membership: Dict[int, int] = {}
     for pass_index, placements in enumerate(pass_placements):
         for softcore_index, _hardcore in placements:

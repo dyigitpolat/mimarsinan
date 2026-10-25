@@ -221,12 +221,17 @@ class TestTheDelayedSlicesCrossTheBoundary:
 
 
 def test_the_noc_fragments_without_runs_keep_the_depth_segments():
-    """Byte identity of the default: a caller that passes no runs (and no program) plans as before."""
+    """Byte identity of the default: a caller that passes no runs, no program and no wire census plans as before
+    (the depth segments). [integration of U1 W9 with explore fix_b] A wire census states the walk's runs
+    (``LayoutWireCensus.spec_runs``), and the fragments plan with them where neither runs nor a program is given."""
     rep = V.random_rep(0)
     walk, specs = _walk(rep)
-    frag = collect_noc_fragments(softcores=specs, core_types=[LayoutHardCoreType(V.MAX_AXONS, V.MAX_NEURONS, 3)],
-                                 census=census_of_walk(walk), **V.capabilities().layout_kwargs())
-    assert frag.runs is None
+    types = [LayoutHardCoreType(V.MAX_AXONS, V.MAX_NEURONS, 3)]
+    assert collect_noc_fragments(softcores=specs, core_types=types, census=None,
+                                 **V.capabilities().layout_kwargs()).runs is None
+    census = census_of_walk(walk)
+    frag = collect_noc_fragments(softcores=specs, core_types=types, census=census, **V.capabilities().layout_kwargs())
+    assert frag.runs == tuple(census.spec_runs) == spec_runs(walk)
 
 
 BRANCHY = ("edge_class", "intra_to_cross", "cores_only", "deep_mismatch", "moved_to_output", "shift_streamed",

@@ -80,10 +80,12 @@ def build_integer_program(
     activation_bits: int = 8, weight_bits: int = 8, max_axons=None, max_neurons=None,
     prune: Optional[dict] = None, seed: int = 0, calibration_size: int = 32, allow_coalescing: bool = False,
     boundary_scales: Optional[Sequence[float]] = None, readout_ranges: Optional[Sequence[float]] = None,
-    parameter_scales: Optional[Sequence[float]] = None,
+    parameter_scales: Optional[Sequence[float]] = None, hardware_bias: bool = False,
 ) -> IntegerProgram:
     """``prune`` maps perceptron positions to output channels zeroed before mapping (IR pruning then compacts);
-    the three scale lists, when given, replace the calibrated boundary scales, readout ranges and weight grids."""
+    the three scale lists, when given, replace the calibrated boundary scales, readout ranges and weight grids.
+    ``hardware_bias`` [fix_b]: the bias on the core (the target's ``has_bias``, as the pipeline's IR mapping reads it),
+    else on one axon; a caller building for a declared target passes the target's."""
     torch.manual_seed(seed)
     flow = convert_torch_model(model.eval(), input_shape, num_classes, device="cpu", packaging=MVM_PACKAGING).eval()
     for perceptron in flow.get_perceptrons():
@@ -109,7 +111,7 @@ def build_integer_program(
     repr_ = flow.get_mapper_repr()
     repr_.assign_perceptron_indices()
     ir = IRMapping(q_max=q_max, firing_mode="Default", max_axons=max_axons, max_neurons=max_neurons,
-                   allow_coalescing=allow_coalescing).map(repr_)
+                   allow_coalescing=allow_coalescing, hardware_bias=hardware_bias).map(repr_)
     install_boundary_grids(ir, flow)
     quantize_ir_graph(ir, weight_bits, weight_quantization=True)
     if prune:

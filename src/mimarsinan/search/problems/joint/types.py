@@ -164,6 +164,7 @@ class JointHostContract:
     prune_sparsity: float
     prune_criterion: str
     firing_mode: str
+    conversion: Any
     spiking_mode: str
     ttfs_cycle_schedule: str
     per_hop_retiming: bool

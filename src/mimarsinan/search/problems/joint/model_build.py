@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 
 import torch
 from torch.nn.parameter import UninitializedParameter
 
+from mimarsinan.mapping.platform.packaging_contract import SPIKING_PACKAGING, PackagingContract
 from mimarsinan.models.builders import build_model
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
 from .candidate_pruning import apply_declared_pruning
+
+
+@dataclass(frozen=True)
+class DeployedConversion:
+    """How the deployment builds and converts the run's model: the plan's packaging contract and its leaf
+    decomposition, so a candidate is priced on the program the pipeline deploys (sign-off M10)."""
+
+    packaging: PackagingContract = SPIKING_PACKAGING
+    decompose_leaf_modules: bool = False
 
 
 def build_raw_model(
@@ -28,6 +39,7 @@ def build_raw_model(
     pruning: bool = False,
     pruning_fraction: float = 0.0,
     firing_mode: str = "Default",
+    conversion: DeployedConversion = DeployedConversion(),
 ) -> Tuple[Any, float]:
     """Build, warm up, and apply the RUN's declared pruning to a raw model.
 
@@ -38,7 +50,7 @@ def build_raw_model(
         device, input_shape, num_classes, {**pcfg, "target_tq": int(target_tq)},
     )
     model = build_model(
-        builder, model_config, encoding_placement=placement
+        builder, model_config, encoding_placement=placement, packaging=conversion.packaging,
     ).to(device)
 
     model.eval()
@@ -83,12 +95,14 @@ def convert_to_mapper_repr(
     device: Any,
     target_tq: int,
     placement: str,
+    conversion: DeployedConversion = DeployedConversion(),
 ) -> Any:
     """Convert via torch mapping if the model lacks ``get_mapper_repr``.
 
     A native builder's flow already had its placement resolved by
     ``build_model``; a torch module's flow is born here and resolves the
-    same one, so a candidate's core count is the deployed model's.
+    same one under the deployment's conversion, so a candidate's program is
+    the deployed model's.
     """
     if hasattr(model, "get_mapper_repr"):
         return model
@@ -99,4 +113,6 @@ def convert_to_mapper_repr(
         device=device,
         Tq=target_tq,
         encoding_layer_placement=placement,
+        packaging=conversion.packaging,
+        decompose_leaf_modules=conversion.decompose_leaf_modules,
     )

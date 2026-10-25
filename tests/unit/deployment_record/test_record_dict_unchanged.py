@@ -40,10 +40,18 @@ def test_a_wave_zero_record_keeps_its_bytes_and_loads():
     assert DeploymentRecord.from_dict(record.to_dict()) == record
 
 
+#: [W03] The one named change: at 3 cores the chain fits the declared cores, so the residency planner pins every core
+#: of its pass and the stage record carries ``resident_core_indices``; at 1 core it does not fit and nothing is pinned.
+_W03_FIT_MARKS = {1: None, 3: [0, 1, 2]}
+
+
 @pytest.mark.parametrize("count", sorted(_BASE_BUILD_DIGESTS))
 def test_the_record_build_is_byte_identical_after_the_census_split(count):
+    """Byte identity with the base except the fit's residency marks [W03], which are stated and then removed."""
     mapping = built_chain(count)
     schedule = schedule_record_from_mapping(mapping, weight_bits=8, params_reloaded=0, timesteps=4,
                                             pass_transfer="collapse").to_dict()
     placement = placement_record_from_mapping(mapping).to_dict()
+    marks = [stage.pop("resident_core_indices", None) for stage in schedule["stages"]]
+    assert [None if m is None else list(m) for m in marks] == [_W03_FIT_MARKS[count]] * len(schedule["stages"])
     assert (_digest(schedule), _digest(placement)) == _BASE_BUILD_DIGESTS[count]

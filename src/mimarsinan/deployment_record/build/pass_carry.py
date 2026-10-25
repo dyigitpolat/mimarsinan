@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.write_census import BoundaryWidths
 from mimarsinan.mapping.noc.fragments import delayed_carry_wires, spec_segments
+from mimarsinan.mapping.support.period_census import boundary_crossings
 from mimarsinan.mapping.support.schedule.pass_carry import (
     carried_softcore_spans,
     carried_wire_spans,
@@ -87,12 +88,6 @@ def boundary_widths_of(crossings: Iterable[Tuple[int, int, int]],
     """Per-boundary carried widths from ``(width, producing position, last consuming position)``:
     a wire is read out after its producing pass and re-injected before its last consuming pass
     (one crossing per direction, as the dense census counts); ``replayed``: ``(width, reading position)``
-    per delayed slice beyond one per producer and pass, one more re-injection before its reading pass."""
-    out: Dict[int, int] = {}
-    inbound: Dict[int, int] = {}
-    for width, produced, consumed in crossings:
-        out[produced] = out.get(produced, 0) + int(width)
-        inbound[consumed - 1] = inbound.get(consumed - 1, 0) + int(width)
-    for width, reader in replayed:
-        inbound[reader - 1] = inbound.get(reader - 1, 0) + int(width)
-    return tuple((p, out.get(p, 0), inbound.get(p, 0)) for p in sorted(set(out) | set(inbound)))
+    per delayed slice beyond one per producer and pass, one more re-injection before its reading pass.
+    The one rule of every plane, the plan's included [W03]: ``period_census.boundary_crossings``."""
+    return boundary_crossings(crossings, replayed)

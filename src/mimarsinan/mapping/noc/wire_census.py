@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, Mapping, Tuple
+from dataclasses import dataclass, replace
+from typing import Dict, Mapping, Optional, Tuple
 
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.layout.layout_source_view_ops import total_size
+from mimarsinan.mapping.support.residency_rules import spec_runs
 
 #: Per-node walk record: ({real producer node id -> distinct cells},
 #: network-input cells, always-on cells incl. the bias axon).
@@ -24,12 +25,16 @@ class LayoutWireCensus:
     firing source neuron per destination core). ``input_wires[c]`` counts
     network-input and host-boundary cells (they re-enter as segment input,
     never as mesh traffic); ``on_wires[c]`` counts always-on cells plus the
-    bias axon (they fire every active cycle).
+    bias axon (they fire every active cycle). [fix_b] ``spec_runs[c]`` is the
+    builder segment of softcore ``c`` (``residency_rules.spec_runs``: the host
+    ops before its node in the walk's program order), so a plane holding the
+    census plans the builder's segments; None where the walk did not state it.
     """
 
     pair_wires: Mapping[Tuple[int, int], int]
     input_wires: Tuple[int, ...]
     on_wires: Tuple[int, ...]
+    spec_runs: Optional[Tuple[int, ...]] = None
 
 
 def source_cell_census(input_sources) -> NodeCellCensus:
@@ -68,9 +73,10 @@ def census_of_walk(mapping) -> "LayoutWireCensus":
         raise ValueError(
             "wire census was not collected; construct the layout mapping with "
             "collect_wire_census=True before the walk")
-    return build_wire_census(
+    census = build_wire_census(
         mapping._node_wire_census, mapping._node_is_neural,
         mapping._node_id_to_softcore_idx, len(mapping.layout_softcores))
+    return replace(census, spec_runs=spec_runs(mapping))
 
 
 def record_emission_census(

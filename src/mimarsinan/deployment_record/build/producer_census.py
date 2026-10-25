@@ -1,6 +1,6 @@
 """Producer writes of dynamic operand banks (N2 design §2.6): the payload cells each pass writes per inference,
 on both planes; the writes each physical core takes are the period census's one slot rule
-(``write_census._slot_writes``), which places operand regions as it places static tiles.
+(``mapping/support/core_slots.place``), which places operand regions as it places static tiles.
 
 **Declared deployment model.** A pass writes every operand region it holds once per sample: in the pass-major
 order of a batch the next sample overwrites the payload, so a region is rewritten in every pass that holds it,

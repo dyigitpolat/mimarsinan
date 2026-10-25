@@ -20,7 +20,7 @@ from mimarsinan.deployment_record.platform_physics.constants import (
 from mimarsinan.deployment_record.platform_physics.conversion import (
     conversion_model_for,
 )
-from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.deployment_record.platform_physics.profile import ExternalComponent, PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -33,6 +33,26 @@ class PricingRefusal:
 
     name: str
     reason: str
+
+
+#: The refusal of every absolute term at once: a target that declares no physics, or a profile whose external
+#: component (``PlatformPhysics.external_components``) the run has not declared.
+ABSOLUTE_PRICING = "absolute_pricing"
+
+
+def _external_refusal(physics: PlatformPhysics, component: ExternalComponent) -> PricingRefusal:
+    missing = ", ".join(physics.missing(component.constants))
+    note = f" ({component.note})" if component.note else ""
+    return PricingRefusal(name=ABSOLUTE_PRICING, reason=(
+        f"{physics.name} is read only with its {component.name} declared: {missing} undeclared{note}; declare "
+        "them in a named override block (merge_override_blocks)"))
+
+
+def external_refusals(physics: PlatformPhysics) -> Tuple[PricingRefusal, ...]:
+    """The ``absolute_pricing`` refusal of every external component the run has not declared (empty when none):
+    the one gate of every pricer that reads the profile (``price_absolute``, the write law ``price_write_terms`` on
+    every plane [fix_c], the step choice)."""
+    return tuple(_external_refusal(physics, component) for component in physics.undeclared_external())
 
 
 @dataclass(frozen=True)

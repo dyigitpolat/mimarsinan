@@ -11,7 +11,7 @@ import pytest
 from mimarsinan.mapping.support.schedule.residency_front import (
     FRONTS,
     Q_SPAN,
-    VECTORIZED_MIN_UNITS,
+    STORE_MIN_UNITS,
     front_mincarry_np,
     front_mincarry_py,
     phase_partition,
@@ -63,8 +63,11 @@ class TestFrontEqualsTheRaPlanner:
         assert [c.case for c in calls if not _agrees(c, FRONTS[branch])] == []
 
     def test_the_dispatch_threshold(self):
-        assert select_front(VECTORIZED_MIN_UNITS - 1) is front_mincarry_py
-        assert select_front(VECTORIZED_MIN_UNITS) is front_mincarry_np
+        """[W03] The store front from 100 units (re-measured on tile-granular units); the vectorized front a branch."""
+        from mimarsinan.mapping.support.residency_front_store import front_mincarry_store
+        assert select_front(STORE_MIN_UNITS - 1) is front_mincarry_py
+        assert select_front(STORE_MIN_UNITS) is front_mincarry_store
+        assert FRONTS["vectorized"] is front_mincarry_np
 
 
 @pytest.mark.slow
@@ -143,7 +146,7 @@ def _brute_force(sizes, live, C, r, qmax, forced):
 class TestForcedCuts:
     """The one generalization of the port: a segment boundary is a cut every phase respects."""
 
-    def test_both_fronts_equal_a_brute_force_with_and_without_forced_cuts(self):
+    def test_every_front_equals_a_brute_force_with_and_without_forced_cuts(self):
         rng = random.Random(2)
         for _ in range(150):
             n = rng.randint(2, 9)
@@ -153,8 +156,8 @@ class TestForcedCuts:
             forced = tuple(sorted(rng.sample(range(1, n), rng.randint(0, min(2, n - 1)))))
             r, qmax = rng.randint(0, C), rng.randint(1, n + 1)
             want = _brute_force(sizes, live, C, r, qmax, forced)
-            assert front_mincarry_py(sizes, live, C, r, qmax, forced) == want
-            assert front_mincarry_np(sizes, live, C, r, qmax, forced) == want
+            for front in FRONTS.values():
+                assert front(sizes, live, C, r, qmax, forced) == want
 
     def test_the_partition_attains_the_front_and_respects_every_constraint(self):
         rng = random.Random(3)

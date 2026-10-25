@@ -7,7 +7,7 @@ import json
 from dataclasses import replace
 
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
-from mimarsinan.deployment_record.cost.absolute.output_stage import CHIP_ONLY_TERM, output_stage_note
+from mimarsinan.deployment_record.cost.output_stage import CHIP_ONLY_TERM, output_stage_note
 from mimarsinan.deployment_record.quantities.from_record import from_record
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.schema import DeploymentRecord

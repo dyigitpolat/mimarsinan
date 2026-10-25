@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.fx as fx
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.capability.requirements import GROUPED_CONVOLUTION, is_grouped_convolution, requirement_of
 from mimarsinan.mapping.mappers.conv_helpers import perceptron_conv_padding
 from mimarsinan.mapping.platform.packaging_contract import (
     SPIKING_PACKAGING,
@@ -93,13 +94,16 @@ class LoweringRequirement:
 
 
 def core_lowering_requirement(module: nn.Module) -> Optional[LoweringRequirement]:
-    """The one conversion-time capability rule: a convolution with ``groups > 1`` needs class G (grouped lowering,
-    work item N5), so it runs on the host; ``None`` for a module the core lowering takes."""
-    groups = int(getattr(module, "groups", 1)) if isinstance(module, (nn.Conv1d, nn.Conv2d)) else 1
-    if groups == 1:
+    """The one conversion-time capability rule, read from the requirement table (``mapping/capability``): a
+    convolution with ``groups > 1`` needs the classes of the table's grouped-convolution row (G, work item N5), so it
+    runs on the host with the row's stated boundary; ``None`` for a module the core lowering takes."""
+    if not isinstance(module, (nn.Conv1d, nn.Conv2d)) or not is_grouped_convolution(module):
         return None
-    return LoweringRequirement("G", f"grouped convolution (groups={groups}) is the exact host op of its module: its "
-                                    "core lowering needs capability class G (grouped convolution on the host until N5)")
+    row = requirement_of(GROUPED_CONVOLUTION)
+    classes = "".join(sorted(row.classes))
+    return LoweringRequirement(classes, f"grouped convolution (groups={int(module.groups)}) is the exact host op of "
+                                        f"its module: its core lowering needs capability class {classes} "
+                                        f"({row.host_boundary})")
 
 
 def lowers_to_perceptron(absorbs_activation: bool, packaging: PackagingContract) -> bool:

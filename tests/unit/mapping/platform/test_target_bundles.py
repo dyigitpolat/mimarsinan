@@ -34,9 +34,15 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import build_platf
 PHYSICS_BUNDLES = {
     "odin": "odin", "truenorth": "truenorth", "loihi": "loihi", "isaac_like": "isaac_like",
     "generic_estimated_22nm": "generic_estimated_22nm",
+    # [CL2] the three page-sourced profiles (G3's sub-deliverable)
+    "hermes_64": "hermes_64", "neurram": "neurram", "sram_cim_macro": "sram_cim_macro",
 }
-#: The geometries of three shipped profiles are bundled once, as physics bundles (plan section 8.1).
-PHYSICS_GEOMETRY = {"truenorth": "truenorth_like", "loihi": "loihi_dense_equiv_128x1024", "isaac_like": "isaac_like"}
+#: The geometries of five shipped profiles are bundled once, as physics bundles (plan sections 8.1 and 14 CL2).
+PHYSICS_GEOMETRY = {"truenorth": "truenorth_like", "loihi": "loihi_dense_equiv_128x1024", "isaac_like": "isaac_like",
+                    "neurram": "neurram_like", "hermes_64": "hermes_64"}
+#: Physics bundles whose geometry is declared in bundle data (no registered geometry): name -> geometry.
+DECLARED_GEOMETRY = {"odin": "odin_stock_core", "generic_estimated_22nm": "generic_22nm_256x256",
+                     "sram_cim_macro": "dimc_macro_128x1024"}
 SYNTHETIC_GRIDS = {"imc_128x128", "imc_256x256", "imc_512x512", "imc_mixed_tile"}
 LITERATURE = set(imc_platform_names()) - SYNTHETIC_GRIDS
 
@@ -55,7 +61,7 @@ def _write(directory, *bundles):
 
 
 class TestShippedRegistry:
-    def test_five_physics_bundles_and_nine_geometry_only_bundles(self):
+    def test_eight_physics_bundles_and_nine_geometry_only_bundles(self):
         bundles = target_bundles()
         physics = {name for name, b in bundles.items() if "platform_physics_profile" in b.values}
         assert {name: bundles[name].values["platform_physics_profile"] for name in physics} == PHYSICS_BUNDLES
@@ -73,6 +79,9 @@ class TestShippedRegistry:
         assert not SYNTHETIC_GRIDS & set(geometries)
         for name, geometry in PHYSICS_GEOMETRY.items():
             assert target_bundles()[name].geometry == geometry
+        assert set(geometries) - LITERATURE == set(DECLARED_GEOMETRY.values())
+        for name, geometry in DECLARED_GEOMETRY.items():
+            assert target_bundles()[name].geometry == geometry and geometry not in imc_platform_names()
 
     def test_a_registered_geometry_is_taken_from_the_registry(self):
         for bundle in target_bundles().values():

@@ -1,0 +1,2208 @@
+{
+ "schema": "mimarsinan.design_point_instance",
+ "schema_version": 1,
+ "status": "provisional",
+ "produced_by": {
+  "script": "fixture: the ViT-Lite softmax block once dynamic-operand cores and per-core-type write technology are integrated",
+  "command": "none (hand-written schema fixture)",
+  "worktree": "none",
+  "base": "none",
+  "diff_sha256_16": null,
+  "date": "2026-10-23"
+ },
+ "network": {
+  "name": "vit_lite_softmax_block",
+  "builder": "vit_lite_cct (one encoder block)",
+  "width": null,
+  "width_note": "a ViT-Lite-7/4 encoder block, embedding 256",
+  "input_shape": [
+   65,
+   256
+  ],
+  "classes": 100,
+  "weights": "trained checkpoint (fixture)",
+  "block": "softmax attention encoder block",
+  "accuracy": {
+   "value": null,
+   "absent": "left to Wave 3"
+  }
+ },
+ "declarations": {
+  "inference_rate_hz": 30.0,
+  "min_lifetime_hours": 43800.0,
+  "declared_K": 1,
+  "k_grid": [
+   1,
+   16,
+   64
+  ],
+  "budget_rule": "about half the block's tiles",
+  "inputs": {
+   "kind": "integer",
+   "count": 64,
+   "seed": 1
+  },
+  "atol": 0.0,
+  "point_cap": {
+   "wall_s": 3600.0,
+   "memory": "28G"
+  }
+ },
+ "executors": [
+  {
+   "name": "value_flow",
+   "role": "executor",
+   "description": "fixture"
+  },
+  {
+   "name": "int64_golden",
+   "role": "executor",
+   "description": "fixture"
+  },
+  {
+   "name": "nf",
+   "role": "reference",
+   "description": "fixture"
+  },
+  {
+   "name": "scm",
+   "role": "reference",
+   "description": "fixture"
+  }
+ ],
+ "notes": [
+  "FIXTURE: every number below is illustrative; it shows the fields the softmax block fills, not a result"
+ ],
+ "rows": [
+  {
+   "row": "sram_macro",
+   "role": "figure",
+   "title": "SRAM compute-in-memory macro with its backing store",
+   "beside_of": null,
+   "chip": {
+    "target": "sram_cim_macro",
+    "display_name": "SRAM-CIM macro",
+    "core_types": [
+     {
+      "role": "any",
+      "max_axons": 128,
+      "max_neurons": 1024,
+      "count": 28,
+      "write_technology": "sram_cim_macro"
+     }
+    ],
+    "weight_bits": 8,
+    "faithfulness": {
+     "class": "approximate",
+     "named": [
+      "fixture"
+     ]
+    },
+    "claim_class": "quarantined",
+    "arithmetic_class": "digital integer MVM (exact)",
+    "backing_store": {
+     "variant": "hbm2",
+     "constants": {
+      "e_dma_per_byte": {
+       "nominal": 41.9,
+       "unit": "pJ",
+       "evidence_kind": "published"
+      }
+     },
+     "chosen_by": "fixture",
+     "beside": [
+      "onchip_sram_1mb",
+      "ddr4"
+     ]
+    }
+   },
+   "admission": {
+    "verdict": "admitted",
+    "at_K": 1,
+    "reasons": [
+     "fixture"
+    ],
+    "refusals": []
+   },
+   "budget": {
+    "packed_tiles_F": 56,
+    "fraction": 0.5,
+    "cores": 28,
+    "rule": "about half the block's tiles"
+   },
+   "program": {
+    "neural_passes": 6,
+    "host_stages": 6,
+    "segments": 6,
+    "hard_cores_used": 8,
+    "ir_cores": 24,
+    "host_ops": 6
+   },
+   "placement": [
+    {
+     "operator": "ln1",
+     "kind": "norm",
+     "placement": "host",
+     "role": "host",
+     "reason": "normalization needs a row reduction and a data-dependent scale (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 0
+    },
+    {
+     "operator": "qkv",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      0
+     ]
+    },
+    {
+     "operator": "qk",
+     "kind": "mm",
+     "placement": "core",
+     "role": "operand",
+     "reason": "operand core: its matrix is a run-time payload written once per inference and the other operand streamed through it",
+     "ir_nodes": 4,
+     "passes": [
+      1
+     ]
+    },
+    {
+     "operator": "softmax",
+     "kind": "softmax",
+     "placement": "host",
+     "role": "host",
+     "reason": "softmax needs a row reduction, a table law and a product (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 3
+    },
+    {
+     "operator": "pv",
+     "kind": "mm",
+     "placement": "core",
+     "role": "operand",
+     "reason": "operand core: its matrix is a run-time payload written once per inference and the other operand streamed through it",
+     "ir_nodes": 4,
+     "passes": [
+      2
+     ]
+    },
+    {
+     "operator": "proj",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      3
+     ]
+    },
+    {
+     "operator": "add",
+     "kind": "add",
+     "placement": "host",
+     "role": "host",
+     "reason": "add of two activations outside the MVM contract until N3",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 6
+    },
+    {
+     "operator": "ln2",
+     "kind": "norm",
+     "placement": "host",
+     "role": "host",
+     "reason": "normalization needs a row reduction and a data-dependent scale (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 7
+    },
+    {
+     "operator": "fc1",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      4
+     ]
+    },
+    {
+     "operator": "gelu",
+     "kind": "smooth",
+     "placement": "host",
+     "role": "host",
+     "reason": "smooth activation needs a table law (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 9
+    },
+    {
+     "operator": "fc2",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      5
+     ]
+    },
+    {
+     "operator": "add_1",
+     "kind": "add",
+     "placement": "host",
+     "role": "host",
+     "reason": "add of two activations outside the MVM contract until N3",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 11
+    }
+   ],
+   "timeline": [
+    {
+     "position": 0,
+     "kind": "host",
+     "operator": "ln1",
+     "op_kind": "norm"
+    },
+    {
+     "position": 1,
+     "kind": "pass",
+     "pass": 0,
+     "segment_index": 0,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "qkv"
+     ]
+    },
+    {
+     "position": 2,
+     "kind": "pass",
+     "pass": 1,
+     "segment_index": 1,
+     "cores": 8,
+     "resident_cores": 8,
+     "static_written_cells_per_period": 0,
+     "operand_written_cells_per_inference": 116480,
+     "payload_bytes_per_period": 0,
+     "write_units_per_period": 0,
+     "write_events_per_period": 0,
+     "operand_write_events_per_inference": 116480,
+     "operators": [
+      "qk"
+     ]
+    },
+    {
+     "position": 3,
+     "kind": "host",
+     "operator": "softmax",
+     "op_kind": "softmax"
+    },
+    {
+     "position": 4,
+     "kind": "pass",
+     "pass": 2,
+     "segment_index": 2,
+     "cores": 8,
+     "resident_cores": 8,
+     "static_written_cells_per_period": 0,
+     "operand_written_cells_per_inference": 116480,
+     "payload_bytes_per_period": 0,
+     "write_units_per_period": 0,
+     "write_events_per_period": 0,
+     "operand_write_events_per_inference": 116480,
+     "operators": [
+      "pv"
+     ]
+    },
+    {
+     "position": 5,
+     "kind": "pass",
+     "pass": 3,
+     "segment_index": 3,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "proj"
+     ]
+    },
+    {
+     "position": 6,
+     "kind": "host",
+     "operator": "add",
+     "op_kind": "add"
+    },
+    {
+     "position": 7,
+     "kind": "host",
+     "operator": "ln2",
+     "op_kind": "norm"
+    },
+    {
+     "position": 8,
+     "kind": "pass",
+     "pass": 4,
+     "segment_index": 4,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "fc1"
+     ]
+    },
+    {
+     "position": 9,
+     "kind": "host",
+     "operator": "gelu",
+     "op_kind": "smooth"
+    },
+    {
+     "position": 10,
+     "kind": "pass",
+     "pass": 5,
+     "segment_index": 5,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "fc2"
+     ]
+    },
+    {
+     "position": 11,
+     "kind": "host",
+     "operator": "add_1",
+     "op_kind": "add"
+    }
+   ],
+   "certificate": {
+    "atol": 0.0,
+    "inputs": 64,
+    "edges": [
+     {
+      "name": "nf_vs_scm",
+      "between": [
+       "nf",
+       "scm"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "executor_vs_scm",
+      "between": [
+       "value_flow",
+       "scm"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "scm_vs_golden_identity",
+      "between": [
+       "scm",
+       "int64_golden:identity"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "executor_vs_golden",
+      "between": [
+       "value_flow",
+       "int64_golden"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "golden_vs_golden_identity",
+      "between": [
+       "int64_golden",
+       "int64_golden:identity"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     }
+    ],
+    "exact": true,
+    "nonvacuous": true,
+    "operators_observed": 12,
+    "operators": 12,
+    "operand_cells": {
+     "name": "operand_cells",
+     "between": [
+      "value_flow",
+      "int64_golden"
+     ],
+     "mismatches": 0,
+     "compared": 14909440
+    },
+    "notes": [
+     "fixture"
+    ]
+   },
+   "activity": [
+    {
+     "operator": "ln1",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "qkv",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "qk",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "softmax",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "pv",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "proj",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "add",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "ln2",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "fc1",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "gelu",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "fc2",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "add_1",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    }
+   ],
+   "writes": {
+    "declared_K": 1,
+    "static_written_cells_per_period": 262144,
+    "operand_written_cells_per_inference": 232960,
+    "payload_bytes_per_period": 262144,
+    "written_passes": 4,
+    "most_written_core_writes_per_period": 4,
+    "max_writes_per_cell_per_inference": 5.0,
+    "write_events_per_inference": 495104.0,
+    "write_granularity": "cell",
+    "census_label": "record (fixture)",
+    "per_core_type": [
+     {
+      "role": "any",
+      "write_technology": "sram_cim_macro",
+      "static_written_cells_per_period": 262144,
+      "operand_written_cells_per_inference": 232960,
+      "max_writes_per_cell_per_inference": 5.0
+     }
+    ]
+   },
+   "lifetime": {
+    "at_K": 1,
+    "hours": [
+     18518518518.51852,
+     18518518518.51852,
+     18518518518.51852
+    ],
+    "verdict": "admitted",
+    "reason": "fixture",
+    "endurance": {
+     "cycles": [
+      1e+16,
+      1e+16,
+      1e+16
+     ],
+     "evidence_kind": "estimated",
+     "source": "fixture"
+    },
+    "per_core_type": [
+     {
+      "role": "any",
+      "write_technology": "sram_cim_macro",
+      "max_writes_per_cell_per_inference": 5.0,
+      "endurance": {
+       "cycles": [
+        1e+16,
+        1e+16,
+        1e+16
+       ],
+       "evidence_kind": "estimated",
+       "source": "fixture"
+      },
+      "hours": [
+       18518518518.51852,
+       18518518518.51852,
+       18518518518.51852
+      ],
+      "verdict": "admitted"
+     }
+    ],
+    "binding": "any (sram_cim_macro)"
+   },
+   "k_star": {
+    "per_corner": {
+     "low": 1,
+     "nominal": 1,
+     "high": 1
+    },
+    "basis": "fixture",
+    "verdicts_by_K": [
+     {
+      "K": 1,
+      "verdict": "admitted",
+      "hours": [
+       93000000000.0,
+       93000000000.0,
+       93000000000.0
+      ],
+      "per_corner": {
+       "low": "admitted",
+       "nominal": "admitted",
+       "high": "admitted"
+      }
+     }
+    ],
+    "boundary": "admitted from K = 1",
+    "checked": true,
+    "no_K_admits": null
+   },
+   "pricing": {
+    "plane": "fixture",
+    "variants": [
+     {
+      "variant": "host+hbm2",
+      "K": 1,
+      "energy_mj": [
+       0.408,
+       0.9394,
+       1.979
+      ],
+      "energy_split_mj": {
+       "dynamic": [
+        0.001,
+        0.0024,
+        0.004
+       ],
+       "static": [
+        0.0,
+        0.0,
+        0.0
+       ],
+       "static_write": [
+        0.0,
+        0.0,
+        0.0
+       ],
+       "operand_write": [
+        0.007,
+        0.037,
+        0.075
+       ],
+       "host": [
+        0.4,
+        0.9,
+        1.9
+       ]
+      },
+      "latency_s": null,
+      "refusals": {
+       "e2e_latency_s": "t_cycle is undeclared",
+       "energy_per_inference_mj": null
+      },
+      "host_share": 0.958058,
+      "lifetime_verdict": "admitted",
+      "split_closes": true,
+      "dynamic_shares_mj": {
+       "mac": [
+        0.001,
+        0.0024,
+        0.004
+       ],
+       "carry": [
+        0,
+        0,
+        0
+       ]
+      },
+      "energy_without_writes_mj": [
+       0.401,
+       0.9024,
+       1.904
+      ],
+      "latency_without_writes_s": null
+     }
+    ]
+   }
+  },
+  {
+   "row": "rram_static_sram_operand",
+   "role": "figure",
+   "title": "Resistive static tiles with SRAM operand cores",
+   "beside_of": null,
+   "chip": {
+    "target": null,
+    "display_name": "NeuRRAM static tiles with SRAM-CIM operand cores",
+    "core_types": [
+     {
+      "role": "static",
+      "max_axons": 256,
+      "max_neurons": 256,
+      "count": 20,
+      "write_technology": "neurram"
+     },
+     {
+      "role": "operand",
+      "max_axons": 128,
+      "max_neurons": 1024,
+      "count": 8,
+      "write_technology": "sram_cim_macro",
+      "operand": {
+       "payload_bits": 8,
+       "write_source": "host"
+      }
+     }
+    ],
+    "weight_bits": 8,
+    "faithfulness": {
+     "class": "approximate",
+     "named": [
+      "fixture"
+     ]
+    },
+    "claim_class": "quarantined",
+    "arithmetic_class": "analog static MVM run as the integer law; digital operand MVM",
+    "backing_store": null
+   },
+   "admission": {
+    "verdict": "admitted",
+    "at_K": 32768,
+    "reasons": [
+     "fixture"
+    ],
+    "refusals": []
+   },
+   "budget": {
+    "packed_tiles_F": 56,
+    "fraction": 0.5,
+    "cores": 28,
+    "rule": "about half the block's tiles"
+   },
+   "program": {
+    "neural_passes": 6,
+    "host_stages": 6,
+    "segments": 6,
+    "hard_cores_used": 8,
+    "ir_cores": 24,
+    "host_ops": 6
+   },
+   "placement": [
+    {
+     "operator": "ln1",
+     "kind": "norm",
+     "placement": "host",
+     "role": "host",
+     "reason": "normalization needs a row reduction and a data-dependent scale (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 0
+    },
+    {
+     "operator": "qkv",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      0
+     ]
+    },
+    {
+     "operator": "qk",
+     "kind": "mm",
+     "placement": "core",
+     "role": "operand",
+     "reason": "operand core: its matrix is a run-time payload written once per inference and the other operand streamed through it",
+     "ir_nodes": 4,
+     "passes": [
+      1
+     ]
+    },
+    {
+     "operator": "softmax",
+     "kind": "softmax",
+     "placement": "host",
+     "role": "host",
+     "reason": "softmax needs a row reduction, a table law and a product (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 3
+    },
+    {
+     "operator": "pv",
+     "kind": "mm",
+     "placement": "core",
+     "role": "operand",
+     "reason": "operand core: its matrix is a run-time payload written once per inference and the other operand streamed through it",
+     "ir_nodes": 4,
+     "passes": [
+      2
+     ]
+    },
+    {
+     "operator": "proj",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      3
+     ]
+    },
+    {
+     "operator": "add",
+     "kind": "add",
+     "placement": "host",
+     "role": "host",
+     "reason": "add of two activations outside the MVM contract until N3",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 6
+    },
+    {
+     "operator": "ln2",
+     "kind": "norm",
+     "placement": "host",
+     "role": "host",
+     "reason": "normalization needs a row reduction and a data-dependent scale (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 7
+    },
+    {
+     "operator": "fc1",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      4
+     ]
+    },
+    {
+     "operator": "gelu",
+     "kind": "smooth",
+     "placement": "host",
+     "role": "host",
+     "reason": "smooth activation needs a table law (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 9
+    },
+    {
+     "operator": "fc2",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      5
+     ]
+    },
+    {
+     "operator": "add_1",
+     "kind": "add",
+     "placement": "host",
+     "role": "host",
+     "reason": "add of two activations outside the MVM contract until N3",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 11
+    }
+   ],
+   "timeline": [
+    {
+     "position": 0,
+     "kind": "host",
+     "operator": "ln1",
+     "op_kind": "norm"
+    },
+    {
+     "position": 1,
+     "kind": "pass",
+     "pass": 0,
+     "segment_index": 0,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "qkv"
+     ]
+    },
+    {
+     "position": 2,
+     "kind": "pass",
+     "pass": 1,
+     "segment_index": 1,
+     "cores": 8,
+     "resident_cores": 8,
+     "static_written_cells_per_period": 0,
+     "operand_written_cells_per_inference": 116480,
+     "payload_bytes_per_period": 0,
+     "write_units_per_period": 0,
+     "write_events_per_period": 0,
+     "operand_write_events_per_inference": 116480,
+     "operators": [
+      "qk"
+     ]
+    },
+    {
+     "position": 3,
+     "kind": "host",
+     "operator": "softmax",
+     "op_kind": "softmax"
+    },
+    {
+     "position": 4,
+     "kind": "pass",
+     "pass": 2,
+     "segment_index": 2,
+     "cores": 8,
+     "resident_cores": 8,
+     "static_written_cells_per_period": 0,
+     "operand_written_cells_per_inference": 116480,
+     "payload_bytes_per_period": 0,
+     "write_units_per_period": 0,
+     "write_events_per_period": 0,
+     "operand_write_events_per_inference": 116480,
+     "operators": [
+      "pv"
+     ]
+    },
+    {
+     "position": 5,
+     "kind": "pass",
+     "pass": 3,
+     "segment_index": 3,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "proj"
+     ]
+    },
+    {
+     "position": 6,
+     "kind": "host",
+     "operator": "add",
+     "op_kind": "add"
+    },
+    {
+     "position": 7,
+     "kind": "host",
+     "operator": "ln2",
+     "op_kind": "norm"
+    },
+    {
+     "position": 8,
+     "kind": "pass",
+     "pass": 4,
+     "segment_index": 4,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "fc1"
+     ]
+    },
+    {
+     "position": 9,
+     "kind": "host",
+     "operator": "gelu",
+     "op_kind": "smooth"
+    },
+    {
+     "position": 10,
+     "kind": "pass",
+     "pass": 5,
+     "segment_index": 5,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "fc2"
+     ]
+    },
+    {
+     "position": 11,
+     "kind": "host",
+     "operator": "add_1",
+     "op_kind": "add"
+    }
+   ],
+   "certificate": {
+    "atol": 0.0,
+    "inputs": 64,
+    "edges": [
+     {
+      "name": "nf_vs_scm",
+      "between": [
+       "nf",
+       "scm"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "executor_vs_scm",
+      "between": [
+       "value_flow",
+       "scm"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "scm_vs_golden_identity",
+      "between": [
+       "scm",
+       "int64_golden:identity"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "executor_vs_golden",
+      "between": [
+       "value_flow",
+       "int64_golden"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "golden_vs_golden_identity",
+      "between": [
+       "int64_golden",
+       "int64_golden:identity"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     }
+    ],
+    "exact": true,
+    "nonvacuous": true,
+    "operators_observed": 12,
+    "operators": 12,
+    "operand_cells": {
+     "name": "operand_cells",
+     "between": [
+      "value_flow",
+      "int64_golden"
+     ],
+     "mismatches": 0,
+     "compared": 14909440
+    },
+    "notes": [
+     "fixture"
+    ]
+   },
+   "activity": [
+    {
+     "operator": "ln1",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "qkv",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "qk",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "softmax",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "pv",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "proj",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "add",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "ln2",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "fc1",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "gelu",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "fc2",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "add_1",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    }
+   ],
+   "writes": {
+    "declared_K": 32768,
+    "static_written_cells_per_period": 262144,
+    "operand_written_cells_per_inference": 232960,
+    "payload_bytes_per_period": 262144,
+    "written_passes": 4,
+    "most_written_core_writes_per_period": 4,
+    "max_writes_per_cell_per_inference": 1.0,
+    "write_events_per_inference": 237056.0,
+    "write_granularity": "cell",
+    "census_label": "record (fixture)",
+    "per_core_type": [
+     {
+      "role": "static",
+      "write_technology": "neurram",
+      "static_written_cells_per_period": 262144,
+      "operand_written_cells_per_inference": 0,
+      "max_writes_per_cell_per_inference": 0.0001220703125
+     },
+     {
+      "role": "operand",
+      "write_technology": "sram_cim_macro",
+      "static_written_cells_per_period": 0,
+      "operand_written_cells_per_inference": 232960,
+      "max_writes_per_cell_per_inference": 1.0
+     }
+    ]
+   },
+   "lifetime": {
+    "at_K": 32768,
+    "hours": [
+     75851.85185185185,
+     2396918.5185185187,
+     75851851.85185185
+    ],
+    "verdict": "admitted",
+    "reason": "fixture: static NVM tiles 4 writes per period at K = 32,768 bind; the SRAM operand cores are written every inference within their endurance",
+    "endurance": {
+     "cycles": [
+      1000000.0,
+      31600000.0,
+      1000000000.0
+     ],
+     "evidence_kind": "published",
+     "source": "sridharan2023xformer p.1; SECONDARY"
+    },
+    "per_core_type": [
+     {
+      "role": "static",
+      "write_technology": "neurram",
+      "max_writes_per_cell_per_inference": 0.0001220703125,
+      "endurance": {
+       "cycles": [
+        1000000.0,
+        31600000.0,
+        1000000000.0
+       ],
+       "evidence_kind": "published",
+       "source": "sridharan2023xformer p.1; SECONDARY"
+      },
+      "hours": [
+       75851.85185185185,
+       2396918.5185185187,
+       75851851.85185185
+      ],
+      "verdict": "admitted"
+     },
+     {
+      "role": "operand",
+      "write_technology": "sram_cim_macro",
+      "max_writes_per_cell_per_inference": 1.0,
+      "endurance": {
+       "cycles": [
+        1e+16,
+        1e+16,
+        1e+16
+       ],
+       "evidence_kind": "estimated",
+       "source": "fixture"
+      },
+      "hours": [
+       92592592592.59259,
+       92592592592.59259,
+       92592592592.59259
+      ],
+      "verdict": "admitted"
+     }
+    ],
+    "binding": "static (neurram)"
+   },
+   "k_star": {
+    "per_corner": {
+     "low": 18922,
+     "nominal": 599,
+     "high": 19
+    },
+    "basis": "fixture: the static NVM tiles' K* = ceil(4 r T / E); the SRAM operand cores admit at every K",
+    "verdicts_by_K": [
+     {
+      "K": 18921,
+      "verdict": "straddles",
+      "hours": [
+       43798.61111111112,
+       1384036.1111111112,
+       43798611.11111111
+      ],
+      "per_corner": {
+       "low": "inadmissible",
+       "nominal": "admitted",
+       "high": "admitted"
+      }
+     },
+     {
+      "K": 18922,
+      "verdict": "admitted",
+      "hours": [
+       43800.925925925934,
+       1384109.2592592593,
+       43800925.92592593
+      ],
+      "per_corner": {
+       "low": "admitted",
+       "nominal": "admitted",
+       "high": "admitted"
+      }
+     }
+    ],
+    "boundary": "fixture",
+    "checked": true,
+    "no_K_admits": null
+   },
+   "pricing": {
+    "plane": "fixture",
+    "variants": [
+     {
+      "variant": "host",
+      "K": 32768,
+      "energy_mj": [
+       0.4011,
+       0.9026,
+       1.9044
+      ],
+      "energy_split_mj": {
+       "dynamic": [
+        0.001,
+        0.0024,
+        0.004
+       ],
+       "static": [
+        0.0,
+        0.0,
+        0.0
+       ],
+       "static_write": [
+        0.0,
+        0.0,
+        0.0
+       ],
+       "operand_write": [
+        0.0001,
+        0.0002,
+        0.0004
+       ],
+       "host": [
+        0.4,
+        0.9,
+        1.9
+       ]
+      },
+      "latency_s": null,
+      "refusals": {
+       "e2e_latency_s": "t_cycle is undeclared",
+       "energy_per_inference_mj": null
+      },
+      "host_share": 0.997119,
+      "lifetime_verdict": "admitted",
+      "split_closes": true,
+      "dynamic_shares_mj": {
+       "mac": [
+        0.001,
+        0.0024,
+        0.004
+       ],
+       "carry": [
+        0,
+        0,
+        0
+       ]
+      },
+      "energy_without_writes_mj": [
+       0.401,
+       0.9024,
+       1.904
+      ],
+      "latency_without_writes_s": null
+     }
+    ]
+   }
+  },
+  {
+   "row": "rram_alone",
+   "role": "figure",
+   "title": "Resistive cores only",
+   "beside_of": null,
+   "chip": {
+    "target": "neurram",
+    "display_name": "NeuRRAM",
+    "core_types": [
+     {
+      "role": "any",
+      "max_axons": 256,
+      "max_neurons": 256,
+      "count": 28,
+      "write_technology": "neurram"
+     }
+    ],
+    "weight_bits": 8,
+    "faithfulness": {
+     "class": "approximate",
+     "named": [
+      "fixture"
+     ]
+    },
+    "claim_class": "quarantined",
+    "arithmetic_class": "analog MVM run as the integer law (error not modeled)",
+    "backing_store": null
+   },
+   "admission": {
+    "verdict": "inadmissible",
+    "at_K": 1,
+    "reasons": [
+     "fixture: operand cells written every inference"
+    ],
+    "refusals": []
+   },
+   "budget": {
+    "packed_tiles_F": 56,
+    "fraction": 0.5,
+    "cores": 28,
+    "rule": "about half the block's tiles"
+   },
+   "program": {
+    "neural_passes": 6,
+    "host_stages": 6,
+    "segments": 6,
+    "hard_cores_used": 8,
+    "ir_cores": 24,
+    "host_ops": 6
+   },
+   "placement": [
+    {
+     "operator": "ln1",
+     "kind": "norm",
+     "placement": "host",
+     "role": "host",
+     "reason": "normalization needs a row reduction and a data-dependent scale (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 0
+    },
+    {
+     "operator": "qkv",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      0
+     ]
+    },
+    {
+     "operator": "qk",
+     "kind": "mm",
+     "placement": "core",
+     "role": "operand",
+     "reason": "operand core: its matrix is a run-time payload written once per inference and the other operand streamed through it",
+     "ir_nodes": 4,
+     "passes": [
+      1
+     ]
+    },
+    {
+     "operator": "softmax",
+     "kind": "softmax",
+     "placement": "host",
+     "role": "host",
+     "reason": "softmax needs a row reduction, a table law and a product (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 3
+    },
+    {
+     "operator": "pv",
+     "kind": "mm",
+     "placement": "core",
+     "role": "operand",
+     "reason": "operand core: its matrix is a run-time payload written once per inference and the other operand streamed through it",
+     "ir_nodes": 4,
+     "passes": [
+      2
+     ]
+    },
+    {
+     "operator": "proj",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      3
+     ]
+    },
+    {
+     "operator": "add",
+     "kind": "add",
+     "placement": "host",
+     "role": "host",
+     "reason": "add of two activations outside the MVM contract until N3",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 6
+    },
+    {
+     "operator": "ln2",
+     "kind": "norm",
+     "placement": "host",
+     "role": "host",
+     "reason": "normalization needs a row reduction and a data-dependent scale (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 7
+    },
+    {
+     "operator": "fc1",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      4
+     ]
+    },
+    {
+     "operator": "gelu",
+     "kind": "smooth",
+     "placement": "host",
+     "role": "host",
+     "reason": "smooth activation needs a table law (N4)",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 9
+    },
+    {
+     "operator": "fc2",
+     "kind": "mm",
+     "placement": "core",
+     "role": "static",
+     "reason": "static matrix product: a crossbar core at every level",
+     "ir_nodes": 4,
+     "passes": [
+      5
+     ]
+    },
+    {
+     "operator": "add_1",
+     "kind": "add",
+     "placement": "host",
+     "role": "host",
+     "reason": "add of two activations outside the MVM contract until N3",
+     "ir_nodes": 1,
+     "passes": [],
+     "host_stage": 11
+    }
+   ],
+   "timeline": [
+    {
+     "position": 0,
+     "kind": "host",
+     "operator": "ln1",
+     "op_kind": "norm"
+    },
+    {
+     "position": 1,
+     "kind": "pass",
+     "pass": 0,
+     "segment_index": 0,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "qkv"
+     ]
+    },
+    {
+     "position": 2,
+     "kind": "pass",
+     "pass": 1,
+     "segment_index": 1,
+     "cores": 8,
+     "resident_cores": 8,
+     "static_written_cells_per_period": 0,
+     "operand_written_cells_per_inference": 116480,
+     "payload_bytes_per_period": 0,
+     "write_units_per_period": 0,
+     "write_events_per_period": 0,
+     "operand_write_events_per_inference": 116480,
+     "operators": [
+      "qk"
+     ]
+    },
+    {
+     "position": 3,
+     "kind": "host",
+     "operator": "softmax",
+     "op_kind": "softmax"
+    },
+    {
+     "position": 4,
+     "kind": "pass",
+     "pass": 2,
+     "segment_index": 2,
+     "cores": 8,
+     "resident_cores": 8,
+     "static_written_cells_per_period": 0,
+     "operand_written_cells_per_inference": 116480,
+     "payload_bytes_per_period": 0,
+     "write_units_per_period": 0,
+     "write_events_per_period": 0,
+     "operand_write_events_per_inference": 116480,
+     "operators": [
+      "pv"
+     ]
+    },
+    {
+     "position": 5,
+     "kind": "pass",
+     "pass": 3,
+     "segment_index": 3,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "proj"
+     ]
+    },
+    {
+     "position": 6,
+     "kind": "host",
+     "operator": "add",
+     "op_kind": "add"
+    },
+    {
+     "position": 7,
+     "kind": "host",
+     "operator": "ln2",
+     "op_kind": "norm"
+    },
+    {
+     "position": 8,
+     "kind": "pass",
+     "pass": 4,
+     "segment_index": 4,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "fc1"
+     ]
+    },
+    {
+     "position": 9,
+     "kind": "host",
+     "operator": "gelu",
+     "op_kind": "smooth"
+    },
+    {
+     "position": 10,
+     "kind": "pass",
+     "pass": 5,
+     "segment_index": 5,
+     "cores": 8,
+     "resident_cores": 0,
+     "static_written_cells_per_period": 65536,
+     "operand_written_cells_per_inference": 0,
+     "payload_bytes_per_period": 65536,
+     "write_units_per_period": 65536,
+     "write_events_per_period": 65536,
+     "operand_write_events_per_inference": null,
+     "operators": [
+      "fc2"
+     ]
+    },
+    {
+     "position": 11,
+     "kind": "host",
+     "operator": "add_1",
+     "op_kind": "add"
+    }
+   ],
+   "certificate": {
+    "atol": 0.0,
+    "inputs": 64,
+    "edges": [
+     {
+      "name": "nf_vs_scm",
+      "between": [
+       "nf",
+       "scm"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "executor_vs_scm",
+      "between": [
+       "value_flow",
+       "scm"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "scm_vs_golden_identity",
+      "between": [
+       "scm",
+       "int64_golden:identity"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "executor_vs_golden",
+      "between": [
+       "value_flow",
+       "int64_golden"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     },
+     {
+      "name": "golden_vs_golden_identity",
+      "between": [
+       "int64_golden",
+       "int64_golden:identity"
+      ],
+      "mismatches": 0,
+      "compared": 640
+     }
+    ],
+    "exact": true,
+    "nonvacuous": true,
+    "operators_observed": 12,
+    "operators": 12,
+    "operand_cells": {
+     "name": "operand_cells",
+     "between": [
+      "value_flow",
+      "int64_golden"
+     ],
+     "mismatches": 0,
+     "compared": 14909440
+    },
+    "notes": [
+     "fixture"
+    ]
+   },
+   "activity": [
+    {
+     "operator": "ln1",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "qkv",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "qk",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "softmax",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "pv",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "proj",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "add",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "ln2",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "fc1",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "gelu",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "fc2",
+     "placement": "core",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 4,
+     "nodes_observed": 1
+    },
+    {
+     "operator": "add_1",
+     "placement": "host",
+     "outputs": 262144,
+     "nonzero": {
+      "value_flow": 200000,
+      "int64_golden": 200000
+     },
+     "mismatches": 0,
+     "nodes": 1,
+     "nodes_observed": 1
+    }
+   ],
+   "writes": {
+    "declared_K": 1,
+    "static_written_cells_per_period": 262144,
+    "operand_written_cells_per_inference": 232960,
+    "payload_bytes_per_period": 262144,
+    "written_passes": 4,
+    "most_written_core_writes_per_period": 4,
+    "max_writes_per_cell_per_inference": 5.0,
+    "write_events_per_inference": 495104.0,
+    "write_granularity": "cell",
+    "census_label": "record (fixture)",
+    "per_core_type": [
+     {
+      "role": "any",
+      "write_technology": "neurram",
+      "static_written_cells_per_period": 262144,
+      "operand_written_cells_per_inference": 232960,
+      "max_writes_per_cell_per_inference": 5.0
+     }
+    ]
+   },
+   "lifetime": {
+    "at_K": 1,
+    "hours": [
+     1.8518518518518519,
+     58.51851851851852,
+     1851.851851851852
+    ],
+    "verdict": "inadmissible",
+    "reason": "fixture",
+    "endurance": {
+     "cycles": [
+      1000000.0,
+      31600000.0,
+      1000000000.0
+     ],
+     "evidence_kind": "published",
+     "source": "sridharan2023xformer p.1; SECONDARY"
+    },
+    "per_core_type": [
+     {
+      "role": "any",
+      "write_technology": "neurram",
+      "max_writes_per_cell_per_inference": 5.0,
+      "endurance": {
+       "cycles": [
+        1000000.0,
+        31600000.0,
+        1000000000.0
+       ],
+       "evidence_kind": "published",
+       "source": "sridharan2023xformer p.1; SECONDARY"
+      },
+      "hours": [
+       1.8518518518518519,
+       58.51851851851852,
+       1851.851851851852
+      ],
+      "verdict": "inadmissible",
+      "notes": "the operand cells are written every inference: at any K the wear is at least 1 per inference, 9,259 h at the high corner, so no K admits"
+     }
+    ],
+    "binding": "any (neurram)"
+   },
+   "k_star": {
+    "per_corner": {
+     "low": null,
+     "nominal": null,
+     "high": null
+    },
+    "basis": "fixture",
+    "verdicts_by_K": [
+     {
+      "K": 1,
+      "verdict": "inadmissible",
+      "hours": [
+       9.3,
+       293.0,
+       9259.0
+      ],
+      "per_corner": {
+       "low": "inadmissible",
+       "nominal": "inadmissible",
+       "high": "inadmissible"
+      }
+     }
+    ],
+    "boundary": "no batch up to 2^40 admits",
+    "checked": true,
+    "no_K_admits": "no batch admits the low, nominal, high endurance corner: operand cells are written every inference, which no batch amortizes"
+   },
+   "pricing": {
+    "plane": "fixture",
+    "variants": [
+     {
+      "variant": "host",
+      "K": 1,
+      "energy_mj": [
+       0.5,
+       1.0,
+       2.0
+      ],
+      "energy_split_mj": {
+       "dynamic": [
+        0.001,
+        0.0024,
+        0.004
+       ],
+       "static": [
+        0.0,
+        0.0,
+        0.0
+       ],
+       "static_write": [
+        0.0,
+        0.0,
+        0.0
+       ],
+       "operand_write": null,
+       "host": [
+        0.4,
+        0.9,
+        1.9
+       ]
+      },
+      "latency_s": null,
+      "refusals": {
+       "e2e_latency_s": "t_cycle is undeclared",
+       "energy_per_inference_mj": null
+      },
+      "host_share": 0.95,
+      "lifetime_verdict": "admitted",
+      "split_closes": null,
+      "dynamic_shares_mj": {
+       "mac": [
+        0.001,
+        0.0024,
+        0.004
+       ],
+       "carry": [
+        0,
+        0,
+        0
+       ]
+      },
+      "energy_without_writes_mj": [
+       0.401,
+       0.9024,
+       1.904
+      ],
+      "latency_without_writes_s": null
+     }
+    ]
+   }
+  }
+ ]
+}

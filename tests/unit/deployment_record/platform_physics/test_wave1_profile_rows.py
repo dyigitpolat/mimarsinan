@@ -6,7 +6,7 @@ import pytest
 from mimarsinan.chip_simulation.weight_reuse_cost_model import DEFAULT_COEFFICIENT_BAND
 from mimarsinan.deployment_record.cost.absolute import price_absolute, price_write_terms
 from mimarsinan.deployment_record.cost.absolute.validity import CoreGeometry
-from mimarsinan.deployment_record.platform_physics import get_platform_physics
+from mimarsinan.deployment_record.platform_physics import apply_overrides, get_platform_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensus
@@ -82,8 +82,14 @@ class TestThePageSourcedProfiles:
         assert physics.validity.geometry is not None
 
     def test_the_macro_refuses_its_chip_level_rows_by_name(self):
+        """With its backing store declared (CL2: the profile's external component), the macro prices and still
+        refuses every chip-level row it lacks by name; without the store it prices nothing
+        (test_external_components)."""
+        rows = {"evidence_kind": "estimated", "note": "test store"}
+        store = {"e_dma_per_byte": {"nominal": 100.0, "unit": "pJ", **rows},
+                 "t_program_per_byte": {"nominal": 0.1, "unit": "ns", **rows}}
         pricing = price_absolute(_quantities(cores_physical=1, synaptic_events=10, host_macs=0),
-                                 get_platform_physics("sram_cim_macro"))
+                                 apply_overrides(get_platform_physics("sram_cim_macro"), store))
         refused = {r.name: r.reason for r in pricing.refusals}
         assert "area_per_core_total" in refused["chip_area_mm2"]
         assert "t_cycle" in refused["e2e_latency_s"]

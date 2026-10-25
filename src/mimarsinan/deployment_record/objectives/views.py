@@ -183,16 +183,18 @@ class CandidateStaticView:
         return estimate
 
     def cost_report(self) -> Optional[DeploymentCostReport]:
-        """The vendor-priced report, or None when this run declared no physics."""
+        """The vendor-priced report; a target that declares no physics reports its refusal, and a run
+        that declares neither physics nor a target reports None."""
         if "report" not in self._priced:
             context = self.quantity_context
+            refusal = None if context is None else context.pricing_refusal
             self._priced["report"] = (
                 candidate_cost_report(
                     self.quantities, self.physics, writes=self._write_inputs(),
-                    geometry=None if context is None else context.core_geometry,
+                    geometry=None if context is None else context.core_geometry, refusal=refusal,
                     output_stage=None if context is None else context.output_stage,
                 )
-                if self.physics is not None
+                if self.physics is not None or refusal is not None
                 else None
             )
         return self._priced["report"]

@@ -219,6 +219,26 @@ class TestPlanPeriodCensus:
                                     bytes_per_element=1)
         assert [(p.resident, p.payload_bytes) for p in census.passes] == [(True, 0)]
 
+    def test_the_stateless_plan_of_a_fit_runs_one_pass_that_nothing_displaces(self):
+        """At F <= C the stateless plan is one pass (Q = 1): no other pass rewrites its cores, so the executed
+        rotation writes nothing per period, as the RA ``price`` reads a fit (resident) under either arm."""
+        plan = plan_steps([2, 3], [4, 0], 8)
+        assert stateless_step(plan) == (8, 0, 1)
+        census = plan_period_census([2, 3], [4, 0], 8, stateless_step(plan), bytes_of_cells=int, tile_cells=4,
+                                    bytes_per_element=1)
+        assert [(p.resident, p.resident_cores, p.payload_bytes) for p in census.passes] == [(True, 5, 0)]
+
+    def test_a_segmented_fit_rotates_its_segments_unless_the_floor_pins_them(self):
+        """A forced cut makes the stateless plan of a fit two passes, each loaded from the first core: both rewrite
+        every period; the floor pins every tile of both (the resident census)."""
+        plan = residency_steps([2, 3], [0, 0], 8, forced=(1,))
+        stateless = plan_period_census([2, 3], [0, 0], 8, stateless_step(plan), forced=(1,), bytes_of_cells=int,
+                                       tile_cells=4, bytes_per_element=1)
+        assert [(p.segment_index, p.payload_bytes) for p in stateless.passes] == [(0, 8), (1, 12)]
+        floor = plan_period_census([2, 3], [0, 0], 8, plan.steps[0], forced=(1,), bytes_of_cells=int, tile_cells=4,
+                                   bytes_per_element=1)
+        assert [(p.resident, p.payload_bytes) for p in floor.passes] == [(True, 0), (True, 0)]
+
 
 class TestProgrammedCells:
     """Programmed bytes, defined once: the occupied cells of every core a pass writes (its packed cores less the
@@ -230,8 +250,9 @@ class TestProgrammedCells:
         specs = [LayoutSoftCoreSpec(input_count=8, output_count=4, perceptron_index=0, latency_tag=0)
                  for _ in range(3)]
         units = residency_units(specs, [CutNode(i, 0, (), 4) for i in range(3)], CORE, segments=[0, 0, 0])
-        # two 8x4 softcores share a 16x8 core diagonally (its used rectangle 16x8), the third uses 8x4 of one
-        assert units.cores == (((128, 1), (32, 1)),) and units.tiles == (2,)
+        # two 8x4 softcores share a 16x8 core diagonally (its used rectangle 16x8), the third uses 8x4 of one; each
+        # core is a tile group of the layer [W03], in order of its first spec
+        assert units.members == ((0,), (1, 2)) and units.cores == (((32, 1),), ((128, 1),)) and units.tiles == (1, 1)
 
     def test_the_written_cells_are_the_cores_the_pinned_rule_leaves(self):
         tiles, live, C = [2, 1, 2], [5, 5, 0], 3
@@ -260,10 +281,10 @@ class TestProgrammedCells:
         with pytest.raises(ResidencyPlanError, match="no programmed cells"):
             facts.programmed_bytes(int)
 
-    def test_a_phase_packed_jointly_writes_at_most_the_layer_granular_tiles(self):
+    def test_a_phase_packed_jointly_writes_at_most_the_planned_tiles(self):
         # layers 0 and 1 read the input (latency 0) and share one 16x8 core when packed as one pass; layer 2 (two
-        # 8x8 specs) reads both. F = 4 layer-granular tiles at C = 2; the stateless plan's first phase holds
-        # layers 0 and 1, which pack into one core, so it writes 3 tiles, not W = 4.
+        # 8x8 specs, two tile groups [W03]) reads both. F = 4 planned tiles at C = 2; the stateless plan's first
+        # phase holds layers 0 and 1, which pack into one core, so it writes 3 tiles, not W = 4.
         specs = [LayoutSoftCoreSpec(input_count=8, output_count=4 if i < 2 else 8, perceptron_index=min(i, 2),
                                     latency_tag=int(i >= 2), segment_id=0, name=f"s{i}") for i in range(4)]
         nodes = [CutNode(0, 0, (), 4), CutNode(1, 0, (), 4), CutNode(2, 1, (0, 1), 8), CutNode(3, 1, (0, 1), 8)]
@@ -273,7 +294,8 @@ class TestProgrammedCells:
                                          residency_plan={"step": "stateless"}, program=program,
                                          allow_coalescing=False, allow_splitting=False, max_schedule_passes=8)
         facts = comp.facts
-        assert facts.phases == ((0, 2), (2, 3)) and facts.pass_tiles == (2, 2)
+        assert comp.units.members == ((0,), (1,), (2,), (3,)) and comp.units.layers == (0, 1, 2, 2)
+        assert facts.phases == ((0, 2), (2, 4)) and facts.pass_tiles == (2, 2)
         assert facts.pass_cores == (((128, 1),), ((64, 1), (64, 1)))
         assert facts.written_cells == ((128,), (64, 64))
         assert facts.written_core_tiles == 3 < facts.written_tiles == 4                    # W_exec < W

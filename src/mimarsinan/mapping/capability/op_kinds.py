@@ -9,13 +9,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.mapping.capability.requirements import REQUIREMENTS, UnknownOpKindError
+from mimarsinan.mapping.capability.requirements import (
+    GROUPED_CONVOLUTION,
+    REQUIREMENTS,
+    UnknownOpKindError,
+    is_grouped_convolution,
+)
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, NeuralCore
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter, _cat_along, cat_per_sample
 from mimarsinan.mapping.support.operand_write import OperandWrite
 from mimarsinan.mapping.support.scale_wrapper import unwrap_scale_wrapper
 from mimarsinan.torch_mapping.converter_handlers.batchnorm_lowering import BatchNormAffine
 from mimarsinan.torch_mapping.converter_handlers.rules.method_rules import torch_function_of
+from mimarsinan.torch_mapping.leaf_decomposition.recurrence import Recurrence
 
 #: The §5.1 interface (G1's ``Contraction`` payload): ``op_type`` names it, ``operand_roles`` decides D against S.
 CONTRACTION_OP_TYPE = "Contraction"
@@ -32,6 +38,7 @@ _MODULE_TYPES: Tuple[Tuple[tuple, str], ...] = (
     ((nn.GELU, nn.SiLU, nn.Sigmoid, nn.Tanh, nn.ELU, nn.Softplus, nn.Mish), "smooth"),
     ((nn.LayerNorm, nn.GroupNorm, nn.InstanceNorm1d, nn.InstanceNorm2d), "norm"),
     ((nn.Softmax,), "softmax"),
+    ((Recurrence,), "recurrence"),
     ((nn.AvgPool1d, nn.AvgPool2d, nn.AdaptiveAvgPool1d, nn.AdaptiveAvgPool2d), "pool"),
     ((nn.MaxPool1d, nn.MaxPool2d, nn.AdaptiveMaxPool1d, nn.AdaptiveMaxPool2d), "maxp"),
     ((nn.modules.batchnorm._BatchNorm, BatchNormAffine), "affine"),
@@ -41,7 +48,7 @@ _MODULE_TYPES: Tuple[Tuple[tuple, str], ...] = (
 )
 #: Module rules whose kind reads a module attribute (groups, interpolation mode); checked before the type table.
 _MODULE_RULES: Tuple[Tuple[Callable[[nn.Module], bool], str], ...] = (
-    (lambda m: isinstance(m, _CONVS) and int(m.groups) > 1, "mmg"),
+    (is_grouped_convolution, GROUPED_CONVOLUTION),
     (lambda m: isinstance(m, _CONVS + (nn.Linear,)), "mms"),
     (lambda m: isinstance(m, nn.Upsample) and m.mode == "nearest", "wire+"),
     (lambda m: isinstance(m, nn.Upsample), "mms"),
@@ -62,6 +69,11 @@ _FUNCTION_KINDS: Mapping[Callable, str] = {
                      torch.swapaxes, torch.swapdims, torch.roll, torch.squeeze, torch.unsqueeze, cat_per_sample,
                      _cat_along), "wire+"),
     F.scaled_dot_product_attention: "leaf",
+    # A boolean mask and the select it drives, in any operand structure (a constant or an activation mask).
+    **dict.fromkeys((torch.eq, torch.ne, torch.lt, torch.le, torch.gt, torch.ge, operator.eq, operator.ne, operator.lt,
+                     operator.le, operator.gt, operator.ge, torch.masked_fill, torch.where, torch.logical_not,
+                     torch.logical_and, torch.logical_or, torch.logical_xor, operator.invert, operator.and_,
+                     operator.or_, operator.xor), "mask"),
 }
 #: Binary arithmetic: (kind with two activation operands, kind with one activation and a constant).
 _BINARY_KINDS: Mapping[Callable, Tuple[str, str]] = {

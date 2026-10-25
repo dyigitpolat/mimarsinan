@@ -1,0 +1,32 @@
+{
+  "name": "sram_cim_macro",
+  "display_name": "Digital SRAM-CIM macro (16 nm, 128 kB, Jiang 2023): one core of 128 x 1024, 8-bit weights",
+  "geometry": {
+    "name": "dimc_macro_128x1024",
+    "cores": [
+      {
+        "max_axons": 128,
+        "max_neurons": 1024,
+        "count": 1,
+        "has_bias": false
+      }
+    ],
+    "weight_bits": 8,
+    "provenance": "jiang2023a: \"It consists of 32*4 SRAM blocks (SR[i][j]) of 1kB each.\" (Section II 'Chip architecture', p.2) | jiang2023a: \"In each SR, there are 1kB 6T unmodified bit-cells, which are arranged into 64 rows containing 128 bits each.\" (Section II, p.2) | jiang2023a: \"The SRs are further combined into 16 SR groups: each column of 8 SRs makes up an SR group.\" (Section II, p.2) | jiang2023a: \"Each SR produces 16 8b weights (W) in every clock cycle. The input activation (IA) driver delivers 128 (4b) IA to all 16 SR groups, which are further divided equally into 8 parts for each SR in the SR group.\" (Section II, Fig. 3 description, p.2) | jiang2023a: \"In total 16 32b outputs (SUM[31:0]) are computed each clock cycle for the macro.\" (Section II, Fig. 3 description, p.2) | jiang2023a: \"In case one when FX*FY*C >128 (Fig. 5.a), W needs to be stored in multiple addresses of an SR group. It takes at least 2 steps to compute the output.\" (Section III.A, p.3). Derived logical core: each of the 16 SR groups computes one 128-input dot product per cycle over one address (one 128-bit row in each of its 8 SRs, 16 weights each) and holds 64 addresses, so the macro holds 16 x 64 = 1024 weight vectors of 128 8-bit weights: one core of 128 axons x 1024 neurons, 1024 x 128 x 1 B = 128 kB, the quoted capacity; a fan-in above 128 takes several addresses with a full-precision partial sum (p.3).",
+    "claim_class": "quarantined"
+  },
+  "keys": {
+    "core_semantics": "mvm",
+    "platform_physics_profile": "sram_cim_macro",
+    "allow_coalescing": true,
+    "allow_neuron_splitting": false
+  },
+  "faithfulness": {
+    "class": "approximate",
+    "named": [
+      "array write energy derived from the read energy"
+    ],
+    "note": "The macro accumulates exactly (8-bit weights, 4-bit inputs, 32-bit partial sums, jiang2023a p.2-3), the toolchain's integer value law; its weight write energy is not stated and the sram_cim_macro profile brackets it from the measured read energy (derived). Macro-level constants only: the profile names the backing store as an external component, so no absolute number is read until a run declares it (a backing_store block through merge_override_blocks)."
+  },
+  "notes": "Population 1 is a single macro, the degenerate case the curated table quarantines (as ODIN's single core); a study that tiles macros declares the count through target_overrides with a note. allow_coalescing is true: \"In case one when FX*FY*C >128 (Fig. 5.a), W needs to be stored in multiple addresses of an SR group. It takes at least 2 steps to compute the output.\" and \"Unlike AIMC, our macro provides a full precision partial sum, causing no precision lost from truncation of that partial sum.\" (jiang2023a, Section III.A, p.3), with \"The results are buffered locally when partial sums are needed.\" (Section II, p.2). allow_neuron_splitting is false: every output of the macro reads the same 128 inputs (p.2), and the source states no input sharing across macros. The inputs are 4-bit (p.2); the bundle binds no activation_bits, so a run that holds the macro's input width declares activation_bits 4."
+}

@@ -56,6 +56,42 @@ def natural(value: Any, what: str, *, error: type = PeriodCensusError) -> int:
     return operator.index(value)
 
 
+def rotation_rewrites(writing_passes: Any) -> bool:
+    """The executed rotation, the one period rule of every plane: each execution stage loads its cores from its
+    core type's first core, so two or more passes that write displace each other and rewrite their unkept cores
+    every period, while a lone writing pass is never displaced and stays loaded across periods."""
+    return natural(writing_passes, "writing passes") >= 2
+
+
+def boundary_crossings(crossings: Iterable[Tuple[int, int, int]],
+                       replayed: Iterable[Tuple[int, int]] = ()) -> Tuple[Tuple[int, int, int], ...]:
+    """The crossing rule of every plane (record, candidate and plan): per boundary with a carried wire,
+    ``(boundary, width read out, width re-injected)`` from ``(width, producing pass, last consuming pass)``. A wire is
+    read out after its producing pass and re-injected before its last consuming pass, one crossing per direction
+    however many boundaries it lives across (the dense census); boundary ``p`` follows pass ``p``. [U1 W10]
+    ``replayed``: ``(width, reading pass)`` per delayed slice beyond one per producer and pass (the builder replays a
+    carried producer once per delivery delay), one more re-injection before its reading pass; none on a plan."""
+    out: Dict[int, int] = {}
+    inbound: Dict[int, int] = {}
+    for width, produced, consumed in crossings:
+        out[int(produced)] = out.get(int(produced), 0) + int(width)
+        inbound[int(consumed) - 1] = inbound.get(int(consumed) - 1, 0) + int(width)
+    for width, reader in replayed:
+        inbound[int(reader) - 1] = inbound.get(int(reader) - 1, 0) + int(width)
+    return tuple((p, out.get(p, 0), inbound.get(p, 0)) for p in sorted(set(out) | set(inbound)))
+
+
+def phase_crossings(unit_spans: Iterable[Tuple[int, int, int]], phases: Iterable[Tuple[int, int]]
+                    ) -> Tuple[Tuple[int, int], ...]:
+    """[W03] Per boundary of a plan's passes, (elements read out, elements re-injected) by ``boundary_crossings``:
+    the carried spans on units ``(width, producing unit, last consuming unit)`` mapped onto the passes' unit ranges."""
+    bounds = list(phases)
+    phase_of = {u: q for q, (a, b) in enumerate(bounds) for u in range(int(a), int(b))}
+    by = {p: (o, i) for p, o, i in boundary_crossings(
+        (w, phase_of[int(p)], phase_of[int(c)]) for w, p, c in unit_spans if phase_of[int(p)] != phase_of[int(c)])}
+    return tuple(by.get(q, (0, 0)) for q in range(max(0, len(bounds) - 1)))
+
+
 def settle_naturals(instance: Any, names: Iterable[str], *, error: type = PeriodCensusError) -> None:
     """Hold every named field of a frozen dataclass as ``natural`` of its value (None refuses)."""
     owner = type(instance).__name__

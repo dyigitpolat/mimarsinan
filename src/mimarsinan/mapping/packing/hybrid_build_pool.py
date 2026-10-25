@@ -20,6 +20,8 @@ from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_build_scheduled import _build_scheduled
+from mimarsinan.mapping.packing.hybrid_build_fit import fit_program
+from mimarsinan.mapping.packing.schedule_residency_plan import mark_fit_residency
 from mimarsinan.mapping.packing.pass_timing import project_passes
 from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
 from mimarsinan.mapping.packing.segment_specs import (  # moved there: re-exported for the scheduler and tests
@@ -68,6 +70,12 @@ def build_hybrid_hard_core_mapping(
     all_reindex_maps: dict[int, dict[int, int]] = {}
     residency = None
 
+    def single_pool(stages_out: list, maps_out: dict) -> None:
+        _build_single_pool(ir_graph=ir_graph, cores_config=cores_config, consumed_by=consumed_by, stages=stages_out,
+                           all_reindex_maps=maps_out, allow_neuron_splitting=strategy.allow_neuron_splitting,
+                           allow_coalescing=strategy.allow_coalescing, per_hop_neural_segments=per_hop_neural_segments,
+                           retimed_level_stages=retimed_level_stages)
+
     if strategy.allow_scheduling:
         residency = _build_scheduled(
             ir_graph=ir_graph,
@@ -83,18 +91,13 @@ def build_hybrid_hard_core_mapping(
             residency_plan=strategy.capabilities.residency_plan,
             position_multiplexing=strategy.capabilities.position_multiplexing,
         )
+        # [fix_b, fix_c] the fit rule (U1 and every declared plan but stateless): the unscheduled pack holds unwritten
+        specs = _segment_specs(list(ir_graph.get_neural_cores()), ir_graph=ir_graph)[0]
+        all_reindex_maps, residency = fit_program(
+            single_pool, stages, all_reindex_maps, residency, residency_plan=strategy.capabilities.residency_plan,
+            cells=sum(int(s.input_count) * int(s.output_count) for s in specs), cores_config=cores_config)
     else:
-        _build_single_pool(
-            ir_graph=ir_graph,
-            cores_config=cores_config,
-            consumed_by=consumed_by,
-            stages=stages,
-            all_reindex_maps=all_reindex_maps,
-            allow_neuron_splitting=strategy.allow_neuron_splitting,
-            allow_coalescing=strategy.allow_coalescing,
-            per_hop_neural_segments=per_hop_neural_segments,
-            retimed_level_stages=retimed_level_stages,
-        )
+        single_pool(stages, all_reindex_maps)
 
     if not stages:
         raise ValueError("Cannot build HybridHardCoreMapping: IRGraph has no stages.")
@@ -226,3 +229,5 @@ def _build_single_pool(
             stages.append(HybridStage(kind="compute", name=node.name, compute_op=op_copy))
     if not identity and not retimed_level_stages:
         project_passes(stages[first_stage:])
+    if not identity:  # [W03] one shared pool holds every segment side by side: the planner pins the fit
+        mark_fit_residency([s for s in stages[first_stage:] if s.kind == "neural"], cores_config)

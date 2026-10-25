@@ -1,7 +1,9 @@
 """Acceptance 4: on CIFAR ResNet-18 w1 built here, the toolchain's residency units equal an independent count from
 the module shapes and the packed HCM core count, and the live sets equal the widths recomputed from FX shapes; under
 the MVM conversion every inter-layer edge crosses a host op, so those live sets are all zero, and the FX witness is
-repeated on the LIF deep CNN of t0_03, whose cuts inside a segment carry non-zero widths.
+repeated on the LIF deep CNN of t0_03, whose cuts inside a segment carry non-zero widths. [W03] Units are tile groups,
+so the counts and FX widths are compared per layer: a layer's tiles summed over its tile groups, its live set at its
+last tile group's cut.
 
 Every conv output position is its own bank-backed softcore (``conv_helpers.map_shared_weight_conv``), so a layer's
 unit is ``positions x ceil(fan_in / axons) x ceil(fan_out / neurons)`` tiles; the geometry (4609 axons, 64 neurons)
@@ -68,6 +70,20 @@ def _fx_live(model: nn.Module, unit_modules: List[str], input_shape=R.INPUT_SHAP
     return live
 
 
+def _layers(units):
+    """[W03] The units folded to their layers (a layer's tile groups are consecutive in program order): per layer its
+    first unit, its tiles, and the live set at the layer's last cut (the layer-granular cut the FX widths count)."""
+    first, tiles, live = [], [], []
+    for u, layer in enumerate(units.layers):
+        if u == 0 or layer != units.layers[u - 1] or units.segments[u] != units.segments[u - 1]:
+            first.append(u)
+            tiles.append(0)
+            live.append(0)
+        tiles[-1] += units.tiles[u]
+        live[-1] = units.live[u]
+    return first, tiles, live
+
+
 @pytest.mark.slow
 @pytest.mark.timeout(900)
 def test_units_and_live_sets_of_resnet18_w1():
@@ -79,7 +95,8 @@ def test_units_and_live_sets_of_resnet18_w1():
     units = residency_units(specs, cut_nodes_from_census(specs, census_of_walk(mapping)),
                             [LayoutHardCoreType(AXONS, NEURONS, 1)], segments=[s.segment_id or 0 for s in specs],
                             allow_splitting=True)
-    names = [_unit_name(specs[m[0]].name) for m in units.members]
+    first, layer_tiles, layer_live = _layers(units)
+    names = [_unit_name(specs[units.members[u][0]].name) for u in first]
     layers = {name.replace(".", "_"): (module, hw) for name, module, hw in R.conv_layers(model)}
     assert sorted(names) == sorted(layers)
     independent = []
@@ -91,7 +108,7 @@ def test_units_and_live_sets_of_resnet18_w1():
         else:
             fan_in, fan_out = module.in_features + 1, module.out_features
         independent.append(h * w * math.ceil(fan_in / AXONS) * math.ceil(fan_out / NEURONS))
-    assert list(units.tiles) == independent
+    assert layer_tiles == independent
 
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir, cores_config=[{"max_axons": AXONS, "max_neurons": NEURONS, "count": sum(units.tiles)}],
@@ -105,10 +122,10 @@ def test_units_and_live_sets_of_resnet18_w1():
             assert len(placements) == 1                                  # one-to-one packing
             layer = layer_of[int(placements[0]["ir_node_id"])]
             cores_per_layer[layer] = cores_per_layer.get(layer, 0) + 1
-    assert [cores_per_layer[layer] for layer in units.layers] == list(units.tiles)
+    assert [cores_per_layer[units.layers[u]] for u in first] == layer_tiles
 
     module_names = [next(n for n, m in model.named_modules() if m is layers[name][0]) for name in names]
-    assert list(units.live) == _fx_live(model, module_names)
+    assert layer_live == _fx_live(model, module_names)
 
 
 def test_live_sets_of_the_lif_deep_cnn_of_t0_03_equal_the_fx_widths():
@@ -123,8 +140,10 @@ def test_live_sets_of_the_lif_deep_cnn_of_t0_03_equal_the_fx_widths():
                             allow_coalescing=bool(vehicle.config.get("allow_coalescing", False)),
                             allow_splitting=bool(vehicle.config.get("allow_neuron_splitting", False)))
     by_name = {name.replace(".", "_"): name for name, _ in vehicle.model.named_modules()}
-    module_names = [by_name[_unit_name(specs[m[0]].name)] for m in units.members]
+    first, _tiles, layer_live = _layers(units)
+    module_names = [by_name[_unit_name(specs[units.members[u][0]].name)] for u in first]
+    assert len(units.members) > len(first)                               # tile units: layers split [W03]
     # LIF conversion: BatchNorm and the activation fold into the unit; pooling runs on the host
     want = _fx_live(vehicle.model, module_names, input_shape=vehicle.input_shape, through=(nn.BatchNorm2d, nn.ReLU))
-    assert list(units.live) == want
+    assert layer_live == want
     assert sum(1 for w in want if w > 0) >= 3                            # the witness is not all zeros

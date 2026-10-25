@@ -298,29 +298,48 @@ class TestScheduleReading:
     segments rewrites its cores on every inference even when C >= F.
     """
 
-    def test_a_segment_multiplexed_program_at_c_equal_f_reads_and_prices_like_c_below_f(self):
+    def test_at_c_equal_f_the_planner_pins_the_program_and_one_core_less_u1_multiplexes_it(self):
+        """[W03] At C = F the three segments' passes fit the cores side by side, so the planner pins every core (the
+        floor at r = 0) and the program is written once; one core less, U1's three passes each load from the first
+        core and rewrite every period (the executed rotation, finding 4, option (a))."""
         at_f, below = _row(cores=F_HAND, k=1), _row(cores=F_HAND - 1, k=1)
         assert at_f["x_packed"] == 1.0 and below["x_packed"] > 1.0
         assert at_f["capacity_reading"] == law.FITS_BY_CAPACITY
         assert below["capacity_reading"] != law.FITS_BY_CAPACITY
         for row in (at_f, below):
             assert (row["passes"], row["reprogram_passes"], row["segments"]) == (SEGMENTS, SEGMENTS, SEGMENTS)
-            assert row["schedule_reading"] == law.schedule_reading(SEGMENTS, SEGMENTS)
-            assert row["schedule_reading"].startswith("U1: multiplexed by 3")
-            assert row["k_star"]["max_writes_per_cell_per_inference"] == float(SEGMENTS)
+        assert at_f["schedule_reading"] == law.schedule_reading(0, SEGMENTS)
+        assert (at_f["k_star"]["max_writes_per_cell_per_inference"], at_f["reprogrammed_bytes_per_period"]) == (0.0, 0)
+        assert below["schedule_reading"] == law.schedule_reading(SEGMENTS, SEGMENTS)
+        assert below["schedule_reading"].startswith("U1: multiplexed by 3")
+        assert below["k_star"]["max_writes_per_cell_per_inference"] == float(SEGMENTS)
         for axis in ("energy", "time"):
-            assert at_f[axis]["regime"]["reading"] not in (law.RESIDENT, "fits (no multiplexing)")
             m_f, m_b = at_f[axis]["overhead"], below[axis]["overhead"]
-            assert m_f is not None and m_b is not None
-            assert m_f["toolchain_priced"] == pytest.approx(m_b["toolchain_priced"], rel=1e-12)
-            # At x <= 1 the residency floor writes nothing (phi = 0): the floor form is 1 + kappa.
+            assert at_f[axis]["regime"]["reading"] == law.RESIDENT
+            assert below[axis]["regime"]["reading"] != law.RESIDENT and m_b is not None
+            # The pinned program writes nothing per period: M is the compute plus the boundary, the floor form 1 + kappa.
+            assert m_f["toolchain_priced"] == pytest.approx([1.0 + ka for ka in m_f["kappa"]], rel=1e-12)
             assert m_f["phi_floor"] == 0.0
             assert m_f["closed_form_floor"] == pytest.approx([1.0 + ka for ka in m_f["kappa"]], rel=1e-15)
-            print(f"[ladder] C = F = {F_HAND}, {axis}: M toolchain {m_f['toolchain_priced']}, "
-                  f"floor {m_f['closed_form_floor']}, stateless {m_f['closed_form_stateless']}")
+            assert all(b > f for b, f in zip(m_b["toolchain_priced"], m_f["toolchain_priced"]))
+            print(f"[ladder] C = F - 1 = {F_HAND - 1}, {axis}: M toolchain {m_b['toolchain_priced']}, "
+                  f"floor {m_b['closed_form_floor']}, stateless {m_b['closed_form_stateless']}")
+
+    def test_an_unscheduled_program_of_several_segments_is_pinned_whole(self):
+        """[W03] One planned pass of three segments runs three execution stages; the pass fits the declared cores,
+        so the planner pins all of them and no stage displaces another (before W03 the rotation rewrote them)."""
+        network = _network(4)
+        platform = {**_platform(64), "allow_scheduling": False}
+        census = ladder.shape_census(network, platform)
+        priced = ladder.price_program(network, census, platform, _facts)
+        row = ladder.ladder_row(network, census, priced, {**platform, "inference_batch_K": 1}, READING)
+        assert (row["passes"], row["reprogram_passes"], row["segments"]) == (1, 1, SEGMENTS)
+        assert row["schedule_reading"] == law.schedule_reading(0, SEGMENTS)
+        assert (row["k_star"]["max_writes_per_cell_per_inference"], row["reprogrammed_bytes_per_period"]) == (0.0, 0)
 
     def test_a_resident_program_writes_no_cell_per_inference(self):
-        network = _network(4)
+        """One conv under the value-domain contract is one neural segment: one pass, never displaced."""
+        network = _network(4, _OneConv, "one_conv")
         platform = {**_platform(64), "allow_scheduling": False}
         census = ladder.shape_census(network, platform)
         priced = ladder.price_program(network, census, platform, _facts)
@@ -348,7 +367,7 @@ class TestScheduleReading:
         priced = ladder.price_program(network, census, platform, _facts, tiles=f)
         row = ladder.ladder_row(network, census, priced, {**platform, "inference_batch_K": 16}, READING)
         assert (row["x_packed"], row["passes"], row["reprogram_passes"]) == (4.0, 4, 1)
-        assert row["schedule_reading"] == law.schedule_reading(1, 1) and row["schedule_reading"].startswith("resident")
+        assert row["schedule_reading"] == law.schedule_reading(0, 1) and row["schedule_reading"].startswith("resident")
         assert row["k_star"]["max_writes_per_cell_per_inference"] == 0.0
         for axis in ("energy", "time"):
             col = row[axis]
@@ -364,6 +383,91 @@ class TestScheduleReading:
             assert all(d < 0.0 for d in m["rel_diff_floor"])
             print(f"[ladder] single segment at C = F/4, {axis}: M toolchain {m['toolchain_priced']} "
                   f"(1 + kappa), floor at phi 1 {m['closed_form_floor']} ({m['rel_diff_floor']})")
+
+
+def _census_quantities(cores: int):
+    """G3's candidate-plane quantities of the ladder's program at K = 1, built beside the ladder (the one source)."""
+    from mimarsinan.deployment_record.objectives.context import candidate_context_from_platform
+    from mimarsinan.deployment_record.quantities.from_candidate import from_candidate
+    from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
+    from mimarsinan.mapping.noc import collect_noc_fragments
+    from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
+
+    network, platform = _network(4), _platform(cores)
+    census = ladder.shape_census(network, platform)
+    noc = collect_noc_fragments(softcores=census.softcores, core_types=core_types_from_declaration(platform["cores"]),
+                                census=census.wire_census,
+                                **ChipCapabilities.from_platform_constraints(platform).layout_kwargs())
+    noc, facts = _facts(census.softcores, noc, platform)
+    context = candidate_context_from_platform({**platform, "inference_batch_K": 1}, passes=facts.passes,
+                                              carry=facts.carry, programming=facts.programming,
+                                              latency_steps=facts.latency_steps)
+    return from_candidate(layout=None, chip_param_capacity=None, total_params=None, host_side_segment_count=None,
+                          context=context)
+
+
+class TestOneWriteSource:
+    """Interaction finding 4, option (a): the ladder reads G3's period census quantities (the most-written cell's
+    writes per inference at K = 1 and the period rewrite bytes) as its one source, never a rule of its own."""
+
+    @pytest.mark.parametrize("cores, want", [(F_HAND, (0.0, 0)), (F_HAND - 1, (3.0, 1702))])
+    def test_the_row_equals_the_census_quantities_at_c_equal_f_and_below(self, cores, want):
+        """At C = F the planner pins the fit [W03]; one core less, U1's three passes rewrite every period."""
+        row, q = _row(cores=cores, k=16), _census_quantities(cores)
+        assert row["k_star"]["max_writes_per_cell_per_inference"] == q.get("max_writes_per_cell_per_inference").value
+        assert row["reprogrammed_bytes_per_period"] == q.get("period_rewrite_bytes").value
+        assert row["k_star"]["max_writes_source"].startswith("the period census")
+        assert (row["k_star"]["max_writes_per_cell_per_inference"], row["reprogrammed_bytes_per_period"]) == want
+
+    def test_a_resident_program_rewrites_no_byte_per_period(self):
+        platform = {**_platform(64), "allow_scheduling": False}
+        network = _network(4, _OneConv, "one_conv")
+        census = ladder.shape_census(network, platform)
+        priced = ladder.price_program(network, census, platform, _facts)
+        row = ladder.ladder_row(network, census, priced, {**platform, "inference_batch_K": 1}, READING)
+        assert (row["reprogrammed_bytes_per_period"], row["k_star"]["max_writes_per_cell_per_inference"]) == (0, 0.0)
+
+    def test_the_law_module_holds_no_write_rule(self):
+        assert not hasattr(law, "WRITES_RULE") and not hasattr(law, "writes_per_inference")
+
+
+class TestTheLadderReadsTheResidencyPlanner:
+    """[W03] The exploration's pricer prices the program the builder deploys under a declared ``residency_plan``: the
+    planner's composition on the shape-only plane (the layout walk's wire census and program graph), its pins and its
+    period census; the floor plans below the widest layer (conv1's 16 tiles) where a layer-granular plan had none."""
+
+    @staticmethod
+    def _floor(cores: int):
+        from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
+        from mimarsinan.mapping.support.schedule.residency_composition import (
+            ShapeOnlyResidency, compose_shape_only_program)
+
+        network, platform = _network(4), _platform(cores)
+        census = ladder.shape_census(network, platform)
+        comp = compose_shape_only_program(
+            census.softcores, core_types_from_declaration(platform["cores"]),
+            ShapeOnlyResidency({"step": "floor"}, census.wire_census, census.program),
+            allow_coalescing=True, allow_splitting=False, max_schedule_passes=64)
+        return comp
+
+    @pytest.mark.parametrize("cores", [F_HAND, F_HAND - 1, 8])
+    def test_the_row_prices_the_floors_period_census(self, cores):
+        from mimarsinan.deployment_record.build.payload_sizes import params_bytes
+
+        comp = self._floor(cores)
+        platform = {**_platform(cores), "residency_plan": {"step": "floor"}}
+        row = _row(cores=cores, k=16, platform=platform)
+        assert "refusal" not in row and row["passes"] == comp.step[2]
+        assert row["reprogrammed_bytes_per_period"] == comp.facts.programmed_bytes(lambda c: params_bytes(c, BITS))
+        u1 = _row(cores=cores, k=16)["reprogrammed_bytes_per_period"]
+        if cores == F_HAND:
+            assert row["reprogrammed_bytes_per_period"] == 0 == u1 and comp.step[0] == 0
+        else:
+            assert row["reprogrammed_bytes_per_period"] > 0 and u1 > 0
+        # The floor programs one copy of a bank-backed conv per output position (its tile groups); U1's bank-clustered
+        # passes reuse one copy, so at C = 8 U1 writes fewer bytes (one weight copy across positions is W02's item).
+        print(f"[W03 ladder] C = {cores}: floor r* {comp.step[0]}, Q {comp.step[2]}, "
+              f"{row['reprogrammed_bytes_per_period']} B per period; U1 {u1} B")
 
 
 class TestKStar:

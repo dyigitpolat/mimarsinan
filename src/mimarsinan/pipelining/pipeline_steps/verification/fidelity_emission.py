@@ -26,6 +26,7 @@ from mimarsinan.deployment_record.platform_physics.resolve import (
     resolve_platform_physics,
 )
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
+    deployed_conversion_of,
     firing_semantics_kwargs,
     make_platform_resolver,
 )
@@ -120,6 +121,7 @@ def _fidelity_problem(
         # armed differently prices a program the run never executed (H0: a
         # re-timed run's twin priced the fused wall).
         **firing_semantics_kwargs(plan, config),
+        conversion=deployed_conversion_of(plan, config),
     )
 
 

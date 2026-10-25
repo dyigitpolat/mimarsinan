@@ -7,14 +7,37 @@ override-ready ``platform_physics_overrides`` block with ``evidence_kind:
 measured`` and the machine's identity in the note, never a silent default.
 
 ``p_host`` is measured only where RAPL exposes package energy; otherwise it is
-NOT invented — the block simply omits it and says so.
+NOT invented: the block omits it and says so, or carries the operator's
+DECLARED row (a band with its own evidence) beside the measured ones. A row both
+measured and declared refuses by name. ``host_block`` reads the block of a
+calibration artifact as the named ``host`` block of ``merge_override_blocks``
+(CL0): every host row present and valid, nothing but host rows.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import platform
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
+
+from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.deployment_record.platform_physics.constants import keys_in_group
+from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
+from mimarsinan.deployment_record.platform_physics.vocabulary import HOST
+
+#: The rows the host terms multiply: rate (host MACs), dispatch (host ops), power (host time).
+HOST_BLOCK_KEYS: Tuple[str, ...] = ("host_macs_per_s", "t_host_op_overhead", "p_host")
+
+
+class HostRowConflictError(ToolchainRefusal, ValueError):
+    """A host row the calibration measured is also declared: two values for one host."""
+
+
+class HostBlockIncompleteError(ToolchainRefusal, ValueError):
+    """A host block lacks a row the host terms multiply, or carries a row that is not the host's."""
+
 
 #: ComputeOp-shaped fp32 matmuls: (batch, in_features, out_features) — the
 #: encoder/softmax-scale work a host actually runs in this framework's flows.
@@ -30,22 +53,17 @@ def macs_of(shape: Tuple[int, int, int]) -> int:
     return int(batch) * int(in_features) * int(out_features)
 
 
-def measure_host_macs_per_s(
+def measure_host_mac_rates(
     *,
     shapes: Tuple[Tuple[int, int, int], ...] = CALIBRATION_SHAPES,
     repeats: int = 200,
     warmup: int = 20,
-) -> float:
-    """Sustained fp32 MACs/s over deployment-shaped ops, best-of-shapes.
-
-    Best (not mean) of the per-shape sustained rates: the host runs each
-    ComputeOp as a single matmul, so the honest rate is what the BLAS path
-    sustains at that shape — averaging in a cold shape would understate it.
-    """
+) -> Dict[Tuple[int, int, int], float]:
+    """Sustained fp32 MACs/s per deployment-shaped op."""
     import torch
 
     torch.manual_seed(0)
-    best = 0.0
+    rates: Dict[Tuple[int, int, int], float] = {}
     for shape in shapes:
         batch, in_features, out_features = shape
         x = torch.randn(batch, in_features)
@@ -56,8 +74,16 @@ def measure_host_macs_per_s(
         for _ in range(repeats):
             x @ w
         wall = time.perf_counter() - start
-        best = max(best, macs_of(shape) * repeats / wall)
-    return best
+        rates[shape] = macs_of(shape) * repeats / wall
+    return rates
+
+
+def measure_host_macs_per_s(**measure_kwargs: Any) -> float:
+    """Best (not mean) of the per-shape sustained rates: the host runs each
+    ComputeOp as a single matmul, so the honest rate is what the BLAS path
+    sustains at that shape — averaging in a cold shape would understate it.
+    """
+    return max(measure_host_mac_rates(**measure_kwargs).values())
 
 
 def measure_host_op_overhead_s(
@@ -133,16 +159,35 @@ def measure_p_host_w(*, seconds: float = 2.0) -> Optional[float]:
     return (after - before) / seconds
 
 
+def cpu_model() -> str:
+    """The processor's model name (Linux ``/proc/cpuinfo``), else what ``platform`` reports."""
+    try:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("model name"):
+                    return " ".join(line.split(":", 1)[1].split())
+    except OSError:
+        pass
+    return platform.processor() or "cpu"
+
+
 def machine_identity() -> str:
-    return f"{platform.node()} ({platform.machine()}, {platform.processor() or 'cpu'})"
+    return f"{platform.node()} ({platform.machine()}, {cpu_model()})"
+
+
+def _affinity() -> Tuple[int, ...]:
+    getter = getattr(os, "sched_getaffinity", None)
+    return tuple(sorted(getter(0))) if getter is not None else ()
 
 
 def calibration_overrides(
     *, macs_per_s: float, op_overhead_s: Tuple[float, float, float],
     p_host_w: Optional[float],
     identity: str,
+    declared: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """The ``platform_physics_overrides`` block a run config declares."""
+    """The ``platform_physics_overrides`` block a run config declares: the measured rows plus the
+    operator's ``declared`` rows (each a physics constant with its own evidence, copied verbatim)."""
     note = (
         f"Measured on the deployment host {identity} over ComputeOp-shaped "
         f"fp32 matmuls (best sustained shape). Re-run "
@@ -181,26 +226,69 @@ def calibration_overrides(
                 f"Whole-package: an upper bound on the deployment share."
             ),
         }
+    for key, declaration in (declared or {}).items():
+        if key in overrides:
+            raise HostRowConflictError(
+                f"host row {key!r} is both measured on {identity} and declared; declare it only "
+                "where the calibration cannot measure it")
+        overrides[key] = dict(declaration)
+    resolve_platform_physics(None, overrides)  # every row a valid constant, evidence included
     return overrides
 
 
-def run_calibration(**measure_kwargs: Any) -> Dict[str, Any]:
+def run_calibration(
+    *, declared: Optional[Mapping[str, Mapping[str, Any]]] = None, **measure_kwargs: Any,
+) -> Dict[str, Any]:
     """Measure and assemble the full calibration artifact."""
-    macs_per_s = measure_host_macs_per_s(**measure_kwargs)
+    import torch
+
+    rates = measure_host_mac_rates(**measure_kwargs)
+    macs_per_s = max(rates.values())
     op_overhead_s = measure_host_op_overhead_s()
     p_host = measure_p_host_w()
-    identity = machine_identity()
+    threads, affinity = torch.get_num_threads(), _affinity()
+    machine = machine_identity()
+    identity = f"{machine}, {threads} torch thread(s) on CPUs {list(affinity)}"
+    declared_power = (declared or {}).get("p_host")
+    if p_host is not None:
+        basis = "RAPL package counter"
+    elif declared_power is not None:
+        basis = (f"declared: {declared_power.get('evidence_kind')}: {declared_power.get('citation', '')} "
+                 "(no readable RAPL counter)")
+    else:
+        basis = "unavailable: no readable RAPL counter — p_host stays declared"
     return {
-        "machine": identity,
+        "machine": machine,
+        "threads": threads,
+        "cpu_affinity": list(affinity),
+        "torch_version": str(torch.__version__),
         "host_macs_per_s": macs_per_s,
+        "host_macs_per_s_by_shape": {"x".join(map(str, shape)): rate for shape, rate in rates.items()},
         "t_host_op_overhead_s": list(op_overhead_s),
         "p_host_w": p_host,
-        "p_host_basis": (
-            "RAPL package counter" if p_host is not None
-            else "unavailable: no readable RAPL counter — p_host stays declared"
-        ),
+        "p_host_basis": basis,
         "platform_physics_overrides": calibration_overrides(
             macs_per_s=macs_per_s, op_overhead_s=op_overhead_s,
-            p_host_w=p_host, identity=identity,
+            p_host_w=p_host, identity=identity, declared=declared,
         ),
     }
+
+
+def host_block(artifact: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """The calibration artifact's override block as the named ``host`` block: every row
+    ``HOST_BLOCK_KEYS`` names, nothing outside the host group, each a valid constant."""
+    block = {key: dict(row) for key, row in artifact["platform_physics_overrides"].items()}
+    missing = [key for key in HOST_BLOCK_KEYS if key not in block]
+    foreign = sorted(set(block) - set(keys_in_group(HOST)))
+    if missing or foreign:
+        raise HostBlockIncompleteError(
+            f"a host block needs {list(HOST_BLOCK_KEYS)} and only host rows; missing {missing}, "
+            f"not host rows {foreign}")
+    resolve_platform_physics(None, block)
+    return block
+
+
+def load_host_block(path: str) -> Dict[str, Dict[str, Any]]:
+    """``host_block`` of the calibration artifact at ``path``."""
+    with open(path, "r", encoding="utf-8") as fh:
+        return host_block(json.load(fh))

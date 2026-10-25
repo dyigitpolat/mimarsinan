@@ -17,7 +17,7 @@ import torch
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.capability.census import ladder_census
 from mimarsinan.mapping.capability.ladder import LADDER, ON_CHIP_WRITE_BACK
-from mimarsinan.mapping.capability.mac_split import ESTIMATOR_BELOW_CORE_FLOOR, mac_statement
+from mimarsinan.mapping.capability.mac_split import mac_statement
 from mimarsinan.mapping.capability.member import (
     AGREEMENT,
     REFUSED,
@@ -44,15 +44,16 @@ CONVERTING = (
     "resnet18_cifar_w1/4", "mobilenetv2_small_relu6_dense_twin", "efficientnet_mbconv_se_dense_twin",
     "vit_lite_7_4_softmax_ln_gelu", "unet_level_convtranspose",
 )
-#: Refused on the integrated tree; asserted generically (a ToolchainRefusal subclass), re-pinned at CL4 (§13 rule 6).
-#: Empty since integration: every scout member refused on the Wave 0 round 4 base converts (below).
-REFUSED_MEMBERS = ()
+#: Refused on the integrated tree; asserted generically (a ToolchainRefusal subclass), re-pinned at CL4 (§13 rule 6):
+#: the scout's unrolled Elman RNN, whose step Linears are reached from every unrolled call site (call-site weight
+#: sharing, refused by name until N7). Never empty: an empty set would skip its test silently.
+REFUSED_MEMBERS = ("elman_unrolled_relu",)
 #: Refused on the Wave 0 round 4 base and converting on the integrated tree with the stage-2 identity value
 #: program, re-pinned at integration (§13 rule 6): the ReLU-attention ViT-Lite (refused by a lowering refusal,
 #: NonTensorHostValueError) converts on Wave 0 frozen at round 16t; the two grouped members convert with G1's
 #: grouped convolution on the host. Their oracle rows and host MAC shares join at CL4.
 CONVERTING_AT_INTEGRATION = ("vit_lite_7_4_bn_relu_reluattn", "mobilenetv2_small_relu6", "efficientnet_mbconv_se")
-#: Rows whose IR holds a multi-input ComputeOp: both MAC counters printed, equality asserted elsewhere (CL4: all).
+#: Rows whose IR holds a multi-input ComputeOp; since G1's input_shapes rule both MAC counters agree on them too (CL4).
 MULTI_INPUT_ROWS = frozenset({
     "resnet18_cifar_w1/4", "mobilenetv2_small_relu6_dense_twin", "efficientnet_mbconv_se_dense_twin",
     "vit_lite_7_4_softmax_ln_gelu",
@@ -103,6 +104,14 @@ def test_the_pinned_rows_are_the_oracle_output():
     assert set(CONVERTING) | set(REFUSED_MEMBERS) | set(CONVERTING_AT_INTEGRATION) <= set(doc["members"])
 
 
+def test_the_refused_set_is_fed_and_partitions_the_copied_members_with_the_converting_ones():
+    """The refused-member test runs on at least one member, never a silent empty parametrization."""
+    assert REFUSED_MEMBERS, "an empty refused set would skip its test"
+    copied = [name for name, _, _ in MEMBERS]
+    groups = (set(CONVERTING), set(CONVERTING_AT_INTEGRATION), set(REFUSED_MEMBERS))
+    assert sorted(set().union(*groups)) == sorted(copied) and sum(map(len, groups)) == len(copied)
+
+
 def test_every_reviewed_delta_names_a_cause():
     doc = _deltas()
     for member, levels in doc["members"].items():
@@ -147,16 +156,16 @@ def test_rows_equal_the_pinned_rows_up_to_the_reviewed_deltas(key):
 
 
 @pytest.mark.parametrize("key", CONVERTING)
-def test_the_mac_counters_agree_on_rows_without_a_multi_input_op(key):
+def test_the_mac_counters_agree_on_every_row_multi_input_included(key):
+    """CL4: ``count_host_ops`` equals the forward estimator's host MACs on every census row, the rows whose IR holds
+    a multi-input ComputeOp included (G1's input_shapes rule), so no row withholds its host MACs for the reason."""
     converted = _converted(key)
     counters = converted.mac_counters
     assert counters.ir_host_macs == count_host_ops(converted.ir)
     assert counters.has_multi_input_op == (key in MULTI_INPUT_ROWS)
-    if not counters.has_multi_input_op:
-        assert counters.agree and counters.reason is None
-    else:
-        assert counters.reason == (
-            "multi-input op counted by the forward estimator only until G1's input_shapes rule")
+    assert counters.agree and counters.host_withheld is None
+    for row in ladder_census(converted.ir, value_bits=BITS):
+        assert "host_macs" not in mac_statement(row, counters).withheld or row.uncounted_host_products, row.level
 
 
 @pytest.mark.parametrize("key", ("unet_level_convtranspose", *CONVERTING_AT_INTEGRATION))
@@ -195,18 +204,46 @@ def test_the_field_map_never_states_on_chip_macs_below_the_cores_mac_floor(key):
             assert statement.withheld["onchip_macs"], "absent with a named reason"
 
 
-def test_resnet18_withholds_its_on_chip_macs_with_the_named_reason():
+def _analytic_weight_macs(model, shape) -> int:
+    """MACs of every Conv2d and Linear at its observed output, counted here independently of the MAC SSOT:
+    ``out_channels x H_out x W_out x in_channels / groups x kernel area`` per convolution, ``in x out`` per Linear
+    position."""
+    total = []
+
+    def hook(module, inputs, output):
+        if isinstance(module, torch.nn.Conv2d):
+            per_output = module.in_channels // module.groups * module.kernel_size[0] * module.kernel_size[1]
+            total.append(output[0].numel() * per_output)
+        elif isinstance(module, torch.nn.Linear):
+            total.append(output[0].numel() * module.in_features)
+
+    handles = [m.register_forward_hook(hook) for m in model.modules()
+               if isinstance(m, (torch.nn.Conv2d, torch.nn.Linear))]
+    try:
+        with torch.no_grad():
+            model(torch.zeros(1, *shape))
+    finally:
+        for handle in handles:
+            handle.remove()
+    return sum(total)
+
+
+def test_resnet18_states_its_on_chip_macs_at_the_analytic_count():
+    """Since integration the estimator counts every on-chip convolution at every output position: its total is the
+    analytic 35,058,176 conv and Linear MACs of CIFAR ResNet-18 w1/4 (100 classes), at or above the cores' MAC floor,
+    so the on-chip MACs are stated on every row, never withheld."""
+    model, shape = _model("resnet18_cifar_w1/4")
+    assert _analytic_weight_macs(model, shape) == 35_058_176
     converted = _converted("resnet18_cifar_w1/4")
     counters = converted.mac_counters
-    assert counters.estimator_total_macs == 710_576, "every on-chip convolution counted at one output position"
+    assert counters.estimator_total_macs == 35_058_176, "the analytic count, every output position included"
     for row in ladder_census(converted.ir, value_bits=BITS):
         quantities = level_quantities(row, counters=counters)
-        assert "onchip_macs" not in quantities, "absent, never below its own macs"
-        assert quantities["macs"] == row.cells_committed == 35_211_876
+        assert quantities["macs"] == row.cells_committed == 35_211_876, "one bias row per output beside the MACs"
         assert row.core_mac_floor == 30_446_784, "cells fed by a value: no bias row, no padding axon"
         statement = mac_statement(row, counters)
-        assert statement.total_withheld == ESTIMATOR_BELOW_CORE_FLOOR == "estimator_conv_one_position"
-        assert statement.withheld["onchip_macs"] == ESTIMATOR_BELOW_CORE_FLOOR
+        assert statement.total_withheld is None and statement.withheld == {}, (row.level, row.payload_write)
+        assert quantities["onchip_macs"] == 35_058_176 - quantities["host_macs"] >= row.core_mac_floor
         assert quantities["host_macs"] == statement.host_macs == 0, "both host counters agree on 0"
 
 
