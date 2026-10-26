@@ -19,7 +19,6 @@ from mimarsinan.certification.program_check.timing import IdentityTiming
 from mimarsinan.mapping.export.law_solver import solve_ir_laws
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
 from mimarsinan.mapping.packing.softcore.compaction import _ir_keep_indices
-from mimarsinan.mapping.support.activation_scales import scalar_node_scale
 
 #: The executors' staircase kernels take the integer charge (closure fix MJ4, sign-off P1 items 1 to 3:
 #: ``models/spiking/wire_semantics.lif_window_count`` and the synchronized TTFS lattice ladder), so H8-staircase
@@ -152,13 +151,21 @@ def check_solved_laws(ir_graph: Any, law_inputs: Optional[Mapping[str, Any]], re
         result.note += f"; {len(carried)} IR laws re-solved and equal"
 
 
+def _unit_gauge(scale: Any) -> bool:
+    """Every channel of a scalar or per-channel gauge at 1: a per-channel gauge is never read by its mean (exact
+    unit's verify minor V2: a per-channel currency 0.5, 1.5 has mean 1 and is off unit gauges on every channel)."""
+    if hasattr(scale, "detach"):
+        scale = scale.detach().cpu()
+    return bool(np.all(np.asarray(scale, dtype=np.float64) == 1.0))
+
+
 def check_seams(ir_graph: Any, identity: Any, result: ConditionResult) -> None:
     """Currency coherence at every spiking seam (calculus 11.2): a core that reads host-op outputs must re-encode them
     at its trained entry currency. Statically decided where every seam is at unit gauges (the core's entry currency
     ``input_activation_scale`` and the gauge each host source emits, the identity's ``node_activation_scales``, all
-    1): coherent by construction. A seam with another gauge depends on how its host op owns its scale domain (a
-    ``ScaleNormalizingWrapper`` emits at its own armed gauge, a heterogeneous join folds per-source scales into the
-    weights, calculus 16.6), which the program does not keep; the install certificate
+    1 on every channel): coherent by construction. A seam with another gauge depends on how its host op owns its
+    scale domain (a ``ScaleNormalizingWrapper`` emits at its own armed gauge, a heterogeneous join folds per-source
+    scales into the weights, calculus 16.6), which the program does not keep; the install certificate
     (``verify_boundary_currency_coherence``) decides it, so the condition stays with the sampled run there."""
     hosts = {int(n.id) for n in getattr(ir_graph, "nodes", ()) if isinstance(n, ComputeOp)}
     scales = getattr(identity, "node_activation_scales", None) or {}
@@ -170,9 +177,7 @@ def check_seams(ir_graph: Any, identity: Any, result: ConditionResult) -> None:
         if not deps:
             continue
         result.checked += 1
-        gauges = [scalar_node_scale(scales.get(d, 1.0)) for d in deps]
-        stamped = float(np.mean(np.asarray(node.input_activation_scale, dtype=np.float64)))
-        if stamped != 1.0 or any(g != 1.0 for g in gauges):
+        if not (_unit_gauge(node.input_activation_scale) and all(_unit_gauge(scales.get(d, 1.0)) for d in deps)):
             non_unit.append(int(node.id))
     if non_unit:
         result.status = NOT_STATIC

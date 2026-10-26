@@ -65,6 +65,47 @@ def test_a_seam_off_unit_gauges_leaves_proposition_2_to_the_sampled_run():
     assert report.proposition2.startswith("conditional") and "seam-currency" in report.proposition2
 
 
+def _seam_status(ir, identity) -> str:
+    from mimarsinan.certification.program_check import network as N
+    from mimarsinan.certification.program_check.report import ESTABLISHED, ConditionResult
+
+    result = ConditionResult("seam-currency", ESTABLISHED)
+    N.check_seams(ir, identity, result)
+    assert result.checked, result.note
+    return result.status
+
+
+def test_a_per_channel_entry_currency_whose_mean_is_one_is_off_unit_gauges():
+    """[exact V2] A seam reader's per-channel entry currency 0.5, 1.5, ... (mean 1) is off unit gauges on every
+    channel; the seam's coherence is then the install certificate's, never 'coherent by construction' by its mean."""
+    import numpy as np
+
+    ir = P.integer_ir(V.split_level_repr())
+    identity = P.identity_of(ir)
+    assert _seam_status(ir, identity) == "established"
+    bad = copy.deepcopy(ir)
+    node = _seam_consumer(bad)
+    width = int(np.asarray(node.core_matrix).shape[0])
+    node.input_activation_scale = torch.tensor([0.5, 1.5] * (width // 2) + [1.0] * (width % 2))
+    assert _seam_status(bad, identity) == NOT_STATIC
+
+
+def test_a_per_channel_host_gauge_whose_mean_is_one_is_off_unit_gauges():
+    """[exact V2] A host source emitting at the per-channel gauge 0.25, 1.75 (mean 1) is off unit gauges: the seam
+    reader's coherence stays with the install certificate and the sampled run."""
+    import numpy as np
+    from mimarsinan.mapping.ir import ComputeOp
+
+    ir = P.integer_ir(V.split_level_repr())
+    identity = copy.deepcopy(P.identity_of(ir))
+    scales = dict(getattr(identity, "node_activation_scales", None) or {})
+    for node in ir.nodes:
+        if isinstance(node, ComputeOp):
+            scales[int(node.id)] = np.array([0.25, 1.75])
+    identity.node_activation_scales = scales
+    assert _seam_status(ir, identity) == NOT_STATIC
+
+
 def test_a_folded_half_step_leaves_proposition_2_to_the_sampled_run():
     program, ir = P.streamed_multipass()
     plain = P.run(program, ir, P.decl("synchronized_ttfs"))

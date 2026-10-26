@@ -155,6 +155,32 @@ def test_a_bank_range_shifted_at_equal_extent():
     _failed(P.run(bad, ir, decl), "tiles", "bank_content")
 
 
+def test_a_bank_range_one_axon_short_of_the_used_extent_fails_by_name():
+    """[exact V4] A bank-path core whose record keeps ``axons`` at the used extent but names a bank axon range one
+    axon short: the block the record names is not the core's shape, which the check names (``bank_content``) instead
+    of stopping on the sweep's broadcast error."""
+    from mimarsinan.mapping.packing.executed_reads import bank_read
+
+    program, ir = P.resident_chain()
+    decl = P.decl("streamed_lif", core_types=CHAIN_CORES)
+    bad = copy.deepcopy(program)
+    hit = None
+    for stage in P.neural(bad):
+        hcm = stage.hard_core_mapping
+        for h, records in enumerate(hcm.soft_core_placements_per_hard_core):
+            read = bank_read(hcm, h)
+            if read is not None and read.axons[1] - read.axons[0] > 1:
+                records[0]["bank_axon_range"] = (read.axons[0], read.axons[1] - 1)
+                hit = (stage.name, h)
+                break
+        if hit:
+            break
+    assert hit is not None
+    report = P.run(bad, ir, decl)
+    _failed(report, "tiles", "bank_content")
+    assert any("has shape" in v.text() for v in report.results["tiles"].violations)
+
+
 def _encoded_host_node(program) -> int:
     """A host op whose output a pass encodes (the split-level vehicle's host_1, read by Y's pass)."""
     hosts = {int(s.compute_op.id) for s in program.stages if s.kind == "compute" and s.compute_op is not None}

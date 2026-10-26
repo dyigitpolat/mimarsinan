@@ -101,13 +101,16 @@ def bank_block(mapping, read: BankRead) -> Optional[np.ndarray]:
 def executed_weights(mapping, core_index: int) -> np.ndarray:
     """The ``(used axons, used neurons)`` weight block the HCM uploads for a core (``build_segment_tensors``): its
     bank block on the bank fast path, else its grid (``get_core_matrix``); a missing bank reads the grid, as the
-    TTFS executors read it (the HCM refuses it with a KeyError, the check names it)."""
+    TTFS executors read it (the HCM refuses it with a KeyError, the check names it), and so does a bank block whose
+    shape is not the used extent (a record's bank range shorter than its ``axons``: the check names it,
+    ``bank_content``, instead of stopping on a broadcast error; exact unit's verify minor V4)."""
     core = mapping.cores[core_index]
+    want = (used_axons(core, min_one=True), used_neurons(core, min_one=True))
     read = bank_read(mapping, core_index)
     block = None if read is None else bank_block(mapping, read)
-    if block is not None:
+    if block is not None and block.shape == want:
         return block
-    return np.asarray(core.get_core_matrix())[:used_axons(core, min_one=True), :used_neurons(core, min_one=True)]
+    return np.asarray(core.get_core_matrix())[:want[0], :want[1]]
 
 
 def consumer_counts(program) -> Dict[int, int]:
