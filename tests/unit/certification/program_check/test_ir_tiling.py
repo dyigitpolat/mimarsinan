@@ -348,8 +348,7 @@ def test_a_tile_whose_readout_law_the_tiling_changed():
     def mutate(ir):
         tile = _tile(ir)
         law = tile.readout_law
-        tile.readout_law = type(law)(**{**{f: getattr(law, f) for f in law.__dataclass_fields__},
-                                        "m0": np.asarray(law.m0) + 1})
+        tile.readout_law = replace(law, m0=np.asarray(law.m0) + 1)
     _failed(_value_check(mutate), "law")
 
 
@@ -359,8 +358,7 @@ def test_a_tile_whose_identity_adc_clamps_below_its_accumulator_bound():
     def mutate(ir):
         tile = _tile(ir)
         law = tile.readout_law
-        tile.readout_law = type(law)(**{**{f: getattr(law, f) for f in law.__dataclass_fields__},
-                                        "adc_levels": np.ones_like(np.asarray(law.adc_levels))})
+        tile.readout_law = replace(law, adc_levels=np.ones_like(np.asarray(law.adc_levels)))
     _failed(_value_check(mutate), "law")
 
 

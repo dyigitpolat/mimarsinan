@@ -51,7 +51,8 @@ CONDITION_MAP: Tuple[ConditionSpec, ...] = (
     ConditionSpec("R3", T1, "program", "a slice is carried exactly when the identity reads it inside its segment; no "
                   "identity segment boundary runs in-unit"),
     ConditionSpec("R4", T1, "program", "every slice a unit reads is of the kind the identity's unit reads it as, and "
-                  "under a phase-dithered encode rotates by the identity program's channels at unbounded geometry"),
+                  "under a phase-dithered encode every encoded channel rotates by the channel identity of the IR "
+                  "neuron at its program output (its channel at unbounded geometry, read off the IR)"),
     ConditionSpec("R5", T1, "program", "under windowed LIF every unit is one identity level unit, of its kind and "
                   "flag"),
     ConditionSpec("laws", T1, "program", "every core of an integer value program carries a law, its stamped columns "

@@ -213,3 +213,41 @@ def test_a_bank_backed_node_whose_mask_is_not_its_columns_has_no_channel():
     assert 0 not in PCH.node_phase_channels(ir)
     node.pre_pruning_col_mask = [False, True, False]
     assert np.array_equal(PCH.node_phase_channels(ir)[0], [0, 2])
+
+
+# ── the declaration keys the timing rules (E1 verify N1, integration2/e1) ───────────────────────────────────────
+
+def _tiling_alone(case, semantics: str, facts):
+    """``ir-tiling`` on the case's two IRs through ``check_ir_tiling`` with the given identity facts."""
+    from mimarsinan.certification.program_check import CheckDeclaration
+    from mimarsinan.certification.program_check.report import ConditionResult
+    from mimarsinan.certification.program_check.unbounded import check_ir_tiling
+
+    decl = CheckDeclaration(semantics=semantics, window=V.T, pass_transfer=V.TRANSFER[semantics],
+                            dithered_encode=False, core_types=tuple(dict(c) for c in V.constraints(2)["cores"]))
+    result = ConditionResult("ir-tiling", ESTABLISHED)
+    check_ir_tiling(case.ir, case.unbounded, declaration=decl, result=result, identity_facts=facts)
+    return result
+
+
+def test_facts_without_executed_latencies_under_a_timed_declaration_fail_by_name():
+    """A caller that hands ``check_ir_tiling`` identity facts without latencies under a timed declaration: the timing
+    rules compare nothing, so the condition fails ``timing_derivation`` by name, never holds (A2, whose executed
+    latency differs, would otherwise read established)."""
+    from mimarsinan.certification.program_check.unbounded.latency import IdentityFacts
+
+    case = V.case(V.consumer_split("streamed_lif"), max_neurons=2)
+    facts = case.report.identity_facts
+    assert _tiling_alone(case, "streamed_lif", facts).violation_count
+    stripped = IdentityFacts(latency=None, stage=facts.stage, channels=facts.channels)
+    result = _tiling_alone(case, "streamed_lif", stripped)
+    assert "timing_derivation" in {v.rule for v in result.violations}, result.note
+
+
+@pytest.mark.parametrize("semantics", TIMING_FREE)
+def test_the_note_names_only_what_was_compared(semantics):
+    """Timing-free and undithered: the condition holds and its note claims neither executed latency nor channels."""
+    case = V.case(V.consumer_split(semantics), max_neurons=2)
+    result = _tiling_alone(case, semantics, case.report.identity_facts)
+    assert result.violation_count == 0
+    assert "executed latency" not in result.note and "channel" not in result.note, result.note

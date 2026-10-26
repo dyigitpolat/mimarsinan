@@ -193,10 +193,15 @@ class _Compare:
         return same_function(a, b, column_bounds(self.t, mine, mine_cols, self.levels[0]),
                              column_bounds(self.u, theirs, their_cols, self.levels[1]))
 
-    def timing(self, facts: IdentityFacts) -> None:
-        """Under timed semantics: each paired tile runs where its unbounded node runs (``executed_latency``), both
-        read off the IRs' core graphs, the tiled IR's derivation held to the check's identity program first."""
+    def timing(self, facts: IdentityFacts, *, timed: bool) -> None:
+        """Under timed semantics (the declaration's, never the facts' content): each paired tile runs where its
+        unbounded node runs (``executed_latency``), both read off the IRs' core graphs, the tiled IR's derivation held
+        to the check's identity program first; facts with no latency under a timed declaration fail by name."""
+        if not timed:
+            return
         if facts.latency is None:
+            self.fail("timing_derivation", "IR", "a timed declaration, but the identity facts carry no executed "
+                      "latency: the timing rules would compare nothing")
             return
         lat_t, stage_t = identity_timing(self.t.graph)
         lat_u, stage_u = identity_timing(self.u.graph)
@@ -277,11 +282,14 @@ def check_ir_tiling(ir_graph: Any, unbounded_ir: Optional[Any], *, declaration: 
     result.checked += check_reference(compare.u, compare.fail)
     compare.neurons()
     compare.tiles()
-    compare.timing(identity_facts)
+    compare.timing(identity_facts, timed=declaration.timed)
     compare.hosts()
     compare.outputs()
     if declaration.dithered_encode:
         compare.phases(identity_facts)
     if not result.violation_count:
-        result.note = (f"{result.checked} neuron, timing and host-op checks: the tiled IR holds every neuron of the IR "
-                       f"at unbounded geometry once, with its fan-in, function, executed latency and channel")
+        kinds = ", ".join(["neuron"] + ["timing"] * bool(declaration.timed) + ["host-op"])
+        held = ", ".join(["fan-in", "function"] + ["executed latency"] * bool(declaration.timed)
+                         + ["channel"] * bool(declaration.dithered_encode))
+        result.note = (f"{result.checked} {kinds} checks: the tiled IR holds every neuron of the IR at unbounded "
+                       f"geometry once, with its {held}")

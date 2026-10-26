@@ -91,3 +91,12 @@ def test_the_check_leaves_the_program_byte_identical():
             else "streamed_lif"
         P.run(program, ir, P.decl(semantics))
         assert pickle.dumps(program) == before
+
+
+def test_r4s_statement_names_the_ir_neurons_channel_identity():
+    """E1 verify N2 (integration2/e1): R4 holds each encoded slice's channels to the channel identity of the IR neuron
+    at each program output (``unbounded/keys.output_channels``), not to an identity program's table, and its statement,
+    copied into every report's condition map, says so."""
+    r4 = next(spec for spec in CONDITION_MAP if spec.condition == "R4")
+    assert "identity program's channels" not in r4.statement
+    assert "IR neuron" in r4.statement and "unbounded geometry" in r4.statement
