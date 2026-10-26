@@ -9,7 +9,7 @@
     "supply_v": 0.58,
     "temperature_c": null,
     "array_size_assumed": "128 kB of 6T in 128 blocks of 1 kB (64 rows of 128 b); 16 SR groups of 8 blocks each compute one 128-input dot product per cycle, so the macro is one logical core of 128 inputs x 1024 weight vectors of 8-bit weights; 4-bit inputs, 32-bit partial sums, exact digital accumulation (jiang2023a p.2-3)",
-    "notes": "MACRO-LEVEL constants only, measured at 20 MHz and 0.58 V (jiang2023a p.4). Chip-level rows (periphery, NoC, host, static power, the cycle time of a whole evaluation) are absent and refuse by name; the backing store is declared by a backing-store override block (CL5, CL7), so an SRAM point is never read without it.",
+    "notes": "MACRO-LEVEL constants only, measured at 20 MHz and 0.58 V (jiang2023a p.4), and the cycle time of one evaluation of the macro's logical core (t_cycle, from the outputs per clock cycle and the measured clocks, p.2-4). Chip-level rows (periphery, NoC, host, static power) are absent and refuse by name; the backing store is declared by a backing-store override block (CL5, CL7), so an SRAM point is never read without it.",
     "geometry": {
       "axons": 128,
       "neurons": 1024,
@@ -30,6 +30,16 @@
       "evidence_kind": "derived",
       "citation": "jiang2023a p.4 via constants.md sec. 4",
       "derivation": "12.6 TOPS/W non-weight-stationary at 8b W x 4b A, 20 MHz: 2 / 12.6e12 J = 158.7 fJ per MAC (1 MAC = 2 OPs); weight-stationary with 20x reuse 23.8 TOPS/W = 84.0 fJ (the band's low end). The non-WS anchor is the one a CIM activation reads."
+    },
+    "t_cycle": {
+      "low": 703.2967,
+      "nominal": 6400.0,
+      "high": 6400.0,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.2 (printed 410), p.3-4 (printed 411-412), Fig. 8c p.4 (printed 412)",
+      "derivation": "One step of the value window is one evaluation of the macro's logical core (128 inputs x 1024 weight vectors, the sram_cim_macro bundle: 16 SR groups of 64 addresses). Outputs per cycle: 'In total 16 32b outputs (SUM[31:0]) are computed each clock cycle for the macro.' (p.2), at the 4-bit input of 'The input activation (IA) driver delivers 128 (4b) IA to all 16 SR groups' (p.2), so the 1024 outputs take 1024 / 16 = 64 cycles. An 8-bit input takes two 4-bit cycles: Fig. 8c (p.4) lists the macro at 'Precision(I/W/O) 8/8/32' with footnote 1 'An 8bW*8bA MAC is defined as two ops', and its 'TP(TOPs) 0.182' closes on 16 x 128 4-bit products per cycle = 1024 8-bit MACs per cycle x 2 ops x 91 MHz = 0.186 TOPS (within 3 %), so 128 cycles per evaluation. Clocks: 'The design is functional down to 20MHz at 0.58V VDDH and 91MHz at 1V VDDH.' (p.3-4) and 'clock period time 0.05us (20MHz)' (p.4). Low: 64 cycles / 91 MHz = 703.3 ns (4-bit inputs at the fastest measured clock); nominal and high: 128 cycles x 50 ns = 6400 ns (8-bit MACs at 20 MHz, the operating point of the profile's energy rows: '12.6TOPs/W at 20MHz' and '23.8TOPs/W (8b) at 20MHz', p.4).",
+      "note": "DECLARED from the macro's own paper, the arithmetic shown. Every address of the core is counted: a core that uses n of its 1024 neurons reads ceil(n / 16) addresses, so the constant is an upper bound per step for a partly used core. The pipeline fill of the adder trees and ACC blocks and the activation-buffer load are not stated and not counted. A program at 4-bit inputs (activation_bits 4) runs at the band's low half; one wider than 8 bits lies outside the band."
     },
     "e_write_per_cell": {
       "low": 76.0,

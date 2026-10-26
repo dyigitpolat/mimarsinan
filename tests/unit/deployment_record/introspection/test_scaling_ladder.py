@@ -172,6 +172,8 @@ class TestHandComputation:
             + math.ceil(HEAD * BITS / 8)
         assert row["programmed_bytes_once"] == once_bytes and row["programmed_cores_once"] == tiles
         c = CONSTANTS
+        # [consts fix round, R1] Pi's numerator is the write law's tile writes (fetch and commit per byte), the one
+        # pricer of every per-inference write; [consts] the law charges e_core_program once per written core.
         pi_e = ((c["e_dma_per_byte"] + c["e_program_per_byte"]) * once_bytes + c["e_core_program"] * tiles) / (
             c["e_mac"] * cells * T * ACTIVITY + c["e_core_init"] * tiles)
         pi_t = c["t_program_per_byte"] * once_bytes / (c["t_cycle"] * steps + c["t_core_init"] * tiles)

@@ -55,10 +55,11 @@ PRICE_KEYS = ROW_KEYS + ("platform_physics_profile", "platform_physics_overrides
 _CARRY = ("carried_raster_bytes", "carry_peak_live_bytes", "carry_out_bytes", "carry_in_bytes")
 _PROGRAMMING = ("reprogrammed_bytes", "reprogrammed_cores", "reprogram_passes")
 _ENDURANCE = "endurance_cycles"
-#: axis -> (compute-only term, headline (whose refusal names an absence), programming term, host term)
+#: axis -> (compute-only term, headline (whose refusal names an absence), programming term, host term); [consts] the
+#: programming term is the write law's tile writes (``scaling_ladder_reading.tile_writes``)
 _AXES = {
-    "energy": ("energy_dynamic_mj", "energy_per_inference_mj", "energy_programming_mj", "energy_host_mj"),
-    "time": ("e2e_latency_s", "e2e_latency_s", "latency_programming_s", "latency_host_s"),
+    "energy": ("energy_dynamic_mj", "energy_per_inference_mj", "energy_write_mj", "energy_host_mj"),
+    "time": ("e2e_latency_s", "e2e_latency_s", "latency_write_exposed_s", "latency_host_s"),
 }
 _HEADLINES = ("e2e_latency_s", "energy_per_inference_mj")
 __all__ = ["LadderDeclarationError", "LadderGeometryError", "LadderNetwork", "LadderScheduleRefusal",
@@ -169,8 +170,9 @@ def price_scheduled(
     *, on_stage: Optional[Callable[[str], None]] = None,
 ) -> PricedProgram:
     """Price a scheduled program on ``platform``, which may differ from the scheduled one only in its physics and
-    the row keys (refused by name otherwise): four variants (the program, its compute-only cost, the program
-    without host, writing every tile once) and, at a declared ``inference_batch_K``, the write law at that batch."""
+    the row keys (refused by name otherwise): three variants (the program, its compute-only cost, the program
+    without host), the write law's tile writes at K = 1 (writing every tile once, and the program's period writes,
+    [consts] ``tile_writes``) and, at a declared ``inference_batch_K``, the write law at that batch."""
     if _base(platform, PRICE_KEYS) != _base(scheduled.platform, PRICE_KEYS):
         raise LadderDeclarationError("a priced platform may differ from its scheduled program only in "
                                      + ", ".join(PRICE_KEYS))
@@ -202,13 +204,13 @@ def price_scheduled(
     write_law: Dict[str, Any] = {}
     if physics is not None:
         compute = _variant(q, _CARRY + _PROGRAMMING + ("sync_count", "compute_op_count"), {"host_macs": 0})
-        once = {"reprogrammed_cores": once_tiles, **({} if once_bytes is None else
-                                                          {"reprogrammed_bytes": once_bytes})}
-        for name, variant in (("program", q), ("compute_only", compute), ("once", _variant(compute, (), once)),
+        for name, variant in (("program", q), ("compute_only", compute),
                               ("no_host", _variant(q, ("compute_op_count",), {"host_macs": 0}))):
             pricing = price_absolute(variant, physics)
             terms[name] = {t.name: t.band for t in pricing.terms if t.band is not None}
             refusals[name] = {r.name: r.reason for r in pricing.refusals}
+        for name, load in (("once", True), ("period", False)):
+            terms[name], refusals[name] = point_reading.tile_writes(facts.passes, platform, bits, physics, load=load)
         if context.writes is not None:
             at_k = price_absolute(q, physics, writes=WriteInputs.of(context.writes))
             write_law = point_reading.write_law_columns(at_k, platform.get("inference_batch_K"))

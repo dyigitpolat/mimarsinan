@@ -34,6 +34,7 @@ NEW_ROWS = (
     ("sram_cim_macro", "write_verify_iterations", "derived", ()),
     ("sram_cim_macro", "endurance_cycles", "published", ()),
     ("sram_cim_macro", "conductance_levels", "published", ()),
+    ("sram_cim_macro", "t_cycle", "derived", ("16 32b outputs", "0.05us", "91MHz", "8/8/32", "DECLARED")),
     ("neurram", "e_mac", "published", ("SECONDARY",)),
     ("neurram", "t_cycle", "published", ()),
     ("neurram", "write_verify_iterations", "published", ()),
@@ -74,6 +75,50 @@ def _quantities(**values):
     return Quantities({k: QuantityValue(float(v), "static") for k, v in values.items()})
 
 
+def _macro_with_store():
+    """The macro with a test backing store (its external component) declared beside it."""
+    rows = {"evidence_kind": "estimated", "note": "test store"}
+    store = {"e_dma_per_byte": {"nominal": 100.0, "unit": "pJ", **rows},
+             "t_program_per_byte": {"nominal": 0.1, "unit": "ns", **rows}}
+    return apply_overrides(get_platform_physics("sram_cim_macro"), store)
+
+
+class TestTheMacroCycleTime:
+    """[consts] The macro's cycle time from its own paper (jiang2023a): one step of the value window is one
+    evaluation of the logical core, 1024 outputs at 16 per clock cycle (p.2), 64 cycles at the 4-bit input and 128 at
+    the 8-bit MAC of the paper's precision row (Fig. 8c), at the measured 91 MHz to 20 MHz clocks (p.3-4)."""
+
+    def test_the_band_is_one_core_evaluation_between_the_measured_clocks(self):
+        band = get_platform_physics("sram_cim_macro").band("t_cycle")
+        assert band.low == pytest.approx(64 / 91e6, rel=1e-6)       # 4-bit inputs at 91 MHz: 703.3 ns
+        assert band.nominal == pytest.approx(128 * 50e-9, rel=1e-12)  # 8-bit MACs at 20 MHz: 6.4 us
+        assert band.high == pytest.approx(128 * 50e-9, rel=1e-12)
+
+    def test_the_row_cites_the_macro_paper_by_page_and_quotes_it(self):
+        value = get_platform_physics("sram_cim_macro").constants["t_cycle"]
+        assert value.citation.startswith("jiang2023a") and "p.2" in value.citation and "Fig. 8c" in value.citation
+        for quote in ("In total 16 32b outputs (SUM[31:0]) are computed each clock cycle for the macro.",
+                      "clock period time 0.05us (20MHz)", "functional down to 20MHz at 0.58V VDDH and 91MHz at 1V VDDH",
+                      "Precision(I/W/O) 8/8/32", "An 8bW*8bA MAC is defined as two ops"):
+            assert quote in value.derivation, quote
+
+    def test_with_its_store_the_macro_prices_latency_as_t_cycle_times_the_steps(self):
+        macro = _macro_with_store()
+        pricing = price_absolute(_quantities(cores_physical=1, synaptic_events=10, host_macs=0, latency_steps=7),
+                                 macro)
+        assert "e2e_latency_s" not in {r.name for r in pricing.refusals}
+        latency = {t.name: t for t in pricing.terms}["e2e_latency_s"].band
+        cycle = macro.band("t_cycle")
+        assert (latency.low, latency.nominal, latency.high) == pytest.approx(
+            (7 * cycle.low, 7 * cycle.nominal, 7 * cycle.high), rel=1e-12)
+
+    def test_without_its_store_the_macro_still_prices_nothing(self):
+        """The cycle time does not lift the external-component gate: no absolute term without the backing store."""
+        pricing = price_absolute(_quantities(cores_physical=1, synaptic_events=10, host_macs=0, latency_steps=7),
+                                 get_platform_physics("sram_cim_macro"))
+        assert pricing.terms == () and [r.name for r in pricing.refusals] == ["absolute_pricing"]
+
+
 class TestThePageSourcedProfiles:
     @pytest.mark.parametrize("name", ["hermes_64", "sram_cim_macro", "neurram"])
     def test_each_profile_loads_with_its_validity(self, name):
@@ -84,15 +129,12 @@ class TestThePageSourcedProfiles:
     def test_the_macro_refuses_its_chip_level_rows_by_name(self):
         """With its backing store declared (CL2: the profile's external component), the macro prices and still
         refuses every chip-level row it lacks by name; without the store it prices nothing
-        (test_external_components)."""
-        rows = {"evidence_kind": "estimated", "note": "test store"}
-        store = {"e_dma_per_byte": {"nominal": 100.0, "unit": "pJ", **rows},
-                 "t_program_per_byte": {"nominal": 0.1, "unit": "ns", **rows}}
-        pricing = price_absolute(_quantities(cores_physical=1, synaptic_events=10, host_macs=0),
-                                 apply_overrides(get_platform_physics("sram_cim_macro"), store))
+        (test_external_components). [consts] Its cycle time is declared, so a latency refusal names the absent
+        latency census, never the constant."""
+        pricing = price_absolute(_quantities(cores_physical=1, synaptic_events=10, host_macs=0), _macro_with_store())
         refused = {r.name: r.reason for r in pricing.refusals}
         assert "area_per_core_total" in refused["chip_area_mm2"]
-        assert "t_cycle" in refused["e2e_latency_s"]
+        assert refused["e2e_latency_s"] == "t_cycle is declared but the latency_steps census is absent"
 
     def test_neurram_refuses_its_write_energy_by_name(self):
         pricing = price_write_terms(_census(), get_platform_physics("neurram"), WritePolicy(batch_k=1))

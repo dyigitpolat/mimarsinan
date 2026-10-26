@@ -33,7 +33,11 @@ ENTRIES = (
        doc="Sparse map of physics constant -> declaration, applied on top of the "
            "selected profile and recorded with the run, so a report states exactly "
            "what physics priced it. Each entry needs a nominal value and a note "
-           "saying why it deviates; low/high and unit default to the profile's. With "
+           "saying why it deviates; low/high and unit default to the profile's. An "
+           "entry stating combine 'slower' (a time that is one stage of a series link, "
+           "as a backing store's channel beside the chip's own programming port) takes "
+           "the slower of it and the profile's value, corner by corner: the pipelined "
+           "bound of the link (a store-and-forward link is slower). With "
            "no profile selected these constants alone form a custom target.",
        provenance="consumer frozen default", derived_default=_frozen({})),
     _E("activity_factor", section=_PC, group="hardware",

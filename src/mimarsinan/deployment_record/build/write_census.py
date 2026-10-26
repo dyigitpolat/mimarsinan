@@ -28,7 +28,7 @@ record is placed per row: a stated boundary until the record seals its execution
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
@@ -168,22 +168,27 @@ def _row_tiles(rows: Sequence[PassRow], capacity: Mapping[CoreType, int]) -> Opt
 
 def period_census(passes: ProgramPasses, *, weight_bits: int,
                   capacity: Optional[Mapping[CoreType, int]],
-                  bytes_of: Optional[Callable[[int], int]] = None, label: str = "") -> WriteCensus:
+                  bytes_of: Optional[Callable[[int], int]] = None, label: str = "",
+                  every_core: bool = False) -> WriteCensus:
     """The steady-state period census of a pass list (the one rule, both planes: the executed rotation).
 
     ``capacity`` (the declared cores per core type) places each rewritten core on a physical core.
     Rows that state no core types on a chip of several types are rewritten by the same rule, placed on
     no physical core (said in the label). ``bytes_of`` sizes the carried elements of a boundary in
     this run's domain; without it the census states no boundary. A pass is ``resident`` exactly when it
-    writes nothing per period.
+    writes nothing per period. [consts] ``every_core``: the deployment load instead, every core of every pass
+    written once from an empty chip (no residency flag or mark keeps one), the tile writes of law.md's Pi.
     """
     if not capacity:
         raise WriteCensusError("the platform declares no complete core geometry (max_axons and max_neurons "
                                "of every core type), so no rewritten core can be placed on a declared core")
     rows = passes.rows
+    if every_core:
+        rows = tuple(replace(row, resident=False, marks=frozenset()) for row in rows)
+        label = (f"{label}; " if label else "") + "the deployment load: every core of every pass written once"
     typed = _row_tiles(rows, capacity)
     unkept = [[i for i in range(len(row.core_cells)) if not row.resident and i not in row.marks] for row in rows]
-    rotates = rotation_rewrites(sum(1 for cores in unkept if cores))
+    rotates = every_core or rotation_rewrites(sum(1 for cores in unkept if cores))
     written_cores: List[List[int]] = unkept if rotates else [[] for _ in rows]
     if typed is None and rotates:
         label = (f"{label}; " if label else "") + (

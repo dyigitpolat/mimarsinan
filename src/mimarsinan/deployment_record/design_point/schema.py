@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping
 
 from mimarsinan.deployment_record.design_point.wear import wear_problems
+from mimarsinan.deployment_record.platform_physics.loader import COMBINE_RULES
 from mimarsinan.deployment_record.design_point.schema_types import (
     ANY, BAND, BOOL, INT, NUMBER, STR, Enum, ListOf, MapOf, Nullable, Obj, errors, json_schema,
 )
@@ -30,8 +31,9 @@ VERDICTS = ("admitted", "inadmissible", "straddles", "refused", "above_cap")
 ENERGY_PARTS = ("dynamic", "static", "static_write", "operand_write", "host")
 
 REFUSAL = Obj({"name": STR, "reason": STR}, {"stage": STR})
+#: A declared constant as a block states it; ``combine`` is how it composes with the chip's own value (``COMBINE_RULES``).
 CONSTANT = Obj({"nominal": NUMBER, "unit": STR, "evidence_kind": STR},
-               {"low": NUMBER, "high": NUMBER, "citation": STR, "note": STR})
+               {"low": NUMBER, "high": NUMBER, "citation": STR, "note": STR, "combine": Enum(COMBINE_RULES)})
 CORE_TYPE = Obj(
     {"role": Enum(("any", STATIC, OPERAND)), "max_axons": INT, "max_neurons": INT, "count": Nullable(INT),
      "write_technology": Nullable(STR)},

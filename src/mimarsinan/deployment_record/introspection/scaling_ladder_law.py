@@ -12,7 +12,12 @@ Definitions (`06_parts/law.md` §1-§3; `lens_arch.md` §2.2-§2.3):
   multi-pass program (residency passes after its load) prices M with no period
   writes.
 - Pi = cost of writing every tile of the program once / compute-only cost of one
-  inference, per axis (energy, time); Pi/K at the declared batch K.
+  inference, per axis (energy, time); Pi/K at the declared batch K. [consts] The numerator
+  is the write law's (``scaling_ladder_reading.tile_writes``: the program's deployment load at
+  K = 1, serial), the pricer of every per-inference write, so its commit energy, its
+  per-core e_core_program and its write-verify wall are Pi's; where the law refuses, the
+  axis is absent with its reason.
+  M's period writes are the same law on the program's period census.
 - Regime per band corner of Pi/K under caller-declared reading thresholds (the
   thresholds are reading constants of the caller, never framework constants);
   "straddles" when the corners carry different labels; a resident program reads
@@ -161,17 +166,19 @@ def axis_columns(
     names: Sequence[str], *, k: Optional[int], reading: RegimeReading, multiplexed: bool, x: float,
     passes: int, axis: str,
 ) -> Dict[str, Any]:
-    """One axis of a row from the four pricings (program, compute_only, once, no_host).
+    """One axis of a row from the pricings (program, compute_only, no_host) and the write law's tile writes (once,
+    period).
 
     ``names``: (compute-only term, headline whose refusal names an absence, programming term, host term).
     M is priced for every program of two or more passes; its period writes are the
-    program's programming term when the schedule writes per inference (``multiplexed``)
-    and none otherwise.
+    write law's on the program's period census when the schedule writes per inference
+    (``multiplexed``) and none otherwise. An axis is absent when its compute is refused, or
+    [consts] when the write law refuses writing every tile once (by the law's reason).
     """
     compute_term, headline, programming, host_term = names
-    t = {name: terms.get(name, {}) for name in ("program", "compute_only", "once", "no_host")}
+    t = {name: terms.get(name, {}) for name in ("program", "compute_only", "once", "period", "no_host")}
     compute, no_host = t["compute_only"].get(compute_term), t["no_host"].get(compute_term)
-    once, period, host = t["once"].get(programming), t["program"].get(programming), t["program"].get(host_term)
+    once, period, host = t["once"].get(programming), t["period"].get(programming), t["program"].get(host_term)
     boundary = None if compute is None or no_host is None else sub_corners(no_host, compute, "boundary")
     pi = ratio(once, compute, f"Pi_{axis}")
     with_host = None if host is None or compute is None else ratio(
@@ -180,8 +187,10 @@ def axis_columns(
     return {
         "terms": {"compute_only": triple(compute), "boundary": None if boundary is None else list(boundary),
                   "once": triple(once), "period": triple(period), "host": triple(host)},
-        "absent": None if compute is not None else (refusals.get("compute_only", {}).get(headline)
-                                                    or "no physics declared"),
+        "absent": (None if compute is not None and once is not None else
+                   (refusals.get("compute_only", {}).get(headline) or "no physics declared") if compute is None else
+                   "the write law refuses writing every tile once: "
+                   + (refusals.get("once", {}).get(programming) or "no write term is priced")),
         "host_share": share(host, t["program"].get(headline)),
         "pi": triple(pi), "pi_host_included": triple(with_host), "pi_over_k": triple(pi_k),
         "regime": regime(pi_k, reading, multiplexed),

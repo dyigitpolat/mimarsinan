@@ -134,7 +134,7 @@ def placed_wear(batch_k: int, most_written: int, producer_slots: Sequence[Tuple[
 
 
 def written_cores(census: Any) -> int:
-    """W: the core writes of one period (every rewritten core of every pass)."""
+    """W: the core writes of one period (every rewritten core of every pass); [consts] e_core_program's count."""
     return sum(p.cores - p.resident_cores for p in census.passes if p.written_cells_backing_store)
 
 
@@ -244,10 +244,10 @@ def spans_match_carry(passes: ProgramPasses, carry: Optional[Mapping[str, Any]],
 
 
 def plane_write_census(passes: ProgramPasses, platform: Mapping[str, Any], *, weight_bits: Any,
-                       timesteps: Optional[int], label: str, carry: Optional[Mapping[str, Any]] = None
-                       ) -> Tuple[Optional[WriteCensus], Optional[str]]:
+                       timesteps: Optional[int], label: str, carry: Optional[Mapping[str, Any]] = None,
+                       every_core: bool = False) -> Tuple[Optional[WriteCensus], Optional[str]]:
     """A plane's period census in its domain (the value rule's window under the value domain), or
-    None with the reason it cannot be stated."""
+    None with the reason it cannot be stated; ``every_core``: its deployment load (``period_census``)."""
     if weight_bits is None:
         return None, "the platform declares no weight_bits, so the rewritten payload has no size"
     rows = passes.rows
@@ -262,6 +262,7 @@ def plane_write_census(passes: ProgramPasses, platform: Mapping[str, Any], *, we
             bytes_of=domain_bytes_of(platform, timesteps) if attributable else None,
             label=label if attributable else f"{label}; per-boundary carry withheld (the carry census "
                                              "counts trains the wire spans do not attribute)",
+            every_core=every_core,
         ), None
     except WriteCensusError as refusal:
         return None, f"the {label} plane's period census refuses: {refusal}"

@@ -21,6 +21,7 @@ inputs, so CL2 corrected it to the group-level core the `sram_cim_macro` target 
 | constant | value | evidence | basis |
 |---|---|---|---|
 | `e_mac` | 158.7 fJ, band from 84.0 fJ | derived | 2 / 12.6e12 J per MAC (non-WS, the CIM activation's anchor); 2 / 23.8e12 J weight-stationary |
+| `t_cycle` | 703.3 ns - 6.4 us, nominal 6.4 us per core evaluation | derived (DECLARED) | 16 outputs per cycle (p.2) over the core's 1024: 64 cycles at 4-bit inputs, 128 at the 8-bit MAC of Fig. 8c (p.4); clocks 91 MHz to 20 MHz (p.3-4) |
 | `e_write_per_cell` | 76 - 342 fJ, nominal 161.2 fJ | derived | constants.md sec. 5: 1x the 20 MHz read byte energy to 2x the 91 MHz one (a write is full swing) |
 | `write_verify_iterations` | 1 | derived | a digital write has no verify loop |
 | `endurance_cycles` | 1e16 | published | ielmini2018inmemory p.7 |
@@ -28,11 +29,31 @@ inputs, so CL2 corrected it to the group-level core the `sram_cim_macro` target 
 
 ## Absent, refused by name
 
-Every chip-level row: periphery, NoC, host, static power, area, and the cycle time of a whole evaluation (the
-macro is bit-serial over its 4-bit inputs at 20 MHz, and the cycles per evaluation are not stated). The
+Every chip-level row: periphery, NoC, host, static power and area. The
 **backing store** is not part of the macro: the profile names it as an external component (`external_components`:
 `e_dma_per_byte`, `t_program_per_byte`), and `price_absolute` refuses every absolute term by name
 (`absolute_pricing`) until a run declares both, which CL5 and CL7 do as a named `backing_store` override block
 (`merge_override_blocks`), so this point is never read without it. houshmand2023benchmarking (Table II and
 Fig. 7, p.6) carries an analytical weight-write term that was not read in this round; it is the cross-check the
 derived write bracket waits on.
+
+## Cycle time of one evaluation [consts]
+
+One step of the value window is one evaluation of the logical core. The paper states the outputs per cycle and the
+clocks, so the cycles per evaluation follow (DECLARED from jiang2023a, the arithmetic shown; PDF pages, printed
+pages 409-412):
+
+- "In total 16 32b outputs (SUM[31:0]) are computed each clock cycle for the macro." (p.2) The core's 1024 outputs
+  take 1024 / 16 = 64 cycles at the 4-bit input ("The input activation (IA) driver delivers 128 (4b) IA to all 16 SR
+  groups", p.2).
+- Fig. 8c (p.4) lists the macro at "Precision(I/W/O) 8/8/32" with the footnote "An 8bW*8bA MAC is defined as two
+  ops", and its "TP(TOPs) 0.182" closes on 1024 8-bit MACs per cycle (16 x 128 4-bit products) x 2 ops x 91 MHz =
+  0.186 TOPS: an 8-bit input takes two 4-bit cycles, 128 per evaluation.
+- "The design is functional down to 20MHz at 0.58V VDDH and 91MHz at 1V VDDH." (p.3-4); "clock period time 0.05us
+  (20MHz)" (p.4).
+
+The band runs from 64 cycles at 91 MHz (703.3 ns) to 128 cycles at 20 MHz (6.4 us); the nominal is the high end, the
+operating point of the energy rows (8-bit MACs at 20 MHz). A partly used core reads fewer addresses (ceil(n / 16) for
+n neurons), so the constant is an upper bound per step there; pipeline fill and the activation-buffer load are not
+stated and not counted. The 4 bits of an input are multiplied in one cycle (four gates per bit line, the LSB and MSB
+2-bit halves accumulated by two adder trees in parallel, p.2), so an 8-bit input is two such cycles.

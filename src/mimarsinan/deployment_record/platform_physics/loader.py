@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
@@ -18,8 +19,22 @@ from mimarsinan.deployment_record.platform_physics.profile import (
     PlatformPhysics,
     PlatformPhysicsValidity,
 )
+from mimarsinan.deployment_record.units import TIME, to_canonical
 
 SANAFE_PRESET_REF = "sanafe_preset"
+
+#: [consts] How an override declaration composes with the profile's own value of its key (the declaration's
+#: ``combine``): ``replace`` (the default: an operator's departure replaces the profile's value) or ``slower`` (the
+#: declaration is one stage of a series link whose other stage the profile declares, as a backing store's channel
+#: beside the chip's own programming port: a streamed payload moves no faster than its slower stage, so the composed
+#: time is the larger of the two corner by corner, the pipelined bound of the link (a store-and-forward link, which
+#: adds its stages, is slower); a profile without its own stage takes the declared one).
+COMBINE_RULES = ("replace", "slower")
+#: [consts fix round] The closed field set of an override declaration; a field outside it refuses by name.
+OVERRIDE_FIELDS = frozenset({"nominal", "low", "high", "unit", "evidence_kind", "citation", "derivation", "note",
+                             "combine"})
+#: Evidence classes weaker than a shown derivation: a composition (arithmetic) cannot strengthen such a stage.
+_BELOW_DERIVED = frozenset({"estimated"})
 
 #: The SANA-FE per-event presets are stored in SI already, and their suffix names the
 #: unit — which is what lets a mis-bound reference (an energy priced with a latency) hit
@@ -172,7 +187,8 @@ def apply_overrides(
     """A new profile with operator-declared values replacing (or adding) constants.
 
     An override must say why it deviates; the replacement is marked so reports and the
-    wizard can show it as a departure from the declared profile.
+    wizard can show it as a departure from the declared profile. A declaration stating
+    ``combine: slower`` composes with the profile's own value instead (``COMBINE_RULES``).
     """
     if not overrides:
         return physics
@@ -181,9 +197,19 @@ def apply_overrides(
         spec = spec_for(key)
         existing = physics.constants.get(key)
         data = dict(raw)
+        unknown = set(data) - OVERRIDE_FIELDS
+        if unknown:
+            raise ValueError(f"{key}: unknown fields {sorted(unknown)} in the declaration (an override declares "
+                             f"{sorted(OVERRIDE_FIELDS)})")
+        combine = str(data.pop("combine", "replace"))
+        if combine not in COMBINE_RULES:
+            raise ValueError(f"{key}: combine {combine!r} is not one of {list(COMBINE_RULES)}")
+        if combine == "slower" and spec.dimension != TIME:
+            raise ValueError(f"{key}: combine 'slower' composes a time (the slower stage of a series link), and "
+                             f"{key} is a {spec.dimension} constant")
         data.setdefault("unit", existing.unit if existing else spec.display_unit)
         data.setdefault("evidence_kind", "estimated")
-        constants[key] = PhysicsConstantValue(
+        value = PhysicsConstantValue(
             key=key,
             low=float(data.get("low", data["nominal"])),
             nominal=float(data["nominal"]),
@@ -195,6 +221,7 @@ def apply_overrides(
             note=str(data.get("note", "")),
             overridden=True,
         )
+        constants[key] = _slower(value, existing) if combine == "slower" and existing is not None else value
     return PlatformPhysics(
         name=physics.name,
         display_name=physics.display_name,
@@ -204,3 +231,25 @@ def apply_overrides(
         conversion_model=physics.conversion_model,
         external_components=physics.external_components,
     )
+
+
+def _stage(value: PhysicsConstantValue) -> str:
+    return "; ".join(part for part in (value.evidence_kind, value.citation, value.derivation, value.note) if part)
+
+
+def _slower(declared: PhysicsConstantValue, own: PhysicsConstantValue) -> PhysicsConstantValue:
+    """The slower stage of a series link, corner by corner, in the declared unit, stating both stages: the pipelined
+    bound of the link (a store-and-forward link is slower). Its class is derived (the arithmetic shown) unless a stage
+    that prevails at some corner is weaker, which the composition keeps (an estimated port stays estimated)."""
+    scale = to_canonical(1.0, declared.unit)
+    ends = ("low", "nominal", "high")
+    prevailing = {(declared if getattr(declared.band, end) >= getattr(own.band, end) else own).evidence_kind
+                  for end in ends}
+    low, nominal, high = (max(getattr(declared.band, end), getattr(own.band, end)) / scale for end in ends)
+    derivation = (f"the slower stage of a series link, corner by corner (combine: slower; the pipelined bound, a "
+                  f"store-and-forward link is slower): the declared stage [{_stage(declared)}] and the profile's own "
+                  f"[{_stage(own)}]")
+    weak = sorted(prevailing & _BELOW_DERIVED)
+    return replace(declared, low=low, nominal=nominal, high=high, evidence_kind=weak[0] if weak else "derived",
+                   citation="; ".join(c for c in (declared.citation, own.citation) if c), derivation=derivation,
+                   note=declared.note or ((own.note or derivation) if weak else ""))

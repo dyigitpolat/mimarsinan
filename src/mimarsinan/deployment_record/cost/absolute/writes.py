@@ -1,11 +1,11 @@
-"""The write law priced over a period census: write energy and exposed write time per inference at
-batch K, lifetime against endurance, and the lifetime floor as a separate admissibility verdict.
+"""The write law priced over a period census: write energy and exposed write time per inference at batch K, lifetime
+against endurance, and the lifetime floor as a separate admissibility verdict.
 
-One pricer for every census producer (the record and candidate planes, the residency plan steps,
-the capability-level census): it reads the S0 ``PassPeriodCensus`` and the declared policy only.
-On a chip of several write technologies (N2b, ``quantities/write_technology.py``) the same law prices each
-technology's share under its physics, and the shares join: energies and per-pass walls add, the lifetime and
-verdict are ``write_lifetime.join_lifetimes``'.
+One pricer for every census producer (the record and candidate planes, the residency plan steps, the capability-level
+census): it reads the S0 ``PassPeriodCensus`` and the declared policy only. On a chip of several write technologies
+(N2b, ``quantities/write_technology.py``) the same law prices each technology's share under its physics, and the
+shares join: energies and per-pass walls add, the lifetime and verdict are ``write_lifetime.join_lifetimes``'.
+[consts] Each core a period rewrites costs its fetch and commit and, where declared, the chip's ``e_core_program``.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from mimarsinan.deployment_record.cost.write_lifetime import (
 )
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.platform_physics.resolve import technology_physics
-from mimarsinan.deployment_record.quantities.write_law import WritePolicy, pass_events, pass_units
+from mimarsinan.deployment_record.quantities.write_law import WritePolicy, pass_events, pass_units, written_cores
 from mimarsinan.deployment_record.quantities.write_technology import TechnologySplit, shadow_room_refusal
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -59,8 +59,7 @@ class WriteInputs:
         census = writes.census
         return cls(census=None if census is None else census.census, policy=writes.policy,
                    written_extents=None if census is None else census.written_extents,
-                   compute_sealed=census is not None and census.compute_sealed,
-                   unavailable=writes.unavailable,
+                   compute_sealed=census is not None and census.compute_sealed, unavailable=writes.unavailable,
                    most_written=None if census is None else census.most_written_core,
                    pass_core_types=None if census is None else census.pass_core_types,
                    producer_slots=None if census is None else census.producer_slots,
@@ -115,6 +114,9 @@ def _write_energy(census: Any, physics: PlatformPhysics, policy: WritePolicy) ->
     else:
         return None, ("cells are written per inference but the target declares no commit energy "
                       "(e_write_per_cell, or e_program_per_byte for backing-store bytes)")
+    if physics.has("e_core_program") and (cores := written_cores(census)):
+        core = physics.band("e_core_program")
+        parts.append(scale_band(core, cores / k * _J_TO_MJ, f"e_core_program [{core.basis}] x rewritten_cores / K"))
     basis = " + ".join(p.basis for p in parts) + (f"; {'; '.join(notes)}" if notes else "")
     return add_bands(parts, basis), ""
 
@@ -267,20 +269,18 @@ def _price_technologies(writes: WriteInputs, split: TechnologySplit, chip: Platf
 
 def price_write_terms(census: Any, physics: PlatformPhysics, policy: WritePolicy, *,
                       written_extents: Optional[Sequence[Sequence[Tuple[int, int]]]] = None,
-                      compute_sealed: bool = True, most_written: Optional[int] = None,
-                      pass_core_types: Any = None,
+                      compute_sealed: bool = True, most_written: Optional[int] = None, pass_core_types: Any = None,
                       producer_slots: Optional[Sequence[Tuple[int, int]]] = None) -> WritePricing:
     """Write energy, exposed write time and lifetime of one period census at the declared K.
 
-    ``most_written`` is the period writes of the most-written physical core (``WriteCensus.
-    most_written_core``). A producer that places no core leaves it None only where the census
-    provably rewrites; the lifetime is then an upper bound that can only prove inadmissibility.
-    ``pass_core_types`` (``WriteCensus.pass_core_types``) gives the overlapped mode its per-type room;
-    ``producer_slots`` (``WriteCensus.producer_slots``) the operand regions' placement by the same slot rule. A
-    policy of several write technologies refuses by name (``price_write_inputs`` prices their shares). [fix_c] A
-    profile whose external component the run has not declared (an SRAM-CIM macro without its backing store) prices
-    no write term and refuses each by name (``external_refusals``, the gate ``price_absolute`` reads), so the
-    executed and the exploration plane read one rule."""
+    ``most_written`` is the period writes of the most-written physical core (``WriteCensus.most_written_core``). A
+    producer that places no core leaves it None only where the census provably rewrites; the lifetime is then an
+    upper bound that can only prove inadmissibility. ``pass_core_types`` (``WriteCensus.pass_core_types``) gives the
+    overlapped mode its per-type room; ``producer_slots`` (``WriteCensus.producer_slots``) the operand regions'
+    placement by the same slot rule. A policy of several write technologies refuses by name (``price_write_inputs``
+    prices their shares). [fix_c] A profile whose external component the run has not declared (an SRAM-CIM macro
+    without its backing store) prices no write term and refuses each by name (``external_refusals``, the gate
+    ``price_absolute`` reads), so the executed and the exploration plane read one rule."""
     if gate := external_refusals(physics):
         return _refuse_all(policy, "; ".join(r.reason for r in gate))
     if policy.core_technologies is not None:

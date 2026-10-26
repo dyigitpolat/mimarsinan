@@ -126,3 +126,15 @@ def test_a_row_whose_planes_disagree_names_every_difference():
     assert any("disagree on ['neural_passes'], unnamed" in e for e in validate_instance(document))
     row["planes"]["named"] = [{"field": "neural_passes", "reason": "a named plane difference"}]
     assert validate_instance(document) == []
+
+
+def test_a_backing_store_constant_may_state_how_it_composes_with_the_chip():
+    """[consts] A store block's channel time composes with the chip's own port (``combine: slower``); the instance
+    carries the block's constants as declared, so the field validates, and only the composition rules exist."""
+    document = _vit()
+    store = document["rows"][0]["chip"]["backing_store"]["constants"]
+    store["t_program_per_byte"] = {"nominal": 0.0133, "unit": "ns", "evidence_kind": "published",
+                                   "combine": "slower"}
+    assert validate_instance(document) == []
+    store["t_program_per_byte"]["combine"] = "faster"
+    assert any("'faster' is not one of" in e for e in validate_instance(document))
