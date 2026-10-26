@@ -14,9 +14,15 @@ Both runs of ``t0_53r`` also bound their processes to the capped scopes the runs
 Lava wave worker (``MIMARSINAN_LOIHI_WAVE_WORKERS``; the default, ``os.cpu_count()``, forks a Lava runtime per core of
 a wave).
 
-The verdicts are compared as each run prints them (``gate_verdicts``): a value-domain record holds no certificate
-rows, so on t0_44r the record alone compares nothing; every printed gate line, its verdict PASS, FAIL or SKIP
-included, must match its U1 twin's, and each variant's own gates must have run (``RAN``).
+The verdicts are compared as each run prints them (``gate_verdicts``): every printed gate line, its verdict PASS, FAIL
+or SKIP included, must match its U1 twin's, and each variant's own gates must have run (``RAN``). The records are
+compared too (``certificate_verdicts``). [fix round M1] A value-domain record without a readout law holds no sampled
+certificate row, only the static program check's two records (W15, ``STATIC_RECORDS``), which read outside scope
+there: the value domain without a readout law runs the fp64 float path, not the integer law. So on t0_44r the records
+compare those two verdicts and the printed lines carry the sampled ones. A static record passes only where its theorem
+is established (W15's rule), so the runs are certified when every sampled certificate passes and every static record
+is established, outside scope with its stated reason, or conditional with the conditions that stay with the sampled
+run (``uncertified``), never failed.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ from pathlib import Path
 import pytest
 
 from integration.parity_harness import ensure_nevresim_path
+from mimarsinan.certification.program_check.report import ESTABLISHED_ON_PROGRAM
 from mimarsinan.deployment_record.schema.record import DEPLOYMENT_RECORD_FILENAME, load_deployment_record
 from mimarsinan.pipelining.session import PipelineSession
 
@@ -64,6 +71,61 @@ def gate_verdicts(text: str) -> list:
             continue
         kind = _KIND.search(line)
         out.append((tag.group(1) if tag else "Loihi spike parity", kind.group(0) if kind else "", verdict.group(1)))
+    return out
+
+
+#: [W15] The static program check's records: backend ``static``, one per theorem, in every deployment record.
+STATIC_BACKEND = "static"
+STATIC_RECORDS = {"static_program_check_theorem1", "static_program_check_proposition2"}
+#: A static verdict's class by the prefix the check writes (``program_check.report``, ``check.py``); every class but
+#: ``failed`` is one a certified run may record, each but ``established`` with what it names.
+_STATIC_PREFIXES = ((ESTABLISHED_ON_PROGRAM, "established"), ("outside_scope: ", "outside_scope"),
+                    ("conditional: ", "conditional"), ("not claimed: ", "not_claimed"), ("failed", "failed"))
+NAMED_STATIC = ("outside_scope", "conditional", "not_claimed")
+_OPEN = " stay with the sampled run"
+
+
+def static_verdict(certificate) -> tuple:
+    """A static record's verdict (its ``detail``) as ``(class, what it names)``: ``("established", "")``; an
+    outside-scope or not-claimed verdict with its stated reason; a conditional one with the conditions that stay with
+    the sampled run; ``("failed", what failed)``; ``("unread", the verdict)`` for a text no prefix reads."""
+    verdict = str(json.loads(certificate.detail or "{}").get("verdict", ""))
+    for prefix, kind in _STATIC_PREFIXES:
+        if not verdict.startswith(prefix):
+            continue
+        rest = verdict[len(prefix):]
+        if kind == "established":
+            return kind, ""
+        if kind == "conditional":
+            if _OPEN not in rest:
+                break
+            rest = rest.split(_OPEN, 1)[0]
+        return kind, rest.strip(" :")
+    return "unread", verdict
+
+
+def certificate_verdicts(record) -> dict:
+    """Every certificate of the record keyed ``(name, backend)``: a sampled certificate by whether it passed, a static
+    record by ``static_verdict``."""
+    return {(c.name, c.backend): static_verdict(c) if c.backend == STATIC_BACKEND else c.passed
+            for c in record.accuracy.certificates}
+
+
+def uncertified(record) -> list:
+    """What keeps the record's certificates from certifying its run (empty when nothing does): a sampled certificate
+    that did not pass; a static record whose verdict is failed or unread, or names no reason or condition; a static
+    record whose ``passed`` is not its theorem being established (W15's rule)."""
+    out = []
+    for c in record.accuracy.certificates:
+        if c.backend != STATIC_BACKEND:
+            if not c.passed:
+                out.append(f"{c.name} [{c.backend}] did not pass")
+            continue
+        kind, named = static_verdict(c)
+        if bool(c.passed) != (kind == "established"):
+            out.append(f"{c.name}: passed {c.passed} on a verdict of class {kind}")
+        if kind not in ("established", *NAMED_STATIC) or (kind != "established" and not named):
+            out.append(f"{c.name}: {kind} {named!r}")
     return out
 
 
@@ -107,7 +169,7 @@ def test_the_variant_gives_the_verdicts_of_its_u1_twin(name, tmp_path, monkeypat
     executed = _run(variant_config(name, {"step": "floor"}, tmp_path / "residency"))
     executed_out = capfd.readouterr().out
     u1_gates, executed_gates = gate_verdicts(u1_out), gate_verdicts(executed_out)
-    verdicts = lambda record: {(c.name, c.backend): c.passed for c in record.accuracy.certificates}
+    verdicts = certificate_verdicts
     with capfd.disabled():
         for text in (u1_out, executed_out):
             print("\n".join(line for line in text.splitlines() if " wall " in line and "peak RSS" in line))
@@ -120,7 +182,8 @@ def test_the_variant_gives_the_verdicts_of_its_u1_twin(name, tmp_path, monkeypat
     assert RAN[name] <= set(executed_gates)
     assert all(verdict != "FAIL" for _, _, verdict in executed_gates)
     assert verdicts(executed) == verdicts(u1)
-    assert all(verdicts(executed).values())
+    assert {n for n, backend in verdicts(executed) if backend == STATIC_BACKEND} == STATIC_RECORDS
+    assert uncertified(executed) == [] == uncertified(u1), (uncertified(executed), uncertified(u1))
     assert executed.schedule.pass_count >= 2
 
 
@@ -146,6 +209,68 @@ def test_gate_verdicts_ignore_numbers_and_keep_verdicts():
     skipped = _TWIN_LINES.replace("[ValueTwinCertificate] PASS backend", "[ValueTwinCertificate] SKIP (unarmed)")
     assert gate_verdicts(skipped) != twin
     assert RAN["t0_44r"] <= set(twin) and not RAN["t0_44r"] <= set(gate_verdicts(skipped))
+
+
+def _static_report(*, in_scope=True, scope_note="", statuses=(), unknown=False, cascaded=False):
+    """A static check report of the given condition statuses (``(condition, theorem, status)``), as
+    ``check_deployment`` assembles one, so its records carry the verdict texts the check writes."""
+    from mimarsinan.certification.program_check.report import (
+        ConditionResult, ConditionSpec, StaticCheckReport, Violation,
+    )
+
+    report = StaticCheckReport(
+        semantics="value_integer", in_scope=in_scope, scope_note=scope_note,
+        results={c: ConditionResult(c, status) for c, _theorem, status in statuses},
+        specs=tuple(ConditionSpec(c, theorem, "program", "") for c, theorem, _status in statuses),
+        unknown_forms=[Violation("forms", "a_form", "unit 0", "unregistered")] if unknown else [])
+    if cascaded:
+        report.proposition2_note = "not claimed: cascaded TTFS is in Theorem 1 only (its greedy schedule is lossy)"
+    return report
+
+
+def _record(*records):
+    from types import SimpleNamespace
+
+    from mimarsinan.deployment_record.schema import CertificateRecord
+
+    return SimpleNamespace(accuracy=SimpleNamespace(certificates=tuple(CertificateRecord.from_dict(r) for r in records)))
+
+
+def test_the_static_verdicts_a_certified_run_may_record_are_named_and_never_failed():
+    """[fix round M1] W15 records a static record as passed only where its theorem is established; an outside-scope,
+    conditional or not-claimed verdict is recorded by name, never as a pass. A certified run's records: every sampled
+    certificate passes, and every static record is established or carries its stated reason or its conditions."""
+    from mimarsinan.certification.program_check.report import ESTABLISHED, FAILED, NOT_STATIC, P2, T1
+    from mimarsinan.deployment_record.schema import CertificateRecord
+    from mimarsinan.pipelining.core.gates.static_program_gate import _error_records
+
+    sampled = CertificateRecord("spike_count_streaming_twin", "hcm", True, 10, 1.0, 0.0, "").to_dict()
+    established = _static_report(statuses=(("A", T1, ESTABLISHED), ("B", P2, ESTABLISHED))).certificate_records()
+    outside = _static_report(in_scope=False, scope_note="the value domain without a readout law runs the fp64 float "
+                             "path, not the integer law").certificate_records()
+    conditional = _static_report(statuses=(("A", T1, ESTABLISHED), ("H4", P2, NOT_STATIC))).certificate_records()
+    not_claimed = _static_report(statuses=(("A", T1, ESTABLISHED),), cascaded=True).certificate_records()
+    assert [static_verdict(CertificateRecord.from_dict(r)) for r in established] == [("established", "")] * 2
+    assert [static_verdict(CertificateRecord.from_dict(r)) for r in outside] == [
+        ("outside_scope", "the value domain without a readout law runs the fp64 float path, not the integer law")] * 2
+    assert [static_verdict(CertificateRecord.from_dict(r)) for r in conditional] == [
+        ("established", ""), ("conditional", "H4")]
+    assert static_verdict(CertificateRecord.from_dict(not_claimed[1]))[0] == "not_claimed"
+    for records in (established, outside, conditional, not_claimed):
+        assert uncertified(_record(sampled, *records)) == []
+        assert {n for (n, b) in certificate_verdicts(_record(sampled, *records)) if b == STATIC_BACKEND} == \
+            STATIC_RECORDS
+    # every failed form, a reason or condition missing, a pass on an unestablished verdict, a sampled failure
+    failed = _static_report(statuses=(("A", T1, FAILED), ("B", P2, ESTABLISHED))).certificate_records()
+    unknown = _static_report(statuses=(("A", T1, ESTABLISHED),), unknown=True).certificate_records()
+    unnamed = _static_report(in_scope=False, scope_note="").certificate_records()
+    errored = _error_records(ValueError("an element the check reads"))
+    passed_conditional = [dict(r, passed=True) for r in conditional]
+    for records, bad in ((failed, 1), (unknown, 2), (unnamed, 2), (errored, 2), (passed_conditional, 1)):
+        assert len(uncertified(_record(sampled, *records))) == bad, (records, uncertified(_record(sampled, *records)))
+    assert static_verdict(CertificateRecord.from_dict(errored[0]))[0] == "failed"
+    assert uncertified(_record(dict(sampled, passed=False), *established)) == [
+        "spike_count_streaming_twin [hcm] did not pass"]
 
 
 @pytest.mark.slow

@@ -6,7 +6,9 @@ same rows as evidence, ``scripts/cl3_certify.py``).
     builder's composition) in the pass partition, Q, the pins and the carry per boundary, and in cells and bytes
     where both packers pack every phase alike (A1); it equals the candidate plane's census on the unpruned
     programs, while on t0_44r (pruning) the difference is printed; the value programs run NF = SCM = HCM = the int64
-    golden at atol 0 under the integer readout law; t0_53r's pipeline gates and certificates all pass.
+    golden at atol 0 under the integer readout law; t0_53r's pipeline gates and sampled certificates all pass. [fix
+    round M1] Every static program check record (W15) is established, outside scope with its stated reason, or
+    conditional with its conditions, never failed; under the integer readout law both are established.
 (e) The step that minimizes the toolchain-priced writes plus carry under ``generic_estimated_22nm`` is the floor on
     CIFAR ResNet-18 w1/4 at every K (its step function has one step: every cut of the value program is a forced
     segment cut, so the carry is 0 at every r); on the spiking deep CNN of t0_03 at twice its cores a non-floor step
@@ -24,7 +26,9 @@ from pathlib import Path
 import pytest
 import torch
 
-from integration.test_residency_executed import RAN, _run, gate_verdicts, variant_config
+from integration.test_residency_executed import (
+    RAN, STATIC_BACKEND, STATIC_RECORDS, _run, certificate_verdicts, gate_verdicts, uncertified, variant_config,
+)
 from mimarsinan.deployment_record.build.from_mapping import schedule_record_from_mapping
 from mimarsinan.deployment_record.cost.absolute.step_choice import cheapest_step
 from mimarsinan.deployment_record.platform_physics import get_platform_physics
@@ -181,8 +185,12 @@ def test_the_pipeline_run_seals_and_certifies_the_executed_step(variant, readout
     if variant != "t0_44r":
         assert CF.differences(planes.record, planes.candidate) == []
     assert RAN[variant] <= set(gates) and all(v != "FAIL" for _, _, v in gates)
-    assert all(c.passed for c in record.accuracy.certificates)
+    static = {n: v for (n, backend), v in certificate_verdicts(record).items() if backend == STATIC_BACKEND}
+    assert set(static) == STATIC_RECORDS
+    assert uncertified(record) == [], uncertified(record)
     if readout_law:
+        # [fix round M1] under the integer readout law the static check establishes both theorems on the executed step
+        assert all(v == ("established", "") for v in static.values()), static
         shape = tuple(TV.resolve(variant[:-1])["input_shape"])
         nf = CF.deployed_value_model(model, ir, weight_bits=int(platform["weight_bits"]))
         certificate = CF.integer_certificate(nf, ir, hybrid, integer_inputs(type("P", (), {"input_shape": shape})(), 64))
