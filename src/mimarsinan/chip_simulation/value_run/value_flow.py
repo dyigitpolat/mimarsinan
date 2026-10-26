@@ -18,48 +18,27 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 from mimarsinan.chip_simulation.value_run import operand_payloads
 from mimarsinan.chip_simulation.value_run.host_ops import execute_host_op
-from mimarsinan.chip_simulation.value_run.operand_blocks import stage_banks
 from mimarsinan.chip_simulation.value_run.value_execution import (
     ValueSegmentScope,
     run_neural_segment_values,
 )
-from mimarsinan.mapping.ir import IRSource
+from mimarsinan.mapping.ir.dynamic_bank import stage_payload_sources
+from mimarsinan.mapping.packing.executed_reads import consumer_counts
 
 
 def _consumer_counts(hybrid_mapping) -> Dict[int, int]:
-    """{node_id: downstream reads} for state-buffer pruning (stage_io twin)."""
+    """{node_id: downstream reads} for state-buffer pruning: ``executed_reads.consumer_counts`` (every stage's slices,
+    host-op sources, program outputs and N2's payload writes), memoized as the spiking flows memoize it."""
     cached = getattr(hybrid_mapping, "_consumer_counts_cache", None)
     if cached is not None:
         return cached
-    counts: Dict[int, int] = {}
-
-    def _bump(nid: int) -> None:
-        counts[nid] = counts.get(nid, 0) + 1
-
-    for stage in hybrid_mapping.stages:
-        if stage.kind == "neural":
-            for s in stage.input_map:
-                if s.node_id is not None and int(s.node_id) >= 0:
-                    _bump(int(s.node_id))
-        elif stage.kind == "compute":
-            for src in stage.compute_op.input_sources.flatten():
-                if isinstance(src, IRSource) and src.node_id >= 0:
-                    _bump(int(src.node_id))
-    for src in hybrid_mapping.output_sources.flatten():
-        if isinstance(src, IRSource) and src.node_id >= 0:
-            _bump(int(src.node_id))
-    for stage in hybrid_mapping.stages:  # N2: a neural stage reads its banks' payload writes
-        for source in _payload_sources(hybrid_mapping, stage):
-            _bump(source)
+    counts = consumer_counts(hybrid_mapping)
     hybrid_mapping._consumer_counts_cache = counts
     return counts
 
 
 def _payload_sources(hybrid_mapping, stage) -> list:
-    bindings = getattr(hybrid_mapping, "dynamic_bank_bindings", None)
-    if not bindings or stage.kind != "neural":
-        return []
-    return sorted({int(bindings[bank].source_node_id) for bank in stage_banks(stage, bindings)})
+    return stage_payload_sources(stage, getattr(hybrid_mapping, "dynamic_bank_bindings", None) or {})
 
 
 _RAW_INPUT_NODE_ID = -2

@@ -38,7 +38,7 @@ T1, P2 = "theorem1", "proposition2"
 ASSUMED_EXECUTOR, ASSUMED_REFERENCE = "assumed_executor", "assumed_reference"
 #: When an assumption is listed: always, only where the verdict is against the IR at unbounded geometry, or only under
 #: a phase-dithered encode.
-ALWAYS, UNBOUNDED_LISTED, DITHERED_LISTED = "", "unbounded_reference", "dithered_encode"
+ALWAYS, UNBOUNDED_LISTED, DITHERED_LISTED, OPERAND_LISTED = "", "unbounded_reference", "dithered_encode", "operand_banks"
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ class Assumption:
     tested_by: str = "the sampled run (512 inputs at atol 0 against the int64 golden or the identity program)"
     #: The condition whose established status discharges the assumption (it is then no longer assumed).
     discharged_by: str = ""
-    #: ``ALWAYS``, ``UNBOUNDED_LISTED`` or ``DITHERED_LISTED``.
+    #: ``ALWAYS``, ``UNBOUNDED_LISTED``, ``DITHERED_LISTED`` or (N2, a program with operand banks) ``OPERAND_LISTED``.
     listed_when: str = ALWAYS
 
 
@@ -104,6 +104,12 @@ ASSUMED: Tuple[Assumption, ...] = (
                "(stage_input_channels)", "a phase-dithered encode rotates every encoded channel by the program's "
                "channel table as channels_of reads it", "the sampled run; the X3a R4 arm switches it (the rotation "
                "keyed on stage-input positions)", listed_when=DITHERED_LISTED),
+    Assumption("operand payload", ASSUMED_EXECUTOR, (T1, P2), "tiles",
+               "chip_simulation/value_run/operand_payloads.py (materialize), chip_simulation/value_run/operand_blocks.py "
+               "(bank_payload, fill_operand_blocks)", "every bound bank's cells are its payload write's codes per "
+               "sample, at the binding's offset, shape and step, each within its payload_bits grid",
+               "the operand certificate (the payload edge at atol 0 on every written cell, cells beyond the width) "
+               "and the sampled run", listed_when=OPERAND_LISTED),
 )
 
 
@@ -174,10 +180,14 @@ class StaticCheckReport:
     #: What the check's identity program executes (``unbounded.latency.IdentityFacts``), so ``ir-tiling`` can run
     #: after the program is freed; no record carries it.
     identity_facts: Optional[Any] = None
+    #: [N2] The program holds operand banks (its verdicts assume the ``operand payload`` clause).
+    operand_banks: bool = False
 
     def _listed(self, a: Assumption) -> bool:
         if a.listed_when == UNBOUNDED_LISTED:
             return self.reference == UNBOUNDED_REFERENCE
+        if a.listed_when == OPERAND_LISTED:
+            return self.operand_banks
         return self.dithered_encode if a.listed_when == DITHERED_LISTED else True
 
     def assumed(self, theorem: str) -> List[Assumption]:

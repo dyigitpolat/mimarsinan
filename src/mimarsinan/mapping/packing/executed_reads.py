@@ -16,6 +16,7 @@ from typing import Any, Callable, Collection, Dict, List, Optional, Tuple
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
+from mimarsinan.mapping.ir.dynamic_bank import stage_payload_sources
 from mimarsinan.mapping.packing.pass_timing import replay_delays
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.schedule.pass_carry import carried_outputs_by_stage
@@ -110,8 +111,9 @@ def executed_weights(mapping, core_index: int) -> np.ndarray:
 
 
 def consumer_counts(program) -> Dict[int, int]:
-    """``{node id: reads}`` over every neural stage's input slices, every host op's sources and the program outputs:
-    the state-buffer refcounts the stage loop frees buffers by (``_build_consumer_counts`` memoizes it)."""
+    """``{node id: reads}`` over every neural stage's input slices, every host op's sources, the program outputs and
+    (N2) each neural stage's payload writes (``dynamic_bank.stage_payload_sources``): the state-buffer refcounts the
+    stage loop frees buffers by (``_build_consumer_counts`` and the value flow memoize it)."""
     counts: Dict[int, int] = {}
 
     def bump(node) -> None:
@@ -129,6 +131,10 @@ def consumer_counts(program) -> Dict[int, int]:
     for src in program.output_sources.flatten():
         if isinstance(src, IRSource) and src.node_id >= 0:
             bump(src.node_id)
+    bindings = getattr(program, "dynamic_bank_bindings", None) or {}
+    for stage in program.stages if bindings else ():
+        for source in stage_payload_sources(stage, bindings):
+            bump(source)
     return counts
 
 

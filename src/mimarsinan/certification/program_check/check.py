@@ -26,6 +26,9 @@ from mimarsinan.certification.program_check.report import (
 from mimarsinan.certification.program_check.residency import check_residency
 from mimarsinan.certification.program_check.tiles import sweep, wiring
 from mimarsinan.certification.program_check.unbounded import check_ir_tiling
+from mimarsinan.certification.program_check.unit_forms.payloads import check_bindings, check_payloads
+from mimarsinan.certification.program_check.unit_forms.pruned_rows import check_dropped_offset_rows
+from mimarsinan.certification.program_check.unit_forms.widths import check_cell_widths
 from mimarsinan.certification.program_check.unbounded.latency import IdentityFacts
 from mimarsinan.certification.program_check.view import K_ON, ProgramView, build_view
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
@@ -35,8 +38,10 @@ T1, P2 = "theorem1", "proposition2"
 CONDITION_MAP: Tuple[ConditionSpec, ...] = (
     ConditionSpec("tiles", T1, "deployment", "the tiles reassemble to the identity program: every placed neuron's "
                   "executed fan-in summed per source, its bias and the stage and program I/O equal the identity's; "
-                  "the placements are a bijection onto its neurons; every bank block is its core's grid; every memo "
-                  "and span cache its derivation; host stages are its host ops, fixed functions"),
+                  "the placements are a bijection onto its neurons; every bank block is its core's grid; every neuron "
+                  "on a bound bank reads the identity neuron's payload cells (bank, bank row and column, row source) "
+                  "under the IR's binding table, and no operand block sits on a fused core; every memo and span "
+                  "cache its derivation; host stages are its host ops, fixed functions"),
     ConditionSpec("H1-theta", T1, "program", "every core's stored singletons equal each resident's identity core's"),
     ConditionSpec("H1-latency", T1, "program", "the residents of a core share one identity (fused, ALAP) latency"),
     ConditionSpec("H5-collapse", T1, "program", "every carried wire delivers what the semantics owes a cut (the "
@@ -47,7 +52,8 @@ CONDITION_MAP: Tuple[ConditionSpec, ...] = (
     ConditionSpec("H5-skew", T1, "program", "R1 and R2"),
     ConditionSpec("H6", T1, "program", "a fused core's neurons carry their whole fan-in in one dot product"),
     ConditionSpec("H10", T1, "program", "a resident pass holds what its programming pass wrote; pinned cores fit "
-                  "beside every pass on the declared pool"),
+                  "beside every pass on the declared pool, a wholly resident pass on its programming pass's cores, "
+                  "every core of a declared type"),
     ConditionSpec("R3", T1, "program", "a slice is carried exactly when the identity reads it inside its segment; no "
                   "identity segment boundary runs in-unit"),
     ConditionSpec("R4", T1, "program", "every slice a unit reads is of the kind the identity's unit reads it as, and "
@@ -56,20 +62,24 @@ CONDITION_MAP: Tuple[ConditionSpec, ...] = (
     ConditionSpec("R5", T1, "program", "under windowed LIF every unit is one identity level unit, of its kind and "
                   "flag"),
     ConditionSpec("laws", T1, "program", "every core of an integer value program carries a law, its stamped columns "
-                  "the IR node's solved law"),
+                  "the IR node's solved law, each fused operand by the source its operand row reads"),
     ConditionSpec("H0", T1, "executor", "the program's form is the declared semantics' (level units exactly under "
                   "windowed LIF, every multi-depth windowed stage levelled, every level flag its unit's)"),
     ConditionSpec("H7", T1, "executor", "on a per-event core: no co-residency, split neuron, fused fan-in or level unit"),
-    ConditionSpec("H8", T1, "executor", "integral weights and biases, every weight and code exact in each executor's "
-                  "upload dtype, and every charge below each executor's exact integer reach"),
-    ConditionSpec("H9", T1, "executor", "every unit reads only produced nodes, every node is produced once, no "
-                  "coalescing group is cut, the refcount memos are fresh"),
+    ConditionSpec("H8", T1, "executor", "integral weights and the biases an executor accumulates (a law core's is "
+                  "its law's), every weight and code exact in each executor's upload dtype and every typed core's "
+                  "codes on its type's grid, and every charge below each executor's exact integer reach (a bound "
+                  "bank's cells at its payload width)"),
+    ConditionSpec("H9", T1, "executor", "every unit reads only produced nodes (its slices and its payload writes), "
+                  "every node is produced once, no coalescing group is cut, the refcount memos are fresh"),
     ConditionSpec("R6", T1, "executor", "every unit's core graph is acyclic and every core read is walked"),
     ConditionSpec("H2", P2, "network", "window coverage", "a latency gap above one leaves coverage to the data"),
     ConditionSpec("H3", P2, "network", "no terminal overshoot", "a signed fan-in leaves overshoot to the data"),
     ConditionSpec("H4", P2, "network", "chase completion", "burst debt drains depending on the arrival pattern"),
     ConditionSpec("H8-staircase", P2, "network", "every staircase on the integer charge (integral lattice)"),
-    ConditionSpec("N-identity", P2, "network", "compaction drops only dead rows and columns"),
+    ConditionSpec("N-identity", P2, "network", "compaction drops only dead rows and columns, and every row it drops "
+                  "reads integer 0 under its reader's law (beside an offset grid: value 0 a whole-step code k, "
+                  "M0 k = M_o, the ADC passing the dropped term unchanged)"),
     ConditionSpec("seam-currency", P2, "network", "every core reading a host op's output re-encodes it at its trained "
                   "entry currency (calculus 11.2): coherent by construction at unit gauges",
                   "a non-unit seam's coherence depends on how its host op owns its scale domain, which the program "
@@ -90,7 +100,7 @@ CONDITION_MAP: Tuple[ConditionSpec, ...] = (
 RULES: Dict[str, Tuple[str, ...]] = {
     "tiles": ("fan_in", "coverage", "unplaced_column", "placement_extent", "foreign_node", "output_source",
               "output_width", "node_scales", "program_outputs", "host_op", "host_training", "identity_placement",
-              "bank_content", "stale_memo", "fused_axons"),
+              "bank_content", "stale_memo", "fused_axons", "payload_cells", "operand_binding", "operand_on_fused_core"),
     "H1-theta": ("threshold", "activation_scale", "parameter_scale", "input_activation_scale", "boundary_grid"),
     "H1-latency": ("co_resident_latencies",),
     "H5-collapse": ("transfer", "wire_delivery", "shifted_count"),
@@ -98,18 +108,19 @@ RULES: Dict[str, Tuple[str, ...]] = {
     "R2": ("delivery_delay", "delay_on_encoded_slice"),
     "H6": ("partial_sums",),
     "H10": ("resident_content", "no_programming_pass", "pinned_slot_overwritten", "pin_out_of_range",
-            "undeclared_pool"),
+            "undeclared_pool", "undeclared_core"),
     "R3": ("carry_scope", "mixed_segments", "boundary_edge_in_unit", "stale_memo"),
     "R4": ("phase_channel", "slice_kind", "multi_home_unit"),
     "R5": ("unit_kind", "mixed_levels", "level_flag"),
-    "laws": ("stamped_law", "solved_law", "law_free_core"),
+    "laws": ("stamped_law", "solved_law", "law_free_core", "operand_source"),
     "H0": ("unlevelled_windowed_stage", "streamed_windowed_pass", "level_unit", "level_flag"),
     "H7": ("co_residency", "split_neuron", "fused_fan_in", "level_unit"),
-    "H8": ("off_lattice", "input_range", "accumulation_bound", "law_magnitude", "upload_precision"),
-    "H9": ("reads_unproduced", "produced_twice", "output_unproduced", "coalescing_group_cut", "stale_memo"),
+    "H8": ("off_lattice", "input_range", "accumulation_bound", "law_magnitude", "upload_precision", "cell_width"),
+    "H9": ("reads_unproduced", "produced_twice", "output_unproduced", "coalescing_group_cut", "stale_memo",
+           "payload_unproduced"),
     "R6": ("core_cycle", "unwalked_core"),
     "H8-staircase": ("off_lattice",),
-    "N-identity": ("dropped_live_row", "dropped_output", "dropped_read_column"),
+    "N-identity": ("dropped_live_row", "dropped_output", "dropped_read_column", "dropped_offset_row"),
     "ir-tiling": ("reference_geometry", "unkeyed_neuron", "duplicate_neuron", "partial_sum_group", "missing_neuron",
                   "extra_neuron", "fan_in", "bias", "threshold", "neuron_scale", "boundary_grid", "law", "activation",
                   "executed_latency", "timing_derivation", "host_op", "program_outputs", "phase_channel"),
@@ -209,9 +220,11 @@ def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclarati
     delta, iota = build_view(program, foreign=-6), build_view(identity, foreign=-7)
     counts: Dict[str, Any] = {"compile_source": compile_source}
     levels = _value_levels(iota) if decl.value else (lambda unit, cv: np.ones(cv.used_axons, dtype=np.float64))
+    check_bindings(program, ir_graph, results["tiles"])   # first: a lost table's NaN cells fail every fan-in after it
     facts = sweep(delta, iota, results, row_levels=levels, include_bias=not decl.value)
     wiring(delta, iota, program, identity, facts.width, results["tiles"])
     RD.check_banks(delta, results["tiles"], counts)
+    check_payloads(delta, iota, results["tiles"], counts)
     RD.check_memos(program, results)
     deliveries, iota_deliveries = RD.unit_deliveries(program, delta, decl), RD.unit_deliveries(identity, iota, decl)
     ident = TM.identity_timing(iota, facts, latencies=decl.timed)
@@ -225,12 +238,14 @@ def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclarati
     else:
         results["H7"].status, results["H7"].note = VACUOUS, "no core type declares per-event firing"
     E.check_accumulation(delta, facts, decl, results["H8"], results["laws"], counts)
+    check_cell_widths({"deployment": delta, "identity": iota}, results["H8"], counts)
     check_residency(program, delta, decl, results["H10"])
     N.check_staircase(facts, results["H8-staircase"])
     N.check_coverage(ident, results["H2"])
     N.check_overshoot(facts, results["H3"])
     N.chase_completion(results["H4"])
     N.check_identity_network(ir_graph, results["N-identity"])
+    check_dropped_offset_rows(ir_graph, results["N-identity"], counts)
     N.check_solved_laws(ir_graph, law_inputs, results["laws"])
     N.check_seams(ir_graph, identity, results["seam-currency"])
     N.check_half_step(decl, results["half-step"])
@@ -249,7 +264,8 @@ def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclarati
                                unknown_forms=[v for v in forms if v.condition == "forms"],
                                unread_forms=[v for v in forms if v.condition == "forms_unread"],
                                compile_wall_s=compile_wall_s if compile_source == "built" else None, counts=counts,
-                               dithered_encode=decl.dithered_encode, identity_facts=facts)
+                               dithered_encode=decl.dithered_encode, identity_facts=facts,
+                               operand_banks=bool(delta.bindings))
     report.wall_s = time.perf_counter() - start
     if decl.semantics == CASCADED_TTFS:
         report.proposition2_note = "not claimed: cascaded TTFS is in Theorem 1 only (its greedy schedule is lossy)"

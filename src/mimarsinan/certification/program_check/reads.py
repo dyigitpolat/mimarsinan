@@ -13,6 +13,7 @@ import torch
 
 from mimarsinan.certification.program_check.declaration import SYNCHRONIZED_LIF, CheckDeclaration
 from mimarsinan.certification.program_check.report import ConditionResult, Violation
+from mimarsinan.certification.program_check.unit_forms.operands import static_part
 from mimarsinan.certification.program_check.view import ProgramView, UnitView
 from mimarsinan.mapping.packing.executed_reads import (
     SliceDelivery, bank_block, bank_read, slice_deliveries, stale_memos,
@@ -93,7 +94,7 @@ def check_memos(program: Any, results: Mapping[str, ConditionResult]) -> None:
 def check_banks(view: ProgramView, tiles: ConditionResult, counts: Dict[str, Any]) -> None:
     """``bank_content``: every core the HCM and the TTFS executors upload from a weight bank (``bank_read``) has a
     bank block equal to its grid block, so every executor (the value one and the backends read the grid) runs the
-    same weights."""
+    same weights; an operand block (N2) is the payload's in both, so it is cleared in both."""
     bank_cores = 0
     for unit in view.units:
         hcm = unit.stage.hard_core_mapping
@@ -109,8 +110,8 @@ def check_banks(view: ProgramView, tiles: ConditionResult, counts: Dict[str, Any
                 what = "is absent"
             elif block.shape != want:
                 what = f"block {read.axons} x {read.neurons} has shape {block.shape}, the core uses {want}"
-            elif not np.array_equal(np.asarray(block, dtype=np.float64),
-                                    np.asarray(cv.core.get_core_matrix(), dtype=np.float64)[:want[0], :want[1]]):
+            elif not np.array_equal(static_part(np.asarray(block, dtype=np.float64), cv.blocks), static_part(
+                    np.asarray(cv.core.get_core_matrix(), dtype=np.float64)[:want[0], :want[1]], cv.blocks)):
                 what = "block differs from the core's grid"
             else:
                 continue

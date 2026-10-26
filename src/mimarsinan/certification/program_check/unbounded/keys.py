@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from mimarsinan.certification.program_check.unbounded.payload_cells import payload_block
+from mimarsinan.certification.program_check.unbounded.unit_keys import unit_key
 from mimarsinan.certification.program_check.view import OFF, Canonical, canonical
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.packing.softcore.compaction import _ir_keep_indices
@@ -59,7 +61,13 @@ class KeySpace:
             return "always-on axon"
         if owner == INPUT_OWNER:
             return f"input[{channel}]"
-        return f"unkeyed node {owner[2]}[{channel}] of the {owner[1]} IR"
+        if owner[0] == "unkeyed":
+            return f"unkeyed node {owner[2]}[{channel}] of the {owner[1]} IR"
+        if owner[0] == "relay":   # [E6] unit keys (``unit_keys``)
+            return "relay of " + ("an off axon" if owner[1] < 0 else self.text(owner[1]))
+        if owner[0] == "lane-reduce":
+            return f"reduction of perceptron {owner[1]}, pool output {channel}"
+        return f"{' '.join(str(part) for part in owner)}[{channel}]"
 
 
 def node_width(node: Any, graph: IRGraph) -> int:
@@ -126,6 +134,8 @@ class KeyedIR:
     duplicated: List[Tuple[int, Tuple[int, int], Tuple[int, int]]] = field(default_factory=list)
     hosts: Dict[str, Any] = field(default_factory=dict)
     by_id: Dict[int, Any] = field(default_factory=dict)
+    #: [E6] Neural nodes keyed by their unit's key (``unit_keys``: a lane core, a relay), by kind.
+    unit_keyed: Dict[int, str] = field(default_factory=dict)
 
     def source_codes(self, sources) -> np.ndarray:
         """One code per IR source: the producer neuron's identity, the raw input's, the always-on axon's, ``OFF`` for
@@ -156,11 +166,29 @@ class KeyedIR:
 
     def block(self, node: NeuralCore) -> Canonical:
         """The node's fan-in per source code over its kept rows (rows summed per code, off rows dropped), every column
-        before compaction (a dropped column's weights are never read)."""
+        before compaction (a dropped column's weights are never read); a bound bank's node by its payload cells."""
         rows = self.rows[int(node.id)]
+        payload = payload_block(self, node, rows)
+        if payload is not None:
+            return payload
         sources = self.node_sources(node)
         matrix = np.asarray(node.get_core_matrix(self.graph))
         return canonical(self.source_codes([sources[r] for r in rows.tolist()]), matrix[rows], None)
+
+
+def _neural_codes(node: NeuralCore, graph: IRGraph, out: KeyedIR) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """A neural node's codes and channels per column before compaction: its perceptron's (perceptron, output column,
+    channel), else (E6) its unit's (``unit_keys``: a lane core, a relay); None for a node no key names."""
+    nid = int(node.id)
+    found, perceptron = perceptron_channels(node, node_width(node, graph)), node.perceptron_index
+    if found is not None and perceptron is not None:
+        column = -1 if node.perceptron_output_column is None else int(node.perceptron_output_column)
+        return out.space.codes(("perceptron", int(perceptron), column), found), found
+    unit = unit_key(node, graph, out.node_sources(node), out.rows[nid], out.source_codes)
+    if unit is None:
+        return None
+    out.unit_keyed[nid], owners, channels = unit
+    return np.asarray([int(out.space.owner(o)) for o in owners], dtype=np.int64) | channels, channels
 
 
 def keyed(graph: IRGraph, space: KeySpace, label: str) -> KeyedIR:
@@ -174,27 +202,24 @@ def keyed(graph: IRGraph, space: KeySpace, label: str) -> KeyedIR:
                 out.duplicated.append((-1, (int(out.hosts[name].id), 0), (nid, 0)))
             out.hosts[name] = node
             channels = np.arange(node_width(node, graph), dtype=np.int64)
-            owner: Tuple[Any, ...] = ("host", name)
-        elif isinstance(node, NeuralCore):
-            found, perceptron = perceptron_channels(node, node_width(node, graph)), node.perceptron_index
-            if found is None or perceptron is None:
-                out.unkeyed.append(nid)
-                continue
-            channels = found
-            column = -1 if node.perceptron_output_column is None else int(node.perceptron_output_column)
-            owner = ("perceptron", int(perceptron), column)
-            out.rows[nid], out.cols[nid] = kept(node)
-        else:
+            out.codes[nid], out.channels[nid] = space.codes(("host", name), channels), channels
             continue
-        codes = space.codes(owner, channels)
-        if isinstance(node, NeuralCore):
-            dropped = np.ones(len(codes), dtype=bool)
-            dropped[out.cols[nid]] = False
-            codes[dropped] = OFF
-            for column in out.cols[nid].tolist():
-                code = int(codes[column])
-                held = out.neurons.setdefault(code, (nid, column))
-                if held != (nid, column):
-                    out.duplicated.append((code, held, (nid, column)))
+        if not isinstance(node, NeuralCore):
+            continue
+        out.rows[nid], out.cols[nid] = kept(node)
+        found = _neural_codes(node, graph, out)
+        if found is None:
+            out.unkeyed.append(nid)
+            del out.rows[nid], out.cols[nid]
+            continue
+        codes, channels = found
+        dropped = np.ones(len(codes), dtype=bool)
+        dropped[out.cols[nid]] = False
+        codes[dropped] = OFF
+        for column in out.cols[nid].tolist():
+            code = int(codes[column])
+            held = out.neurons.setdefault(code, (nid, column))
+            if held != (nid, column):
+                out.duplicated.append((code, held, (nid, column)))
         out.codes[nid], out.channels[nid] = codes, channels
     return out

@@ -58,9 +58,9 @@ def emit_operand_product(mapper: Any, ir_mapping: Any, stream: np.ndarray, paylo
         bank = ir_mapping.register_weight_bank(
             weights=np.full((neurons, axons), np.nan), biases=None, perceptron_index=operand.perceptron_index)
         for i in range(instances):
-            result = ir_mapping.add_shared_neural_core(
+            result = ir_mapping.add_shared_neural_core(  # [E6] instance i is the bank's output column i (provenance)
                 input_sources=np.asarray(stream[j, i], dtype=object), weight_bank_id=bank, has_bias=False,
-                name=f"{operand.name}_v{i}", perceptron_index=operand.perceptron_index,
+                name=f"{operand.name}_v{i}", perceptron_index=operand.perceptron_index, perceptron_output_column=i,
             )
             node_id = _first_node_id(result)
             specs = getattr(ir_mapping, "layout_softcores", None)

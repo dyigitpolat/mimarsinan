@@ -8,7 +8,7 @@ facts H8 bounds; the column coverage makes the placement records a bijection ont
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
@@ -16,6 +16,8 @@ import torch
 
 from mimarsinan.certification.program_check.reads import training_module
 from mimarsinan.certification.program_check.report import ConditionResult, Violation
+from mimarsinan.certification.program_check.unit_forms.lanes import compare_laws
+from mimarsinan.certification.program_check.unit_forms.operands import payload_terms
 from mimarsinan.certification.program_check.view import (
     OFF, Canonical, Placed, ProgramView, canonical, decode, first_difference, restrict, same,
 )
@@ -69,22 +71,30 @@ def _block(cv, lo: int, hi: int) -> Tuple[np.ndarray, Optional[np.ndarray]]:
 
 
 def _facts(cv, block_all, bias_all, row_levels, include_bias: bool) -> CoreFacts:
-    live = np.any(block_all != 0, axis=1) & (cv.codes != OFF)
-    used = np.asarray(block_all, dtype=np.float64)[cv.codes != OFF]
-    levels = row_levels[cv.codes != OFF][:, None]
+    named = cv.codes != OFF
+    # [N2] a bound bank's rows read the payload (cleared in ``block_all``): live reads, at the payload's width.
+    extra, top, coded, payload_rows = payload_terms(cv.blocks, cv.bindings or {}, row_levels, named, cv.used_neurons)
+    read = np.any(block_all != 0, axis=1) | payload_rows
+    live = read & named
+    used = np.asarray(block_all, dtype=np.float64)[named]
+    levels = row_levels[named][:, None]
     # A row whose input range is undeclared (NaN) taints the bound only where it carries a weight.
     mags = np.where(used != 0, np.abs(used) * levels, 0.0).sum(axis=0) if used.size else np.zeros(1)
+    if cv.blocks:
+        mags = mags + extra if mags.size == extra.size else extra
     bias = None if bias_all is None else np.asarray(bias_all[:cv.used_neurons], dtype=np.float64)
     if include_bias and bias is not None and bias.size:
         mags = mags + np.abs(bias)
     theta = float(getattr(cv.core, "threshold", 1.0) or 0.0)
-    weighted = levels[:, 0][np.any(used != 0, axis=1)] if used.size else np.zeros(0)
+    weighted = row_levels[live]
+    law = getattr(cv.core, "readout_law", None)
     return CoreFacts(live=live, magnitude=float(np.max(mags, initial=0.0)), theta=theta, placed=bool(cv.placements),
-                     max_weight=float(np.abs(used).max(initial=0.0)),
-                     max_level=float(np.nanmax(weighted, initial=0.0)) if weighted.size else 0.0,
-                     law=getattr(cv.core, "readout_law", None),
-                     integral_weights=bool(np.array_equal(used, np.round(used))),
-                     integral_bias=bias is None or bool(np.array_equal(bias, np.round(bias))),
+                     max_weight=max(float(np.abs(used).max(initial=0.0)), top),
+                     max_level=float(np.nanmax(weighted, initial=0.0)) if weighted.size else 0.0, law=law,
+                     integral_weights=coded and bool(np.array_equal(used, np.round(used))),
+                     # [E6] a law core's executor reads the law's integer bias, never its hardware bias (a bias at
+                     # the law's resolution is real-valued, WI-5g's declared grids).
+                     integral_bias=law is not None or bias is None or bool(np.array_equal(bias, np.round(bias))),
                      integral_threshold=theta == round(theta),
                      nonnegative=bool((used >= 0).all()) and (bias is None or bool((bias >= 0).all())))
 
@@ -92,17 +102,6 @@ def _facts(cv, block_all, bias_all, row_levels, include_bias: bool) -> CoreFacts
 def _singletons(core) -> Tuple[str, ...]:
     constrained = getattr(core, "constrained_properties", None) or ()
     return tuple(p.name for p in CORE_SINGLETON_PROPERTIES if p.name in EXECUTOR_READ or p.name in constrained)
-
-
-def _law_columns(core, lo: int, hi: int):
-    law = getattr(core, "readout_law", None)
-    return None if law is None else law.take_columns(np.arange(lo, hi))
-
-
-def _laws_equal(a, b) -> bool:
-    if a is None or b is None:
-        return a is b
-    return all(np.array_equal(getattr(a, f.name), getattr(b, f.name)) for f in fields(a))
 
 
 def sweep(delta: ProgramView, iota: ProgramView, results: Dict[str, ConditionResult], *,
@@ -170,7 +169,8 @@ def sweep(delta: ProgramView, iota: ProgramView, results: Dict[str, ConditionRes
                     if fused is not None:
                         h6.add(Violation("H6", "partial_sums", where, detail))
                 ip = ident[p.node]
-                icore = iota.units[ip.unit].cores[ip.core].core
+                icv = iota.units[ip.unit].cores[ip.core]
+                icore = icv.core
                 for name in _singletons(cv.core):
                     theta.checked += 1
                     prop = next(q for q in CORE_SINGLETON_PROPERTIES if q.name == name)
@@ -178,13 +178,13 @@ def sweep(delta: ProgramView, iota: ProgramView, results: Dict[str, ConditionRes
                         theta.add(Violation("H1-theta", name, where,
                                             f"the core stores {getattr(cv.core, name, None)!r}, the node's "
                                             f"identity core {getattr(icore, name, None)!r}"))
-                mine_law = _law_columns(cv.core, lo, hi)
-                their_law = _law_columns(icore, ip.neuron_offset + p.col0, ip.neuron_offset + p.col0 + p.cols)
-                if mine_law is not None or their_law is not None:
-                    laws.checked += 1
-                    if not _laws_equal(mine_law, their_law):
-                        laws.add(Violation("laws", "stamped_law", where,
-                                           "the core's law columns differ from the node's solved law"))
+                carried, broken = compare_laws(cv.core, cv.codes, lo, hi, icore, icv.codes, ip.neuron_offset + p.col0,
+                                               ip.neuron_offset + p.col0 + p.cols)
+                laws.checked += int(carried)
+                for rule in broken:
+                    laws.add(Violation("laws", rule, where, "the core's law columns differ from the node's solved law"
+                                       if rule == "stamped_law" else "a column's fused operand row reads another "
+                                       "source than the identity core's (zero crossbar weights: no fan-in shows it)"))
                 pending[p.node] -= 1
                 if pending[p.node] == 0:
                     cache.pop(p.node, None)

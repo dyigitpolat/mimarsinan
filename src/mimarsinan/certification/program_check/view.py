@@ -2,7 +2,9 @@
 its input slices, and per hard core the used rectangle, the IR neuron each used column is (its placement record), and
 the source each used axon row reads, as one integer code per row.
 
-The weights are the ones the HCM uploads (the bank block on the bank fast path, ``executed_reads``). A row's code
+The weights are the ones the HCM uploads (the bank block on the bank fast path, ``executed_reads``), each operand
+block a bound bank's placement writes per sample cleared (N2, ``unit_forms.operands``: the value executor's static
+grid; the payload cells are compared apart, ``unit_forms.payloads``). A row's code
 names its source in the program-independent space both programs share: ``(node, index)`` of an IR node's
 buffer (the network input -2, a compacted neural column, a host output), the always-on axon, or nothing (an off axon).
 An in-unit core source is coded through the placement of the neuron it reads; a stage input through the slice that
@@ -16,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from mimarsinan.certification.program_check.unit_forms.operands import core_blocks, program_bindings, static_part
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import enumerate_execution_stages
 from mimarsinan.mapping.packing.executed_reads import executed_weights
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
@@ -69,11 +72,16 @@ class CoreView:
     placements: List[Placed] = field(default_factory=list)
     mapping: Any = None
     index: int = 0
+    #: [N2] The operand blocks the value executor writes per sample on this core, and whether it refuses them here.
+    blocks: list = field(default_factory=list)
+    operand_refused: bool = False
+    bindings: Any = None
 
     def weights(self) -> np.ndarray:
         """The weight block the HCM uploads for this core (``executed_reads.executed_weights``: the bank block on the
-        bank fast path, else the grid), recomputed per call so a sweep holds one core's block at a time."""
-        return executed_weights(self.mapping, self.index)
+        bank fast path, else the grid) with its operand blocks cleared, recomputed per call so a sweep holds one core's
+        block at a time."""
+        return static_part(executed_weights(self.mapping, self.index), self.blocks)
 
 
 @dataclass
@@ -97,6 +105,8 @@ class ProgramView:
     hosts: List[Tuple[int, int, Any]]
     placements: Dict[int, List[Placed]]
     unplaced: List[Tuple[int, int, int]]
+    #: [N2] The program's binding table (``dynamic_bank_bindings``), empty without operand banks.
+    bindings: Any = None
 
 
 def _used(core) -> Tuple[int, int]:
@@ -177,6 +187,7 @@ def build_view(program: Any, *, foreign: int) -> ProgramView:
     placements: Dict[int, List[Placed]] = {}
     unplaced: List[Tuple[int, int, int]] = []
     index_of = {id(s): i for i, s in enumerate(program.stages)}
+    bindings = program_bindings(program)
     for index, program_stage, stage in enumerate_execution_stages(program.stages):
         p_index = index_of[id(program_stage)]
         if stage.kind != "neural" or stage.hard_core_mapping is None:
@@ -187,10 +198,12 @@ def build_view(program: Any, *, foreign: int) -> ProgramView:
         view = UnitView(index, p_index, stage, program_stage, program_stage.schedule_segment_index,
                         stage is not program_stage,
                         [(int(s.node_id), int(s.offset), int(s.size)) for s in stage.input_map], [])
+        blocks, refused = core_blocks(hcm, bindings)
         for h, core in enumerate(hcm.cores):
             ua, un = _used(core)
             cv = CoreView(core, ua, un, np.full(un, -1, dtype=np.int64), np.full(un, -1, dtype=np.int64),
-                          mapping=hcm, index=h)
+                          mapping=hcm, index=h, blocks=blocks[h] if h < len(blocks) else [],
+                          operand_refused=h in refused, bindings=bindings)
             _placements(len(units), h, cv, records[h] if h < len(records) else [])
             for p in cv.placements:
                 placements.setdefault(p.node, []).append(p)
@@ -200,7 +213,7 @@ def build_view(program: Any, *, foreign: int) -> ProgramView:
         for cv in view.cores:
             _rows(view, cv, foreign, tables)
         units.append(view)
-    return ProgramView(units, hosts, placements, unplaced)
+    return ProgramView(units, hosts, placements, unplaced, bindings)
 
 
 @dataclass

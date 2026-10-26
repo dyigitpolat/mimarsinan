@@ -24,13 +24,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from mimarsinan.certification.program_check.report import ASSUMED_CONDITION, ConditionResult, Violation
-from mimarsinan.certification.program_check.tiles import _laws_equal, _same_value, _values_equal
+from mimarsinan.certification.program_check.tiles import _same_value, _values_equal
 from mimarsinan.certification.program_check.unbounded.keys import (
     WHOLE_FAN_IN_ROLES, KeyedIR, KeySpace, kept, keyed, node_width,
 )
 from mimarsinan.certification.program_check.unbounded.latency import IdentityFacts, facts_of, identity_timing
 from mimarsinan.certification.program_check.unbounded.laws import column_bounds, output_levels, same_function
 from mimarsinan.certification.program_check.unbounded.reference import check_reference
+from mimarsinan.certification.program_check.unit_forms.lanes import laws_equal as _laws_equal
 from mimarsinan.certification.program_check.view import Canonical, first_difference, same
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
@@ -251,6 +252,8 @@ class _Compare:
         for k, table in ((self.t, facts.channels), (self.u, node_phase_channels(self.u.graph,
                                                                                  _identity_remaps(self.u.graph)))):
             for nid, columns in k.cols.items():
+                if nid in k.unit_keyed:   # [E6] a lane core or a relay holds no perceptron channel to key
+                    continue
                 want = k.channels[nid][columns]
                 got = _entry(table, nid, len(want))
                 if got is None or not np.array_equal(got, want):
@@ -258,6 +261,8 @@ class _Compare:
                               f"outputs 0..{len(want) - 1} by channels {None if got is None else got[:6].tolist()}, "
                               f"its neurons' channels are {want[:6].tolist()}")
         for nid in self.t.cols:
+            if nid in self.t.unit_keyed:
+                continue
             a, b = _entry(derived_t, nid, len(self.t.cols[nid])), _entry(facts.channels, nid, len(self.t.cols[nid]))
             if a is None or b is None or not np.array_equal(a, b):
                 if a is None and b is None:

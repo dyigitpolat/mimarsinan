@@ -32,6 +32,8 @@ PROGRAM: Dict[str, Readers] = {
             "node_buffer_scales", "node_output_shifts"),
     "_consumer_counts_cache": ("H9",), "_carried_output_cache": ("R3",), "node_phase_channels": ("R4",),
     "schedule_residency_plan": (UNREAD,), "source_ir_build_token": (UNREAD,),
+    # [N2] the binding table the value executor writes each bound bank's payload by (``unit_forms.operands``).
+    "dynamic_bank_bindings": ("tiles", "H9", "H8"),
 }
 STAGE: Dict[str, Readers] = {
     "kind": ("tiles", "H9"), "name": (LABEL,), "hard_core_mapping": _TILES, "compute_op": ("tiles", "H9"),
@@ -58,6 +60,11 @@ HARD_CORE: Dict[str, Readers] = {
     "has_bias_capability": (BACKEND,),
     **_same((UNREAD,), "residency_class_id", "resident_bank_ids", "unusable_space", "_type_key_cache",
             "per_neuron_values", "weight_sign_granularity"),
+    # [WI-5g] a typed core's cell width, the codes it can hold (``unit_forms.widths``); [N2b] the roles a declared
+    # core type accepts, the packer's placement constraint (an operand bank only on an operand core): cost and
+    # admission, no executor reads it; [W08] the axon rows a core gives to fused-add operands, priced as the lane's
+    # operand port (the executor reads each operand through its law's row, ``laws``).
+    "weight_bits": ("H8",), **_same((UNREAD,), "accepted_roles", "lane_operand_axons"),
 }
 PLACEMENT: Dict[str, Readers] = {
     **_same(_TILES, "ir_node_id", "neuron_offset", "neurons", "neuron_range_in_original", "axon_offset", "axons",
@@ -71,6 +78,9 @@ MATRIX_PLACEMENT: Dict[str, Readers] = _same(_TILES, "axon_offset", "axons", "ke
 IR_GRAPH: Dict[str, Readers] = {
     **_same((IDENTITY,), "nodes", "output_sources", "weight_banks", "layout_softcores", "_is_segment_subgraph"),
     "build_token": (UNREAD,),
+    # [N2] the binding table the identity builder carries into the program (``carry_bindings``) and the check holds
+    # the program's to; [WI-5e] the lane fusion's report (records and the census).
+    "dynamic_bank_bindings": ("tiles", IDENTITY), "lane_fusion_report": (UNREAD,),
 }
 #: The IR node classes' attributes: everything the identity builder reads, the compaction masks N-identity and
 #: ir-tiling read too, the law the laws condition reads, the pre-pruning column mask both builders' channel tables read
@@ -87,18 +97,39 @@ _NODE: Dict[str, Readers] = {
     "readout_law": ("laws", IDENTITY), "_source_counts_cache": ("H9",),
     "pre_pruning_col_mask": ("R4", "ir-tiling", IDENTITY),
     **_same((UNREAD,), "pre_pruning_heatmap", "pre_pruning_row_mask"),
+    # [N2] an operand instance's role (the packer's and the sign split's read); [WI-5g] its layer's cell width and
+    # [W08] its fused-add operand rows, both carried to its soft core and hard core (``legacy_convert``).
+    **_same((IDENTITY,), "core_role", "weight_bits", "lane_operand_axons"),
+    # [WI-5e] the law solver's and stamp's records: each column's operand row (the stamped law carries it, read by
+    # ``laws``), a pool lane's owner key, a reduction's instance counts and producer theta.
+    **_same((UNREAD,), "lane_operand_rows", "lane_owner", "lane_reduced_instances", "lane_producer_theta"),
+    # [WI-5e] a pool lane's and a reduction's pool output per column and its pool op; [C5] a depth-balancing relay's
+    # mark: the keys of ``ir-tiling`` (``unbounded.unit_keys``).
+    **_same(("ir-tiling",), "lane_outputs", "lane_source_name", "_depth_relay"),
+    # [N7] the per-column weight of the rows compaction dropped, which the model still reads (``unit_forms.pruned_rows``).
+    "pruned_row_magnitude": ("N-identity",),
+}
+#: [E6] The IR's weight banks (``ir_graph.weight_banks``), each read by the identity builder; ``weight_bits`` is
+#: WI-5g's bank width; the pre-pruning snapshot and the column views are the GUI's and a memo of the bank's columns.
+_BANK: Dict[str, Readers] = {
+    **_same((IDENTITY,), "id", "core_matrix", "activation_scale", "parameter_scale", "input_activation_scale",
+            "perceptron_index", "hardware_bias", "bias_scale", "weight_bits"),
+    **_same((UNREAD,), "pre_pruning_snapshot", "_column_views", "_column_views_base"),
 }
 
 ATTRIBUTES: Mapping[str, Mapping[str, Readers]] = {
     "program": PROGRAM, "stage": STAGE, "io_slice": IO_SLICE, "core_mapping": CORE_MAPPING, "hard_core": HARD_CORE,
     "placement": PLACEMENT, "matrix_placement": MATRIX_PLACEMENT, "axon_source": {}, "ir_source": {},
-    "ir_graph": IR_GRAPH, "ir_node": _NODE,
+    "ir_graph": IR_GRAPH, "ir_node": _NODE, "ir_bank": _BANK,
 }
 CLASSES: Mapping[str, FrozenSet[str]] = {
     "program": frozenset({"HybridHardCoreMapping"}), "stage": frozenset({"neural", "compute"}),
     "io_slice": frozenset({"SegmentIOSlice"}), "core_mapping": frozenset({"HardCoreMapping"}),
     "hard_core": frozenset({"HardCore"}), "placement": frozenset(),
     "matrix_placement": frozenset({"MatrixPlacement", "SignedRowPlacement"}),
-    "axon_source": frozenset({"SpikeSource"}), "ir_source": frozenset({"IRSource"}),
+    # [Swin W9] ``ColumnSpikeSource``: a read-only entry of a columnar core's ``SpikeSourceColumns``, read through the
+    # spans every executor reads (``compress_spike_sources``), as a ``SpikeSource`` is.
+    "axon_source": frozenset({"SpikeSource", "ColumnSpikeSource"}), "ir_source": frozenset({"IRSource"}),
     "ir_graph": frozenset({"IRGraph"}), "ir_node": frozenset({"NeuralCore", "ComputeOp"}),
+    "ir_bank": frozenset({"WeightBank"}),
 }

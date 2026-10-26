@@ -25,7 +25,7 @@ def _add_dataclass_field(monkeypatch, cls, name: str) -> None:
 
 
 @pytest.mark.parametrize("cls_path,attribute", [
-    ("mimarsinan.mapping.ir:IRGraph", "dynamic_bank_bindings"),
+    ("mimarsinan.mapping.ir:IRGraph", "zz_unit_graph_field"),
     ("mimarsinan.mapping.packing.hybrid_types:HybridStage", "lane_owner"),
 ])
 def test_a_dataclass_field_a_unit_adds_fails_by_name(monkeypatch, cls_path, attribute):

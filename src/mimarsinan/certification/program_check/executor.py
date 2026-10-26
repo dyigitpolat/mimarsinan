@@ -18,6 +18,7 @@ from mimarsinan.certification.program_check.report import ConditionResult, Viola
 from mimarsinan.certification.program_check.tiles import SweepFacts
 from mimarsinan.certification.program_check.timing import IdentityTiming, walked_latencies
 from mimarsinan.certification.program_check.view import K_CORE, K_INPUT, ProgramView
+from mimarsinan.mapping.ir.dynamic_bank import stage_payload_sources
 from mimarsinan.mapping.latency.core_graph import topological_order
 from mimarsinan.mapping.packing.executed_reads import COUNT, REPLAYED, SliceDelivery
 from mimarsinan.mapping.packing.pass_timing import carried_nodes
@@ -27,8 +28,8 @@ from mimarsinan.models.nn.activations.integer_law import law_magnitude_bound
 
 def check_order(program: Any, delta: ProgramView, facts: SweepFacts, h9: ConditionResult,
                 r6: ConditionResult) -> None:
-    """H9: every unit reads only nodes an earlier unit or host stage produced, every node is produced once, a
-    coalescing group sits in one unit. R6: every unit's core graph is acyclic and every core read is walked."""
+    """H9: every unit reads only nodes an earlier unit or host stage produced (its slices and, N2, its operand banks'
+    payload writes), every node is produced once, a coalescing group sits in one unit. R6: every unit's core graph is acyclic and every core read is walked."""
     produced: Set[int] = {-2}
     made_by: Dict[int, str] = {}
     by_unit = {u.index: u for u in delta.units}
@@ -40,16 +41,23 @@ def check_order(program: Any, delta: ProgramView, facts: SweepFacts, h9: Conditi
                 stage.compute_op is not None else set()
             outputs = {int(stage.compute_op.id)} if stage.compute_op is not None else set()
             where = f"host stage {stage.name}"
+            payloads: List[int] = []
         else:
             unit = by_unit[index]
             reads = {n for n, _, _ in unit.slices}
             outputs = {int(s.node_id) for s in unit.stage.output_map}
             where = f"unit {index} ({unit.stage.name})"
+            # [N2] a neural stage reads its bound banks' payload writes from the state buffer when it runs.
+            payloads = stage_payload_sources(unit.stage, delta.bindings or {})
         h9.checked += 1
         missing = sorted(n for n in reads if n >= 0 and n not in produced)
         if missing:
             h9.add(Violation("H9", "reads_unproduced", where, f"reads node(s) {missing[:6]} before any stage "
                              "produces them"))
+        unwritten = [n for n in payloads if n not in produced]
+        if unwritten:
+            h9.add(Violation("H9", "payload_unproduced", where, f"reads the payload write(s) of node(s) "
+                             f"{unwritten[:6]} before any stage produces them"))
         for node in sorted(outputs):
             if node in made_by:
                 h9.add(Violation("H9", "produced_twice", where, f"node {node} is produced again (first by "

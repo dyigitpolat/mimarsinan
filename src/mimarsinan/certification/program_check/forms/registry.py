@@ -126,24 +126,36 @@ def _flat(values) -> list:
     return list(np.asarray(values, dtype=object).flatten()) if values is not None else []
 
 
+def _keys(obj: Any) -> List[str]:
+    """``obj``'s attributes: its instance dict and every slot it fills (an element without an instance dict is read
+    by its slots and its class, never ``vars()``'s TypeError)."""
+    names: List[str] = [str(name) for name in (getattr(obj, "__dict__", None) or {})]
+    for cls in type(obj).__mro__:
+        slots = cls.__dict__.get("__slots__", ())
+        for name in ((slots,) if isinstance(slots, str) else slots):
+            if name not in ("__dict__", "__weakref__") and name not in names and hasattr(obj, name):
+                names.append(name)
+    return names
+
+
 def _scan_unit(scan: _Scan, unit: Any, where: str) -> None:
-    scan.element("stage", unit, where, keys=vars(unit), kind=str(getattr(unit, "kind", "?")))
+    scan.element("stage", unit, where, keys=_keys(unit), kind=str(getattr(unit, "kind", "?")))
     scan.classes_of("io_slice", list(unit.input_map) + list(unit.output_map), where)
     for s in list(unit.input_map) + list(unit.output_map):
-        scan.element("io_slice", s, where, keys=vars(s))
+        scan.element("io_slice", s, where, keys=_keys(s))
     if getattr(unit, "kind", None) == "compute":
         op = unit.compute_op
         if op is not None:
-            scan.element("ir_node", op, where, keys=vars(op))
+            scan.element("ir_node", op, where, keys=_keys(op))
             scan.classes_of("ir_source", _flat(op.input_sources), where)
         return
     hcm = getattr(unit, "hard_core_mapping", None)
     if hcm is None:
         return
-    scan.element("core_mapping", hcm, where, keys=vars(hcm))
+    scan.element("core_mapping", hcm, where, keys=_keys(hcm))
     scan.classes_of("axon_source", _flat(hcm.output_sources), f"{where} outputs")
     for h, core in enumerate(hcm.cores):
-        scan.element("hard_core", core, f"{where} core {h}", keys=vars(core))
+        scan.element("hard_core", core, f"{where} core {h}", keys=_keys(core))
         scan.classes_of("matrix_placement", list(getattr(core, "matrix_placements", None) or ()), f"{where} core {h}")
         scan.classes_of("axon_source", core.axon_sources, f"{where} core {h}")
     for h, placements in enumerate(getattr(hcm, "soft_core_placements_per_hard_core", None) or []):
@@ -155,7 +167,7 @@ def scan_forms(program: Any, ir_graph: Any = None) -> List[Violation]:
     """Every program element no registered form declares (condition ``forms``) and every registered attribute that
     no predicate reads (``forms_unread``), each named once (its first occurrence)."""
     scan = _Scan()
-    scan.element("program", program, "program", keys=vars(program))
+    scan.element("program", program, "program", keys=_keys(program))
     scan.classes_of("ir_source", _flat(getattr(program, "output_sources", None)), "program outputs")
     for s, stage in enumerate(getattr(program, "stages", ()) or ()):
         units = [("", stage)] + [(f" level {u}", lv) for u, lv in
@@ -163,10 +175,12 @@ def scan_forms(program: Any, ir_graph: Any = None) -> List[Violation]:
         for suffix, unit in units:
             _scan_unit(scan, unit, f"stage {s}{suffix} ({getattr(unit, 'name', '?')})")
     if ir_graph is not None:
-        scan.element("ir_graph", ir_graph, "IR graph", keys=vars(ir_graph))
+        scan.element("ir_graph", ir_graph, "IR graph", keys=_keys(ir_graph))
         for node in getattr(ir_graph, "nodes", None) or ():
             where = f"IR node {getattr(node, 'id', '?')}"
-            scan.element("ir_node", node, where, keys=vars(node))
+            scan.element("ir_node", node, where, keys=_keys(node))
+        for bank_id, bank in sorted((getattr(ir_graph, "weight_banks", None) or {}).items()):
+            scan.element("ir_bank", bank, f"IR weight bank {bank_id}", keys=_keys(bank))
     return scan.found
 
 

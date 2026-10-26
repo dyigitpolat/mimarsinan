@@ -4,7 +4,9 @@ supplies it, and the verdict then names it, so the predicate holds it to what an
 Every neural node of the reference has a perceptron identity and holds its perceptron's whole output for its column
 (``perceptron_output_slice`` from 0, as wide as the node's columns before IR pruning), exactly one node per
 (perceptron, column), in no coalescing group and with no partial-sum role; every neuron and every host-op name is held
-once. A tiled IR, an IR at another declared geometry, or an IR holding a relay or an inserted core fails by name."""
+once. A tiled IR, an IR at another declared geometry, or an IR holding an inserted core no key names fails by name.
+[E6] A lane core or a relay (``unit_keys``) is keyed by its unit, not by a perceptron: it is held to no perceptron
+slice, only to no coalescing or partial-sum group and to holding its neurons once."""
 
 from __future__ import annotations
 
@@ -37,6 +39,8 @@ def check_reference(u: KeyedIR, fail: Callable[[str, str, str], None]) -> int:
         if any(value is not None for value in groups.values()):
             fail(RULE, f"node {nid} of {where}", f"in a coalescing or partial-sum group ({groups}): a tiling of a "
                  "fan-in across cores")
+        if nid in u.unit_keyed:
+            continue
         slice_ = node.perceptron_output_slice
         perceptron = node.perceptron_index
         assert slice_ is not None and perceptron is not None    # keyed: ``perceptron_channels`` found both

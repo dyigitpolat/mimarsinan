@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple, TypeVar
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple, TypeVar
 
 import numpy as np
 
@@ -53,6 +53,21 @@ def bound_instances(ir_graph: Any) -> Dict[int, List[Any]]:
         if bank is not None and int(bank) in banks:
             out[int(bank)].append(node)
     return out
+
+
+def stage_bound_banks(stage: Any, bindings: Mapping[int, Any]) -> List[int]:
+    """The bound banks a neural stage's placements read, sorted (empty without bindings or a mapping)."""
+    hcm = getattr(stage, "hard_core_mapping", None)
+    if not bindings or hcm is None:
+        return []
+    return sorted({int(p["weight_bank_id"]) for placements in hcm.soft_core_placements_per_hard_core
+                   for p in placements if p.get("weight_bank_id") is not None and int(p["weight_bank_id"]) in bindings})
+
+
+def stage_payload_sources(stage: Any, bindings: Mapping[int, Any]) -> List[int]:
+    """The host ops whose payload writes a neural stage reads (its bound banks' sources), sorted: the value executor
+    materializes them from the state buffer when the stage runs, so they are the stage's reads beside its slices."""
+    return sorted({int(bindings[bank].source_node_id) for bank in stage_bound_banks(stage, bindings)})
 
 
 def carry_bindings(program: _P, ir_graph: Any) -> _P:

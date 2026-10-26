@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.ir.dynamic_bank import stage_bound_banks
 from mimarsinan.models.nn.activations.integer_law import grid_codes, grid_levels
 
 
@@ -49,10 +50,8 @@ def operand_blocks(hcm, bindings: Mapping) -> List[List[OperandBlock]]:
 
 
 def stage_banks(stage, bindings: Mapping) -> List[int]:
-    """The bound banks a neural stage holds, sorted."""
-    found = {int(p["weight_bank_id"]) for placements in stage.hard_core_mapping.soft_core_placements_per_hard_core
-             for p in placements if p.get("weight_bank_id") is not None and int(p["weight_bank_id"]) in bindings}
-    return sorted(found)
+    """The bound banks a neural stage holds, sorted (``dynamic_bank.stage_bound_banks``, the one rule)."""
+    return stage_bound_banks(stage, bindings)
 
 
 def bank_payload(values: torch.Tensor, binding) -> torch.Tensor:

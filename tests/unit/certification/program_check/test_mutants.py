@@ -21,7 +21,8 @@ from unit.certification.program_check import programs as P
 #: ``program_check.RULES`` to one, or to an entry of ``program_check.UNMUTATED`` with its reason.
 MUTANTS = {
     ("tiles", "fan_in"): ("test_a_tile_swap", "test_a_bias_stamped_differently",
-                          "test_a_hardware_bias_stamped_differently"),
+                          "test_a_hardware_bias_stamped_differently", "test_a_sign_row_flipped",
+                          "test_the_static_part_of_an_operand_core_is_compared_as_any_core"),
     ("tiles", "output_source"): ("test_an_output_wire_swapped",),
     ("tiles", "coverage"): ("test_a_placement_record_dropped",),
     ("tiles", "unplaced_column"): ("test_a_placement_record_dropped",),
@@ -35,6 +36,20 @@ MUTANTS = {
     ("tiles", "bank_content"): ("test_bank_content_that_is_not_the_grid", "test_a_bank_range_shifted_at_equal_extent"),
     ("tiles", "stale_memo"): ("test_a_stale_axon_span_cache", "test_a_stale_output_span_cache"),
     ("tiles", "fused_axons"): ("test_fused_axons_that_do_not_sum",),
+    # [E6] the integrated units' forms (test_operand_forms, test_lane_forms, test_pruned_row_form,
+    # test_residency_forms, test_sign_width_relay_forms).
+    ("tiles", "payload_cells"): ("test_a_payload_placement_reading_another_heads_bank",
+                                 "test_a_payload_row_reading_another_source"),
+    ("tiles", "operand_binding"): ("test_a_binding_table_that_is_not_the_irs", "test_a_program_that_lost_its_binding_table"),
+    ("tiles", "operand_on_fused_core"): ("test_an_operand_block_on_a_fused_core",),
+    ("H9", "payload_unproduced"): ("test_a_payload_write_produced_after_the_stage_that_reads_it",),
+    ("laws", "operand_source"): ("test_a_fused_operand_row_reading_another_source",
+                                 "test_a_lane_law_naming_another_operand_row"),
+    ("H8", "cell_width"): ("test_a_core_declared_narrower_than_its_codes",),
+    ("H10", "undeclared_core"): ("test_a_pinned_core_no_declared_core_type_holds_is_named",),
+    ("N-identity", "dropped_offset_row"): ("test_the_pre_n7_offset_multiplier_is_named_where_its_image_of_zero_is_not_zero",
+                                           "test_a_reader_whose_adc_rounds_the_dropped_term",
+                                           "test_a_reader_whose_value_zero_is_no_code_of_its_grid"),
     ("H6", "partial_sums"): ("test_a_dropped_partial_sum", "test_a_duplicated_partial_sum",
                              "test_a_permuted_coalescing_wire"),
     ("R2", "delivery_delay"): ("test_a_carry_delay_off_by_one",),
@@ -45,17 +60,20 @@ MUTANTS = {
     ("laws", "law_free_core"): ("test_a_law_free_core_in_an_integer_value_program",),
     ("H8", "accumulation_bound"): ("test_a_charge_bound_exceeded_in_float64", "test_a_charge_bound_exceeded_in_float32",
                                    "test_a_charge_bound_one_bit_short_under_synchronized_ttfs"),
-    ("H8", "off_lattice"): ("test_an_off_lattice_weight",),
+    ("H8", "off_lattice"): ("test_an_off_lattice_weight", "test_a_payload_whose_values_are_no_codes",
+                            "test_a_core_that_accumulates_its_bias_still_needs_it_integral"),
     ("H8", "input_range"): ("test_a_code_whose_range_no_law_or_grid_declares",),
     ("H8", "law_magnitude"): ("test_a_law_whose_magnitude_leaves_float64",),
-    ("H8", "upload_precision"): ("test_a_weight_a_float32_upload_rounds",),
+    ("H8", "upload_precision"): ("test_a_weight_a_float32_upload_rounds", "test_a_payload_wider_than_the_float32_upload"),
     ("H9", "reads_unproduced"): ("test_a_pass_ordered_before_its_producer",),
     ("H9", "produced_twice"): ("test_a_node_produced_twice",),
     ("H9", "output_unproduced"): ("test_the_network_reading_a_node_no_stage_produces",),
     ("H9", "coalescing_group_cut"): ("test_a_coalescing_group_cut_across_passes",),
     ("H9", "stale_memo"): ("test_a_stale_consumer_count_memo",),
-    ("H10", "pinned_slot_overwritten"): ("test_a_pinned_slot_overwritten",),
-    ("H10", "resident_content"): ("test_a_resident_pass_that_was_never_written",),
+    ("H10", "pinned_slot_overwritten"): ("test_a_pinned_slot_overwritten",
+                                         "test_a_fit_on_a_pool_too_small_for_its_loading_passes"),
+    ("H10", "resident_content"): ("test_a_resident_pass_that_was_never_written",
+                                  "test_a_multiplexed_pass_holding_other_weights_than_its_runs_copy"),
     ("H10", "no_programming_pass"): ("test_a_first_pass_marked_weight_resident",),
     ("H10", "pin_out_of_range"): ("test_a_pin_of_a_core_the_pass_does_not_hold",),
     ("H10", "undeclared_pool"): ("test_pinned_cores_without_a_declared_pool",),
@@ -525,7 +543,7 @@ def test_an_off_lattice_threshold():
     _failed(P.run(program, ir, P.decl("synchronized_lif")), "H8-staircase", "off_lattice")
 
 
-@pytest.mark.parametrize("element,attribute", [("hard_core", "accepted_roles"), ("placement", "lane_owner")])
+@pytest.mark.parametrize("element,attribute", [("hard_core", "zz_unit_core_field"), ("placement", "lane_owner")])
 def test_an_unknown_program_form_fails_by_name(element, attribute):
     """Unregistered, the form fails by name; registered with a predicate that reads it, the predicate decides."""
     from mimarsinan.certification.program_check import ProgramForm, register_program_form
