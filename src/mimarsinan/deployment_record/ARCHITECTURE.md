@@ -68,6 +68,42 @@ withholds the three by name. The sealed fields (`utilization.crossbar.cores_allo
 meaning. Boundary: a fused core whose summed geometry equals another declared type is read as one core of that type
 on the sealed record, until the record seals each core's members (`SegmentCoreRecord`).
 
+## Scaling ladder (Wave 2 exploration: CL3, W03, CL5, CL7)
+
+From the exploration unit's ladder fragments (`11_wave2/explore/{cl3,w03,cl5,cl7}/arch_fragments/`), merged at CL9 of
+integration pass 2 and restated on the integrated tree. `introspection/scaling_ladder.py` is free of workloads: the
+caller hands in a built mapper representation, resolved platform dicts and the candidate plane's program census as a
+callable. `shape_census` lays one network out per core geometry and keeps the layout walk's program graph
+(`ShapeCensus.program`, `ProgramGraph.of_walk`) and the walk's runs (`ShapeCensus.runs`, the builder segment of each
+spec) beside its wire census. `schedule_program` packs and schedules one core budget with the builder's planner: U1 on
+the walk's runs, or, when the platform declares `residency_plan`, the residency composition on the program graph,
+so a declared step is planned as the builder plans it (tile-granular units, the declared step, its pins and its
+period census); a program whose passes fit the declared cores side by side carries the planner's fit pins
+(`residency_rules.fit_pins`), so at C >= F the ladder reads 0 rewrite bytes per period, as the record does. It
+returns a `ScheduledProgram` (or a `LadderScheduleRefusal` by name). `compute_mapping_stats` plans a declared
+`residency_plan` only when it holds the walk's cut census and program, and refuses the key by name without them
+(`refuse_without_cut_census`). `price_scheduled` prices a scheduled program on a platform that may differ only in its
+physics and the row keys (batch K, rate, lifetime); anything else refuses by name (`LadderDeclarationError`), so one
+schedule is priced under several override-block sets (host, backing store) and batch sizes without scheduling again;
+`price_program` composes the two. Write-once costs count physical tiles (`PassProgram.tiles`, the pack unit's rule)
+and the closure's sign-register bytes (`pass_program_bytes`). At a declared `inference_batch_K` the candidate context
+carries the pass rows, so the value rule's latency window and G3's write law are priced at that batch (write energy,
+exposed write time, lifetime and its admissibility verdict, the headlines at K). The ladder's one write source is G3's
+candidate-plane period census (`scaling_ladder_reading.period_writes`: `plane_write_census` over the program facts'
+passes, then `write_quantities` at K = 1 for `max_writes_per_cell_per_inference`, the K*_census multiplicand, and
+`period_rewrite_bytes`); the passes it rewrites decide `multiplexed` (regime reading, the period writes in M, the
+schedule reading), and the ladder's own write rule is removed. `ladder_row` reads one priced program at one K;
+`scaling_ladder_reading` adds the reading columns: MACs per weight R (on-chip MACs over the stationary weight cells,
+`stationary_weight_cells`), K x R and Pi x R per axis; the two-ceiling minimum batch (`min_batch`: endurance m r T / E
+from the census beside the closed forms at x_fluid and x_packed, the write-bandwidth ceiling r t_w, the crossover
+endurance, the binding ceiling and the verdict per corner); and the latency semantics (`latency_semantics`).
+`write_law_columns` carries the write law's terms at the row's K, among them the energy headline's parts
+(`ENERGY_HEADLINE_PARTS`), so `energy_per_inference_mj` at K is their corner-wise sum by `cost/absolute/energy.py`'s
+construction and a reader splits it without subtracting; the row's `headlines` stay the steady headlines without
+writes. The exploration script declares keys as JSON values (`scripts/scaling_ladder.py --declare`, `declared_values`),
+so `--declare 'residency_plan={"step": "floor"}'` explores the floor on every target; a value that is no JSON refuses
+by name.
+
 ## Dependencies
 
 Near-leaf: may import `mapping`, `chip_simulation`, `certification`,

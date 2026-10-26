@@ -31,6 +31,9 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: Integration re-pin (tcad/wave1-merged, E1 onto the exactness unit): E1's R4 row (gap, memo, sites on tree E1,
 #: witnesses, code-level text) and its ``position_dependent_encode`` status, folded into the CL9 fixture by the same
 #: three-way JSON union with no conflict (RA/11_wave2/integration2/e1/repin/); RA/10_wave1/thm/ regenerated from it.
+#: CL9 final re-pin of integration pass 2 (explore, exact, E1, E6, P1): the fixture is, byte for byte, the three-way
+#: JSON union of the pass-1 CL9 fixture and E1's over the closure tree's, with no conflict; the exploration, exactness,
+#: E6 and P1 units leave it unchanged (RA/11_wave2/integration2/cl9/repin/); RA/10_wave1/thm/ is regenerated from it.
 TABLE_SHA256 = "6e01f324f6b014f1a7a92dd0e17281711aad1dfeabecd21006f48c5207658255"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")

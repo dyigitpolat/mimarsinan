@@ -112,6 +112,7 @@ class TestCoverage:
 #: fields, read by the lane rows of the physics and the record's lane quantities only (a program never reads them).
 #: CL9 final re-pin: the 32 rows are the union of the units' amendments (closure, N2, N2b, pack, lanes), equal to the
 #: theorem box fixture's ``cost_only`` list (test_hypothesis_table.py) and to the X3a partition (test_cost_draws.py).
+#: CL9 of integration pass 2: no unit of the pass (explore, exact, E1, E6, P1) amends the set, so it keeps its 32 rows.
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",
