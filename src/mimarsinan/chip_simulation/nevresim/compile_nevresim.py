@@ -14,6 +14,19 @@ from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.common.build_utils import find_cpp20_compiler
 
 
+#: The constant-evaluation budget of nevresim's compile-time chip: gcc counts operations, clang steps.
+CONSTEXPR_STEP_LIMIT = 256 * 256 * 10000
+
+
+def constexpr_options(family: str) -> list[str]:
+    """The options every nevresim build by a compiler of ``family`` (``find_cpp20_compiler``) takes beside the
+    standard: the constant-evaluation budget, then libc++ for clang. The stage-input read probe compiles nevresim's
+    own self-test with them (``chip_simulation/stage_input_clock``)."""
+    step = (f"-fconstexpr-ops-limit={CONSTEXPR_STEP_LIMIT}" if family == "gcc"
+            else f"-fconstexpr-steps={CONSTEXPR_STEP_LIMIT}")
+    return [step] + (["-stdlib=libc++"] if family == "clang" else [])
+
+
 @dataclass
 class CompileResult:
     binary_path: str | None
@@ -103,11 +116,7 @@ def compile_simulator(
     if verbose:
         print(f"  Using compiler: {cc_command} (family={family})")
 
-    step_limit = 256 * 256 * 10000
-    if family == "gcc":
-        step_limit_option = f"-fconstexpr-ops-limit={step_limit}"
-    else:
-        step_limit_option = f"-fconstexpr-steps={step_limit}"
+    step_limit_option, *stdlib_options = constexpr_options(family)
 
     # Default into the per-run tree: a shared binary path lets a concurrent run overwrite the binary another is executing (ETXTBSY / wrong simulator).
     if output_path is None:
@@ -123,10 +132,8 @@ def compile_simulator(
         "-I", "{}/include".format(nevresim_path),
         "-I", "{}/chip".format(generated_files_path),
         "-std=c++20",
+        *stdlib_options,
     ]
-
-    if family == "clang":
-        cmd.append("-stdlib=libc++")
 
     if time_trace and family == "clang":
         cmd.append("-ftime-trace")

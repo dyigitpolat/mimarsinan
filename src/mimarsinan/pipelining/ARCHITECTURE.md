@@ -54,7 +54,7 @@ Absent, every step is the base's.
 
 From the closure unit's step 1 (IE-2, KA-G3-1). `pipeline_steps/mapping/hard_core_mapping_step.py` runs the built
 program's replay refusals (`models/spiking/hybrid/carry.run_pass_transfer(config, hybrid_mapping=hybrid_mapping)`:
-stochastic multi-pass, the nevresim clock refusal, delayed value-mode slices) before any simulation; the judgement
+stochastic multi-pass; and, on a backend that does not read a stage input in core-local time on this checkout, a late stage-input reader or a delayed slice, which since W33 refuses on nevresim only where its tree lacks W33's read, `chip_simulation/stage_input_clock`) before any simulation; the judgement
 leaves the built cores' latencies as built. `pipeline_steps/mapping/deployment_record_emission.py`: the schedule
 fragment seals `value_noc_wire_hops` (`deployment_record/quantities/value_domain.record_value_noc_wire_hops`) on
 value-domain runs.

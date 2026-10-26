@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 import torch
 
+from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.simulation_runner import emit as nevresim_emit
 from mimarsinan.chip_simulation.simulation_runner.carry import assemble_input_train
 from mimarsinan.common.refusal import ToolchainRefusal
@@ -25,6 +26,8 @@ from mimarsinan.mapping.packing.pass_timing import (
 )
 from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
 from mimarsinan.models.spiking.hybrid import carry as C
+
+from unit.chip_simulation import nevresim_trees as NT
 
 from . import runs as R
 from . import vehicles as V
@@ -290,10 +293,10 @@ class TestTheChipClock:
             C.require_backend_replay(streamed, "future_backend", transfer=COLLAPSE, spike_mode="TTFS",
                                      spiking_mode="ttfs_cycle_based")
 
-    def test_an_undeclared_clock_refuses_before_nevresim_compiles(self, monkeypatch):
-        """The refusal is wired into nevresim's emit: with nevresim taken out of the declaration, a late reader refuses
-        before any segment compiles."""
-        monkeypatch.setattr(C, "CORE_LOCAL_REPLAY_BACKENDS", C.CORE_LOCAL_REPLAY_BACKENDS - {"nevresim"})
+    def test_an_undeclared_clock_refuses_before_nevresim_compiles(self, monkeypatch, tmp_path):
+        """The refusal is wired into nevresim's emit: on a nevresim tree without W33's core-local read (base 90af7d2,
+        ``nevresim_trees.base_tree``), a late reader refuses before any segment compiles."""
+        monkeypatch.setattr(NevresimDriver, "nevresim_path", str(NT.base_tree(tmp_path)))
         late = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None)
         runner = SimpleNamespace(pass_transfer=VERBATIM, spike_generation_mode="Uniform", spiking_mode="lif")
         with pytest.raises(C.ChipClockReplayRefusal):

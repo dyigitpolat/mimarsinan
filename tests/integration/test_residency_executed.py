@@ -150,16 +150,19 @@ def test_gate_verdicts_ignore_numbers_and_keep_verdicts():
 
 @pytest.mark.slow
 @pytest.mark.timeout(900)
-def test_t0_53rs_u1_twin_and_its_residency_steps_are_admitted_on_nevresim(monkeypatch):
+def test_t0_53rs_u1_twin_and_its_residency_steps_are_admitted_on_nevresim(monkeypatch, tmp_path):
     """At plan time (``run_pass_transfer`` with the built program, what the hard-core mapping step holds), with nevresim
     enabled as t0_53 enables it. [W33] t0_53r's U1 twin, whose second pass reads a carried slice at latency 1, and its
     residency variant are admitted (refused by name before W33: nevresim read its input at the global cycle). [W03] So
     is every step of the variant: on tile-granular units each step cuts inside a layer (the floor r 1 splits layer 1's
     two tiles, against the layer-granular floor's r 2 that kept one layer per pass), so a later layer of the pass reads
-    a carried slice at latency 1. A backend that reads a stage input at the global cycle refuses the twin and every
-    step by name (nevresim taken out of the declaration). At the fit (C = F) the program is one pass."""
+    a carried slice at latency 1. On a nevresim tree without W33's core-local read (base 90af7d2), which reads a stage
+    input at the global cycle, the twin and every step are refused by name. At the fit (C = F) the program is one pass
+    with no late reader, admitted on either tree."""
     from unit.mapping.residency.executed import certified as CF
     from unit.mapping.residency.executed import templates as TV
+    from unit.chip_simulation import nevresim_trees as NT
+    from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
     from mimarsinan.mapping.packing.pass_timing import carried_nodes, late_stage_input_readers
     from mimarsinan.models.spiking.hybrid import carry as C
     from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
@@ -193,12 +196,13 @@ def test_t0_53rs_u1_twin_and_its_residency_steps_are_admitted_on_nevresim(monkey
                                             pipeline_config=vehicle.config)
     assert len([s for s in fit.stages if s.kind == "neural"]) == 1
     assert run_pass_transfer(vehicle.config, hybrid_mapping=fit) == "verbatim"
-    monkeypatch.setattr(C, "CORE_LOCAL_REPLAY_BACKENDS", C.CORE_LOCAL_REPLAY_BACKENDS - {"nevresim"})
+    monkeypatch.setattr(NevresimDriver, "nevresim_path", str(NT.base_tree(tmp_path)))     # a tree without W33's read
     with pytest.raises(C.ChipClockReplayRefusal, match="nevresim reads a stage input at the global cycle"):
         run_pass_transfer(vehicle.config, hybrid_mapping=twin)
     for program in step_programs:
         with pytest.raises(C.ChipClockReplayRefusal, match="stage-input rows read by cores that start above latency 0"):
             run_pass_transfer(vehicle.config, hybrid_mapping=program)
+    assert run_pass_transfer(vehicle.config, hybrid_mapping=fit) == "verbatim"        # no late reader: either tree
 
 
 def _nevresim_final_counts(mapping, xs, *, transfer: str):

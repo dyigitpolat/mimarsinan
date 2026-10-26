@@ -19,7 +19,7 @@ from mimarsinan.chip_simulation.simulation_runner.flat import SimulationFlatMixi
 from mimarsinan.chip_simulation.simulation_runner.hybrid import SimulationHybridMixin
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.models.nn.lif_kernels import measurement_plane
-from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
+from mimarsinan.models.spiking.hybrid.carry import require_backend_replay, run_pass_transfer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
@@ -157,6 +157,9 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
                 segments = self.mapping.get_neural_segments()
                 compute_ops = self.mapping.get_compute_ops()
                 if len(segments) == 1 and len(compute_ops) == 0:
+                    # [W33] the flat route compiles without ``prepare_all_segments``: the same refusals come first
+                    require_backend_replay(self.mapping, "nevresim", transfer=self.pass_transfer,
+                                           spike_mode=self.spike_generation_mode, spiking_mode=self.spiking_mode)
                     return self._run_flat_mapping(segments[0])
                 print(
                     f"  Hybrid mapping: {len(segments)} neural segments, "

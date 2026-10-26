@@ -23,6 +23,8 @@ from mimarsinan.mapping.support.schedule.pass_carry import (
 from mimarsinan.chip_simulation.activation_semantics import effective_legacy_spiking_mode, is_streamed_lif
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import execution_neural_stages
 from mimarsinan.chip_simulation.spiking_semantics import is_cycle_based
+from mimarsinan.chip_simulation.stage_input_clock import (  # noqa: F401 (re-exported)
+    IN_TREE_CORE_LOCAL_BACKENDS, core_local_replay_backends, stage_input_read)
 from mimarsinan.mapping.support.schedule.pass_cut import (
     COLLAPSE,
     VERBATIM,
@@ -232,15 +234,6 @@ def refuse_stochastic_replay(hybrid_mapping, *, spike_mode: str, pass_transfer: 
                 f"carried, but nodes {missing} are host boundaries; the chip's RNG cannot be reproduced host-side")
 
 
-#: [W33] The stage-input timing rule: every backend delivers each stage-input row to each reading core in that core's
-#: local time (cycle t of the row at global cycle latency + t; a delayed slice |d| cycles later, R2), as the HCM reads
-#: it (``lif_step``, ``packed_cycle``): SANA-FE shifts an input neuron's row to its reader's start, Lava gives each core
-#: its own input window, nevresim's generated simulator reads its input train at each core's local cycle
-#: (``nevresim/include/simulator/spike_generation/stage_input_train.hpp``) and takes every input the host must time
-#: (a carried raster, a delayed slice) as a host-assembled SpikeTrain (``simulation_runner/emit.segment_input_mode``).
-CORE_LOCAL_REPLAY_BACKENDS = frozenset({"hcm", "sanafe", "lava", "nevresim"})
-
-
 class ChipClockReplayRefusal(PassReplayRefusal):
     """A program a backend cannot run in its readers' local time, refused by name."""
 
@@ -248,28 +241,33 @@ class ChipClockReplayRefusal(PassReplayRefusal):
 def require_backend_replay(hybrid_mapping, backend: str, *, transfer: str, spike_mode: str, spiking_mode: str,
                            stages=None) -> None:
     """[U1, W33] Refusals by name of a program ``backend`` cannot run exactly (every neural stage, or the given
-    ``stages``): Stochastic generation under VERBATIM, and on a backend not declared in ``CORE_LOCAL_REPLAY_BACKENDS``
-    under a cycle-timed mode (an analytical TTFS value is read whenever its core runs) any stage-input row, carried or
+    ``stages``): Stochastic generation under VERBATIM, and under a cycle-timed mode (an analytical TTFS value is read
+    whenever its core runs), on a backend that does not read in core-local time on this checkout (``stage_input_read``:
+    an in-tree read, or a probe of the source tree the backend runs, asked only here), any stage-input row, carried or
     host-encoded, read above latency 0 in a unit the backend executes, and any delayed slice."""
     refuse_stochastic_replay(hybrid_mapping, spike_mode=spike_mode, pass_transfer=transfer)
-    if backend in CORE_LOCAL_REPLAY_BACKENDS or not is_cycle_based(spiking_mode):
+    if backend in IN_TREE_CORE_LOCAL_BACKENDS or not is_cycle_based(spiking_mode):
         return
     for stage in hybrid_mapping.stages if stages is None else stages:
         if stage.kind != "neural":
             continue
         late = executed_late_input_readers(stage)
-        if late:
-            raise ChipClockReplayRefusal(
-                f"{backend} reads a stage input at the global cycle, and segment {stage.name!r} has stage-input rows "
-                f"read by cores that start above latency 0 ((core, latency) {late[:4]}); each would read its row that "
-                f"many cycles ahead of its local time. Run without {backend}, or on a backend that reads in core-local "
-                f"time")
         delayed = [k for unit in execution_neural_stages(stage) if not getattr(unit, "is_retimed_level", False)
                    for k in replay_delays(unit)]
-        if delayed:
+        if not (late or delayed):
+            continue
+        read = stage_input_read(backend)
+        if read.core_local:
+            return
+        if late:
             raise ChipClockReplayRefusal(
-                f"{backend} cannot read segment {stage.name!r}'s delayed slices {sorted(delayed)} late under "
-                f"{spiking_mode!r}")
+                f"{backend} reads a stage input at the global cycle ({read.evidence}), and segment {stage.name!r} has "
+                f"stage-input rows read by cores that start above latency 0 ((core, latency) {late[:4]}); each would "
+                f"read its row that many cycles ahead of its local time. Run without {backend}, or on a backend that "
+                f"reads in core-local time")
+        raise ChipClockReplayRefusal(
+            f"{backend} cannot read segment {stage.name!r}'s delayed slices {sorted(delayed)} late under "
+            f"{spiking_mode!r} ({read.evidence})")
 
 
 def executed_late_input_readers(stage) -> list:
@@ -289,11 +287,11 @@ def require_replayable_program(hybrid_mapping, config, transfer: str) -> None:
 
 #: Re-exported so a backend reads the discipline and its price from one import.
 __all__ = [
-    "CORE_LOCAL_REPLAY_BACKENDS", "ChipClockReplayRefusal", "VERBATIM_BACKENDS",
+    "IN_TREE_CORE_LOCAL_BACKENDS", "ChipClockReplayRefusal", "VERBATIM_BACKENDS", "core_local_replay_backends",
     "PassReplayRefusal", "apply_carried_input", "carried_output_ids", "carried_wire_bytes", "carry_plan_for",
     "carry_scope", "pass_transfer_for_backend", "publish_carried_trains", "record_carry", "record_reference_carry",
     "refuse_stochastic_replay", "replay_carried_slices", "replay_input_slices", "replay_raster",
     "executed_late_input_readers", "require_backend_replay", "require_carry_capable", "require_replayable_program",
     "run_pass_transfer",
-    "shift_delayed_slices", "shift_rows_to_core_time", "stochastic_replay_conflicts",
+    "shift_delayed_slices", "shift_rows_to_core_time", "stage_input_read", "stochastic_replay_conflicts",
 ]

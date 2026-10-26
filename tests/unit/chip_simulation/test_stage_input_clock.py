@@ -4,8 +4,10 @@ A core whose window starts at latency L reads cycle t of its stage input at glob
 cycles later still (R2), as the fused segment and the HCM (``lif_step``, ``packed_cycle``) read it. SANA-FE and Lava
 shift the rows host-side; nevresim reads its T-cycle input train at each core's local cycle in the generated simulator
 (``nevresim/include/simulator/spike_generation/stage_input_train.hpp``) and compiles every unit whose input replays a
-carried raster or a delayed slice in SpikeTrain mode, its train assembled host-side. A backend not declared to read in
-core-local time refuses by name every program with a stage-input reader above latency 0, carried or host-encoded.
+carried raster or a delayed slice in SpikeTrain mode, its train assembled host-side; nevresim counts as reading in
+core-local time only where its tree carries that read (a probe of its sources, ``test_stage_input_read_probe``). A
+backend that does not read in core-local time refuses by name every program with a stage-input reader above latency
+0, carried or host-encoded.
 The compiled behaviour is ``tests/integration/test_nevresim_stage_input_clock.py``."""
 
 from __future__ import annotations
@@ -48,7 +50,9 @@ def _delayed_pass():
 
 class TestTheDeclaration:
     def test_every_backend_reads_a_stage_input_in_core_local_time(self):
-        assert set(C._BACKEND_ENABLE_KEYS) | {"hcm"} <= C.CORE_LOCAL_REPLAY_BACKENDS
+        """On this checkout, whose nevresim tree carries W33's read; a tree without it reads at the global cycle and
+        refuses every late reader on nevresim by name (``test_stage_input_read_probe``)."""
+        assert set(C._BACKEND_ENABLE_KEYS) | {"hcm"} <= C.core_local_replay_backends()
 
     def test_nevresim_admits_a_carried_slice_read_above_latency_zero(self):
         """Chain C 3: pass 4 reads its carried slice at latency 1 (refused by name before W33)."""
