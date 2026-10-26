@@ -141,6 +141,45 @@ def multiplexed() -> Built:
     return _quiet(lambda: M.build(program.ir, MUX_CORES, True)), program.ir, value_decl(MUX_CORES)
 
 
+#: [fix round F1] The exactness review's sched_mux row: 64 x 16 cores with a bias, 64 of them.
+WINDOWED_MUX_CORE = {"max_axons": 64, "max_neurons": 16, "count": 64, "has_bias": True}
+
+
+@functools.lru_cache(maxsize=None)
+def windowed_mux_program():
+    """[fix round F1] The pack unit's LIF conv chain on integer codes (``round(5 w)``, bias 1, threshold 6: the integer
+    mode of the pass-1 review) at 64 x 16, position-multiplexed by the pipeline's builder under windowed LIF (per-hop
+    retiming: every pass executes as its retimed level units). Returns ``(program, ir, the semantics run)``."""
+    import copy
+
+    from mimarsinan.certification.randomized import executors as ex
+    from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline
+    from unit.mapping.position_multiplexing import vehicles as M
+
+    rep = M.lif_conv_chain(seed=0, widths=(6, 6))
+    for perceptron in rep.get_perceptrons():
+        with torch.no_grad():
+            perceptron.layer.weight.copy_(torch.round(perceptron.layer.weight * 5))
+            if perceptron.layer.bias is not None:
+                perceptron.layer.bias.fill_(1.0)
+            perceptron.base_activation.activation_scale.fill_(6.0)
+    ir = M.lif_ir(rep, WINDOWED_MUX_CORE["max_axons"], WINDOWED_MUX_CORE["max_neurons"])
+    run = ex.RUNS[ex.WINDOWED_LIF]
+    constraints = dict(allow_scheduling=True, max_schedule_passes=M.PASSES, allow_neuron_splitting=True,
+                       position_multiplexing=True, allow_coalescing=False, cores=[dict(WINDOWED_MUX_CORE)])
+    program = _quiet(lambda: build_hybrid_mapping_for_pipeline(copy.deepcopy(ir), constraints,
+                                                               pipeline_config=dict(run.config)))
+    return program, ir, run
+
+
+def windowed_multiplexed() -> Built:
+    from unit.mapping.position_multiplexing import vehicles as M
+
+    program, ir, run = windowed_mux_program()
+    return program, ir, CheckDeclaration(semantics="windowed_lif", window=M.T, pass_transfer=run.transfer,
+                                         core_types=(dict(WINDOWED_MUX_CORE),))
+
+
 def fit_chain() -> Built:
     program, ir = P.resident_chain()
     return program, ir, P.decl("synchronized_lif", core_types=CHAIN_CORES)
@@ -191,5 +230,5 @@ BUILDERS: Dict[str, Callable[[], Built]] = {
     "pruned_lane_direct": lambda: pruned("lane_direct"), "pruned_linear_reader": lambda: pruned("linear_reader"),
     "pruned_entry_host": lambda: pruned("entry_host"),
     "pruned_entry_host_plain": lambda: pruned("entry_host_plain"), "neuron_split": neuron_split,
-    "multiplexed": multiplexed, "fit_chain": fit_chain, "per_axon": per_axon, "relays": relays, "columnar": columnar,
+    "multiplexed": multiplexed, "windowed_multiplexed": windowed_multiplexed, "fit_chain": fit_chain, "per_axon": per_axon, "relays": relays, "columnar": columnar,
 }

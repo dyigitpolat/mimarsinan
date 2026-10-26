@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 
 import numpy as np
+import torch
 
 from mimarsinan.certification.program_check.report import ESTABLISHED, FAILED
 from mimarsinan.mapping.support.period_census import SCHEDULE_RESIDENT_CORES
@@ -77,6 +78,53 @@ def test_a_multiplexed_pass_holding_other_weights_than_its_runs_copy():
     bad = copy.deepcopy(program)
     stage = next(s for s in P.neural(bad) if getattr(s, "schedule_weights_resident", False))
     core = stage.hard_core_mapping.cores[0]
+    grid = np.array(core.get_core_matrix(), dtype=np.float64)
+    grid[0, 0] += 1.0
+    core.core_matrix = grid
+    _failed(P.run(bad, ir, decl), "H10", "resident_content")
+
+
+def _windowed_outputs(program, x):
+    from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+    from unit.mapping.position_multiplexing import vehicles as M
+
+    _program, _ir, run = UV.windowed_mux_program()
+    flow = SpikingHybridCoreFlow(M.LIF_SHAPE, program, simulation_length=M.T, thresholding_mode="<=",
+                                 pass_transfer=run.transfer, spike_mode="Uniform", **dict(run.flow))
+    with torch.no_grad():
+        return flow(x)
+
+
+def test_a_position_multiplexed_program_of_level_units_is_established_on_its_resident_runs():
+    """[fix round F1] Under per-hop retiming (windowed LIF) every pass executes as its retimed level units, so a
+    programming pass heads its segment by its level units: H10 compares each resident level unit with the level unit
+    of the same ordinal in the segment's latest programming pass. Before, no level unit registered a head, and every
+    resident pass of this exact program failed ``no_programming_pass``. The program runs equal to the identity program
+    of its IR at atol 0."""
+    from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
+    from unit.mapping.position_multiplexing import vehicles as M
+
+    program, ir, decl = UV.windowed_multiplexed()
+    passes = P.neural(program)
+    resident = [s for s in passes if getattr(s, "schedule_weights_resident", False)]
+    assert resident and all(getattr(s, "retimed_level_stages", None) for s in passes), "level units, resident runs"
+    report = P.run(program, ir, decl)
+    h10 = report.results["H10"]
+    assert h10.status == ESTABLISHED and h10.checked > 0, [v.text() for v in h10.violations]
+    assert report.established("theorem1"), (report.theorem1, report.failures_by_condition())
+    identity = build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=True)
+    x = torch.rand(16, *M.LIF_SHAPE, generator=torch.Generator().manual_seed(500))
+    want, got = _windowed_outputs(identity, x), _windowed_outputs(program, x)
+    assert torch.equal(got, want) and float(want.std()) > 0
+
+
+def test_a_resident_level_unit_holding_other_weights_than_its_heads():
+    """[fix round F1] The mutant: a resident pass's level unit whose grid differs from its head's level unit of the same
+    ordinal fails H10 by name."""
+    program, ir, decl = UV.windowed_multiplexed()
+    bad = copy.deepcopy(program)
+    stage = next(s for s in P.neural(bad) if getattr(s, "schedule_weights_resident", False))
+    core = stage.retimed_level_stages[0].hard_core_mapping.cores[0]
     grid = np.array(core.get_core_matrix(), dtype=np.float64)
     grid[0, 0] += 1.0
     core.core_matrix = grid

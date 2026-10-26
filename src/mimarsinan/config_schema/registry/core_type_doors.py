@@ -7,6 +7,7 @@ from typing import Any, List, Mapping
 
 from mimarsinan.mapping.lanes.declaration import lane_operand_conflict
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON, PER_SYNAPSE, operand_sign_conflict
+from mimarsinan.mapping.support.residency_declaration import residency_plan_conflicts
 
 
 def platform_sign_errors(config: Mapping[str, Any]) -> List[str]:
@@ -28,3 +29,10 @@ def platform_lane_errors(config: Mapping[str, Any]) -> List[str]:
     """Why executed lanes refuse beside the chip's core types, else [] (both doors, beside the per-axon rule): an
     operand core type is not composed with lanes on the integer path (``lane_operand_conflict``)."""
     return [c for c in (lane_operand_conflict(config),) if c is not None]
+
+
+def platform_residency_errors(config: Mapping[str, Any]) -> List[str]:
+    """Why a declared residency plan refuses beside the chip's core types or lanes, else [] (both doors, beside the
+    lane rule): the builder's refusals of a plan beside an operand core type and beside executed fused-add lanes
+    (``residency_plan_conflicts``), before any training spend."""
+    return residency_plan_conflicts(config)

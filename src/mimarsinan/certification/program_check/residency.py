@@ -6,7 +6,10 @@ cores fit beside every pass on the declared pool, so no pass writes a pinned slo
 pass) executes on the cores its programming pass loaded, ordinal by ordinal, so the fit counts it on its head's cores:
 the cores a pass occupies, the other cores its head's group pins, and every other group's pins (W03's
 ``residency_rules.fit_pins`` pins every core of a program whose loading passes fit side by side). A core no declared
-type decomposes (or decomposes in several ways) leaves the fit unread on the declared pool: ``undeclared_core``."""
+type decomposes (or decomposes in several ways) leaves the fit unread on the declared pool: ``undeclared_core``.
+
+[fix round F1] Under per-hop retiming every pass executes as its retimed level units: a resident pass's level unit is
+compared with the level unit of the same ordinal in the pass that programmed its cores."""
 
 from __future__ import annotations
 
@@ -37,22 +40,36 @@ def _region(core, axons: int, neurons: int, blocks=()) -> Optional[Tuple[np.ndar
 
 
 def _resident_units(delta: ProgramView, h10: ConditionResult) -> int:
-    heads: Dict[Any, Any] = {}
+    """H10's resident content: a pass executes as one unit, or (per-hop retiming) as its retimed level units, so a
+    programming pass heads its segment by its units in their order, and each unit of a resident pass is compared with
+    the head's unit of the same ordinal [fix round F1: before, level units registered no head]."""
+    heads: Dict[Any, List[Any]] = {}
+    ordinals: Dict[int, int] = {}
     resident = 0
     for unit in delta.units:
         stage = unit.program_stage
         key = unit.segment
+        ordinal = ordinals.get(unit.program_index, 0)
+        ordinals[unit.program_index] = ordinal + 1
         if not getattr(stage, "schedule_weights_resident", False):
-            if key is not None and not unit.level:
-                heads[key] = unit
+            if key is not None:
+                if ordinal == 0:
+                    heads[key] = []
+                heads[key].append(unit)
             continue
         resident += 1
-        head = heads.get(key)
+        head_units = heads.get(key)
         where = f"unit {unit.index} ({unit.stage.name})"
-        if head is None:
+        if head_units is None:
             h10.add(Violation("H10", "no_programming_pass", where, "marked weight-resident with no earlier pass of "
                               "its segment that programmed the cores"))
             continue
+        if ordinal >= len(head_units):
+            h10.add(Violation("H10", "resident_content", where, f"level unit {ordinal} of its pass, while the pass "
+                              f"that programmed its cores executes {len(head_units)} unit(s): this unit was never "
+                              "written"))
+            continue
+        head = head_units[ordinal]
         for h, cv in enumerate(unit.cores):
             h10.checked += 1
             if h >= len(head.cores):

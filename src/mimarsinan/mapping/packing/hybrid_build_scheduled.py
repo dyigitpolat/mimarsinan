@@ -25,6 +25,7 @@ from mimarsinan.mapping.packing.schedule_residency_plan import (
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
 from mimarsinan.mapping.packing.type_binding import refuse_typed_multi_pass
 from mimarsinan.mapping.support.period_census import ResidencySegmentPlan
+from mimarsinan.mapping.support.residency_declaration import OPERAND_RESIDENCY_REFUSAL
 from mimarsinan.mapping.layout.segmentation import (
     NeuralSegment,
     partition_ir_graph,
@@ -243,9 +244,7 @@ def _build_scheduled(
                 "residency_plan plans the program's neural segments; the per-hop mapping-level split "
                 "(per_hop_neural_segments, the differential reference) is not planned with it")
         if getattr(ir_graph, "dynamic_bank_bindings", None):
-            raise ResidencyPlanError(
-                "residency_plan pins cores by payload, and its units do not yet state which cores hold dynamic "
-                "operand banks (rewritten every inference, never pinned): refused for a program with operand banks")
+            raise ResidencyPlanError(OPERAND_RESIDENCY_REFUSAL)
         segments = depth_partition(ir_graph)
         builder = compose_builder_program(
             [s for s in segments if isinstance(s, NeuralSegment)], ir_graph=ir_graph,
