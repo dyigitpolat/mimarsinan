@@ -8,8 +8,10 @@ the fix re-pins it (plan section 13 rule 6), where the owner's own test becomes 
 CL1 (the integrated tree): G5's pass projection meets H5-skew (R1 pins, R2 delivery delays) and every segment walk
 is dependency-ordered (R6), so both arms switch the integrated rule off and pin a counterexample with an equal
 paired control; the CL1 fix round (sign-off P1 (a)) levels a coalescing group as one unit, so H0 joins them, and
-reads the synchronized LIF count off its window charge (H8's count_rebuild). R4 stays violated by the base. Two
-arms are retired with their reason, never weakened: the
+reads the synchronized LIF count off its window charge (H8's count_rebuild). E1 meets R4, the last base violation:
+the dithered comb rotates by each channel's channel at unbounded geometry, so the R4 arm switches that key back to the
+channel's stage-input position, with an equal paired control. Two arms are retired with their reason, never
+weakened: the
 packing predicate's latency clause off is refused by name at the pass projection (H1-latency is asserted at run
 time), and a windowed run's transfer discipline changes no output (every carried wire is read by a level unit
 that re-encodes its count, G5's R5).
@@ -77,13 +79,11 @@ from mimarsinan.mapping.packing.pass_timing import PassTimingError
 #: (synchronized TTFS) the TTFS float membrane is the same in every packing past the exact range too, so the
 #: deployment equals the identity program there, and the departure H8 names shows on the network relation
 #: (``TestTheH8DepartureOnTheTtfsFloatPath``).
-OFF_WITNESSES = {"H1-theta": 0, "H5-collapse": 32, "H8": 90, "H5-skew": 1, "R6": 16, "H0": 0}
-#: The R4 arm's witness: a windowed-LIF deployment whose dithered encode rotates a slice by its channel index in
-#: the deployed stage input, not its fused one (class position_dependent_encode). CL1: seed 6's drawn residency
-#: plan is refused by name, so the witness moves to 7, the screen's first R4 counterexample.
+#: The R4 arm's witness: a windowed-LIF deployment whose dithered encode, keyed on stage-input positions, rotates a
+#: slice by where the relabelled IR's node ids lay it out (class position_dependent_encode). CL1: seed 6's drawn
+#: residency plan is refused by name, so the witness moves to 7, the screen's first R4 counterexample; E1 keeps it.
 R4_SEED = 7
-#: Base-violation arm -> a seed where the base toolchain runs a counterexample of the arm's mechanism.
-BASE_WITNESSES = {"R4": R4_SEED}
+OFF_WITNESSES = {"H1-theta": 0, "H5-collapse": 32, "H8": 90, "H5-skew": 1, "R6": 16, "H0": 0, "R4": R4_SEED}
 #: The base's synchronized-LIF walk witness: the identity program walked a consumer before its producer while the
 #: multi-pass deployment walked in dependency order. Retired at CL1 (fixed by the dependency-ordered count walk).
 WALK_WITNESS = (ON_SCHEDULED, 67)
@@ -132,20 +132,20 @@ class TestTheH8DepartureOnTheTtfsFloatPath:
 
 
 class TestBaseViolations:
-    @pytest.mark.parametrize("arm", sorted(BASE_WITNESSES))
-    def test_the_base_runs_a_counterexample_of_the_arms_mechanism(self, arm):
-        verdict = run_instance(BASE_WITNESSES[arm], arm)
-        assert verdict.outcome == COUNTEREXAMPLE, verdict.to_dict()
-        assert ARMS[arm].mechanism in attribute(verdict), verdict.to_dict()
+    def test_no_arm_is_a_base_violation_on_this_tree(self):
+        """E1: R4, the last hypothesis the base violated, is met; every exercisable arm switches its rule off with a
+        paired control (``OFF_WITNESSES``), so none attributes its teeth by mechanism."""
+        assert not {a for a, arm in ARMS.items() if arm.mechanism}
 
-    def test_every_mechanism_arm_has_a_witness(self):
-        assert {a for a, arm in ARMS.items() if arm.mechanism} == set(BASE_WITNESSES)
+    def test_the_r4_off_arm_names_the_position_keyed_rotation(self):
+        verdict = run_instance(R4_SEED, "R4")
+        assert verdict.outcome == COUNTEREXAMPLE and "position_dependent_encode" in attribute(verdict), verdict.to_dict()
 
-    def test_the_r4_violation_needs_the_dithered_encode_on_both_programs(self, monkeypatch):
-        """The R4 arm holds a function-bearing axis (phase-dithered Uniform) on the identity program and the
-        deployment alike, so it switches nothing off; the same deployment without the dither is equal."""
+    def test_the_r4_off_arm_needs_the_dithered_encode_on_both_programs(self, monkeypatch):
+        """The R4 arm holds a function-bearing axis (phase-dithered Uniform) on the identity program, the deployment
+        and the paired control alike; the same deployment without the dither is equal with the key switched off."""
         arm = ARMS["R4"]
-        assert arm.phase_dither and not arm.changes_a_field and arm.control() == arm
+        assert arm.phase_dither and arm.changes_a_field and arm.control().phase_dither
         monkeypatch.setitem(ARMS, "R4/undithered", replace(arm, id="R4/undithered", phase_dither=False))
         assert run_instance(R4_SEED, "R4/undithered").outcome == EQUAL
 

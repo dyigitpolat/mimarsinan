@@ -35,7 +35,7 @@ def test_a_declaration_reads_the_run_transfer_window_and_encoder():
     decl = declaration_from_config({"spiking_family": "lif", "spiking_variant": "streamed", "simulation_steps": 12,
                                     "spike_phase_dither": True, "cores": P.V.cores(3)})
     assert (decl.semantics, decl.window, decl.pass_transfer) == ("streamed_lif", 12, "verbatim")
-    assert not decl.encoder_position_free and decl.core_types[0]["count"] == 3
+    assert decl.dithered_encode and decl.core_types[0]["count"] == 3
     assert declaration_from_config({"core_semantics": "mvm"}).accumulation["int64_golden"] == "int64"
 
 

@@ -28,8 +28,9 @@ T = V.T
 
 
 def integer_ir(rep, *, coalescing: bool = False, bits: int = 8):
-    """The vehicle's IR on the integer lattice: every untrained core takes the mapping-time grid scale
-    ``floor(q_max / max |W|)`` (``chip_quantize._matrix_scale``'s fallback), then the IR latency pass."""
+    """The vehicle's IR on the integer lattice: every untrained perceptron takes the mapping-time grid scale
+    ``floor(q_max / max |W|)`` over all its cores (``chip_quantize._matrix_scale``'s fallback, one grid per perceptron
+    since E1), then the IR latency pass."""
     ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=V.MAX_AXONS, max_neurons=V.MAX_NEURONS,
                    allow_coalescing=coalescing).map(rep)
     for node in ir.get_neural_cores():

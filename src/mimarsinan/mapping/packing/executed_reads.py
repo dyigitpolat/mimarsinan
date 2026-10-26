@@ -16,7 +16,6 @@ from typing import Any, Callable, Collection, Dict, List, Optional, Tuple
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
-from mimarsinan.mapping.packing import pass_positions
 from mimarsinan.mapping.packing.pass_timing import replay_delays
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.schedule.pass_carry import carried_outputs_by_stage
@@ -154,8 +153,6 @@ class Memo:
 
 
 MEMOS: Tuple[Memo, ...] = (
-    Memo("program", "_fused_position_cache", lambda p: pass_positions._fused_positions(p.stages),
-         "pass_positions.fused_input_positions"),
     Memo("program", "_carried_output_cache", lambda p: carried_outputs_by_stage(p.stages),
          "carry.carried_output_ids"),
     Memo("program", "_consumer_counts_cache", consumer_counts, "HybridStageIOMixin._build_consumer_counts"),

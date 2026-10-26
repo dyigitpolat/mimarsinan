@@ -14,17 +14,23 @@ logger = logging.getLogger("mimarsinan.spiking.spike_trains")
 
 def uniform_spike_train(
     rate: torch.Tensor, T: int, *, phase_dither: bool = False,
+    channels: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Encode rates in [0, 1] to a uniform-spaced spike train of shape ``(T, ...)``.
 
     ``phase_dither`` rotates each channel's comb by a deterministic offset mod T
-    (count-exact) to decorrelate cross-channel arrival [calculus sec.15.11]."""
+    (count-exact) to decorrelate cross-channel arrival [calculus sec.15.11],
+    keyed on ``channels`` (one channel id per last-dim position: a chip stage's
+    channels at unbounded geometry, E1), else on the last-dim index."""
     T = int(T)
     rate_c = rate.clamp(0.0, 1.0)
-    offsets = (
-        spike_modes.uniform_phase_offsets(rate_c.shape[-1], T, device=rate_c.device)
-        if phase_dither else None
-    )
+    offsets = None
+    if phase_dither:
+        offsets = (
+            spike_modes.uniform_phase_offsets(rate_c.shape[-1], T, device=rate_c.device)
+            if channels is None else
+            spike_modes.channel_phase_offsets(channels, T, device=rate_c.device)
+        )
     trains = [
         spike_modes.to_uniform_spikes(rate_c, cycle, T, phase_offsets=offsets)
         for cycle in range(T)
@@ -66,12 +72,13 @@ def lif_spike_train(
 
 def materialized_spike_train(
     rate: torch.Tensor, T: int, *, phase_dither: bool = False,
+    channels: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Build a full ``(T, ...)`` train upfront for ``spike_mode='SpikeTrain'``.
 
     Uses the same Uniform spacing as the per-cycle encoder so replay matches HCM.
     """
-    return uniform_spike_train(rate, T, phase_dither=phase_dither)
+    return uniform_spike_train(rate, T, phase_dither=phase_dither, channels=channels)
 
 
 def rates_to_spike_train(
@@ -81,8 +88,10 @@ def rates_to_spike_train(
     spike_mode: str,
     log_fallback: bool = True,
     phase_dither: bool = False,
+    channels: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Legacy fallback: expand clamped rates to a spike train per cycle."""
+    """Legacy fallback: expand clamped rates to a spike train per cycle (a dithered
+    Uniform or SpikeTrain encode keyed on ``channels``, ``uniform_spike_train``)."""
     if spike_mode == "SpikeTrain":
         if log_fallback:
             logger.debug(
@@ -90,10 +99,10 @@ def rates_to_spike_train(
                 T, tuple(rates.shape),
             )
         return materialized_spike_train(
-            rates.clamp(0.0, 1.0), int(T), phase_dither=phase_dither,
+            rates.clamp(0.0, 1.0), int(T), phase_dither=phase_dither, channels=channels,
         )
     if spike_mode == "Uniform" and phase_dither:
-        return uniform_spike_train(rates, int(T), phase_dither=True)
+        return uniform_spike_train(rates, int(T), phase_dither=True, channels=channels)
 
     if log_fallback:
         logger.debug(

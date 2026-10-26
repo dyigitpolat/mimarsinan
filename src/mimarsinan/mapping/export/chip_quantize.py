@@ -40,11 +40,13 @@ def quantize_ir_graph(
     bank_scale_used: dict[int, float] = {}
     # N2: a bound bank's matrix is a payload of integer codes written at run time; its law carries the scale.
     dynamic = dynamic_bank_ids(ir_graph)
+    peaks = _untrained_perceptron_peaks(ir_graph, eps, payload_banks=dynamic)
     for bank_id, bank in ir_graph.weight_banks.items():
         if bank_id in dynamic:
             continue
         b_min, b_max = _bounds_of(bank, bits, q_min, q_max)  # [WI-5g] the bank's core-type width
-        scale = _matrix_scale(bank.core_matrix, bank.parameter_scale, b_max, eps, grids.fractional_scale)
+        scale = _matrix_scale(bank.core_matrix, bank.parameter_scale, b_max, eps, grids.fractional_scale,
+                              peaks.get(getattr(bank, "perceptron_index", None)))
         bank.core_matrix = np.clip(np.round(bank.core_matrix * scale), b_min, b_max).astype(
             _dtype_of(bank, bits, q_dtype))
         bank.parameter_scale = torch.tensor(1.0)
@@ -71,7 +73,8 @@ def quantize_ir_graph(
                 f"quantize_ir_graph: NeuralCore {node.name} (id={node.id}) has "
                 f"neither a weight bank nor an owned core_matrix."
             )
-        scale = _matrix_scale(matrix, node.parameter_scale, n_max, eps, grids.fractional_scale)
+        scale = _matrix_scale(matrix, node.parameter_scale, n_max, eps, grids.fractional_scale,
+                              peaks.get(node.perceptron_index))
         node.core_matrix = np.clip(np.round(matrix * scale), n_min, n_max).astype(n_dtype)
         node.threshold = scale
         node.parameter_scale = torch.tensor(1.0)
@@ -108,22 +111,47 @@ def code_dtype(bits: int):
     return np.int8 if bits <= 8 else np.int16 if bits <= 16 else np.int32
 
 
-def _matrix_scale(matrix, parameter_scale, q_max: int, eps: float, fractional: bool = False) -> float:
+def _untrained(parameter_scale, eps: float) -> bool:
+    ps = float(parameter_scale.item() if hasattr(parameter_scale, "item") else parameter_scale)
+    return abs(ps) <= eps
+
+
+def _untrained_perceptron_peaks(ir_graph: IRGraph, eps: float, *, payload_banks=frozenset()) -> dict:
+    """[E1] Per perceptron with no trained scale, the largest weight magnitude over every core and bank of it: the
+    fallback grid is one per perceptron, as the trained lattice is, so the IR's tiling at the declared geometry never
+    changes a perceptron's integers or threshold (a core without a perceptron, a relay, keeps its own). A bank bound
+    to a payload (N2, ``payload_banks``) holds no weights, only a placeholder the quantizer skips, so it sets no grid."""
+    peaks: dict = {}
+    owned = [(n.perceptron_index, n.parameter_scale, n.core_matrix) for n in ir_graph.nodes
+             if isinstance(n, NeuralCore) and not n.has_weight_bank() and n.core_matrix is not None]
+    banked = [(getattr(b, "perceptron_index", None), b.parameter_scale, b.core_matrix)
+              for bank_id, b in ir_graph.weight_banks.items() if bank_id not in payload_banks]
+    for perceptron, parameter_scale, matrix in owned + banked:
+        if perceptron is not None and _untrained(parameter_scale, eps) and np.size(matrix):
+            peaks[perceptron] = max(peaks.get(perceptron, 0.0), float(np.max(np.abs(matrix))))
+    return peaks
+
+
+def _matrix_scale(matrix, parameter_scale, q_max: int, eps: float, fractional: bool = False,
+                  peak: float | None = None) -> float:
     """Integer-lattice grid scale (== the deployed integer threshold).
 
     A TRAINED scale (NAPQ parameter_scale) must already be integral — the
     network was optimized against that lattice, so fractional drift here
     deploys a different fire condition than was trained and fails loud.
-    The mapping-time fallback (never-trained cores, e.g. relays) rounds.
+    The mapping-time fallback (never-trained cores, e.g. relays) rounds, on
+    ``peak`` (its perceptron's largest magnitude, ``_untrained_perceptron_peaks``)
+    where the core has a perceptron, else on its own.
     A declared fractional rule (a value-domain law carries the scale in its
-    multiplier) deploys the trained scale as is, and q_max / max|w| otherwise."""
+    multiplier) deploys the trained scale as is, and the fallback q_max / max|w|
+    otherwise, on the same ``peak`` (one grid per perceptron under either rule)."""
     ps = float(
         parameter_scale.item()
         if hasattr(parameter_scale, "item")
         else parameter_scale
     )
     if fractional:
-        return ps if abs(ps) > eps else q_max / max(float(np.max(np.abs(matrix))), eps)
+        return ps if abs(ps) > eps else q_max / _fallback_magnitude(matrix, peak, eps)
     if abs(ps) > eps:
         snapped = max(1.0, float(round(ps)))
         if abs(ps - snapped) > 1e-6 * snapped:
@@ -133,10 +161,13 @@ def _matrix_scale(matrix, parameter_scale, q_max: int, eps: float, fractional: b
                 f"the grid during training — refusing to truncate at deploy."
             )
         return snapped
-    w_max = float(np.max(np.abs(matrix)))
-    w_max = max(w_max, eps)
     # FLOOR keeps w_max*scale <= q_max (no clip saturation; relay margin survives).
-    return max(1.0, float(np.floor(q_max / w_max)))
+    return max(1.0, float(np.floor(q_max / _fallback_magnitude(matrix, peak, eps))))
+
+
+def _fallback_magnitude(matrix, peak: float | None, eps: float) -> float:
+    """The magnitude the mapping-time fallback grid divides by: the perceptron's ``peak``, else the core's own."""
+    return max(float(np.max(np.abs(matrix))) if peak is None else float(peak), eps)
 
 
 def _bias_grid_ratio(node: NeuralCore, weight_scale: float, eps: float) -> int:

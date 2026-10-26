@@ -132,8 +132,8 @@ class TestDependencyOrderedWalks:
 
 
 class TestPositionDependentEncodes:
-    """R4 with spike_phase_dither: an external slice is encoded at the channel the fused stage (under re-timing, the
-    identity's level stage) encodes it at; the dither comb rotates by the stage-input channel index
+    """R4 with spike_phase_dither: every encoded channel's comb rotates by its channel at unbounded geometry (E1,
+    ``phase_channels``), never by where a pass lays its slice out. These were G5's witnesses of the position rule
     (``split_level`` C 1: 3 of 72 outputs differed under streamed LIF with the slice at its own offset; seeds 5, 16
     and 152: windowed LIF with dither differed, the level units reading their slices at their own offsets)."""
 
@@ -148,8 +148,8 @@ class TestPositionDependentEncodes:
                                                       (lambda: _fuzz(16), 3, R.WINDOWED_LIF)],
                              ids=["split_level", "seed16"])
     def test_a_mapping_whose_flow_ran_keeps_its_positions_through_a_pickle_round_trip(self, make, count, semantics):
-        """The fused positions are memoized on the mapping by stage position, not identity: a mapping pickled after
-        its flow ran (split_level C 1: 5 outputs differed with identity keys; seed 16 C 3: 3) runs equal."""
+        """A mapping pickled after its flow ran keeps its channel table (G5's fused-position memo once differed here,
+        split_level C 1: 5 outputs; seed 16 C 3: 3) and runs equal."""
         ir = make()
         u1 = V.build(ir, count, None, retimed_level_stages=R.retimed(semantics))
         with torch.no_grad():

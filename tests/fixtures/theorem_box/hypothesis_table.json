@@ -830,18 +830,25 @@
     "synchronized_ttfs"
    ],
    "statement": "a carried slice is replayed, and every other slice is encoded exactly as the fused stage encodes it, in its fused channel positions (a position-free encoder meets the position clause by construction): a pass cut, a packing or a relabelling never changes how a slice is encoded",
-   "memo": "g5_residency_planner/u1_design.md section 3 ('Crash: mixed-input pass under VERBATIM', 'Position-dependent encodes') and section 5.1 rule 4; chip_simulation/recording/spike_modes.py:60-66 (the dither comb rotates by stage-input channel index); proof_check.md PC6, PC17; review round 2",
+   "memo": "g5_residency_planner/u1_design.md section 3 ('Crash: mixed-input pass under VERBATIM', 'Position-dependent encodes') and section 5.1 rule 4; chip_simulation/recording/spike_modes.py:60-66 (the dither comb rotates by stage-input channel index); proof_check.md PC6, PC17; review round 2; E1 (RA/11_wave2/e1/step1_report.md): the comb keyed on each channel's channel at unbounded geometry",
    "sites": [
     {
      "site": "G5 fused input positions (mapping/packing/pass_timing.py fused_input_positions, spiking/segment_boundary.py)",
      "kind": "construction",
      "tree": "CL1"
+    },
+    {
+     "site": "E1 channels at unbounded geometry (mapping/packing/phase_channels.py stage_input_channels, spiking/segment_boundary.py _dither_channels)",
+     "kind": "construction",
+     "tree": "E1"
     }
    ],
-   "gap": "no assertion on this base, which violates both clauses. Per-slice kinds: a pass that holds cached trains and must encode a non-raw external slice crashes (spiking/segment_boundary.py:279-286; run-error class mixed_input_pass, 3 hypothesis-on seeds, all streamed LIF). Fused positions: a phase-dithered Uniform encode rotates each slice by its channel index in the deployed stage input (spike_modes.uniform_phase_offsets via spiking/spike_trains.py), so packing, relabelling and pass cuts move its train (silent class position_dependent_encode, the R4 arm; u1_design.md section 3 measured 13 streamed and 146 windowed silent mismatches on G5's round-2 tree). CL1 (integrated tree): the per-slice clause holds (G5's per-slice input kinds; the three mixed_input_pass seeds run equal), and a pass is encoded at its fused segment's channel positions (mapping/packing/pass_positions.py fused_input_positions), but the fused layout orders external nodes by IR node id, so packing and relabelling still move a dithered slice against the identity program (the R4 arm: 26 of 100 admitted)",
+   "gap": "no assertion on this base, which violates both clauses. Per-slice kinds: a pass that holds cached trains and must encode a non-raw external slice crashes (spiking/segment_boundary.py:279-286; run-error class mixed_input_pass, 3 hypothesis-on seeds, all streamed LIF). Fused positions: a phase-dithered Uniform encode rotates each slice by its channel index in the deployed stage input (spike_modes.uniform_phase_offsets via spiking/spike_trains.py), so packing, relabelling and pass cuts move its train (silent class position_dependent_encode, the R4 arm; u1_design.md section 3 measured 13 streamed and 146 windowed silent mismatches on G5's round-2 tree). CL1 (integrated tree): the per-slice clause holds (G5's per-slice input kinds; the three mixed_input_pass seeds run equal), and a pass is encoded at its fused segment's channel positions (mapping/packing/pass_positions.py fused_input_positions), but the fused layout orders external nodes by IR node id, so packing and relabelling still move a dithered slice against the identity program (the R4 arm: 26 of 100 admitted). E1 (on the exactness tree): every dithered comb rotates by its channel's channel at unbounded geometry (the perceptron output channel of its IR neuron, a host op's or the raw input's output index; mapping/packing/phase_channels.py), so neither the IR's tiling, its node ids and order, packing nor a pass cut moves a dithered train: the 26 counterexamples run equal and the R4 arm's paired control is equal on 100 of 100 admitted; the arm now keys the rotation on stage-input positions (switched off)",
    "witness": [
-    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_base_runs_a_counterexample_of_the_arms_mechanism[R4]",
-    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_r4_violation_needs_the_dithered_encode_on_both_programs",
+    "tests/unit/certification/randomized/test_witnesses.py::TestCodeLevelWitnesses::test_off_arm_differs_and_control_agrees[R4]",
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_r4_off_arm_names_the_position_keyed_rotation",
+    "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_the_r4_off_arm_needs_the_dithered_encode_on_both_programs",
+    "tests/unit/spiking/test_phase_channels.py::test_a_dithered_deployment_equals_the_identity_program_at_unbounded_geometry",
     "tests/unit/certification/randomized/test_witnesses.py::TestBaseViolations::test_a_cached_trains_crash_is_tagged_by_its_rule[streamed_lif-mixed_input_pass]",
     "RA/10_wave1/g5_residency_planner/u1_design.md section 3, per-slice rule off (442 crashes) and dither fuzz; G5's tests at CL1"
    ],
@@ -849,7 +856,7 @@
     "code": "R4",
     "model": null
    },
-   "code_level": "the R4 arm declares the phase-dithered Uniform encode on both programs (a function-bearing axis held equal) under windowed LIF with scheduled declarations and no coalescing; each counterexample is attributed by a position-free rotation (one offset for every channel) that restores equality; the hypothesis-on arms keep the encoder undithered",
+   "code_level": "the R4 arm declares the phase-dithered Uniform encode on both programs (a function-bearing axis held equal) under windowed LIF with scheduled declarations and no coalescing, and switches the rotation's key from each channel's channel at unbounded geometry (E1) to its stage-input position; its paired control keeps the key on; each counterexample is attributed by a channel-free rotation (one offset for every channel) that restores equality; the hypothesis-on arms keep the encoder undithered",
    "model_level": "no model-level counterpart: the golden's encode is position-free (second agent, part 1)"
   },
   {
@@ -925,8 +932,8 @@
    "hypothesis": "R4",
    "probe_arm": "R4",
    "statement": "a phase-dithered Uniform encode rotates each slice's comb by its channel index in the deployed stage input (chip_simulation/recording/spike_modes.py uniform_phase_offsets, through spiking/spike_trains.py and spiking/segment_boundary.py), so packing, relabelling and pass cuts change a slice's train: the dithered declaration's outputs depend on cost-only decisions",
-   "owner": "G5 (fused channel positions, plan section 21 item 1; u1_design.md section 5.3, spike_modes.py)",
-   "status": "fixed across pass cuts on the integrated tree (pass_positions.fused_input_positions); packing and relabelling still move a dithered slice (R4 arm, 26 of 100 admitted)"
+   "owner": "G5 (fused channel positions, plan section 21 item 1; u1_design.md section 5.3, spike_modes.py); E1 (exactness follow-up, RA/11_wave2/e1)",
+   "status": "fixed by E1 on the exactness tree (not yet integrated): the comb rotates by each channel's channel at unbounded geometry (mapping/packing/phase_channels.py), so packing, relabelling, tiling and pass cuts move no dithered slice (the 26 R4 counterexamples run equal; the R4 arm switches the key off)"
   },
   {
    "id": "mixed_input_pass",

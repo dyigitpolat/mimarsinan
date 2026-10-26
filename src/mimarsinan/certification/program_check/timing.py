@@ -1,6 +1,7 @@
 """[W15] The pass-cut conditions on a deployment against its identity program: identity-program latency (H1-latency),
 pinned latencies (R1), delivery delays on every slice the stage loop reads late (R2), the scoped carry store and edge
-classes (R3), per-slice input kinds and positions (R4), and the static part of window coverage (H2, Proposition 2).
+classes (R3), per-slice input kinds and dithered channels, the latter against the IR neurons' channels (R4), and the
+static part of window coverage (H2, Proposition 2).
 
 Latencies are the executed ones (``executed_core_latencies``: ChipLatency, pins honoured, the stored latencies left
 as they were); the identity program's are its own executed latencies per IR node, its segments its program stages."""
@@ -8,7 +9,7 @@ as they were); the identity program's are its own executed latencies per IR node
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from mimarsinan.certification.program_check.declaration import CheckDeclaration
 from mimarsinan.certification.program_check.reads import segment_carried
@@ -18,7 +19,8 @@ from mimarsinan.certification.program_check.view import K_CORE, K_INPUT, Program
 from mimarsinan.mapping.packing.executed_reads import CACHED, REPLAYED, SliceDelivery
 from mimarsinan.mapping.packing.pass_timing import carried_nodes, executed_core_latencies
 from mimarsinan.mapping.latency.chip import PINNED_LATENCIES, ChipLatency
-from mimarsinan.mapping.packing import pass_positions
+from mimarsinan.mapping.packing import phase_channels as PCH
+from mimarsinan.certification.program_check.unbounded.keys import output_channels
 
 
 @dataclass
@@ -159,20 +161,47 @@ def check_timing(program: Any, delta: ProgramView, facts: SweepFacts, ident: Ide
                                  f"{-d.delay} cycle(s) late"))
 
 
+def _channels(program: Any, node: int, size: int) -> Optional[Tuple[int, ...]]:
+    """The channels at unbounded geometry the dithered encoder rotates ``node``'s first ``size`` outputs by in
+    ``program`` (``phase_channels.channels_of``, its own read), None where it refuses them by name."""
+    try:
+        return tuple(PCH.channels_of(program, node, size).tolist())
+    except PCH.PhaseChannelRefusal:
+        return None
+
+
+def _neuron_channels(ir_graph: Any) -> Callable[[int, int], Optional[Tuple[int, ...]]]:
+    """Per IR node and size, the channel identity of the IR neuron at each of its first ``size`` program outputs
+    (``keys.output_channels``: the perceptron channel of each kept column, a host op's and the raw input's output
+    index), read off the IR and not off any builder's channel table; None where the node has none."""
+    nodes = {int(n.id): n for n in ir_graph.nodes}
+    memo: Dict[int, Optional[Tuple[int, ...]]] = {}
+
+    def channels(node: int, size: int) -> Optional[Tuple[int, ...]]:
+        if node == PCH.RAW_INPUT:
+            return tuple(range(int(size)))
+        if node not in memo:
+            found = output_channels(nodes[node], ir_graph) if node in nodes else None
+            memo[node] = None if found is None else tuple(found.tolist())
+        found = memo[node]
+        return None if found is None or len(found) < size else found[:size]
+
+    return channels
+
+
 def check_slices(program: Any, delta: ProgramView, iota: ProgramView, ident: IdentityTiming,
                  deliveries: Dict[int, List[SliceDelivery]], iota_deliveries: Dict[int, List[SliceDelivery]],
-                 decl: CheckDeclaration, r4: ConditionResult) -> None:
+                 decl: CheckDeclaration, r4: ConditionResult, ir_graph: Any) -> None:
     """R4 (G5's rule 4): every slice a unit reads that the identity's unit of its neurons reads too (a carried wire is
     in-unit there; H5-collapse reads it) is of the kind the identity reads it as (a cached train, a count re-encode,
-    an encode: ``slice_deliveries``), and under a position-dependent encode (dither) every encoded one sits at that
-    unit's channel offset (the executor's own fused positions, whose memo ``stale_memo`` holds to them). A unit
-    holding neurons of two identity units fails by name (``multi_home_unit``), never a skip."""
-    fused = {} if decl.encoder_position_free else pass_positions._fused_positions(program.stages)
-    offsets: Dict[Tuple[int, int], int] = {}
+    an encode: ``slice_deliveries``), and under a phase-dithered encode every encoded one rotates each neuron by its
+    channel at unbounded geometry (``phase_channel``: the program's channel table, the encoder's own read, against the
+    channel identity of the IR neuron at each program output, so a builder's table fault is not compared with a
+    table the same builder made; a channel the encoder refuses by name fails too). A unit holding neurons of two
+    identity units fails by name (``multi_home_unit``), never a skip."""
+    neuron_channels = _neuron_channels(ir_graph)
     kinds: Dict[Tuple[int, int], str] = {}
     for u, unit in enumerate(iota.units):
-        for node, offset, _ in unit.slices:
-            offsets[(u, node)] = offset
         for d in iota_deliveries[unit.index]:
             kinds[(u, d.node)] = d.kind
     for unit in delta.units:
@@ -185,8 +214,6 @@ def check_slices(program: Any, delta: ProgramView, iota: ProgramView, ident: Ide
         if not homes:
             continue
         home = next(iter(homes))
-        key = pass_positions.stage_key(program.stages, unit.stage)
-        moved = fused.get(key) if key is not None else None
         for d in deliveries[unit.index]:
             want_kind = kinds.get((home, d.node))
             if want_kind is None:          # in-unit in the identity: a carried wire, which H5-collapse reads
@@ -195,14 +222,17 @@ def check_slices(program: Any, delta: ProgramView, iota: ProgramView, ident: Ide
             if d.kind != want_kind:
                 r4.add(Violation("R4", "slice_kind", f"{where} slice {d.index}", f"node {d.node} is read as "
                                  f"{d.kind}, the identity's unit reads it as {want_kind}"))
-            if decl.encoder_position_free or d.kind in (REPLAYED, CACHED):
+            if not decl.dithered_encode or d.kind in (REPLAYED, CACHED):
                 continue
-            fused_at = None if moved is None else moved.get(d.index)
-            at = unit.slices[d.index][1] if fused_at is None else int(fused_at)
-            want = offsets.get((home, d.node))
-            if want is not None and at != want:
-                r4.add(Violation("R4", "encode_position", f"{where} slice {d.index}",
-                                 f"node {d.node} encoded at channel offset {at}, the identity stage encodes it at "
-                                 f"{want}"))
-    if decl.encoder_position_free:
-        r4.note = "position-free encoder: the position clause holds by construction; slice kinds checked"
+            size = unit.slices[d.index][2]
+            got, want = _channels(program, d.node, size), neuron_channels(d.node, size)
+            if got is None or got != want:
+                r4.add(Violation("R4", "phase_channel", f"{where} slice {d.index}",
+                                 f"node {d.node} rotated by channels {_head(got)}, its neurons' channels at unbounded "
+                                 f"geometry are {_head(want)} (None: refused by name, or no channel identity)"))
+    if not decl.dithered_encode:
+        r4.note = "undithered encoder: a slice's train is its value's; slice kinds checked"
+
+
+def _head(channels: Optional[Tuple[int, ...]]) -> str:
+    return "None" if channels is None else str(list(channels[:6])) + ("..." if len(channels) > 6 else "")

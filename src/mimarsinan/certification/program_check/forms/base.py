@@ -30,7 +30,7 @@ PROGRAM: Dict[str, Readers] = {
     "stages": ("tiles", "H9"), "output_sources": ("tiles", "H9"),
     **_same(("tiles", "seam-currency"), "node_activation_scales", "node_input_activation_scales",
             "node_buffer_scales", "node_output_shifts"),
-    "_consumer_counts_cache": ("H9",), "_carried_output_cache": ("R3",), "_fused_position_cache": ("R4",),
+    "_consumer_counts_cache": ("H9",), "_carried_output_cache": ("R3",), "node_phase_channels": ("R4",),
     "schedule_residency_plan": (UNREAD,), "source_ir_build_token": (UNREAD,),
 }
 STAGE: Dict[str, Readers] = {
@@ -72,8 +72,10 @@ IR_GRAPH: Dict[str, Readers] = {
     **_same((IDENTITY,), "nodes", "output_sources", "weight_banks", "layout_softcores", "_is_segment_subgraph"),
     "build_token": (UNREAD,),
 }
-#: The IR node classes' attributes: everything the identity builder reads, the compaction masks N-identity reads
-#: too, the law the laws condition reads; the pre-pruning records no builder reads.
+#: The IR node classes' attributes: everything the identity builder reads, the compaction masks N-identity and
+#: ir-tiling read too, the law the laws condition reads, the pre-pruning column mask both builders' channel tables read
+#: (``phase_channels.node_phase_channels``) and R4 and ir-tiling read (the channel identity); the other pre-pruning
+#: records no builder reads.
 _NODE: Dict[str, Readers] = {
     **_same((IDENTITY,), "id", "name", "input_sources", "core_matrix", "threshold", "activation_scale",
             "parameter_scale", "input_activation_scale", "boundary_grid", "latency", "weight_bank_id",
@@ -81,9 +83,10 @@ _NODE: Dict[str, Readers] = {
             "perceptron_input_slice", "psum_group_id", "psum_role", "coalescing_group_id", "coalescing_role",
             "normalization_type", "activation_type", "hardware_bias", "bias_scale", "layout_softcore_index",
             "op_type", "params", "input_shape", "output_shape", "_negative_shift"),
-    **_same(("N-identity", IDENTITY), "pruned_row_mask", "pruned_col_mask"),
+    **_same(("N-identity", "ir-tiling", IDENTITY), "pruned_row_mask", "pruned_col_mask"),
     "readout_law": ("laws", IDENTITY), "_source_counts_cache": ("H9",),
-    **_same((UNREAD,), "pre_pruning_heatmap", "pre_pruning_row_mask", "pre_pruning_col_mask"),
+    "pre_pruning_col_mask": ("R4", "ir-tiling", IDENTITY),
+    **_same((UNREAD,), "pre_pruning_heatmap", "pre_pruning_row_mask"),
 }
 
 ATTRIBUTES: Mapping[str, Mapping[str, Readers]] = {

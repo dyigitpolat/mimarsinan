@@ -57,13 +57,24 @@ def comb_spike_count_np(rates, simulation_length: int):
     return (f + (x - f >= 0.5)).astype(np.int64)
 
 
+def channel_phase_offsets(
+    channels: torch.Tensor, simulation_length: int, device: torch.device | None = None,
+) -> torch.Tensor:
+    """[E1] Comb rotation (whole cycles in [0, T)) of each channel id in
+    ``channels`` for phase-dithered uniform encodes; rotation mod T preserves
+    every channel's count exactly. A chip stage passes each stage-input
+    channel's channel at unbounded geometry (``phase_channels``), so no
+    cost-only decision moves a rotation."""
+    idx = torch.as_tensor(channels, device=device).to(dtype=torch.float32)
+    return torch.floor((idx * _PHASE_GOLDEN).frac() * simulation_length)
+
+
 def uniform_phase_offsets(
     n_channels: int, simulation_length: int, device: torch.device | None = None,
 ) -> torch.Tensor:
-    """Per-channel comb rotation (whole cycles in [0, T)) for phase-dithered
-    uniform encodes; rotation mod T preserves every channel's count exactly."""
-    idx = torch.arange(n_channels, device=device, dtype=torch.float32)
-    return torch.floor((idx * _PHASE_GOLDEN).frac() * simulation_length)
+    """Per-channel comb rotation of channels ``0 .. n_channels - 1`` (a
+    producer's own output: the NF twin's and the host boundary's encode)."""
+    return channel_phase_offsets(torch.arange(n_channels, device=device), simulation_length, device)
 
 
 def to_uniform_spikes(

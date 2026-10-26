@@ -28,7 +28,10 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: CL9 final re-pin (the six Wave 2 units on tcad/wave1-merged): the fixture is, byte for byte, the three-way JSON union
 #: of the units' own fixtures over 75998141's (closure, N2 with N2b, pack, lanes; Swin and D19 leave it unchanged), with
 #: no conflict (RA/11_wave2/integration/cl9/scripts/fixture_union.py); RA/10_wave1/thm/ is regenerated from it.
-TABLE_SHA256 = "c7ae72daaccee49632e32d90a19accc0e65c8c072d5f80b03a530b1320e8a854"
+#: Integration re-pin (tcad/wave1-merged, E1 onto the exactness unit): E1's R4 row (gap, memo, sites on tree E1,
+#: witnesses, code-level text) and its ``position_dependent_encode`` status, folded into the CL9 fixture by the same
+#: three-way JSON union with no conflict (RA/11_wave2/integration2/e1/repin/); RA/10_wave1/thm/ regenerated from it.
+TABLE_SHA256 = "6e01f324f6b014f1a7a92dd0e17281711aad1dfeabecd21006f48c5207658255"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -131,14 +134,16 @@ def test_h8_states_the_synchronized_count_rebuild_and_its_fix(table):
             assert "H8" in labels, key
 
 
-def test_r4_is_g5s_per_slice_input_kinds_with_a_base_violation_arm(table):
+def test_r4_is_g5s_per_slice_input_kinds_with_its_switching_arm(table):
     """G5's rule 4: a carried slice is replayed and every other slice encoded as the fused stage encodes it, in
-    its fused channel positions; the base violates it (crash class mixed_input_pass, silent class
-    position_dependent_encode under a dithered encode)."""
+    its fused channel positions; the base violated it (crash class mixed_input_pass, silent class
+    position_dependent_encode under a dithered encode), CL1 met the per-slice kinds and E1 the rotation (keyed on each
+    channel at unbounded geometry), so the R4 arm switches that key off with a paired control."""
     r4 = _row(table, "R4")
     assert "carried slice is replayed" in r4["statement"] and "fused channel positions" in r4["statement"]
-    assert r4["arms"]["code"] == "R4"
-    assert "mixed_input_pass" in r4["gap"] and "position_dependent_encode" in r4["gap"]
+    assert r4["arms"]["code"] == "R4" and ARMS["R4"].changes_a_field and not ARMS["R4"].mechanism
+    assert "mixed_input_pass" in r4["gap"] and "position_dependent_encode" in r4["gap"] and "E1" in r4["gap"]
+    assert any(s["tree"] == "E1" and "phase_channels" in s["site"] for s in r4["sites"])
     assert "mixed_input_pass" not in _row(table, "R5")["gap"]
 
 

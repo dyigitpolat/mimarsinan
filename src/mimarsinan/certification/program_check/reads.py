@@ -22,11 +22,11 @@ from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
 from mimarsinan.spiking.compute_boundary import publishes_boundary_train
 
-#: The condition each memo steers: fused positions the encode (R4), carried outputs the carry store (R3), the
-#: refcounts the state buffer's lifetimes (H9), the span caches every gather (tiles).
-MEMO_CONDITION: Mapping[str, str] = {"_fused_position_cache": "R4", "_carried_output_cache": "R3",
-                                     "_consumer_counts_cache": "H9", "_output_source_spans": "tiles",
-                                     "_axon_source_spans": "tiles", "_source_counts_cache": "H9"}
+#: The condition each memo steers: carried outputs the carry store (R3), the refcounts the state buffer's lifetimes
+#: (H9), the span caches every gather (tiles).
+MEMO_CONDITION: Mapping[str, str] = {"_carried_output_cache": "R3", "_consumer_counts_cache": "H9",
+                                     "_output_source_spans": "tiles", "_axon_source_spans": "tiles",
+                                     "_source_counts_cache": "H9"}
 #: Torch modules whose forward reads ``training``: a host op holding one in training mode is batch-dependent.
 MODE_DEPENDENT = (torch.nn.modules.batchnorm._NormBase, torch.nn.modules.dropout._DropoutNd)
 

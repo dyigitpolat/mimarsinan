@@ -45,10 +45,17 @@ def test_an_off_arm_counts_teeth_by_its_paired_control():
     assert summary["unnamed_refusals"] == {"RuntimeError": 1}
 
 
-def test_a_base_violation_counts_teeth_by_mechanism():
-    """R4 is the base violation left after the CL1 fix round (H0's arm now switches its rule off)."""
-    rows = [_row("R4", "counterexample", classes=["layer:positions", "position_dependent_encode"]),
-            _row("R4", "counterexample", classes=["layer:pass_cut", "u1_cut"]), _row("R4", "equal")]
+def test_a_base_violation_counts_teeth_by_mechanism(monkeypatch):
+    """No arm is a base violation since E1 met R4; an arm declaring a mechanism (R4's arm as it stood before E1)
+    still counts its teeth by that mechanism, never by a paired control."""
+    from dataclasses import replace
+
+    from mimarsinan.certification.randomized.arms import ARMS
+
+    monkeypatch.setitem(ARMS, "R4/base", replace(ARMS["R4"], id="R4/base", switch=None,
+                                                 mechanism="position_dependent_encode"))
+    rows = [_row("R4/base", "counterexample", classes=["layer:positions", "position_dependent_encode"]),
+            _row("R4/base", "counterexample", classes=["layer:pass_cut", "u1_cut"]), _row("R4/base", "equal")]
     assert arm_summary(rows)["teeth"] == 1
 
 
@@ -95,21 +102,21 @@ def test_the_long_window_stratum_is_reported_apart_from_the_declared_line(table)
 def test_the_denominators_list_every_hypothesis_of_the_box(table):
     """Review round 2: the denominator is the fixture's, every row with its code arm, its model arm or where
     it is pending (CL1), so no condition of the box drops out of the count."""
-    rows = [_row("R4", "counterexample", classes=["layer:positions", "position_dependent_encode"]),
+    rows = [_row("R4", "counterexample", classes=["layer:positions", "position_dependent_encode"], control="equal"),
             _row("H1-theta", "counterexample", control="equal")]
     den = report(rows, table=table)["denominators"]
     ids = [h["id"] for h in table["hypotheses"]]
     assert den["hypotheses"] == ids and list(den["per_hypothesis"]) == ids
     assert set(den["switched_off_with_paired_controls"]) == {"H1-theta", "H5-collapse", "H8", "H5-skew", "R6",
-                                                             "H0"}
-    assert set(den["violated_by_the_base"]) == {"R4"}
+                                                             "H0", "R4"}
+    assert set(den["violated_by_the_base"]) == set()  # E1 met R4, the last base violation
     assert "H1-latency" in den["model_level_only"]  # asserted at run time on the integrated tree (CL1)
     for hid, entry in den["per_hypothesis"].items():
         assert entry["code_arm"] or entry["model_arm"] or entry["pending"], hid
     assert den["per_hypothesis"]["R5"]["pending"] == "CL1 (G5)"
     assert {"R1", "R2", "R3"} <= set(den["model_level_only"]) and "R5" in den["not_exercised"]
     assert {"R4", "H1-theta"} <= set(den["with_teeth"])
-    assert den["restated"].startswith("6 switched off with paired controls + 1 violated by the base, of 20")
+    assert den["restated"].startswith("7 switched off with paired controls + 0 violated by the base, of 20")
 
 
 def test_the_report_states_the_value_runs_against_the_int64_golden(table):

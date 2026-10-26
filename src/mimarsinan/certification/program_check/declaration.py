@@ -68,7 +68,7 @@ class CheckDeclaration:
     semantics: str
     window: int
     pass_transfer: str
-    encoder_position_free: bool = True
+    dithered_encode: bool = False
     firing_granularity: str = "per_cycle"
     membrane_init: float = 0.0
     core_types: Tuple[Mapping[str, Any], ...] = ()
@@ -148,7 +148,7 @@ def declaration_from_config(config: Mapping[str, Any], *, cores: Optional[Sequen
     return CheckDeclaration(
         semantics=semantics, window=int(config.get("simulation_steps", 1) or 1),
         pass_transfer=run_pass_transfer(config),
-        encoder_position_free=not spike_phase_dither_enabled(config),
+        dithered_encode=spike_phase_dither_enabled(config),
         firing_granularity=str(config.get("firing_granularity", "per_cycle") or "per_cycle"),
         membrane_init=lif_membrane_init(config),
         core_types=tuple(dict(c) for c in (cores if cores is not None else config.get("cores") or ())),

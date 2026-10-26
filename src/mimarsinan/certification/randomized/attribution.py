@@ -64,9 +64,9 @@ MECHANISMS: Mapping[str, str] = {
     "mixed_input_pass": "G5 R4 per-slice input kinds (u1_design.md section 3, 'Crash: mixed-input pass "
                         "under VERBATIM'; spiking/segment_boundary.py raises on cached plus missing slices); fixed "
                         "on the integrated tree (CL1)",
-    "position_dependent_encode": "G5 R4 fused channel positions (u1_design.md section 3, 'Position-dependent "
-                                 "encodes'): the dithered comb rotates by the slice's channel index in the deployed "
-                                 "stage input (chip_simulation/recording/spike_modes.py uniform_phase_offsets)",
+    "position_dependent_encode": "R4 per-channel encode (E1): the dithered comb rotates by each channel's channel at "
+                                 "unbounded geometry (mapping/packing/phase_channels.py); met on this tree, so the "
+                                 "class arises where the R4 arm keys the rotation on stage-input positions",
     "windowed_cached_trains": "G5 R5 level units (u1_design.md section 3, 'Crash: windowed LIF, cached spike "
                               "trains'; mapping/packing/retimed_levels.py gives a single-level chunk no levels)",
     "count_rebuild": "H8 exact accumulation (sign-off P1 (a), CL1 fix round): the synchronized LIF count executor "
@@ -94,21 +94,21 @@ def dependency_walks() -> Iterator[None]:
 
 @contextlib.contextmanager
 def position_free_rotation() -> Iterator[None]:
-    """The dithered comb's rotation made position-free, in-process and for the block only (no file edit):
-    every channel takes one offset, so a slice's train no longer depends on where the stage input holds it
-    (R4's position clause met by construction) while the trains stay rotated."""
+    """The dithered comb's rotation made channel-free, in-process and for the block only (no file edit):
+    every channel takes one offset, so a slice's train depends neither on where the stage input holds it nor on
+    its channel key (R4 met by construction) while the trains stay rotated."""
     modes = spike_trains.spike_modes
-    saved = modes.uniform_phase_offsets
+    saved = modes.channel_phase_offsets
 
-    def one_offset(n_channels, simulation_length, device=None):
+    def one_offset(channels, simulation_length, device=None):
         """Channel 1's offset (the dithered comb's first nonzero rotation) for every channel."""
-        return saved(2, simulation_length, device=device)[1:].expand(int(n_channels)).clone()
+        return saved(torch.ones_like(torch.as_tensor(channels)), simulation_length, device=device)
 
-    setattr(modes, "uniform_phase_offsets", one_offset)
+    setattr(modes, "channel_phase_offsets", one_offset)
     try:
         yield
     finally:
-        setattr(modes, "uniform_phase_offsets", saved)
+        setattr(modes, "channel_phase_offsets", saved)
 
 
 @contextlib.contextmanager

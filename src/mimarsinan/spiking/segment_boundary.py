@@ -13,7 +13,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
 )
-from mimarsinan.mapping.packing.pass_positions import fused_input_positions
+from mimarsinan.mapping.packing.phase_channels import stage_input_channels
 from mimarsinan.mapping.support.activation_scales import (
     perceptron_wrapped_activation_scale,
 )
@@ -209,28 +209,19 @@ def decode_segment_output_torch(
     return spike_counts / float(t)
 
 
-def _encode_uniform(rates, T, config):
+def _encode_uniform(rates, T, config, channels=None):
     return uniform_spike_train(
-        rates, T, phase_dither=config.phase_dither,
+        rates, T, phase_dither=config.phase_dither, channels=channels,
     ).to(config.compute_dtype)
 
 
-def _at_fused_positions(encode, rates: torch.Tensor, stage, hybrid_mapping, config: BoundaryConfig):
-    """[U1 R4] A position-dependent encode (phase dither) of each external slice at the channels the fused stage
-    encodes it at; a carried slice (replayed afterwards) takes a channel of its own beyond them."""
-    positions = fused_input_positions(hybrid_mapping, stage) if config.phase_dither else None
-    if not positions:
-        return encode(rates)
-    in_size = int(rates.shape[1])
-    offsets = [positions.get(k, int(s.offset)) for k, s in enumerate(stage.input_map)]
-    width = max((o + int(s.size) for o, s in zip(offsets, stage.input_map) if o is not None), default=0)
-    index = torch.arange(in_size, device=rates.device) + width
-    for offset, s in zip(offsets, stage.input_map):
-        if offset is not None:
-            index[s.offset:s.offset + s.size] = torch.arange(offset, offset + int(s.size), device=rates.device)
-    placed = rates.new_zeros(rates.shape[0], width + in_size)
-    placed[:, index] = rates
-    return encode(placed)[:, :, index]
+def _dither_channels(stage, hybrid_mapping, config: BoundaryConfig, width: int, cached) -> torch.Tensor | None:
+    """[E1] Under a phase-dithered encode, the channel at unbounded geometry of every position of ``stage``'s input
+    (``phase_channels``): the comb of a slice rotates by its IR neurons, never by where a cost-only decision lays it
+    out; refuses by name a channel that has none. None for an undithered encode."""
+    if not config.phase_dither:
+        return None
+    return stage_input_channels(hybrid_mapping, stage, width, cached=cached)
 
 
 def encode_segment_input(
@@ -245,7 +236,7 @@ def encode_segment_input(
     device: torch.device,
 ) -> torch.Tensor:
     """``(T, B, in_size)`` segment input, slice by slice by its kind: a cached train verbatim, every other slice by
-    the encode of its value [U1 R4]. Retimed level stages read the COUNT re-encode by definition (cached raw rhythm
+    the encode of its value [U1 R4], a dithered comb keyed on its channels at unbounded geometry [E1]. Retimed level stages read the COUNT re-encode by definition (cached raw rhythm
     shifts combs at equal counts — the t0_04 s32 catch)."""
     if getattr(stage, "is_retimed_level", False):
         state_buffer_spikes = {}
@@ -268,16 +259,14 @@ def encode_segment_input(
 
     if not missing:
         return spike_train
+    channels = _dither_channels(stage, hybrid_mapping, config, in_size, cached=state_buffer_spikes)
     if config.use_cycle_accurate_trains:
-        def encode(rates):
-            return _encode_uniform(rates, T, config)
+        encoded = _encode_uniform(seg_input_rates_clamped, T, config, channels)
     else:
-        def encode(rates):
-            return rates_to_spike_train(
-                rates, T, spike_mode=config.spike_mode,
-                log_fallback=not filled_ranges, phase_dither=config.phase_dither,
-            ).to(config.compute_dtype)
-    encoded = _at_fused_positions(encode, seg_input_rates_clamped, stage, hybrid_mapping, config)
+        encoded = rates_to_spike_train(
+            seg_input_rates_clamped, T, spike_mode=config.spike_mode,
+            log_fallback=not filled_ranges, phase_dither=config.phase_dither, channels=channels,
+        ).to(config.compute_dtype)
     for lo, hi in filled_ranges:
         encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
     return encoded

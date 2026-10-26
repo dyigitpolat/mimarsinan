@@ -67,10 +67,11 @@ MUTANTS = {
     ("R3", "carry_scope"): ("test_a_carried_slice_scoped_to_another_segment",),
     ("R3", "mixed_segments"): ("test_a_core_holding_neurons_of_two_identity_segments",),
     ("R3", "stale_memo"): ("test_a_stale_carried_output_memo",),
-    ("R4", "encode_position"): ("test_a_dithered_slice_at_its_deployed_offset",),
+    ("R4", "phase_channel"): ("test_a_dithered_slice_the_encoder_refuses",
+                              "test_a_channel_table_keyed_off_the_identity_under_a_dithered_encode",
+                              "test_a_reindex_fault_in_the_deployments_channel_table"),
     ("R4", "slice_kind"): ("test_the_level_flag_on_a_pass_reading_a_host_train",),
     ("R4", "multi_home_unit"): ("test_a_multi_level_windowed_pass_run_streamed_is_a_multi_home_unit",),
-    ("R4", "stale_memo"): ("test_a_stale_fused_position_memo_under_a_dithered_encode",),
     ("R5", "unit_kind"): ("test_a_single_level_pass_run_as_a_plain_stage",),
     ("R5", "level_flag"): ("test_the_level_flag_cleared_on_the_level_units_of_a_windowed_program",),
     ("H0", "level_unit"): ("test_level_units_under_streamed_lif",),
@@ -90,6 +91,38 @@ MUTANTS = {
     ("N-identity", "dropped_read_column"): ("test_a_dead_dropped_column_is_the_networks_and_a_live_one_is_named",),
     ("N-identity", "dropped_output"): ("test_compaction_that_drops_a_live_network_output",),
     ("H8-staircase", "off_lattice"): ("test_an_off_lattice_threshold",),
+    # [E1 F1] test_ir_tiling: each fault built into the deployment's IR before its program, so only ir-tiling sees it.
+    ("ir-tiling", "unkeyed_neuron"): ("test_a_neural_node_with_no_perceptron_identity",),
+    ("ir-tiling", "duplicate_neuron"): ("test_two_tiles_holding_one_neuron",),
+    ("ir-tiling", "partial_sum_group"): ("test_a_tile_holding_a_share_of_a_fan_in",),
+    ("ir-tiling", "missing_neuron"): ("test_a_tile_keyed_on_another_slice_of_its_perceptron",
+                                      "test_a_column_one_ir_compacts_and_the_other_keeps"),
+    ("ir-tiling", "extra_neuron"): ("test_a_tile_keyed_on_another_slice_of_its_perceptron",),
+    ("ir-tiling", "fan_in"): ("test_a_tile_whose_weight_the_tiling_changed", "test_a_tile_reading_another_source",
+                              "test_a_tile_whose_bias_row_the_tiling_changed",
+                              "test_a_tile_whose_compaction_drops_a_live_row"),
+    ("ir-tiling", "bias"): ("test_a_tile_whose_hardware_bias_the_tiling_changed",),
+    ("ir-tiling", "threshold"): ("test_the_tiles_whose_threshold_the_tiling_changed",),
+    ("ir-tiling", "neuron_scale"): ("test_the_tiles_whose_scale_the_tiling_changed",),
+    ("ir-tiling", "boundary_grid"): ("test_a_tile_whose_boundary_grid_the_tiling_changed",),
+    ("ir-tiling", "law"): ("test_a_tile_whose_readout_law_the_tiling_changed",
+                           "test_a_tile_whose_identity_adc_clamps_below_its_accumulator_bound"),
+    # [E1 fix round] test_ir_tiling_executed: what the identity programs execute, the compaction they apply, the
+    # reference, and the channel tables on the reindexed branch, each beside its sampled run.
+    ("ir-tiling", "executed_latency"): (
+        "test_a_tiling_that_splits_a_producers_consumers_moves_its_executed_latency",
+        "test_per_tile_dead_row_masks_that_move_an_executed_latency"),
+    ("ir-tiling", "timing_derivation"): ("test_an_identity_builder_whose_timing_departs_from_the_core_graph",),
+    ("ir-tiling", "reference_geometry"): (
+        "test_the_deployments_own_tiled_ir_given_as_the_reference",
+        "test_an_ir_at_another_declared_geometry_given_as_the_reference",
+        "test_a_reference_holding_one_host_op_name_twice", "test_a_reference_holding_an_unkeyed_neural_node",
+        "test_a_reference_holding_a_coalescing_group"),
+    ("ir-tiling", "activation"): ("test_a_tile_whose_activation_kind_the_tiling_changed",),
+    ("ir-tiling", "host_op"): ("test_a_host_op_running_another_module",),
+    ("ir-tiling", "program_outputs"): ("test_the_network_reading_other_neurons",),
+    ("ir-tiling", "phase_channel"): ("test_a_channel_table_keyed_on_tile_columns_under_a_dithered_encode",
+                                     "test_a_reindex_fault_confined_to_the_unbounded_identity_program"),
 }
 
 
@@ -359,18 +392,18 @@ def test_a_carried_slice_scoped_to_another_segment():
     _failed(P.run(bad, ir, P.decl("streamed_lif")), "R3", "carry_scope")
 
 
-def test_a_dithered_slice_at_its_deployed_offset(monkeypatch):
-    """The executor's fused positions switched off (the base's deployed-offset encode): the dithered split-level
-    vehicle's pass encodes host_1 at another channel offset than the fused stage."""
-    import mimarsinan.mapping.packing.pass_positions as pp
+def test_a_dithered_slice_the_encoder_refuses():
+    """[E1] A program without its channel table (a pickle from before E1, another builder): the dithered encoder
+    refuses every slice by name, and R4 names the program for it."""
     from unit.mapping.residency.executed import vehicles as V
 
     ir = P.integer_ir(V.split_level_repr())
     program = V.build(ir, 1, None)
-    clean = P.run(program, ir, P.decl("streamed_lif", encoder_position_free=False))
+    clean = P.run(program, ir, P.decl("streamed_lif", dithered_encode=True))
     assert clean.results["R4"].status != FAILED and clean.results["R4"].checked
-    monkeypatch.setattr(pp, "_fused_positions", lambda stages: {})
-    _failed(P.run(program, ir, P.decl("streamed_lif", encoder_position_free=False)), "R4", "encode_position")
+    bad = copy.deepcopy(program)
+    bad.node_phase_channels = {}
+    _failed(P.run(bad, ir, P.decl("streamed_lif", dithered_encode=True)), "R4", "phase_channel")
 
 
 def test_a_single_level_pass_run_as_a_plain_stage():

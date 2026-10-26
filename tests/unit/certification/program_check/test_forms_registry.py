@@ -119,8 +119,8 @@ REFERENCE_EXECUTORS = ("models/spiking/hybrid", "models/spiking/cycle_policy.py"
                        "chip_simulation/ttfs", "chip_simulation/value_run")
 BACKEND_EXECUTORS = ("chip_simulation/simulation_runner", "chip_simulation/nevresim", "code_generation",
                      "mapping/export/chip_export.py", "chip_simulation/sanafe", "chip_simulation/lava_loihi")
-ACCESSORS = ("mapping/packing/pass_timing.py", "mapping/packing/pass_positions.py",
-             "mapping/support/schedule/pass_carry.py", "mapping/latency/chip.py", "mapping/latency/core_graph.py",
+ACCESSORS = ("mapping/packing/pass_timing.py", "mapping/packing/phase_channels.py:channels_of",
+             "mapping/packing/phase_channels.py:stage_input_channels", "mapping/support/schedule/pass_carry.py", "mapping/latency/chip.py", "mapping/latency/core_graph.py",
              "mapping/support/spike_source_spans.py", "mapping/packing/executed_reads.py",
              "mapping/packing/softcore/hard_core.py:HardCore.get_axon_source_spans",
              "mapping/packing/softcore/hard_core.py:HardCore.get_core_matrix",

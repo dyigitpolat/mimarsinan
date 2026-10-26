@@ -196,15 +196,22 @@ AccuracyRecord:      deployed: AccuracyReadRecord, reads: tuple, certificates: t
                      # [W15] two more, never FATAL: static_program_check_theorem1 and
                      # static_program_check_proposition2 (backend "static", 0 neuron windows,
                      # exact_match_fraction = share of the theorem's conditions established,
-                     # vacuous or not required; detail = JSON: verdict, per-condition status,
-                     # failures, assumed, reference, check and compile walls, compile_source).
+                     # vacuous or not required (a condition "assumed" is not held; E1 lists it
+                     # in assumed_conditions); detail = JSON: verdict, per-condition status,
+                     # failures, assumed, assumed_conditions, reference, check and compile
+                     # walls, compile_source).
                      # passed (static records) = the verdict reads "established on the
                      # program": every program condition and every statically checkable
                      # executor condition of the theorem holds for every input, relative to
-                     # the identity program of the IR at the declared geometry ("reference");
+                     # the identity program named by "reference": the IR at the declared
+                     # geometry, or [E1] the IR at unbounded geometry where the ir-tiling
+                     # condition holds (Theorem 1's identity program);
                      # the clauses in "assumed" (executor code: H0 dispatch, H8 operand, R6
                      # walk, stage-input local time, producer-local carry, per-core output
-                     # windows, H8-staircase kernel; reference: IR tiling, identity builder)
+                     # windows, H8-staircase kernel, and [E1] dithered encode under a
+                     # phase-dithered encode; reference: IR tiling where ir-tiling is not
+                     # established, identity builder, and [E1] neuron-keyed identity builder
+                     # where the reference is the IR at unbounded geometry)
                      # are not checked by the record and are tested by the sampled run.
                      # compile_wall_s is null when the mapping was loaded from the cache.
 AdaptationRecord:    max_ft_pass_wall_s, ft_pass_walls (per-pass {label, wall_s} bundles)

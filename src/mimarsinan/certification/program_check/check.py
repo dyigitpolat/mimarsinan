@@ -1,6 +1,6 @@
 """[W15] The static per-deployment check: the condition map, its named rules, and ``check_deployment``, which reads a
-built program against its identity program (built from the same IR, at the declared geometry) and reports every
-condition of Theorem 1 and Proposition 2.
+built program against its identity program (built from the same IR, at the declared geometry), and that IR against the
+IR at unbounded geometry where it is given (E1 F1), and reports every condition of Theorem 1 and Proposition 2.
 
 Input-independent and read-only: it compares what the executors read (executed weights, biases, thresholds, laws,
 wiring, latencies, pass structure, slice deliveries, memos, residency marks), never runs an input."""
@@ -25,6 +25,8 @@ from mimarsinan.certification.program_check.report import (
 )
 from mimarsinan.certification.program_check.residency import check_residency
 from mimarsinan.certification.program_check.tiles import sweep, wiring
+from mimarsinan.certification.program_check.unbounded import check_ir_tiling
+from mimarsinan.certification.program_check.unbounded.latency import IdentityFacts
 from mimarsinan.certification.program_check.view import K_ON, ProgramView, build_view
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.support.bias_compensation import propagate_negative_shifts_to_hybrid
@@ -49,7 +51,7 @@ CONDITION_MAP: Tuple[ConditionSpec, ...] = (
     ConditionSpec("R3", T1, "program", "a slice is carried exactly when the identity reads it inside its segment; no "
                   "identity segment boundary runs in-unit"),
     ConditionSpec("R4", T1, "program", "every slice a unit reads is of the kind the identity's unit reads it as, and "
-                  "under a position-dependent encode sits at the identity stage's channel offset"),
+                  "under a phase-dithered encode rotates by the identity program's channels at unbounded geometry"),
     ConditionSpec("R5", T1, "program", "under windowed LIF every unit is one identity level unit, of its kind and "
                   "flag"),
     ConditionSpec("laws", T1, "program", "every core of an integer value program carries a law, its stamped columns "
@@ -74,6 +76,13 @@ CONDITION_MAP: Tuple[ConditionSpec, ...] = (
     ConditionSpec("half-step", P2, "network", "synchronized TTFS: no half-step folded (P3, P4 vacuous)",
                   "a folded half-step's single fold and bias-lattice representation are the conversion's, not the "
                   "program's (P3, P4)"),
+    ConditionSpec("ir-tiling", T1, "reference", "the reference is an IR at unbounded geometry, and the IR at the "
+                  "declared geometry holds each of its neurons once, read through the identity builder's compaction, "
+                  "with its fan-in (reassembled across tiles and coalescing groups), bias, threshold, scales, boundary "
+                  "maps, grid, law and activation; under timed semantics both identity programs run it at one latency "
+                  "in one stage; every host op the same function of the same neurons; the same program outputs; under "
+                  "a dithered encode both identity programs key it on its channel (E1 F1; assumed where the IR at "
+                  "unbounded geometry is not given)"),
 )
 
 #: Every named rule a condition's predicates raise (``test_condition_map`` holds each to a mutant or to ``UNMUTATED``).
@@ -90,7 +99,7 @@ RULES: Dict[str, Tuple[str, ...]] = {
     "H10": ("resident_content", "no_programming_pass", "pinned_slot_overwritten", "pin_out_of_range",
             "undeclared_pool"),
     "R3": ("carry_scope", "mixed_segments", "boundary_edge_in_unit", "stale_memo"),
-    "R4": ("encode_position", "slice_kind", "multi_home_unit", "stale_memo"),
+    "R4": ("phase_channel", "slice_kind", "multi_home_unit"),
     "R5": ("unit_kind", "mixed_levels", "level_flag"),
     "laws": ("stamped_law", "solved_law", "law_free_core"),
     "H0": ("unlevelled_windowed_stage", "streamed_windowed_pass", "level_unit", "level_flag"),
@@ -100,6 +109,9 @@ RULES: Dict[str, Tuple[str, ...]] = {
     "R6": ("core_cycle", "unwalked_core"),
     "H8-staircase": ("off_lattice",),
     "N-identity": ("dropped_live_row", "dropped_output", "dropped_read_column"),
+    "ir-tiling": ("reference_geometry", "unkeyed_neuron", "duplicate_neuron", "partial_sum_group", "missing_neuron",
+                  "extra_neuron", "fan_in", "bias", "threshold", "neuron_scale", "boundary_grid", "law", "activation",
+                  "executed_latency", "timing_derivation", "host_op", "program_outputs", "phase_channel"),
 }
 #: The named rules no seeded program fault breaks, with the reason.
 UNMUTATED: Dict[Tuple[str, str], str] = {
@@ -178,9 +190,12 @@ def _finalize(decl: CheckDeclaration, results: Dict[str, ConditionResult]) -> No
 
 def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclaration, identity: Any = None,
                      law_inputs: Optional[Mapping[str, Any]] = None, compile_wall_s: Optional[float] = None,
-                     compile_source: str = "built") -> StaticCheckReport:
-    """Every condition of the condition map on ``program`` against the identity program of ``ir_graph``; a mapping
-    loaded from a cache (``compile_source``) has no compile wall to price the check against."""
+                     compile_source: str = "built", unbounded_ir: Any = None) -> StaticCheckReport:
+    """Every condition of the condition map on ``program`` against the identity program of ``ir_graph``, and, given
+    ``unbounded_ir`` (the same network's IR at unbounded geometry), ``ir_graph`` against it per neuron (``ir-tiling``,
+    which also reads what that identity program executes: ``report.identity_facts``, so a caller can run it later
+    with ``check_ir_tiling``); a mapping loaded from a cache (``compile_source``) has no compile wall to price the
+    check against."""
     start = time.perf_counter()
     decl = declaration
     results = {s.condition: ConditionResult(s.condition, ESTABLISHED) for s in CONDITION_MAP}
@@ -200,7 +215,7 @@ def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclarati
     deliveries, iota_deliveries = RD.unit_deliveries(program, delta, decl), RD.unit_deliveries(identity, iota, decl)
     ident = TM.identity_timing(iota, facts, latencies=decl.timed)
     TM.check_timing(program, delta, facts, ident, results, deliveries, timed=decl.timed)
-    TM.check_slices(program, delta, iota, ident, deliveries, iota_deliveries, decl, results["R4"])
+    TM.check_slices(program, delta, iota, ident, deliveries, iota_deliveries, decl, results["R4"], ir_graph)
     E.check_order(program, delta, facts, results["H9"], results["R6"])
     E.check_semantics(program, ir_graph, delta, iota, ident, decl, results, facts)
     E.check_transfer(program, delta, facts, deliveries, decl, results["H5-collapse"])
@@ -219,6 +234,11 @@ def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclarati
     N.check_seams(ir_graph, identity, results["seam-currency"])
     N.check_half_step(decl, results["half-step"])
     run_form_predicates(program, delta, iota, decl, results)
+    facts = IdentityFacts(latency=dict(ident.latency) if decl.timed else None, stage=dict(ident.segment),
+                          channels=dict(getattr(identity, "node_phase_channels", None) or {}))
+    t_tiling = time.perf_counter()
+    check_ir_tiling(ir_graph, unbounded_ir, declaration=decl, result=results["ir-tiling"], identity_facts=facts)
+    counts["ir_tiling_s"] = round(time.perf_counter() - t_tiling, 6)
     _finalize(decl, results)
     counts.update(units=len(delta.units), host_stages=len(delta.hosts),
                   cores=sum(len(u.cores) for u in delta.units), placements=sum(len(p) for p in delta.placements.values()),
@@ -227,7 +247,8 @@ def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclarati
                                scope_note=OUTSIDE_SCOPE.get(decl.semantics, ""), results=results, specs=CONDITION_MAP,
                                unknown_forms=[v for v in forms if v.condition == "forms"],
                                unread_forms=[v for v in forms if v.condition == "forms_unread"],
-                               compile_wall_s=compile_wall_s if compile_source == "built" else None, counts=counts)
+                               compile_wall_s=compile_wall_s if compile_source == "built" else None, counts=counts,
+                               dithered_encode=decl.dithered_encode, identity_facts=facts)
     report.wall_s = time.perf_counter() - start
     if decl.semantics == CASCADED_TTFS:
         report.proposition2_note = "not claimed: cascaded TTFS is in Theorem 1 only (its greedy schedule is lossy)"

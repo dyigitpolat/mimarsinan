@@ -155,13 +155,21 @@ def test_a_bank_range_shifted_at_equal_extent():
     _failed(P.run(bad, ir, decl), "tiles", "bank_content")
 
 
-def test_a_stale_fused_position_memo_under_a_dithered_encode():
+def _encoded_host_node(program) -> int:
+    """A host op whose output a pass encodes (the split-level vehicle's host_1, read by Y's pass)."""
+    hosts = {int(s.compute_op.id) for s in program.stages if s.kind == "compute" and s.compute_op is not None}
+    return next(int(sl.node_id) for s in P.neural(program) for sl in s.input_map if int(sl.node_id) in hosts)
+
+
+def test_a_channel_table_keyed_off_the_identity_under_a_dithered_encode():
+    """[E1] The program's channel table keys a host-encoded node's outputs on other channels than the identity
+    program's (as a builder keying them on stage-input positions would): the dithered run departs, R4 names it."""
     ir = P.integer_ir(V.split_level_repr())
     program = V.build(ir, 1, None)
     bad = copy.deepcopy(program)
-    bad._fused_position_cache = {}
+    bad.node_phase_channels = {**bad.node_phase_channels, _encoded_host_node(bad): 3}
     assert differing_entries(P.identity_of(ir), bad, R.STREAMED_LIF, phase_dither=True) > 0
-    _failed(P.run(bad, ir, P.decl("streamed_lif", encoder_position_free=False)), "R4", "stale_memo")
+    _failed(P.run(bad, ir, P.decl("streamed_lif", dithered_encode=True)), "R4", "phase_channel")
 
 
 def test_a_stale_carried_output_memo():

@@ -3,21 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, Iterator, Mapping, Optional, Tuple
 
+import torch
+
 from mimarsinan.certification.randomized.instance import (
-    ANALYTICAL_TTFS,
-    CASCADED_TTFS,
-    IN_SCOPE_SEMANTICS,
-    STREAMED_LIF,
-    SYNCHRONIZED_LIF,
-    SYNCHRONIZED_TTFS,
-    INPUT,
-    NEURAL,
-    VALUE,
-    WINDOWED_LIF,
-    Instance,
+    ANALYTICAL_TTFS, CASCADED_TTFS, IN_SCOPE_SEMANTICS, STREAMED_LIF, SYNCHRONIZED_LIF, SYNCHRONIZED_TTFS, INPUT, NEURAL,
+    VALUE, WINDOWED_LIF, Instance,
 )
 import mimarsinan.chip_simulation.ttfs.ttfs_segment as ttfs_segment
 from mimarsinan.chip_simulation.value_run import value_execution
@@ -28,6 +22,7 @@ from mimarsinan.mapping.platform import core_residency
 from mimarsinan.mapping.platform.core_residency import ALL_SINGLETON_NAMES, SingletonProperty, residency_key
 from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
 from mimarsinan.models.spiking.hybrid.executors import sync_counts
+import mimarsinan.spiking.segment_boundary as segment_boundary
 
 ON = "on"
 #: The hypothesis-on arm restricted to scheduled declarations of small core budgets, so passes are exercised.
@@ -207,6 +202,10 @@ def _coalescing_unleveled() -> Iterator[None]:
         yield
 
 
+#: R4 off (E1): every dithered comb rotated by its channel's position in the executed unit's stage input (ordered by IR
+#: node id) instead of by its channel at unbounded geometry.
+_position_keyed_rotation = functools.partial(_patched, segment_boundary, "stage_input_channels",
+                                             lambda _mapping, _stage, width, cached=(): torch.arange(int(width)))
 _SCHEDULED = {"allow_scheduling": True, "max_schedule_passes": 8, "count": (1, 4)}
 
 _CO_RESIDENT = {"axons": (32, 64), "neurons": (32, 64), "count": (2, 6), "allow_scheduling": True,
@@ -269,11 +268,11 @@ ARMS: Dict[str, Arm] = {arm.id: arm for arm in (
                     "tree's rule); the arm targets coalescing under windowed LIF", semantics=(WINDOWED_LIF,),
         motifs=("wide_fan_in",), declaration={"allow_coalescing": True, "axons": (8, 24)},
         switch=_coalescing_unleveled),
-    Arm("R4", "R4", "none on this base: a phase-dithered Uniform encode rotates each slice's comb by its channel "
-                    "index in the deployed stage input, not in the fused one; the arm declares the dithered encode on "
-                    "both programs under windowed LIF (no coalescing)", semantics=(WINDOWED_LIF,),
-        motifs=("chain",), declaration={**_SCHEDULED, "allow_coalescing": False}, phase_dither=True,
-        mechanism="position_dependent_encode"),
+    Arm("R4", "R4", "the dithered encode's key (E1): each channel's comb rotated by its position in the executed "
+                    "unit's stage input (the rule before E1) instead of its channel at unbounded geometry; the arm "
+                    "declares the dithered encode on both programs under windowed LIF (no coalescing)",
+        semantics=(WINDOWED_LIF,), motifs=("chain",), declaration={**_SCHEDULED, "allow_coalescing": False},
+        phase_dither=True, switch=_position_keyed_rotation),
     Arm(BOUNDARY_ANALYTICAL, "", "boundary row: analytical TTFS evaluates real-valued activations (outside the "
                                  "integer scope by name), measured under the hypothesis-on draws",
         semantics=(ANALYTICAL_TTFS,)),

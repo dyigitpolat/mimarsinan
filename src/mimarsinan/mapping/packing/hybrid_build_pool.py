@@ -23,6 +23,7 @@ from mimarsinan.mapping.packing.hybrid_build_scheduled import _build_scheduled
 from mimarsinan.mapping.packing.hybrid_build_fit import fit_program
 from mimarsinan.mapping.packing.schedule_residency_plan import mark_fit_residency
 from mimarsinan.mapping.packing.pass_timing import project_passes
+from mimarsinan.mapping.packing.phase_channels import node_phase_channels
 from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
 from mimarsinan.mapping.packing.segment_specs import (  # moved there: re-exported for the scheduler and tests
     _segment_specs as _segment_specs, segment_specs_for as segment_specs_for,
@@ -105,15 +106,13 @@ def build_hybrid_hard_core_mapping(
     output_sources = ir_graph.output_sources.copy()
     _apply_reindex_to_ir_sources(output_sources, all_reindex_maps)
 
-    node_activation_scales = _compute_node_activation_scales(ir_graph)
-    node_input_activation_scales = _compute_node_input_activation_scales(ir_graph)
-
     mapping = HybridHardCoreMapping(
         stages=stages,
         output_sources=output_sources,
-        node_activation_scales=node_activation_scales,
-        node_input_activation_scales=node_input_activation_scales,
+        node_activation_scales=_compute_node_activation_scales(ir_graph),
+        node_input_activation_scales=_compute_node_input_activation_scales(ir_graph),
         node_buffer_scales=_compute_node_buffer_scales(ir_graph),
+        node_phase_channels=node_phase_channels(ir_graph, all_reindex_maps),
     )
     if residency is not None:
         setattr(mapping, SCHEDULE_RESIDENCY_PLAN, residency)
@@ -165,6 +164,7 @@ def build_identity_hybrid_mapping(
         node_activation_scales=_compute_node_activation_scales(ir_graph),
         node_input_activation_scales=_compute_node_input_activation_scales(ir_graph),
         node_buffer_scales=_compute_node_buffer_scales(ir_graph),
+        node_phase_channels=node_phase_channels(ir_graph, all_reindex_maps),
     ), ir_graph)
 
 

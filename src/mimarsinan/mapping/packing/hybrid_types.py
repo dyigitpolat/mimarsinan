@@ -6,6 +6,7 @@ from typing import List, Literal
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp
+from mimarsinan.mapping.packing.phase_channels import NodeChannels
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.mapping.support.activation_scales import NodeScale
 
@@ -61,6 +62,8 @@ class HybridHardCoreMapping:
     node_buffer_scales: dict[int, NodeScale] = field(default_factory=dict)
     # Per-producer per-channel rate shift applied before the [0,1] clamp; the consumer core's bias is pre-corrected (B' = B - W·s) so the on-chip result is unchanged.
     node_output_shifts: dict[int, np.ndarray] = field(default_factory=dict)
+    # [E1] Each keyed IR node's channels at unbounded geometry, the phase-dithered encode's key (``phase_channels``).
+    node_phase_channels: dict[int, NodeChannels] = field(default_factory=dict)
     # Lazy consumer-refcount cache filled by SpikingHybridCoreFlow._build_consumer_counts.
     _consumer_counts_cache: dict[int, int] | None = field(
         default=None, init=False, repr=False, compare=False
