@@ -322,6 +322,32 @@ the physical-tile SSOT of both planes: `declared_tiles`, `core_type_tiles`, `til
 rows over its tiles) and `expand_to_tiles`. `crossbar_utilization.py`: `CoreOccupancy.tiles` and
 `CrossbarUtilizationReport.physical_cores` beside `cores_allocated` (allocated crossbars, the sealed field).
 
+## Split fragments by reference and pass pools (P1)
+
+From the P1 build (`11_wave2/sched_memory/scout.md`, `11_wave2/integration2/p1/report.md`). No direct child of
+`mapping/` is added, removed or renamed.
+
+**Fragments by reference (R1).** `packing/softcore/fragments.make_real_fragments` gives each neuron-split fragment a
+compaction descriptor over its parent's weight payload (`window_descriptor`): a stored float64 payload's rows and the
+window of its columns, a descriptor parent's (a compaction, an earlier fragment) rows and the window of its columns, a
+per-axon parent's logical rows (each payload row once, `sign_split.logical_starts`) and the window of its columns. A
+split therefore stores index arrays and no weight array; the index arrays are shared within one placement
+(`RuntimeMaterializer`'s memo, `sign_split.memoized_array`). `materialize_compacted` of the descriptor equals the copy
+recipe's window (`parent_dense[:, lo:hi].copy()`, or a per-axon parent's logical window split again) in bytes, dtype,
+shape and C-contiguity, so every placement resolves the grid it resolved before. A window it would not equal keeps the
+copy: a stored payload of another dtype (the recipe casts to float64), and a per-axon window whose all-zero row holds a
+negative zero (`keeps_a_signed_zero`: the logical view writes every zero as +0, `materialize_signed` keeps an all-zero
+row as it is). A fragment's grid is read through `get_core_matrix`. Named changes, none priced: an exact-fit fragment
+placement is no longer plain, so its resolved grid is a fresh grid of the content-keyed memo instead of the fragment's
+own copy (equal windows of one payload share one grid), and a pickled program stores each payload once.
+
+**A placed mapping keeps the cores it uses (R2a).** `packing/softcore/hard_core_mapping.HardCoreMapping.map` drops its
+reference to the pool it drew from once placement is done (`unused_cores` is empty afterwards). The pool is the
+caller's: placement takes its cores from the caller's list in place, so an unscheduled build's next stage draws what is
+left, in order; a scheduled pass's fresh pool (`hybrid_segment._flush_scheduled_segment`) and a fused stage's private
+level pool (`retimed_levels.attach_retimed_level_stages`) are freed with the call that made them. `unused_cores` stays
+an attribute (the program forms' `core_mapping` row); nothing reads it after placement.
+
 ## Dependencies
 - `code_generation` — `cpp_chip_model` chip types (`SpikeSource`, chip model) for export, softcore packing, and spike-source spans.
 - `models` — `Perceptron` and nn layers consumed by mappers; builders registry for the wizard layout verify.

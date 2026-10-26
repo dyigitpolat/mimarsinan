@@ -58,7 +58,8 @@ def _require_integer_grid(core: Any, matrix: np.ndarray) -> None:
             f"integer weights (quantize the weights for this target); a weight off the integer grid was found")
 
 
-def _memoized(memo: Dict[Any, Any], array: np.ndarray) -> np.ndarray:
+def memoized_array(memo: Dict[Any, Any], array: np.ndarray) -> np.ndarray:
+    """One array object per content in ``memo`` (an index or sign array many descriptors share)."""
     key = (array.dtype.str, array.tobytes())
     hit = memo.get(key)
     if hit is None:
@@ -94,9 +95,9 @@ def split_soft_core(core: Any, memo: Optional[Dict[Any, Any]] = None) -> None:
         core.axon_sources = [sources[j] if i == 0 or origin[i - 1] != j else _copied(sources[j])
                              for i, j in enumerate(origin.tolist())]
     core.compact_source_matrix = source
-    core.compact_keep_rows = _memoized(memo, np.asarray(rows, dtype=np.intp))
-    core.compact_keep_cols = _memoized(memo, np.asarray(cols, dtype=np.intp))
-    core.compact_row_signs = _memoized(memo, signs)
+    core.compact_keep_rows = memoized_array(memo, np.asarray(rows, dtype=np.intp))
+    core.compact_keep_cols = memoized_array(memo, np.asarray(cols, dtype=np.intp))
+    core.compact_row_signs = memoized_array(memo, signs)
     core.core_matrix = None
     core.weight_bank_id = None
     core.bank_axon_slice = None
@@ -129,9 +130,20 @@ def physical_law(core: Any) -> Any:
     return law.with_operand_rows(np.where(logical >= 0, first[np.maximum(logical, 0)], -1))
 
 
+def logical_starts(core: Any) -> np.ndarray:
+    """Per logical row of a split core, its first physical row (a mixed row's W+ row, any other row itself)."""
+    rows = np.asarray(core.compact_keep_rows)
+    return np.flatnonzero(np.concatenate(([True], rows[1:] != rows[:-1])))
+
+
+def logical_sources(core: Any) -> List[SpikeSource]:
+    """Each logical row's first source (a mixed row's W- row reads a duplicate of it)."""
+    return [core.axon_sources[i] for i in logical_starts(core).tolist()]
+
+
 def logical_view(core: Any) -> Tuple[np.ndarray, List[SpikeSource]]:
     """The logical matrix and sources of a split core: the rows of one origin summed (one of each pair is zero
-    per entry, so the sum is exact), each origin's first source."""
+    per entry, so the sum is exact; every zero sums to +0), each origin's first source."""
     physical = materialize_signed(core.compact_source_matrix, core.compact_keep_rows, core.compact_keep_cols,
                                   core.compact_row_signs)
     rows = np.asarray(core.compact_keep_rows)

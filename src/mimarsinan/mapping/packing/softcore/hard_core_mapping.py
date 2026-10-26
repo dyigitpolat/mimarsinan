@@ -28,6 +28,8 @@ class RuntimeMaterializer:
     def __init__(self, hard_core_mapping: "HardCoreMapping") -> None:
         self._hcm = hard_core_mapping
         self._split_counter = 0
+        # [P1 R1] One index array per content across this placement's fragments (they window shared payloads).
+        self._index_memo: dict = {}
 
     @staticmethod
     def is_mapping_possible(softcore, hardcore) -> bool:
@@ -77,7 +79,7 @@ class RuntimeMaterializer:
         self._split_counter += 1
         return make_real_fragments(
             softcore=softcore, first_neurons=first_neurons,
-            remaining_neurons=remaining_neurons, group_id=group_id,
+            remaining_neurons=remaining_neurons, group_id=group_id, memo=self._index_memo,
         )
 
     def split_softcore(self, softcore, available_neurons):
@@ -207,6 +209,10 @@ class HardCoreMapping:
                 )
                 taken = offered - {id(hc) for hc in pool}
                 self.unused_cores[:] = [hc for hc in self.unused_cores if id(hc) not in taken]
+        # [P1 R2a] A placed mapping keeps only the cores it uses. The pool is the caller's: placement took its cores
+        # from the caller's list in place (an unscheduled build's next stage draws what is left), and a scheduled
+        # pass's fresh pool is freed with its pass, so no mapping retains the unused rest of a pool.
+        self.unused_cores = []
 
         self._finalize_sources(softcore_mapping)
 

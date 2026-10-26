@@ -262,8 +262,9 @@ class TestFragments:
         w = np.array([[1, -1, 3], [2, 2, -1]], dtype=np.float64)
         parent = _soft(w)
         first, second = make_real_fragments(softcore=parent, first_neurons=1, remaining_neurons=2, group_id=0)
-        assert not is_sign_split(first) and np.array_equal(first.core_matrix, w[:, :1])
-        assert np.array_equal(second.core_matrix, w[:, 1:])
+        # [P1 R1] a fragment windows its parent's payload by reference: its grid is read through the accessor
+        assert not is_sign_split(first) and np.array_equal(first.get_core_matrix(), w[:, :1])
+        assert np.array_equal(second.get_core_matrix(), w[:, 1:])
 
 
 def _ir_graph(rng, *, banked=False, pruned=False):
