@@ -95,6 +95,24 @@ def lif_per_hop_retiming_enabled(config) -> bool:
     )
 
 
+def lif_config(config) -> bool:
+    """[W15] The config runs a LIF plan (the mode the dither and the membrane guard act on)."""
+    return is_lif(str(config.get("spiking_mode", "lif")))
+
+
+def cycle_accurate_lif_trains(config) -> bool:
+    """[W15] Host ops leave cycle-accurate trains a stage reads verbatim: a LIF plan with the cycle-accurate forward
+    (``SpikingHybridCoreFlow._use_cycle_accurate_trains``; off unless declared, as the plan resolves it)."""
+    return lif_config(config) and bool(config.get("cycle_accurate_lif_forward", False))
+
+
+def ttfs_half_step_folded(config, *, floor_ceil_convention: bool) -> bool:
+    """[W15] The half-step bias compensation is folded into the biases (``SoftCoreMappingStep``: a plan of the
+    floor-ceil convention, which the caller decides from its resolved semantics, with activation quantization), so
+    Proposition 2's P3 and P4 bind."""
+    return bool(floor_ceil_convention) and bool(config.get("activation_quantization", False))
+
+
 def forces_activation_quantization(spiking_mode: str) -> bool:
     """Mode requires the activation-quantization chain (S-level activations)."""
     return _norm(spiking_mode) in _ACT_QUANT_MODES

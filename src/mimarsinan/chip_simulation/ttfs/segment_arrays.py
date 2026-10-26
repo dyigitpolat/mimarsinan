@@ -8,6 +8,7 @@ from typing import Any, List
 
 import numpy as np
 
+from mimarsinan.mapping.packing.executed_reads import bank_read
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.spike_source_spans import SpikeSourceSpan, compress_spike_sources
 
@@ -94,7 +95,6 @@ def _segment_ttfs_arrays_from_mapping_uncached(mapping: Any) -> SegmentTtfsArray
         output_spans = compress_spike_sources(list(mapping.output_sources.flatten()))
 
     weight_banks = getattr(mapping, "weight_banks", None) or {}
-    placements = getattr(mapping, "soft_core_placements_per_hard_core", []) or []
 
     core_params: List[np.ndarray] = []
     hw_biases: List[np.ndarray | None] = []
@@ -104,32 +104,18 @@ def _segment_ttfs_arrays_from_mapping_uncached(mapping: Any) -> SegmentTtfsArray
     for core_idx, core in enumerate(cores):
         used_ax = used_axons(core, min_one=True)
         used_neu = used_neurons(core, min_one=True)
-        placement_dicts = placements[core_idx] if core_idx < len(placements) else []
         core_weight: np.ndarray | None = None
 
-        if len(placement_dicts) == 1:
-            pd = placement_dicts[0]
-            bid = pd.get("weight_bank_id")
-            ao = int(pd.get("axon_offset", 0))
-            ne_off = int(pd.get("neuron_offset", 0))
-            a = int(pd.get("axons", 0))
-            n = int(pd.get("neurons", 0))
-            if (
-                bid is not None
-                and ao == 0
-                and ne_off == 0
-                and a == used_ax
-                and n == used_neu
-            ):
-                bank_mat = weight_banks.get(int(bid))
-                if bank_mat is not None:
-                    ba0, ba1 = pd.get("bank_axon_range") or (0, a)
-                    bn0, bn1 = pd.get("bank_neuron_range") or (0, n)
-                    # bank.core_matrix is (axons, neurons); slice by axon/neuron range then transpose to the (neurons, axons) core_params layout.
-                    core_weight = np.asarray(
-                        bank_mat[int(ba0):int(ba1), int(bn0):int(bn1)],
-                        dtype=np.float64,
-                    ).T
+        # [W15] the bank fast path's one definition (``executed_reads.bank_read``), which the static check reads too.
+        bank = bank_read(mapping, core_idx)
+        if bank is not None:
+            bank_mat = weight_banks.get(bank.bank_id)
+            if bank_mat is not None:
+                # bank.core_matrix is (axons, neurons); slice by axon/neuron range then transpose to the (neurons, axons) core_params layout.
+                core_weight = np.asarray(
+                    bank_mat[bank.axons[0]:bank.axons[1], bank.neurons[0]:bank.neurons[1]],
+                    dtype=np.float64,
+                ).T
 
         if core_weight is None:
             grid = core.get_core_matrix()

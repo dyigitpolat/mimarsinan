@@ -4,10 +4,11 @@ pipeline gate and certificate gives the verdict the U1 run of the same variant g
 ``identity.platform`` carries the key. Walls and peak RSS are printed.
 
 The variants are built from the tier-0 templates here (the RA tree records the same declarations as
-``RA/10_wave1/g5_residency_planner/variants/``). Both runs of ``t0_53r`` declare nevresim off: t0_53 runs streamed
-lif, the U1 twin's second pass reads a carried slice at latency 1, and nevresim reads its T-cycle input train at the
-global cycle, so it refuses that program by name (``test_t0_53rs_u1_twin_refuses_nevresim_by_name``); SANA-FE and
-Lava present every stage input in core-local time. The gate set of ``t0_53r`` is therefore t0_53's without nevresim.
+``RA/10_wave1/g5_residency_planner/variants/``). Both runs of ``t0_53r`` declare nevresim off, as they did when
+nevresim read its T-cycle input train at the global cycle and refused the U1 twin (its second pass reads a carried
+slice at latency 1). Since W33 every backend reads a stage input in core-local time and nevresim admits the twin
+(``test_t0_53rs_u1_twin_and_its_residency_steps_are_admitted_on_nevresim``); turning nevresim back on in
+``t0_53r``'s gate set is the integration run's change, since these pipeline runs read the data set's test split.
 Both runs of ``t0_53r`` also bound their processes to the capped scopes the runs are admitted under (TasksMax 150):
 ``num_workers: 0`` (no persistent DataLoader workers; a data-loading setting, the deployed function unchanged) and one
 Lava wave worker (``MIMARSINAN_LOIHI_WAVE_WORKERS``; the default, ``os.cpu_count()``, forks a Lava runtime per core of
@@ -35,7 +36,7 @@ from mimarsinan.pipelining.session import PipelineSession
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "templates" / "tier_0"
 #: variant -> (template, core-count scale, deployment overrides): the budgets the G5b unit tests certify (Q >= 2, every
-#: unit within C); t0_53r runs without nevresim (the chip-clock refusal, module docstring). [fix_c] t0_44r runs at x3.4
+#: unit within C); t0_53r runs without nevresim (module docstring). [fix_c] t0_44r runs at x3.4
 #: (40 + 40 cores), below its 42 + 42 footprint: at x4 the declared pool holds the unscheduled pack, so the fit rule
 #: makes the floor that pack (one pass per segment, no composition plan); its loaders run in process, as CL3's
 #: harness runs them (a worker's queue timed out under a loaded host)
@@ -149,16 +150,19 @@ def test_gate_verdicts_ignore_numbers_and_keep_verdicts():
 
 @pytest.mark.slow
 @pytest.mark.timeout(900)
-def test_t0_53rs_u1_twin_and_its_residency_steps_refuse_nevresim_by_name():
-    """At plan time (``run_pass_transfer`` with the built program, what the hard-core mapping step holds): t0_53r's U1
-    twin, with nevresim enabled as t0_53 enables it, refuses by name. [W03] So does every step of its residency
-    variant: on tile-granular units each step cuts inside a layer (the floor r 1 splits layer 1's two tiles, against
-    the layer-granular floor's r 2 that kept one layer per pass), so a later layer of the pass reads a carried slice
-    at latency 1, which nevresim's global-cycle replay cannot deliver. At the fit (C = F) the program is one pass and
-    nevresim admits it. The variant's other backends replay in core-local time (``test_spiking_cells``, t0_53)."""
+def test_t0_53rs_u1_twin_and_its_residency_steps_are_admitted_on_nevresim(monkeypatch):
+    """At plan time (``run_pass_transfer`` with the built program, what the hard-core mapping step holds), with nevresim
+    enabled as t0_53 enables it. [W33] t0_53r's U1 twin, whose second pass reads a carried slice at latency 1, and its
+    residency variant are admitted (refused by name before W33: nevresim read its input at the global cycle). [W03] So
+    is every step of the variant: on tile-granular units each step cuts inside a layer (the floor r 1 splits layer 1's
+    two tiles, against the layer-granular floor's r 2 that kept one layer per pass), so a later layer of the pass reads
+    a carried slice at latency 1. A backend that reads a stage input at the global cycle refuses the twin and every
+    step by name (nevresim taken out of the declaration). At the fit (C = F) the program is one pass."""
     from unit.mapping.residency.executed import certified as CF
     from unit.mapping.residency.executed import templates as TV
-    from mimarsinan.models.spiking.hybrid.carry import ChipClockReplayRefusal, run_pass_transfer
+    from mimarsinan.mapping.packing.pass_timing import carried_nodes, late_stage_input_readers
+    from mimarsinan.models.spiking.hybrid import carry as C
+    from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
     from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved
     from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline
 
@@ -171,19 +175,30 @@ def test_t0_53rs_u1_twin_and_its_residency_steps_refuse_nevresim_by_name():
 
     platform = scaled(VARIANTS["t0_53r"][1])
     twin = build_hybrid_mapping_for_pipeline(vehicle.ir, platform, pipeline_config=vehicle.config)
-    with pytest.raises(ChipClockReplayRefusal, match="nevresim"):
-        run_pass_transfer(vehicle.config, hybrid_mapping=twin)
+    assert any(late_stage_input_readers(s, carried_nodes(twin.stages, s)) for s in twin.stages if s.kind == "neural")
+    assert run_pass_transfer(vehicle.config, hybrid_mapping=twin) == "verbatim"
+    variant = build_hybrid_mapping_for_pipeline(vehicle.ir, {**platform, "residency_plan": {"step": "floor"}},
+                                                pipeline_config=vehicle.config)
+    assert run_pass_transfer(vehicle.config, hybrid_mapping=variant) == "verbatim"
     steps = CF.builder_composition(vehicle.ir, platform, {"step": "floor"}).plan.steps
     assert steps[0][0] == 1 and len(steps) >= 2
-    for index in range(len(steps)):
-        variant = build_hybrid_mapping_for_pipeline(
-            vehicle.ir, {**platform, "residency_plan": {"step": "index", "index": index}}, pipeline_config=vehicle.config)
-        with pytest.raises(ChipClockReplayRefusal, match="carried slices read by cores that start above latency 0"):
-            run_pass_transfer(vehicle.config, hybrid_mapping=variant)
+    step_programs = [build_hybrid_mapping_for_pipeline(
+        vehicle.ir, {**platform, "residency_plan": {"step": "index", "index": index}}, pipeline_config=vehicle.config)
+        for index in range(len(steps))]
+    for program in step_programs:
+        assert any(late_stage_input_readers(s, carried_nodes(program.stages, s))
+                   for s in program.stages if s.kind == "neural")
+        assert run_pass_transfer(vehicle.config, hybrid_mapping=program) == "verbatim"
     fit = build_hybrid_mapping_for_pipeline(vehicle.ir, {**scaled(3.0), "residency_plan": {"step": "floor"}},
                                             pipeline_config=vehicle.config)
     assert len([s for s in fit.stages if s.kind == "neural"]) == 1
     assert run_pass_transfer(vehicle.config, hybrid_mapping=fit) == "verbatim"
+    monkeypatch.setattr(C, "CORE_LOCAL_REPLAY_BACKENDS", C.CORE_LOCAL_REPLAY_BACKENDS - {"nevresim"})
+    with pytest.raises(C.ChipClockReplayRefusal, match="nevresim reads a stage input at the global cycle"):
+        run_pass_transfer(vehicle.config, hybrid_mapping=twin)
+    for program in step_programs:
+        with pytest.raises(C.ChipClockReplayRefusal, match="stage-input rows read by cores that start above latency 0"):
+            run_pass_transfer(vehicle.config, hybrid_mapping=program)
 
 
 def _nevresim_final_counts(mapping, xs, *, transfer: str):

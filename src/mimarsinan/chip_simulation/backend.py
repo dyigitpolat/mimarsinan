@@ -5,6 +5,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Optional
 
+from mimarsinan.chip_simulation.backend_extensions import (
+    EXECUTION_EXTENSIONS,
+    BackendExtensionRefusal,
+    declared_extensions,
+    require_extensions,
+)
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
 __all__ = [
@@ -12,6 +18,9 @@ __all__ = [
     "SimulationBackend",
     "BackendRegistry",
     "BACKEND_REGISTRY",
+    "BackendExtensionRefusal",
+    "EXECUTION_EXTENSIONS",
+    "declared_extensions",
 ]
 
 
@@ -76,8 +85,11 @@ class SimulationBackend(Backend):
         unsupported_error: Optional[Callable[[Any], str]] = None,
         exports_final_membrane: bool = False,
         decodes_accuracy: bool = False,
+        implements: frozenset = frozenset(),
     ) -> None:
         self.name = name
+        # [W15, W33] the execution extensions (``backend_extensions``) this backend runs as the HCM does.
+        self.implements = frozenset(implements)
         self.step_name = step_name
         self.step_class = step_class
         self._enabled_for = enabled_for
@@ -97,12 +109,15 @@ class SimulationBackend(Backend):
         return True if self._applies_for is None else bool(self._applies_for(plan))
 
     def require_supported(self, contract: Any, *, context: str) -> None:
-        """Validate the backend×mode, preferring a backend-specific error message."""
-        if self.supports(contract):
-            return
-        if self._unsupported_error is not None:
-            raise ValueError(self._unsupported_error(contract))
-        super().require_supported(contract, context=context)
+        """Validate the backend×mode, preferring a backend-specific error message, then every execution extension
+        the plan declares (refused by name where this backend does not implement it)."""
+        if not self.supports(contract):
+            if self._unsupported_error is not None:
+                raise ValueError(self._unsupported_error(contract))
+            super().require_supported(contract, context=context)
+        config = getattr(contract, "config", None)
+        if isinstance(config, dict):
+            require_extensions(self.name, self.implements, config, context=context)
 
     def step_spec(self) -> tuple[str, type]:
         """The ``(step_name, step_class)`` this backend contributes."""

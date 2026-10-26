@@ -4,7 +4,8 @@ Persists the HCM fragments as JSON-safe dicts through the pipeline cache
 (the ``deployment_record_hcm`` promise): schedule/placement/utilization
 mirrors via ``deployment_record.build.from_mapping``, the weight-programming
 totals (the seal's independent cross-check figure), the gate-reduced boundary
-traffic (when the spike-count gate ran), and the step's own accuracy read.
+traffic (when the spike-count gate ran), the step's own accuracy read, and the static program check's two
+certificate records beside the sampled ones.
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ def emit_deployment_record_hcm(
     crossbar_report: Any,
     spike_gate_result: Any,
     accuracy: float,
+    static_certificates: Optional[List[Dict[str, Any]]] = None,
     observes_values: bool,
     model: Any,
     ir_graph: Any,
@@ -108,6 +110,8 @@ def emit_deployment_record_hcm(
             max_abs_delta=float(cert.max_abs_delta),
             detail=cert.summary(),
         ).to_dict())
+    # [W15] the static program check's Theorem 1 and Proposition 2 records, beside the sampled run's.
+    certificates.extend(static_certificates or ())
     step.add_entry("deployment_record_hcm", {
         "schedule": schedule.to_dict(),
         "placement": placement.to_dict(),

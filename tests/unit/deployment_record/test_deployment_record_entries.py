@@ -214,7 +214,10 @@ class TestHardCoreMappingEntry:
         _run_hard_core_mapping(pipeline, monkeypatch)
         entry = pipeline.cache["HardCoreMappingStep.deployment_record_hcm"]
         assert entry["boundary_traffic"] is None
-        assert entry["certificates"] == []
+        # [W15] the static program check's two records are the only certificates when the sampled gate skips.
+        assert [c["name"] for c in entry["certificates"]] == [
+            "static_program_check_theorem1", "static_program_check_proposition2"]
+        assert {c["backend"] for c in entry["certificates"]} == {"static"}
 
     def test_gate_pass_persists_boundary_traffic_and_certificate(
         self, tmp_path, monkeypatch
@@ -229,9 +232,11 @@ class TestHardCoreMappingEntry:
             BoundaryTrafficRecord.from_dict(b) for b in entry["boundary_traffic"]
         ]
         assert boundary.total_count == 12
-        (certificate,) = [
+        # [W15] the sampled run's record first, then the static program check's two (Theorem 1, Proposition 2).
+        certificate, *static = [
             CertificateRecord.from_dict(c) for c in entry["certificates"]
         ]
+        assert [c.name for c in static] == ["static_program_check_theorem1", "static_program_check_proposition2"]
         assert certificate.name == "spike_count_streaming_twin"
         assert certificate.passed is True
         assert certificate.neuron_windows_compared == 16

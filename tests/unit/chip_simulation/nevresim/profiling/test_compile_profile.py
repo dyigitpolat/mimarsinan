@@ -7,6 +7,7 @@ from mimarsinan.chip_simulation.nevresim.compile_cache import (
     cache_key,
     mapping_connectivity_hash,
     policy_hash,
+    simulator_source_fingerprint,
 )
 from mimarsinan.chip_simulation.nevresim.profiling.compile_profile import (
     NevresimCompileProfile,
@@ -62,3 +63,18 @@ def test_correlate_compile_vs_metric() -> None:
     r = correlate_compile_vs_metric(rows, "total_axon_slots")
     assert r is not None
     assert abs(r - 1.0) < 1e-6
+
+
+def test_a_binary_from_other_simulator_sources_is_another_cache_entry(tmp_path) -> None:
+    """[W33] The cache key reads the simulator's include tree: a binary compiled before a nevresim source change
+    (the stage-input clock) never answers a lookup made after it."""
+    (tmp_path / "include" / "simulator").mkdir(parents=True)
+    header = tmp_path / "include" / "simulator" / "execution.hpp"
+    header.write_text("// reads the stage input at the global cycle\n")
+    base = dict(spiking_mode="lif", spike_generation_mode="Uniform", firing_mode="Default", thresholding_mode="<=",
+                weight_type_name="double", threshold_type_name="double", simulation_length=8, latency=2)
+    before = policy_hash(**base, simulator_source=simulator_source_fingerprint(tmp_path))
+    assert before == policy_hash(**base, simulator_source=simulator_source_fingerprint(tmp_path))
+    header.write_text("// reads the stage input at the core's local cycle\n")
+    assert policy_hash(**base, simulator_source=simulator_source_fingerprint(tmp_path)) != before
+    assert simulator_source_fingerprint(None) == ""

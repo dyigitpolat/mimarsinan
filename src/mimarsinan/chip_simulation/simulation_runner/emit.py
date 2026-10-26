@@ -14,7 +14,9 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
 from mimarsinan.chip_simulation.simulation_runner.membrane_probe import (
     membrane_readout_slices,
 )
+from mimarsinan.chip_simulation.spiking_semantics import is_cycle_based
 from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.mapping.packing.pass_timing import replay_delays
 from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
 from mimarsinan.models.spiking.hybrid.carry import carried_output_ids, require_backend_replay
 from typing import Dict
@@ -40,11 +42,8 @@ class _PreparedSegment:
     record_mode: bool = False
     output_sources: "list[tuple[str, int, int]] | None" = None
     membrane_binary_path: "str | None" = None
-    # Verbatim pass-carry roles (streamed scheduled runs only): a PRODUCING
-    # segment's record build also defines NEVRESIM_RECORD_SPIKE_TRAINS and the
-    # runner extracts its output rasters; a CONSUMING segment is compiled in
-    # SpikeTrain input mode and the runner assembles its input train (carried
-    # slices verbatim, host slices via the SSOT encoder twin).
+    # Pass-carry roles: a PRODUCING segment's record build also defines NEVRESIM_RECORD_SPIKE_TRAINS (its output
+    # rasters extracted); a unit whose input the host times (``segment_input_mode``) compiles in SpikeTrain mode.
     record_trains: bool = False
     input_mode: "str | None" = None
     carried_output_node_ids: "tuple[int, ...]" = ()
@@ -172,6 +171,18 @@ def _serialize_output_sources(chip) -> "list[tuple[str, int, int]]":
     return out
 
 
+def segment_input_mode(unit, carried_node_ids, *, transfer: str, spiking_mode: str) -> "str | None":
+    """[U1, W33] ``"SpikeTrain"`` for an executed unit whose input the host must time, else ``None`` (the chip encodes
+    the values itself): a unit that replays a carried raster (VERBATIM), or one that reads a delayed slice under a
+    cycle-timed mode (its re-encode read |d| cycles late). A re-timed level unit reads counts, so no delay applies."""
+    if any(int(sl.node_id) in carried_node_ids for sl in unit.input_map):
+        return "SpikeTrain"
+    if (is_cycle_based(spiking_mode) and not getattr(unit, "is_retimed_level", False) and replay_delays(unit)
+            and transfer != VERBATIM):
+        return "SpikeTrain"
+    return None
+
+
 def prepare_all_segments(runner, hybrid) -> "Dict[int, _PreparedSegment]":
     """Emit all segment params and compile nevresim binaries in parallel (keyed by segment idx)."""
     require_backend_replay(hybrid, "nevresim", transfer=runner.pass_transfer,      # [U1] before anything compiles
@@ -184,10 +195,8 @@ def prepare_all_segments(runner, hybrid) -> "Dict[int, _PreparedSegment]":
     state_sizes: Dict[int, int] = {-2: original_input.shape[1]}
     segment_specs: list = []
 
-    # Verbatim pass-carry roles (streamed scheduled runs): which stages'
-    # outputs a later pass of the same segment replays, and which node ids
-    # therefore cross as trains. COLLAPSE runs leave both empty and the
-    # whole path below is byte-identical to before.
+    # Verbatim pass-carry roles (streamed scheduled runs): which stages' outputs a later pass of the same segment
+    # replays, and which node ids therefore cross as trains; COLLAPSE runs leave both empty.
     carried_by_stage = (
         carried_output_ids(hybrid)
         if runner.pass_transfer == VERBATIM else {}
@@ -221,15 +230,12 @@ def prepare_all_segments(runner, hybrid) -> "Dict[int, _PreparedSegment]":
                 # the export build (the C2 decode side-channel).
                 record_mode = runner.spiking_mode == "lif"
                 carried_out = carried_by_stage.get(stage_index, ())
-                consumes_carry = any(
-                    int(sl.node_id) in carried_node_ids
-                    for sl in exec_stage.input_map
-                )
                 segment_specs.append(
                     (seg_idx, seg_dir, seg_mapping, input_size,
                      ChipLatency(seg_mapping).calculate(), export_membrane,
                      record_mode, bool(carried_out),
-                     "SpikeTrain" if consumes_carry else None,
+                     segment_input_mode(exec_stage, carried_node_ids, transfer=runner.pass_transfer,
+                                        spiking_mode=runner.spiking_mode),
                      tuple(carried_out)))
                 for s in exec_stage.output_map:
                     state_sizes[s.node_id] = max(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from mimarsinan.mapping.packing.executed_reads import bank_read
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.models.spiking.signal_spans import SpanFillPlan
@@ -56,9 +57,6 @@ def build_segment_tensors(mapping, device: torch.device) -> dict:
     cores = mapping.cores
     output_sources = mapping.output_sources
     weight_banks = getattr(mapping, "weight_banks", None) or {}
-    placements_per_core = getattr(
-        mapping, "soft_core_placements_per_hard_core", []
-    )
 
     axon_spans = []
     for c in cores:
@@ -99,30 +97,13 @@ def build_segment_tensors(mapping, device: torch.device) -> dict:
         used_ax = used_axons(core, min_one=True)
         used_neu = used_neurons(core, min_one=True)
 
-        placement_dicts = (
-            placements_per_core[core_idx]
-            if core_idx < len(placements_per_core)
-            else []
-        )
-
         core_weight: torch.Tensor | None = None
 
-        if len(placement_dicts) == 1:
-            pd = placement_dicts[0]
-            bid = pd.get("weight_bank_id")
-            ao = int(pd.get("axon_offset", 0))
-            ne_off = int(pd.get("neuron_offset", 0))
-            a = int(pd.get("axons", 0))
-            n = int(pd.get("neurons", 0))
-            if (
-                bid is not None
-                and ao == 0 and ne_off == 0
-                and a == used_ax and n == used_neu
-            ):
-                bank_t = _ensure_bank_tensor(int(bid))
-                ba0, ba1 = pd.get("bank_axon_range") or (0, a)
-                bn0, bn1 = pd.get("bank_neuron_range") or (0, n)
-                core_weight = bank_t[int(bn0):int(bn1), int(ba0):int(ba1)]
+        # [W15] the bank fast path's one definition (``executed_reads.bank_read``), which the static check reads too.
+        bank = bank_read(mapping, core_idx)
+        if bank is not None:
+            bank_t = _ensure_bank_tensor(bank.bank_id)
+            core_weight = bank_t[bank.neurons[0]:bank.neurons[1], bank.axons[0]:bank.axons[1]]
 
         if core_weight is None:
             tile = core.get_core_matrix()[:used_ax, :used_neu]

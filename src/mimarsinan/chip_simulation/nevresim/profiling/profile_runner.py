@@ -13,6 +13,7 @@ from mimarsinan.chip_simulation.nevresim.compile_cache import (
     cache_key,
     mapping_connectivity_hash,
     policy_hash,
+    simulator_source_fingerprint,
 )
 from mimarsinan.chip_simulation.nevresim.compile_nevresim import CompileResult, compile_simulator
 from mimarsinan.chip_simulation.nevresim.connectivity import (
@@ -135,6 +136,7 @@ def profile_mapping_compile(
             simulation_length=simulation_length,
             latency=latency,
             connectivity_mode=connectivity_mode,
+            simulator_source=simulator_source_fingerprint(nevresim_path),
         )
         key = cache_key(m_hash, p_hash)
         binary_path = work_dir / "bin" / "simulator"

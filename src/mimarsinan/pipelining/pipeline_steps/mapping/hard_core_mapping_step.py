@@ -17,7 +17,7 @@ from mimarsinan.deployment_record.build.pass_carry import (
 from mimarsinan.mapping.weight_programming import weight_programming_report
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
+from mimarsinan.pipelining.core.hybrid_mapping_consumer import cached_hybrid_mapping, load_hybrid_mapping_for_step
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
 from mimarsinan.pipelining.core.spike_count_gate import (
@@ -27,9 +27,11 @@ from mimarsinan.pipelining.core.gates.value_gates import (
     run_value_mapping_metric,
     run_value_twin_certificate_gate,
 )
+from mimarsinan.pipelining.core.gates.static_program_gate import run_static_program_check
 
 import torch
 import os
+import time
 
 from mimarsinan.common.diagnostics import phase_profiler
 
@@ -89,8 +91,11 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("after_load_entries")
 
         _HCM = "HardCoreMappingStep"
+        compile_source = "loaded" if cached_hybrid_mapping(self.pipeline, self) is not None else "built"
+        compile_start = time.perf_counter()
         with phase_profiler(_HCM, "build_hybrid"):
             hybrid_mapping = load_hybrid_mapping_for_step(self.pipeline, self)
+        compile_wall_s = time.perf_counter() - compile_start
 
         neural_segs = hybrid_mapping.get_neural_segments()
         compute_ops = hybrid_mapping.get_compute_ops()
@@ -126,6 +131,14 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("after_build_hybrid")
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")
         _vram_probe("after_pickle_save")
+
+        # [W15] the static per-deployment check beside the sampled certificates (read-only, never refuses).
+        with phase_profiler(_HCM, "static_program_check"):
+            _, static_certificates = run_static_program_check(
+                self.pipeline, ir_graph, hybrid_mapping,
+                cores=platform_constraints.get("cores"), compile_wall_s=compile_wall_s,
+                compile_source=compile_source,
+            )
 
         # [wsm V0'] the weight-programming boundary, measured on every run.
         with phase_profiler(_HCM, "reports"):
@@ -199,6 +212,7 @@ class HardCoreMappingStep(PipelineStep):
             programming=programming,
             crossbar_report=utilization,
             spike_gate_result=spike_gate_result,
+            static_certificates=static_certificates,
             accuracy=float(acc),
             observes_values=plan.mode_policy().observes_values(),
             model=model,

@@ -9,6 +9,7 @@ from mimarsinan.chip_simulation.nevresim.compile_cache import (
     cache_key,
     mapping_connectivity_hash,
     policy_hash,
+    simulator_source_fingerprint,
 )
 from mimarsinan.chip_simulation.nevresim.connectivity import (
     ConnectivityMode,
@@ -136,6 +137,7 @@ class NevresimDriver:
             simulation_length=int(simulation_length),
             latency=int(latency),
             connectivity_mode=self.connectivity_mode,
+            simulator_source=simulator_source_fingerprint(NevresimDriver.nevresim_path),
         )
         return cache_key(m_hash, p_hash)
 

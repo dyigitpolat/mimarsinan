@@ -51,6 +51,23 @@ def _resolve_lif_perceptron(module) -> tuple[object, LIFActivation] | None:
     return module, lif
 
 
+def _boundary_lif(op) -> LIFActivation | None:
+    """The LIF activation of a plain-LIF-Perceptron host op's module, None for every other op."""
+    if not isinstance(op, ComputeOp):
+        return None
+    module = (op.params or {}).get("module") if op.params else None
+    if module is None:
+        return None
+    resolved = _resolve_lif_perceptron(module)
+    return None if resolved is None else resolved[1]
+
+
+def publishes_boundary_train(op) -> bool:
+    """[W15] Whether ``op``'s boundary leaves the wire train a later stage reads verbatim under cycle-accurate
+    trains (``encode_compute_boundary``'s own predicate; the static check reads it per slice)."""
+    return _boundary_lif(op) is not None
+
+
 def encode_compute_boundary(
     *,
     op: ComputeOp,
@@ -65,16 +82,9 @@ def encode_compute_boundary(
     del state_buffer_spikes, hybrid_mapping  # boundary emission needs only the op value
     if not config.use_cycle_accurate_trains:
         return None
-    if not isinstance(op, ComputeOp):
+    lif = _boundary_lif(op)
+    if lif is None:
         return None
-
-    module = (op.params or {}).get("module") if op.params else None
-    if module is None:
-        return None
-    resolved = _resolve_lif_perceptron(module)
-    if resolved is None:
-        return None
-    _, lif = resolved
 
     value = state_buffer.get(int(op.id))
     if value is None:

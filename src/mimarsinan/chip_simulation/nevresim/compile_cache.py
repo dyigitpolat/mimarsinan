@@ -36,6 +36,19 @@ def mapping_connectivity_hash(hcm: HardCoreMapping) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def simulator_source_fingerprint(nevresim_path: str | Path | None) -> str:
+    """sha256 over the simulator's include tree (each file's path and bytes): a binary compiled from other simulator
+    sources is another program (W33 changed when a core reads its stage input), so it never answers a cache lookup."""
+    if not nevresim_path:
+        return ""
+    root = Path(nevresim_path) / "include"
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        digest.update(str(path.relative_to(root)).encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 def policy_hash(
     *,
     spiking_mode: str,
@@ -47,9 +60,11 @@ def policy_hash(
     simulation_length: int,
     latency: int,
     connectivity_mode: str = "compile_time",
+    simulator_source: str = "",
 ) -> str:
     payload = json.dumps(
         {
+            "simulator_source": simulator_source,
             "spiking_mode": spiking_mode,
             "spike_generation_mode": spike_generation_mode,
             "firing_mode": firing_mode,

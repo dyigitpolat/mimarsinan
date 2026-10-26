@@ -13,6 +13,7 @@ from mimarsinan.chip_simulation.hybrid_run.host_compute import (
     execute_compute_op_torch as execute_compute_op_torch,
 )
 from mimarsinan.mapping.ir import IRSource
+from mimarsinan.mapping.packing.executed_reads import op_source_counts_fresh
 from mimarsinan.mapping.support.activation_scales import scalar_node_scale
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 from mimarsinan.chip_simulation.hybrid_run.input_shifts import (
@@ -192,11 +193,7 @@ def op_source_counts(op) -> Dict[int, int]:
     cached = getattr(op, "_source_counts_cache", None)
     if cached is not None:
         return cached
-    counts: Dict[int, int] = {}
-    for src in op.input_sources.flatten():
-        if isinstance(src, IRSource) and src.node_id >= 0:
-            nid = int(src.node_id)
-            counts[nid] = counts.get(nid, 0) + 1
+    counts = op_source_counts_fresh(op)   # [W15] the derivation the static check holds the memo to
     op._source_counts_cache = counts
     return counts
 

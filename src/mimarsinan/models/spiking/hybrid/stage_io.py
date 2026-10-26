@@ -13,7 +13,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     store_segment_output_torch,
 )
 from mimarsinan.chip_simulation import spike_modes
-from mimarsinan.mapping.ir import IRSource
+from mimarsinan.mapping.packing.executed_reads import consumer_counts
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage, SegmentIOSlice
 from mimarsinan.models.spiking.hybrid.carry import (
     carried_output_ids,
@@ -67,26 +67,7 @@ class HybridStageIOMixin(HybridFlowHost):
         if cached is not None:
             return cached
 
-        counts: Dict[int, int] = {}
-
-        def _bump(nid: int) -> None:
-            counts[nid] = counts.get(nid, 0) + 1
-
-        for stage in self.hybrid_mapping.stages:
-            if stage.kind == "neural":
-                for s in stage.input_map:
-                    if s.node_id is not None and int(s.node_id) >= 0:
-                        _bump(int(s.node_id))
-            elif stage.kind == "compute":
-                op = stage.compute_op
-                assert op is not None
-                for src in op.input_sources.flatten():
-                    if isinstance(src, IRSource) and src.node_id >= 0:
-                        _bump(int(src.node_id))
-
-        for src in self.hybrid_mapping.output_sources.flatten():
-            if isinstance(src, IRSource) and src.node_id >= 0:
-                _bump(int(src.node_id))
+        counts = consumer_counts(self.hybrid_mapping)   # [W15] the derivation the static check holds the memo to
 
         try:
             self.hybrid_mapping._consumer_counts_cache = counts

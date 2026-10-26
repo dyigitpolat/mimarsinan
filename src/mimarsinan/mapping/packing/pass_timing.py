@@ -250,14 +250,15 @@ def executed_core_latencies(hcm) -> List[int]:
             core.latency = latency
 
 
-def off_clock_readers(stage: HybridStage, carried: Set[int]) -> List[Tuple[int, int]]:
-    """``(core, latency)`` per hard core of ``stage`` that reads a carried slice and starts above latency 0 as executed
-    (``executed_core_latencies``): a backend that reads a stage input at the global cycle sees that slice
-    ``latency`` cycles late, where the fused segment (and the HCM's core-local read) delivers it on time."""
-    if not carried:
+def late_stage_input_readers(stage: HybridStage, nodes: Optional[Set[int]] = None) -> List[Tuple[int, int]]:
+    """``(core, latency)`` per hard core of ``stage`` that reads a stage-input row (of ``nodes``, or any) and starts
+    above latency 0 as executed (``executed_core_latencies``): such a core reads cycle t of that row at global cycle
+    ``latency + t`` (the stage-input timing rule, W33), and a backend that read a stage input at the global cycle
+    would hand it the row ``latency`` cycles early and never its last ``latency`` cycles."""
+    if nodes is not None and not nodes:
         return []
     slice_of = _slice_index(stage)
-    rows = {k for k, s in enumerate(stage.input_map) if int(s.node_id) in carried}
+    rows = {k for k, s in enumerate(stage.input_map) if nodes is None or int(s.node_id) in nodes}
     hcm = stage.hard_core_mapping
     executed = executed_core_latencies(hcm)
     return [(h, latency) for h, (core, latency) in enumerate(zip(hcm.cores, executed)) if latency > 0

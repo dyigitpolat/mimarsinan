@@ -12,7 +12,7 @@ import pytest
 import torch
 
 from mimarsinan.chip_simulation.simulation_runner import emit as nevresim_emit
-from mimarsinan.chip_simulation.simulation_runner.carry import assemble_carried_input_train
+from mimarsinan.chip_simulation.simulation_runner.carry import assemble_input_train
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.latency.chip import PINNED_LATENCIES, ChipLatency
 from mimarsinan.mapping.latency.core_graph import alap_latencies, longest_paths, topological_order
@@ -21,7 +21,7 @@ from mimarsinan.mapping.noc import execution_stage_latencies
 from mimarsinan.mapping.noc.fragments import delayed_carry_wires, walk_runs
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.packing.pass_timing import (
-    REPLAY_DELAYS, PassTimingError, _core_latencies, _delay, carried_nodes, off_clock_readers,
+    REPLAY_DELAYS, PassTimingError, _core_latencies, _delay, carried_nodes, late_stage_input_readers,
 )
 from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
 from mimarsinan.models.spiking.hybrid import carry as C
@@ -252,72 +252,74 @@ def _streamed(**enabled):
 
 
 class TestTheChipClock:
-    """[U1 W6, review rounds 1-2] nevresim reads its T-cycle input train at the global cycle, so a core that starts at
-    latency L > 0 reads a carried slice L cycles late; SANA-FE and Lava present every stage-input row in the reader's
-    local time; nevresim refuses such a program by name, at plan time and before compiling, judged on the units it
-    executes (a pass, or its level units under per-hop re-timing)."""
+    """[U1 W6, review rounds 1-2, W33] Every backend reads a stage-input row in the reading core's local time: SANA-FE
+    and Lava shift it host-side, nevresim's generated simulator reads its input train at each core's local cycle. A
+    backend not declared core-local refuses by name, at plan time and before compiling, a program with a stage-input
+    reader above latency 0 in the units it executes (a pass, or its level units under per-hop re-timing)."""
 
     def test_a_carried_slice_read_above_latency_zero_is_found(self):
         u1 = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None)
-        late = {k: off_clock_readers(s, carried_nodes(u1.stages, s)) for k, s in enumerate(u1.stages)
+        late = {k: late_stage_input_readers(s, carried_nodes(u1.stages, s)) for k, s in enumerate(u1.stages)
                 if s.kind == "neural"}
         assert late[4] == [(0, 1)] and sum(map(len, late.values())) == 1
         skew = V.build(V.ir_of(V.branchy_repr("skew3")), 3, None)
-        assert not any(off_clock_readers(s, carried_nodes(skew.stages, s)) for s in V.neural_passes(skew))
+        assert not any(late_stage_input_readers(s, carried_nodes(skew.stages, s)) for s in V.neural_passes(skew))
 
-    def test_nevresim_refuses_by_name_at_plan_time_and_core_local_backends_admit(self):
+    def test_every_declared_backend_admits_a_late_reader_at_plan_time(self):
         late = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None)
-        with pytest.raises(C.ChipClockReplayRefusal, match="nevresim reads a stage input at the global cycle") as caught:
-            C.run_pass_transfer(_streamed(enable_nevresim_simulation=True), hybrid_mapping=late)
-        assert isinstance(caught.value, ToolchainRefusal)
-        assert C.run_pass_transfer(_streamed(enable_sanafe_simulation=True, enable_loihi_simulation=True),
-                                   hybrid_mapping=late) == VERBATIM
-        on_time = V.build(V.ir_of(V.chain_repr(seed=0)), 6, None)
-        assert len(V.neural_passes(on_time)) > 1
-        assert C.run_pass_transfer(_streamed(enable_nevresim_simulation=True), hybrid_mapping=on_time) == VERBATIM
-        # an analytical TTFS value is read whenever its core runs: no clock refusal
-        C.require_backend_replay(late, "nevresim", transfer=COLLAPSE, spike_mode="TTFS", spiking_mode="ttfs")
-
-    def test_nevresim_admits_a_re_timed_program_whose_level_units_read_on_time(self):
-        """[Review round 2] Under per-hop re-timing (windowed lif, COLLAPSE: the deployed lifsync) nevresim executes a
-        pass's level units, whose cores all start at latency 0: chain C 3's pass 4 reads its carried slice at latency 1
-        as a pass, at 0 in its units, so the program is admitted (the measured run equals the HCM identity run,
-        ``tests/integration/test_residency_executed.py``); the same cut run streamed, unit-less, still refuses."""
-        retimed = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None, retimed_level_stages=True)
-        reader = retimed.stages[4]
-        assert off_clock_readers(reader, carried_nodes(retimed.stages, reader)) == [(0, 1)]
-        assert reader.retimed_level_stages and C.executed_off_clock_readers(retimed, reader) == []
-        C.require_backend_replay(retimed, "nevresim", transfer=COLLAPSE, spike_mode="Uniform", spiking_mode="lif")
-        streamed = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None)
-        assert C.executed_off_clock_readers(streamed, streamed.stages[4]) == [(0, 1)]
-        with pytest.raises(C.ChipClockReplayRefusal):
-            C.require_backend_replay(streamed, "nevresim", transfer=COLLAPSE, spike_mode="TTFS",
+        assert C.run_pass_transfer(_streamed(enable_nevresim_simulation=True, enable_sanafe_simulation=True,
+                                             enable_loihi_simulation=True), hybrid_mapping=late) == VERBATIM
+        for backend in ("nevresim", "sanafe"):
+            C.require_backend_replay(late, backend, transfer=COLLAPSE, spike_mode="TTFS",
                                      spiking_mode="ttfs_cycle_based")
 
-    def test_nevresim_refuses_before_compiling(self):
+    def test_late_readers_are_judged_on_the_units_a_backend_executes(self, monkeypatch):
+        """[Review round 2] Under per-hop re-timing (windowed lif, COLLAPSE: the deployed lifsync) a backend executes a
+        pass's level units, whose cores all start at latency 0: chain C 3's pass 4 reads its carried slice at latency 1
+        as a pass, at 0 in its units; the same cut run streamed, unit-less, reads it at 1. An undeclared backend is
+        refused only the second."""
+        monkeypatch.setitem(C._BACKEND_ENABLE_KEYS, "future_backend", "enable_future_backend")
+        retimed = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None, retimed_level_stages=True)
+        reader = retimed.stages[4]
+        assert late_stage_input_readers(reader, carried_nodes(retimed.stages, reader)) == [(0, 1)]
+        assert reader.retimed_level_stages and C.executed_late_input_readers(reader) == []
+        C.require_backend_replay(retimed, "future_backend", transfer=COLLAPSE, spike_mode="Uniform", spiking_mode="lif")
+        streamed = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None)
+        assert (0, 1) in C.executed_late_input_readers(streamed.stages[4])
+        with pytest.raises(C.ChipClockReplayRefusal):
+            C.require_backend_replay(streamed, "future_backend", transfer=COLLAPSE, spike_mode="TTFS",
+                                     spiking_mode="ttfs_cycle_based")
+
+    def test_an_undeclared_clock_refuses_before_nevresim_compiles(self, monkeypatch):
+        """The refusal is wired into nevresim's emit: with nevresim taken out of the declaration, a late reader refuses
+        before any segment compiles."""
+        monkeypatch.setattr(C, "CORE_LOCAL_REPLAY_BACKENDS", C.CORE_LOCAL_REPLAY_BACKENDS - {"nevresim"})
         late = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None)
         runner = SimpleNamespace(pass_transfer=VERBATIM, spike_generation_mode="Uniform", spiking_mode="lif")
         with pytest.raises(C.ChipClockReplayRefusal):
             nevresim_emit.prepare_all_segments(runner, late)       # refuses before it reads test data or compiles
 
-    def test_nevresim_assembles_a_delayed_slice_late_and_refuses_a_late_reader(self):
-        """Fuzz seed 58 C 2: a carried slice delayed by 1 cycle, read at latency 0; chain C 3: read at latency 1."""
+    def test_nevresim_assembles_a_delayed_slice_late_and_a_late_readers_slice_verbatim(self):
+        """Fuzz seed 58 C 2: a carried slice delayed by 1 cycle, read at latency 0; chain C 3: read at latency 1, in
+        stage time (the generated simulator moves it into the reader's local time)."""
         u1 = V.build(V.ir_of(V.random_rep(58)), 2, None)
         stage = next(s for s in V.neural_passes(u1) if getattr(s, REPLAY_DELAYS, None))
         (k, delay), = getattr(stage, REPLAY_DELAYS).items()
         node, width = int(stage.input_map[k].node_id), int(stage.input_map[k].size)
         raster = (np.arange(2 * V.T * width).reshape(2, V.T, width) % 3 == 0).astype(np.float64)
         size = max(int(s.offset) + int(s.size) for s in stage.input_map)
-        train = assemble_carried_input_train(stage, np.zeros((2, size)), {stage.schedule_segment_index: {node: raster}},
-                                             spike_generation_mode="Uniform", T=V.T)
+        train = assemble_input_train(stage, np.zeros((2, size)), {stage.schedule_segment_index: {node: raster}},
+                                     spike_generation_mode="Uniform", T=V.T)
         offset = int(stage.input_map[k].offset)
         assert delay < 0 and np.array_equal(train[:, :, offset:offset + width],
                                             C.replay_raster(raster, delay, time_axis=1))
         late = V.build(V.ir_of(V.chain_repr(seed=0)), 3, None)
         reader = late.stages[4]
-        store = {reader.schedule_segment_index: {n: np.zeros((1, V.T, 8)) for n in carried_nodes(late.stages, reader)}}
-        with pytest.raises(C.ChipClockReplayRefusal, match="global cycle"):
-            assemble_carried_input_train(reader, np.zeros((1, 64)), store, spike_generation_mode="Uniform", T=V.T)
+        nodes = carried_nodes(late.stages, reader)
+        store = {reader.schedule_segment_index: {n: np.ones((1, V.T, 64)) for n in nodes}}
+        train = assemble_input_train(reader, np.zeros((1, 64)), store, spike_generation_mode="Uniform", T=V.T)
+        carried = [(int(s.offset), int(s.size)) for s in reader.input_map if int(s.node_id) in nodes]
+        assert carried and all(train[:, :, lo:lo + n].min() == 1 for lo, n in carried)
 
     def test_sanafe_presents_every_stage_input_row_in_its_readers_local_time(self):
         """[Review round 2] A carried slice (node 7) and a host-encoded one (node 3) alike: the input neuron feeding a
@@ -593,18 +595,20 @@ class TestPlanTimeRefusals:
         assert C.run_pass_transfer({"spiking_family": "lif", "spiking_variant": "synchronized",
                                     "enable_future_backend": True}) == COLLAPSE
 
-    def test_a_delayed_slice_on_a_value_mode_nevresim_segment(self):
-        """nevresim encodes a value-mode input on chip: a cycle-based COLLAPSE run of a delayed slice refuses by name;
-        a SpikeTrain-mode consumer (VERBATIM) replays it, SANA-FE shifts it host-side, and the analytical TTFS reads
-        values, where a delay moves nothing. Fuzz seed 58 C 2: a delayed slice read at latency 0."""
+    def test_a_delayed_slice_on_every_backend(self, monkeypatch):
+        """[W33] nevresim compiles a cycle-based COLLAPSE unit that reads a delayed slice in SpikeTrain mode and reads
+        it late, as SANA-FE shifts it host-side; the analytical TTFS reads values, where a delay moves nothing; a
+        backend not declared core-local refuses it by name. Fuzz seed 58 C 2: a delayed slice read at latency 0."""
+        monkeypatch.setitem(C._BACKEND_ENABLE_KEYS, "future_backend", "enable_future_backend")
         u1 = V.build(V.ir_of(V.random_rep(58)), 2, None)
         assert any(getattr(s, REPLAY_DELAYS, None) for s in V.neural_passes(u1))
         kwargs = dict(spike_mode="TTFS", spiking_mode="ttfs_cycle_based")
+        for backend in ("nevresim", "sanafe"):
+            C.require_backend_replay(u1, backend, transfer=COLLAPSE, **kwargs)
         with pytest.raises(C.ChipClockReplayRefusal, match="delayed slices"):
-            C.require_backend_replay(u1, "nevresim", transfer=COLLAPSE, **kwargs)
-        C.require_backend_replay(u1, "sanafe", transfer=COLLAPSE, **kwargs)
+            C.require_backend_replay(u1, "future_backend", transfer=COLLAPSE, **kwargs)
         C.require_backend_replay(u1, "nevresim", transfer=VERBATIM, spike_mode="Uniform", spiking_mode="lif")
-        C.require_backend_replay(u1, "nevresim", transfer=COLLAPSE, spike_mode="TTFS", spiking_mode="ttfs")
+        C.require_backend_replay(u1, "future_backend", transfer=COLLAPSE, spike_mode="TTFS", spiking_mode="ttfs")
 
 
 class TestSingleSpikeCarry:

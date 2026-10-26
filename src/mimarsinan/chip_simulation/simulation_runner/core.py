@@ -47,6 +47,14 @@ def load_verified_test_data(runner, test_loader, source: str):
     return [*zip(np.stack(runner.test_input), np.stack(runner.test_targets))]
 
 
+def nevresim_weight_type(config) -> type:
+    """nevresim's C++ weight type: ``int`` on a weight-quantized chip, ``double`` otherwise. Deliberately not routed
+    through DeploymentPlan: this runner keeps the legacy weight_quantization default of True, which diverges from the
+    plan's False default for a config that omits the key. [W15] The static check reads it for nevresim's exact
+    integer reach (C++ ``int``: below 2^31)."""
+    return int if config.get("weight_quantization", True) else float
+
+
 class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
     def __init__(self, pipeline, mapping, simulation_length, preprocessor=None,
                  stage_timer=None):
@@ -83,9 +91,7 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
             pipeline.config,
         )
 
-        # Deliberately not routed through DeploymentPlan: this runner keeps the legacy weight_quantization default of True, which diverges from the plan's False default for a config that omits the key.
-        wt_q = pipeline.config.get("weight_quantization", True)
-        self.weight_type = int if wt_q else float
+        self.weight_type = nevresim_weight_type(pipeline.config)
 
         is_ttfs = requires_ttfs_firing(self.spiking_mode)
         self.threshold_type = float if is_ttfs else self.weight_type

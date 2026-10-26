@@ -27,7 +27,7 @@ from mimarsinan.chip_simulation.simulation_runner.emit import (
     prepare_all_segments,
 )
 from mimarsinan.chip_simulation.simulation_runner.carry import (
-    assemble_carried_input_train,
+    assemble_input_train,
     publish_segment_trains,
 )
 from mimarsinan.chip_simulation.simulation_runner.segment_run import (
@@ -138,7 +138,7 @@ class SimulationHybridMixin(SimulationHostContract):
             prepared = prepared_segments[seg_counter]
             input_train = None
             if prepared.input_mode == "SpikeTrain":
-                input_train = assemble_carried_input_train(
+                input_train = assemble_input_train(
                     stage, seg_input, state_buffer_trains,
                     spike_generation_mode=self.spike_generation_mode,
                     T=int(self.simulation_length),
