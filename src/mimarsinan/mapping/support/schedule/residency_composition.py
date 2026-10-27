@@ -19,7 +19,7 @@ from mimarsinan.mapping.support.residency_rules import (
 )
 from mimarsinan.mapping.support.schedule.pass_cut import CutNode, cut_nodes_from_census
 from mimarsinan.mapping.support.schedule.residency_front import ResidencyStepFunction
-from mimarsinan.mapping.packing.residency_tiles import CoreTiles, PackedCore, pack_specs
+from mimarsinan.mapping.packing.residency_tiles import pack_specs
 from mimarsinan.mapping.support.schedule.residency_units import (
     PlanPeriodFacts,
     ResidencyUnits,
@@ -99,7 +99,8 @@ class ResidencyComposition:
         return out
 
 
-PhasePacker = Callable[[Sequence[int]], Tuple[Sequence[PackedCore], Sequence[CoreTiles]]]
+#: Spec indices to packed cores and their tiles, and [F3] optionally each core's operand-bank cells.
+PhasePacker = Callable[[Sequence[int]], Tuple[Any, ...]]
 
 
 def compose_units(units: ResidencyUnits, selection: ResidencySelection, budget: int, *, max_schedule_passes: int,
@@ -117,7 +118,8 @@ def compose_units(units: ResidencyUnits, selection: ResidencySelection, budget: 
     can place pins on a core type the pool holds too few of, and admission is not monotone in r (a larger r can pick
     wider phases), so every r is tried in order (r* itself wherever its pins fit, every single-type chip so far). A
     declared index or the stateless plan is composed as declared or refused by name (``PoolAdmissionError``)."""
-    plan = residency_steps(units.tiles, units.live, int(budget), forced=units.forced, max_passes=max_schedule_passes)
+    plan = residency_steps(units.tiles, units.live, int(budget), forced=units.forced, max_passes=max_schedule_passes,
+                           operand=units.operand_tiles)
     step = selection.step_of(plan)
     if pack_phase is None or selection.rule != STEP_FLOOR:
         return compose_step(units, selection, plan, step, max_schedule_passes=max_schedule_passes,
@@ -152,7 +154,9 @@ def compose_step(units: ResidencyUnits, selection: ResidencySelection, plan: Res
                  pool: Optional[Mapping[Tuple[int, int], int]] = None) -> ResidencyComposition:
     """One step's composition (``compose_units`` without the floor's walk): its phases, packed and checked."""
     facts = plan_period_facts(units.tiles, units.live, plan.C, step, forced=units.forced, unit_cores=units.cores or None,
-                              max_passes=max_schedule_passes, unit_spans=units.spans)
+                              max_passes=max_schedule_passes, unit_spans=units.spans,
+                              unit_delayed_reads=units.delayed_reads, unit_operand=units.operand_tiles,
+                              unit_producer=units.producer)
     composition = ResidencyComposition(selection=selection, units=units, plan=plan, step=step, facts=facts)
     over = {s: len(p) for s, p in composition.segment_passes().items() if len(p) > int(max_schedule_passes)}
     if over:
@@ -162,8 +166,8 @@ def compose_step(units: ResidencyUnits, selection: ResidencySelection, plan: Res
     if pack_phase is None:
         return composition
     packed = [pack_phase(m) for m in composition.pass_members()]
-    phased = facts_with_cores(facts, [cores for cores, _ in packed])
-    check_pinned_fit([tiles for _, tiles in packed], phased.pass_resident_cores, dict(pool or {}))
+    phased = facts_with_cores(facts, [p[0] for p in packed], [p[2] for p in packed if len(p) > 2])
+    check_pinned_fit([p[1] for p in packed], phased.pass_resident_cores, dict(pool or {}))
     return replace(composition, facts=phased)
 
 
@@ -190,9 +194,9 @@ class ResidencyProgram:
 
     def steps(self) -> ResidencyStepFunction:
         return residency_steps(self.units.tiles, self.units.live, self.budget, forced=self.units.forced,
-                               max_passes=self.max_schedule_passes)
+                               max_passes=self.max_schedule_passes, operand=self.units.operand_tiles)
 
-    def pack_phase(self, members: Sequence[int]) -> Tuple[Sequence[PackedCore], Sequence[CoreTiles]]:
+    def pack_phase(self, members: Sequence[int]) -> Tuple[Any, ...]:
         return pack_specs([self.specs[i] for i in members], self.core_types, allow_coalescing=self.allow_coalescing,
                           allow_splitting=self.allow_splitting, bounded=True)
 
@@ -289,7 +293,8 @@ def refuse_without_cut_census(entry_point: str, residency_plan: Optional[Mapping
 
 
 def pin_program(pass_payloads: Sequence[Sequence[int]], pass_core_types: Sequence[Sequence[Tuple[Any, ...]]],
-                r: int, budget: int) -> Tuple[FrozenSet[int], ...]:
-    """Pinned cores per executed pass: the one pinned rule (``pin_passes``) on the packed passes' cores."""
+                r: int, budget: int, producer: Sequence[Sequence[int]] = ()) -> Tuple[FrozenSet[int], ...]:
+    """Pinned cores per executed pass: the one pinned rule (``pin_passes``) on the packed passes' cores ([F3]
+    ``producer``: per pass each core's operand-bank cells; its operand cores are never pinned)."""
     return pin_passes([[(int(p), len(t)) for p, t in zip(payloads, types)]
-                       for payloads, types in zip(pass_payloads, pass_core_types)], int(r), int(budget))
+                       for payloads, types in zip(pass_payloads, pass_core_types)], int(r), int(budget), producer)

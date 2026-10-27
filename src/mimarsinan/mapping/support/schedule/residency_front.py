@@ -1,14 +1,21 @@
-"""[E85/E297] The residency planner: phase fit, the exact minimal rotating region r* and the live-set carry front."""
+"""[E85/E297] The residency planner: phase fit, the exact minimal rotating region r* and the live-set carry front;
+[F3 round] r* bisected on the exact feasibility of a plan (``residency_front_bounds.plan_exists``), the floor's carry
+probed when a step is first read, each next step searched outward from the last step's r + 1 (``StepWalk._next``).
+The reference fronts are ``residency_front_reference``'s."""
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-import numpy as np
-
-from mimarsinan.mapping.support.residency_front_store import front_mincarry_store, front_store, lowest_starts
+from mimarsinan.mapping.support.residency_front_bounds import plan_exists
+from mimarsinan.mapping.support.residency_front_reference import (
+    front_mincarry_np as front_mincarry_np, front_mincarry_py as front_mincarry_py,
+)
+from mimarsinan.mapping.support.residency_front_store import (
+    carries_below, front_mincarry_below, front_mincarry_store, operand_bound, planned_store,
+)
 
 #: Phases beyond the fit the planner may use: Q in [Q_fit, Q_fit + Q_SPAN] (law.md Q_hi).
 Q_SPAN = 8
@@ -19,99 +26,6 @@ Q_SPAN = 8
 STORE_MIN_UNITS = 100
 
 FrontFn = Callable[..., Optional[Tuple[int, int]]]
-
-
-def _python_fronts(sizes, live, C, r, qmax, forced):
-    """Pareto fronts over (excess, carry, phases), the RA's bare 3-tuples (its bisection calls it per probed r)."""
-    n = len(sizes)
-    prefix = [0]
-    for s in sizes:
-        prefix.append(prefix[-1] + s)
-    budget = C - r
-    starts = lowest_starts(n, forced)
-    fronts: List[list] = [[] for _ in range(n + 1)]
-    fronts[0] = [(0, 0, 0)]
-    for j in range(1, n + 1):
-        cand = []
-        cut = 2 * live[j - 1] if j < n else 0
-        for i in range(j - 1, starts[j] - 1, -1):
-            width = prefix[j] - prefix[i]
-            if width > C:
-                break
-            ex = max(0, width - r)
-            for e, c, q in fronts[i]:
-                if e + ex <= budget and q + 1 <= qmax:
-                    cand.append((e + ex, c + cut, q + 1))
-        cand.sort()
-        keep: list = []
-        for t in cand:
-            if not any(k[0] <= t[0] and k[1] <= t[1] and k[2] <= t[2] for k in keep):
-                keep.append(t)
-        fronts[j] = keep
-    return fronts
-
-
-def _best(front):
-    return min(range(len(front)), key=lambda k: (front[k][1], front[k][2]))
-
-
-def front_mincarry_py(sizes, live, C, r, qmax, forced=()):
-    """``x9_0_v3._front_mincarry`` with optional forced cuts: min (carry, phases) under every phase <= C and
-    sum_q (R_q - r)^+ <= C - r, at most ``qmax`` phases, or None."""
-    last = _python_fronts(sizes, live, C, r, qmax, forced)[len(sizes)]
-    if not last:
-        return None
-    best = last[_best(last)]
-    return best[1], best[2]
-
-
-def front_mincarry_np(sizes, live, C, r, qmax, forced=()):
-    """``v42a_plan.front_mincarry_np`` (E296, exact): the same fronts with numpy candidate arrays."""
-    n = len(sizes)
-    prefix = [0]
-    for s in sizes:
-        prefix.append(prefix[-1] + s)
-    budget = C - r
-    starts = lowest_starts(n, forced)
-    empty = np.zeros(0, dtype=np.int64)
-    E: List[np.ndarray] = [np.zeros(1, dtype=np.int64)] + [empty] * n
-    Cc: List[np.ndarray] = [np.zeros(1, dtype=np.int64)] + [empty] * n
-    Q: List[np.ndarray] = [np.zeros(1, dtype=np.int64)] + [empty] * n
-    big = np.iinfo(np.int64).max
-    for j in range(1, n + 1):
-        cut = 2 * live[j - 1] if j < n else 0
-        es, cs, qs = [], [], []
-        for i in range(j - 1, starts[j] - 1, -1):
-            width = prefix[j] - prefix[i]
-            if width > C:
-                break
-            if E[i].size == 0:
-                continue
-            e2, q2 = E[i] + max(0, width - r), Q[i] + 1
-            ok = (e2 <= budget) & (q2 <= qmax)
-            if ok.any():
-                es.append(e2[ok])
-                cs.append(Cc[i][ok] + cut)
-                qs.append(q2[ok])
-        if not es:
-            continue
-        e, c, q = np.concatenate(es), np.concatenate(cs), np.concatenate(qs)
-        o = np.lexsort((q, c, e))
-        e, c, q = e[o], c[o], q[o]
-        keep = np.ones(e.size, dtype=bool)
-        for qq in np.unique(q):
-            # exclusive prefix minimum of carry over earlier candidates with phases <= qq
-            pm = np.minimum.accumulate(np.where(q <= qq, c, big))
-            prev = np.r_[big, pm[:-1]]
-            sel = q == qq
-            keep[sel] &= prev[sel] > c[sel]
-        E[j], Cc[j], Q[j] = e[keep], c[keep], q[keep]
-    if E[n].size == 0:
-        return None
-    o = np.lexsort((E[n], Q[n], Cc[n]))
-    return int(Cc[n][o[0]]), int(Q[n][o[0]])
-
-
 FRONTS: Dict[str, FrontFn] = {"python": front_mincarry_py, "vectorized": front_mincarry_np,
                               "store": front_mincarry_store}
 
@@ -174,11 +88,26 @@ class ResidencyStepFunction:
 
 class StepWalk:
     """The steps of mincarry(r) from r*, each the smallest r whose carry falls below the last step's, probed once
-    per r (feasibility and the carry are monotone in r)."""
+    per r (feasibility and the carry are monotone in r). ``first`` is the floor step, or [F3 round] its r alone,
+    probed when a step is first read (the stateless plan reads none)."""
 
-    def __init__(self, probe: Callable[[int], Optional[Tuple[int, int]]], C: int, first: Tuple[int, int, int],
-                 done: bool = False):
-        self.probe, self.C, self.found, self.done = probe, int(C), [first], done
+    def __init__(self, probe: Callable[[int], Optional[Tuple[int, int]]], C: int, first: Any, done: bool = False,
+                 below: Optional[Callable[[int, int], Optional[Tuple[int, int]]]] = None,
+                 decide: Optional[Callable[[int, int], bool]] = None):
+        self.probe, self.C, self.done = probe, int(C), done
+        self.below = below or self._below
+        self.decide = decide or (lambda r, ceiling: self.below(r, ceiling) is not None)
+        self.found: List[Tuple[int, int, int]] = [] if isinstance(first, int) else [first]
+        self.first_r = int(first) if isinstance(first, int) else None
+
+    def _start(self) -> None:
+        if not self.found and self.first_r is not None:
+            self.found.append((self.first_r, *self._at(self.first_r)))
+
+    def _below(self, r: int, ceiling: int) -> Optional[Tuple[int, int]]:
+        """``probe(r)`` where its carry is below ``ceiling``, else None (a step's decision, [F3 round])."""
+        got = self.probe(r)
+        return got if got is not None and got[0] < ceiling else None
 
     def _at(self, r: int) -> Tuple[int, int]:
         got = self.probe(r)
@@ -186,25 +115,42 @@ class StepWalk:
         return got
 
     def _next(self) -> None:
+        """The smallest r above the last step's whose carry falls below it, searched outward from r + 1 [F3 round]:
+        the next r's exact probe first (the step, where the function steps at every r), then strides doubling from
+        r + 2 on the decisions, then a bisection inside the bracket; the same r as a bisection over (r, C]."""
         r, carry = self.found[-1][0], self.found[-1][1]
-        if r >= self.C or self._at(self.C)[0] >= carry:
+        if r >= self.C or self.below(self.C, carry) is None:
             self.done = True
             return
-        lo, hi = r + 1, self.C
+        got = self.below(r + 1, carry)
+        if got is not None:
+            self.found.append((r + 1, *got))
+            return
+        lo, hi, stride = r + 2, self.C, 1
+        while lo < hi:  # the decision holds at hi and fails below lo
+            point = min(lo + stride - 1, hi - 1)
+            if self.decide(point, carry):
+                hi = point
+                break
+            lo, stride = point + 1, 2 * stride
         while lo < hi:
             mid = (lo + hi) // 2
-            if self._at(mid)[0] < carry:
+            if self.decide(mid, carry):
                 hi = mid
             else:
                 lo = mid + 1
-        self.found.append((lo, *self._at(lo)))
+        got = self.below(lo, carry)
+        assert got is not None, "the step's r carries no less"
+        self.found.append((lo, *got))
 
     def upto(self, index: int) -> Optional[Tuple[int, int, int]]:
+        self._start()
         while len(self.found) <= index and not self.done:
             self._next()
         return self.found[index] if index < len(self.found) else None
 
     def every(self) -> Tuple[Tuple[int, int, int], ...]:
+        self._start()
         while not self.done:
             self._next()
         return tuple(self.found)
@@ -223,10 +169,12 @@ def binding_cap(sizes: Sequence[int], C: int, forced: Sequence[int], qmax: int,
 
 
 def plan_steps(sizes, live, C, *, forced=(), front: Optional[FrontFn] = None,
-               segment_cap: Optional[int] = None) -> Optional[ResidencyStepFunction]:
+               segment_cap: Optional[int] = None, operand=()) -> Optional[ResidencyStepFunction]:
     """The step function of mincarry(r), non-increasing in r; None if no plan exists (a unit exceeds C, or a segment
-    needs more phases than ``segment_cap``). A cap that can bind plans on the store front with it [W03]."""
-    sizes = tuple(int(s) for s in sizes)
+    needs more phases than ``segment_cap``). A cap that can bind plans on the store front with it [W03]. [F3]
+    ``operand``: per unit its operand tiles, never pinned, so a phase at r holds at most r of them (a fit with
+    operand tiles is planned by the fronts: its closed form, r* = 0, pins every tile)."""
+    sizes, operand = tuple(int(s) for s in sizes), tuple(int(o) for o in operand)
     live = tuple(int(v) for v in live)
     forced = tuple(sorted(int(p) for p in forced))
     F = sum(sizes)
@@ -237,32 +185,59 @@ def plan_steps(sizes, live, C, *, forced=(), front: Optional[FrontFn] = None,
     cap = binding_cap(sizes, C, forced, qmax, segment_cap)
     if cap is not None and max(q_fit(sizes[a:b], C) or 0 for a, b in _segments(len(sizes), forced)) > cap:
         return None
-    if F <= C and all(0 < p < len(sizes) for p in forced):
+    if F <= C and all(0 < p < len(sizes) for p in forced) and not any(operand):
         return _fit(sizes, live, int(C), qf, qmax, forced)
     memo: Dict[int, Optional[Tuple[int, int]]] = {}
-    run = front or select_front(len(sizes))
+    run, held = front or select_front(len(sizes)), ({"operand": operand} if any(operand) else {})
 
     def f(r: int) -> Optional[Tuple[int, int]]:
         if r not in memo:
-            memo[r] = (run(sizes, live, C, r, qmax, forced) if cap is None else
-                       front_mincarry_store(sizes, live, C, r, qmax, forced, segment_cap=cap))
+            memo[r] = (run(sizes, live, C, r, qmax, forced, **held) if cap is None else
+                       front_mincarry_store(sizes, live, C, r, qmax, forced, segment_cap=cap, **held))
         return memo[r]
+
+    def fits(r: int) -> bool:  # [F3 round] the exact feasibility of the default fronts, without a front
+        if front is None and cap is None:
+            return plan_exists(sizes, C, r, qmax, forced, operand_bound(operand))
+        return f(r) is not None
+
+    known_floor: Dict[int, int] = {}  # per probed r, a carry its minimal plan is known not to be below
+
+    def below(r: int, ceiling: int) -> Optional[Tuple[int, int]]:  # [F3 round] a walk step's decision
+        if r in memo or front is not None or cap is not None or len(sizes) < STORE_MIN_UNITS:
+            got = f(r)
+            return got if got is not None and got[0] < ceiling else None
+        if known_floor.get(r, -1) >= ceiling:
+            return None
+        got = front_mincarry_below(sizes, live, C, r, qmax, forced, ceiling, operand=operand)
+        if got is None:
+            known_floor[r] = max(known_floor.get(r, 0), int(ceiling))
+            return None
+        memo[r] = got
+        return got
+
+    def decide(r: int, ceiling: int) -> bool:  # [F3 round] a walk step's search decision: the bound may decide it
+        if r in memo or known_floor.get(r, -1) >= ceiling or front is not None or cap is not None \
+                or len(sizes) < STORE_MIN_UNITS:
+            return below(r, ceiling) is not None
+        verdict = carries_below(sizes, live, C, r, qmax, forced, ceiling, operand=operand)
+        if verdict is False:
+            known_floor[r] = max(known_floor.get(r, 0), int(ceiling))
+        return below(r, ceiling) is not None if verdict is None else verdict
 
     lo = max(0, math.ceil((F - C) / (qmax - 1)))
     stateless = f(C)
     if stateless is None:
         return None
-    a, b = (lo, lo) if f(lo) is not None else (lo + 1, C)  # smallest feasible r (feasibility monotone in r)
+    a, b = (lo, lo) if fits(lo) else (lo + 1, C)  # smallest feasible r (feasibility monotone in r)
     while a < b:
         mid = (a + b) // 2
-        if f(mid) is None:
+        if not fits(mid):
             a = mid + 1
         else:
             b = mid
-    first = f(a)
-    assert first is not None
     return ResidencyStepFunction(stateless=stateless, q_fit=qf, F=F, fluid_r=(F - C) / max(1, qf - 1), C=int(C),
-                                 qmax=qmax, forced=forced, walk=StepWalk(f, int(C), (a, first[0], first[1])))
+                                 qmax=qmax, forced=forced, walk=StepWalk(f, int(C), a, below=below, decide=decide))
 
 
 def _segments(n: int, forced: Sequence[int]) -> List[Tuple[int, int]]:
@@ -279,10 +254,11 @@ def _fit(sizes, live, C, qf, qmax, forced) -> ResidencyStepFunction:
                                  walk=StepWalk(lambda r: (carry, qf), C, (0, carry, qf), done=True))
 
 
-def phase_partition(sizes, live, C, r, qmax, forced=(), *,
-                    segment_cap: Optional[int] = None) -> Optional[Tuple[Tuple[int, int], ...]]:
+def phase_partition(sizes, live, C, r, qmax, forced=(), *, segment_cap: Optional[int] = None,
+                    operand=()) -> Optional[Tuple[Tuple[int, int], ...]]:
     """The phases ``[(start, end), ...]`` of the plan the front answers at ``r`` (its minimal (carry, Q)), from the
-    store front with ``plan_steps``' cap and the pointer front's tie order."""
+    store front with ``plan_steps``' cap and the pointer front's tie order ([F3] ``operand`` as ``plan_steps``')."""
     sizes = tuple(int(s) for s in sizes)
     cap = binding_cap(sizes, C, forced, qmax, segment_cap)
-    return front_store(sizes, tuple(int(v) for v in live), C, r, qmax, forced, segment_cap=cap).path()
+    store = planned_store(sizes, tuple(int(v) for v in live), C, r, qmax, forced, segment_cap=cap, operand=operand)
+    return None if store is None else store.path()

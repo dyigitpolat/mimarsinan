@@ -222,6 +222,27 @@ def project_planned_passes(widths: Sequence[int], pass_members: Sequence[Sequenc
     return PlannedProjection(tuple(spans), tuple(extra))
 
 
+def delayed_reads(specs: Sequence[Any], nodes: Sequence[Any], unit_members: Sequence[Sequence[int]],
+                  segment_of: Sequence[int]) -> Tuple[Tuple[int, int, int, int, int], ...]:
+    """[F2] ``project_planned_passes``' delays on a plan's units, for the plan plane's replays: per read of a producer
+    by a spec of another unit of its segment (``nodes``' sources, spec indices), ``(producer width, producing unit,
+    reading unit, producer, delay)`` at the fused latencies over the specs' wires, for each producer read at more than
+    one delay (the only producers a pass replays: a pass reading one at k delays replays it k - 1 more times,
+    ``period_census.phase_replays``)."""
+    unit_of = {int(i): u for u, members in enumerate(unit_members) for i in members}
+    reads: Dict[int, Set[int]] = {i: set() for i in unit_of}
+    for node in nodes:
+        reads[int(node.core_id)].update(int(s) for s in node.sources
+                                        if int(s) in unit_of and segment_of[int(s)] == segment_of[int(node.core_id)])
+    fused = fused_latencies(reads)
+    rows = [(int(specs[p].output_count), unit_of[p], unit_of[c], p, fused[c] - 1 - fused[p])
+            for c in sorted(reads) for p in sorted(reads[c]) if unit_of[p] != unit_of[c]]
+    delays: Dict[int, Set[int]] = defaultdict(set)
+    for row in rows:
+        delays[row[3]].add(row[4])
+    return tuple(sorted(row for row in rows if len(delays[row[3]]) > 1))
+
+
 def replay_delays(stage) -> Dict[int, int]:
     return dict(getattr(stage, REPLAY_DELAYS, None) or {})
 

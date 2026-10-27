@@ -44,6 +44,23 @@ def dynamic_bank_ids(ir_graph: Any) -> FrozenSet[int]:
     return frozenset(int(b) for b in getattr(ir_graph, "dynamic_bank_bindings", {}) or {})
 
 
+def operand_cells_by_core(hard_core_mapping: Any, banks: Any) -> List[int]:
+    """Per hard core of one built segment, the cells of its bound-bank regions (0 for a static core): the payload the
+    producer writes every inference (N2), the cores the pinned rule never pins (F3)."""
+    return [sum(int(p["axons"]) * int(p["neurons"]) for p in placements
+                if p.get("weight_bank_id") is not None and int(p["weight_bank_id"]) in banks)
+            for placements in hard_core_mapping.soft_core_placements_per_hard_core]
+
+
+def payload_sources(ir_graph: Any) -> Dict[int, int]:
+    """{node id: the host op that writes its payload} for every instance of a bound bank. An instance reads it (the
+    value executor materializes it beside the stage's slices, ``stage_payload_sources``), so a program graph and its
+    depth segments count it among the instance's producers (F3)."""
+    bindings = getattr(ir_graph, "dynamic_bank_bindings", None) or {}
+    return {int(node.id): int(bindings[int(node.weight_bank_id)].source_node_id) for node in ir_graph.nodes
+            if getattr(node, "weight_bank_id", None) is not None and int(node.weight_bank_id) in bindings}
+
+
 def bound_instances(ir_graph: Any) -> Dict[int, List[Any]]:
     """{bank id: the NeuralCore instances reading it} for every bound bank."""
     banks = dynamic_bank_ids(ir_graph)

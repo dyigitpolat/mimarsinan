@@ -27,6 +27,7 @@ from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Set,
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
+from mimarsinan.mapping.ir.dynamic_bank import payload_sources
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
 from mimarsinan.mapping.layout.segmentation import compute_segment_ids
 from mimarsinan.mapping.platform.mapping_structure import PoolAdmissionError, ResidencyPlanError, residency_declaration
@@ -46,13 +47,15 @@ class ProgramGraph:
     @classmethod
     def of_ir(cls, ir_graph: Any, spec_of: Mapping[int, int]) -> "ProgramGraph":
         """The IR's program (``ir_graph.nodes``, the order ``partition_ir_graph`` reads), ``spec_of`` a neural
-        core's id to its spec index on the builder's plane."""
-        nodes = list(ir_graph.nodes)
+        core's id to its spec index on the builder's plane; [F3] an operand bank's instance also reads the host op
+        writing its payload (``dynamic_bank.payload_sources``)."""
+        nodes, payload = list(ir_graph.nodes), payload_sources(ir_graph)
         return cls(
             ids=tuple(int(n.id) for n in nodes),
             specs=tuple(int(spec_of[int(n.id)]) if isinstance(n, NeuralCore) else None for n in nodes),
             producers=tuple(frozenset(int(s.node_id) for s in np.asarray(n.input_sources, dtype=object).ravel()
-                                      if isinstance(s, IRSource) and s.node_id >= 0) for n in nodes),
+                                      if isinstance(s, IRSource) and s.node_id >= 0)
+                            | frozenset([payload[int(n.id)]] if int(n.id) in payload else []) for n in nodes),
         )
 
     @classmethod
@@ -65,8 +68,10 @@ class ProgramGraph:
         walk: a ``LayoutSourceView`` keeps every producer of a view it slices (tier-0 t0_01: IR node 33 reads [1], its
         recorded set is [1, ..., 12]). A host op's producers are the recorded set, the walk holding no census for it:
         the IR's on ``IRMapping``; on the deferred walk a host op reading a slice of a multi-producer view records a
-        superset (t0_30: 96 of 99 host ops, their producers at one depth). They feed only the depth segments, which
-        ``require_depth_segments`` ties to the plane's spec segments. A walk without the census refuses by name."""
+        superset (t0_30: 96 of 99 host ops, their producers at one depth). [F3] An operand bank's instance also reads
+        the host op that writes its payload (the walk's ``dynamic_bank_bindings``, by its spec's bank), as the walk's
+        spec segments count it. They feed only the depth segments, which ``require_depth_segments`` ties to the plane's
+        spec segments. A walk without the census refuses by name."""
         if not getattr(mapping, "collect_wire_census", False):
             raise ResidencyPlanError(
                 "residency_plan: the program graph reads the layout walk's wire census (a neural node's producers are "
@@ -77,9 +82,15 @@ class ProgramGraph:
         reads: Mapping[int, Set[int]] = mapping._node_input_node_ids
         cells: Mapping[int, Tuple[Mapping[int, int], int, int]] = mapping._node_wire_census
         ids = sorted(int(i) for i in neural)
+        bindings = getattr(mapping, "dynamic_bank_bindings", None) or {}
+        writer = {int(bank): int(binding.source_node_id) for bank, binding in bindings.items()}
+        specs = getattr(mapping, "layout_softcores", None) or ()
+        banks = {i: getattr(specs[int(to_spec[i])], "bank_id", None) for i in ids
+                 if writer and neural[i] and int(to_spec[i]) < len(specs)}
+        payload = {i: writer[int(b)] for i, b in banks.items() if b is not None and int(b) in writer}
         return cls(ids=tuple(ids), specs=tuple(int(to_spec[i]) if neural[i] else None for i in ids),
                    producers=tuple(frozenset(int(p) for p in (cells[i][0] if neural[i] else reads.get(i, ())))
-                                   for i in ids))
+                                   | frozenset([payload[i]] if i in payload else []) for i in ids))
 
     def node_of_spec(self) -> Dict[int, int]:
         return {int(s): i for i, s in zip(self.ids, self.specs) if s is not None}

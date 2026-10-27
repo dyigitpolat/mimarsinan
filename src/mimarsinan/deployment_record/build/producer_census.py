@@ -10,16 +10,10 @@ of L instances is written L times per inference on the program the packer builds
 
 from __future__ import annotations
 
-from typing import Any, List, Mapping, Sequence, Tuple
+from typing import Any, List, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.write_census import WriteCensusError
-
-
-def operand_cells_by_core(hard_core_mapping: Any, banks: Mapping) -> List[int]:
-    """Per hard core of one built segment, the cells of its bound-bank regions (0 for a static core)."""
-    return [sum(int(p["axons"]) * int(p["neurons"]) for p in placements
-                if p.get("weight_bank_id") is not None and int(p["weight_bank_id"]) in banks)
-            for placements in hard_core_mapping.soft_core_placements_per_hard_core]
+from mimarsinan.mapping.ir.dynamic_bank import operand_cells_by_core as operand_cells_by_core  # one rule (F3)
 
 
 def candidate_operand_cells(softcores: Sequence[Any], placements: Sequence[Tuple[int, int]], cores: Sequence[int],

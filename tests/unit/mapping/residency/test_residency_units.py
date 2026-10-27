@@ -68,12 +68,14 @@ class TestUnits:
         assert units.forced == (2,)
         assert units.live == (8, 0, 8, 0)
 
-    def test_a_layer_order_that_is_not_a_program_order_refuses_by_name(self):
-        # layer 0 holds specs 0 and 2, and spec 2 reads spec 1 of layer 1: no pass order runs layer 0 first
+    def test_a_layer_order_that_is_not_a_program_order_plans_in_the_unit_graphs_order(self):
+        # [F2] layer 0 holds specs 0 and 2, and spec 2 reads spec 1 of layer 1: no pass order runs layer 0 first, so
+        # the units run in a topological order of the unit graph (a pass may hold part of a layer); a strongly
+        # connected set of units would be one unit (``test_unit_order``)
         specs, nodes, seg = _chain([0, 1, 0])
-        with pytest.raises(ResidencyPlanError, match="not a program order") as caught:
-            residency_units(specs, nodes, CORE, segments=seg)
-        assert isinstance(caught.value, ToolchainRefusal)
+        units = residency_units(specs, nodes, CORE, segments=seg)
+        assert units.members == ((0,), (1,), (2,)) and units.layers == (0, 1, 0)
+        assert units.live == (8, 8, 0)
 
     def test_a_core_without_a_layer_joins_the_layer_it_feeds(self):
         specs, nodes, seg = _chain([0, None, 1])

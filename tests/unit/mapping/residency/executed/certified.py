@@ -8,7 +8,9 @@ Planes of one executed program at its executed step:
 - candidate: the search plane's census (``collect_noc_fragments`` on the deferred layout walk of the model, then
   ``candidate_program_passes``).
 The compute steps are each plane's own statement (the record's measured or unstated, the candidate's window, the
-plan's none), so they are not compared; a boundary that carries 0 bytes is the same as no boundary.
+plan's none), so they are not compared; a boundary that carries 0 bytes is the same as no boundary. [Residency unit,
+fix round] With ``candidate_refusal`` a refusal by name of the shape-only plane under the declared plan is recorded
+beside the record and plan planes instead of raised (K12 reads those two; the candidate plane is printed beside them).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.chip_simulation.value_run.int64_golden import run_golden
 from mimarsinan.deployment_record.build.payload_sizes import params_bytes
 from mimarsinan.deployment_record.build.program_census import (
@@ -124,11 +127,16 @@ class Planes:
     candidate: Any
     composition: Any
     sealed: Any = None
+    #: [Fix round] The shape-only plane's refusal by name of the declared plan (``planes(candidate_refusal=True)``;
+    #: the candidate is then None), else None.
+    candidate_refusal: Optional[str] = None
 
 
 def planes(hybrid: Any, ir: Any, deferred: Walk, platform: Mapping[str, Any], residency_plan: Mapping[str, Any],
-           *, timesteps: Optional[int], semantics: Any, sealed_record: Any = None) -> Planes:
-    """The record, plan and candidate censuses of ``hybrid``, built from ``ir`` under ``residency_plan``."""
+           *, timesteps: Optional[int], semantics: Any, sealed_record: Any = None,
+           candidate_refusal: bool = False) -> Planes:
+    """The record, plan and candidate censuses of ``hybrid``, built from ``ir`` under ``residency_plan``; with
+    ``candidate_refusal`` a refusal by name of the candidate plane is recorded (``Planes.candidate_refusal``)."""
     caps = ChipCapabilities.from_platform_constraints({**platform, "residency_plan": dict(residency_plan)})
     core_types = core_types_from_declaration(platform["cores"])
     bits = int(platform["weight_bits"])
@@ -142,15 +150,21 @@ def planes(hybrid: Any, ir: Any, deferred: Walk, platform: Mapping[str, Any], re
     plan = facts_period_census(composition.facts, forced=composition.units.forced,
                                bytes_of_cells=lambda cells: params_bytes(cells, bits), tile_cells=0,
                                bytes_per_element=bytes_per_element(platform, timesteps), label="plan")
-    fragments = collect_noc_fragments(softcores=deferred.specs, core_types=core_types, census=deferred.census,
-                                      program=deferred.graph, **caps.layout_kwargs())
+    refusal = None
+    try:
+        fragments = collect_noc_fragments(softcores=deferred.specs, core_types=core_types, census=deferred.census,
+                                          program=deferred.graph, **caps.layout_kwargs())
+    except ToolchainRefusal as exc:
+        if not candidate_refusal:
+            raise
+        fragments, refusal = None, f"{type(exc).__name__}: {exc}"
     sealed = None if sealed_record is None else census(
         record_program_passes(sealed_record), "sealed record", sealed_record.identity.platform,
         sealed_record.utilization.crossbar.weight_bits, int(sealed_record.timing.s_global))
-    return Planes(record=census(mapping_program_passes(hybrid), "record"), plan=plan,
-                  candidate=census(candidate_program_passes(deferred.specs, fragments, semantics=semantics,
-                                                            timesteps=timesteps), "candidate"),
-                  composition=composition, sealed=sealed)
+    candidate = None if fragments is None else census(
+        candidate_program_passes(deferred.specs, fragments, semantics=semantics, timesteps=timesteps), "candidate")
+    return Planes(record=census(mapping_program_passes(hybrid), "record"), plan=plan, candidate=candidate,
+                  composition=composition, sealed=sealed, candidate_refusal=refusal)
 
 
 def executed_marks(hybrid: Any) -> List[Tuple[int, ...]]:

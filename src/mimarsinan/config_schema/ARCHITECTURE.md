@@ -196,11 +196,10 @@ both planes refuse a declared true there by name (`legal_value_set`).
 `registry/core_type_doors.py` holds the core-type door rules both doors call over the layout they judge, beside the
 platform bias rule: `platform_sign_errors` (per-axon weight sign under float weights or beside an operand core type;
 moved from `entries_write`, which re-exports it), `platform_lane_errors` (executed lanes beside an operand core type,
-`mapping/lanes/declaration.lane_operand_conflict`) and [fix round of integration pass 2, exactness review F2 and F3]
-`platform_residency_errors` (a declared `residency_plan` beside an operand core type, under the builder's own message,
-or beside executed fused-add lanes, class E on the integer path, whose lane cores the residency planner's layer-order
-units hold in no program order: `mapping/support/residency_declaration.residency_plan_conflicts`);
-`declaration_judge._layout_errors` calls all three.
+`mapping/lanes/declaration.lane_operand_conflict`); `declaration_judge._layout_errors` calls both. [exactness review
+F2 and F3] A declared `residency_plan` is admitted beside executed lanes of every class and beside an operand core type
+(the planner orders its units by the layer graph and states which cores hold operand banks), so no residency-plan rule
+is left at the doors.
 
 ## Key files
 | File | Purpose |

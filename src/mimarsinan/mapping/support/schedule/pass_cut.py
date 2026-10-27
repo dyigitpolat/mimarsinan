@@ -187,10 +187,23 @@ class PassCut:
 
     def live_at(self, boundary: int) -> Tuple[CarriedWire, ...]:
         """The wires that must still be held across boundary ``boundary``."""
-        return tuple(w for w in self.carried if boundary in w.live_boundaries)
+        return tuple(w for w in self.carried if w.produced_in <= boundary < w.last_consumed_in)
 
     def cut_width(self, boundary: int) -> int:
         return sum(w.width for w in self.live_at(boundary))
+
+    def cut_widths(self) -> Tuple[int, ...]:
+        """``cut_width`` of every boundary ``0 .. pass_count - 2`` in one pass over the wires (each adds its width at
+        the boundary after its producing pass and removes it at the boundary after its last consuming pass)."""
+        delta = [0] * max(self.pass_count, 1)
+        for w in self.carried:
+            delta[w.produced_in] += w.width
+            delta[w.last_consumed_in] -= w.width
+        out, acc = [], 0
+        for d in delta[:max(self.pass_count - 1, 0)]:
+            acc += d
+            out.append(acc)
+        return tuple(out)
 
     def carried_bytes(self, timesteps: int) -> int:
         """Total raster payload written across every boundary of this segment."""

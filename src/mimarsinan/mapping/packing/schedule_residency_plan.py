@@ -9,6 +9,7 @@ import numpy as np
 
 from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
 from mimarsinan.mapping.ir import IRSource, NeuralCore
+from mimarsinan.mapping.ir.dynamic_bank import dynamic_bank_ids, operand_cells_by_core, payload_sources
 from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.mapping.layout.segmentation import HostSegment, NeuralSegment, Segment, compute_segment_ids
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
@@ -85,16 +86,21 @@ def _runs(values) -> str:
 
 @dataclass(frozen=True)
 class BuilderComposition:
-    """The composition on the builder's plane: per neural segment its passes of IR cores."""
+    """The composition on the builder's plane: per neural segment its passes of IR cores, and [F3] the program's
+    dynamic operand banks (the built cores holding them are never pinned)."""
 
     composition: ResidencyComposition
     chunks: Tuple[Tuple[Tuple[Any, ...], ...], ...]
+    operand_banks: FrozenSet[int] = frozenset()
 
 
 def _producers(ir_graph: Any) -> Dict[int, Set[int]]:
+    """Per node the nodes it reads: its input sources and [F3] the host op writing its payload (``payload_sources``)."""
+    payload = payload_sources(ir_graph)
     return {
         int(node.id): {int(s.node_id) for s in np.asarray(node.input_sources, dtype=object).ravel()
-                       if isinstance(s, IRSource) and s.node_id >= 0}
+                       if isinstance(s, IRSource) and s.node_id >= 0} | ({payload[int(node.id)]}
+                                                                          if int(node.id) in payload else set())
         for node in ir_graph.nodes
     }
 
@@ -154,13 +160,14 @@ def compose_builder_program(
     by_segment = composition.segment_passes()
     chunks = tuple(tuple(tuple(cores[i] for i in members) for members in by_segment.get(ordinal, []))
                    for ordinal in range(len(neural_segments)))
-    return BuilderComposition(composition=composition, chunks=chunks)
+    return BuilderComposition(composition=composition, chunks=chunks, operand_banks=dynamic_bank_ids(ir_graph))
 
 
 def mark_residency_plan(pass_stages: Sequence[Any], builder: BuilderComposition,
                         cores_config: Sequence[dict]) -> Tuple[ResidencySegmentPlan, ...]:
-    """Pin each executed pass's cores by the one pinned rule, check the fit on the declared pool, record
-    each pass beside the composition's plan of it, and return the plan per segment."""
+    """Pin each executed pass's cores by the one pinned rule (never a core holding an operand bank [F3]), check the
+    fit on the declared pool, record each pass beside the composition's plan of it, and return the plan per
+    segment."""
     comp = builder.composition
     if len(pass_stages) != len(comp.facts.phases):
         raise ResidencyPlanError(f"residency_plan: {len(pass_stages)} built passes for {len(comp.facts.phases)} "
@@ -170,7 +177,8 @@ def mark_residency_plan(pass_stages: Sequence[Any], builder: BuilderComposition,
     payloads = [[CoreOccupancy.from_hard_core(core).cells_used for core in hcm.cores] for hcm in hcms]
     types = [[core_type_tiles(core.axons_per_core, core.neurons_per_core, declared,
                               getattr(core, "fused_component_axons", None)) for core in hcm.cores] for hcm in hcms]
-    pins = pin_program(payloads, types, comp.r, comp.budget)
+    producer = [operand_cells_by_core(hcm, builder.operand_banks) for hcm in hcms] if builder.operand_banks else ()
+    pins = pin_program(payloads, types, comp.r, comp.budget, producer)
     check_pinned_fit(types, pins, declared_pool(declared))
     for q, (stage, pin) in enumerate(zip(pass_stages, pins)):
         setattr(stage, SCHEDULE_RESIDENT_CORES, frozenset(pin))

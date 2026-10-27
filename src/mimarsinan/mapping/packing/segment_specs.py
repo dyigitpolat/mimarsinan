@@ -9,6 +9,7 @@ from dataclasses import replace
 from typing import Sequence
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
+from mimarsinan.mapping.ir.lane_law import operand_axons
 from mimarsinan.mapping.layout.softcore_spec_adapter import (
     spec_at_compacted_extent,
     spec_at_deployed_extent,
@@ -42,21 +43,31 @@ def _segment_specs(
     keep a wide fan-in's fragments in one pass. Every spec is sized by the
     post-compaction extent: elimination reaches the pass ladder only if a
     pruned instance is budgeted for what it occupies.
+
+    [F2] The spec is chosen per core: a core's layout record where it has one,
+    the reconstruction only for a core without one (a core inserted after the
+    layout walk: a lane fusion's pool cores, a depth-balancing relay), whose
+    ungrouped residency ids then follow the records' so no two collide. A
+    record predates the rows a lane fusion adds: its extent gains the core's
+    operand rows, and every spec states them (``operand_axons``), so the planner
+    packs the axons the builder places and counts the cells the record counts.
+    The order facts the capacity split reads (``segment_id``, ``latency_tag``)
+    have one source per segment: the records' where every core has one, else
+    every core's reconstruction (the records' predate the inserted cores).
     """
     global _SPLIT_FALLBACK_LOGGED
     if not cores:
         return [], {}, []
 
     layout_specs = list(getattr(ir_graph, "layout_softcores", None) or [])
-    use_layout = bool(layout_specs) and all(
-        getattr(c, "layout_softcore_index", None) is not None for c in cores
-    )
+    recorded = [bool(layout_specs) and getattr(c, "layout_softcore_index", None) is not None for c in cores]
+    fallback_base, mixed = (len(layout_specs) if any(recorded) else 0), any(recorded) and not all(recorded)
 
     specs: list = []
     coalescing_group_ids: list[int | None] = []
     spec_to_core: dict[int, NeuralCore] = {}
     for idx, core in enumerate(cores):
-        if use_layout:
+        if recorded[idx]:
             sc_idx = int(core.layout_softcore_index)  # type: ignore[arg-type]
             spec = spec_at_compacted_extent(layout_specs[sc_idx], core)
             # [W04] The class the packer reads on this core's soft core (a segment subgraph carries no layout record:
@@ -64,11 +75,16 @@ def _segment_specs(
             # packer keeps apart, and the build refused its own plan (``PlannedPassPackingRefusal``).
             spec = replace(spec, residency_basis=BASIS_PROVENANCE, residency_class_id=provenance_group_id(
                 getattr(core, "perceptron_index", None), fallback=ungrouped_fallback_id(sc_idx)))
+            if operand_axons(core):
+                spec = replace(spec, input_count=int(spec.input_count) + operand_axons(core))
+            if mixed:
+                rebuilt = spec_from_neural_core(core, hardware_bias=hardware_bias, fallback_residency_class_id=0)
+                spec = replace(spec, segment_id=rebuilt.segment_id, latency_tag=rebuilt.latency_tag)
         else:
             if not _SPLIT_FALLBACK_LOGGED:
                 logging.getLogger(__name__).warning(
                     "Scheduled split: reconstructing LayoutSoftCoreSpec from NeuralCore "
-                    "(missing IRGraph.layout_softcores); input_count may diverge from SCM, "
+                    "(a core without an IRGraph.layout_softcores record); input_count may diverge from SCM, "
                     "and residency classes fall back to the source-perceptron proxy "
                     "(residency_basis=provenance_fallback) rather than the core values."
                 )
@@ -76,7 +92,7 @@ def _segment_specs(
             spec = spec_from_neural_core(
                 core,
                 hardware_bias=hardware_bias,
-                fallback_residency_class_id=ungrouped_fallback_id(idx),
+                fallback_residency_class_id=ungrouped_fallback_id(fallback_base + idx),
             )
         spec = spec_at_deployed_extent(spec, core, sign_granularity, graph=ir_graph)
         bank_id = None if sign_granularity == PER_AXON else getattr(core, "weight_bank_id", None)
@@ -84,6 +100,8 @@ def _segment_specs(
             # The core is the authority on bank identity: a layout spec that
             # predates bank stamping must not silently disqualify residency.
             spec = replace(spec, bank_id=int(bank_id))
+        if operand_axons(core):
+            spec = replace(spec, operand_axons=operand_axons(core))
         specs.append(spec)
         coalescing_group_ids.append(getattr(core, "coalescing_group_id", None))
         spec_to_core[id(spec)] = core

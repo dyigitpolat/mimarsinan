@@ -70,7 +70,8 @@ def boundary_crossings(crossings: Iterable[Tuple[int, int, int]],
     read out after its producing pass and re-injected before its last consuming pass, one crossing per direction
     however many boundaries it lives across (the dense census); boundary ``p`` follows pass ``p``. [U1 W10]
     ``replayed``: ``(width, reading pass)`` per delayed slice beyond one per producer and pass (the builder replays a
-    carried producer once per delivery delay), one more re-injection before its reading pass; none on a plan."""
+    carried producer once per delivery delay), one more re-injection before its reading pass; a plan's are
+    ``phase_replays`` [F2]."""
     out: Dict[int, int] = {}
     inbound: Dict[int, int] = {}
     for width, produced, consumed in crossings:
@@ -81,14 +82,29 @@ def boundary_crossings(crossings: Iterable[Tuple[int, int, int]],
     return tuple((p, out.get(p, 0), inbound.get(p, 0)) for p in sorted(set(out) | set(inbound)))
 
 
-def phase_crossings(unit_spans: Iterable[Tuple[int, int, int]], phases: Iterable[Tuple[int, int]]
-                    ) -> Tuple[Tuple[int, int], ...]:
+def phase_replays(delayed_reads: Iterable[Tuple[int, int, int, int, int]], phases: Iterable[Tuple[int, int]]
+                  ) -> Tuple[Tuple[int, int], ...]:
+    """[F2] A plan's ``replayed`` slices, ``(width, reading pass)``: the units' delayed reads ``(producer width,
+    producing unit, reading unit, producer, delay)`` (``pass_timing.delayed_reads``) on the passes' unit ranges, k - 1
+    per pass that reads a producer of an earlier pass at k delays, the builder's rule (``project_planned_passes``)."""
+    phase_of = {u: q for q, (a, b) in enumerate(phases) for u in range(int(a), int(b))}
+    seen: Dict[Tuple[int, int], Tuple[int, set]] = {}
+    for width, produced, read, producer, delay in delayed_reads:
+        if phase_of[int(produced)] < phase_of[int(read)]:
+            seen.setdefault((int(producer), phase_of[int(read)]), (int(width), set()))[1].add(int(delay))
+    return tuple((w, q) for (_p, q), (w, delays) in sorted(seen.items()) for _ in range(len(delays) - 1))
+
+
+def phase_crossings(unit_spans: Iterable[Tuple[int, int, int]], phases: Iterable[Tuple[int, int]],
+                    delayed_reads: Iterable[Tuple[int, int, int, int, int]] = ()) -> Tuple[Tuple[int, int], ...]:
     """[W03] Per boundary of a plan's passes, (elements read out, elements re-injected) by ``boundary_crossings``:
-    the carried spans on units ``(width, producing unit, last consuming unit)`` mapped onto the passes' unit ranges."""
+    the carried spans on units ``(width, producing unit, last consuming unit)`` mapped onto the passes' unit ranges,
+    and [F2] the replays of the units' ``delayed_reads`` (``phase_replays``), as the record and candidate planes."""
     bounds = list(phases)
     phase_of = {u: q for q, (a, b) in enumerate(bounds) for u in range(int(a), int(b))}
     by = {p: (o, i) for p, o, i in boundary_crossings(
-        (w, phase_of[int(p)], phase_of[int(c)]) for w, p, c in unit_spans if phase_of[int(p)] != phase_of[int(c)])}
+        ((w, phase_of[int(p)], phase_of[int(c)]) for w, p, c in unit_spans if phase_of[int(p)] != phase_of[int(c)]),
+        phase_replays(delayed_reads, bounds))}
     return tuple(by.get(q, (0, 0)) for q in range(max(0, len(bounds) - 1)))
 
 

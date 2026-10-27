@@ -1,0 +1,879 @@
+{
+ "cases": {
+  "chain@5:floor": {
+   "marks": "7effbb9eb1e3b6250b32bda9f6656f786e8391bfc73e575883b28ba262d01635",
+   "passes": 7,
+   "plan_carry": {
+    "0": [
+     8,
+     0
+    ],
+    "1": [
+     8,
+     16
+    ],
+    "2": [
+     24,
+     24
+    ],
+    "3": [
+     16,
+     0
+    ],
+    "4": [
+     8,
+     16
+    ],
+    "5": [
+     8,
+     16
+    ]
+   },
+   "plan_census": "d64c8f338ccd56b825322b10fb4d2884b37c2afb42e98f1f962d989ec3151463",
+   "plan_rows": [
+    {
+     "carried_elements": 208,
+     "core_budget": 5,
+     "passes": 7,
+     "rotating_tiles": 1,
+     "segment_index": 0,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 11,
+     "written_tiles": 7
+    }
+   ],
+   "record_carry": {
+    "0": [
+     8,
+     0
+    ],
+    "1": [
+     8,
+     16
+    ],
+    "2": [
+     24,
+     24
+    ],
+    "3": [
+     16,
+     0
+    ],
+    "4": [
+     8,
+     16
+    ],
+    "5": [
+     8,
+     16
+    ]
+   },
+   "record_census": "d64c8f338ccd56b825322b10fb4d2884b37c2afb42e98f1f962d989ec3151463",
+   "unit_count": 11,
+   "units": "7a05639afe16500072331e475e6a5f8211e76ea93036dafe404a90f5790c6495"
+  },
+  "chain@5:stateless": {
+   "marks": "5ae1625b488b3935122d8dd627fe575b388a5aa360378fa4407aad08baaed1e2",
+   "passes": 3,
+   "plan_carry": {
+    "0": [
+     8,
+     8
+    ],
+    "1": [
+     24,
+     24
+    ]
+   },
+   "plan_census": "0172acdd1c2d8ca99dcf7f421189d4a78941856d710a2c11be666fe2fbae1d2f",
+   "plan_rows": [
+    {
+     "carried_elements": 64,
+     "core_budget": 5,
+     "passes": 3,
+     "rotating_tiles": 5,
+     "segment_index": 0,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 11,
+     "written_tiles": 11
+    }
+   ],
+   "record_carry": {
+    "0": [
+     8,
+     8
+    ],
+    "1": [
+     24,
+     24
+    ]
+   },
+   "record_census": "0172acdd1c2d8ca99dcf7f421189d4a78941856d710a2c11be666fe2fbae1d2f",
+   "unit_count": 11,
+   "units": "7a05639afe16500072331e475e6a5f8211e76ea93036dafe404a90f5790c6495"
+  },
+  "chain@6:floor": {
+   "marks": "a56237cbb19a58a4aac3f8291f0a0e70a2e384b9e2ed01045d08f620aab3cca0",
+   "passes": 6,
+   "plan_carry": {
+    "0": [
+     8,
+     0
+    ],
+    "1": [
+     8,
+     16
+    ],
+    "2": [
+     16,
+     0
+    ],
+    "3": [
+     8,
+     16
+    ],
+    "4": [
+     8,
+     16
+    ]
+   },
+   "plan_census": "2e9372ea9752beac47a96130b8e11b92073b25afc0d35d38fdc56b9bbb62c2d0",
+   "plan_rows": [
+    {
+     "carried_elements": 160,
+     "core_budget": 6,
+     "passes": 6,
+     "rotating_tiles": 1,
+     "segment_index": 0,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 11,
+     "written_tiles": 6
+    }
+   ],
+   "record_carry": {
+    "0": [
+     8,
+     0
+    ],
+    "1": [
+     8,
+     16
+    ],
+    "2": [
+     16,
+     0
+    ],
+    "3": [
+     8,
+     16
+    ],
+    "4": [
+     8,
+     16
+    ]
+   },
+   "record_census": "2e9372ea9752beac47a96130b8e11b92073b25afc0d35d38fdc56b9bbb62c2d0",
+   "unit_count": 11,
+   "units": "7a05639afe16500072331e475e6a5f8211e76ea93036dafe404a90f5790c6495"
+  },
+  "chain@6:stateless": {
+   "marks": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+   "passes": 2,
+   "plan_carry": {
+    "0": [
+     24,
+     24
+    ]
+   },
+   "plan_census": "1e4ec31adf288fcf8c0eb1c77c5fb4ac0947e37cbe3e973091a1104207b3f1d1",
+   "plan_rows": [
+    {
+     "carried_elements": 48,
+     "core_budget": 6,
+     "passes": 2,
+     "rotating_tiles": 6,
+     "segment_index": 0,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 11,
+     "written_tiles": 11
+    }
+   ],
+   "record_carry": {
+    "0": [
+     24,
+     24
+    ]
+   },
+   "record_census": "1e4ec31adf288fcf8c0eb1c77c5fb4ac0947e37cbe3e973091a1104207b3f1d1",
+   "unit_count": 11,
+   "units": "7a05639afe16500072331e475e6a5f8211e76ea93036dafe404a90f5790c6495"
+  },
+  "chain@8:floor": {
+   "marks": "77be9b9f53bb8d16d0c6de072c12488dd6ba6c4125b8b414abaa2a2a8fd90ea9",
+   "passes": 4,
+   "plan_carry": {
+    "0": [
+     8,
+     8
+    ],
+    "1": [
+     16,
+     16
+    ],
+    "2": [
+     16,
+     16
+    ]
+   },
+   "plan_census": "5d98a0d56ea9c5143e71313114ffdb893bd885aaa902ea2da52103505bb9d4fa",
+   "plan_rows": [
+    {
+     "carried_elements": 80,
+     "core_budget": 8,
+     "passes": 4,
+     "rotating_tiles": 1,
+     "segment_index": 0,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 11,
+     "written_tiles": 4
+    }
+   ],
+   "record_carry": {
+    "0": [
+     8,
+     8
+    ],
+    "1": [
+     16,
+     16
+    ],
+    "2": [
+     16,
+     16
+    ]
+   },
+   "record_census": "5d98a0d56ea9c5143e71313114ffdb893bd885aaa902ea2da52103505bb9d4fa",
+   "unit_count": 11,
+   "units": "7a05639afe16500072331e475e6a5f8211e76ea93036dafe404a90f5790c6495"
+  },
+  "chain@8:stateless": {
+   "marks": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+   "passes": 2,
+   "plan_carry": {
+    "0": [
+     16,
+     16
+    ]
+   },
+   "plan_census": "ad608fa1b33df7903b84a4b2c7436b3d75919dac7488ae54433063a194b0661c",
+   "plan_rows": [
+    {
+     "carried_elements": 32,
+     "core_budget": 8,
+     "passes": 2,
+     "rotating_tiles": 8,
+     "segment_index": 0,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 11,
+     "written_tiles": 11
+    }
+   ],
+   "record_carry": {
+    "0": [
+     16,
+     16
+    ]
+   },
+   "record_census": "ad608fa1b33df7903b84a4b2c7436b3d75919dac7488ae54433063a194b0661c",
+   "unit_count": 11,
+   "units": "7a05639afe16500072331e475e6a5f8211e76ea93036dafe404a90f5790c6495"
+  },
+  "deep_skip@5:floor": {
+   "marks": "a9da3d21b15816ed3e58e3793166dc4869bcb5cc08495a4b058b9ba6d69b1d0f",
+   "passes": 6,
+   "plan_carry": {
+    "0": [
+     8,
+     8
+    ],
+    "1": [
+     16,
+     16
+    ],
+    "2": [
+     16,
+     16
+    ],
+    "3": [
+     16,
+     16
+    ],
+    "4": [
+     8,
+     8
+    ]
+   },
+   "plan_census": "c8ee65ffc57a83685568a21a2ee3f808332b920c5ca5a2401b46fdb784dbad59",
+   "plan_rows": [
+    {
+     "carried_elements": 128,
+     "core_budget": 5,
+     "passes": 6,
+     "rotating_tiles": 1,
+     "segment_index": 0,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 10,
+     "written_tiles": 6
+    }
+   ],
+   "record_carry": {
+    "0": [
+     8,
+     16
+    ],
+    "1": [
+     16,
+     16
+    ],
+    "2": [
+     16,
+     16
+    ],
+    "3": [
+     16,
+     16
+    ],
+    "4": [
+     8,
+     8
+    ]
+   },
+   "record_census": "84b13144440af6d5017043ff857e999b04f4da8f7fe171a2a8817a094e1bed9a",
+   "unit_count": 10,
+   "units": "08cdc4aa4cb67333de544b8107ee47ca465e0258354b942a1d00cf941d78a36a"
+  },
+  "deep_skip@5:stateless": {
+   "marks": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+   "passes": 2,
+   "plan_carry": {
+    "0": [
+     24,
+     24
+    ]
+   },
+   "plan_census": "d78c36d43afa85adcbba4b66f4357274b90029df654c7274202eb6a074dc3ff9",
+   "plan_rows": [
+    {
+     "carried_elements": 48,
+     "core_budget": 5,
+     "passes": 2,
+     "rotating_tiles": 5,
+     "segment_index": 0,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 10,
+     "written_tiles": 10
+    }
+   ],
+   "record_carry": {
+    "0": [
+     24,
+     24
+    ]
+   },
+   "record_census": "d78c36d43afa85adcbba4b66f4357274b90029df654c7274202eb6a074dc3ff9",
+   "unit_count": 10,
+   "units": "08cdc4aa4cb67333de544b8107ee47ca465e0258354b942a1d00cf941d78a36a"
+  },
+  "lane_L@None:floor": {
+   "marks": "8870a385346d4f48650dbd43fa033003be6bad163c24b4b61ac1ac2e42ede7ce",
+   "passes": 13,
+   "plan_carry": {
+    "0": [
+     576,
+     0
+    ],
+    "1": [
+     576,
+     0
+    ],
+    "2": [
+     576,
+     1728
+    ],
+    "3": [
+     1864,
+     584
+    ],
+    "4": [
+     0,
+     568
+    ],
+    "5": [
+     0,
+     712
+    ],
+    "7": [
+     576,
+     256
+    ],
+    "8": [
+     448,
+     512
+    ],
+    "9": [
+     0,
+     256
+    ]
+   },
+   "plan_census": "f8599e04a1676bb52632a816fc5dd2b76ad5daba684aa0e06d2a3a42be2bd08b",
+   "plan_rows": [
+    {
+     "carried_elements": 14624,
+     "core_budget": 1058,
+     "passes": 7,
+     "rotating_tiles": 192,
+     "segment_index": 0,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 3173,
+     "written_tiles": 2307
+    },
+    {
+     "carried_elements": 3200,
+     "core_budget": 1058,
+     "passes": 5,
+     "rotating_tiles": 192,
+     "segment_index": 1,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 3173,
+     "written_tiles": 2307
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 1058,
+     "passes": 1,
+     "rotating_tiles": 192,
+     "segment_index": 2,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 3173,
+     "written_tiles": 2307
+    }
+   ],
+   "record_carry": {
+    "0": [
+     576,
+     0
+    ],
+    "1": [
+     576,
+     0
+    ],
+    "2": [
+     576,
+     1728
+    ],
+    "3": [
+     1864,
+     584
+    ],
+    "4": [
+     0,
+     568
+    ],
+    "5": [
+     0,
+     712
+    ],
+    "7": [
+     576,
+     256
+    ],
+    "8": [
+     448,
+     512
+    ],
+    "9": [
+     0,
+     256
+    ]
+   },
+   "record_census": "d8da70411d583e20deda128ba61b3ca0583b26585e54fece862cef9ad3e97be1",
+   "unit_count": 290,
+   "units": "cc340174998a7399bc69d38d0e8e6669da71d859e16752ebb0c056d506a2913c"
+  },
+  "lane_L@None:stateless": {
+   "marks": "be8a1bbaee025d5501a33340bd5d4e547d41835268267e671efcd939c6856fe3",
+   "passes": 5,
+   "plan_carry": {
+    "0": [
+     2176,
+     2176
+    ]
+   },
+   "plan_census": "1c45982ee5a4738255619a41ae6584e6bf172b8659f74b6ddaedb069da282894",
+   "plan_rows": [
+    {
+     "carried_elements": 4352,
+     "core_budget": 1058,
+     "passes": 2,
+     "rotating_tiles": 1058,
+     "segment_index": 0,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 3173,
+     "written_tiles": 3173
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 1058,
+     "passes": 2,
+     "rotating_tiles": 1058,
+     "segment_index": 1,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 3173,
+     "written_tiles": 3173
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 1058,
+     "passes": 1,
+     "rotating_tiles": 1058,
+     "segment_index": 2,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 3173,
+     "written_tiles": 3173
+    }
+   ],
+   "record_carry": {
+    "0": [
+     2176,
+     2176
+    ]
+   },
+   "record_census": "d1a1957b171430b9819c98167b0d992f2c76be31511b242e9e3c1393a6ad30b5",
+   "unit_count": 290,
+   "units": "cc340174998a7399bc69d38d0e8e6669da71d859e16752ebb0c056d506a2913c"
+  },
+  "late_skip@2:floor": {
+   "marks": "bb5d919a3b6872a195514cce3518d131c5657fe7efbe7df39254159bf1f3801c",
+   "passes": 4,
+   "plan_carry": {
+    "0": [
+     8,
+     8
+    ],
+    "1": [
+     8,
+     8
+    ],
+    "2": [
+     8,
+     8
+    ]
+   },
+   "plan_census": "3b6fc53a79e1b728b7dffe3ec83818247680815ca92d85b8f5562c2c6c8544a9",
+   "plan_rows": [
+    {
+     "carried_elements": 48,
+     "core_budget": 2,
+     "passes": 4,
+     "rotating_tiles": 1,
+     "segment_index": 0,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 5,
+     "written_tiles": 4
+    }
+   ],
+   "record_carry": {
+    "0": [
+     8,
+     8
+    ],
+    "1": [
+     8,
+     16
+    ],
+    "2": [
+     8,
+     8
+    ]
+   },
+   "record_census": "dc96bff84aff54f760cf035eb7779966207aa9e68c613dcb0333d73ed29b34ce",
+   "unit_count": 5,
+   "units": "3d4fcdb8fe46811c8ea3a43708b314301dee523acddfd11924fe7d7aecf76998"
+  },
+  "late_skip@2:stateless": {
+   "marks": "5ae1625b488b3935122d8dd627fe575b388a5aa360378fa4407aad08baaed1e2",
+   "passes": 3,
+   "plan_carry": {
+    "0": [
+     8,
+     8
+    ],
+    "1": [
+     8,
+     8
+    ]
+   },
+   "plan_census": "ecdbcc50c0d5ae3d6e77319b4c28ebb1934d2a0822c830344db32904a2689a92",
+   "plan_rows": [
+    {
+     "carried_elements": 32,
+     "core_budget": 2,
+     "passes": 3,
+     "rotating_tiles": 2,
+     "segment_index": 0,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 5,
+     "written_tiles": 5
+    }
+   ],
+   "record_carry": {
+    "0": [
+     8,
+     16
+    ],
+    "1": [
+     8,
+     8
+    ]
+   },
+   "record_census": "081c1b20fe1e3ae24485b8e0edd43e74623fe363ed0b76ca3c89e2475bc88fc1",
+   "unit_count": 5,
+   "units": "3d4fcdb8fe46811c8ea3a43708b314301dee523acddfd11924fe7d7aecf76998"
+  },
+  "t0_03@1.0:floor": {
+   "marks": "a8f2e5f6e7d645a87e1b090e253d83cd660de234db0e58950d00825217933cbf",
+   "passes": 12,
+   "plan_carry": {
+    "7": [
+     1568,
+     1568
+    ],
+    "9": [
+     1792,
+     1792
+    ]
+   },
+   "plan_census": "708ba63e6b5762b843297ca89de38b958248f008ad8b813488caee9218103a4a",
+   "plan_rows": [
+    {
+     "carried_elements": 0,
+     "core_budget": 288,
+     "passes": 7,
+     "rotating_tiles": 34,
+     "segment_index": 0,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 649,
+     "written_tiles": 395
+    },
+    {
+     "carried_elements": 3136,
+     "core_budget": 288,
+     "passes": 2,
+     "rotating_tiles": 34,
+     "segment_index": 1,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 649,
+     "written_tiles": 395
+    },
+    {
+     "carried_elements": 3584,
+     "core_budget": 288,
+     "passes": 2,
+     "rotating_tiles": 34,
+     "segment_index": 2,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 649,
+     "written_tiles": 395
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 288,
+     "passes": 1,
+     "rotating_tiles": 34,
+     "segment_index": 3,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 649,
+     "written_tiles": 395
+    }
+   ],
+   "record_carry": {
+    "7": [
+     1568,
+     1568
+    ],
+    "9": [
+     1792,
+     1792
+    ]
+   },
+   "record_census": "56727df49a782f2fe19eca0f4aad308d9622554008798af6351bbe7fc9aaa777",
+   "unit_count": 640,
+   "units": "66c66414875f0570be38a9fda390ee1e72ba49de3784220d4a485fcd9572b818"
+  },
+  "t0_03@1.0:stateless": {
+   "marks": "210e130878aabaf46f1fe72749a263f9eb71c6a262b80f13882ed08d472c0ecd",
+   "passes": 4,
+   "plan_carry": {},
+   "plan_census": "d978cf31f8b202c661554c82612effbcab37f3faddec55cfbd310246d6cc8c44",
+   "plan_rows": [
+    {
+     "carried_elements": 0,
+     "core_budget": 288,
+     "passes": 1,
+     "rotating_tiles": 288,
+     "segment_index": 0,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 649,
+     "written_tiles": 649
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 288,
+     "passes": 1,
+     "rotating_tiles": 288,
+     "segment_index": 1,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 649,
+     "written_tiles": 649
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 288,
+     "passes": 1,
+     "rotating_tiles": 288,
+     "segment_index": 2,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 649,
+     "written_tiles": 649
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 288,
+     "passes": 1,
+     "rotating_tiles": 288,
+     "segment_index": 3,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 649,
+     "written_tiles": 649
+    }
+   ],
+   "record_carry": {},
+   "record_census": "d978cf31f8b202c661554c82612effbcab37f3faddec55cfbd310246d6cc8c44",
+   "unit_count": 640,
+   "units": "66c66414875f0570be38a9fda390ee1e72ba49de3784220d4a485fcd9572b818"
+  },
+  "t0_22@0.7:floor": {
+   "marks": "6e0be79d09b631ca00a0b877a8272a934339fef5e09a68191e660c59cfbe6402",
+   "passes": 2,
+   "plan_carry": {},
+   "plan_census": "4f5e18236d3b0056a918e33cda38d52ab3f4f8fe09b9dc2b65032d1612355124",
+   "plan_rows": [
+    {
+     "carried_elements": 0,
+     "core_budget": 67,
+     "passes": 1,
+     "rotating_tiles": 1,
+     "segment_index": 0,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 68,
+     "written_tiles": 2
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 67,
+     "passes": 1,
+     "rotating_tiles": 1,
+     "segment_index": 1,
+     "step_index": 0,
+     "step_rule": "floor",
+     "total_tiles": 68,
+     "written_tiles": 2
+    }
+   ],
+   "record_carry": {},
+   "record_census": "4f5e18236d3b0056a918e33cda38d52ab3f4f8fe09b9dc2b65032d1612355124",
+   "unit_count": 68,
+   "units": "2fe8f6e0fefad44aa29de09c5e5881197f94716647b4caf4316a349133ed1cb4"
+  },
+  "t0_22@0.7:stateless": {
+   "marks": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+   "passes": 2,
+   "plan_carry": {},
+   "plan_census": "ab90c1be3052c841534a1e0cab09d54dd1c85c14ab961dcb6a5a2e0af170a643",
+   "plan_rows": [
+    {
+     "carried_elements": 0,
+     "core_budget": 67,
+     "passes": 1,
+     "rotating_tiles": 67,
+     "segment_index": 0,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 68,
+     "written_tiles": 68
+    },
+    {
+     "carried_elements": 0,
+     "core_budget": 67,
+     "passes": 1,
+     "rotating_tiles": 67,
+     "segment_index": 1,
+     "step_index": null,
+     "step_rule": "stateless",
+     "total_tiles": 68,
+     "written_tiles": 68
+    }
+   ],
+   "record_carry": {},
+   "record_census": "ab90c1be3052c841534a1e0cab09d54dd1c85c14ab961dcb6a5a2e0af170a643",
+   "unit_count": 68,
+   "units": "2fe8f6e0fefad44aa29de09c5e5881197f94716647b4caf4316a349133ed1cb4"
+  }
+ },
+ "export": "/tmp/claude-1005/-home-yigit-repos-research-stuff/0dc5568f-acf6-4fe7-81cc-1acf39a655db/scratchpad/resid_head",
+ "head": "c913118818b83b2225562556427a397321fa6aaf",
+ "walls_s": {
+  "chain@5:floor": 0.5,
+  "chain@5:stateless": 0.0,
+  "chain@6:floor": 0.0,
+  "chain@6:stateless": 0.0,
+  "chain@8:floor": 0.0,
+  "chain@8:stateless": 0.0,
+  "deep_skip@5:floor": 0.0,
+  "deep_skip@5:stateless": 0.0,
+  "lane_L@None:floor": 13.0,
+  "lane_L@None:stateless": 11.3,
+  "late_skip@2:floor": 0.0,
+  "late_skip@2:stateless": 0.0,
+  "t0_03@1.0:floor": 30.9,
+  "t0_03@1.0:stateless": 26.1,
+  "t0_22@0.7:floor": 0.3,
+  "t0_22@0.7:stateless": 0.6
+ },
+ "written_by": "11_wave2/resid/scripts/freeze_order_identity.py"
+}

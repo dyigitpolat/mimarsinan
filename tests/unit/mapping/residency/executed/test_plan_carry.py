@@ -6,6 +6,11 @@ direction: read out after its producing pass and re-injected before its last con
 (``period_census.boundary_crossings``). The plan census of a composition states the same crossings from its units'
 carried spans. The planner's own carry, the step function's objective (E85), stays the live set at every cut in both
 directions, and a plan stated by tile counts alone (the E85 fixture, the ladder's units) keeps that statement.
+
+[F2] The builder replays a carried producer once per delivery delay (``pass_timing``): a pass that reads a producer
+of an earlier pass at k delays re-injects it k - 1 more times, which the record states (``delayed_input_slices``) and
+the candidate states (``delayed_carry_wires``). The plan census states the same replays from its units' delayed
+reads, so the three planes apply one crossing rule with one replay term at every boundary.
 """
 
 from __future__ import annotations
@@ -15,10 +20,15 @@ import random
 import pytest
 
 from mimarsinan.deployment_record.build.payload_sizes import params_bytes
-from mimarsinan.deployment_record.build.program_census import boundary_widths_of, mapping_program_passes
+from mimarsinan.deployment_record.build.program_census import (
+    boundary_widths_of,
+    candidate_program_passes,
+    mapping_program_passes,
+)
 from mimarsinan.deployment_record.build.write_census import period_census
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.support.period_census import boundary_crossings
+from mimarsinan.mapping.packing.pass_timing import project_planned_passes
+from mimarsinan.mapping.support.period_census import boundary_crossings, phase_crossings
 from mimarsinan.mapping.support.schedule.pass_cut import CutNode, PassCut
 from mimarsinan.mapping.support.schedule.residency_units import (
     facts_period_census,
@@ -27,6 +37,8 @@ from mimarsinan.mapping.support.schedule.residency_units import (
     residency_steps,
     residency_units,
 )
+
+from mimarsinan.search.problems.joint.candidate_fragments import StageSemantics
 
 from . import certified as CF
 from . import vehicles as V
@@ -125,3 +137,91 @@ class TestThePlanCensusEqualsTheRecordCensus:
             live_each_way = {q: (v * BPE, v * BPE) for q, v in enumerate(comp.facts.boundary_elements) if v}
             multi += live_each_way != _carry(record)
         assert multi > 0                                                     # the regression bites
+
+
+def _skip3():
+    """Spec 0 -> spec 1 -> spec 2, and spec 2 reads spec 0 too (an identity skip): the fused segment raises spec 0 to
+    its deepest reader's latency minus one, so spec 1 reads it one cycle late and spec 2 on time (delays -1 and 0)."""
+    specs = [LayoutSoftCoreSpec(input_count=16, output_count=8, perceptron_index=i, segment_id=0, latency_tag=i,
+                                name=f"sc{i}") for i in range(3)]
+    nodes = [CutNode(0, 0, (), 8), CutNode(1, 1, (0,), 8), CutNode(2, 2, (0, 1), 8)]
+    return specs, nodes
+
+
+def _projected(units, phases, specs, nodes):
+    """The crossings of ``phases`` by the candidate plane's rule: ``project_planned_passes`` on the passes' specs and
+    the cut nodes' wires, its extra slices re-injected through ``boundary_crossings``."""
+    members = [[i for u in range(a, b) for i in units.members[u]] for a, b in phases]
+    phase_of = {u: q for q, (a, b) in enumerate(phases) for u in range(a, b)}
+    wires = [(int(s), int(n.core_id)) for n in nodes for s in n.sources]
+    segment = {i: s for m, s in zip(units.members, units.segments) for i in m}
+    projection = project_planned_passes([int(s.output_count) for s in specs], members, wires,
+                                        [segment[i] for i in range(len(specs))])
+    replayed = [(w, q) for q, extra in enumerate(projection.extra_slices) for _p, w in extra]
+    by = {p: (o, i) for p, o, i in boundary_crossings(
+        [(w, phase_of[p], phase_of[c]) for w, p, c in units.spans if phase_of[p] != phase_of[c]], replayed)}
+    return tuple(by.get(q, (0, 0)) for q in range(len(phases) - 1))
+
+
+class TestThePlanPlaneStatesTheReplays:
+    def test_a_producer_read_at_two_delays_in_one_pass_is_re_injected_once_more(self):
+        specs, nodes = _skip3()
+        units = residency_units(specs, nodes, CORE, segments=[0, 0, 0])
+        assert units.delayed_reads == ((8, 0, 1, 0, -1), (8, 0, 2, 0, 0))
+        # cut after spec 0: pass 1 reads spec 0 at two delays, so spec 0's width is re-injected twice
+        assert phase_crossings(units.spans, ((0, 1), (1, 3)), units.delayed_reads) == ((8, 16),)
+        assert phase_crossings(units.spans, ((0, 1), (1, 3))) == ((8, 8),)
+        # one pass per spec: each pass reads spec 0 at one delay, no replay
+        assert phase_crossings(units.spans, ((0, 1), (1, 2), (2, 3)), units.delayed_reads) == ((8, 0), (8, 16))
+        assert _projected(units, ((0, 1), (1, 3)), specs, nodes) == ((8, 16),)
+
+    def test_a_program_whose_readers_read_each_producer_at_one_delay_states_no_delayed_reads(self):
+        specs, nodes = _fan([1, 3, 1])
+        assert residency_units(specs, nodes, CORE, segments=[0] * len(specs)).delayed_reads == ()
+
+    @pytest.mark.parametrize("seed", range(40))
+    def test_the_replays_are_the_candidate_planes_projection_on_every_phase_partition(self, seed):
+        rng = random.Random(seed)
+        n = rng.randint(3, 12)
+        specs = [LayoutSoftCoreSpec(input_count=16, output_count=rng.choice([4, 8]), perceptron_index=i, segment_id=0,
+                                    latency_tag=i, name=f"sc{i}") for i in range(n)]
+        nodes = [CutNode(i, i, tuple(sorted(a for a in range(i) if rng.random() < 0.35)), int(specs[i].output_count))
+                 for i in range(n)]
+        units = residency_units(specs, nodes, CORE, segments=[0] * n)
+        for _ in range(6):
+            cuts = sorted(rng.sample(range(1, len(units.members)), rng.randint(0, len(units.members) - 1)))
+            bounds = [0, *cuts, len(units.members)]
+            phases = tuple(zip(bounds, bounds[1:]))
+            assert phase_crossings(units.spans, phases, units.delayed_reads) == _projected(units, phases, specs,
+                                                                                           nodes)
+
+
+#: (vehicle, step, cores) where the builder replays a carried producer (the replay probe of the residency unit).
+REPLAYING = [("late_skip", "floor", 2), ("late_skip", "stateless", 3), ("skew3", "floor", 3), ("deep_skip", "floor", 5),
+             ("skip", "floor", 2), ("random_38", "stateless", 2)]
+
+
+def _vehicle(name):
+    rep = V.random_rep(int(name.split("_")[1])) if name.startswith("random_") else V.branchy_repr(name)
+    specs, census, program = V.layout_plane(rep)
+    return specs, census, program, V.ir_of(rep)
+
+
+class TestThePlanesAgreeWhereTheBuilderReplays:
+    @pytest.mark.parametrize("name,step,count", REPLAYING)
+    def test_the_record_plan_and_candidate_planes_state_one_carry_at_every_boundary(self, name, step, count):
+        specs, census, program, ir = _vehicle(name)
+        plan = {"step": step}
+        hybrid = V.build(ir, count, plan, max_schedule_passes=64)
+        passes = V.neural_passes(hybrid)
+        assert sum(len(s.input_map) - len({int(x.node_id) for x in s.input_map}) for s in passes) > 0   # it bites
+        capacity = {(V.MAX_AXONS, V.MAX_NEURONS): count}
+        record = period_census(mapping_program_passes(hybrid), weight_bits=BITS, capacity=capacity,
+                               bytes_of=lambda w: w * BPE).census
+        comp, planned = _builder_census(ir, count, plan)
+        frag = V.fragments(specs, census, count, plan, program=program, max_schedule_passes=64)
+        candidate = period_census(candidate_program_passes(specs, frag, semantics=StageSemantics(), timesteps=V.T),
+                                  weight_bits=BITS, capacity=capacity, bytes_of=lambda w: w * BPE).census
+        assert len(record.passes) == len(planned.passes) == len(candidate.passes) == len(passes)
+        assert _carry(planned) == _carry(record) == _carry(candidate)
+        assert comp.units.delayed_reads

@@ -1,13 +1,16 @@
-"""[E85] The cores a set of layout specs packs into, the declared physical tiles each packed core occupies, and the
-tile groups a layer splits into across passes."""
+"""[E85] The cores a set of layout specs packs into, the declared physical tiles each packed core occupies, the
+tile groups a layer splits into across passes, each spec's layer, [F2] the program order of a program's tile
+groups, and [F3] the cells of the dynamic operand-bank regions each packed core holds."""
 
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from mimarsinan.mapping.latency.core_graph import condensed_order
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutPackingResult, LayoutSoftCoreSpec
+from mimarsinan.mapping.packing.canonical import OPERAND_ROLE
 from mimarsinan.mapping.platform.mapping_structure import PoolAdmissionError, ResidencyPlanError
 
 #: One packed core: its occupied cells (used axons x used neurons, the rectangle the record's ``params_bytes``
@@ -17,6 +20,9 @@ PackedCore = Tuple[int, int]
 CoreTiles = Tuple[Tuple[int, int], ...]
 #: [W03] One tile group: the indices (into the packed specs) that share packed cores, and those cores, in order.
 TileGroup = Tuple[Tuple[int, ...], Tuple[PackedCore, ...]]
+#: [F2] One unit of a program: its segment, its layer, its spec indices and its packed cores, then (F3) per core
+#: further facts in core order (its operand-bank cells).
+ProgramUnit = Tuple[Any, ...]
 
 
 def declared_tiles(axons: int, neurons: int, declared: Iterable[Tuple[int, int]]) -> Optional[CoreTiles]:
@@ -105,21 +111,46 @@ def _pack(specs: Sequence[LayoutSoftCoreSpec], core_types: Sequence[LayoutHardCo
     return pack
 
 
-def _cores(pack: LayoutPackingResult,
-           core_types: Sequence[LayoutHardCoreType]) -> Tuple[Tuple[PackedCore, ...], Tuple[CoreTiles, ...]]:
+def _cores(pack: LayoutPackingResult, core_types: Sequence[LayoutHardCoreType],
+           specs: Sequence[LayoutSoftCoreSpec] = ()) -> Tuple[Tuple[PackedCore, ...], Tuple[CoreTiles, ...]]:
+    """Per packed core its occupied cells (used axons, less the operand axons of the specs placed on it [F2], as
+    ``CoreOccupancy`` counts a built core, times used neurons) and tiles."""
     snaps = tuple(pack.used_core_snapshots or ())
     tiles = tuple(core_type_tiles(snap.axons_per_core, snap.neurons_per_core, core_types) for snap in snaps)
-    return tuple((int(s.used_axons) * int(s.used_neurons), len(t)) for s, t in zip(snaps, tiles)), tiles
+    port = [0] * len(snaps)
+    for origin, core in (pack.placements or ()) if any(s.operand_axons for s in specs) else ():
+        port[int(core)] += int(specs[int(origin)].operand_axons)
+    return tuple(((int(s.used_axons) - p) * int(s.used_neurons), len(t)) for s, t, p in zip(snaps, tiles, port)), tiles
+
+
+def _operand(specs: Sequence[LayoutSoftCoreSpec]) -> bool:
+    return any(getattr(s, "core_role", None) == OPERAND_ROLE for s in specs)
+
+
+def producer_cells(pack: LayoutPackingResult, specs: Sequence[LayoutSoftCoreSpec]) -> Tuple[int, ...]:
+    """[F3] Per packed core, the cells of the dynamic operand-bank regions it holds (each region's axons x neurons,
+    the regions of the banks of ``specs`` whose role is the operand's), as ``dynamic_bank.operand_cells_by_core``
+    counts a built core: their payload is written every inference. () where no spec holds an operand bank."""
+    if not _operand(specs):
+        return ()
+    banks = {s.bank_id for s in specs if getattr(s, "core_role", None) == OPERAND_ROLE}
+    if None in banks:
+        raise ResidencyPlanError("residency_plan: an operand bank's soft core states no bank id, so the cores holding "
+                                 "its payload are not determined")
+    return tuple(sum(int(a) * int(n) for bank, a, n, *_ in regions if bank in banks)
+                 for regions in pack.core_regions or ())
 
 
 def pack_specs(specs: Sequence[LayoutSoftCoreSpec], core_types: Sequence[LayoutHardCoreType], *,
                allow_coalescing: bool, allow_splitting: bool,
-               bounded: bool = False) -> Tuple[Tuple[PackedCore, ...], Tuple[CoreTiles, ...]]:
+               bounded: bool = False) -> Tuple[Tuple[PackedCore, ...], Tuple[CoreTiles, ...], Tuple[int, ...]]:
     """Every core ``specs`` pack into on the declared core types with the layout packer (``pack_layout``): per core
-    its ``PackedCore`` and its physical tiles. The pool is unbounded (a layer packed alone on its best type), or
-    ``bounded`` to the declared counts (a phase, packed as ``collect_noc_fragments`` packs a pass)."""
-    return _cores(_pack(specs, core_types, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
-                        bounded=bounded), core_types)
+    its ``PackedCore``, its physical tiles and [F3] its operand-bank cells (``producer_cells``, () without operand
+    banks). The pool is unbounded (a layer packed alone on its best type), or ``bounded`` to the declared counts (a
+    phase, packed as ``collect_noc_fragments`` packs a pass)."""
+    pack = _pack(specs, core_types, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
+                 bounded=bounded, placements=any(s.operand_axons for s in specs) or _operand(specs))
+    return (*_cores(pack, core_types, specs), producer_cells(pack, specs))
 
 
 def packed_cores(specs: Sequence[LayoutSoftCoreSpec], core_types: Sequence[LayoutHardCoreType], *,
@@ -137,11 +168,12 @@ def unit_tile_count(specs: Sequence[LayoutSoftCoreSpec], core_types: Sequence[La
 
 
 def tile_groups(specs: Sequence[LayoutSoftCoreSpec], core_types: Sequence[LayoutHardCoreType], *,
-                allow_coalescing: bool, allow_splitting: bool,
-                bonds: Sequence[Tuple[int, int]] = ()) -> Tuple[TileGroup, ...]:
+                allow_coalescing: bool, allow_splitting: bool, bonds: Sequence[Tuple[int, int]] = (),
+                producer: bool = False) -> Tuple[Tuple[Any, ...], ...]:
     """[W03] The finest units a layer's ``specs`` split into across passes: packed alone (an unbounded pool), the
     specs that share a packed core, or that a ``bond`` ties (a dependency, a coalescing group), form one group with
-    every core they occupy; groups in order of their first spec, so they partition the layer's packed tiles."""
+    every core they occupy; groups in order of their first spec, so they partition the layer's packed tiles. Each
+    group is (spec indices, cores), with ``producer`` [F3] (spec indices, cores, each core's operand-bank cells)."""
     pack = _pack(specs, core_types, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
                  bounded=False, placements=True)
     parent = list(range(len(specs)))
@@ -164,6 +196,59 @@ def tile_groups(specs: Sequence[LayoutSoftCoreSpec], core_types: Sequence[Layout
     held: Dict[int, set] = {}
     for origin, core in pack.placements or ():
         held.setdefault(root(int(origin)), set()).add(int(core))
-    cores, _ = _cores(pack, core_types)
-    return tuple((tuple(group), tuple(cores[c] for c in sorted(held.get(key, ()))))
+    cores, _ = _cores(pack, core_types, specs)
+    cells = (producer_cells(pack, specs) or (0,) * len(cores)) if producer else ()
+    return tuple((tuple(group), tuple(cores[c] for c in sorted(held.get(key, ()))),
+                  *((tuple(cells[c] for c in sorted(held.get(key, ()))),) if producer else ()))
                  for key, group in sorted(members.items(), key=lambda item: item[1][0]))
+
+
+def layer_of_each_spec(specs: Sequence[LayoutSoftCoreSpec], nodes: Sequence[Any]) -> List[Any]:
+    """Layer identity per spec: its ``perceptron_index``, else the layer it feeds (its consumer of the lowest index)."""
+    consumers: Dict[int, List[int]] = {}
+    for node in nodes:
+        for source in node.sources:
+            consumers.setdefault(int(source), []).append(int(node.core_id))
+    layer: List[Any] = [spec.perceptron_index for spec in specs]
+    for index in range(len(specs) - 1, -1, -1):
+        if layer[index] is None:
+            fed = [layer[c] for c in sorted(consumers.get(index, ())) if layer[c] is not None]
+            layer[index] = fed[0] if fed else None
+    missing = [specs[i].name or i for i, value in enumerate(layer) if value is None]
+    if missing:
+        raise ResidencyPlanError(
+            f"residency_plan needs a layer identity for every core: {missing[:5]} carry no perceptron_index and "
+            f"feed no core that does")
+    return layer
+
+
+def program_order(groups: Sequence[ProgramUnit], nodes: Sequence[Any]) -> List[ProgramUnit]:
+    """[F2] A program's tile groups (``groups`` in layer order: by segment, then each layer's first spec) in a program
+    order over the cut nodes' reads (``core_id`` and ``sources`` spec indices, within a segment): the layers of each
+    segment ranked by a topological order of the layer graph, ties to layer order; the groups in a topological order
+    of the group graph, ties to (segment, layer rank, layer-order position); a strongly connected set of groups one
+    unit, its specs in index order, its cores (and each per-core fact after them) in group order. Wherever layer
+    order is a program order, ``groups`` unchanged (each order is then its key order,
+    ``core_graph.topological_order``)."""
+    unit_of = {int(spec): u for u, group in enumerate(groups) for spec in group[2]}
+    reads: List[set] = [set() for _ in groups]
+    for node in nodes:
+        v = unit_of[int(node.core_id)]
+        reads[v].update(unit_of[int(s)] for s in node.sources
+                        if int(s) in unit_of and unit_of[int(s)] != v and groups[unit_of[int(s)]][0] == groups[v][0])
+    layer_of: Dict[Tuple[int, Any], int] = {}
+    for group in groups:
+        layer_of.setdefault((group[0], group[1]), len(layer_of))
+    layer = [layer_of[(group[0], group[1])] for group in groups]
+    layer_reads: List[set] = [set() for _ in layer_of]
+    for v, read in enumerate(reads):
+        layer_reads[layer[v]].update(layer[u] for u in read if layer[u] != layer[v])
+    rank = {m: r for r, members in enumerate(condensed_order([sorted(r) for r in layer_reads], key=int))
+            for m in members}
+    out: List[ProgramUnit] = []
+    for members in condensed_order([sorted(r) for r in reads], key=lambda u: (groups[u][0], rank[layer[u]], u)):
+        first = groups[members[0]]
+        out.append(first if len(members) == 1 else (
+            first[0], first[1], tuple(sorted(s for u in members for s in groups[u][2])),
+            *(tuple(fact for u in members for fact in groups[u][k]) for k in range(3, len(first)))))
+    return out
