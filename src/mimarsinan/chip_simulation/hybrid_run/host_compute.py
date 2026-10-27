@@ -8,6 +8,13 @@ step is exactly one spike once the segment boundary transcodes value to counts.
 That is why ``device`` is a required argument here and why it rides on
 ``SpikingDeploymentContract``: the census/HCM reference and every backend that
 re-derives the op must land on the same step by construction.
+
+The deployed TIE RULE is decided here too, for every executor: a hosted module
+runs in the chip-lattice plane (``measurement_plane``), so an armed lattice node
+(a host-run perceptron of a weight-quantized program, e.g. the subsumed encoding
+layer) decides an exact membrane tie by the exact value, as the chip's integer
+cores do every cycle, whatever plane its caller has opened (w2-parity fix round:
+the C5 T-LIF metric flow read its stem by float dust outside the plane).
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ import torch
 
 from mimarsinan.mapping.ir import ComputeOp, computeop_deployment_dtype
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
+from mimarsinan.models.nn.lif_kernels import measurement_plane
 
 
 def execute_compute_op_torch(
@@ -48,7 +56,9 @@ def execute_compute_op_torch(
     if abs(in_scale - 1.0) > 1e-9:
         gathered = gathered * in_scale
 
-    result = op.execute_on_gathered(gathered)
+    # The deployed tie rule (module docstring): the plane is the evaluator's, not the caller's.
+    with measurement_plane():
+        result = op.execute_on_gathered(gathered)
 
     if abs(out_scale - 1.0) > 1e-9:
         result = result / out_scale

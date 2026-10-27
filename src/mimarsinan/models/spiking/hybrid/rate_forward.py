@@ -9,7 +9,6 @@ import torch
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     decref_op_consumers,
-    compute_input_state_with_shifts,
     execute_compute_op_torch,
     resolve_stage_compute_scales,
 )
@@ -34,6 +33,7 @@ from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales,
     decode_segment_output_torch,
     encode_compute_boundary,
+    host_op_input_state,
     normalize_boundary_slices_torch,
     warn_once_lossy_negative_clamp,
 )
@@ -62,7 +62,8 @@ class HybridRateForwardMixin(HybridFlowHost):
         is_ttfs_family = requires_ttfs_firing(self.spiking_mode)
         # Rate/LIF host ComputeOps run with (1, 1) scales, leaving value-domain
         # results in the state buffer; TTFS host ops already transcode to wire
-        # via resolve_stage_compute_scales.
+        # via resolve_stage_compute_scales. The divisors serve BOTH wire reads:
+        # neural-stage inputs and domain-owning host ops (host_op_input_state).
         wire_divisors = (
             {} if is_ttfs_family
             else boundary_normalization_scales(self.hybrid_mapping)
@@ -185,8 +186,8 @@ class HybridRateForwardMixin(HybridFlowHost):
             )
             gather_buffer = (
                 ctx.state_buffer if is_ttfs_family
-                else compute_input_state_with_shifts(
-                    op, ctx.state_buffer, node_output_shifts,
+                else host_op_input_state(
+                    op, ctx.state_buffer, wire_divisors, node_output_shifts,
                 )
             )
             result = execute_compute_op_torch(

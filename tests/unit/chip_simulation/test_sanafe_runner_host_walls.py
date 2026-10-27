@@ -29,7 +29,8 @@ def _declared_behavior(spiking_mode="lif", firing_mode="Default"):
 
 
 def _compute_only_mapping(op_id=42):
-    op = SimpleNamespace(id=op_id)
+    # The runtime contract fields the run's wire-divisor table reads (params, input_sources).
+    op = SimpleNamespace(id=op_id, params={}, input_sources=np.array([], dtype=object))
     stage = SimpleNamespace(
         kind="compute", name="host_op", hard_core_mapping=None,
         compute_op=op, input_map=[], output_map=[],

@@ -12,7 +12,7 @@ import torch.nn as nn
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
-    apply_input_shifts_numpy, assemble_segment_input_numpy, compute_input_state_with_shifts, execute_compute_op_numpy, gather_final_output_numpy, resolve_stage_compute_scales, store_segment_output_numpy,)
+    apply_input_shifts_numpy, assemble_segment_input_numpy, execute_compute_op_numpy, gather_final_output_numpy, resolve_stage_compute_scales, store_segment_output_numpy,)
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
     enumerate_execution_stages, run_hybrid_stages,)
 from mimarsinan.chip_simulation.lava_loihi.core_lava import LavaCoreMixin, _subtractive_lif_cls
@@ -26,7 +26,7 @@ from mimarsinan.data_handling import batch_integrity
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.spiking.segment_boundary import (
-    boundary_normalization_scales, normalize_boundary_slices_numpy,)
+    boundary_normalization_scales, host_op_input_state, normalize_boundary_slices_numpy,)
 
 
 
@@ -147,7 +147,8 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         x_flat = self._preprocess(x_np)
         state_buffer: Dict[int, np.ndarray] = {-2: x_flat}
         # Lava runs host ComputeOps with (1, 1) scales (rate/LIF semantics), so
-        # boundary slices carry value-domain results until normalized here.
+        # boundary slices carry value-domain results until normalized here (at
+        # neural-stage inputs and at domain-owning host ops alike).
         wire_divisors = boundary_normalization_scales(self.mapping)
         node_output_shifts = getattr(self.mapping, "node_output_shifts", None)
 
@@ -193,8 +194,8 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             )
             result = execute_compute_op_numpy(
                 stage.compute_op, x_flat,
-                compute_input_state_with_shifts(
-                    stage.compute_op, state_buffer, node_output_shifts,
+                host_op_input_state(
+                    stage.compute_op, state_buffer, wire_divisors, node_output_shifts,
                 ),
                 in_scale=ttfs_in_scale, out_scale=ttfs_out_scale,
                 # Host ops are re-derived here: evaluate them where the census

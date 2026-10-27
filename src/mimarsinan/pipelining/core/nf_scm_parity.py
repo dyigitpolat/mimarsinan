@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from mimarsinan.common.env import nf_scm_parity_debug_enabled
+from mimarsinan.models.nn.lif_kernels import measurement_plane
 
 
 class NfScmParityError(AssertionError):
@@ -202,7 +203,6 @@ def assert_streamed_nf_scm_exact_or_raise(
     no mismatch budget; parity holds by construction or the deployment is
     wrong."""
     from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
-    from mimarsinan.models.nn.lif_kernels import measurement_plane
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
     from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
 
@@ -344,14 +344,18 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
 ) -> float:
     """Torch↔deployed-sim parity: the NF torch forward must agree with the deployed spiking sim on ``min_agreement`` of samples.
 
-    Healthy agreement is ~1.0 (a single WQ tie-flip per few hundred samples is the
-    only expected residual); a fidelity regression craters it. Returns the measured agreement.
+    Healthy agreement is 1.0 where the twins are bit-exact; a fidelity regression craters it. Returns the measured
+    agreement. Both twins read inside the ONE measurement plane, as the streamed exactness gate reads them. The
+    deployed executor decides every exact tie on the integer membrane lattice by exact values whatever its caller's
+    plane: its chip cores every cycle, its host-run lattice nodes (the C5 stem) through the host-op evaluator
+    (``chip_simulation.hybrid_run.host_compute``). The armed torch node decides them so only inside the plane
+    (outside it float32 dust decided them: the C5 T-LIF first core, SCM = NF + 1), so the plane is the NF's read.
     """
     device = _unify_model_device(model)
     if device is not None:
         samples = samples.to(device)
         flow = flow.to(device)
-    with torch.no_grad():
+    with torch.no_grad(), measurement_plane():
         torch_pred = model(samples).argmax(dim=1)
         sim_pred = flow(samples).argmax(dim=1)
     agreement = float((torch_pred == sim_pred).double().mean())
@@ -371,8 +375,8 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
             f"torch↔deployed-sim parity failed: {agreement:.4f} < "
             f"min_agreement={min_agreement} over {int(samples.shape[0])} samples. "
             f"The deployed spiking sim diverged from the trained torch cascade — a "
-            f"deployment-fidelity regression (expected residual is only the rare WQ "
-            f"tie-flip, ~1 sample per few hundred)."
+            f"deployment-fidelity regression (both twins read in the measurement plane, "
+            f"where exact lattice ties are decided alike on both)."
         )
     return agreement
 

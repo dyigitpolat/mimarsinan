@@ -48,7 +48,9 @@ class SpikingDeploymentContract:
     # a pre-activation within f32 reduction noise of a step edge resolves to
     # DIFFERENT steps on cuda and cpu — and one step is exactly one spike after
     # the segment-boundary transcode. Every backend that re-derives a host op
-    # must therefore evaluate it where the census/HCM reference did.
+    # must therefore evaluate it where the census/HCM reference did. The same
+    # evaluator (``hybrid_run.host_compute``) decides exact lattice ties of an
+    # armed host node in the chip-lattice plane, whatever plane its caller runs.
     host_compute_device: Any = None
     # [E3] carry the +θ/(2S) mid-tread offset in the compare ladder, not the bias.
     comparator_half_step: bool = False

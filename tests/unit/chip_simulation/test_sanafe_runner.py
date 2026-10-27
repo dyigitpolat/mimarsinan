@@ -665,7 +665,8 @@ def test_run_propagates_arch_preset_to_record(monkeypatch):
 
 
 def test_run_executes_compute_stage_via_hybrid_execution(monkeypatch):
-    op = SimpleNamespace(id=42)
+    # The runtime contract fields the run's wire-divisor table reads (params, input_sources).
+    op = SimpleNamespace(id=42, params={}, input_sources=np.array([], dtype=object))
     stage_compute = _fake_stage("compute", name="op", compute_op=op,
                                 input_map=[], output_map=[])
     mapping = _fake_mapping(stage_compute)
@@ -694,7 +695,8 @@ def test_run_executes_compute_stage_via_hybrid_execution(monkeypatch):
 
 
 def test_run_lif_compute_stage_does_not_apply_ttfs_scales(monkeypatch):
-    op = SimpleNamespace(id=42)
+    # The runtime contract fields the run's wire-divisor table reads (params, input_sources).
+    op = SimpleNamespace(id=42, params={}, input_sources=np.array([], dtype=object))
     stage_compute = _fake_stage("compute", name="op", compute_op=op,
                                 input_map=[], output_map=[])
     mapping = _fake_mapping(stage_compute)
@@ -718,6 +720,33 @@ def test_run_lif_compute_stage_does_not_apply_ttfs_scales(monkeypatch):
 
     assert called["in_scale"] == 1.0
     assert called["out_scale"] == 1.0
+
+
+def test_run_builds_its_wire_divisor_table_once_whatever_its_host_ops(monkeypatch):
+    """[w2-parity fix round] One divisor table per run, as the other executors build it: not once per domain-owning
+    host op (and per sample), and on every rate/LIF run, so production code never bends to a stand-in mapping."""
+    import torch
+
+    import mimarsinan.spiking.segment_boundary as segment_boundary
+    from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
+
+    owner = ScaleNormalizingWrapper(torch.nn.Identity(), input_scales=[torch.tensor(2.0)],
+                                    output_scale=torch.tensor(1.0))
+    ops = [SimpleNamespace(id=40 + i, params={"module": owner}, input_sources=np.array([], dtype=object))
+           for i in range(3)]
+    mapping = _fake_mapping(*[_fake_stage("compute", name=f"op{i}", compute_op=op, input_map=[], output_map=[])
+                              for i, op in enumerate(ops)])
+    _patch_sanafe_stack(monkeypatch)
+    monkeypatch.setattr(runner_mod, "execute_compute_op_numpy",
+                        lambda op, orig, buf, **kw: np.asarray([[0.5]], dtype=np.float64))
+    built = []
+    table = segment_boundary.boundary_normalization_scales
+    monkeypatch.setattr(segment_boundary, "boundary_normalization_scales", lambda m: built.append(m) or table(m))
+
+    runner = SanafeRunner(mapping=mapping, simulation_length=8, behavior=_declared_behavior(spiking_mode="lif"))
+    rec = runner.run(np.asarray([[1.0]], dtype=np.float32), sample_index=0)
+    assert sorted(rec.compute_outputs) == [40, 41, 42]
+    assert built == [mapping], f"{len(built)} tables built for one run"
 
 
 def test_run_ttfs_compute_stage_records_op_id_after_neural(monkeypatch):

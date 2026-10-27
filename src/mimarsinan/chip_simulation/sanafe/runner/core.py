@@ -150,12 +150,14 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         segments: Dict[int, SanafeSegmentRecord] = {}
         compute_outputs: Dict[int, np.ndarray] = {}
 
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
-            compute_input_state_with_shifts,
-            resolve_stage_compute_scales,
-        )
+        from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import resolve_stage_compute_scales
+        from mimarsinan.spiking.segment_boundary import boundary_normalization_scales, host_op_input_state
         from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
         from mimarsinan.chip_simulation.hybrid_run.stage_timing import StageTimer
+
+        # The rate/LIF wire divisors, once per run, that domain-owning host ops read through (TTFS: its contract stage).
+        wire_divisors = ({} if _runner.is_ttfs_spiking_mode(self.spiking_mode)
+                         else boundary_normalization_scales(self.mapping))
 
         # [W4.3] per-sample host-op walls: a fresh timer per run so the
         # per-sample record never carries another sample's accumulation.
@@ -195,10 +197,8 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
                 )
                 result = _runner.execute_compute_op_numpy(
                     op, sample_input,
-                    compute_input_state_with_shifts(
-                        op, state_buffer,
-                        getattr(self.mapping, "node_output_shifts", None),
-                    ),
+                    host_op_input_state(op, state_buffer, wire_divisors,
+                                        getattr(self.mapping, "node_output_shifts", None)),
                     in_scale=in_scale, out_scale=out_scale,
                     dtype=_COMPUTE_DTYPE,
                     device=self.host_compute_device,

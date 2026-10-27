@@ -313,6 +313,10 @@ class TestStreamedExactnessAtAMixedSeam:
         is why forcing it False leaves streamed counts untouched. State that
         here so nobody mistakes a passing gate for coverage of this predicate;
         the levers that DO carry the streamed seam are the three breaks above.
+        (Since w2-parity the host-op READ consults it, ``host_op_input_state``:
+        a domain-owning op reads raw sources at the wire gauge. This fixture's
+        join reads no raw source, so that read is the identity here; it is
+        covered by ``tests/unit/spiking/test_host_op_wire_read.py``.)
         """
         from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
             resolve_stage_compute_scales,

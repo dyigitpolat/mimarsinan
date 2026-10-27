@@ -8,10 +8,16 @@ import numpy as np
 import numpy.typing as npt
 import torch
 
+from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    compute_input_state_with_shifts,
+    compute_op_owns_scale_domain,
+)
 from mimarsinan.mapping.ir import IRSource
+from mimarsinan.mapping.ir.gather_plan import gather_plan_for
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
+    SegmentIOSlice,
 )
 from mimarsinan.mapping.packing.phase_channels import stage_input_channels
 from mimarsinan.mapping.support.activation_scales import (
@@ -36,6 +42,7 @@ __all__ = [
     "decode_segment_output_torch",
     "encode_compute_boundary",
     "encode_segment_input",
+    "host_op_input_state",
     "normalize_boundary_slices_numpy",
     "normalize_boundary_slices_torch",
     "normalize_boundary_value",
@@ -164,6 +171,27 @@ def normalize_boundary_slices_torch(
         ).reshape(-1).clamp(min=1e-12)
         out[:, s.offset : s.offset + s.size] /= (d if d.numel() > 1 else d[0])
     return out
+
+
+def host_op_input_state(op, state_buffer, wire_divisors, node_output_shifts):
+    """The state buffer a rate/LIF host ComputeOp gathers from: the ONE host-op read every executor shares.
+
+    An op that owns its scale domain (``ScaleNormalizingWrapper``, decoding each source at the producer's kappa_fold)
+    reads every source at the wire gauge through the divisor table and per-producer transcode a neural-stage input
+    reads (``boundary_normalization_scales``, ``normalize_boundary_slices_*``); any other op reads the buffers as
+    stored, its output inheriting their gauge (``kappa_buf``). The producer shifts follow, in the neural-stage order.
+    A host-run perceptron (a subsumed encoding layer) stores its raw value, so its domain-owning readers (a ResNet's
+    first residual add) meet the wire currency here. Nothing to transcode => the buffer itself (no copy)."""
+    view = state_buffer
+    if wire_divisors and compute_op_owns_scale_domain(op):
+        for nid in gather_plan_for(op).referenced_node_ids:
+            buf = state_buffer.get(nid)
+            if nid in wire_divisors and buf is not None:
+                whole = [SegmentIOSlice(node_id=nid, offset=0, size=int(buf.shape[1]))]
+                view = dict(view) if view is state_buffer else view
+                view[nid] = (normalize_boundary_slices_torch(whole, buf, wire_divisors) if isinstance(buf, torch.Tensor)
+                             else normalize_boundary_slices_numpy(whole, buf, wire_divisors))
+    return compute_input_state_with_shifts(op, view, node_output_shifts)
 
 
 _warned_negative_boundary_stages: set = set()

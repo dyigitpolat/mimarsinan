@@ -12,7 +12,6 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMap
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     apply_input_shifts_numpy,
     assemble_segment_input_numpy,
-    compute_input_state_with_shifts,
     execute_compute_op_numpy,
     gather_final_output_numpy,
     resolve_stage_compute_scales,
@@ -42,6 +41,7 @@ from mimarsinan.models.spiking.hybrid.membrane_readout import (
 )
 from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales,
+    host_op_input_state,
     normalize_boundary_slices_numpy,
 )
 
@@ -108,7 +108,8 @@ class SimulationHybridMixin(SimulationHostContract):
         prepared_segments = self._prepare_all_segments(hybrid)
 
         # Rate/LIF host ComputeOps run with (1, 1) scales (value-domain buffers);
-        # TTFS transcodes via resolve_stage_compute_scales instead.
+        # TTFS transcodes via resolve_stage_compute_scales instead. The divisors
+        # serve neural-stage inputs and domain-owning host ops alike.
         wire_divisors = {} if is_ttfs else boundary_normalization_scales(hybrid)
         node_output_shifts = getattr(hybrid, "node_output_shifts", None)
 
@@ -179,8 +180,8 @@ class SimulationHybridMixin(SimulationHostContract):
             )
             gather_buf = (
                 buf if is_ttfs
-                else compute_input_state_with_shifts(
-                    stage.compute_op, buf, node_output_shifts,
+                else host_op_input_state(
+                    stage.compute_op, buf, wire_divisors, node_output_shifts,
                 )
             )
             buf[op_id] = execute_compute_op_numpy(
