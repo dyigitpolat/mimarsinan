@@ -196,10 +196,15 @@ both planes refuse a declared true there by name (`legal_value_set`).
 `registry/core_type_doors.py` holds the core-type door rules both doors call over the layout they judge, beside the
 platform bias rule: `platform_sign_errors` (per-axon weight sign under float weights or beside an operand core type;
 moved from `entries_write`, which re-exports it), `platform_lane_errors` (executed lanes beside an operand core type,
-`mapping/lanes/declaration.lane_operand_conflict`); `declaration_judge._layout_errors` calls both. [exactness review
-F2 and F3] A declared `residency_plan` is admitted beside executed lanes of every class and beside an operand core type
-(the planner orders its units by the layer graph and states which cores hold operand banks), so no residency-plan rule
-is left at the doors.
+`mapping/lanes/declaration.lane_operand_conflict`), `platform_residency_errors` (a residency plan on a chip that packs
+per axon); `declaration_judge._layout_errors` calls all three. [exactness review F2 and F3] A declared `residency_plan`
+is admitted beside executed lanes of every class and beside an operand core type (the planner orders its units by the
+layer graph and states which cores hold operand banks). [G2] It is refused by name on a chip any of whose core types
+declares per-axon weight sign: the builder places a mixed-sign row as a W+ and a W- row, which the residency planner's
+plan plane does not read, so the plan's period census and the built program's record disagree (outputs exact); the
+door refuses it until the two planes agree. Whether a chip packs per axon is `platform_constraints.pool_sign_granularity`'s
+fold, the one the builder runs, and a value the fold refuses (one it does not know, or null) is refused there in the
+fold's words.
 
 ## Key files
 | File | Purpose |

@@ -5,7 +5,8 @@ F3. The scheduled builder refused a residency plan for a program with dynamic op
 refused one beside an operand core type at every door: the plan pins cores by payload, and its units did not state
 which cores hold operand banks (rewritten every inference, never pinned). The planner now states them and prices
 their tiles (``residency_units``' producer cells, ``pinned_tiles``, the fronts' operand bound), so every door admits a
-residency plan beside an operand core type, and no residency-plan rule is left at the doors.
+residency plan beside an operand core type. [G2] The one residency-plan rule at the doors is the per-axon one
+(``platform_residency_errors``, ``test_per_axon_residency_door.py``): it keeps both of these verdicts.
 
 F2. The residency planner took each layer's tile groups as units in layer order, in which a lane program with fused
 adds (WI-5e class E) is no program order, so the build refused every step and the fix round refused a residency plan
@@ -60,12 +61,15 @@ class TestResidencyPlanBesideAnOperandCoreType:
         doc[PC] = {**doc[PC], **SCHEDULED, "residency_plan": {"step": "floor"}}
         assert _verdicts(doc, tmp_path) == ([], [], None)
 
-    def test_no_residency_plan_rule_is_left_at_the_doors(self):
+    def test_the_one_residency_plan_rule_at_the_doors_admits_operand_types_and_lanes(self):
         import importlib.util
 
-        import mimarsinan.config_schema.registry.core_type_doors as doors
+        from mimarsinan.config_schema.registry.core_type_doors import platform_residency_errors
 
-        assert not hasattr(doors, "platform_residency_errors")
+        plan = {**SCHEDULED, "residency_plan": {"step": "floor"}}
+        assert platform_residency_errors({**plan, "cores": [{**STATIC, **SYNAPSE}, OPERAND]}) == []
+        assert platform_residency_errors({**plan, "cores": [SHARED_OPERAND]}) == []
+        assert platform_residency_errors({**plan, "cores": [STATIC], **POOL_LANES}) == []
         assert importlib.util.find_spec("mimarsinan.mapping.support." + "residency_declaration") is None
 
 
