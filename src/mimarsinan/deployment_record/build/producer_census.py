@@ -10,7 +10,7 @@ of L instances is written L times per inference on the program the packer builds
 
 from __future__ import annotations
 
-from typing import Any, FrozenSet, List, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.write_census import WriteCensusError
 from mimarsinan.mapping.ir.dynamic_bank import operand_cells_by_core as operand_cells_by_core  # one rule (F3)
@@ -57,3 +57,17 @@ def operand_only_tiles(flags: Sequence[bool], tiles: Sequence[Sequence[Any]]) ->
     members): each such core is its own one tile, since no fused core takes the operand role."""
     first = [sum(len(t) for t in tiles[:i]) for i in range(len(tiles))]
     return frozenset(first[i] for i, flag in enumerate(flags) if flag)
+
+
+def producer_split(cells: Sequence[int], operand: Optional[Sequence[int]]) -> Dict[str, Any]:
+    """A pass row's cell fields, its producer-written operand cells (per tile; None: none) apart from its static
+    cells: ``core_cells``, ``producer_cells``, ``producer_cores`` and ``producer_core_cells`` (one rule, all planes)."""
+    held = tuple(operand) if operand is not None else (0,) * len(cells)
+    return {"core_cells": tuple(c - o for c, o in zip(cells, held)), "producer_cells": sum(held),
+            "producer_cores": frozenset(i for i, o in enumerate(held) if o),
+            "producer_core_cells": held if any(held) else None}
+
+
+def operands_stated(segments: Sequence[Any]) -> bool:
+    """[E-6] A sealed record states its operand regions when every pass sealed them (a program binding banks)."""
+    return bool(segments) and all(getattr(s, "operand_core_cells", None) is not None for s in segments)

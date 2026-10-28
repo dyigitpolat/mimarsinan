@@ -21,6 +21,8 @@ from mimarsinan.deployment_record.quantities.value_domain import (
     value_carry,
     value_window,
 )
+from mimarsinan.deployment_record.platform_physics.converter import declared_adc_bits
+from mimarsinan.deployment_record.quantities.compute_technology import compute_split
 from mimarsinan.deployment_record.quantities.write_law import plane_writes
 
 
@@ -60,7 +62,8 @@ def candidate_context_from_platform(
     context = replace(context, core_geometry=declared_geometry(list(pcfg.get("cores") or ())),
                       writes=plane_writes(passes, pcfg, weight_bits=pcfg.get("weight_bits"),
                                           timesteps=context.timesteps, label="candidate", carry=carry),
-                      pricing_refusal=target_bundles.absolute_pricing_refusal(pcfg))
+                      pricing_refusal=target_bundles.absolute_pricing_refusal(pcfg),
+                      compute=compute_split(pcfg, passes), readout_bits=declared_adc_bits(pcfg))
     context = _lane_context(context, pcfg, lane_ops)
     if not names_value_domain(pcfg):
         return _event_census(context, pcfg, passes)

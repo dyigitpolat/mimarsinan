@@ -121,6 +121,11 @@ class CandidateQuantityContext:
     #: ``synaptic_events`` (``compute_time.busiest_core_events``); formed only where the resolved physics prices
     #: compute per synaptic operation, None elsewhere (so no other chip's quantities change).
     pass_core_events: Optional[Tuple[float, ...]] = None
+    #: [E-6] The MAC events per core type (``compute_technology.compute_split``), present only when a core type names
+    #: a compute physics: each type's MAC energy at its own e_mac.
+    compute: Optional[Any] = None
+    #: [E-5] The run's converter resolution (``readout_law.adc_bits``), None when undeclared.
+    readout_bits: Optional[int] = None
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],

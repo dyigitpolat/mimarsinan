@@ -35,6 +35,19 @@ SPEC = {
          "core_types": [{"role": "static", "target": "neurram"}, {"role": "operand", "target": "sram_cim_macro",
                                                                    "operand": {"payload_bits": 8, "write_source": "host"}}],
          "arithmetic_class": "test"},
+        # [E-6, targeted pass] the same two technologies through a declaration that states each core type's
+        # write_physics, on the row's own network (a small softmax block on the operand core type)
+        {"row": "mixed", "role": "figure", "title": "Two technologies, declared", "beside_of": None,
+         "core_types": [{"role": "static", "target": "neurram"}, {"role": "operand", "target": "sram_cim_macro",
+                                                                   "operand": {"payload_bits": 8, "write_source": "host"}}],
+         "declaration": "tests/fixtures/design_point/hybrid_neurram_sram_cim.json", "core_counts": [8, 4],
+         "declare": {"allow_scheduling": True, "max_schedule_passes": 4096},
+         "network": {"name": "softmax_block", "builder": "test factory", "program": "operand",
+                     "roster_entry": ["factory:unit.chip_simulation.value_run.operand_programs:attention_block",
+                                      {"depth": 1}, 5, [3, 8, 8]],
+                     "width": None, "input_shape": [3, 8, 8], "classes": 5, "weights": "random",
+                     "block": "softmax attention block", "accuracy_absent": "random weights"},
+         "arithmetic_class": "test"},
     ],
 }
 
@@ -45,7 +58,7 @@ def test_the_driver_writes_a_valid_document_with_a_judged_and_a_refused_row(tmp_
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps(SPEC))
     parts = tmp_path / "parts"
-    for row in ("rram", "placeholder"):
+    for row in ("rram", "placeholder", "mixed"):
         assert driver.main(["--spec", str(spec_path), "--parts", str(parts), "--row", row]) == 0
     out = tmp_path / "doc.json"
     assert driver.main(["--spec", str(spec_path), "--parts", str(parts), "--out", str(out)]) == 0
@@ -62,3 +75,26 @@ def test_the_driver_writes_a_valid_document_with_a_judged_and_a_refused_row(tmp_
     assert {f["field"] for f in judged["planes"]["fields"]} >= {"cores", "neural_passes", "written_passes"}
     assert judged["planes"]["agree"], judged["planes"]  # [fix_b] the priced program is the executed one
     assert judged["chip"]["core_types"][0]["write_technology"] == "neurram"
+
+
+@pytest.mark.timeout(240)
+def test_a_row_declared_with_each_core_types_write_physics_is_judged_and_priced_on_the_record_plane(tmp_path):
+    """[E-6, targeted pass, review M2] the declaration route: the row is built, certified, judged per core type and
+    priced on the record plane at every batch of the grid; the document validates."""
+    driver = _driver()
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps({**SPEC, "rows": [r for r in SPEC["rows"] if r["row"] == "mixed"]}))
+    parts = tmp_path / "parts"
+    assert driver.main(["--spec", str(spec_path), "--parts", str(parts), "--row", "mixed"]) == 0
+    out = tmp_path / "doc.json"
+    assert driver.main(["--spec", str(spec_path), "--parts", str(parts), "--out", str(out)]) == 0
+    row = json.loads(out.read_text())["rows"][0]
+    assert row["admission"]["verdict"] == "admitted", row["admission"]
+    assert row["certificate"]["exact"]
+    assert {e["write_technology"] for e in row["lifetime"]["per_core_type"]} == {"neurram", "sram_cim_macro"}
+    assert [(c["role"], c["write_technology"], c["count"]) for c in row["chip"]["core_types"]] == [
+        ("static", "neurram", 8), ("operand", "sram_cim_macro", 4)]
+    assert row["pricing"]["plane"].startswith("record")
+    assert {v["K"] for v in row["pricing"]["variants"]} == {1, 16}
+    assert all(v["energy_split_mj"]["dynamic"] is not None for v in row["pricing"]["variants"])
+    assert row["network"]["name"] == "softmax_block" and row["budget"]["packed_tiles_F"] is None

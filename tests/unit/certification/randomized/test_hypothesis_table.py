@@ -34,7 +34,9 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: CL9 final re-pin of integration pass 2 (explore, exact, E1, E6, P1): the fixture is, byte for byte, the three-way
 #: JSON union of the pass-1 CL9 fixture and E1's over the closure tree's, with no conflict; the exploration, exactness,
 #: E6 and P1 units leave it unchanged (RA/11_wave2/integration2/cl9/repin/); RA/10_wave1/thm/ is regenerated from it.
-TABLE_SHA256 = "6e01f324f6b014f1a7a92dd0e17281711aad1dfeabecd21006f48c5207658255"
+#: E-6 re-pin (U-E, N2 follow-up F5): ``cores.compute_physics`` joins the cost-only list (pricing-only, X3a
+#: ``PRICING_ONLY``), 33 cost-only rows; RA/10_wave1/thm/ is regenerated from the fixture at integration.
+TABLE_SHA256 = "7b016305ccc9e58196abea1645393ac04f27dfbcf96b087313976426c0556133"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -50,7 +52,7 @@ def test_the_fixture_is_the_pinned_one():
 
 def test_the_class_list_is_the_registry_cost_only_set(table):
     assert set(table["cost_only"]) == cost_only_set()
-    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 32
+    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 33
 
 
 #: The proof check's split (PC1): conditions on the two deployments, and conditions on every run (the

@@ -1,0 +1,36 @@
+{
+  "name": "hybrid_neurram_sram_cim",
+  "description": "Figure 1's mixed row (N2b, E-6): NeuRRAM static tiles beside an SRAM-CIM operand core type, declared as the neurram bundle with its cores overridden (target_overrides), each core type with its own write and compute technology. A design study: no published chip carries both, so it is a declaration over a published target, not a target bundle (a bundle names a published target, target_bundles.py).",
+  "platform_constraints": {
+    "target": "neurram",
+    "target_overrides": {
+      "cores": {
+        "value": [
+          {
+            "max_axons": 256,
+            "max_neurons": 256,
+            "count": 48,
+            "has_bias": false,
+            "write_granularity": "cell",
+            "write_physics": "neurram",
+            "compute_physics": "neurram"
+          },
+          {
+            "max_axons": 128,
+            "max_neurons": 1024,
+            "count": 1,
+            "has_bias": false,
+            "write_granularity": "cell",
+            "write_physics": "sram_cim_macro",
+            "compute_physics": "sram_cim_macro",
+            "operand": {
+              "payload_bits": 8,
+              "write_source": "host"
+            }
+          }
+        ],
+        "note": "design study (N2b, E-6): NeuRRAM's 48 static cores of 256 x 256 (wan2022a p.505; written per cell by its write-verify iteration, wan2021edge p.9) beside one SRAM-CIM macro of 128 x 1024 as the operand core type (jiang2023a Section II p.2; written per 8-bit cell, the sram_cim_macro profile's t_write_per_unit); each core type's writes and MACs priced under its own technology (write_physics, compute_physics), every other constant NeuRRAM's; a study declares both counts"
+      }
+    }
+  }
+}

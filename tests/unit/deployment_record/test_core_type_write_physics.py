@@ -165,7 +165,10 @@ def test_the_write_technology_replaces_every_write_row_and_nothing_else():
         assert typed.has(key) == sram.has(key), key
         if sram.has(key):
             assert typed.constants[key] == sram.constants[key], key
-    assert not typed.has("t_write_per_unit")  # NeuRRAM's write time is not the SRAM cells' write time
+    # NeuRRAM's write time is not the SRAM cells' write time: the typed physics takes the macro's (E-6 sourced it,
+    # jiang2023a), never the chip's
+    assert typed.constants["t_write_per_unit"] == sram.constants["t_write_per_unit"]
+    assert typed.constants["t_write_per_unit"] != chip.constants["t_write_per_unit"]
     assert typed.constants["e_mac"] == chip.constants["e_mac"]
     assert "e_dma_per_byte" not in WRITE_TECHNOLOGY_KEYS and "t_program_per_byte" not in WRITE_TECHNOLOGY_KEYS
     assert set(typed.constants) - set(WRITE_TECHNOLOGY_KEYS) == set(chip.constants) - set(WRITE_TECHNOLOGY_KEYS)
@@ -236,8 +239,10 @@ def test_nvm_static_tiles_with_an_sram_operand_core_type_are_admitted_where_all_
     assert energy is not None
     assert energy.nominal == pytest.approx(sram.band("e_write_per_cell").nominal * 80 * 1e3, rel=1e-12)  # mJ
     assert "unpriced: e_dma_per_byte(host-sourced payload transfer)" in energy.basis  # NeuRRAM's chip, no DMA row
-    assert "t_write_per_unit" in (_refusal(admitted, LATENCY_WRITE) or "")  # SRAM macro states no write time
-    assert "32 x 32" in (_refusal(admitted, LATENCY_WRITE) or "")
+    # [E-6] the SRAM macro states its write time per cell (jiang2023a), so the operand writes' exposed time prices
+    exposed = _term(admitted, LATENCY_WRITE)
+    assert exposed is not None and _refusal(admitted, LATENCY_WRITE) is None
+    assert exposed.band.nominal > 0
     # the chip-wide wear is unchanged by the technology: one write per operand cell per inference
     quantities = write_quantities(writes.census.census, writes.policy, most_written=writes.census.most_written_core,
                                   producer_slots=writes.census.producer_slots)

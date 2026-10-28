@@ -12,6 +12,7 @@ from mimarsinan.deployment_record.cost.absolute.formulas import (
     ENERGY_COMPONENTS,
     PROGRAMMING_BYTE_ENERGIES,
     add_bands,
+    per_core_type_compute,
     programming_payload_bytes,
     scale_band,
 )
@@ -182,8 +183,10 @@ def _programming_energy(ctx: PricingContext) -> None:
         ctx.term("energy_programming_mj", "mJ", add_bands(components, source), source)
 
 
-def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any] = None) -> None:
-    """Energy per inference, or a refusal naming the missing constant or census."""
+def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any] = None,
+                 split: Optional[Any] = None) -> None:
+    """Energy per inference, or a refusal naming the missing constant or census. [E-6] A per-core-type MAC split
+    (``split``) prices the compute term per core type."""
     compute = _compute_constant(ctx)
     if compute is None:
         _refuse(ctx, "no compute-energy source is declared: the "
@@ -203,13 +206,30 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
                      "an event census yet)")
         _programming_energy(ctx)
         return
-    value = ctx.physics.band(compute)
-    events = ctx.quantities.get("synaptic_events").value
-    components = [scale_band(value, events * _J_TO_MJ, f"{compute} x synaptic_events")]
-    evidence = [f"compute: {compute} [{value.basis}]" + (
-        mean_core_note(ctx.physics, ctx.geometry, point_model=True) if compute == "e_synaptic_event_total" else "")]
+    if split is not None:
+        per_type, evidence, reason = per_core_type_compute(
+            split, ctx.physics, compute, ctx.quantities.get("synaptic_events").value, _J_TO_MJ)
+        if per_type is None:
+            ctx.refuse(ENERGY_DYNAMIC, reason or "per-core-type compute physics refused")
+            _refuse(ctx, reason or "per-core-type compute physics refused")
+            _programming_energy(ctx)
+            return
+        components = list(per_type)
+    else:
+        value = ctx.physics.band(compute)
+        events = ctx.quantities.get("synaptic_events").value
+        components = [scale_band(value, events * _J_TO_MJ, f"{compute} x synaptic_events")]
+        evidence = [f"compute: {compute} [{value.basis}]" + (
+            mean_core_note(ctx.physics, ctx.geometry, point_model=True) if compute == "e_synaptic_event_total"
+            else "")]
 
     bands, notes, unpriced = ctx.component_bands(ENERGY_COMPONENTS, _J_TO_MJ)
+    blocked = [ctx.blocked[c] for c, _f, _l in ENERGY_COMPONENTS if c in ctx.blocked]
+    if blocked:  # [E-5] a converter the run's resolution leaves unstated: no headline reads around it
+        ctx.refuse(ENERGY_DYNAMIC, blocked[0])
+        _refuse(ctx, blocked[0])
+        _programming_energy(ctx)
+        return
     components.extend(bands)
     evidence.extend(notes)
 

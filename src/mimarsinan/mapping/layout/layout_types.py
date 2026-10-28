@@ -228,6 +228,9 @@ class LayoutPackingResult:
     placements: Optional[Tuple[Tuple[int, int], ...]] = None
     # [W04] With placements: per used core, its placed regions (``LayoutHardCoreInstance.regions``).
     core_regions: Optional[Tuple[FrozenSet[Tuple], ...]] = None
+    # [E-3] Packed by builder segment (``pack_layout(runs=...)``): per segment in program order, its cores, which are
+    # consecutive in ``used_core_snapshots``; None for one co-pack.
+    segment_cores: Optional[Tuple[int, ...]] = None
 
     # [TS4] Why the pack ended this way, additive beside ``feasible``: a refusal
     # is either PROVEN (``infeasibility_proofs``, scoped to this one pack — a

@@ -8,9 +8,10 @@ dividing-coefficient discipline).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple, Union
+from typing import Any, List, Optional, Sequence, Tuple, Union
 
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.deployment_record.quantities.compute_technology import share_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -203,3 +204,29 @@ def programming_payload_bytes(
                 "bytes_per_connectivity_entry is undeclared, so they are unpriced"
             )
     return total, note
+
+
+def per_core_type_compute(split: Any, chip: PlatformPhysics, compute_constant: Optional[str], synaptic_events: float,
+                          scale: float) -> Tuple[Optional[List[Band]], List[str], Optional[str]]:
+    """[E-6] (bands, evidence, refusal reason): each core type's MAC events at its own e_mac
+    (``quantities/compute_technology``), x ``scale`` (J to the headline's unit); refused by name where the plane
+    states no split, the split differs from the MAC census, the chip prices its compute by a per-event aggregate,
+    or a share's physics declares no e_mac."""
+    if split.unavailable is not None:
+        return None, [], f"per-core-type compute physics: {split.unavailable}"
+    if compute_constant != "e_mac":
+        return None, [], ("per-core-type compute physics prices e_mac per core type; the chip prices its compute "
+                          "by the per-event aggregate e_synaptic_event_total, which is not split per core type")
+    if abs(float(split.events) - float(synaptic_events)) > 0.5:
+        return None, [], (f"per-core-type compute physics: the per-core-type MAC split ({split.events} events) "
+                          f"differs from the synaptic_events census ({synaptic_events:g})")
+    bands: List[Band] = []
+    evidence: List[str] = []
+    for share in split.shares:
+        physics = share_physics(share, chip)
+        if not physics.has("e_mac"):
+            return None, [], f"per-core-type compute physics: {share.label} declares no e_mac"
+        value = physics.band("e_mac")
+        bands.append(scale_band(value, share.events * scale, f"e_mac of {share.label} x its MAC events"))
+        evidence.append(f"compute: e_mac of {share.label} [{value.basis}] x {share.events} MAC events")
+    return bands, evidence, None

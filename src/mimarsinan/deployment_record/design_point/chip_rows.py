@@ -5,10 +5,12 @@ A row declares its core types (role ``any``, ``static`` or ``operand``; geometry
 technology; an ``operand`` declaration on an operand core type). Two rules refuse a row by name before anything is
 built or priced:
 
-- ``per_core_type_write_technology``: the core types name more than one write technology. The instance prices one
-  physics per chip (one ``platform_physics_profile`` per priced point); the write law's per-core-type technologies
-  (N2b: a core type's ``write_physics``, ``quantities/write_technology.py``) are not read by the instance yet, so
-  such a row is refused by name until the instance declares its core types' ``write_physics``.
+- ``per_core_type_write_technology``: the core types name more than one write technology and some core type
+  declares no ``write_physics``. [E-6, targeted pass] Where every core type declares its ``write_physics`` (N2b,
+  ``quantities/write_technology.py``; a row's declaration, e.g. ``tests/fixtures/design_point/
+  hybrid_neurram_sram_cim.json``), the instance prices each technology's share of the census by the write law and
+  judges each core type's wear (``design_point/wear.technology_wear``), so the row is built; otherwise no technology
+  is named for some core type's cells, and the row is refused by name.
 - ``operand_core_type``: a core type declares an operand core while the registry's core-type schema declares no
   ``operand`` field: dynamic-operand cores are not integrated, so products of two activations stay host operations
   (the requirement row of ``dmm``). The rule reads the registry, so it lifts when the capability registers its key.
@@ -54,13 +56,13 @@ def declaration_refusals(core_types: Sequence[Mapping[str, Any]]) -> List[Dict[s
     """The refusals by name of a row's core-type declaration (empty: the row can be built and priced)."""
     out: List[Dict[str, str]] = []
     technologies = sorted({str(ct["write_technology"]) for ct in core_types if ct.get("write_technology")})
-    if len(technologies) > 1:
+    if len(technologies) > 1 and not all(ct.get("write_physics") for ct in core_types):
         roles = ", ".join(f"{ct.get('role', 'any')}: {ct.get('write_technology')}" for ct in core_types)
         out.append({"name": PER_CORE_TYPE_WRITE_TECHNOLOGY, "stage": "declare",
-                    "reason": (f"the core types declare {len(technologies)} write technologies ({roles}); the "
-                               "instance prices one physics per chip (one platform_physics_profile per priced "
-                               "point) and does not read the write law's per-core-type write_physics yet, so a "
-                               "chip with a write technology per core type is not priced here")})
+                    "reason": (f"the core types declare {len(technologies)} write technologies ({roles}) and "
+                               "not every core type declares its write_physics, so the write law cannot name the "
+                               "technology each core type's cells are written under (a row's declaration states "
+                               "write_physics per core type)")})
     if any(ct.get(OPERAND_FIELD) is not None for ct in core_types) and OPERAND_FIELD not in CORE_TYPE_SCHEMA.fields:
         out.append({"name": OPERAND_CORE_TYPE, "stage": "declare",
                     "reason": ("a core type declares an operand core, and the registry's core-type schema declares "

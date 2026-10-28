@@ -5,105 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
-from mimarsinan.deployment_record.platform_physics.constants import spec_for
-from mimarsinan.deployment_record.units import to_canonical, unit_for
+# [U-E3] The value type and its evidence kinds live below the converter (``constants``), re-exported here.
+from mimarsinan.deployment_record.platform_physics.constants import (
+    EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, spec_for,
+)
+from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwargs
 
 PHYSICS_FORMAT_VERSION = 1
 
-EVIDENCE_KINDS = frozenset(
-    {"published", "datasheet", "derived", "estimated", "measured"}
-)
 MEASUREMENT_KINDS = frozenset({"silicon", "simulation", "projection", "mixed"})
-
-#: What each evidence kind must carry for the value to be readable years later.
-_EVIDENCE_REQUIREMENTS = {
-    "published": ("citation", "the paper and table/figure the number came from"),
-    "datasheet": ("citation", "the datasheet and revision the number came from"),
-    "derived": ("derivation", "the arithmetic that produced this per-unit number"),
-    "estimated": ("note", "why this estimate is reasonable and its expected error"),
-    # [H3b] measured on THIS deployment stack (host calibration, bench runs) —
-    # the strongest kind, and the one that must say where and on what machine.
-    "measured": ("note", "what was measured, on which machine, and how to redo it"),
-}
-
-
-@dataclass(frozen=True)
-class PhysicsConstantValue:
-    """One declared value: a band in its declared unit, plus the evidence behind it.
-
-    The SI band is a PROPERTY, never a stored field — there is exactly one number in
-    the profile, so the declared and canonical forms cannot drift apart.
-    """
-
-    key: str
-    low: float
-    nominal: float
-    high: float
-    unit: str
-    evidence_kind: str
-    citation: str = ""
-    derivation: str = ""
-    note: str = ""
-    overridden: bool = False
-
-    def __post_init__(self) -> None:
-        spec = spec_for(self.key)
-        require_choice("PhysicsConstantValue", "evidence_kind", self.evidence_kind,
-                       EVIDENCE_KINDS)
-        if unit_for(self.unit).dimension != spec.dimension:
-            raise ValueError(
-                f"{self.key}: declared unit {self.unit!r} has the wrong dimension — "
-                f"{self.key} is a {spec.dimension} constant"
-            )
-        if not (self.low <= self.nominal <= self.high):
-            raise ValueError(
-                f"{self.key}: band must satisfy low <= nominal <= high, got "
-                f"({self.low}, {self.nominal}, {self.high})"
-            )
-        required, why = _EVIDENCE_REQUIREMENTS[self.evidence_kind]
-        if not str(getattr(self, required)).strip():
-            raise ValueError(
-                f"{self.key}: evidence_kind {self.evidence_kind!r} requires "
-                f"{required!r} — {why}"
-            )
-
-    @property
-    def basis(self) -> str:
-        """The written basis carried into every Band and CostTerm built from this value."""
-        detail = self.citation or self.derivation or self.note
-        marker = " (operator override)" if self.overridden else ""
-        return f"{self.evidence_kind}{marker}: {detail}"
-
-    @property
-    def band(self) -> Band:
-        """The declared band in the dimension's SI base unit."""
-        return Band(
-            to_canonical(self.low, self.unit),
-            to_canonical(self.nominal, self.unit),
-            to_canonical(self.high, self.unit),
-            basis=self.basis,
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "key": self.key,
-            "low": self.low,
-            "nominal": self.nominal,
-            "high": self.high,
-            "unit": self.unit,
-            "evidence_kind": self.evidence_kind,
-            "citation": self.citation,
-            "derivation": self.derivation,
-            "note": self.note,
-            "overridden": self.overridden,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "PhysicsConstantValue":
-        return cls(**strict_kwargs(cls, data))
-
 
 #: How an aggregate constant may be read outside its measured core: ``cells`` scales it by the
 #: core's cell count relative to the validity core's.
@@ -224,13 +136,13 @@ class PlatformPhysics:
     format_version: int = PHYSICS_FORMAT_VERSION
     #: [CL2] Components the profile leaves out; serialized only when present.
     external_components: Tuple[ExternalComponent, ...] = ()
+    #: [E-5] The converter over resolution (``readout_law.adc_bits``, ``converter.py``); serialized only when present.
+    converter: Optional[ConverterTable] = None
 
     def __post_init__(self) -> None:
         if self.format_version != PHYSICS_FORMAT_VERSION:
-            raise ValueError(
-                f"PlatformPhysics format_version {self.format_version} != "
-                f"{PHYSICS_FORMAT_VERSION}; migrate explicitly, never tolerate silently"
-            )
+            raise ValueError(f"PlatformPhysics format_version {self.format_version} != "
+                             f"{PHYSICS_FORMAT_VERSION}; migrate explicitly, never tolerate silently")
         for key, value in self.constants.items():
             if key != value.key:
                 raise ValueError(
@@ -281,6 +193,7 @@ class PlatformPhysics:
             "constants": {k: v.to_dict() for k, v in sorted(self.constants.items())},
             **({"external_components": [c.to_dict() for c in self.external_components]}
                if self.external_components else {}),
+            **({"converter": self.converter.to_dict()} if self.converter is not None else {}),
         }
 
     @classmethod
@@ -294,4 +207,5 @@ class PlatformPhysics:
             for key, value in (kwargs.get("constants") or {}).items()
         }
         kwargs["conversion_model"] = dict(kwargs.get("conversion_model") or {})
+        kwargs["converter"] = None if kwargs.get("converter") is None else ConverterTable.from_dict(kwargs["converter"])
         return cls(**kwargs)

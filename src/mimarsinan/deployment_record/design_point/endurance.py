@@ -1,6 +1,7 @@
 """Lifetime and the minimum batch K* of an executed program, read off the write law's own verdicts.
 
-Lifetime at a batch K is G3's write pricer (``price_write_terms``) on the executed program's period census at K. K*
+Lifetime at a batch K is G3's write pricer (``price_write_inputs``: per write technology where the core types
+declare several, N2b) on the executed program's period census at K. K*
 per endurance corner is the smallest K whose priced lifetime at that corner reaches ``min_lifetime_hours``, found on
 the pricer itself (doubling, then bisection; the wear M / K + p falls with K), so the boundary is the toolchain's
 verdict, never a closed form read at one point: below K* the corner is inadmissible and from K* on it is admitted,
@@ -11,16 +12,21 @@ printed by name. The closed form K = M r T / E (static writes only) and the two-
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.cost.absolute.writes import (
-    LIFETIME_HOURS, LIFETIME_VERDICT, WritePricing, price_write_terms,
+    LIFETIME_HOURS, LIFETIME_VERDICT, WriteInputs, WritePricing, price_write_inputs,
 )
+from mimarsinan.deployment_record.cost.write_lifetime import price_lifetime
+from mimarsinan.deployment_record.design_point.wear import binding
+from mimarsinan.deployment_record.platform_physics.resolve import technology_physics
 from mimarsinan.deployment_record.design_point.timeline import ProgramWrites
 from mimarsinan.deployment_record.introspection.scaling_ladder_reading import min_batch
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics
-from mimarsinan.deployment_record.quantities.write_law import write_policy_of
+from mimarsinan.deployment_record.quantities.write_law import cell_wear, write_policy_of
+from mimarsinan.deployment_record.quantities.write_technology import TechnologySplit
 from mimarsinan.deployment_record.schema.provenance import Band
 
 #: Endurance band corners in the pricer's band order (low endurance gives the shortest lifetime).
@@ -34,15 +40,29 @@ class EnduranceUnavailable(ToolchainRefusal, ValueError):
 
 
 def priced_at(writes: ProgramWrites, physics: PlatformPhysics, platform: Mapping[str, Any], k: int) -> WritePricing:
-    """The write law on the executed census at batch ``k`` (the platform's other declarations unchanged)."""
+    """The write law on the executed census at batch ``k`` (the platform's other declarations unchanged): [E-6,
+    targeted pass] the plane's one entry (``price_write_inputs``), so a chip of several write technologies prices
+    each technology's share under its own physics and joins them, and the operand regions' placement
+    (``producer_slots``) states the most-written cell's wear exactly, as on the record plane."""
     census = writes.census
     if census is None:
         raise EnduranceUnavailable(writes.unavailable or "the program states no period census")
     policy = write_policy_of({**platform, "inference_batch_K": int(k)})
     assert policy is not None
-    return price_write_terms(census.census, physics, policy, written_extents=census.written_extents,
-                             compute_sealed=census.compute_sealed, most_written=census.most_written_core,
-                             pass_core_types=census.pass_core_types)
+    return price_write_inputs(WriteInputs(
+        census=census.census, policy=policy, written_extents=census.written_extents,
+        compute_sealed=census.compute_sealed, most_written=census.most_written_core,
+        # a census that places no operand core states no slot: its producer cells bound the wear from below only
+        pass_core_types=census.pass_core_types, producer_slots=census.producer_slots or None,
+        by_technology=split_at(writes.by_technology, int(k))), physics)
+
+
+def split_at(split: Optional[TechnologySplit], k: int) -> Optional[TechnologySplit]:
+    """The census split by write technology at batch ``k``: each technology's policy at ``k`` (the split's census
+    is the period's, which no batch changes)."""
+    if split is None:
+        return None
+    return replace(split, parts=tuple(replace(part, policy=replace(part.policy, batch_k=int(k))) for part in split.parts))
 
 
 def _band(pricing: WritePricing, name: str) -> Optional[Band]:
@@ -143,12 +163,15 @@ def k_star(writes: ProgramWrites, physics: PlatformPhysics, platform: Mapping[st
         for c, value in per_corner.items() if value is not None)
     none = [c for c, v in per_corner.items() if v is None]
     most = census.most_written_core
+    shares = "" if writes.by_technology is None or not writes.by_technology.parts else (
+        "; per write technology (each under its own endurance, the row's lifetime the shortest): " + ", ".join(
+            f"{part.label}: M = {part.most_written}" for part in writes.by_technology.parts))
     out: Dict[str, Any] = {
         "per_corner": per_corner, "checked": checked, "verdicts_by_K": verdicts,
         "basis": (f"K* per endurance corner: the smallest batch whose lifetime priced by price_write_terms on the "
                   f"executed period census reaches {floor:g} h at {rate:g} inferences/s; the wear is "
                   f"M / K{' + operand writes per inference' if producer else ''} with M = {most} writes of the "
-                  "most-written core per period"),
+                  f"most-written core per period{shares}"),
         "boundary": "; ".join(
             (f"{c} endurance: admitted from K = 1" if v == 1 else
              f"{c} endurance: inadmissible below K = {v}, admitted from K = {v}") if v is not None
@@ -169,3 +192,37 @@ def k_star(writes: ProgramWrites, physics: PlatformPhysics, platform: Mapping[st
             write_time_source="the write law's exposed write time at K = 1 (serial: the write time of one period)",
             k=None if declared is None else int(declared.batch_k))
     return out
+
+
+def technology_wear(writes: ProgramWrites, physics: PlatformPhysics, k: int,
+                    roles: Mapping[str, str]) -> Optional[Dict[str, Any]]:
+    """[E-6, targeted pass] The per-core-type blocks of a row of several write technologies at batch ``k``: per
+    technology's share of the executed census (``ProgramWrites.by_technology``), its role (``roles``: write physics
+    name to the row's role; else operand where the share's core types hold operand regions, static otherwise), its
+    static cells per period and operand cells per inference, its most-written cell's wear (``cell_wear``, the slot
+    rule), its endurance and the lifetime the write law prices under its own physics (``price_lifetime`` on the
+    share, the rule ``price_write_inputs`` joins), with the binding type named. None where the census is not split
+    (one technology), or the split refuses (the write terms then refuse by its reason)."""
+    split = split_at(writes.by_technology, k)
+    if split is None or split.refused is not None or not split.parts:
+        return None
+    entries_writes: List[Dict[str, Any]] = []
+    entries_life: List[Dict[str, Any]] = []
+    for part in split.parts:
+        name = part.technology.write_physics
+        role = roles.get(str(name)) or ("operand" if any(t.operand for t in part.group) else "static")
+        own_physics = technology_physics(physics, part.technology)
+        wear, _unknown = cell_wear(part.census, part.policy, part.most_written, part.producer_slots)
+        per_cell = None if wear is None or wear.high is None else float(wear.high)
+        own = WritePricing()
+        price_lifetime(own, part.census, own_physics, part.policy, part.most_written, part.producer_slots)
+        verdict = next((v.verdict for v in own.verdicts if v.name == LIFETIME_VERDICT), None)
+        entries_writes.append({
+            "role": role, "write_technology": name,
+            "static_written_cells_per_period": int(sum(p.written_cells_backing_store for p in part.census.passes)),
+            "operand_written_cells_per_inference": int(sum(p.written_cells_producer for p in part.census.passes)),
+            "max_writes_per_cell_per_inference": per_cell})
+        entries_life.append({"role": role, "write_technology": name, "max_writes_per_cell_per_inference": per_cell,
+                             "endurance": endurance_of(own_physics), "hours": _triple(_band(own, LIFETIME_HOURS)),
+                             "verdict": verdict})
+    return {"writes": entries_writes, "lifetime": entries_life, "binding": binding(entries_life)}

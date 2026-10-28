@@ -131,6 +131,7 @@ def pack_layout(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
     collect_placements: bool = False,
+    runs: Optional[Sequence[int]] = None,
 ) -> LayoutPackingResult:
     """Pack layout-only softcores into a limited pool of hardware cores.
 
@@ -140,7 +141,14 @@ def pack_layout(
     into independent single-core fragments, so this plane packs what the builder packs.
     ``collect_placements`` additionally seals which hardcore each input softcore
     landed on (``result.placements``: ``(origin index, hardcore index)`` per
-    placed unit; fragments repeat their origin)."""
+    placed unit; fragments repeat their origin).
+
+    [E-3] ``runs`` (per softcore, its builder segment: ``residency_rules.spec_runs``) packs the program as the
+    builder packs its single shared pool (``hybrid_build_pool._build_single_pool``): segment by segment in program
+    order (ascending run), each segment's softcores in their order onto cores of its own drawn from the one declared
+    pool, so no core holds two segments; ``result.segment_cores`` states each segment's cores, which are consecutive
+    in ``used_core_snapshots``. Without ``runs`` every softcore is packed in one co-pack. A segment the remaining
+    pool cannot take refuses the pack by the name the builder's packer raises (``CoreCapacityRefusal``)."""
 
     used_hardcores: List[LayoutHardCoreInstance] = []
     unused_hardcores = _core_pool(core_types)
@@ -152,15 +160,21 @@ def pack_layout(
     if collect_placements:
         materializer.origin_of = {id(sc): i for i, sc in enumerate(unmapped)}
 
+    groups = _segment_groups(unmapped, runs)
+    segment_cores: List[int] = []
     try:
-        run_placement(
-            softcores=unmapped,
-            used_hardcores=used_hardcores,
-            unused_hardcores=unused_hardcores,
-            materializer=materializer,
-            allow_neuron_splitting=allow_neuron_splitting,
-            allow_coalescing=allow_coalescing,
-        )
+        for group in groups:
+            segment_used: List[LayoutHardCoreInstance] = []
+            run_placement(
+                softcores=group,
+                used_hardcores=segment_used,
+                unused_hardcores=unused_hardcores,
+                materializer=materializer,
+                allow_neuron_splitting=allow_neuron_splitting,
+                allow_coalescing=allow_coalescing,
+            )
+            used_hardcores.extend(segment_used)
+            segment_cores.append(len(segment_used))
     except RuntimeError as e:
         # Fusion spreads a softcore's axons only under declared coalescing (as on the runtime packer).
         verdict = failed_pack_verdict(
@@ -176,7 +190,8 @@ def pack_layout(
             avg_unused_area_per_core=float("inf"),
             unusable_space_total=0,
             avg_unusable_space_per_core=0.0,
-            error=tag_with_verdict(verdict, named_message(e)),
+            error=tag_with_verdict(verdict, named_message(e) + (
+                "" if runs is None else f" (segment {len(segment_cores)} of {len(groups)}, the builder's single pool)")),
             verdict=verdict,
         )
 
@@ -236,4 +251,17 @@ def pack_layout(
         ),
         placements=placements,
         core_regions=tuple(frozenset(h.regions) for h in used_hardcores) if collect_placements else None,
+        segment_cores=tuple(segment_cores) if runs is not None else None,
     )
+
+
+def _segment_groups(softcores: List[LayoutSoftCoreSpec], runs: Optional[Sequence[int]]) -> List[List[LayoutSoftCoreSpec]]:
+    """[E-3] The softcores of each builder segment in program order (ascending run), or one co-pack without runs."""
+    if runs is None:
+        return [softcores]
+    if len(runs) != len(softcores):
+        raise ValueError(f"runs states {len(runs)} segments for {len(softcores)} softcores")
+    by_run: Dict[int, List[LayoutSoftCoreSpec]] = {}
+    for softcore, run in zip(softcores, runs):
+        by_run.setdefault(int(run), []).append(softcore)
+    return [by_run[run] for run in sorted(by_run)]

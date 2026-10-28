@@ -116,6 +116,8 @@ class TestCoverage:
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",
+    # E-6 key amendment (U-E, N2 follow-up F5): a core type's compute technology, priced per core type.
+    "cores.compute_physics",
     # N2 (Wave 2) key amendment: who writes an operand core type's payloads, priced apart (design §2.9).
     "cores.operand.write_source",
     "cores.weight_sign_granularity",
@@ -190,8 +192,8 @@ class TestPlanClasses:
         cost_only = {path for path, cls in _every_path_class() if cls == COST_ONLY}
         # 26 owner-reviewed rows + the closure's CL-SG amendment (weight_sign_granularity) + the N2 key amendment
         # (write_source) + the N2b one (write_physics) + W02's position_multiplexing (pack) + W08's two lane-block
-        # pricing fields (lanes)
-        assert len(FROZEN_COST_ONLY) == 32
+        # pricing fields (lanes) + E-6's compute_physics
+        assert len(FROZEN_COST_ONLY) == 33
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 
@@ -437,7 +439,7 @@ class TestJoin:
             "write_overlap": {"mode": "serial"},
         }
         assert declared_paths(values) == (
-            "cores.count", "cores.has_bias", "cores.max_axons", "cores.max_neurons",
+            "cores.compute_physics", "cores.count", "cores.has_bias", "cores.max_axons", "cores.max_neurons",
             "cores.operand.payload_bits", "cores.operand.write_source",
             "cores.weight_bits",  # Wave 2 WI-5g: absent, the platform weight_bits (function-bearing)
             "cores.weight_sign_granularity",

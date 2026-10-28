@@ -11,7 +11,7 @@ planner finds no schedule at the point's core budget.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -28,6 +28,20 @@ class LadderDeclarationError(ToolchainRefusal, ValueError):
 
 class LadderScheduleRefusal(ToolchainRefusal, ValueError):
     """The builder's planner finds no schedule at the point's core budget (a row records it by name)."""
+
+
+#: Declarations a row reads that leave the priced program unchanged.
+ROW_KEYS = ("inference_batch_K", "inference_rate_hz", "min_lifetime_hours")
+#: [CL5] Declarations a priced platform may change against its scheduled program: the row keys and the physics.
+PRICE_KEYS = ROW_KEYS + ("platform_physics_profile", "platform_physics_overrides", "platform_physics_resolved")
+
+
+def require_declared_change(platform: Mapping[str, Any], reference: Mapping[str, Any], keys: Sequence[str],
+                            what: str) -> None:
+    """Refuse by name (``LadderDeclarationError``: "<what> only in <keys>") a ``platform`` that differs from
+    ``reference`` in any declaration outside ``keys`` (``ROW_KEYS`` for a row, ``PRICE_KEYS`` for a pricing)."""
+    if {k: v for k, v in platform.items() if k not in keys} != {k: v for k, v in reference.items() if k not in keys}:
+        raise LadderDeclarationError(f"{what} only in " + ", ".join(keys))
 
 
 def certificate_record(certificate: Any) -> Dict[str, Any]:

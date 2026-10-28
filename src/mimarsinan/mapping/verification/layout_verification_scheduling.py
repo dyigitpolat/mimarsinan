@@ -54,6 +54,9 @@ def compute_mapping_stats(
     fit the pool side by side (unpinned) while the unscheduled pack holds (``unscheduled_pack_holds``), that pack is
     the program (the fit rule, as the builder builds its single pool); [fix_c] likewise under a declared plan whose
     composition rotates tiles (r > 0), every plan but the stateless baseline (``fit_rule_applies``).
+    [E-3] With the builder's segments (``runs``, else the census's) the unscheduled pack is the builder's single
+    pool (``pack_layout(runs=...)``: segment by segment from one pool), so the unscheduled feasibility and the fit
+    rule judge the program the builder builds, and refuse where it refuses, by the same name.
     """
     if census is None or program is None:
         refuse_without_cut_census("compute_mapping_stats", residency_plan)
@@ -61,11 +64,13 @@ def compute_mapping_stats(
         return _empty_stats(feasible=False, num_softcores=len(softcores)), \
             "No softcores or core types"
 
+    segment_runs = runs if runs is not None else getattr(census, "spec_runs", None)
     pack = pack_layout(
         softcores=softcores,
         core_types=core_types,
         allow_neuron_splitting=allow_neuron_splitting,
         allow_coalescing=allow_coalescing,
+        runs=segment_runs,
     )
     flat_stats = (
         _stats_from_packing(
@@ -91,7 +96,7 @@ def compute_mapping_stats(
         allow_splitting=allow_neuron_splitting,
         max_schedule_passes=max_schedule_passes,
         residency=None if residency_plan is None else ShapeOnlyResidency(residency_plan, census, program),
-        runs=runs if runs is not None else getattr(census, "spec_runs", None),
+        runs=segment_runs,
         position_multiplexing=position_multiplexing,
     )
 

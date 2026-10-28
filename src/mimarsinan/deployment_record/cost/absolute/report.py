@@ -9,6 +9,7 @@ from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import mimarsinan.mapping.platform.target_bundles as target_bundles
+from mimarsinan.deployment_record.build.program_census import record_program_passes
 from mimarsinan.deployment_record.cost.absolute.context import AbsolutePricing, PricingRefusal
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
 from mimarsinan.deployment_record.cost.output_stage import output_stage_note
@@ -16,7 +17,9 @@ from mimarsinan.deployment_record.cost.absolute.validity import UNJUDGED, declar
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
 from mimarsinan.deployment_record.cost.terms import CostTerm, DeploymentCostReport
+from mimarsinan.deployment_record.platform_physics.converter import declared_adc_bits
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.deployment_record.quantities.compute_technology import compute_split
 from mimarsinan.deployment_record.quantities.from_record import from_record
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.quantities.write_law import record_write_census
@@ -102,6 +105,7 @@ def candidate_cost_report(
     writes: Optional[WriteInputs] = None, geometry: Optional[Tuple[Any, ...]] = None,
     refusal: Optional[Tuple[str, str]] = None,
     output_stage: Optional[Mapping[str, Any]] = None,
+    compute: Optional[Any] = None, readout_bits: Optional[int] = None,
 ) -> DeploymentCostReport:
     """A candidate's report: priced terms only — no segments, no measured plane. A candidate that
     declares no complete core geometry prices the aggregates as declared (``UNJUDGED``); one on a
@@ -113,7 +117,8 @@ def candidate_cost_report(
         raise ValueError("a candidate cost report needs the candidate's physics or its pricing refusal")
     else:
         pricing = price_absolute(quantities, physics, writes=writes,
-                                 geometry=UNJUDGED if geometry is None else geometry)
+                                 geometry=UNJUDGED if geometry is None else geometry, compute=compute,
+                                 readout_bits=readout_bits)
     groups = _grouped(pricing)
     stage = () if output_stage is None else (output_stage_note(output_stage, pricing),)
     return DeploymentCostReport(
@@ -147,7 +152,22 @@ def absolute_pricing_for_record(
         return None
     geometry = record_geometry(record)
     return price_absolute(from_record(record), physics, writes=record_write_inputs(record),
+                          compute=record_compute_split(record), readout_bits=record_readout_bits(record),
                           geometry=UNJUDGED if geometry is None else geometry)
+
+
+def record_readout_bits(record: Any) -> Optional[int]:
+    """[E-5] The sealed run's converter resolution (``readout_law.adc_bits`` of its platform), None when undeclared."""
+    return declared_adc_bits(record.identity.platform)
+
+
+def record_compute_split(record: DeploymentRecord) -> Optional[Any]:
+    """[E-6] The sealed record's MAC events per core type (``compute_technology.compute_split`` on its passes),
+    present only when a core type of its platform names a compute physics."""
+    platform = record.identity.platform
+    if not any(ct.get("compute_physics") for ct in (platform or {}).get("cores") or ()):
+        return None
+    return compute_split(platform, record_program_passes(record))
 
 
 def record_geometry(record: DeploymentRecord) -> Optional[Tuple[Any, ...]]:

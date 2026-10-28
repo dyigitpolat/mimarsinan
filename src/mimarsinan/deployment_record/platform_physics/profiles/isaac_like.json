@@ -245,5 +245,48 @@
       "derivation": "[CH-D2] The pattern of this profile's e_dma_per_byte (a row's power over the bytes it moves per unit time): router 42 mW, 8 ports, 32-bit flits; at the paper's conservative 32-bit link at 1 GHz a router moves 8 x 4 B per ns, so 42 mW / 32 GB/s = 1.3125 pJ per byte-hop; at the 1.2 GHz clock 1.09375 pJ.",
       "note": "Assumes the published router power is drawn with every port moving a flit each link cycle; a router that idles part of the time costs less per byte, so the band is the full-rate figure. The c-mesh shares one router among 4 tiles, which the XY hop count of the declared floorplan does not model."
     }
+  },
+  "converter": {
+    "rows": [
+      {
+        "bits": 8,
+        "e_adc_conversion": {
+          "low": 1.5625,
+          "nominal": 1.5625,
+          "high": 1.667,
+          "unit": "pJ",
+          "evidence_kind": "derived",
+          "citation": "shafiee2016isaac Table I ADC row + Section V 'The Read/ADC Pipeline', p.5",
+          "derivation": "Operational (nominal): 16 mW x 100 ns = 1.6 nJ per IMA-cycle over 8 arrays x 128 columns = 1024 conversions = 1.5625 pJ. Nameplate (high): 2 mW per ADC / 1.2 GSps = 1.667 pJ. The two agree because the text's actual rate is 1.28 GSps.",
+          "note": "The single most important constant in this profile: at ~1 conversion per 16-bit MAC, conversion is the dominant analog cost."
+        },
+        "t_adc_conversion": {
+          "low": 0.781,
+          "nominal": 0.781,
+          "high": 0.833,
+          "unit": "ns",
+          "evidence_kind": "derived",
+          "citation": "shafiee2016isaac Section V + Table I, p.5",
+          "derivation": "Text rate 1/1.28 GSps = 0.781 ns; Table I nameplate 1/1.2 GSps = 0.833 ns. Cross-checked by the text's own '128 bitline currents are processed in 100 ns' = 0.781 ns each."
+        },
+        "area_per_adc": {
+          "nominal": 1200.0,
+          "unit": "um^2",
+          "evidence_kind": "derived",
+          "citation": "shafiee2016isaac Table I, ADC row, p.8",
+          "derivation": "0.0096 mm^2 for 8 ADCs / 8 = 0.0012 mm^2 = 1200 um^2 per 8-bit 1.2 GSps ADC at 32 nm."
+        }
+      }
+    ],
+    "energy_law": {
+      "form": "linear_plus_exponential",
+      "anchor_bits": 8,
+      "bits_range": [4, 8],
+      "k1": {"nominal": 100.0, "unit": "fJ"},
+      "k2": {"nominal": 0.001, "unit": "fJ"},
+      "citation": "houshmand2023benchmarking Eq. 8, p.5 (the ADC energy model of its ref. [5], murmann2021mixed)",
+      "derivation": "houshmand2023benchmarking p.5: 'EADC is estimated using the ADC energy model from [5]: EADC = (k1 x ADCres + k2 4^ADCres) V^2 x Bw x (total MACs/D2) (8) with k1 = 100 fJ and k2 = 1 aJ. The model assumes one ADC conversion per bitline.' Per conversion E(b) = (k1 b + k2 4^b) V^2; anchored at the profile's own 8-bit row at one operating point the supply term cancels: E(b) = E(8) x (k1 b + k2 4^b) / (k1 8 + k2 4^8), e.g. 0.4624 x E(8) at 4 bits, 0.5789 at 5, 0.6979 at 6, 0.8277 at 7. The range is W34's sweep at and below the anchor (4 to 8 bits): the law scales ISAAC's measured 8-bit ADC down and is never read above it; the paper states no resolution range of its own. ISAAC's own text states the same shape: 'some ADC overheads grow exponentially with resolution' (shafiee2016isaac p.5)."
+    },
+    "note": "[E-5] The profile's converter at its own resolution: ISAAC's 8-bit ADC (shafiee2016isaac Table I, p.8; Section V, p.5), its three flat constants as the row at 8 bits. A run that declares readout_law.adc_bits prices the converter at that resolution: at 8 bits exactly the flat constants; from 4 to 7 bits the energy per conversion by the cited law (energy_law), anchored at the 8-bit row; the area per converter and the conversion time are stated at 8 bits only, so off that row the area headline is refused by name (W34; ISAAC scales its ADC area with resolution from its ADC's component split, shafiee2016isaac p.5 and its refs. [36], [59], which this profile does not state). The conversion time enters no priced term: the profile's t_cycle is the crossbar read, 'the slowest stage' (shafiee2016isaac Section VI, p.6)."
   }
 }

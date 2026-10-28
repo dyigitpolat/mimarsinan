@@ -109,12 +109,10 @@ class TestAChipThatHoldsTheProgramProgramsItOnce:
         _builder_fit(name, counts)
 
     @pytest.mark.slow
-    @pytest.mark.xfail(strict=True, reason="W04 packer parity: the shape-only plane's layout packer (pack_layout) does "
-                                           "not hold the program where the builder's packer does (t0_43 segment 1: 113 "
-                                           "cores against 75), so the plane plans U1; the W03 census lists every such "
-                                           "point by name (summarize_census.py, shape_only_fits)")
     @pytest.mark.parametrize("name, counts", WITNESSES)
     def test_the_witnesses_on_the_shape_only_plane(self, name, counts):
+        """[E-3] The W04 residual closed: the shape-only plane packs the builder's single pool segment by segment
+        (``pack_layout(runs=...)``; t0_43 at 104 + 104: 49, 75, 18, 31, 10, 13, 3, 5 and 1 cores on both planes)."""
         _plane_fit(*_builder_fit(name, counts))
 
 

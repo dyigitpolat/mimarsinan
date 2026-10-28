@@ -225,13 +225,16 @@ def _operand_chip(count: int = 3) -> dict:
             "inference_batch_K": 1, "inference_rate_hz": 30.0, "min_lifetime_hours": 43_800.0}
 
 
-def test_the_sealed_record_plane_refuses_the_write_terms_of_an_operand_program(program):
-    """The record schema states no operand regions per pass, so its census would price operand cells as static
-    backing-store cells and admit an NVM chip the mapping plane refuses (integration review's reproducer)."""
+def test_a_sealed_record_without_operand_regions_refuses_the_write_terms_of_an_operand_program(program):
+    """A record that states no operand regions per pass (sealed before E-6 sealed them,
+    ``test_record_operand_regions.py``) would price operand cells as static backing-store cells and admit an NVM
+    chip the mapping plane refuses (integration review's reproducer), so its write terms refuse by name."""
     mapping = program.packed_mapping(**GEOMETRY)
     platform = _operand_chip(10_000)
+    sealed = schedule_record_from_mapping(mapping, weight_bits=8, params_reloaded=0)
     record = SimpleNamespace(
-        schedule=schedule_record_from_mapping(mapping, weight_bits=8, params_reloaded=0),
+        schedule=replace(sealed, stages=tuple(replace(s, operand_core_cells=None) if hasattr(s, "operand_core_cells")
+                                              else s for s in sealed.stages)),
         timing=SimpleNamespace(per_segment=(), s_global=1), identity=SimpleNamespace(platform=platform),
         utilization=SimpleNamespace(crossbar=SimpleNamespace(weight_bits=8)))
     writes = record_write_census(record)

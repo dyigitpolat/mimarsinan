@@ -193,6 +193,8 @@ class CandidateStaticView:
                     self.quantities, self.physics, writes=self._write_inputs(),
                     geometry=None if context is None else context.core_geometry, refusal=refusal,
                     output_stage=None if context is None else context.output_stage,
+                    compute=None if context is None else context.compute,
+                    readout_bits=None if context is None else context.readout_bits,
                 )
                 if self.physics is not None or refusal is not None
                 else None

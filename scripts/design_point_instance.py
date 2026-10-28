@@ -15,6 +15,15 @@ anything is built. Per judged row: the ladder's priced point at the budget (the 
 override-block set, each batch of the grid), the integer program built the pipeline's way on the target's geometry
 and permissions (random weights from the roster's factory), the program the pipeline's builder schedules at the
 budget (U1), and the instance machinery's judged fields on it. Every number is a single run; provisional.
+
+[E-6, targeted pass] A row that declares its core types with a ``declaration`` (a platform declaration file whose
+core types each state their ``write_physics``, e.g. ``tests/fixtures/design_point/hybrid_neurram_sram_cim.json``) is
+judged too: its platform is the declaration resolved (at the row's ``core_counts`` where stated, with the row's
+``declare`` keys and each variant's override blocks), its network the row's own (``network``; a ``program``
+``operand`` network is built the pipeline's way onto the declared operand core type), the IR's latencies tagged as
+Soft Core Mapping tags them, its wear and lifetime per core type, and it is priced on the record plane (its executed
+record per variant, ``design_point.pricing.executed_record``), since the exploration plane plans no operand
+regions.
 """
 
 from __future__ import annotations
@@ -42,8 +51,13 @@ import scaling_ladder as ladder  # noqa: E402
 from mimarsinan.deployment_record.design_point.chip_rows import core_type_record, declaration_refusals  # noqa: E402
 from mimarsinan.deployment_record.design_point.executors import EXECUTORS  # noqa: E402
 from mimarsinan.deployment_record.design_point.pricing import (  # noqa: E402
-    candidate_facts, executed_facts, ladder_pricing,
+    candidate_facts, executed_facts, ladder_pricing, record_pricing,
 )
+from mimarsinan.deployment_record.design_point.pricing import executed_record  # noqa: E402
+from mimarsinan.deployment_record.build.partition import compute_partition_record  # noqa: E402
+from mimarsinan.config_schema.runtime import run_config  # noqa: E402
+from mimarsinan.mapping.latency.ir import IRLatency  # noqa: E402
+from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved  # noqa: E402
 from mimarsinan.deployment_record.design_point.rows import judged_row, plane_agreement  # noqa: E402
 from mimarsinan.deployment_record.design_point.schema import SCHEMA_ID, SCHEMA_VERSION, validate_instance  # noqa: E402
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics  # noqa: E402
@@ -53,6 +67,7 @@ import mimarsinan.mapping.platform.target_bundles as bundle_module  # noqa: E402
 from mimarsinan.mapping.platform.target_bundles import declared_departures, target_bundles  # noqa: E402
 from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline  # noqa: E402
 from unit.chip_simulation.value_run.integer_programs import build_integer_program, integer_inputs  # noqa: E402
+from unit.chip_simulation.value_run.operand_programs import LAW as OPERAND_LAW, build_operand_program  # noqa: E402
 
 #: Declared on every built program beside the bundle's keys: the 8-bit value grid of the integer readout law.
 BUILD_DECLARATIONS = {"activation_bits": 8, "core_semantics": "mvm"}
@@ -67,9 +82,10 @@ def load_json(path: str) -> Any:
         return json.load(handle)
 
 
-def register_network(spec: Mapping[str, Any]) -> str:
-    """The ladder roster name of the spec's network; a spec that declares its roster entry adds it (for this run)."""
-    network = spec["network"]
+def register_network(spec: Mapping[str, Any], network: Optional[Mapping[str, Any]] = None) -> str:
+    """The ladder roster name of the spec's network (or of ``network``, a row's own); a network that declares its
+    roster entry adds it (for this run)."""
+    network = spec["network"] if network is None else network
     entry = network.get("roster_entry")
     if entry is not None:
         builder, config, classes, shape = entry
@@ -77,10 +93,11 @@ def register_network(spec: Mapping[str, Any]) -> str:
     return str(network.get("roster", network["name"]))
 
 
-def model_factory(spec: Mapping[str, Any]):
+def model_factory(spec: Mapping[str, Any], network: Optional[Mapping[str, Any]] = None):
     """The roster entry's model factory (the ladder's: the same random weights for the ladder and the build)."""
-    builder, config, classes = ladder.ROSTER[register_network(spec)][:3]
-    shape = ladder.member_shape(register_network(spec), None)
+    name = register_network(spec, network)
+    builder, config, classes = ladder.ROSTER[name][:3]
+    shape = ladder.member_shape(name, None)
     return lambda: ladder._builder(builder)(shape, classes, config).eval(), shape, int(classes)
 
 
@@ -108,28 +125,98 @@ def bundle_document(name: str) -> Dict[str, Any]:
     return load_json(os.path.join(os.path.dirname(bundle_module.__file__), "targets", f"{name}.json"))
 
 
-def chip_block(spec: Mapping[str, Any], row: Mapping[str, Any], cores: Optional[int]) -> Dict[str, Any]:
-    """The row's chip declaration in the instance's form."""
+def declaration_of(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """[E-6, targeted pass] The row's platform declaration (its ``declaration`` file's ``platform_constraints``, a
+    path relative to the worktree root), or None."""
+    path = row.get("declaration")
+    if not path:
+        return None
+    return dict(load_json(os.path.join(HERE, "..", path))["platform_constraints"])
+
+
+def declared_core_types(row: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """The row's core types in the instance's form, with their write technology: the declaration's core types
+    (each with its ``write_physics``, at the row's ``core_counts`` where stated) where the row names one, else each
+    named bundle's first core type under the bundle's physics profile."""
+    declaration = declaration_of(row)
+    out: List[Dict[str, Any]] = []
+    if declaration is None:
+        for declared in row["core_types"]:
+            bundle = target_bundles()[declared["target"]]
+            out.append({**dict(bundle.values["cores"][0]), "role": declared.get("role", "any"),
+                        "count": declared.get("count"),
+                        "write_technology": bundle.values.get("platform_physics_profile"),
+                        **({"operand": declared["operand"]} if "operand" in declared else {}),
+                        "source": f"geometry and write technology of bundle {bundle.name}"})
+        return out
+    cores = declaration_cores(row, declaration)
+    if len(cores) != len(row["core_types"]):
+        raise ladder.LadderDeclarationError(f"the row names {len(row['core_types'])} core types and its declaration "
+                                            f"{row['declaration']} declares {len(cores)}")
+    for declared, core in zip(row["core_types"], cores):
+        out.append({**core, "role": declared.get("role", "any"),
+                    "write_technology": core.get("write_physics"),
+                    "source": f"core type of the declaration {row['declaration']}"})
+    return out
+
+
+def declaration_cores(row: Mapping[str, Any], declaration: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """The declaration's core types (its target overrides), at the row's ``core_counts`` where stated."""
+    cores = [dict(c) for c in declaration["target_overrides"]["cores"]["value"]]
+    counts = row.get("core_counts")
+    if counts is not None:
+        if len(counts) != len(cores):
+            raise ladder.LadderDeclarationError(f"core_counts {counts} names {len(counts)} counts for {len(cores)} "
+                                                "declared core types")
+        cores = [{**c, "count": int(n)} for c, n in zip(cores, counts)]
+    return cores
+
+
+def declared_platform(spec: Mapping[str, Any], row: Mapping[str, Any], overrides: Optional[Dict[str, Any]],
+                      k: int) -> Dict[str, Any]:
+    """The row's declaration resolved (``build_platform_constraints_resolved`` over the registry's run config): its
+    core types at the row's counts, the row's ``declare`` keys, the instance's build declarations, the declared batch,
+    rate and floor, and the variant's override blocks. [U-C C-5] A build declaration the declaration's target sets
+    to another value (``declared_departures``) is a declared departure, stated in ``target_overrides`` with its
+    note, so the record names it; the others are plain declarations."""
+    declaration = declaration_of(row)
+    assert declaration is not None
+    cores = declaration_cores(row, declaration)
+    overrides_block = dict(declaration.get("target_overrides") or {})
+    overrides_block["cores"] = {**overrides_block["cores"], "value": cores}
+    build = {k_: v for k_, v in BUILD_DECLARATIONS.items() if k_ != "core_semantics"}
+    departing = {d["key"] for d in declared_departures(declaration["target"], build)} if declaration.get(
+        "target") else set()
+    overrides_block.update({k_: {"value": v, "note": f"the instance's build declares {k_}={v!r} (BUILD_DECLARATIONS: "
+                                                     "the integer readout law's value grid)"}
+                            for k_, v in build.items() if k_ in departing})
+    declared = {**declaration, "target_overrides": overrides_block,
+                **{k_: v for k_, v in build.items() if k_ not in departing},
+                **dict(row.get("declare") or {}), "inference_batch_K": int(k), "inference_rate_hz": ladder.RATE_HZ,
+                "min_lifetime_hours": ladder.LIFETIME_HOURS,
+                **({"platform_physics_overrides": overrides} if overrides else {})}
+    return build_platform_constraints_resolved(run_config({}, declared))
+
+
+def chip_block(spec: Mapping[str, Any], row: Mapping[str, Any], cores: Optional[int],
+               resolved: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """The row's chip declaration in the instance's form (``resolved``: a declared row's resolved platform, once
+    judged)."""
     bundles = target_bundles()
     if row.get("core_types"):
-        types, departures = [], []
-        for declared in row["core_types"]:
-            bundle = bundles[declared["target"]]
-            core = dict(bundle.values["cores"][0])
-            role = declared.get("role", "any")
-            types.append(core_type_record({**core, "role": role, "count": declared.get("count"),
-                                           "write_technology": bundle.values.get("platform_physics_profile"),
-                                           **({"operand": declared["operand"]} if "operand" in declared else {}),
-                                           "source": f"geometry and write technology of bundle {bundle.name}"}))
-            # [U-C C-5] each core type's bundle against the build's own declarations, by name
-            departures += [f"{d['key']} declared ({role} core type, bundle {bundle.name})"
-                           for d in declared_departures(bundle.name, BUILD_DECLARATIONS)]
+        types = [core_type_record({k: v for k, v in ct.items() if k not in ("write_physics", "compute_physics")})
+                 for ct in declared_core_types(row)]
+        # [U-C C-5] each core type's bundle against the build's own declarations, by name
+        departures = [f"{d['key']} declared ({ct.get('role', 'any')} core type, bundle {ct['target']})"
+                      for ct in row["core_types"] for d in declared_departures(ct["target"], BUILD_DECLARATIONS)]
         names = [ct["target"] for ct in row["core_types"]]
+        judged = resolved is not None
         return {"target": None, "display_name": row.get("display_name", " with ".join(names)), "core_types": types,
-                "weight_bits": None, "faithfulness": {"class": "refused", "named": departures,
-                                                      "note": row.get("note", "")},
+                "weight_bits": None if not judged else int(resolved["weight_bits"]),
+                "faithfulness": {"class": "refused" if not judged else str(resolved.get("target_faithfulness_class")),
+                                 "named": departures, "note": row.get("note", "")},
                 "claim_class": None, "arithmetic_class": row["arithmetic_class"], "backing_store": None,
-                "physics_profile": None}
+                "physics_profile": None if not judged else resolved.get("platform_physics_profile")}
     bundle = bundles[row["target"]]
     document = bundle_document(bundle.name)
     values = bundle.values
@@ -224,26 +311,94 @@ def judged_part(spec: Mapping[str, Any], row: Mapping[str, Any]) -> Dict[str, An
     return judged
 
 
+def declared_program(spec: Mapping[str, Any], row: Mapping[str, Any], platform: Mapping[str, Any]):
+    """(the row's program on its resolved platform, its model, shape and classes): the row's network (or the spec's)
+    built the pipeline's way; a ``program`` ``operand`` network lowers its products onto the declared operand core
+    type (``build_operand_program``). The IR's latencies are tagged as Soft Core Mapping tags them (``IRLatency``)."""
+    network = row.get("network") or spec["network"]
+    factory, shape, classes = model_factory(spec, network)
+    bits = int(platform["weight_bits"])
+    if network.get("program", "integer") == "operand":
+        program = build_operand_program(factory(), tuple(shape), num_classes=classes, weight_bits=bits,
+                                        platform={**platform, "readout_law": dict(OPERAND_LAW),
+                                                  "readout_ranges": "per_consumer_group"})
+    else:
+        pmap = resolve_platform_mapping_params(list(platform["cores"]),
+                                               allow_coalescing=bool(platform.get("allow_coalescing", False)))
+        program = build_integer_program(factory(), shape, num_classes=classes, max_axons=pmap.effective_max_axons,
+                                        max_neurons=pmap.effective_max_neurons,
+                                        allow_coalescing=bool(platform.get("allow_coalescing", False)),
+                                        weight_bits=bits, hardware_bias=pmap.hardware_bias)
+    IRLatency(program.ir).calculate()
+    return program, network, tuple(shape), classes
+
+
+def judged_declared_part(spec: Mapping[str, Any], row: Mapping[str, Any]) -> Dict[str, Any]:
+    """[E-6, targeted pass] Every judged field of a row declared by core types (its declaration's), priced on the
+    record plane per variant at each batch of the grid."""
+    variants = row_variants(spec, row)
+    named = next(iter(variants))
+    declared_k = int(row.get("declared_K", spec["declared_K"]))
+    platform = declared_platform(spec, row, variants[named], declared_k)
+    start = time.time()
+    with contextlib.redirect_stdout(io.StringIO()):
+        program, network, shape, classes = declared_program(spec, row, platform)
+        hybrid = build_hybrid_mapping_for_pipeline(program.ir, platform)
+    built = time.time() - start
+    bits = int(platform["weight_bits"])
+    partition = compute_partition_record(program.ir, program.model, shape, classes, encoding_placement="subsume")
+    records = {label: executed_record(hybrid, declared_platform(spec, row, blocks, declared_k), weight_bits=bits,
+                                      label=f"{row['row']}:{label}", partition=partition)
+               for label, blocks in variants.items()}
+    inputs = spec["inputs"]
+    x_int = integer_inputs(program, int(inputs["count"]), seed=int(inputs["seed"]), spread=int(inputs.get("spread", 3)))
+    names = {i: p.name for i, p in enumerate(program.model.get_perceptrons())}
+    types = declared_core_types(row)
+    judged = judged_row(nf=program.model, ir_graph=program.ir, hybrid=hybrid, x_int=x_int, platform=platform,
+                        physics=PlatformPhysics.from_dict(platform["platform_physics_resolved"]),
+                        k_grid=spec["k_grid"], weight_bits=bits, names=names,
+                        roles={str(ct["write_physics"]): str(ct["role"]) for ct in types if ct.get("write_physics")})
+    judged["program"].update(route=("build_operand_program" if network.get("program") == "operand"
+                                    else "build_integer_program") + " + IRLatency + build_hybrid_mapping_for_pipeline "
+                                   "on the row's resolved declaration, integer readout law", build_wall_s=round(built, 1))
+    cores = sum(int(c.get("count", 1)) for c in platform["cores"])
+    judged["budget"] = {"packed_tiles_F": None, "fraction": None, "cores": cores,
+                        "rule": ("the row's declaration states its core counts (" + ", ".join(
+                            f"{ct['role']} {ct.get('write_physics')}: {ct.get('count')}" for ct in types) + "); "
+                                 "no footprint F: the ladder's packer plans no operand regions")}
+    judged["pricing"] = record_pricing(records, spec["k_grid"])
+    judged["chip"] = chip_block(spec, row, cores, resolved=platform)
+    if row.get("network"):
+        judged["network"] = network_block(row["network"])
+    return judged
+
+
+def network_block(network: Mapping[str, Any]) -> Dict[str, Any]:
+    """A network declaration in the document's form (the document's network, or a row's own)."""
+    return {"name": network["name"], "builder": network["builder"], "width": network.get("width"),
+            **({"width_note": network["width_note"]} if network.get("width_note") else {}),
+            "input_shape": list(network["input_shape"]), "classes": int(network["classes"]),
+            "weights": network["weights"], "block": network.get("block"),
+            "accuracy": {"value": None, "absent": network["accuracy_absent"]}}
+
+
 def row_part(spec: Mapping[str, Any], row: Mapping[str, Any]) -> Dict[str, Any]:
     start = time.time()
     head = {k: row.get(k) for k in ("row", "role", "title", "beside_of")}
     if row.get("label"):
         head["label"] = row["label"]
+    judge = judged_part
     if row.get("core_types"):
-        refusals = declaration_refusals([{**core_type_record({**dict(target_bundles()[ct["target"]].values["cores"][0]),
-                                                               "role": ct.get("role", "any")}),
-                                          "write_technology": target_bundles()[ct["target"]].values.get(
-                                              "platform_physics_profile"), **({"operand": ct["operand"]}
-                                                                             if "operand" in ct else {})}
-                                         for ct in row["core_types"]])
-        part = {**head, "chip": chip_block(spec, row, None),
-                "admission": {"verdict": "refused" if refusals else "admitted", "at_K": None, "reasons": [],
-                              "refusals": refusals}}
-        if not refusals:
-            raise ladder.LadderDeclarationError("a multi-core-type row with no refusal needs per-core-type pricing, "
-                                                "which this script does not build")
-        return part
-    work, mark = ladder.attempt(spec.get("point_budget_s"), lambda clock: judged_part(spec, row))
+        refusals = declaration_refusals(declared_core_types(row))
+        if refusals or declaration_of(row) is None:
+            return {**head, "chip": chip_block(spec, row, None),
+                    "admission": {"verdict": "refused", "at_K": None, "reasons": [],
+                                  "refusals": refusals or [{"name": "no_declaration", "stage": "declare",
+                                                            "reason": "a row of core types names no declaration "
+                                                                      "(a platform declaration file), so it is not "
+                                                                      "built"}]}}
+        judge = judged_declared_part
+    work, mark = ladder.attempt(spec.get("point_budget_s"), lambda clock: judge(spec, row))
     if work is None:
         part = {**head, "chip": chip_block(spec, row, None),
                 "admission": {"verdict": "above_cap" if (mark or {}).get("above_budget") else "refused",
@@ -279,11 +434,7 @@ def assemble(spec: Mapping[str, Any], parts_dir: str, spec_path: str, argv: List
     return {
         "schema": SCHEMA_ID, "schema_version": SCHEMA_VERSION, "status": "provisional",
         "produced_by": provenance(spec_path, argv),
-        "network": {"name": network["name"], "builder": network["builder"], "width": network.get("width"),
-                    **({"width_note": network["width_note"]} if network.get("width_note") else {}),
-                    "input_shape": list(network["input_shape"]), "classes": int(network["classes"]),
-                    "weights": network["weights"], "block": network.get("block"),
-                    "accuracy": {"value": None, "absent": network["accuracy_absent"]}},
+        "network": network_block(network),
         "declarations": {"inference_rate_hz": ladder.RATE_HZ, "min_lifetime_hours": ladder.LIFETIME_HOURS,
                          "declared_K": int(spec["declared_K"]), "k_grid": list(spec["k_grid"]),
                          "budget_rule": f"{spec['budget_fraction']} of the packed tile count F",

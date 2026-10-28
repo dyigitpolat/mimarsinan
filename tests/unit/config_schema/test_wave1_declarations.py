@@ -172,6 +172,7 @@ class TestRegistryEntries:
             "write_granularity", "write_units_in_parallel",
             "operand",  # N2 (Wave 2) key amendment: the operand core type (design §2.9)
             "write_physics",  # N2b key amendment: per-core-type write technology (design §2.9)
+            "compute_physics",  # E-6 key amendment: per-core-type compute technology (N2 follow-up F5)
             "weight_bits",  # Wave 2 WI-5g: a core type's own weight width
         }
 

@@ -52,7 +52,8 @@ CHIP = Obj(
      "readout": Obj({"declared_law": STR, "bundle_converter": STR}, {"note": STR})})
 ADMISSION = Obj({"verdict": Enum(VERDICTS), "at_K": Nullable(INT), "reasons": ListOf(STR),
                  "refusals": ListOf(REFUSAL)})
-BUDGET = Obj({"packed_tiles_F": INT, "fraction": NUMBER, "cores": INT, "rule": STR},
+#: [E-6, targeted pass] A row declared by core types states its counts (no footprint F, no fraction: null).
+BUDGET = Obj({"packed_tiles_F": Nullable(INT), "fraction": Nullable(NUMBER), "cores": INT, "rule": STR},
              {"x_fluid": Nullable(NUMBER), "x_packed": Nullable(NUMBER), "replication": Nullable(NUMBER)})
 PROGRAM = Obj({"neural_passes": INT, "host_stages": INT, "segments": INT, "hard_cores_used": INT, "ir_cores": INT,
                "host_ops": INT}, {"route": STR, "build_wall_s": NUMBER})
@@ -109,21 +110,21 @@ PRICED_VARIANT = Obj(
 PRICING = Obj({"plane": STR, "variants": ListOf(PRICED_VARIANT)}, {"refusal": Nullable(REFUSAL)})
 PLANES = Obj({"agree": BOOL, "fields": ListOf(Obj({"field": STR, "executed": ANY, "candidate": ANY, "agree": BOOL}))},
              {"named": ListOf(Obj({"field": STR, "reason": STR}))})
+NETWORK = Obj(
+    {"name": STR, "builder": STR, "width": Nullable(NUMBER), "input_shape": ListOf(INT), "classes": INT,
+     "weights": STR, "block": Nullable(STR),
+     "accuracy": Obj({"value": Nullable(NUMBER), "absent": Nullable(STR)}, {"split": STR, "evidence": STR})},
+    {"width_note": STR, "parameters": INT})
 ROW = Obj(
     {"row": STR, "role": Enum(("figure", "beside")), "title": STR, "beside_of": Nullable(STR), "chip": CHIP,
      "admission": ADMISSION},
     {"label": STR, "budget": BUDGET, "program": PROGRAM, "placement": ListOf(OPERATOR),
      "timeline": ListOf(TIMELINE_ENTRY), "certificate": CERTIFICATE, "activity": ListOf(ACTIVITY), "writes": WRITES,
      "lifetime": LIFETIME, "k_star": K_STAR, "pricing": PRICING, "planes": PLANES, "wall_s": NUMBER,
-     "peak_rss_gib": NUMBER})
+     "peak_rss_gib": NUMBER, "network": NETWORK})
 #: The fields every judged row (any verdict but ``refused`` and ``above_cap``) carries.
 JUDGED_FIELDS = ("budget", "program", "placement", "timeline", "certificate", "activity", "writes", "lifetime",
                  "k_star")
-NETWORK = Obj(
-    {"name": STR, "builder": STR, "width": Nullable(NUMBER), "input_shape": ListOf(INT), "classes": INT,
-     "weights": STR, "block": Nullable(STR),
-     "accuracy": Obj({"value": Nullable(NUMBER), "absent": Nullable(STR)}, {"split": STR, "evidence": STR})},
-    {"width_note": STR, "parameters": INT})
 DECLARATIONS = Obj(
     {"inference_rate_hz": NUMBER, "min_lifetime_hours": NUMBER, "declared_K": INT, "k_grid": ListOf(INT),
      "budget_rule": STR, "inputs": Obj({"kind": STR, "count": INT, "seed": INT}, {"spread": INT}), "atol": NUMBER,

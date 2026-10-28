@@ -124,6 +124,7 @@ def schedule_record_from_mapping(
         in _iter_neural_stages(hybrid_mapping)
     }
     stages_out: List[Any] = []
+    # the program's bound banks: [U-C C-6] the operand-only marks, [E-6] the operand regions' cells (where any bind)
     banks = dict(getattr(hybrid_mapping, "dynamic_bank_bindings", None) or {})
     for stage_index, stage in enumerate(hybrid_mapping.stages):
         if stage.kind == "compute":

@@ -27,9 +27,10 @@ from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.compute_time import busiest_stage, compute_law
 import mimarsinan.deployment_record.introspection.scaling_ladder_law as law
 import mimarsinan.deployment_record.introspection.scaling_ladder_reading as point_reading
-from mimarsinan.deployment_record.introspection.scaling_ladder_types import (
-    LadderDeclarationError, LadderGeometryError, LadderNetwork, LadderScheduleRefusal, PricedProgram,
-    ScheduledProgram, ShapeCensus, certificate_record,
+from mimarsinan.deployment_record.introspection.scaling_ladder_types import (  # [U-E3] the keys: re-exported
+    PRICE_KEYS as PRICE_KEYS, ROW_KEYS as ROW_KEYS, LadderDeclarationError, LadderGeometryError, LadderNetwork,
+    LadderScheduleRefusal, PricedProgram, ScheduledProgram, ShapeCensus, certificate_record,
+    require_declared_change,
 )
 from mimarsinan.deployment_record.objectives import CandidateStaticView, declared_core_capacity
 from mimarsinan.deployment_record.objectives.context import candidate_context_from_platform
@@ -49,10 +50,6 @@ from mimarsinan.mapping.verification.layout_verification_scheduling import compu
 #: (softcores, NoC fragments, resolved platform) -> (fragments, program facts with ``latency_steps``,
 #: ``programming`` and ``carry``): the candidate plane's census, injected by the caller.
 ProgramFacts = Callable[[Sequence[Any], Any, Mapping[str, Any]], Tuple[Any, Any]]
-#: Declarations a row reads that leave the priced program unchanged.
-ROW_KEYS = ("inference_batch_K", "inference_rate_hz", "min_lifetime_hours")
-#: [CL5] Declarations a priced platform may change against its scheduled program: the row keys and the physics.
-PRICE_KEYS = ROW_KEYS + ("platform_physics_profile", "platform_physics_overrides", "platform_physics_resolved")
 _CARRY = ("carried_raster_bytes", "carry_peak_live_bytes", "carry_out_bytes", "carry_in_bytes")
 _PROGRAMMING = ("reprogrammed_bytes", "reprogrammed_cores", "reprogram_passes")
 #: axis -> (compute-only term, headline (whose refusal names an absence), programming term, host term); [consts] the
@@ -102,7 +99,9 @@ def packed_tiles(census: ShapeCensus, platform: Mapping[str, Any]) -> int:
     With coalescing declared, the layout packer keeps a softcore wider than one core whole on a
     fused instance of ceil(a / A) cores, as the hard-core packer does, and reports the instance
     as one used core, so a fused instance counts its member cores here (``LayoutCoreSnapshot.tiles``).
-    Without it, nothing fuses and such a softcore does not pack (refused by name).
+    Without it, nothing fuses and such a softcore does not pack (refused by name). [E-3] With the census's runs the
+    pack is the builder's single pool (segment by segment, each segment on cores of its own), so F is the
+    footprint the builder's fit rule reads.
     """
     kwargs = ChipCapabilities.from_platform_constraints(platform).layout_kwargs()
     declared = core_types_from_declaration(platform["cores"])
@@ -114,7 +113,7 @@ def packed_tiles(census: ShapeCensus, platform: Mapping[str, Any]) -> int:
     unbounded = [LayoutHardCoreType(t.max_axons, t.max_neurons, bound) for t in declared]
     pack = pack_layout(softcores=census.softcores, core_types=unbounded,
                        allow_neuron_splitting=kwargs["allow_neuron_splitting"],
-                       allow_coalescing=kwargs["allow_coalescing"])
+                       allow_coalescing=kwargs["allow_coalescing"], runs=getattr(census, "runs", None))
     if not pack.feasible:
         raise LadderGeometryError(f"the program does not pack even on unbounded cores: {pack.error}")
     return sum(-(-int(s.axons_per_core) // width) for s in pack.used_core_snapshots or ())
@@ -173,9 +172,8 @@ def price_scheduled(
     the row keys (refused by name otherwise): three variants (the program, its compute-only cost, the program
     without host), the write law's tile writes at K = 1 (writing every tile once, and the program's period writes,
     [consts] ``tile_writes``) and, at a declared ``inference_batch_K``, the write law at that batch."""
-    if _base(platform, PRICE_KEYS) != _base(scheduled.platform, PRICE_KEYS):
-        raise LadderDeclarationError("a priced platform may differ from its scheduled program only in "
-                                     + ", ".join(PRICE_KEYS))
+    require_declared_change(platform, scheduled.platform, PRICE_KEYS,
+                            "a priced platform may differ from its scheduled program")
     start = time.time()
     tiles = scheduled.packed_tiles
     if scheduled.refusal is not None:
@@ -206,13 +204,14 @@ def price_scheduled(
         compute = _variant(q, _CARRY + _PROGRAMMING + ("sync_count", "compute_op_count"), {"host_macs": 0})
         for name, variant in (("program", q), ("compute_only", compute),
                               ("no_host", _variant(q, ("compute_op_count",), {"host_macs": 0}))):
-            pricing = price_absolute(variant, physics)
+            pricing = price_absolute(variant, physics, compute=context.compute, readout_bits=context.readout_bits)
             terms[name] = {t.name: t.band for t in pricing.terms if t.band is not None}
             refusals[name] = {r.name: r.reason for r in pricing.refusals}
         for name, load in (("once", True), ("period", False)):
             terms[name], refusals[name] = point_reading.tile_writes(facts.passes, platform, bits, physics, load=load)
         if context.writes is not None:
-            at_k = price_absolute(q, physics, writes=WriteInputs.of(context.writes))
+            at_k = price_absolute(q, physics, writes=WriteInputs.of(context.writes), compute=context.compute,
+                                  readout_bits=context.readout_bits)
             write_law = point_reading.write_law_columns(at_k, platform.get("inference_batch_K"))
     several = not (q.has("cores_physical") and q.get("cores_physical").value <= 1)
     stage = None if physics is None or not several else busiest_stage(physics, context.pass_core_events)
@@ -226,10 +225,6 @@ def price_scheduled(
         compute_law=None if physics is None else compute_law(physics),
         event_stage=None if stage is None else (stage.low, stage.nominal, stage.high),
     )
-
-
-def _base(platform: Mapping[str, Any], keys: Sequence[str]) -> Dict[str, Any]:
-    return {k: v for k, v in platform.items() if k not in keys}
 
 
 def _digest(network: LadderNetwork, platform: Mapping[str, Any]) -> str:
@@ -246,9 +241,8 @@ def ladder_row(
     (x_packed) and the schedule reading (the period census) side by side; the regime, M's period writes and the
     write census follow the schedule; M for every program of two or more passes; the CL5 reading columns
     (``scaling_ladder_reading.row_readings``)."""
-    if _base(point_platform, ROW_KEYS) != _base(priced.platform, ROW_KEYS):
-        raise LadderDeclarationError("a row's platform may differ from its priced program only in "
-                                     + ", ".join(ROW_KEYS))
+    require_declared_change(point_platform, priced.platform, ROW_KEYS,
+                            "a row's platform may differ from its priced program")
     cores = sum(int(c.get("count", 1)) for c in point_platform["cores"])
     capacity = sum(int(c.get("count", 1)) * int(c["max_axons"]) * int(c["max_neurons"])
                    for c in point_platform["cores"])

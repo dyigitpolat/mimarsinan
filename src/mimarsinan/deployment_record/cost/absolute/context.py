@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.formulas import (
     Factor,
@@ -109,11 +109,15 @@ class PricingContext:
     #: census, or ``validity.CensusCells`` where the census proves only its cell count; the aggregate
     #: constants are judged against the profile's validity geometry.
     geometry: Optional[Any] = None
+    #: [E-5] Constants the run's declarations refuse with their reason (a converter constant its table does not state
+    #: at the run's adc_bits): a component whose work exists blocks its headline by that reason (``blocked``).
+    refused_constants: Mapping[str, str] = field(default_factory=dict)
+    blocked: Dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def create(
         cls, quantities: Quantities, physics: PlatformPhysics,
-        geometry: Optional[Any] = None,
+        geometry: Optional[Any] = None, refused_constants: Optional[Mapping[str, str]] = None,
     ) -> "PricingContext":
         """Supersession is resolved ONCE here: an aggregate absorbs its components.
 
@@ -134,6 +138,7 @@ class PricingContext:
             physics=physics,
             priceable=frozenset(resolve_supersessions(physics.constants)),
             geometry=geometry,
+            refused_constants=dict(refused_constants or {}),
         )
 
     def term(self, name: str, unit: str, band: Band, source: str) -> CostTerm:
@@ -168,6 +173,10 @@ class PricingContext:
             # A factor the view withholds: its work may exist, so the component is named, never dropped.
             withheld = next((reason for reason in (factor_withheld(self.quantities, f) for f in factors)
                              if reason is not None), None)
+            if constant in self.refused_constants:
+                if product or withheld is not None:  # work exists that the declared constant cannot price
+                    self.blocked[constant] = self.refused_constants[constant]
+                continue
             if self.priced(constant):
                 if product is not None:
                     value = self.physics.band(constant)

@@ -50,6 +50,7 @@
   "allow_neuron_splitting",
   "allow_scheduling",
   "core_value_granularity",
+  "cores.compute_physics",
   "cores.count",
   "cores.max_axons",
   "cores.max_neurons",

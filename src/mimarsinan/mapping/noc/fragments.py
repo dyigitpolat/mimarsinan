@@ -86,6 +86,12 @@ def collect_noc_fragments(
     by side) while the program's unscheduled pack holds on the declared pool (``unscheduled_pack_holds``), that pack
     is the program, pinned, as the builder builds its single pool (``hybrid_build_fit``); [fix_c] likewise under a
     declared plan whose passes are not pinned whole (``fit_rule_applies``: every plan but the stateless baseline).
+    [E-3] With the runs, that unscheduled pack is the builder's single pool (``pack_layout(runs=...)``: segment by
+    segment from one pool), and the fit's program is one pinned pass per segment on the segment's own cores, as the
+    builder's single pool runs one stage per segment. [E-3, targeted pass] On a chip without scheduling the one
+    planned pass is packed as that single pool too (``pack_layout(runs=...)``; one execution stage per segment, each
+    on its segment's cores, pinned by the builder's rule ``fit_pins``), so ``compute_mapping_stats``, these fragments
+    and the builder judge one program, or refuse by one name (``CoreCapacityRefusal``).
     [CL-SG] ``declared_cores`` (the platform's ``cores``) signs each packed core of a per-axon type
     (``carries_sign_register``): its used rows ride the pass program for the payload rule.
     """
@@ -123,15 +129,18 @@ def collect_noc_fragments(
     else:
         pass_lists = [softcores]
         pass_resident = [False]
+    # [E-3, targeted pass] Without scheduling the one planned pass is packed as the builder's single pool (segment by
+    # segment from one pool, ``pack_layout(runs=...)``), the pack ``compute_mapping_stats`` judges.
+    pass_runs = [runs] if not allow_scheduling and runs is not None else None
     per_pass, programs = _placed_passes(pass_lists, pass_resident, global_index, core_types, residency,
-                                        allow_neuron_splitting, allow_coalescing, declared_cores)
+                                        allow_neuron_splitting, allow_coalescing, declared_cores, pass_runs)
     fit = allow_scheduling and fit_rule_applies(residency_plan) and not all(
         p.schedule_resident_cores == frozenset(range(p.cores)) for p in programs) and unscheduled_pack_holds(
         pack_layout(softcores=softcores, core_types=core_types, allow_neuron_splitting=allow_neuron_splitting,
-                    allow_coalescing=allow_coalescing), core_types)
+                    allow_coalescing=allow_coalescing, runs=runs), core_types)
     if fit:  # [fix_b, fix_c] the fit rule, under U1 and every declared plan but the stateless baseline
-        per_pass, programs = _placed_passes([softcores], [False], global_index, core_types, None,
-                                            allow_neuron_splitting, allow_coalescing, declared_cores)
+        per_pass, programs = _single_pool_passes(softcores, runs, global_index, core_types, allow_neuron_splitting,
+                                                 allow_coalescing, declared_cores)
     return LayoutNocFragments(
         pass_placements=tuple(per_pass), census=census, pass_programs=tuple(programs),
         runs=None if residency_plan is not None and not fit else runs,
@@ -139,18 +148,21 @@ def collect_noc_fragments(
 
 
 def _placed_passes(pass_lists, pass_resident, global_index, core_types, residency, allow_neuron_splitting,
-                   allow_coalescing, declared_cores) -> Tuple[List[Tuple[Tuple[int, int], ...]], List[PassProgram]]:
+                   allow_coalescing, declared_cores, pass_runs=None
+                   ) -> Tuple[List[Tuple[Tuple[int, int], ...]], List[PassProgram]]:
     """Every planned pass packed with its placements, and its programs (``packed_pass_program``: per physical tile
-    its cells and signed rows, per core its geometry) with the residency marks."""
+    its cells and signed rows, per core its geometry) with the residency marks. ``pass_runs`` (per pass, its specs'
+    builder segments, or None): [E-3, targeted pass] a pass packed as the builder's single pool."""
     per_pass: List[Tuple[Tuple[int, int], ...]] = []
     programs: List[PassProgram] = []
     pass_types: List[Tuple[CoreTiles, ...]] = []
-    for pass_softcores, resident in zip(pass_lists, pass_resident):
+    for index, (pass_softcores, resident) in enumerate(zip(pass_lists, pass_resident)):
         pack = pack_layout(
             softcores=pass_softcores, core_types=core_types,
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
             collect_placements=True,
+            runs=None if pass_runs is None else pass_runs[index],
         )
         if not pack.feasible or pack.placements is None:
             raise CoreCapacityRefusal(
@@ -165,6 +177,31 @@ def _placed_passes(pass_lists, pass_resident, global_index, core_types, residenc
         programs.append(pass_program)
         pass_types.append(tiles)
     return per_pass, _resident_programs(programs, pass_types, residency, core_types)
+
+
+def _single_pool_passes(softcores, runs, global_index, core_types, allow_neuron_splitting, allow_coalescing,
+                        declared_cores) -> Tuple[List[Tuple[Tuple[int, int], ...]], List[PassProgram]]:
+    """[E-3] The fit's program: the builder's single pool, one pass per segment (one co-pack without runs), each on
+    the cores of its segment in one segment-by-segment pack of the declared pool, every core pinned (the pack holds
+    on the pool, so its passes fit side by side)."""
+    if runs is None:
+        per_pass, programs = _placed_passes([softcores], [False], global_index, core_types, None,
+                                            allow_neuron_splitting, allow_coalescing, declared_cores)
+    else:
+        pack = pack_layout(softcores=softcores, core_types=core_types, allow_neuron_splitting=allow_neuron_splitting,
+                           allow_coalescing=allow_coalescing, collect_placements=True, runs=runs)
+        if not pack.feasible or pack.placements is None or pack.segment_cores is None:
+            raise CoreCapacityRefusal(f"NoC fragments: the single pool does not pack ({pack.error})")
+        snapshots = tuple(pack.used_core_snapshots or ())
+        per_pass, programs, start = [], [], 0
+        for count in pack.segment_cores:
+            per_pass.append(tuple((origin, core - start) for origin, core in pack.placements
+                                  if start <= core < start + count))
+            program, _tiles = packed_pass_program(snapshots[start:start + count], resident=False,
+                                                  core_types=core_types, declared_cores=declared_cores)
+            programs.append(program)
+            start += count
+    return per_pass, [replace(p, schedule_resident_cores=frozenset(range(p.cores))) for p in programs]
 
 
 def delayed_carry_wires(softcores: Sequence[LayoutSoftCoreSpec], frag: LayoutNocFragments,

@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from mimarsinan.deployment_record.cost.absolute.writes import ENERGY_WRITE, LATENCY_WRITE
-from mimarsinan.deployment_record.design_point.endurance import k_star, lifetime_at, priced_at
+from mimarsinan.deployment_record.design_point.endurance import k_star, lifetime_at, priced_at, technology_wear
 from mimarsinan.deployment_record.design_point.executors import ProgramCertificate, certify_program
 from mimarsinan.deployment_record.design_point.placement import operator_of_nodes, operator_placement
 from mimarsinan.deployment_record.design_point.timeline import pass_timeline, program_writes, writes_summary
@@ -52,10 +52,13 @@ def judged_row(*, nf: Any, ir_graph: Any, hybrid: Any, x_int: Any, platform: Map
                physics: PlatformPhysics, k_grid: Sequence[int], weight_bits: Optional[int],
                names: Optional[Mapping[int, str]] = None,
                x_fluid: Optional[float] = None, x_packed: Optional[float] = None,
-               write_technology: Optional[str] = None) -> Dict[str, Any]:
+               write_technology: Optional[str] = None,
+               roles: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
     """The judged fields of one row (``program``, ``placement``, ``timeline``, ``certificate``, ``activity``,
     ``writes``, ``lifetime``, ``k_star``, ``admission``) on ``platform`` at its declared ``inference_batch_K``, the
-    payload bytes at the caller's ``weight_bits``."""
+    payload bytes at the caller's ``weight_bits``. [E-6, targeted pass] On a chip whose core types declare several
+    write technologies the write law prices each technology's share and each core type states its own wear
+    (``technology_wear``; ``roles``: write physics name to the row's role of that core type)."""
     operator_of = operator_of_nodes(ir_graph, names)
     certificate = certify_program(nf, ir_graph, hybrid, x_int, names=names)
     writes = program_writes(hybrid, platform, weight_bits=weight_bits)
@@ -67,7 +70,9 @@ def judged_row(*, nf: Any, ir_graph: Any, hybrid: Any, x_int: Any, platform: Map
         summary[key] = None if band is None else [band.low, band.nominal, band.high]
     summary["refusals"] = [{"name": r.name, "reason": r.reason} for r in pricing.refusals]
     lifetime = lifetime_at(writes, physics, platform, declared)
-    wear = single_type_wear(summary, lifetime, "any", write_technology or platform.get("platform_physics_profile"))
+    wear = technology_wear(writes, physics, declared, roles or {})
+    if wear is None:
+        wear = single_type_wear(summary, lifetime, "any", write_technology or platform.get("platform_physics_profile"))
     summary["per_core_type"], lifetime["per_core_type"], lifetime["binding"] = (
         wear["writes"], wear["lifetime"], wear["binding"])
     notes: List[str] = ["executors run the executed multi-pass program; references are the converted model (nf) "

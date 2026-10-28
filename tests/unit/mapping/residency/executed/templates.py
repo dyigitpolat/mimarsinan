@@ -84,10 +84,13 @@ def template_vehicle(name: str, seed: int = 0) -> TemplateVehicle:
             model(torch.zeros(1, *shape))                       # materializes lazy layers, as the pipeline does
         rep = _mapper_repr(model, config)
         bits = int(config.get("weight_bits", 8))
+        # [E-3] at the cores' mapping parameters, as Soft Core Mapping maps (the bias row of cores without on-core
+        # bias, the effective axons), never the flat config's bias flag
+        pmap = resolve_platform_mapping_params(config["cores"],
+                                               allow_coalescing=bool(config.get("allow_coalescing", False)))
         mapping = IRMapping(q_max=float(2 ** (bits - 1) - 1), firing_mode=str(config.get("firing_mode", "Default")),
-                            max_axons=int(config["max_axons"]), max_neurons=int(config["max_neurons"]),
-                            allow_coalescing=bool(config.get("allow_coalescing", False)),
-                            hardware_bias=bool(config.get("has_bias", True)))
+                            max_axons=pmap.effective_max_axons, max_neurons=pmap.effective_max_neurons,
+                            allow_coalescing=pmap.allow_coalescing, hardware_bias=pmap.hardware_bias)
         mapping.collect_wire_census = True
         ir = mapping.map(rep)
         IRLatency(ir).calculate()                   # as SoftCoreMappingStep does: the executors read core latencies

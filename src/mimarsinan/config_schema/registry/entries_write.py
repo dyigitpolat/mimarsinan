@@ -74,6 +74,13 @@ CORE_TYPE_SCHEMA = ValueSchema(
                                          "resolution",
                                      absent_means="the chip's one physics (platform_physics_profile and its "
                                                   "overrides)"),
+        "compute_physics": ValueSchema(kind=T.STR, min_length=1, decision_class=COST_ONLY,
+                                       doc="the compute technology of this core type's cells (E-6, N2 F5): a shipped "
+                                           "physics profile whose compute row (e_mac) prices this core type's MAC "
+                                           "events, per core type; a name no profile ships is refused by name at "
+                                           "resolution",
+                                       absent_means="the chip's one physics (platform_physics_profile and its "
+                                                    "overrides)"),
         "operand": ValueSchema(
             kind=T.JSON, decision_class=FUNCTION_BEARING,
             doc="an operand core type (N2): products of two activations leave the host for its cores, each "

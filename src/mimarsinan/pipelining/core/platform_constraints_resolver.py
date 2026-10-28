@@ -21,7 +21,10 @@ from mimarsinan.config_schema.registry.declaration_judge import (
 )
 from mimarsinan.config_schema.registry.entries_write import platform_bias_mode
 from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
-from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics, write_physics_profile
+from mimarsinan.deployment_record.platform_physics.resolve import (
+    compute_physics_profile, resolve_platform_physics, write_physics_profile,
+)
+from mimarsinan.deployment_record.quantities.compute_technology import COMPUTE_PHYSICS_RESOLVED
 from mimarsinan.deployment_record.quantities.write_technology import WRITE_PHYSICS_RESOLVED, core_technologies
 from mimarsinan.mapping.lanes.declaration import LANE_KEY, declared_lane_block
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
@@ -56,6 +59,13 @@ def _sealed_write_physics(cores: list) -> dict[str, Any]:
     core_technologies({"cores": cores})
     names = sorted({str(ct["write_physics"]) for ct in cores if ct.get("write_physics")})
     return {name: write_physics_profile(name).to_dict() for name in names}
+
+
+def _sealed_compute_physics(cores: list) -> dict[str, Any]:
+    """[E-6] Each compute physics a core type names, as the energy pricer will price its MAC events
+    (``compute_physics_resolved``); a name no profile ships is refused."""
+    names = sorted({str(ct["compute_physics"]) for ct in cores if ct.get("compute_physics")})
+    return {name: compute_physics_profile(name).to_dict() for name in names}
 
 
 def build_platform_constraints_resolved(
@@ -138,6 +148,10 @@ def build_platform_constraints_resolved(
     sealed = _read_by_consumer(pipeline_config, ("cores",), lambda: _sealed_write_physics(cores))
     if sealed:
         pcfg[WRITE_PHYSICS_RESOLVED] = sealed
+    # [E-6] each core type's named compute physics, sealed the same way (only when a core type names one).
+    computed = _read_by_consumer(pipeline_config, ("cores",), lambda: _sealed_compute_physics(cores))
+    if computed:
+        pcfg[COMPUTE_PHYSICS_RESOLVED] = computed
 
     if "target_tq" in pipeline_config:
         pcfg["target_tq"] = pipeline_config["target_tq"]

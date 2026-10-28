@@ -38,6 +38,7 @@ from mimarsinan.deployment_record.cost.absolute.writes import (
     price_write_inputs,
 )
 from mimarsinan.deployment_record.cost.compute_time import CORE_PROGRAM, compute_time
+from mimarsinan.deployment_record.platform_physics.converter import resolve as resolve_converter
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -104,6 +105,10 @@ def price_area(ctx: PricingContext) -> None:
                         + mean_core_note(ctx.physics, ctx.geometry))
     elif ctx.priced("area_per_cell"):
         bands, notes, missing = ctx.component_bands(AREA_COMPONENTS, _M2_TO_MM2)
+        blocked = [ctx.blocked[c] for c, _f, _l in AREA_COMPONENTS if c in ctx.blocked]
+        if blocked:  # [E-5] a converter the run's resolution leaves unstated
+            ctx.refuse(AREA_HEADLINE, blocked[0])
+            return
         if not bands:
             ctx.refuse(AREA_HEADLINE, "area_per_cell is declared but the "
                                       "cells_physical census is absent")
@@ -228,7 +233,8 @@ def price_throughput(ctx: PricingContext, e2e: Optional[Band]) -> None:
 
 def price_absolute(
     quantities: Quantities, physics: PlatformPhysics, *,
-    writes: Optional[WriteInputs] = None, geometry: Any = None,
+    writes: Optional[WriteInputs] = None, geometry: Any = None, compute: Any = None,
+    readout_bits: Optional[int] = None,
 ) -> AbsolutePricing:
     """Every absolute term the declared physics can honestly back, plus refusals.
 
@@ -240,16 +246,23 @@ def price_absolute(
     validity a mean core at the point is judged there with that basis stated in the term, and refused
     by name under ``validity.CENSUS_PROVED``. ``validity.UNJUDGED`` reads the aggregates as declared. A profile
     whose external component is undeclared prices nothing and refuses by name, the write law's terms each by its own
-    name too (the write law's own gate, [fix_c]), so every plane states the same refusal.
+    name too (the write law's own gate, [fix_c]), so every plane states the same refusal. [E-6] ``compute``
+    (``quantities.compute_technology.compute_split``: the plane's MAC events per core type, present only when a core
+    type names a compute physics) prices each core type's MAC events at its own technology's e_mac. [E-5]
+    ``readout_bits`` (the run's ``readout_law.adc_bits``) prices a profile's converter at that resolution
+    (``platform_physics.converter.resolve``); a converter constant its table does not state there refuses, by name,
+    each headline whose converter work exists. A profile without a converter, or no declared bits, is unchanged.
     """
     if refusals := external_refusals(physics):
         named = () if writes is None else tuple(price_write_inputs(writes, physics).refusals)
         return AbsolutePricing(terms=(), refusals=refusals + named)
-    ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities))
+    physics, converter_refused = resolve_converter(physics, readout_bits)
+    ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities),
+                                refused_constants=converter_refused)
     priced_writes = None if writes is None else price_write_inputs(writes, physics)
     price_area(ctx)
     e2e = price_latency(ctx, priced_writes)
-    price_energy(ctx, e2e, priced_writes)
+    price_energy(ctx, e2e, priced_writes, compute)
     price_throughput(ctx, e2e)
     terms, refusals = list(ctx.terms), list(ctx.refusals)
     if priced_writes is not None:

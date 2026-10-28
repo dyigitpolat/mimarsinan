@@ -45,3 +45,61 @@ def inputs(batch: int = 16) -> Any:
 
 def neurram() -> Any:
     return get_platform_physics("neurram")
+
+
+#: [E-6, targeted pass] The hybrid declaration of Figure 1's mixed row (NeuRRAM static tiles beside SRAM-CIM operand
+#: cores, ``tests/fixtures/design_point/hybrid_neurram_sram_cim.json``) at test counts, with a small softmax attention
+#: block (``operand_programs.attention_block``, depth 1) built the pipeline's way onto its operand core type.
+HYBRID = "tests/fixtures/design_point/hybrid_neurram_sram_cim.json"
+#: A test host block (test constants): the host's MAC rate, dispatch wall and power.
+HOST_BLOCK = {"host_macs_per_s": {"nominal": 20.0, "unit": "G/s", "evidence_kind": "measured",
+                                   "note": "test constant: no machine was measured"},
+              "t_host_op_overhead": {"nominal": 13.0, "unit": "us", "evidence_kind": "measured",
+                                     "note": "test constant: no machine was measured"},
+              "p_host": {"nominal": 30.0, "unit": "W", "evidence_kind": "published",
+                         "citation": "test constant: no source"}}
+
+
+def hybrid_declaration(static: int, operand: int, *, scheduling: bool, k: int = 1,
+                       overrides: Any = None) -> Dict[str, Any]:
+    """The fixture's platform constraints at ``static`` + ``operand`` cores, the run keys of the instance. [U-C C-5]
+    The 8-bit value grid departs from the target's input width, so it is a declared departure (``target_overrides``
+    with its note), as the instance script declares it."""
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[4]
+    declared = json.loads((root / HYBRID).read_text())["platform_constraints"]
+    cores = [dict(c) for c in declared["target_overrides"]["cores"]["value"]]
+    cores[0]["count"], cores[1]["count"] = int(static), int(operand)
+    width = {"value": 8, "note": "the vehicle's 8-bit value grid (the integer readout law's), a declared departure"}
+    return {**declared, "target_overrides": {"cores": {**declared["target_overrides"]["cores"], "value": cores},
+                                             "activation_bits": width},
+            "inference_batch_K": int(k), "inference_rate_hz": RATE_HZ,
+            "min_lifetime_hours": FLOOR_H,
+            **({"allow_scheduling": True, "max_schedule_passes": 4096} if scheduling else {}),
+            **({"platform_physics_overrides": overrides} if overrides else {})}
+
+
+def resolved_hybrid(static: int, operand: int, *, scheduling: bool, k: int = 1, overrides: Any = None) -> Dict[str, Any]:
+    from mimarsinan.config_schema.runtime import run_config
+    from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved
+    return build_platform_constraints_resolved(run_config({}, hybrid_declaration(
+        static, operand, scheduling=scheduling, k=k, overrides=overrides)))
+
+
+@functools.lru_cache(maxsize=4)
+def attention_on_hybrid(static: int, operand: int, scheduling: bool) -> Any:
+    """(program, hybrid mapping, resolved platform) of the small softmax block on the hybrid declaration, the IR's
+    latencies tagged as Soft Core Mapping tags them (``IRLatency``) before the build."""
+    import contextlib
+    import io
+    from mimarsinan.mapping.latency.ir import IRLatency
+    from unit.chip_simulation.value_run.operand_programs import LAW, attention_block, build_operand_program
+    platform = resolved_hybrid(static, operand, scheduling=scheduling)
+    with contextlib.redirect_stdout(io.StringIO()):
+        program = build_operand_program(attention_block(depth=1), (3, 8, 8), num_classes=5,
+                                        platform={**platform, "readout_law": dict(LAW),
+                                                  "readout_ranges": "per_consumer_group"})
+        IRLatency(program.ir).calculate()
+        hybrid = build_hybrid_mapping_for_pipeline(program.ir, {**platform, "weight_bits": 8})
+    return program, hybrid, platform

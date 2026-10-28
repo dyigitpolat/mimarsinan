@@ -87,12 +87,23 @@ class SegmentRecord:
     static_latency_levels: int
     #: Hard cores of this pass an executed residency plan keeps programmed across periods.
     resident_core_indices: Optional[Tuple[int, ...]] = declared_only()
+    #: [E-6, N2 F2] Per hard core of this pass (in ``cores`` order), the cells of its bound-bank regions: the operand
+    #: payload the producer writes every inference (``mapping.ir.dynamic_bank.operand_cells_by_core``; 0 on a static
+    #: core). Sealed on every pass of a program that binds dynamic banks; declared-only, so any other record keeps
+    #: its bytes.
+    operand_core_cells: Optional[Tuple[int, ...]] = declared_only()
 
     def __post_init__(self) -> None:
         require_choice("SegmentRecord", "pass_reason", self.pass_reason, PASS_REASONS)
         require_choice("SegmentRecord", "programming", self.programming, PROGRAMMING_KINDS)
         if self.resident_core_indices is not None:
             object.__setattr__(self, "resident_core_indices", _core_indices(self.resident_core_indices))
+        if self.operand_core_cells is not None:
+            cells = tuple(int(c) for c in self.operand_core_cells)
+            if len(cells) != len(self.cores) or any(c < 0 for c in cells):
+                raise ValueError(f"SegmentRecord operand_core_cells states {len(cells)} non-negative counts for "
+                                 f"{len(self.cores)} cores, one per core required")
+            object.__setattr__(self, "operand_core_cells", cells)
         if self.pass_index > 0 and self.pass_reason != "capacity_overflow":
             raise ValueError(
                 f"SegmentRecord pass_index {self.pass_index} > 0 requires "
@@ -110,6 +121,8 @@ class SegmentRecord:
         kwargs = strict_kwargs(cls, data)
         kwargs["bank_ids"] = tuple(int(b) for b in kwargs["bank_ids"])
         kwargs["cores"] = tuple_of(SegmentCoreRecord.from_dict, kwargs["cores"])
+        if kwargs.get("operand_core_cells") is not None:
+            kwargs["operand_core_cells"] = tuple(int(c) for c in kwargs["operand_core_cells"])
         return cls(**kwargs)
 
 

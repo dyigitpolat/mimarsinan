@@ -19,6 +19,7 @@ from mimarsinan.deployment_record.build.write_census import WriteCensus
 from mimarsinan.deployment_record.quantities.write_law import (
     WritePolicy, pass_events, pass_units, plane_write_census, write_policy_of, write_quantities,
 )
+from mimarsinan.deployment_record.quantities.write_technology import TechnologySplit, split_by_technology
 from mimarsinan.mapping.capability.op_kinds import op_kind
 
 
@@ -33,15 +34,21 @@ class ProgramWrites:
     policy: Optional[WritePolicy]
     census: Optional[WriteCensus]
     unavailable: Optional[str] = None
+    #: [E-6, targeted pass] N2b: the census split by write technology where the platform's core types declare
+    #: several (``write_technology.split_by_technology``, the record plane's rule), else None.
+    by_technology: Optional[TechnologySplit] = None
 
 
 def program_writes(hybrid: Any, platform: Mapping[str, Any], *, weight_bits: Optional[int]) -> ProgramWrites:
     """The record plane's write census of ``hybrid`` on ``platform`` (which declares ``inference_batch_K``), its
-    payload bytes at ``weight_bits`` (the caller reads the run's weight bits, the one-run reader set's rule)."""
+    payload bytes at ``weight_bits`` (the caller reads the run's weight bits, the one-run reader set's rule), and its
+    split by write technology where the core types declare several."""
     policy = write_policy_of(platform)
-    census, reason = plane_write_census(mapping_program_passes(hybrid), platform,
-                                        weight_bits=weight_bits, timesteps=None, label="record")
-    return ProgramWrites(policy, census, reason)
+    passes = mapping_program_passes(hybrid)
+    census, reason = plane_write_census(passes, platform, weight_bits=weight_bits, timesteps=None, label="record")
+    split = None if census is None or policy is None or policy.core_technologies is None or weight_bits is None \
+        else split_by_technology(passes, census, policy, weight_bits=int(weight_bits))
+    return ProgramWrites(policy, census, reason, split)
 
 
 def _operators_of(stage: Any, operator_of: Mapping[int, str]) -> List[str]:

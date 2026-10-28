@@ -116,7 +116,9 @@ CLASSIFIED = {
     ("config_schema/registry/value_schema.py", "describe"): (OTHER, {"upper": 1}),
     ("deployment_record/cost/model.py", "_require_no_double_count_note"): (OTHER, {"lower": 1}),
     ("deployment_record/platform_physics/host_calibration.py", "read_rapl_package_j"): (OTHER, {"strip": 1}),
-    ("deployment_record/platform_physics/profile.py", "PhysicsConstantValue.__post_init__"): (OTHER, {"strip": 1}),
+    # [U-E3] moved with the value type below the converter (profile.py -> constants.py), re-audited: the same
+    # evidence-field strip, no registry value
+    ("deployment_record/platform_physics/constants.py", "PhysicsConstantValue.__post_init__"): (OTHER, {"strip": 1}),
     ("gui/runs.py", "classify_artifact"): (OTHER, {"lower": 1}),
     ("gui/runs.py", "list_dir_artifacts"): (OTHER, {"lower": 1}),
     ("gui/runtime/active_run_tailers.py", "JsonlTailer._tick"): (OTHER, {"strip": 1}),

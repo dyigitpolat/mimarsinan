@@ -16,7 +16,7 @@ from mimarsinan.deployment_record.build.payload_sizes import (  # the candidate'
 )
 from mimarsinan.deployment_record.build.producer_census import (
     candidate_operand_cells, candidate_operand_only, operand_cells_by_core, operand_cells_per_tile,
-    operand_only_by_core, operand_only_tiles,
+    operand_only_by_core, operand_only_tiles, operands_stated, producer_split,
 )
 from mimarsinan.deployment_record.build.write_census import (
     BoundaryWidths, PassRow, ProgramPasses, stage_latency,
@@ -64,9 +64,9 @@ def core_record(core_index: int, core: Any, *, weight_bits: int, resident: bool,
 
 
 def segment_record(stage_index: int, segment_index: int, pass_index: int, stage: Any, *,
-                   weight_bits: int, banks: Any = None) -> SegmentRecord:
-    """One (segment, pass) of the built program; an executed residency plan's marks ride along, and [U-C C-6] on a
-    program with bound ``banks`` each core's operand-only mark."""
+                   weight_bits: int, banks: Optional[Any] = None) -> SegmentRecord:
+    """One (segment, pass) of the built program; an executed residency plan's marks ride along, [U-C C-6] on a
+    program with bound ``banks`` each core's operand-only mark, and [E-6] the operand cells of its bound banks."""
     segment = stage.hard_core_mapping
     resident = bool(getattr(stage, "schedule_weights_resident", False))
     programming = weight_programming_report(_SingleStageProgram(stage))
@@ -98,6 +98,7 @@ def segment_record(stage_index: int, segment_index: int, pass_index: int, stage:
         static_latency_levels=len({int(core.latency) for core in segment.cores
                                    if getattr(core, "latency", None) is not None}),
         resident_core_indices=marks,
+        operand_core_cells=tuple(operand_cells_by_core(segment, banks)) if banks else None,
     )
 
 
@@ -153,9 +154,8 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
                 candidate_operand_cells(softcores, placements, cores, dynamic_banks or ()), tiles)
             rows.append(PassRow(
                 segment_index=segment, resident=bool(program.resident),
-                core_cells=tuple(int(c) - o for c, o in zip((c for t in tiles for c in t), operand)),
-                producer_cells=sum(operand), producer_cores=frozenset(i for i, o in enumerate(operand) if o),
-                producer_core_cells=tuple(operand) if any(operand) else None, operand_only_cores=operand_only_tiles(
+                **producer_split([int(c) for t in tiles for c in t], operand),
+                operand_only_cores=operand_only_tiles(
                     candidate_operand_only(softcores, placements, cores, dynamic_banks or ()), tiles),
                 marks=frozenset(first[i] + j for i, h in enumerate(cores) if h in kept for j in range(len(tiles[i]))),
                 core_extents=None,
@@ -211,10 +211,8 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
             segment_index=int(stage.schedule_segment_index if stage.schedule_segment_index is not None
                               else len(rows)),
             resident=bool(getattr(stage, "schedule_weights_resident", False)),
-            core_cells=tuple(c - p for c, p in zip(cells, operand)),
-            producer_cells=sum(operand), producer_cores=frozenset(i for i, c in enumerate(operand) if c),
-            producer_core_cells=tuple(operand) if any(operand) else None, operand_only_cores=only,
-            marks=marks, core_extents=extents, compute_steps=None, stage_latencies=latencies, core_types=types,
+            **producer_split(cells, operand), operand_only_cores=only, marks=marks, core_extents=extents,
+            compute_steps=None, stage_latencies=latencies, core_types=types,
             core_sign_rows=tuple(r for c, o, t in zip(cores, occupancy, tiles)
                                  for r in tile_rows(core_sign_rows(c, o), t)),
         ))
@@ -235,7 +233,9 @@ def record_program_passes(record: Any) -> ProgramPasses:
         measured[int(row.stage_index)] = measured.get(int(row.stage_index), 0) + int(row.timesteps_executed)
     declared = declared_core_geometries(record.identity.platform)
     rows = []
-    for segment in record.schedule.segments():
+    segments = record.schedule.segments()
+    stated = operands_stated(segments)  # [E-6]
+    for segment in segments:
         span = stage_latency([c.static_delay_levels for c in segment.cores])
         latencies = None if span is None else (span,)
         steps = measured.get(int(segment.stage_index))
@@ -247,13 +247,13 @@ def record_program_passes(record: Any) -> ProgramPasses:
             segment.resident_core_indices or ())
         rows.append(PassRow(
             segment_index=segment.segment_index, resident=segment.programming == "resident",
-            core_cells=cells, marks=marks, core_extents=extents, compute_steps=steps, stage_latencies=latencies,
-            core_types=types,
+            **producer_split(cells, operand_cells_per_tile(segment.operand_core_cells, tiles) if stated else None),
+            marks=marks, core_extents=extents, compute_steps=steps, stage_latencies=latencies, core_types=types,
             operand_only_cores=operand_only_tiles([bool(c.operand_only) for c in segment.cores], tiles),
             core_sign_rows=tuple(r for c, t in zip(segment.cores, tiles)
                                  for r in tile_rows(c.sign_register_rows or 0, t)),
         ))
-    return ProgramPasses(rows=tuple(rows), operands_unstated=RECORD_OPERANDS_UNSTATED)
+    return ProgramPasses(rows=tuple(rows), operands_unstated=None if stated else RECORD_OPERANDS_UNSTATED)
 
 
 def declared_core_geometries(platform: Any) -> Tuple[Tuple[int, int], ...]:

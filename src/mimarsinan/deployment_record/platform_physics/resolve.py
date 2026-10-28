@@ -7,7 +7,8 @@ from typing import Any, Dict, Mapping, Optional
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.platform_physics.lane_blocks import TargetNode, lane_block_rows
-from mimarsinan.deployment_record.platform_physics.loader import apply_overrides, constant_from_declaration
+from mimarsinan.deployment_record.platform_physics.constants import constant_from_declaration
+from mimarsinan.deployment_record.platform_physics.loader import apply_overrides
 from mimarsinan.deployment_record.platform_physics.profile import (
     PlatformPhysics,
     PlatformPhysicsValidity,
@@ -102,6 +103,26 @@ def write_physics_profile(name: str, sealed: Optional[Mapping[str, Mapping[str, 
         return get_platform_physics(name)
     except KeyError as missing:
         raise WritePhysicsError(f"write_physics {name!r}: {missing.args[0]}") from None
+
+
+#: [E-6, N2 F5] The compute-technology constants a core type's own compute physics declares for its cells: the per-MAC
+#: array energy. Every other constant stays the chip's.
+COMPUTE_TECHNOLOGY_KEYS = ("e_mac",)
+
+
+class ComputePhysicsError(ToolchainRefusal, ValueError):
+    """A core type's ``compute_physics`` that names no shipped physics profile."""
+
+
+def compute_physics_profile(name: str, sealed: Optional[Mapping[str, Mapping[str, Any]]] = None) -> PlatformPhysics:
+    """The compute physics a core type names: the copy its run sealed (``compute_physics_resolved``), else the shipped
+    profile; a name no profile ships refuses by name, listing the shipped ones."""
+    if sealed and name in sealed:
+        return PlatformPhysics.from_dict(sealed[name])
+    try:
+        return get_platform_physics(name)
+    except KeyError as missing:
+        raise ComputePhysicsError(f"compute_physics {name!r}: {missing.args[0]}") from None
 
 
 def technology_physics(chip: PlatformPhysics, technology: Any) -> PlatformPhysics:

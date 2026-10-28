@@ -51,6 +51,16 @@
       "derivation": "An 8-bit weight cell is one byte; the array write per byte is bracketed between 1x the measured local-block read byte energy (76 fJ at 20 MHz) and 2x the 91 MHz value (342 fJ), a write being full swing where the read is half swing. Nominal at the log-space centre.",
       "note": "houshmand2023benchmarking Table II and Fig. 7 p.6 carry an analytical weight-write term that was not read in this round; it is the cross-check this bracket waits on."
     },
+    "t_write_per_unit": {
+      "low": 0.6868131868131868,
+      "nominal": 3.125,
+      "high": 50.0,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.2 (printed 410), p.3 (printed 411), p.3-4 (printed 411-412), p.4 (printed 412)",
+      "derivation": "One write of one 8-bit weight cell (write granularity cell). A 1 kB block is 'arranged into 64 rows containing 128 bits each' (p.2), and a row is read or written in one clock cycle: 'the LBL are left floating until the next read/write cycle' (p.3). One 128-bit row holds 16 weights, so a row written per cycle is 1/16 cycle per cell: 50 ns / 16 = 3.125 ns at 20 MHz ('clock period time 0.05us (20MHz)', p.4; the operating point of the profile's energy rows) and (1/91 MHz) / 16 = 0.687 ns at 91 MHz ('The design is functional down to 20MHz at 0.58V VDDH and 91MHz at 1V VDDH.', p.3-4). The paper states no width of its global data driver, the macro's write port ('a global data driver and activation buffer are provided', p.2): the high end, one byte per 20 MHz cycle, is 50 ns per cell.",
+      "note": "DERIVED from the macro's own paper, the arithmetic shown; the write port width is the stated assumption the band spans (a 128-bit row per cycle at the nominal and low ends, one byte per cycle at the high end). E-6 (N2 follow-up F5)."
+    },
     "write_verify_iterations": {
       "nominal": 1.0,
       "unit": "iterations",
