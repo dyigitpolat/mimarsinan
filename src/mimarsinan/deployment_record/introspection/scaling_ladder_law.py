@@ -202,11 +202,14 @@ def axis_columns(
 def k_star(
     *, x_fluid: float, x_packed: float, max_writes: Optional[float], max_writes_source: str,
     rate_hz: Optional[float], lifetime_hours: Optional[float], endurance: Optional[float],
+    pulses_per_write: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """K* in closed form and from the census, and the exact two-factor split of their ratio."""
+    """K* in closed form and from the census, and the exact two-factor split of their ratio; [U-C C-1] the wear of a
+    write is ``pulses_per_write`` endurance cycles where the technology declares it (printed beside)."""
     out: Dict[str, Any] = {
         "max_writes_per_cell_per_inference": max_writes, "max_writes_source": max_writes_source,
         "inference_rate_hz": rate_hz, "min_lifetime_hours": lifetime_hours, "endurance_cycles": endurance,
+        **({} if pulses_per_write is None else {"pulses_per_write": pulses_per_write}),
     }
     if x_fluid > 1.0 and x_packed > 1.0 and max_writes is not None:
         packing = (x_packed - 1.0) / (x_fluid - 1.0)
@@ -222,6 +225,8 @@ def k_star(
         return out
     assert rate_hz is not None and lifetime_hours is not None and endurance is not None
     service = rate_hz * lifetime_hours * _SECONDS_PER_HOUR / endurance
+    if pulses_per_write is not None:
+        service *= pulses_per_write
     out["k_star_closed"] = (x_fluid - 1.0) * service if x_fluid > 1.0 else None
     out["k_star_census"] = None if max_writes is None else max_writes * service
     return out

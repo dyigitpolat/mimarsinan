@@ -65,7 +65,7 @@ from mimarsinan.deployment_record.introspection.scaling_ladder import (  # noqa:
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks  # noqa: E402
 from mimarsinan.deployment_record.introspection.scaling_ladder_law import RegimeReading  # noqa: E402
 from mimarsinan.mapping.platform.imc_platforms import get_imc_platform  # noqa: E402
-from mimarsinan.mapping.platform.target_bundles import target_bundles  # noqa: E402
+from mimarsinan.mapping.platform.target_bundles import declared_departures, target_bundles  # noqa: E402
 from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING, SPIKING_PACKAGING  # noqa: E402
 from mimarsinan.mapping.support.schedule.pass_cut import transfer_for  # noqa: E402
 from mimarsinan.mapping.verification.onchip_fraction import estimate_onchip_fractions  # noqa: E402
@@ -260,6 +260,16 @@ def target_spec(target: str) -> Dict[str, Any]:
                        "packaging_note": None if semantics else "no core_semantics declared: MVM packaging read"}}
 
 
+def departure_labels(target: str, declared: Optional[Dict[str, Any]],
+                     core_fields: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """[U-C C-5] The bundle keys and core fields ``--declare`` and ``--core-field`` set to other values than the target
+    bundle's, printed by name on every row (``declared_departures``); none on a target that is no bundle."""
+    if TARGETS.get(target) not in target_bundles():
+        return {}
+    departures = declared_departures(TARGETS[target], declared, core_fields)
+    return {"declared_departures": list(departures)} if departures else {}
+
+
 def resolved_platform(target: str, fraction_or_declared, packed: Optional[int],
                       declared: Optional[Dict[str, Any]] = None, core_fields: Optional[Dict[str, Any]] = None,
                       overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -442,7 +452,8 @@ def run(networks: Sequence[str], targets: Sequence[str], budgets: Sequence, ks: 
             if packaging not in built:
                 built[packaging] = attempt(point_budget_s, convert)
             network, mark = built[packaging]
-            labels = {"geometry": spec["geometry"], "bundle": spec["bundle"]}
+            labels = {"geometry": spec["geometry"], "bundle": spec["bundle"],
+                      **departure_labels(target, declared, core_fields)}
             if network is None:
                 for budget in (("declared",) if x_only else budgets):
                     for row in marked_rows(name, target, budget, ks, mark or {}):

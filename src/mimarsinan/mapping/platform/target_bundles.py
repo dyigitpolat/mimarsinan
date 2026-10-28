@@ -1,9 +1,10 @@
 """Target bundles: one name selects a published target's declared keys, claim class and faithfulness class.
 
 A bundle is data, ``targets/<name>.json``: a geometry (a registered ``IMCPlatform`` by name, or declared with
-its provenance and claim class), registry keys judged by the value schema at load (the chip's permissions
-among them), and a faithfulness class (exact; approximate or refused, with what departs named). This module
-loads and reads the bundles; ``target_expansion`` writes a declared target's keys at every config entry point.
+its provenance and claim class), the core fields its cores take beside the geometry's (``core_fields``: the cores'
+write path), registry keys judged by the value schema at load (the chip's permissions and input width among them),
+and a faithfulness class (exact; approximate or refused, with what departs named). This module loads and reads the
+bundles; ``target_expansion`` writes a declared target's keys at every config entry point.
 """
 
 from __future__ import annotations
@@ -19,12 +20,13 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.config_schema.registry import REGISTRY, Category
 from mimarsinan.config_schema.registry.build import declared_paths, effective_class
 from mimarsinan.config_schema.registry.decision_classes import COMPOSITE, FUNCTION_BEARING, class_of_path
+from mimarsinan.config_schema.registry.entries_write import CORE_TYPE_SCHEMA
 from mimarsinan.config_schema.registry.value_schema import entry_value_errors
 from mimarsinan.mapping.platform.imc_platforms import IMCPlatform, get_imc_platform, imc_platform_names
 
 DP, PC = "deployment_parameters", "platform_constraints"
 _TARGETS_DIRNAME = "targets"
-_BUNDLE_FIELDS = frozenset({"name", "display_name", "geometry", "keys", "faithfulness", "notes"})
+_BUNDLE_FIELDS = frozenset({"name", "display_name", "geometry", "keys", "core_fields", "faithfulness", "notes"})
 _GEOMETRY_FIELDS = frozenset({"name", "cores", "weight_bits", "provenance", "claim_class"})
 _FAITHFULNESS_FIELDS = frozenset({"class", "named", "note"})
 FAITHFULNESS_KINDS = ("exact", "approximate", "refused")
@@ -138,6 +140,18 @@ def _faithfulness(source: str, spec: Any) -> Faithfulness:
     return Faithfulness(kind, named)
 
 
+def _with_core_fields(source: str, cores: List[Dict[str, Any]], fields: Any) -> List[Dict[str, Any]]:
+    """[U-C C-2] The geometry's cores with the bundle's declared core fields (its cores' write path) on every core;
+    a field the geometry sets refuses by name (the registry's ``cores`` schema judges the rest below)."""
+    if not isinstance(fields, Mapping):
+        raise _refuse(source, f"core_fields must be an object, got {type(fields).__name__}")
+    if clash := sorted(f for f in fields if any(f in core for core in cores)):
+        raise _refuse(source, f"core_fields {clash} are set by the geometry")
+    if unknown := sorted(set(fields) - set(CORE_TYPE_SCHEMA.fields)):  # the cores schema is open; a bundle's is not
+        raise _refuse(source, f"core_fields {unknown} are no core-type field of the registry")
+    return [{**core, **copy.deepcopy(dict(fields))} for core in cores]
+
+
 def load_bundle(path: Path) -> TargetBundle:
     """One bundle file, judged: closed fields, a valid geometry, and every key legal for a bundle."""
     source = path.name
@@ -149,6 +163,7 @@ def load_bundle(path: Path) -> TargetBundle:
     if data["name"] != path.stem:
         raise _refuse(source, f"name {data['name']!r} differs from the file name {path.stem!r}")
     geometry, claim_class, values = _geometry(source, data["geometry"])
+    values["cores"] = _with_core_fields(source, values["cores"], data.get("core_fields", {}))
     if not isinstance(data["keys"], Mapping):
         raise _refuse(source, f"keys must be an object, got {type(data['keys']).__name__}")
     for key, value in data["keys"].items():
@@ -220,6 +235,26 @@ def target_departures(platform: Mapping[str, Any]) -> Tuple[Dict[str, Any], ...]
     return tuple({"key": key, "bundle": values.get(key), "declared": copy.deepcopy(entry["value"]),
                   "note": entry["note"]}
                  for key, entry in sorted((platform.get("target_overrides") or {}).items()))
+
+
+def _same(first: Any, second: Any) -> bool:
+    return json.dumps(first, sort_keys=True, default=repr) == json.dumps(second, sort_keys=True, default=repr)
+
+
+def declared_departures(name: str, declared: Optional[Mapping[str, Any]] = None,
+                        core_fields: Optional[Mapping[str, Any]] = None) -> Tuple[Dict[str, Any], ...]:
+    """[U-C C-5] Each key a declaration beside ``target=<name>`` sets to another value than the bundle's, and each core
+    field it sets to another value than the bundle's cores carry (``cores.<field>``): key, bundle, declared. A key the
+    bundle does not set departs from nothing (the declaration completes the chip description)."""
+    values = get_target_bundle(name).values
+    out = [{"key": key, "bundle": values[key], "declared": copy.deepcopy(value)}
+           for key, value in sorted((declared or {}).items()) if key in values and not _same(values[key], value)]
+    cores = values.get("cores") or []
+    for field, value in sorted((core_fields or {}).items()):
+        stated = [core[field] for core in cores if field in core]
+        if stated and not all(_same(v, value) for v in stated):
+            out.append({"key": f"cores.{field}", "bundle": stated[0], "declared": copy.deepcopy(value)})
+    return tuple(out)
 
 
 def absolute_pricing_refusal(platform: Mapping[str, Any]) -> Optional[Tuple[str, str]]:

@@ -71,12 +71,15 @@ def _corner_states(pricing: WritePricing, floor: float) -> Dict[str, str]:
 
 
 def endurance_of(physics: PlatformPhysics) -> Optional[Dict[str, Any]]:
-    """The declared endurance band with its evidence, or None when undeclared."""
+    """The declared endurance band with its evidence, or None when undeclared; [U-C C-1] with the technology's pulses
+    per write where it declares them (the wear of one write in endurance cycles)."""
     if not physics.has("endurance_cycles"):
         return None
     constant = physics.constants["endurance_cycles"]
+    pulses = physics.constants.get("pulses_per_write")
     return {"cycles": [constant.low, constant.nominal, constant.high], "evidence_kind": constant.evidence_kind,
-            "source": "; ".join(s for s in (constant.citation, constant.note) if s)}
+            "source": "; ".join(s for s in (constant.citation, constant.note) if s),
+            **({} if pulses is None else {"pulses_per_write": [pulses.low, pulses.nominal, pulses.high]})}
 
 
 def lifetime_at(writes: ProgramWrites, physics: PlatformPhysics, platform: Mapping[str, Any], k: int
@@ -161,6 +164,7 @@ def k_star(writes: ProgramWrites, physics: PlatformPhysics, platform: Mapping[st
         out["min_batch"] = min_batch(
             x_fluid=x_fluid, x_packed=x_packed, max_writes=float(most), rate_hz=rate, lifetime_hours=floor,
             endurance=None if endurance is None else endurance["cycles"],
+            pulses_per_write=None if endurance is None else endurance.get("pulses_per_write"),
             write_time_per_period=_triple(exposed),
             write_time_source="the write law's exposed write time at K = 1 (serial: the write time of one period)",
             k=None if declared is None else int(declared.batch_k))

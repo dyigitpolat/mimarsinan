@@ -86,7 +86,7 @@ def merge_override_blocks(blocks: Mapping[str, Mapping[str, Mapping[str, Any]]])
 #: physics declares for its cells. The transfer channel (``e_dma_per_byte``, ``t_program_per_byte``) and every other
 #: constant stay the chip's.
 WRITE_TECHNOLOGY_KEYS = ("e_write_per_cell", "e_verify_read_per_cell", "write_verify_iterations", "t_write_per_unit",
-                         "t_write_setup_per_event", "endurance_cycles", "e_program_per_byte")
+                         "t_write_setup_per_event", "endurance_cycles", "pulses_per_write", "e_program_per_byte")
 
 
 class WritePhysicsError(ToolchainRefusal, ValueError):

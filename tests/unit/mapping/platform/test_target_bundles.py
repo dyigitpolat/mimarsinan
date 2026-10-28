@@ -44,6 +44,7 @@ PHYSICS_GEOMETRY = {"truenorth": "truenorth_like", "loihi": "loihi_dense_equiv_1
 DECLARED_GEOMETRY = {"odin": "odin_stock_core", "generic_estimated_22nm": "generic_22nm_256x256",
                      "sram_cim_macro": "dimc_macro_128x1024"}
 SYNTHETIC_GRIDS = {"imc_128x128", "imc_256x256", "imc_512x512", "imc_mixed_tile"}
+TARGETS_DIR = Path(mimarsinan.__file__).parent / "mapping" / "platform" / "targets"
 LITERATURE = set(imc_platform_names()) - SYNTHETIC_GRIDS
 
 
@@ -61,13 +62,14 @@ def _write(directory, *bundles):
 
 
 class TestShippedRegistry:
-    def test_eight_physics_bundles_and_nine_geometry_only_bundles(self):
+    def test_eight_physics_bundles_and_ten_geometry_only_bundles(self):
+        """[U-C C-4] Loihi 2 (``loihi2_like``) is the tenth geometry-only bundle."""
         bundles = target_bundles()
         physics = {name for name, b in bundles.items() if "platform_physics_profile" in b.values}
         assert {name: bundles[name].values["platform_physics_profile"] for name in physics} == PHYSICS_BUNDLES
         geometry_only = set(bundles) - physics
         assert geometry_only == LITERATURE - set(PHYSICS_GEOMETRY.values())
-        assert len(geometry_only) == 9
+        assert len(geometry_only) == 10 and "loihi2_like" in geometry_only
         for name in geometry_only:
             assert bundles[name].geometry == name
             assert set(bundles[name].values) == {"cores", "weight_bits"}
@@ -84,10 +86,12 @@ class TestShippedRegistry:
             assert target_bundles()[name].geometry == geometry and geometry not in imc_platform_names()
 
     def test_a_registered_geometry_is_taken_from_the_registry(self):
+        """[U-C C-2] with the bundle's own core fields (its cores' write path) beside the geometry's."""
         for bundle in target_bundles().values():
             if bundle.geometry in imc_platform_names():
                 platform = get_imc_platform(bundle.geometry)
-                assert bundle.values["cores"] == [dict(core) for core in platform.cores]
+                fields = json.loads((TARGETS_DIR / f"{bundle.name}.json").read_text()).get("core_fields", {})
+                assert bundle.values["cores"] == [{**dict(core), **fields} for core in platform.cores]
                 assert bundle.values["weight_bits"] == platform.weight_bits
                 assert bundle.claim_class == platform.claim_eligibility
 

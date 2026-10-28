@@ -50,7 +50,7 @@ from mimarsinan.deployment_record.platform_physics import PlatformPhysics  # noq
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks  # noqa: E402
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params  # noqa: E402
 import mimarsinan.mapping.platform.target_bundles as bundle_module  # noqa: E402
-from mimarsinan.mapping.platform.target_bundles import target_bundles  # noqa: E402
+from mimarsinan.mapping.platform.target_bundles import declared_departures, target_bundles  # noqa: E402
 from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline  # noqa: E402
 from unit.chip_simulation.value_run.integer_programs import build_integer_program, integer_inputs  # noqa: E402
 
@@ -112,17 +112,22 @@ def chip_block(spec: Mapping[str, Any], row: Mapping[str, Any], cores: Optional[
     """The row's chip declaration in the instance's form."""
     bundles = target_bundles()
     if row.get("core_types"):
-        types = []
+        types, departures = [], []
         for declared in row["core_types"]:
             bundle = bundles[declared["target"]]
             core = dict(bundle.values["cores"][0])
-            types.append(core_type_record({**core, "role": declared.get("role", "any"), "count": declared.get("count"),
+            role = declared.get("role", "any")
+            types.append(core_type_record({**core, "role": role, "count": declared.get("count"),
                                            "write_technology": bundle.values.get("platform_physics_profile"),
                                            **({"operand": declared["operand"]} if "operand" in declared else {}),
                                            "source": f"geometry and write technology of bundle {bundle.name}"}))
+            # [U-C C-5] each core type's bundle against the build's own declarations, by name
+            departures += [f"{d['key']} declared ({role} core type, bundle {bundle.name})"
+                           for d in declared_departures(bundle.name, BUILD_DECLARATIONS)]
         names = [ct["target"] for ct in row["core_types"]]
         return {"target": None, "display_name": row.get("display_name", " with ".join(names)), "core_types": types,
-                "weight_bits": None, "faithfulness": {"class": "refused", "named": [], "note": row.get("note", "")},
+                "weight_bits": None, "faithfulness": {"class": "refused", "named": departures,
+                                                      "note": row.get("note", "")},
                 "claim_class": None, "arithmetic_class": row["arithmetic_class"], "backing_store": None,
                 "physics_profile": None}
     bundle = bundles[row["target"]]
@@ -131,6 +136,9 @@ def chip_block(spec: Mapping[str, Any], row: Mapping[str, Any], cores: Optional[
     core = dict(values["cores"][0])
     fields = dict(row.get("core_fields", {}))
     store = row.get("backing_store")
+    # [U-C C-5] the build's own declarations and the spec's core fields, where they depart from the bundle, by name
+    departed = bundle.faithfulness.with_departures(
+        f"{d['key']} declared" for d in declared_departures(bundle.name, BUILD_DECLARATIONS, fields))
     return {
         "target": bundle.name, "display_name": str(document.get("display_name", bundle.name)),
         "core_types": [core_type_record({**core, **fields, "role": "any", "count": cores,
@@ -139,7 +147,7 @@ def chip_block(spec: Mapping[str, Any], row: Mapping[str, Any], cores: Optional[
                                              f"; core fields {fields} declared by the spec: "
                                              f"{row.get('core_fields_source', 'no source stated')}" if fields else "")})],
         "weight_bits": int(values["weight_bits"]),
-        "faithfulness": {"class": bundle.faithfulness.kind, "named": list(bundle.faithfulness.named),
+        "faithfulness": {"class": departed.kind, "named": list(departed.named),
                          "note": str((document.get("faithfulness") or {}).get("note", ""))},
         "claim_class": bundle.claim_class, "arithmetic_class": row["arithmetic_class"],
         "backing_store": None if not store else {

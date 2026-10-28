@@ -17,6 +17,7 @@
   },
   "keys": {
     "core_semantics": "mvm",
+    "activation_bits": 4,
     "platform_physics_profile": "sram_cim_macro",
     "allow_coalescing": true,
     "allow_neuron_splitting": false
@@ -28,5 +29,5 @@
     ],
     "note": "The macro accumulates exactly (8-bit weights, 4-bit inputs, 32-bit partial sums, jiang2023a p.2-3), the toolchain's integer value law; its weight write energy is not stated and the sram_cim_macro profile brackets it from the measured read energy (derived). Macro-level constants only: the profile names the backing store as an external component, so no absolute number is read until a run declares it (a backing_store block through merge_override_blocks)."
   },
-  "notes": "Population 1 is a single macro, the degenerate case the curated table quarantines (as ODIN's single core); a study that tiles macros declares the count through target_overrides with a note. allow_coalescing is true: \"In case one when FX*FY*C >128 (Fig. 5.a), W needs to be stored in multiple addresses of an SR group. It takes at least 2 steps to compute the output.\" and \"Unlike AIMC, our macro provides a full precision partial sum, causing no precision lost from truncation of that partial sum.\" (jiang2023a, Section III.A, p.3), with \"The results are buffered locally when partial sums are needed.\" (Section II, p.2). allow_neuron_splitting is false: every output of the macro reads the same 128 inputs (p.2), and the source states no input sharing across macros. The inputs are 4-bit (p.2); the bundle binds no activation_bits, so a run that holds the macro's input width declares activation_bits 4."
+  "notes": "Population 1 is a single macro, the degenerate case the curated table quarantines (as ODIN's single core); a study that tiles macros declares the count through target_overrides with a note. allow_coalescing is true: \"In case one when FX*FY*C >128 (Fig. 5.a), W needs to be stored in multiple addresses of an SR group. It takes at least 2 steps to compute the output.\" and \"Unlike AIMC, our macro provides a full precision partial sum, causing no precision lost from truncation of that partial sum.\" (jiang2023a, Section III.A, p.3), with \"The results are buffered locally when partial sums are needed.\" (Section II, p.2). allow_neuron_splitting is false: every output of the macro reads the same 128 inputs (p.2), and the source states no input sharing across macros. The bundle binds activation_bits 4: \"The input activation (IA) driver delivers 128 (4b) IA to all 16 SR groups\" (jiang2023a, Section II, p.2); a run at another width declares it through target_overrides with a note."
 }

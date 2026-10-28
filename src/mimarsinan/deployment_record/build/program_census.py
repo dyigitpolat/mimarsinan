@@ -4,18 +4,19 @@ plane's passes as the period census reads them (``write_census.PassRow``)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps
 from mimarsinan.deployment_record.build.pass_carry import (  # candidate_carry_census moved there: re-export
     boundary_widths_of, candidate_carry_census as candidate_carry_census,
 )
-from mimarsinan.deployment_record.build.payload_sizes import (
-    core_connectivity_entries, core_payload_bytes, core_sign_rows, pass_program_bytes,
+from mimarsinan.deployment_record.build.payload_sizes import (  # the candidate's programming census: re-exported
+    CandidateProgramming as CandidateProgramming, candidate_programming_census as candidate_programming_census,
+    core_connectivity_entries, core_payload_bytes, core_sign_rows, pass_program_bytes as pass_program_bytes,
 )
 from mimarsinan.deployment_record.build.producer_census import (
-    candidate_operand_cells, operand_cells_by_core, operand_cells_per_tile,
+    candidate_operand_cells, candidate_operand_only, operand_cells_by_core, operand_cells_per_tile,
+    operand_only_by_core, operand_only_tiles,
 )
 from mimarsinan.deployment_record.build.write_census import (
     BoundaryWidths, PassRow, ProgramPasses, stage_latency,
@@ -42,7 +43,8 @@ class _SingleStageProgram:
         self.stages = [stage]
 
 
-def core_record(core_index: int, core: Any, *, weight_bits: int, resident: bool) -> SegmentCoreRecord:
+def core_record(core_index: int, core: Any, *, weight_bits: int, resident: bool,
+                operand_only: Optional[bool] = None) -> SegmentCoreRecord:
     occupancy = CoreOccupancy.from_hard_core(core)
     latency = getattr(core, "latency", None)
     signs, width = core_sign_rows(core, occupancy), core_weight_bits(core, weight_bits)
@@ -57,17 +59,19 @@ def core_record(core_index: int, core: Any, *, weight_bits: int, resident: bool)
         params_bytes=0 if resident else core_payload_bytes(occupancy.cells_used, width, signs),
         connectivity_entries=core_connectivity_entries(core),
         static_delay_levels=None if latency is None else int(latency),
-        sign_register_rows=signs or None,
+        sign_register_rows=signs or None, operand_only=operand_only,
     )
 
 
 def segment_record(stage_index: int, segment_index: int, pass_index: int, stage: Any, *,
-                   weight_bits: int) -> SegmentRecord:
-    """One (segment, pass) of the built program; an executed residency plan's marks ride along."""
+                   weight_bits: int, banks: Any = None) -> SegmentRecord:
+    """One (segment, pass) of the built program; an executed residency plan's marks ride along, and [U-C C-6] on a
+    program with bound ``banks`` each core's operand-only mark."""
     segment = stage.hard_core_mapping
     resident = bool(getattr(stage, "schedule_weights_resident", False))
     programming = weight_programming_report(_SingleStageProgram(stage))
-    cores = tuple(core_record(index, core, weight_bits=weight_bits, resident=resident)
+    only = [None] * len(segment.cores) if banks is None else operand_only_by_core(segment, banks)
+    cores = tuple(core_record(index, core, weight_bits=weight_bits, resident=resident, operand_only=only[index])
                   for index, core in enumerate(segment.cores))
     bank_ids = sorted({
         int(placement["weight_bank_id"])
@@ -101,51 +105,6 @@ def residency_plan_record(hybrid_mapping: Any) -> Optional[ResidencyPlanRecord]:
     """The executed residency plan the build marked on the mapping, or None (declared-only)."""
     plan = getattr(hybrid_mapping, SCHEDULE_RESIDENCY_PLAN, None)
     return None if plan is None else ResidencyPlanRecord.from_plan(plan)
-
-
-@dataclass(frozen=True)
-class CandidateProgramming:
-    """The programming census as the quantity surface consumes it."""
-
-    segment_cores: int
-    #: [R1] Σ over EVERY pass of the occupied used-rows x used-columns cells — the AS-MAPPED
-    #: figure (replicas count once per replica): ``macs``/``cells_used`` at candidate completeness.
-    committed_cells: int
-    reprogrammed_cores: int
-    #: None when the platform declares no weight width — absent, never zero.
-    reprogrammed_bytes: Optional[int]
-    reprogram_passes: int
-    pass_cores: Tuple[int, ...]
-    reprogrammed_cells: Tuple[int, ...]
-
-
-def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProgramming:
-    """[E2] The programming multiplicands of a candidate's pass structure.
-
-    A resident pass contributes its cores to core INIT and nothing else. An undeclared
-    ``weight_bits`` cannot size a payload, so the BYTES stay absent while the core counts count.
-    Every core count is of physical tiles (a fused core counts its members, ``PassProgram.tiles``); the payload is
-    sized per allocated crossbar (``pass_program_bytes``), as the record sizes ``SegmentCoreRecord.params_bytes``.
-    """
-    programs = () if noc is None else noc.pass_programs
-    reprogrammed = tuple(cells for program in programs if not program.resident
-                         for cells in program.core_cells)
-    payloads = None if weight_bits is None else tuple(
-        b for program in programs if not program.resident for b in pass_program_bytes(program, weight_bits))
-    return CandidateProgramming(
-        segment_cores=sum(_tiles(program) for program in programs),
-        committed_cells=sum(sum(program.core_cells) for program in programs),
-        reprogrammed_cores=sum(_tiles(program) for program in programs if not program.resident),
-        reprogrammed_bytes=None if payloads is None else sum(payloads),
-        reprogram_passes=sum(1 for p in programs if not p.resident),
-        pass_cores=tuple(_tiles(program) for program in programs),
-        reprogrammed_cells=reprogrammed,
-    )
-
-
-def _tiles(program: Any) -> int:
-    """A pass program's physical tiles (``PassProgram.tiles``); a program that states none counts its cores."""
-    return int(getattr(program, "tiles", program.cores))
 
 
 #: Why each plane that cannot see operand regions states none (N2): its write terms refuse under an operand core type.
@@ -196,7 +155,8 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
                 segment_index=segment, resident=bool(program.resident),
                 core_cells=tuple(int(c) - o for c, o in zip((c for t in tiles for c in t), operand)),
                 producer_cells=sum(operand), producer_cores=frozenset(i for i, o in enumerate(operand) if o),
-                producer_core_cells=tuple(operand) if any(operand) else None,
+                producer_core_cells=tuple(operand) if any(operand) else None, operand_only_cores=operand_only_tiles(
+                    candidate_operand_only(softcores, placements, cores, dynamic_banks or ()), tiles),
                 marks=frozenset(first[i] + j for i, h in enumerate(cores) if h in kept for j in range(len(tiles[i]))),
                 core_extents=None,
                 compute_steps=None if timesteps is None else program_latency_steps(
@@ -245,6 +205,7 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
             [(o.cells_used, (o.axons_used, o.neurons_used), t) for o, t in zip(occupancy, tiles)],
             resident_core_indices(stage, len(cores)) if getattr(stage, SCHEDULE_RESIDENT_CORES, None) is not None
             else ())
+        only = operand_only_tiles(operand_only_by_core(stage.hard_core_mapping, banks), tiles) if banks else frozenset()
         operand = operand_cells_per_tile(operand, tiles)
         rows.append(PassRow(
             segment_index=int(stage.schedule_segment_index if stage.schedule_segment_index is not None
@@ -252,7 +213,7 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
             resident=bool(getattr(stage, "schedule_weights_resident", False)),
             core_cells=tuple(c - p for c, p in zip(cells, operand)),
             producer_cells=sum(operand), producer_cores=frozenset(i for i, c in enumerate(operand) if c),
-            producer_core_cells=tuple(operand) if any(operand) else None,
+            producer_core_cells=tuple(operand) if any(operand) else None, operand_only_cores=only,
             marks=marks, core_extents=extents, compute_steps=None, stage_latencies=latencies, core_types=types,
             core_sign_rows=tuple(r for c, o, t in zip(cores, occupancy, tiles)
                                  for r in tile_rows(core_sign_rows(c, o), t)),
@@ -286,8 +247,9 @@ def record_program_passes(record: Any) -> ProgramPasses:
             segment.resident_core_indices or ())
         rows.append(PassRow(
             segment_index=segment.segment_index, resident=segment.programming == "resident",
-            core_cells=cells, marks=marks, core_extents=extents,
-            compute_steps=steps, stage_latencies=latencies, core_types=types,
+            core_cells=cells, marks=marks, core_extents=extents, compute_steps=steps, stage_latencies=latencies,
+            core_types=types,
+            operand_only_cores=operand_only_tiles([bool(c.operand_only) for c in segment.cores], tiles),
             core_sign_rows=tuple(r for c, t in zip(segment.cores, tiles)
                                  for r in tile_rows(c.sign_register_rows or 0, t)),
         ))

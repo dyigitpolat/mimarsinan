@@ -54,7 +54,6 @@ ROW_KEYS = ("inference_batch_K", "inference_rate_hz", "min_lifetime_hours")
 PRICE_KEYS = ROW_KEYS + ("platform_physics_profile", "platform_physics_overrides", "platform_physics_resolved")
 _CARRY = ("carried_raster_bytes", "carry_peak_live_bytes", "carry_out_bytes", "carry_in_bytes")
 _PROGRAMMING = ("reprogrammed_bytes", "reprogrammed_cores", "reprogram_passes")
-_ENDURANCE = "endurance_cycles"
 #: axis -> (compute-only term, headline (whose refusal names an absence), programming term, host term); [consts] the
 #: programming term is the write law's tile writes (``scaling_ladder_reading.tile_writes``)
 _AXES = {
@@ -214,15 +213,13 @@ def price_scheduled(
         if context.writes is not None:
             at_k = price_absolute(q, physics, writes=WriteInputs.of(context.writes))
             write_law = point_reading.write_law_columns(at_k, platform.get("inference_batch_K"))
-    endurance = physics.band(_ENDURANCE) if physics is not None and physics.has(_ENDURANCE) else None
     return PricedProgram(
         platform=platform, packed_tiles=tiles, passes=len(noc.pass_placements), latency_steps=facts.latency_steps,
         census_passes=None if facts.passes is None else len(facts.passes.rows),
         reprogram_passes=int(facts.programming.reprogram_passes), written_passes=written, carry=facts.carry,
         period_bytes=period_bytes, once_bytes=once_bytes, once_cores=once_tiles,
         max_writes=max_writes, terms=terms, refusals=refusals, wall_s=scheduled.wall_s + time.time() - start,
-        endurance=None if endurance is None else endurance.nominal, write_law=write_law,
-        endurance_band=None if endurance is None else (endurance.low, endurance.nominal, endurance.high),
+        write_law=write_law, **point_reading.endurance_fields(physics),
     )
 
 
@@ -282,7 +279,7 @@ def ladder_row(
     row["k_star"] = law.k_star(
         x_fluid=x_fluid, x_packed=x_packed, max_writes=priced.max_writes[0], max_writes_source=priced.max_writes[1],
         rate_hz=point_platform.get("inference_rate_hz"), lifetime_hours=point_platform.get("min_lifetime_hours"),
-        endurance=priced.endurance,
+        endurance=priced.endurance, pulses_per_write=None if priced.pulses_band is None else priced.pulses_band[1],
     )
     row.update(point_reading.row_readings(
         priced, x_fluid=x_fluid, x_packed=x_packed, k=k, logical_cells=census.logical_cells,

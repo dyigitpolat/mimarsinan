@@ -169,6 +169,12 @@ def _programming_energy(ctx: PricingContext) -> None:
         evidence.append(f"{constant} [{value.basis}]")
     elif not ctx.physics.has(constant) and ctx.quantities.has(quantity) and ctx.quantities.get(quantity).value:
         unpriced.append(f"{constant}(core_program)")
+    elif ctx.priced(constant) and (withheld := ctx.quantities.withheld_reason(quantity)) is not None:
+        unpriced.append(f"{constant}(core_program; {withheld})")  # [U-C C-6] the cores to charge are not determined
+        if not components:  # the declared per-core charge is the term's only part: refused by name, never silent
+            others = unpriced[:-1]
+            ctx.refuse("energy_programming_mj", f"{constant} is declared but its multiplicand {quantity} is withheld: "
+                       f"{withheld}" + (f"; also unpriced: {', '.join(others)}" if others else ""))
     if components:
         source = "; ".join(evidence) + (
             "; per program load, amortized separately from the per-inference headline"

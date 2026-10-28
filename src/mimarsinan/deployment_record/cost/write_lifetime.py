@@ -1,6 +1,8 @@
 """The write law's lifetime: endurance over the most-written cell's wear, in inferences and hours, and the lifetime
 floor as a separate admissibility verdict (G3, CH-A1); and its join over a chip's write technologies (N2b): the
-chip lives as long as its shortest-lived technology, and its verdict is the worst technology's.
+chip lives as long as its shortest-lived technology, and its verdict is the worst technology's. [U-C C-1] Wear is
+counted in programming pulses: endurance, in set and reset cycles, over the writes times the technology's declared
+``pulses_per_write`` (``endurance_in_writes``, the one reading every endurance reader takes).
 
 ``WritePricing`` (what the write law priced, refused and judged) lives here so that both the one-law pricer
 (``writes.py``) and the join read one type.
@@ -45,6 +47,20 @@ class WritePricing:
         self.refusals.append(PricingRefusal(name=name, reason=reason))
 
 
+def endurance_in_writes(physics: PlatformPhysics) -> Optional[Band]:
+    """[U-C C-1] The writes a cell sustains: ``endurance_cycles`` over ``pulses_per_write`` corner by corner (the
+    shortest life pairs the low endurance with the most pulses); the endurance band itself where the technology
+    declares no pulses per write (one pulse per write); None without an endurance."""
+    if not physics.has("endurance_cycles"):
+        return None
+    cycles = physics.band("endurance_cycles")
+    if not physics.has("pulses_per_write"):
+        return cycles
+    pulses = physics.band("pulses_per_write")
+    return Band(cycles.low / pulses.high, cycles.nominal / pulses.nominal, cycles.high / pulses.low,
+                f"endurance_cycles [{cycles.basis}] / pulses_per_write [{pulses.basis}]")
+
+
 def _life_band(endurance: Band, wear: CellWear, basis: str) -> Band:
     """endurance / wear corner-wise: the low lifetime at the high-wear end, the high at the low."""
     if wear.high is None or wear.exact:
@@ -72,8 +88,12 @@ def price_lifetime(out: WritePricing, census: Any, physics: PlatformPhysics, pol
             out.refuse(LIFETIME_VERDICT, f"a lifetime floor is declared but the lifetime is refused: {reason}")
         return
     endurance = physics.constants["endurance_cycles"]
-    life = out.term(LIFETIME_INFERENCES, "inferences", _life_band(
-        endurance.band, wear, f"endurance_cycles / max_writes_per_cell_per_inference ({wear.basis})"))
+    pulses = physics.constants.get("pulses_per_write")
+    writes = endurance_in_writes(physics)
+    assert writes is not None
+    life = out.term(LIFETIME_INFERENCES, "inferences", _life_band(writes, wear, (
+        f"endurance_cycles / (max_writes_per_cell_per_inference x pulses_per_write) ({wear.basis})" if pulses
+        else f"endurance_cycles / max_writes_per_cell_per_inference ({wear.basis})")))
     rate = policy.inference_rate_hz
     if rate is None:
         if floor is not None:
@@ -97,7 +117,8 @@ def price_lifetime(out: WritePricing, census: Any, physics: PlatformPhysics, pol
     out.verdicts.append(AdmissibilityVerdict(
         LIFETIME_VERDICT, verdict,
         f"lifetime {hours.low:.4g}-{hours.high:.4g} h{kind} against min_lifetime_hours {floor:g}",
-        f"endurance_cycles [{endurance.basis}{secondary}]"))
+        f"endurance_cycles [{endurance.basis}{secondary}]"
+        + (f"; pulses_per_write [{pulses.basis}]" if pulses else "")))
 
 
 def _bands(parts: Sequence[Tuple[str, WritePricing]], name: str) -> List[Tuple[str, str, Band]]:

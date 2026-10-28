@@ -12,8 +12,9 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.build.program_census import record_program_passes
-from mimarsinan.deployment_record.build.write_census import (
+from mimarsinan.deployment_record.build.write_census import (  # the core counts re-exported for their readers
     CoreType, ProgramPasses, WriteCensus, WriteCensusError, core_capacity_of, period_census,
+    programmed_basis as programmed_basis, programmed_cores as programmed_cores, written_cores,
 )
 from mimarsinan.deployment_record.quantities.spec import QuantityValue
 from mimarsinan.deployment_record.quantities import write_technology as wt
@@ -131,11 +132,6 @@ def placed_wear(batch_k: int, most_written: int, producer_slots: Sequence[Tuple[
     write of the core."""
     static = natural(most_written, "most-written core writes", error=WriteLawError) / batch_k
     return max([static] + [s / batch_k + p for s, p in producer_slots])
-
-
-def written_cores(census: Any) -> int:
-    """W: the core writes of one period (every rewritten core of every pass); [consts] e_core_program's count."""
-    return sum(p.cores - p.resident_cores for p in census.passes if p.written_cells_backing_store)
 
 
 def write_quantities(census: Any, policy: WritePolicy, *,

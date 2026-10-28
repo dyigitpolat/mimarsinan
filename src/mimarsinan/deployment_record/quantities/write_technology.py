@@ -193,7 +193,7 @@ def split_by_technology(passes: ProgramPasses, written: WriteCensus, policy: Any
                 written_cells_backing_store=sum(row.core_cells[i] for i in rewritten),
                 written_cells_producer=producer,
                 payload_bytes=sum(row.core_bytes(i, weight_bits) for i in rewritten),  # cells and sign register
-                compute_steps=full.compute_steps))
+                compute_steps=full.compute_steps, operand_only_cores=len(set(rewritten) & row.operand_only_cores)))
             if written.written_extents is not None:
                 extents.append(tuple(extent for i, extent in zip(cores, written.written_extents[position])
                                      if types[i] in kinds))

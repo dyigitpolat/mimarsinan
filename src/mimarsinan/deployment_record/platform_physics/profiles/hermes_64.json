@@ -9,7 +9,7 @@
     "supply_v": null,
     "temperature_c": null,
     "array_size_assumed": "64 cores of 256 x 256 PCM unit cells, chip 12 x 12 mm, core 1.2 x 1.16 mm (gallo2022a p.1-2); 8-bit PWM inputs, 12-bit ADC (p.9)",
-    "notes": "MVM energy and time are MEASURED on the chip (Table I p.18); the MVM energy aggregates array, ADC and PWM (p.10), so no conversion or row-drive row is declared beside it. Programming is page-sourced as a LOWER bound only; write energy, static power and every periphery row are absent and refuse by name.",
+    "notes": "MVM energy and time are MEASURED on the chip (Table I p.18); the MVM energy aggregates array, ADC and PWM (p.10), so no conversion or row-drive row is declared beside it. The write time is derived from the published programming sequence (Nature Electronics pages p.689-690): a per-core setup and a per-iteration step; the write energy (no programming voltage is stated), static power and every periphery row are absent and refuse by name; the endurance is the PCM review band (gallo2020an), worn in programming pulses. The MVM and area rows keep the arXiv version's pages; the fetch intake's page map gives the published ones.",
     "geometry": {
       "axons": 256,
       "neurons": 256,
@@ -54,14 +54,24 @@
       "derivation": "Chip 12 x 12 mm = 144 mm^2 less 64 cores x 1.392 mm^2 = 89.088 mm^2: 54.912 mm^2 outside the cores (gallo2022a p.1-2)."
     },
     "t_write_per_unit": {
-      "low": 2.45,
-      "nominal": 2.45,
-      "high": 2.45,
+      "low": 0.452608,
+      "nominal": 0.649216,
+      "high": 1.042432,
       "unit": "ms",
       "evidence_kind": "derived",
-      "citation": "gallo2022a p.7 via constants.md sec. 6",
-      "derivation": "One programming iteration of one core: 32 source lines in parallel, so 8 programming cycles per diagonal; RESET 125 ns, SET 250 ns, verify read 512 ns PWM plus 256 ns precharge; one-device programming with one verify gives at least 2.45 ms per core (0.61 ms per 16,384-weight tile).",
-      "note": "A LOWER bound per core iteration (write granularity core)."
+      "citation": "gallo2022a (Nature Electronics 6, published version) p.690",
+      "derivation": "[U-C C-3] One write-verify iteration of one core: one programming pulse on each unit cell, 'The programming pulses are square pulses of 125 ns width and amplitude varying between 125 and 700 uA.' (p.690), 32 in parallel: 65,536 / 32 x 125 ns = 0.256 ms; then one verify round, 'The read operation is performed by applying long PWM pulses of 0.2 V amplitude with 512 ns width and 256 ns precharge time to the selected diagonal' (p.690), over the 256 diagonals with r = 1, 2 or 4 reads of 768 ns (the devices are read individually; whether the two polarities read at once is not stated): 0.256 ms + 256 x r x 0.768 us = 0.452608 / 0.649216 / 1.042432 ms.",
+      "note": "Per core iteration (write granularity core). Every unit cell is counted unconverged in every iteration, an upper reading of the step. Replaces 2.45 ms per core iteration, which was no lower bound and repeated the RESET and SET in every iteration (fetch intake constants_write_energy.md sec. 3.4)."
+    },
+    "t_write_setup_per_event": {
+      "low": 1.536,
+      "nominal": 1.536,
+      "high": 1.6384,
+      "unit": "ms",
+      "evidence_kind": "derived",
+      "citation": "gallo2022a (Nature Electronics 6, published version) p.689-690",
+      "derivation": "[U-C C-3] One core's write setup: 'When programming a weight onto a unit cell, all the four PCM devices are first RESET and then the devices corresponding to the weight polarity are SET. For ODP, the SET pulses are sent only to device 1' (p.690), at 'a RESET pulse width of 125 ns with an amplitude of 700 uA, and a SET pulse width of 250 ns with a trailing edge of 50 ns' (p.689), with 'only 32 SLs are programmed in parallel due to area and power constraints' (p.689): 262,144 devices / 32 x 125 ns = 1.024 ms of RESET plus 65,536 device-1 SETs / 32 x 250 ns = 0.512 ms, 1.536 ms; high 1.6384 ms with the 50 ns trailing edge after the 250 ns (2,048 x 300 ns = 0.6144 ms).",
+      "note": "One write step at granularity core; whether the 64 cores program concurrently is not stated, so one core per step."
     },
     "write_verify_iterations": {
       "low": 1.0,
@@ -69,17 +79,27 @@
       "high": 30.0,
       "unit": "iterations",
       "evidence_kind": "published",
-      "citation": "gallo2022a p.7",
-      "note": "'at most 30 iterations'; the mean is not stated, so the band spans one iteration (the lower bound's own assumption) to the stated maximum, nominal at its log-space centre."
+      "citation": "gallo2022a (Nature Electronics 6, published version) p.690",
+      "note": "'The programming sequence ends when the error between the target conductance and programmed conductance of the unit cell is smaller than a margin of 5 ADC counts or when the maximum number of iterations (30) has been reached.' The mean is not stated, so the band spans one iteration to the stated maximum, nominal at its log-space centre."
     },
     "endurance_cycles": {
-      "low": 1000000.0,
-      "nominal": 31622776.6,
-      "high": 1000000000.0,
+      "low": 100000000.0,
+      "nominal": 10000000000.0,
+      "high": 1000000000000.0,
       "unit": "cycles",
       "evidence_kind": "published",
-      "citation": "sridharan2023xformer p.1",
-      "note": "SECONDARY: 'about 1e6 to 1e9 conservative writes' for NVM in general, read in the X-Former paper (secondary source); the primary device citations it rests on were not read in this round (the owner's fetch list holds lee2011a for TaOx RRAM and gallo2020an for PCM, which replace this band when they land). Nominal at the band's log-space centre."
+      "citation": "gallo2020an p.4",
+      "note": "[U-C C-1] A review, so stated: 'high endurance (typically > 10^8 SET/RESET cycles before failure)' is a storage requirement and 'Individual PCM devices have demonstrated > 10^12 endurance cycles' [2, 17-20] a best device (p.4, PDF p.5); the PCM class matches HERMES-64's mushroom cell, but neither figure was measured on its doped Ge2Sb2Te5 cell (gallo2022a p.689), whose endurance the chip paper does not state. Cycles are SET/RESET cycles; one write wears pulses_per_write of them. Nominal at the log-space centre."
+    },
+    "pulses_per_write": {
+      "low": 3.0,
+      "nominal": 7.4772,
+      "high": 32.0,
+      "unit": "pulses",
+      "evidence_kind": "derived",
+      "citation": "gallo2022a (Nature Electronics 6, published version) p.690",
+      "derivation": "[U-C C-1] The most-written device of a unit-cell write: 'all the four PCM devices are first RESET and then the devices corresponding to the weight polarity are SET' (p.690), then 'a programming pulse is applied to the unit cells that did not yet converge' in each iteration (p.684-685), at most 30 (p.690): RESET + SET + one pulse per iteration = 2 + write_verify_iterations, corner by corner (3 / 7.4772 / 32).",
+      "note": "Every pulse counts as one endurance cycle (owner decision B1, 2026-10-27), and a pulse in every iteration is an upper reading; the mean iteration count is not stated."
     }
   }
 }

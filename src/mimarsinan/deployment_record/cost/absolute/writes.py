@@ -5,8 +5,7 @@ One pricer for every census producer (the record and candidate planes, the resid
 census): it reads the S0 ``PassPeriodCensus`` and the declared policy only. On a chip of several write technologies
 (N2b, ``quantities/write_technology.py``) the same law prices each technology's share under its physics, and the
 shares join: energies and per-pass walls add, the lifetime and verdict are ``write_lifetime.join_lifetimes``'.
-[consts] Each core a period rewrites costs its fetch and commit and, where declared, the chip's ``e_core_program``.
-"""
+[consts, U-C C-6] A rewritten core costs its fetch and commit and, if it holds a static program, ``e_core_program``."""
 
 from __future__ import annotations
 
@@ -21,7 +20,8 @@ from mimarsinan.deployment_record.cost.write_lifetime import (
 )
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.platform_physics.resolve import technology_physics
-from mimarsinan.deployment_record.quantities.write_law import WritePolicy, pass_events, pass_units, written_cores
+from mimarsinan.deployment_record.quantities.write_law import (
+    WritePolicy, pass_events, pass_units, programmed_basis, programmed_cores)
 from mimarsinan.deployment_record.quantities.write_technology import TechnologySplit, shadow_room_refusal
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -114,9 +114,9 @@ def _write_energy(census: Any, physics: PlatformPhysics, policy: WritePolicy) ->
     else:
         return None, ("cells are written per inference but the target declares no commit energy "
                       "(e_write_per_cell, or e_program_per_byte for backing-store bytes)")
-    if physics.has("e_core_program") and (cores := written_cores(census)):
-        core = physics.band("e_core_program")
-        parts.append(scale_band(core, cores / k * _J_TO_MJ, f"e_core_program [{core.basis}] x rewritten_cores / K"))
+    if physics.has("e_core_program") and (cores := programmed_cores(census)):  # [U-C C-6] static programs only
+        core, which = physics.band("e_core_program"), programmed_basis(census)
+        parts.append(scale_band(core, cores / k * _J_TO_MJ, f"e_core_program [{core.basis}] x {which} / K"))
     basis = " + ".join(p.basis for p in parts) + (f"; {'; '.join(notes)}" if notes else "")
     return add_bands(parts, basis), ""
 

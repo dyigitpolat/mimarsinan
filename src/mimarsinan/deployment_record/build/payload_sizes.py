@@ -1,5 +1,5 @@
 """Payload sizing SSOT: exact programmed-weight bytes (cells and a per-axon core's sign register) + compressed span
-counts.
+counts, and the candidate's programming census over them (moved here from ``program_census``, which re-exports it).
 
 The documented ``weight_bits`` edge-case choice: ``None`` (an undeclared
 platform weight width) FAILS LOUD. ``SegmentCoreRecord.params_bytes`` is an
@@ -11,6 +11,7 @@ mapping steps run.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
 from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
@@ -81,3 +82,48 @@ def core_connectivity_entries(hard_core: Any) -> int:
     codegen ``compress_sources_to_spans`` export — never a reimplementation.
     """
     return len(hard_core.get_axon_source_spans())
+
+
+@dataclass(frozen=True)
+class CandidateProgramming:
+    """The programming census as the quantity surface consumes it."""
+
+    segment_cores: int
+    #: [R1] Σ over EVERY pass of the occupied used-rows x used-columns cells — the AS-MAPPED
+    #: figure (replicas count once per replica): ``macs``/``cells_used`` at candidate completeness.
+    committed_cells: int
+    reprogrammed_cores: int
+    #: None when the platform declares no weight width — absent, never zero.
+    reprogrammed_bytes: Optional[int]
+    reprogram_passes: int
+    pass_cores: Tuple[int, ...]
+    reprogrammed_cells: Tuple[int, ...]
+
+
+def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProgramming:
+    """[E2] The programming multiplicands of a candidate's pass structure.
+
+    A resident pass contributes its cores to core INIT and nothing else. An undeclared
+    ``weight_bits`` cannot size a payload, so the BYTES stay absent while the core counts count.
+    Every core count is of physical tiles (a fused core counts its members, ``PassProgram.tiles``); the payload is
+    sized per allocated crossbar (``pass_program_bytes``), as the record sizes ``SegmentCoreRecord.params_bytes``.
+    """
+    programs = () if noc is None else noc.pass_programs
+    reprogrammed = tuple(cells for program in programs if not program.resident
+                         for cells in program.core_cells)
+    payloads = None if weight_bits is None else tuple(
+        b for program in programs if not program.resident for b in pass_program_bytes(program, weight_bits))
+    return CandidateProgramming(
+        segment_cores=sum(_tiles(program) for program in programs),
+        committed_cells=sum(sum(program.core_cells) for program in programs),
+        reprogrammed_cores=sum(_tiles(program) for program in programs if not program.resident),
+        reprogrammed_bytes=None if payloads is None else sum(payloads),
+        reprogram_passes=sum(1 for p in programs if not p.resident),
+        pass_cores=tuple(_tiles(program) for program in programs),
+        reprogrammed_cells=reprogrammed,
+    )
+
+
+def _tiles(program: Any) -> int:
+    """A pass program's physical tiles (``PassProgram.tiles``); a program that states none counts its cores."""
+    return int(getattr(program, "tiles", program.cores))

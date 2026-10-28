@@ -4,9 +4,13 @@
   "geometry": "hermes_64",
   "keys": {
     "core_semantics": "mvm",
+    "activation_bits": 8,
     "platform_physics_profile": "hermes_64",
     "allow_coalescing": true,
     "allow_neuron_splitting": true
+  },
+  "core_fields": {
+    "write_granularity": "core"
   },
   "faithfulness": {
     "class": "approximate",
@@ -15,5 +19,5 @@
     ],
     "note": "The chip's MVM is analog: its measured error against the exact product (gallo2022a p.4-5) is not modeled, and a deployment on the bundle runs the toolchain's exact integer value law on HERMES-64's geometry, permissions and physics. The profile declares no link or NoC row, so the activation transport between cores is unpriced by name (in the paper's measurements it ran off chip through the test board's FPGA, p.5)."
   },
-  "notes": "allow_coalescing is true: \"In the current design, the links can transfer data across the LDPUs of multiple cores to realize fully on-chip intra-layer partial sum accumulation, and transfer data from the LDPU to the input of a GDPU.\" (gallo2022a, Section II, p.3). allow_neuron_splitting is true: \"The mapping of weights onto the chip is done by converting a weight matrix for each layer into 256x256 conductance sub-matrices, one for each core the layer is mapped onto. The weight matrix is split into the smallest possible amount of sub-matrices which have the same number of rows and columns, both less than 256.\" (gallo2022a, Methods, p.9): a layer's rows (partial sums) and its output columns span several cores. The chip's inputs are 8-bit time-encoded (Extended Data Table I, p.24); the bundle binds no activation_bits, so a run that holds the chip's input width declares activation_bits 8."
+  "notes": "allow_coalescing is true: \"In the current design, the links can transfer data across the LDPUs of multiple cores to realize fully on-chip intra-layer partial sum accumulation, and transfer data from the LDPU to the input of a GDPU.\" (gallo2022a, Section II, p.3). allow_neuron_splitting is true: \"The mapping of weights onto the chip is done by converting a weight matrix for each layer into 256x256 conductance sub-matrices, one for each core the layer is mapped onto. The weight matrix is split into the smallest possible amount of sub-matrices which have the same number of rows and columns, both less than 256.\" (gallo2022a, Methods, p.9): a layer's rows (partial sums) and its output columns span several cores. The bundle binds activation_bits 8: the chip's inputs are 8-bit pulse-width modulated (Extended Data Table I, p.24; Extended Data Table 1 of the published version: \"8 bit (1 ns/LSB)\"), the input width of its measured MVM; a run at another width declares it through target_overrides with a note. The cores are written one core per write step (core_fields write_granularity core), the hermes_64 profile's per-core setup and per-iteration step, with \"In practice, only 32 SLs are programmed in parallel due to area and power constraints.\" (gallo2022a, Methods, p.689) inside each step; whether the 64 cores program concurrently is not stated, so one core per step."
 }

@@ -166,7 +166,12 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Fixed wall time to open one write step (addressing, mode switch), beside its pulses."),
     ("endurance_cycles", PROGRAMMING, DIMENSIONLESS, "cycles", "declared, not multiplied",
      "Write cycles a cell sustains over its life; lifetime in inferences is endurance_cycles / "
-     "max_writes_per_cell_per_inference (divided, not multiplied)."),
+     "(max_writes_per_cell_per_inference x pulses_per_write) (divided, not multiplied)."),
+    # [U-C C-1] Endurance is counted in set and reset cycles, a write-verify write applies several pulses.
+    ("pulses_per_write", PROGRAMMING, DIMENSIONLESS, "pulses", "declared, not multiplied",
+     "Programming pulses one cell write applies to its cell, each counted as one cycle of endurance_cycles (a set "
+     "or reset pulse): the wear of one write. Lifetime divides endurance_cycles by the most-written cell's writes "
+     "per inference times pulses_per_write; a technology that declares none wears one pulse per write."),
     # --- sync: barriers between passes -------------------------------------------------
     ("e_sync_barrier", SYNC, ENERGY, "pJ", "sync_count",
      "Energy of one chip-wide synchronization barrier."),
@@ -238,3 +243,19 @@ SUPERSEDES: Mapping[str, Tuple[str, ...]] = {
         "p_static_global",
     ),
 }
+
+#: [U-C C-1] The decision class of a declaration of each constant (the registry's class names, data only). A constant
+#: whose only reader is the lifetime the write law judges against ``min_lifetime_hours`` moves only which programs are
+#: admitted: a capacity the built program is judged against without being shaped by it (the class rule), so it is
+#: admissibility-bearing; every other constant is priced, so cost-only.
+LIFETIME_JUDGED: Tuple[str, ...] = ("endurance_cycles", "pulses_per_write")
+_JUDGED = ("admissibility_bearing", "read only by the lifetime the write law judges against min_lifetime_hours: a "
+                                    "declaration moves which programs are admitted, never a priced term")
+_PRICED = ("cost_only", "a constant the cost model prices with; nothing else reads it")
+
+
+def decision_class_of(key: str) -> Tuple[str, str]:
+    """(class, reason) of a declaration of the vocabulary constant ``key``; an unknown key refuses (KeyError)."""
+    if key not in {row[0] for row in ROWS}:
+        raise KeyError(f"{key!r} is not a declarable physics constant")
+    return _JUDGED if key in LIFETIME_JUDGED else _PRICED

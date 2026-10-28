@@ -6,7 +6,7 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.deployment_record.schema.accuracy import (
     AccuracyRecord,
@@ -91,6 +91,10 @@ class DeploymentRecord:
     #: work, host boundary bytes and round trips, labelled executed or estimated. Emitted only when set, so every
     #: record of a chip without the declaration is byte-identical.
     output_stage: Optional[Mapping[str, Any]] = None
+    #: [U-C C-5] Each bundle key the run's ``target_overrides`` replaces (key, bundle value, declared value, note),
+    #: printed by name; emitted only when the run departs from its target bundle, so every other record is
+    #: byte-identical.
+    declared_departures: Optional[Tuple[Mapping[str, Any], ...]] = None
 
     def __post_init__(self) -> None:
         _require_version("DeploymentRecord", self.format_version)
@@ -113,6 +117,8 @@ class DeploymentRecord:
                 else self.adaptation_ledger.to_dict()
             ),
             **({} if self.output_stage is None else {"output_stage": json.loads(json.dumps(self.output_stage))}),
+            **({} if not self.declared_departures else {
+                "declared_departures": json.loads(json.dumps(list(self.declared_departures)))}),
         }
 
     @classmethod
@@ -142,6 +148,8 @@ class DeploymentRecord:
             )
         if kwargs.get("output_stage") is not None:
             kwargs["output_stage"] = dict(kwargs["output_stage"])
+        if kwargs.get("declared_departures") is not None:
+            kwargs["declared_departures"] = tuple(dict(d) for d in kwargs["declared_departures"])
         return cls(**kwargs)
 
 

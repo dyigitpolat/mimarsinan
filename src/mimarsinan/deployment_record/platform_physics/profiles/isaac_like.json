@@ -203,13 +203,20 @@
       "note": "The derate a MEASURED host wall is divided by. Identity by definition: this framework measures its host ComputeOp walls end-to-end on the deployment host (StageTimer), and derating a measurement would invent headroom. [H5] Declared here after the loihi precedent because its absence refused the record-plane e2e/energy headlines BY NAME on runs whose host wall was in fact measured."
     },
     "endurance_cycles": {
-      "low": 1000000.0,
-      "nominal": 31622776.6,
-      "high": 1000000000.0,
+      "low": 10000000000.0,
+      "nominal": 31622776601.683792,
+      "high": 100000000000.0,
       "unit": "cycles",
       "evidence_kind": "published",
-      "citation": "sridharan2023xformer p.1",
-      "note": "[CH-A1] SECONDARY: 'about 1e6 to 1e9 conservative writes' for NVM in general, read in the X-Former paper (secondary source); the primary device citations it rests on were not read in this round (the owner's fetch list holds lee2011a for TaOx RRAM and gallo2020an for PCM, which replace this band when they land). Nominal at the band's log-space centre sqrt(1e6 x 1e9)."
+      "citation": "lee2011a p.627",
+      "note": "[U-C C-1] The resistive band, a device-class proxy, so stated: 'demonstrated cycling endurance values of 10^11, 5x10^10 and 10^10 at 0.5x0.5 um2 cell sizes respectively' (Fig. 2c) on a TaOx bilayer cell; a same-technology transfer, as this profile's write rows: ISAAC publishes no device endurance and its cells are RRAM. Cycles are set/reset cycles; one write wears pulses_per_write of them. Nominal at the band's log-space centre."
+    },
+    "pulses_per_write": {
+      "nominal": 8.52,
+      "unit": "pulses",
+      "evidence_kind": "published",
+      "citation": "wan2022a Methods, PDF p.10",
+      "note": "[U-C C-1] A same-technology transfer from NeuRRAM, as write_verify_iterations: 'On average each cell requires 8.52 set/reset pulses.'"
     },
     "write_verify_iterations": {
       "nominal": 8.52,

@@ -65,6 +65,7 @@ def emit_deployment_record_hcm(
         # the same one, or the record would name a computation only some of them ran.
         pass_transfer=run_pass_transfer(step.pipeline.config),
         value_noc_wire_hops=record_value_noc_wire_hops(hybrid_mapping, platform_constraints),
+        operand_chip=any(c.get("operand") for c in platform_constraints.get("cores") or ()),
     )
     placement = placement_record_from_mapping(hybrid_mapping)
     # The logical on-chip/host split is an ungated CENSUS sealed on every run

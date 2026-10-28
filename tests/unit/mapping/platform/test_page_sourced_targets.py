@@ -35,8 +35,8 @@ TARGETS_DIR = Path(mimarsinan.__file__).parent / "mapping" / "platform" / "targe
 #: bundle -> (geometry, profile, claim class, faithfulness label)
 CL2_PHYSICS = {
     "hermes_64": ("hermes_64", "hermes_64", "headline-eligible", "approximate: analog MVM error not modeled"),
-    "neurram": ("neurram_like", "neurram", "headline-eligible",
-                "approximate: analog MVM error not modeled; MVM energy read in a secondary source"),
+    # [U-C C-2] NeuRRAM's MVM energy is now primary (wan2022a Extended Data Table 1), so the label drops it
+    "neurram": ("neurram_like", "neurram", "headline-eligible", "approximate: analog MVM error not modeled"),
     "sram_cim_macro": ("dimc_macro_128x1024", "sram_cim_macro", "quarantined",
                        "approximate: array write energy derived from the read energy"),
 }
@@ -103,8 +103,10 @@ class TestPhysicsBundles:
         assert not {"e_write_per_cell", "p_static_global", "e_noc_value_per_byte_hop"} & set(physics.constants)
 
     def test_hermes_64_takes_the_registered_64_core_geometry(self):
+        """[U-C C-3] with the bundle's core fields (its write path) beside the registered geometry's."""
         platform = get_imc_platform("hermes_64")
-        assert target_bundles()["hermes_64"].values["cores"] == [dict(core) for core in platform.cores]
+        fields = _bundle_file("hermes_64")["core_fields"]
+        assert target_bundles()["hermes_64"].values["cores"] == [{**dict(core), **fields} for core in platform.cores]
         assert platform.total_cores == 64 and platform.weight_bits == 4
 
     def test_neurram_is_a_physics_bundle_over_the_registered_geometry_once(self):
@@ -218,15 +220,18 @@ def _two_pass_census():
 
 
 class TestNvmEnduranceBand:
-    """NeuRRAM and HERMES-64 carry the NVM band 1e6-1e9 (sridharan2023xformer p.1, SECONDARY) until the owner's fetch
-    of lee2011a and gallo2020an lands (L7), so lifetime and K* are priced on every page-sourced NVM point."""
+    """[U-C C-1] Each NVM bundle carries its technology's band (owner L7 and B1, 2026-10-27): NeuRRAM the resistive
+    proxy of lee2011a (1e10-1e11), HERMES-64 the PCM review band of gallo2020an (1e8-1e12), each worn in its
+    declared programming pulses per write, so lifetime and K* are priced on every page-sourced NVM point."""
+
+    BANDS = {"neurram": (1e10, 1e11, "lee2011a p.627", "proxy"), "hermes_64": (1e8, 1e12, "gallo2020an p.4", "review")}
 
     @pytest.mark.parametrize("name", NVM_BUNDLES)
-    def test_the_band_is_the_secondary_one(self, name):
+    def test_the_band_is_the_technology_s(self, name):
+        low, high, citation, marker = self.BANDS[name]
         row = _physics_of(_pcfg(name)).constants["endurance_cycles"]
-        assert (row.low, row.high, row.evidence_kind) == (1e6, 1e9, "published")
-        assert row.citation == "sridharan2023xformer p.1"
-        assert "SECONDARY" in row.note and "lee2011a" in row.note and "gallo2020an" in row.note
+        assert (row.low, row.high, row.evidence_kind) == (low, high, "published")
+        assert row.citation == citation and marker in row.note and "SECONDARY" not in row.note
 
     @pytest.mark.parametrize("name", NVM_BUNDLES)
     @pytest.mark.parametrize("k", [1, 16, 64])
@@ -235,9 +240,11 @@ class TestNvmEnduranceBand:
         policy = WritePolicy(batch_k=k, inference_rate_hz=30.0, min_lifetime_hours=43_800.0)
         pricing = price_write_terms(_two_pass_census(), physics, policy, most_written=2)
         life = {t.name: t for t in pricing.terms}["lifetime_inferences"]
-        assert (life.band.low, life.band.high) == pytest.approx((1e6 * k / 2, 1e9 * k / 2))
+        cycles, pulses = physics.band("endurance_cycles"), physics.band("pulses_per_write")
+        assert (life.band.low, life.band.high) == pytest.approx((cycles.low / pulses.high * k / 2,
+                                                                 cycles.high / pulses.low * k / 2))
         verdict, = pricing.verdicts
-        assert verdict.evidence.endswith("; a secondary source]")
+        assert "pulses_per_write [" in verdict.evidence and "secondary" not in verdict.evidence
 
 
 class TestMacroBackingStore:

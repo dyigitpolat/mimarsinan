@@ -128,9 +128,12 @@ same thing in the physics layer.
 ## Wave 1 rows: validity, the write law and the value NoC (G3)
 
 - **Validity geometry.** 128 x 128 arrays of 2-bit cells; no aggregate constant is declared.
-- **`endurance_cycles` = 1e6 - 1e9** (published, SECONDARY): the NVM band of sridharan2023xformer p.1, until the
-  owner's fetch of an RRAM endurance source lands. ENDURANCE IS NOW COUNTED: with a declared batch K the write
-  law prices the lifetime against it, and a declared lifetime floor judges admissibility.
+- **`endurance_cycles` = 1e10 - 1e11** (published, a device-class proxy): the resistive band of lee2011a p.627
+  (Fig. 2c, a TaOx bilayer cell), a same-technology transfer as the write rows below; it replaces the shared NVM band
+  of sridharan2023xformer p.1 (SECONDARY). With a declared batch K the write law prices the lifetime against it,
+  and a declared lifetime floor judges admissibility.
+- **`pulses_per_write` = 8.52** (published, wan2022a Methods, PDF p.10): the wear of one write in endurance cycles,
+  NeuRRAM's mean set/reset pulses per cell write, transferred as `write_verify_iterations` is.
 - **`write_verify_iterations` = 8.52** (published, wan2021edge p.9) and **`t_write_per_unit` = 2 - 11 us**
   (derived from the 1 us pulse and the 1-10 us verify read): a **same-technology transfer from NeuRRAM**. ISAAC
   publishes no write; its cells are RRAM, so NeuRRAM's write-verify statistics stand in, labelled as such.

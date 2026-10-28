@@ -84,7 +84,7 @@ WRITES = Obj(
      "write_granularity": Nullable(STR), "census_label": STR},
     {"energy_write_mj": Nullable(BAND), "latency_write_exposed_s": Nullable(BAND), "refusals": ListOf(REFUSAL),
      "per_core_type": ListOf(CORE_TYPE_WRITES)})
-ENDURANCE = Obj({"cycles": BAND, "evidence_kind": STR, "source": STR})
+ENDURANCE = Obj({"cycles": BAND, "evidence_kind": STR, "source": STR}, {"pulses_per_write": BAND})
 #: [fix_b] One declared core type's wear: its role and write technology, the cells it writes, its most-written cell's
 #: writes per inference at the row's K, its endurance band, the lifetime hours and the verdict they give.
 CORE_TYPE_LIFETIME = Obj({"role": Enum(("any", STATIC, OPERAND)), "write_technology": Nullable(STR),

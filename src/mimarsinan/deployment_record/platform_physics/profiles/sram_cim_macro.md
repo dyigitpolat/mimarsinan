@@ -25,6 +25,7 @@ inputs, so CL2 corrected it to the group-level core the `sram_cim_macro` target 
 | `e_write_per_cell` | 76 - 342 fJ, nominal 161.2 fJ | derived | constants.md sec. 5: 1x the 20 MHz read byte energy to 2x the 91 MHz one (a write is full swing) |
 | `write_verify_iterations` | 1 | derived | a digital write has no verify loop |
 | `endurance_cycles` | 1e16 | published | ielmini2018inmemory p.7 |
+| `pulses_per_write` | 1 | derived | one SRAM write is one of the write cycles ielmini2018inmemory counts |
 | `conductance_levels` | 256 | published | 8-bit weights (p.2-3) |
 
 ## Absent, refused by name

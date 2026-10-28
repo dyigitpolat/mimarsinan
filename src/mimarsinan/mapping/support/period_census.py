@@ -150,11 +150,17 @@ class PassCensus:
     #: Bytes programmed when the pass loads (0 when resident).
     payload_bytes: int
     compute_steps: int
+    #: [U-C C-6] Rewritten cores of this pass whose every placement reads a bound bank (N2): they hold no static
+    #: program, so they take no per-core programming charge. Serialized only when nonzero.
+    operand_only_cores: int = 0
 
     def __post_init__(self) -> None:
         settle_naturals(self, [f.name for f in fields(self) if f.name != "resident"])
         _require(self.resident_cores <= self.cores,
                  f"PassCensus.resident_cores {self.resident_cores} exceeds cores {self.cores}")
+        _require(self.operand_only_cores <= self.cores - self.resident_cores,
+                 f"PassCensus.operand_only_cores {self.operand_only_cores} exceeds the rewritten cores "
+                 f"{self.cores - self.resident_cores}")
         _require(not self.resident or self.resident_cores == self.cores,
                  "PassCensus.resident_cores must equal cores on a wholly resident pass")
 
@@ -207,7 +213,7 @@ class PassPeriodCensus:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "passes": [asdict(p) for p in self.passes],
+            "passes": [{k: v for k, v in asdict(p).items() if k != "operand_only_cores" or v} for p in self.passes],
             "boundaries": [asdict(b) for b in self.boundaries],
             "label": self.label,
         }

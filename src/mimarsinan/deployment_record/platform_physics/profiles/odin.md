@@ -97,4 +97,4 @@ constraint — not this profile — is what must say so.
   the per-core footprint `area_per_core_total` holds at that core only, so a chip declaring another core
   geometry, more cores, or weights wider than 3 bits refuses `chip_area_mm2` by name (E190).
 - **`endurance_cycles` = 1e16** (published, ielmini2018inmemory p.7): ODIN's synapses are SRAM, so its lifetime is
-  priced on the embedded-SRAM row.
+  priced on the embedded-SRAM row, at **`pulses_per_write` = 1** (derived): one SRAM write is one write cycle.

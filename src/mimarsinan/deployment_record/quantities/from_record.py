@@ -198,7 +198,15 @@ def _physical_core_counts(values: Dict[str, QuantityValue], record: DeploymentRe
                   "their physical cores are not determined")
         return {key: reason for key in _CORE_COUNTS}
     values["segment_cores"] = _measured(sum(tiles[id(c)] for c in cores))
-    values["reprogrammed_cores"] = _measured(sum(tiles[id(c)] for s in reprogrammed for c in s.cores))
     values["cores_allocated"] = _measured(
         record.utilization.crossbar.cores_allocated + sum(tiles[id(c)] - 1 for c in cores))
+    # [U-C C-6] e_core_program's multiplicand: the reprogrammed cores holding a static program (an operand-only core
+    # holds none). On a chip with an operand core type a core sealed without its mark leaves them undetermined.
+    programmed = [c for s in reprogrammed for c in s.cores]
+    if any(c.get("operand") for c in record.identity.platform.get("cores") or ()) and any(
+            c.operand_only is None for c in programmed):
+        return {"reprogrammed_cores": "the record seals no operand-only mark on its cores (sealed before U-C C-6) on "
+                                      "a chip with an operand core type: the cores holding a static program are not "
+                                      "determined"}
+    values["reprogrammed_cores"] = _measured(sum(tiles[id(c)] for c in programmed if not c.operand_only))
     return {}

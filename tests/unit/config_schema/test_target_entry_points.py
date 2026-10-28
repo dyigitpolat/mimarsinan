@@ -76,11 +76,12 @@ def _document(name):
 
 
 def _value_witness():
-    """A target-only value-domain draft: an MVM bundle, a readout law and activation bits, no core semantics."""
+    """A target-only value-domain draft: an MVM bundle and a readout law, no core semantics; [U-C C-5] its input
+    width is the chip description's (the bundle's activation_bits 16), which the draft does not author."""
     doc = _document("isaac_like")
     del doc[DP]["core_semantics"]
     doc[PC]["readout_law"] = dict(READOUT_LAW)
-    assert doc[PC]["activation_bits"] == 8
+    assert "activation_bits" not in doc[PC]
     return doc
 
 
@@ -223,12 +224,12 @@ class TestValueDomainWitness:
         doc = _value_witness()
         resolution = resolve_draft(copy.deepcopy(doc))
         assert resolution.errors == [] and resolution.dormant == []
-        assert resolution.resolved["readout_law"] == READOUT_LAW and resolution.resolved["activation_bits"] == 8
+        assert resolution.resolved["readout_law"] == READOUT_LAW and resolution.resolved["activation_bits"] == 16
         assert resolution.resolved["core_semantics"] == "mvm"
         emitted = emit_deployment_config(copy.deepcopy(doc))
-        assert emitted[PC]["readout_law"] == READOUT_LAW and emitted[PC]["activation_bits"] == 8
+        assert emitted[PC]["readout_law"] == READOUT_LAW
         assert emitted[PC]["target"] == "isaac_like" and "core_semantics" not in emitted[DP]
-        assert not {"cores", "weight_bits", "platform_physics_profile"} & set(emitted[PC])
+        assert not {"cores", "weight_bits", "platform_physics_profile", "activation_bits"} & set(emitted[PC])
         assert validate_deployment_config(copy.deepcopy(doc)) == []
 
     def test_emit_reads_no_nested_target(self):
@@ -249,7 +250,7 @@ class TestValueDomainWitness:
     def test_the_run_door(self):
         pcfg = build_platform_constraints_resolved(_merged(_value_witness()))
         assert pcfg["readout_law"] == READOUT_LAW and pcfg["core_semantics"] == "mvm"
-        assert pcfg["activation_bits"] == 8 and pcfg["target"] == "isaac_like"
+        assert pcfg["activation_bits"] == 16 and pcfg["target"] == "isaac_like"
 
 
 def _target_cells():

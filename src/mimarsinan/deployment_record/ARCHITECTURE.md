@@ -198,12 +198,15 @@ registry directly (W5.1).
   `inference_batch_K`. `price_write_terms(census, physics, policy, *, most_written=)` prices the write energy per
   inference (DMA of the rewritten bytes / K plus the commit: `e_write_per_cell` x cells x verify iterations / K,
   producer writes per inference; [consts] plus `e_core_program` x W / K where the chip declares it, W the period's
-  rewritten cores `written_cores`, its basis carrying the constant's evidence class, so the deployment load charges
-  it once per tile and the step choice reads it), the exposed write time (serial Σ t_w / K; overlapped
+  rewritten cores holding a static program (`programmed_cores`: [U-C C-6] a core whose every placement reads a bound
+  bank holds none, and its operand writes stay the operand law's), its basis carrying the constant's evidence class,
+  so the deployment load charges it once per tile and the step choice reads it), the exposed write time (serial Σ t_w / K; overlapped
   Σ max(0, t_w(q+1) / K - t_c(q)) after the shadow-room check, per declared core type: every pass computes on at most
   floor(count_t x (1 - s)) cores of each type t, s read exactly as its decimal, and an untyped plane on a
   chip of several types refuses the overlapped term by name; never the planner's 0.8x budget) and the lifetime
-  (`endurance_cycles` / the most-written cell's writes per inference: the most-written core's period writes / K,
+  (`endurance_cycles` / the most-written cell's wear per inference, [U-C C-1] in programming pulses: its writes x
+  the technology's `pulses_per_write`, one where undeclared, `write_lifetime.endurance_in_writes` the one reading
+  every endurance reader takes; the writes are the most-written core's period writes / K,
   with N2's producer writes folded into the same slot rule, `core_slots.place`; producer cells on cores a census
   does not place bound the wear from below only). A census that
   places no core (only where it provably rewrites, above) passes no `most_written`: the pigeonhole bound
@@ -263,6 +266,24 @@ registry directly (W5.1).
   `emit_physics_report` writes that refusal) and the candidate view, through
   `CandidateQuantityContext.pricing_refusal` and `candidate_cost_report(..., refusal=)`; a run with neither
   physics nor a target still reports nothing.
+- **Chip descriptions and declared departures** (U-C C-2, C-5). A target bundle is the chip description: its
+  geometry, the core fields its cores carry beside the geometry's (`core_fields`, the cores' write path: NeuRRAM one
+  cell at a time, HERMES-64 one core per write step) and its keys, the input width (`activation_bits`) among them
+  where the chip states one. A run may declare another value only through `target_overrides` with a note, which the
+  faithfulness label names; the sealed record prints each such departure by name (`DeploymentRecord.
+  declared_departures`, `build/builder.with_declared_departures` at seal, emitted only when the run departs), the
+  scaling ladder's rows print the keys `--declare` and `--core-field` set otherwise (`declared_departures`), and the
+  design point's chip block names the build's own (`target_bundles.declared_departures`; on a row of several core
+  types, each against its own bundle). A synthetic point whose
+  bundle states no input width (the generic estimated chip) takes the run's declaration as its description.
+- **Operand-only cores** (U-C C-6). A core whose every placement reads a bound bank holds no static program: the
+  built and candidate planes state such cores per pass (`PassRow.operand_only_cores`, `PassCensus.
+  operand_only_cores`, serialized only when nonzero), the build seals a mark on every core of a chip with an operand
+  core type (`SegmentCoreRecord.operand_only`, declared-only), and neither `e_core_program` charge counts them: the
+  write law's (`programmed_cores`) and the per-load term's (`reprogrammed_cores`, withheld by name on a record of such
+  a chip sealed without the marks: the term names the charge unpriced, or refuses by name where it is the term's only
+  part). Their operand writes stay priced by the operand write law, and their used
+  rectangle's cells stay in the census as on every core.
 - **Value NoC, lanes, host dispatch, override blocks.** `noc_value_bytes` (byte-hops of a value program,
   `mapping.noc.value_traffic`; a neuron-split softcore's wires are counted at one fragment's core, the
   `estimate_noc` approximation, a stated boundary) is priced by `e_noc_value_per_byte_hop`; the lane rows (`area_per_lane`,

@@ -6,7 +6,6 @@
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
     "target": "neurram",
-    "activation_bits": 4,
     "max_schedule_passes": 128
   },
   "deployment_parameters": {

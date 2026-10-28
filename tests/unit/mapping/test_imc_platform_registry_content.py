@@ -1,8 +1,8 @@
-"""[IMC][W5] The 14 literature-sourced IMC platforms, pinned + provenance-ratcheted.
+"""[IMC][W5] The 15 literature-sourced IMC platforms, pinned + provenance-ratcheted.
 
 Registration source of truth: the extraction cards of `13_chip_geometries.json` (12 cards from the
-structured-elimination workspace, two added at CL2: hermes_64 and puma_node_like; curated table: the
-sibling `13_chip_geometries.md`). This test pins the transcribed geometry/weight_bits/eligibility for
+structured-elimination workspace, two added at CL2: hermes_64 and puma_node_like, and one promoted at U-C:
+loihi2_like; curated table: the sibling `13_chip_geometries.md`). This test pins the transcribed geometry/weight_bits/eligibility for
 each named platform and enforces the provenance ratchet: nothing carrying PLACEHOLDER_PROVENANCE may
 reach a run through the named registry.
 """
@@ -41,6 +41,8 @@ EXPECTED_GEOMETRY = {
     "dynap_se_64x256x4": (64, 256, 4, 2),
     "hermes_64": (256, 256, 64, 4),
     "puma_node_like": (128, 128, 2208, 16),
+    # [U-C C-4] the dense equivalent of Loihi 2's 128 KB at 8-bit weights over 1024 neurons, 128 cores
+    "loihi2_like": (128, 1024, 128, 8),
 }
 
 # Claim-eligibility class per platform, from `13_chip_geometries.md` §"S2 /
@@ -60,12 +62,16 @@ EXPECTED_ELIGIBILITY = {
     "hermes_core_like": "quarantined",
     "hermes_64": "headline-eligible",
     "puma_node_like": "curve-only",
+    "loihi2_like": "curve-only",
 }
 
 #: [CL2] Each added card's page-located quotes, as its provenance names them.
 CL2_PROVENANCE_LOCATIONS = {
     "hermes_64": ("gallo2022a", ("Abstract, p.1", "Section I 'Chip architecture', p.2", "p.5")),
     "puma_node_like": ("ankit2019puma", ("Table 3 'PUMA Hardware Characteristics', p.9", "p.5")),
+    # [U-C C-4] the vendor brief, under its proposed @misc key
+    "loihi2_like": ("intel2021loihi2", ("Figure 1, 'Neuromorphic Core' callout, p.5",
+                                        "Table 2 'Comparison of Loihi to Loihi 2', Loihi 2 column, p.7")),
 }
 SYNTHETIC = {"imc_128x128", "imc_256x256", "imc_512x512", "imc_mixed_tile"}
 
@@ -89,13 +95,13 @@ class TestLiteraturePlatformsArePinned:
         assert provenance.strip()
         assert provenance != PLACEHOLDER_PROVENANCE
 
-    def test_all_fourteen_names_are_covered(self):
+    def test_all_fifteen_names_are_covered(self):
         assert set(EXPECTED_GEOMETRY) == set(EXPECTED_ELIGIBILITY)
-        assert len(EXPECTED_GEOMETRY) == 14
+        assert len(EXPECTED_GEOMETRY) == 15
         assert set(EXPECTED_GEOMETRY) == set(imc_platform_names()) - SYNTHETIC
 
     def test_the_module_docstrings_state_the_literature_count(self):
-        """The count the two module docstrings print follows the registry (CL2 grew it from 12 to 14)."""
+        """The count the two module docstrings print follows the registry (CL2 grew it from 12 to 14, U-C to 15)."""
         count = len(set(imc_platform_names()) - SYNTHETIC)
         for module in (imc_platforms, imc_platforms_literature):
             stated = {int(n) for n in re.findall(r"The (\d+) literature-sourced", module.__doc__ or "")}

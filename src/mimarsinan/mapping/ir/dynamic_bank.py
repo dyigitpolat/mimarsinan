@@ -52,6 +52,14 @@ def operand_cells_by_core(hard_core_mapping: Any, banks: Any) -> List[int]:
             for placements in hard_core_mapping.soft_core_placements_per_hard_core]
 
 
+def operand_only_by_core(hard_core_mapping: Any, banks: Any) -> List[bool]:
+    """[U-C C-6] Per hard core of one built segment, whether every placement reads a bound bank: the core holds no
+    static program (a core with no placement holds none either way, and is not operand-only)."""
+    return [bool(placements) and all(p.get("weight_bank_id") is not None and int(p["weight_bank_id"]) in banks
+                                     for p in placements)
+            for placements in hard_core_mapping.soft_core_placements_per_hard_core]
+
+
 def payload_sources(ir_graph: Any) -> Dict[int, int]:
     """{node id: the host op that writes its payload} for every instance of a bound bank. An instance reads it (the
     value executor materializes it beside the stage's slices, ``stage_payload_sources``), so a program graph and its

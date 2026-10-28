@@ -57,6 +57,9 @@ class SegmentCoreRecord:
     #: [CL-SG] The used rows a per-axon core's sign register signs (its payload counts one bit each, in
     #: ``params_bytes``); unset on a per-synapse core, so its record keeps its bytes.
     sign_register_rows: Optional[int] = declared_only()
+    #: [U-C C-6] On a program with bound banks (N2), whether every placement of the core reads one: such a core holds
+    #: no static program and takes no per-core programming charge. Unset on every other program (its bytes kept).
+    operand_only: Optional[bool] = declared_only()
 
     def to_dict(self) -> Dict[str, Any]:
         return without_unset_declared(self, asdict(self))

@@ -19,7 +19,6 @@
         "note": "eight macros: one macro is one 128-input core, and the toolchain places the fragments of a coalesced fan-in on separate cores, so LeNet-5's widest fan-in needs eight in one pass (one macro accumulates them across its own addresses, jiang2023a p.3)"
       }
     },
-    "activation_bits": 4,
     "max_schedule_passes": 128
   },
   "deployment_parameters": {

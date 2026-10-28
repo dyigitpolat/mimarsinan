@@ -324,17 +324,20 @@ def _multi_pass_census():
 
 
 class TestTechnologyVerdicts:
-    """At 30 inferences/s and a 5-year floor, RRAM wears out across its band and SRAM does not."""
+    """At 30 inferences/s and a 5-year floor, RRAM's verdict turns on the corner of its band and SRAM's does not.
+    [U-C C-1] The resistive band is the lee2011a proxy, worn in programming pulses (8.52 per write)."""
 
     _POLICY = WritePolicy(batch_k=1, inference_rate_hz=30.0, min_lifetime_hours=43_800.0)
 
-    def test_the_isaac_like_row_is_inadmissible_across_its_endurance_band(self):
+    def test_the_isaac_like_row_straddles_its_endurance_band(self):
         pricing = price_write_terms(_multi_pass_census(), get_platform_physics("isaac_like"), self._POLICY,
                                     most_written=2)
         verdict, = pricing.verdicts
-        assert verdict.verdict == "inadmissible"
-        assert verdict.evidence.startswith("endurance_cycles [published:")
-        assert verdict.evidence.endswith("; a secondary source]")
+        hours = _terms(pricing)["lifetime_hours"].band
+        assert verdict.verdict == "straddles" and hours.low < 43_800.0 <= hours.high
+        assert verdict.evidence.startswith("endurance_cycles [published: lee2011a p.627]")
+        assert verdict.evidence.endswith("; pulses_per_write [published: wan2022a Methods, PDF p.10]")
+        assert "secondary" not in verdict.evidence
         assert get_platform_physics("isaac_like").constants["endurance_cycles"].evidence_kind == "published"
 
     def test_the_generic_22nm_row_is_admitted(self):

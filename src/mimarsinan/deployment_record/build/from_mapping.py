@@ -107,13 +107,15 @@ def _compute_op_record(stage_index: int, stage: Any) -> ComputeOpRecord:
 def schedule_record_from_mapping(
     hybrid_mapping: Any, *, weight_bits: Any, params_reloaded: int,
     timesteps: Any = None, pass_transfer: Any = None, value_noc_wire_hops: Optional[int] = None,
+    operand_chip: bool = False,
 ) -> ScheduleRecord:
     """Mirror ``HybridHardCoreMapping.stages`` 1:1 into the schedule fragment.
 
     ``params_reloaded`` is the IR-level plan figure from
     ``weight_reuse_plan_from_graph`` (provenance "planned@scm");
     ``value_noc_wire_hops`` the value-domain wire census the run seals
-    (``value_domain.record_value_noc_wire_hops``), None for none.
+    (``value_domain.record_value_noc_wire_hops``), None for none. [U-C C-6] On a chip with an operand core type
+    (``operand_chip``) or a program with bound banks, every core seals its operand-only mark.
     """
     bits = require_weight_bits(weight_bits)
     neural = {
@@ -122,6 +124,7 @@ def schedule_record_from_mapping(
         in _iter_neural_stages(hybrid_mapping)
     }
     stages_out: List[Any] = []
+    banks = dict(getattr(hybrid_mapping, "dynamic_bank_bindings", None) or {})
     for stage_index, stage in enumerate(hybrid_mapping.stages):
         if stage.kind == "compute":
             stages_out.append(_compute_op_record(stage_index, stage))
@@ -129,6 +132,7 @@ def schedule_record_from_mapping(
             segment_index, pass_index, _ = neural[stage_index]
             stages_out.append(segment_record(
                 stage_index, segment_index, pass_index, stage, weight_bits=bits,
+                banks=banks if operand_chip or banks else None,
             ))
         else:
             raise ValueError(

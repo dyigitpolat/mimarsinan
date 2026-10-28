@@ -116,3 +116,5 @@ class PricedProgram:
     write_law: Mapping[str, Any] = field(default_factory=dict)
     #: [CL5] The endurance band (low, nominal, high) where the physics declares one.
     endurance_band: Optional[Tuple[float, float, float]] = None
+    #: [U-C C-1] The pulses per write (low, nominal, high) where the technology declares them.
+    pulses_band: Optional[Tuple[float, float, float]] = None

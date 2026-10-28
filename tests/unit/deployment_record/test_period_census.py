@@ -21,7 +21,7 @@ from mimarsinan.deployment_record.objectives.context import candidate_context_fr
 from mimarsinan.deployment_record.quantities.from_candidate import from_candidate
 from mimarsinan.deployment_record.quantities.from_record import from_record
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_inputs
-from mimarsinan.deployment_record.platform_physics import get_platform_physics
+from mimarsinan.deployment_record.platform_physics import apply_overrides, get_platform_physics
 from mimarsinan.deployment_record.quantities.write_law import (
     WRITE_KEYS,
     plane_write_census,
@@ -367,9 +367,18 @@ def _mixed_platform(**extra):
     return base
 
 
+#: [U-C C-1] The NVM band these witnesses were written against, pinned: ISAAC-like's own band moved to the resistive
+#: proxy (lee2011a), at which this point's pigeonhole bound no longer proves inadmissibility; the witnesses test the
+#: bound's rule, not a chip's band.
+_WITNESS_BAND = {"endurance_cycles": {"low": 1e6, "nominal": 3.16227766e7, "high": 1e9, "unit": "cycles",
+                                      "evidence_kind": "published", "citation": "sridharan2023xformer p.1",
+                                      "note": "the shared NVM band the pigeonhole witnesses were written against"}}
+
+
 def _priced(rows, platform, label="candidate"):
     writes = plane_writes(ProgramPasses(rows=tuple(rows)), platform, weight_bits=8, timesteps=32, label=label)
-    return writes, price_write_inputs(WriteInputs.of(writes), get_platform_physics("isaac_like"))
+    physics = apply_overrides(get_platform_physics("isaac_like"), _WITNESS_BAND)
+    return writes, price_write_inputs(WriteInputs.of(writes), physics)
 
 
 class TestUndecidableWritesArePricedNowhere:

@@ -68,6 +68,7 @@ _UNITS: Tuple[Unit, ...] = (
     Unit("fraction", DIMENSIONLESS, 1.0),
     Unit("cycles", DIMENSIONLESS, 1.0),
     Unit("iterations", DIMENSIONLESS, 1.0),
+    Unit("pulses", DIMENSIONLESS, 1.0),
 )
 
 _BY_SYMBOL: Dict[str, Unit] = {unit.symbol: unit for unit in _UNITS}

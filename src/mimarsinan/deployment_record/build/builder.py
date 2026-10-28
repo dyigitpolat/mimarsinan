@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import AbstractSet, Any, Dict, Optional, Protocol, Sequence
 
+import mimarsinan.mapping.platform.target_bundles as target_bundles
 from mimarsinan.deployment_record.schema import (
     AccuracyRecord,
     AdaptationRecord,
@@ -36,6 +38,13 @@ _FRAGMENT_TYPES: Dict[str, type] = {
 _ALWAYS_REQUIRED = (
     "identity", "schedule", "placement", "utilization", "accuracy", "timing",
 )
+
+
+def with_declared_departures(record: DeploymentRecord) -> DeploymentRecord:
+    """[U-C C-5] The record with every departure its platform declares from its target bundle (``target_overrides``,
+    ``target_bundles.target_departures``) printed by name; the record itself where it declares none."""
+    departures = target_bundles.target_departures(record.identity.platform)
+    return replace(record, declared_departures=departures) if departures else record
 
 
 class SealPlanView(Protocol):
@@ -102,7 +111,7 @@ class DeploymentRecordBuilder:
         self._require_matrix(plan, resolved_step_names)
         self._require_provenance()
         self._cross_check()
-        return DeploymentRecord(
+        return with_declared_departures(DeploymentRecord(
             identity=self._fragments["identity"],
             schedule=self._fragments["schedule"],
             placement=self._fragments["placement"],
@@ -115,7 +124,7 @@ class DeploymentRecordBuilder:
             provenance=dict(self._provenance),
             adaptation_ledger=self._fragments.get("adaptation_ledger"),
             output_stage=self._fragments.get("output_stage"),
-        )
+        ))
 
     def _require(self, group: str, reason: str) -> Any:
         if group not in self._fragments:

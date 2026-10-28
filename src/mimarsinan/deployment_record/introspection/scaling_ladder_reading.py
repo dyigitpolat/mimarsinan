@@ -79,16 +79,22 @@ def _verdict(admits: List[bool]) -> str:
 
 def min_batch(*, x_fluid: float, x_packed: float, max_writes: Optional[float], rate_hz: Optional[float],
               lifetime_hours: Optional[float], endurance: Optional[Corners],
-              write_time_per_period: Optional[Corners], write_time_source: str, k: Optional[int]) -> Dict[str, Any]:
-    """The endurance and write-bandwidth ceilings on K, their crossover endurance, and the verdict at K."""
+              write_time_per_period: Optional[Corners], write_time_source: str, k: Optional[int],
+              pulses_per_write: Optional[Corners] = None) -> Dict[str, Any]:
+    """The endurance and write-bandwidth ceilings on K, their crossover endurance, and the verdict at K. [U-C C-1]
+    With ``pulses_per_write`` the ceilings read endurance in writes (low with most pulses), crossovers in cycles at
+    each write-time corner's own pulses (one iteration count sets both), so a corner's binding and crossover agree."""
     out: Dict[str, Any] = {"write_time_source": write_time_source, "inference_batch_K": k}
+    p = None if pulses_per_write is None else [float(v) for v in pulses_per_write]
+    if p is not None:
+        out["pulses_per_write"] = p
     if rate_hz is None or lifetime_hours is None:
         missing = [n for n, v in (("inference_rate_hz", rate_hz), ("min_lifetime_hours", lifetime_hours)) if v is None]
         out.update(absent="undeclared: " + ", ".join(missing), verdict={"both": "undetermined"})
         return out
     life_s = lifetime_hours * _S_PER_H
     service = rate_hz * life_s
-    e = None if endurance is None else [float(v) for v in endurance]
+    e = None if endurance is None else [float(v) / f for v, f in zip(endurance, p[::-1] if p else (1.0,) * 3)]
     t = None if write_time_per_period is None else [float(v) for v in write_time_per_period]
     closed = {"fluid": x_fluid, "packed": x_packed}
     absent_closed = [f"x_{n} <= 1" for n, x in closed.items() if x <= 1.0]
@@ -107,10 +113,11 @@ def min_batch(*, x_fluid: float, x_packed: float, max_writes: Optional[float], r
         out["bandwidth_absent"] = "the write time of one period is not priced"
     else:
         out["k_bandwidth"] = [rate_hz * v for v in t]
+        q = p if p else [1.0] * len(t)  # write-time corner i with pulses corner i: both read one iteration count
         out["e_cross_census"] = (None if max_writes is None else
-                                 [life_s * max_writes / v if v > 0.0 else None for v in t])
+                                 [life_s * max_writes * f / v if v > 0.0 else None for v, f in zip(t, q)])
         out["e_cross_closed_packed"] = (None if x_packed <= 1.0 else
-                                        [life_s * (x_packed - 1.0) / v if v > 0.0 else None for v in t])
+                                        [life_s * (x_packed - 1.0) * f / v if v > 0.0 else None for v, f in zip(t, q)])
     end, bw = out["k_endurance_census"], out["k_bandwidth"]
     if end is not None and bw is not None:
         # favourable: highest endurance (end[2]) with the lowest write time (bw[0]); adverse the reverse
@@ -262,6 +269,15 @@ def _time_per_inference(priced: Any, axes: Mapping[str, Any], k: Optional[int]) 
                  "amortized over the batch)")
 
 
+def endurance_fields(physics: Any) -> Dict[str, Any]:
+    """A priced program's endurance fields (``PricedProgram``): the declared cycles (nominal and band) and the pulses
+    per write where the technology declares them; none without physics or an endurance."""
+    cycles, pulses = (None if physics is None or not physics.has(k) else tuple(getattr(physics.band(k), c) for c in (
+        "low", "nominal", "high")) for k in ("endurance_cycles", "pulses_per_write"))
+    return {"endurance": None if cycles is None else cycles[1], "endurance_band": cycles,
+            "pulses_band": pulses if cycles is not None else None}
+
+
 def row_readings(priced: Any, *, x_fluid: float, x_packed: float, k: Optional[int], logical_cells: int,
                  onchip_macs: Optional[float], rate_hz: Optional[float], lifetime_hours: Optional[float],
                  axes: Mapping[str, Any], multiplexed: bool) -> Dict[str, Any]:
@@ -275,7 +291,8 @@ def row_readings(priced: Any, *, x_fluid: float, x_packed: float, k: Optional[in
                                pi_by_axis={a: (axes.get(a) or {}).get("pi") for a in axes}),
         "min_batch": min_batch(x_fluid=x_fluid, x_packed=x_packed, max_writes=priced.max_writes[0], rate_hz=rate_hz,
                                lifetime_hours=lifetime_hours, endurance=priced.endurance_band,
-                               write_time_per_period=t_w, write_time_source=t_w_source, k=k),
+                               write_time_per_period=t_w, write_time_source=t_w_source, k=k,
+                               pulses_per_write=priced.pulses_band),
         "latency_semantics": latency_semantics(time_per_inference=tpi, compute_only=compute, k=k, rate_hz=rate_hz,
                                                carry=dict(priced.carry or {}), passes=priced.passes,
                                                latency_steps=priced.latency_steps, multiplexed=multiplexed,

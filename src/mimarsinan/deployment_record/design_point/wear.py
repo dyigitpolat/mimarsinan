@@ -1,5 +1,6 @@
 """[fix_b] Wear per declared core type: a row's lifetime is the shortest of its core types' lifetimes, each from its
-endurance band, its most-written cell's writes per inference at the row's batch and the declared rate.
+endurance band (with its pulses per write), its most-written cell's writes per inference at the row's batch and the
+declared rate.
 
 A row of two write technologies (resistive static tiles written per period beside SRAM operand cores written every
 inference) has no single writes-per-cell value or endurance band: one mixed value (4/64 static plus 1 operand write
@@ -18,11 +19,14 @@ ORDER = {"admitted": 0, "straddles": 1, "inadmissible": 2}
 RTOL = 1e-6
 
 
-def hours_of(endurance: Sequence[float], writes: float, rate_hz: float) -> Optional[List[float]]:
-    """Endurance over wear, corner-wise: E / (w r 3600) hours; None where no cell of the type is written."""
+def hours_of(endurance: Sequence[float], writes: float, rate_hz: float,
+             pulses: Optional[Sequence[float]] = None) -> Optional[List[float]]:
+    """Endurance over wear, corner-wise: E / (w r 3600) hours, [U-C C-1] E / (w p r 3600) with the pulses per write
+    (the low endurance with the most pulses); None where no cell of the type is written."""
     if not writes:
         return None
-    return [float(e) / (float(writes) * float(rate_hz) * S_PER_H) for e in endurance]
+    per = [1.0, 1.0, 1.0] if pulses is None else [float(p) for p in reversed(pulses)]
+    return [float(e) / (float(writes) * f * float(rate_hz) * S_PER_H) for e, f in zip(endurance, per)]
 
 
 def verdict_of(hours: Optional[Sequence[float]], floor: float) -> str:
@@ -68,7 +72,8 @@ def wear_problems(row: Mapping[str, Any], declarations: Mapping[str, Any]) -> Li
         writes, endurance = entry["max_writes_per_cell_per_inference"], entry["endurance"]
         if writes is None or (endurance is None and writes):
             continue
-        want = None if not writes or endurance is None else hours_of(endurance["cycles"], writes, rate)
+        want = None if not writes or endurance is None else hours_of(endurance["cycles"], writes, rate,
+                                                                     endurance.get("pulses_per_write"))
         if (want is None) != (entry["hours"] is None) or (want is not None and not _close(entry["hours"], want)):
             out.append(f"lifetime.per_core_type[{index}]: hours {entry['hours']} are not endurance / wear / rate "
                        f"{want}")

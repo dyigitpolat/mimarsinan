@@ -31,6 +31,12 @@ from unit.deployment_record.g3_fixtures import constant, physics
 
 S, O, T = (64, 64), (32, 32), (16, 16)  # a static geometry, an operand geometry, a second static geometry
 RATE, FLOOR = 30.0, 43_800.0
+
+
+def _floor_verdict(hours):
+    """[U-C C-1] The write law's floor rule on a lifetime band (hours low to high), as the declared physics gives it:
+    NeuRRAM's operand cells written every inference straddle the floor under the pulse-counted resistive band."""
+    return "inadmissible" if hours.high < FLOOR else "admitted" if hours.low >= FLOOR else "straddles"
 TABLE = Path(__file__).resolve().parents[2] / "fixtures" / "theorem_box" / "hypothesis_table.json"
 
 
@@ -221,7 +227,7 @@ def test_nvm_static_tiles_with_an_sram_operand_core_type_are_admitted_where_all_
     mixed = _platform(_core(S, 3), _core(O, 2, write_physics="sram_cim_macro", operand=True))
     _, refused = _price(_resident(), all_nvm, chip)
     writes, admitted = _price(_resident(), mixed, chip)
-    assert _verdict(refused).verdict == "inadmissible"
+    assert _verdict(refused).verdict == _floor_verdict(_term(refused, "lifetime_hours").band) != "admitted"
     assert _verdict(admitted).verdict == "admitted" and "32 x 32" in _verdict(admitted).reason
     # the operand cells take one write per inference on SRAM, the loaded-once static tiles none
     hours = _term(admitted, "lifetime_hours").band
@@ -242,7 +248,10 @@ def test_the_operand_writes_on_nvm_refuse_whatever_the_static_tiles_are():
     _, priced = _price(_resident(), _platform(_core(S, 3, write_physics="sram_cim_macro"), _core(O, 2, operand=True)),
                        get_platform_physics("neurram"))
     verdict = _verdict(priced)
-    assert verdict.verdict == "inadmissible" and "32 x 32" in verdict.reason
+    # [U-C C-1] NeuRRAM's operand cells written every inference: the computed verdict (straddles under the
+    # pulse-counted resistive band), never admitted, whatever the static tiles are
+    assert verdict.verdict == _floor_verdict(_term(priced, "lifetime_hours").band) != "admitted"
+    assert "32 x 32" in verdict.reason
 
 
 @pytest.mark.parametrize("k", [1, 16, 64])
@@ -325,9 +334,12 @@ def test_the_mixed_lifetime_is_the_shortest_technologys_and_the_verdict_the_wors
     chip = get_platform_physics("neurram")
     platform = _platform(_core(S, 2), _core(O, 1, write_physics="sram_cim_macro", operand=True), k=1)
     _, priced = _price(_rotating(), platform, chip)
-    # static NVM cores rotate: the most-written takes 3 writes per period, against 1e6..1e9 cycles
+    # static NVM cores rotate: the most-written takes 3 writes per period, against the endurance in writes
+    # [U-C C-1] (the resistive band's cycles over NeuRRAM's 8.52 pulses per write)
+    from mimarsinan.deployment_record.cost.write_lifetime import endurance_in_writes
     hours = _term(priced, "lifetime_hours").band
-    nvm = chip.band("endurance_cycles")
+    nvm = endurance_in_writes(chip)
+    assert nvm is not None
     assert (hours.low, hours.high) == pytest.approx((nvm.low / 3 / (RATE * 3600), nvm.high / 3 / (RATE * 3600)))
     verdict = _verdict(priced)
     assert verdict.verdict == "inadmissible" and "64 x 64" in verdict.reason and "32 x 32" not in verdict.reason
@@ -481,7 +493,7 @@ def test_a_built_operand_program_on_a_mixed_chip_is_admitted_and_on_all_nvm_refu
     _, all_nvm = _price(passes, _platform(*declared), chip)
     mixed = _platform(declared[0], {**declared[1], "write_physics": "sram_cim_macro"})
     _, priced = _price(passes, mixed, chip)
-    assert _verdict(all_nvm).verdict == "inadmissible"
+    assert _verdict(all_nvm).verdict == _floor_verdict(_term(all_nvm, "lifetime_hours").band) != "admitted"
     assert _verdict(priced).verdict == "admitted"
     cells = sum(row.producer_cells for row in passes.rows)
     sram = get_platform_physics("sram_cim_macro")

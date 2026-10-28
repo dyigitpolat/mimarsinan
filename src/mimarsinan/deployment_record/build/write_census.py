@@ -71,6 +71,8 @@ class PassRow:
     producer_cores: FrozenSet[int] = frozenset()
     #: N2b: the payload cells of each core, where the plane states them (a share per write technology needs them).
     producer_core_cells: Optional[Tuple[int, ...]] = None
+    #: [U-C C-6] The cores whose every placement reads a bound bank (no static program), where the plane states them.
+    operand_only_cores: FrozenSet[int] = frozenset()
 
     def core_bytes(self, i: int, weight_bits: int) -> int:
         """Core ``i``'s payload by the one rule (``core_payload_bytes``): its cells and its sign register."""
@@ -121,6 +123,23 @@ class WriteCensus:
         if self.slot_writes is None:
             return None
         return max((w for slot in self.slot_writes for w in slot.writes), default=0)
+
+
+def written_cores(census: Any) -> int:
+    """W: the core writes of one period (every rewritten core of every pass), the pigeonhole bound's count."""
+    return sum(p.cores - p.resident_cores for p in census.passes if p.written_cells_backing_store)
+
+
+def programmed_cores(census: Any) -> int:
+    """[consts, U-C C-6] e_core_program's count: the rewritten cores whose static program a period writes, W less the
+    rewritten operand-only cores (every placement a bound bank, whose operand writes the operand law prices)."""
+    return written_cores(census) - sum(p.operand_only_cores for p in census.passes if p.written_cells_backing_store)
+
+
+def programmed_basis(census: Any) -> str:
+    """The multiplicand ``programmed_cores`` names in a priced basis (the consts name where no core is operand-only)."""
+    only = any(p.operand_only_cores for p in census.passes if p.written_cells_backing_store)
+    return "rewritten cores holding a static program" if only else "rewritten_cores"
 
 
 def stage_latency(delays: Sequence[Optional[int]]) -> Optional[int]:
@@ -205,6 +224,7 @@ def period_census(passes: ProgramPasses, *, weight_bits: int,
             written_cells_producer=row.producer_cells,
             payload_bytes=sum(row.core_bytes(i, weight_bits) for i in written),
             compute_steps=row.compute_steps or 0,
+            operand_only_cores=len(set(written) & row.operand_only_cores),
         ))
         if row.core_extents is not None:
             extents.append(tuple(row.core_extents[i] for i in written))

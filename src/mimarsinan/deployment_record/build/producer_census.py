@@ -10,10 +10,11 @@ of L instances is written L times per inference on the program the packer builds
 
 from __future__ import annotations
 
-from typing import Any, List, Sequence, Tuple
+from typing import Any, FrozenSet, List, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.write_census import WriteCensusError
 from mimarsinan.mapping.ir.dynamic_bank import operand_cells_by_core as operand_cells_by_core  # one rule (F3)
+from mimarsinan.mapping.ir.dynamic_bank import operand_only_by_core as operand_only_by_core  # one rule (U-C C-6)
 
 
 def candidate_operand_cells(softcores: Sequence[Any], placements: Sequence[Tuple[int, int]], cores: Sequence[int],
@@ -41,3 +42,18 @@ def operand_cells_per_tile(operand: Sequence[int], tiles: Sequence[Sequence[Any]
         raise WriteCensusError(f"cores {fused} hold operand regions and are fused of several physical tiles, so the "
                                "tile of each region is not stated (no fused core takes the operand role)")
     return tuple(c for cells, t in zip(operand, tiles) for c in (int(cells),) + (0,) * (len(t) - 1))
+
+
+def candidate_operand_only(softcores: Sequence[Any], placements: Sequence[Tuple[int, int]], cores: Sequence[int],
+                           dynamic_banks) -> List[bool]:
+    """[U-C C-6] Per hard core of one planned (pass, segment), whether every soft core placed on it is an operand
+    soft core (the candidate twin of ``operand_only_by_core``)."""
+    held = {core: [getattr(softcores[s], "bank_id", None) for s, h in placements if h == core] for core in cores}
+    return [bool(held[core]) and all(b is not None and int(b) in dynamic_banks for b in held[core]) for core in cores]
+
+
+def operand_only_tiles(flags: Sequence[bool], tiles: Sequence[Sequence[Any]]) -> FrozenSet[int]:
+    """The physical-tile indices of the operand-only cores (``flags`` per core, ``tiles`` per core: a fused core's
+    members): each such core is its own one tile, since no fused core takes the operand role."""
+    first = [sum(len(t) for t in tiles[:i]) for i in range(len(tiles))]
+    return frozenset(first[i] for i, flag in enumerate(flags) if flag)

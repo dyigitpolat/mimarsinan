@@ -102,6 +102,7 @@ because unpriced host work makes moving a layer host-side look free.
 - **`e_write_per_cell` = 76 - 342 fJ** (derived, jiang2023a p.4 via constants.md sec. 5): one 8-bit cell is a
   byte, bracketed by 1x the measured read byte energy and 2x the 91 MHz one; nominal at the log-space centre.
 - **`write_verify_iterations` = 1** (derived): an SRAM write has no verify loop.
+- **`pulses_per_write` = 1** (derived): one SRAM write is one of the write cycles ielmini2018inmemory counts.
 - **`e_noc_value_per_byte_hop` = 0.5 / 1.0 / 4.0 pJ** (estimated): one value byte over one inter-tile link,
   Horowitz-scale on-chip wire energy (about 0.1 - 0.2 pJ per bit per mm, a 1 mm link) plus the router, banded on
   this profile's own `e_inter_tile_hop` envelope because a value byte and a spike flit cross the same link.

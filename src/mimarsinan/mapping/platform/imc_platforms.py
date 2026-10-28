@@ -4,7 +4,7 @@ The geometry model is already generic — ``platform_constraints["cores"]`` is a
 list of heterogeneous core types ``{max_axons, max_neurons, count}``. This module
 only makes concrete chips *addressable by name* with traceable provenance.
 
-The 14 literature-sourced platforms registered below are transcribed verbatim
+The 15 literature-sourced platforms registered below are transcribed verbatim
 (geometry, weight_bits, provenance quote + location) from the extraction cards of
 ``13_chip_geometries.json`` (12 from the structured-elimination paper workspace, two
 added at TCAD CL2; ``imc_platforms_literature`` names both locations, and the sibling
@@ -207,7 +207,7 @@ register_imc_platform(
 )
 
 
-# The 14 literature-sourced platforms live in their own module (data only,
+# The 15 literature-sourced platforms live in their own module (data only,
 # registered via the seams above) purely to stay under this file's LOC budget
 # — see `imc_platforms_literature.py`. Importing it here is what makes those
 # registrations happen: anyone importing `imc_platforms` gets the full roster.

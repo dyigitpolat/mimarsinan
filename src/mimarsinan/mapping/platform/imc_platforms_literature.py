@@ -1,11 +1,11 @@
-"""The 14 literature-sourced IMC platforms (structured-elimination paper W5 handoff, two added at TCAD CL2).
+"""The 15 literature-sourced IMC platforms (structured-elimination paper W5 handoff, two added at TCAD CL2, one at U-C).
 
 Pure data: every ``register_imc_platform(IMCPlatform(...))`` call below is
 transcribed EXACTLY (geometry, weight_bits, provenance quote + location) from
 the extraction cards of ``13_chip_geometries.json``: the first 12 from the
 structured-elimination workspace (research-tree tag
 ``checkpoint/structured-elimination-2026-07-29``), ``hermes_64`` and
-``puma_node_like`` from the CL2 cards that extend it
+``puma_node_like`` from the CL2 cards that extend it, ``loihi2_like`` from the card U-C promoted there
 (``papers/mimarsinan_tcad_2026/research_artifacts/11_wave2/explore/cl2/chip_geometries/``).
 Do not round or invent a number here — add a new extraction card to that JSON
 and re-transcribe instead. ``claim_eligibility`` mirrors the curated table in
@@ -199,6 +199,19 @@ register_imc_platform(
         ),
         weight_bits=16,
         provenance="ankit2019puma: \"MVMU ... # per core 2 ... dimensions 128×128 ... Core ... # per tile 8 ... Tile ... # per node 138\" (Table 3 'PUMA Hardware Characteristics', p.9) | ankit2019puma: \"We conservatively use 2 bits per device, and realize 16-bit MVM operations by combining 8 crossbars via bit-slicing [95], illustrated in Figure 2(b).\" (Section 3.2.1 'Precision Considerations', p.5) | ankit2019puma: \"Since all eight 2-bit crossbars of a 16-bit MVM operation are used simultaneously on the same input, we co-locate these 2-bit crossbars on the same core in the same MVMU\" (Section 3.2.2 'Crossbar Co-location and Input Sharing', p.5)",
+        capabilities={"allow_scheduling": True},
+        claim_eligibility="curve-only",
+    )
+)
+
+register_imc_platform(
+    IMCPlatform(
+        name="loihi2_like",
+        cores=(
+            {"max_axons": 128, "max_neurons": 1024, "count": 128, "has_bias": False},
+        ),
+        weight_bits=8,
+        provenance="intel2021loihi2: \"Up to 128 KB synaptic memory\" and \"Up to 8192 neurons\" (Figure 1, 'Neuromorphic Core' callout, p.5) | intel2021loihi2: \"each Loihi 2 chip consists of microprocessor cores and up to 128 fully asynchronous neuron cores connected by a network-on-chip (NoC)\" ('Base Architecture', p.5) | intel2021loihi2: \"Max # Neuron Cores/Chip 128\" (Table 2 'Comparison of Loihi to Loihi 2', Loihi 2 column, p.7)",
         capabilities={"allow_scheduling": True},
         claim_eligibility="curve-only",
     )

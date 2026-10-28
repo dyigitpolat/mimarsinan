@@ -278,6 +278,12 @@
       "citation": "ielmini2018inmemory p.7",
       "note": "[CH-A1] 'about 1e16 cycles over the expected lifetime of embedded SRAM' (scout_chip.md sec. 4.3, SOURCED). A point, as the source states one figure; lifetime = endurance_cycles / max_writes_per_cell_per_inference."
     },
+    "pulses_per_write": {
+      "nominal": 1.0,
+      "unit": "pulses",
+      "evidence_kind": "derived",
+      "derivation": "[U-C C-1] An SRAM bit cell is written by one write operation, the unit in which ielmini2018inmemory p.7 counts its 1e16 cycles: one pulse per write."
+    },
     "e_write_per_cell": {
       "low": 76.0,
       "nominal": 161.2203,

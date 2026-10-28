@@ -61,6 +61,7 @@ HAND = {
     "isaac_like": {DP: {"core_semantics": "mvm"}, PC: {
         "cores": [{"max_axons": 128, "max_neurons": 128, "count": 16128, "has_bias": False}], "weight_bits": 16,
         "platform_physics_profile": "isaac_like", "allow_coalescing": True, "allow_neuron_splitting": True,
+        "activation_bits": 16,  # [U-C C-5] the chip's input width (16 voltage levels in sequence)
         # Wave 2 W08: the value-domain bundles declare the lane subset with its lane block (one lane per 64 columns).
         "onchip_arithmetic": {"classes": ["L", "E", "P"], "lanes_per_core": 2, "lane_block": "ng45_os_lane"}}},
     "generic_estimated_22nm": {DP: {"core_semantics": "mvm"}, PC: {
