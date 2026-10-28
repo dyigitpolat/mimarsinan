@@ -60,6 +60,7 @@
   "cores.write_physics",
   "cores.write_units_in_parallel",
   "cores_per_tile",
+  "event_census_samples",
   "inference_batch_K",
   "max_axons",
   "max_neurons",

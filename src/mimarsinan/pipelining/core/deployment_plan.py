@@ -96,6 +96,8 @@ class DeploymentPlan(PlanPredicates):
     enable_nevresim_simulation: bool
     enable_loihi_simulation: bool
     enable_sanafe_simulation: bool
+    #: [U-S] validation samples of the opt-in event census (0: none, the default when undeclared).
+    event_census_samples: int
 
     degradation_tolerance: float
     scm_degradation_tolerance: float | None
@@ -170,6 +172,7 @@ class DeploymentPlan(PlanPredicates):
             enable_nevresim_simulation=bool(get("enable_nevresim_simulation", True)),
             enable_loihi_simulation=bool(get("enable_loihi_simulation", False)),
             enable_sanafe_simulation=bool(get("enable_sanafe_simulation", False)),
+            event_census_samples=int(get("event_census_samples", 0) or 0),
             degradation_tolerance=degradation_tolerance,
             scm_degradation_tolerance=None if scm_dt is None else float(scm_dt),
             degradation_budget_total=float(

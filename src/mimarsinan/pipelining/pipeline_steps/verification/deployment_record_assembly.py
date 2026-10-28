@@ -21,7 +21,9 @@ from mimarsinan.chip_simulation.certification import CertificationCell
 from mimarsinan.deployment_record.schema import (
     DEPLOYMENT_RECORD_FORMAT_VERSION,
     ComputeOpRecord,
+    EnergyRecord,
     LatencyDecomposition,
+    Provenance,
     RecordIdentity,
     ScheduleRecord,
     SegmentTimingRecord,
@@ -55,6 +57,7 @@ class PlanSealView:
     spike_count_gate_armed: bool
     nevresim_applies: bool
     tuner_hosting_step_names: AbstractSet[str]
+    event_census: bool = False
 
 
 def nevresim_applies(plan: Any) -> bool:
@@ -75,7 +78,32 @@ def seal_view_for(pipeline: Any, plan: Any) -> PlanSealView:
             for name, step in getattr(pipeline, "steps", []) or []
             if isinstance(step, TunerPipelineStep)
         ),
+        event_census=int(plan.event_census_samples) > 0,
     )
+
+
+def energy_with_event_census(
+    energy: Optional[EnergyRecord], census: Optional[Mapping[str, Any]],
+) -> Tuple[Optional[EnergyRecord], Provenance]:
+    """[U-S] The energy fragment the record seals and its provenance entry.
+
+    Without a census: SANA-FE's fragment (or none) with its provenance, byte for byte. With one: its mean per
+    inference is the fragment's ``synaptic_events``, beside SANA-FE's measured fields, or alone (those fields None)
+    on a run without SANA-FE."""
+    sanafe = Provenance(kind="measured", producer="SANA-FE energy trace", step="SANA-FE Simulation", detail="")
+    if census is None:
+        return energy, sanafe
+    events, samples = float(census["mean_per_inference"]), int(census["samples"])
+    detail = (f"synaptic_events: mean per inference of the event census over {samples} {census['split']} samples "
+              f"at T={census['simulation_steps']} (per core, recorded input counts x used columns)")
+    if energy is None:
+        return (EnergyRecord(total_energy_mj=None, mj_per_sample=None, sample_count=samples, breakdown=(),
+                             energy_proxy_neuron_steps=None, total_spikes=None, synaptic_events=events),
+                Provenance(kind="measured", producer="Hard Core Mapping executor event census", step="Event Census",
+                           detail=detail))
+    return (replace(energy, synaptic_events=events),
+            Provenance(kind="measured", producer="SANA-FE energy trace + Hard Core Mapping executor event census",
+                       step=sanafe.step, detail=detail))
 
 
 def resolved_step_names(pipeline: Any) -> Tuple[str, ...]:

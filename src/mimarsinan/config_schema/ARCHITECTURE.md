@@ -187,8 +187,10 @@ From the pack unit and the integration steps (fragments `11_wave2/pack/arch_frag
 `registry/entries_residency.py` adds `position_multiplexing` (platform_constraints, group mapping_strategy, BOOL,
 passthrough, relevant under `allow_scheduling`, no default: `defaults.py` lists it with the keys whose absence leaves
 every program byte for byte). Decision class (`registry/decision_classes.py`): cost_only (owner approval 2026-10-23,
-W02); the cost-only set has 32 paths on the integrated tree (`FROZEN_COST_ONLY` in
-`tests/unit/config_schema/test_decision_classes.py`, the theorem box fixture's `cost_only` list). Its legal set
+W02); the cost-only set has 34 paths on the integrated tree, U-E's `cores.compute_physics` (E-6) the 33rd and U-S's
+`event_census_samples` (decision B6) the 34th (`FROZEN_COST_ONLY` in
+`tests/unit/config_schema/test_decision_classes.py`, the theorem box fixture's `cost_only` list,
+`test_cost_only_confirmation_uc.py`'s composition). Its legal set
 (`_multiplexing_legal`) admits only false where the run changes the executed cores the shape-only plane plans: an
 operand core type (pack integration), and `pruning` or `lif_depth_balancing_relays` as the run reads them
 (`_run_value`: the declared value, else the conversion recipe's for the run's mode, which arms the relays on LIF), so

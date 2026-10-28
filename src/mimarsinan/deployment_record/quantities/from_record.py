@@ -144,7 +144,7 @@ def from_record(record: DeploymentRecord) -> Quantities:
     _put(values, "host_ops_s", record.timing.latency.host_ops_s)
 
     if record.energy is not None:
-        values["total_spikes"] = _measured(record.energy.total_spikes)
+        _put(values, "total_spikes", record.energy.total_spikes)  # absent on an event-census-only fragment
         _put(values, "synaptic_events", record.energy.synaptic_events,
              provenance="measured")
 

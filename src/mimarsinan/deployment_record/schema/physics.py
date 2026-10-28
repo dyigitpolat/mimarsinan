@@ -106,14 +106,18 @@ class EnergyTermRecord:
 
 @dataclass(frozen=True)
 class EnergyRecord:
-    """The energy fragment: SANA-FE measured totals plus the term breakdown."""
+    """The energy fragment: SANA-FE measured totals plus the term breakdown.
 
-    total_energy_mj: float
-    mj_per_sample: float
+    [U-S] A run without SANA-FE that declares the event census carries this fragment for its census alone: the
+    SANA-FE fields are None there (never a zero), ``breakdown`` is empty and ``sample_count`` counts the census's
+    samples."""
+
+    total_energy_mj: Optional[float]
+    mj_per_sample: Optional[float]
     sample_count: int
     breakdown: Tuple[EnergyTermRecord, ...]
-    energy_proxy_neuron_steps: int
-    total_spikes: int
+    energy_proxy_neuron_steps: Optional[int]
+    total_spikes: Optional[int]
     #: [H1] Measured synapse arrivals per inference (mean over samples), from
     #: the runner's own trace + the HCM's spans; None on records sealed before
     #: the census existed or when a stage's trace was unparsed.

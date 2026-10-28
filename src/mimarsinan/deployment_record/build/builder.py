@@ -52,8 +52,8 @@ class SealPlanView(Protocol):
 
     An adapter over the resolved ``DeploymentPlan`` provides: the SANA-FE enable,
     the counts-observable mode predicate, the spike-count-gate arming, nevresim
-    applicability, and the names of tuner-hosting adaptation steps (matched
-    against ``resolved_step_names``).
+    applicability, the names of tuner-hosting adaptation steps (matched
+    against ``resolved_step_names``) and the event-census declaration.
     """
 
     enable_sanafe_simulation: bool
@@ -61,6 +61,8 @@ class SealPlanView(Protocol):
     spike_count_gate_armed: bool
     nevresim_applies: bool
     tuner_hosting_step_names: AbstractSet[str]
+    #: [U-S] the run declared the event census (``event_census_samples`` > 0).
+    event_census: bool
 
 
 class DeploymentRecordBuilder:
@@ -168,6 +170,10 @@ class DeploymentRecordBuilder:
                 )
         if set(resolved_step_names) & set(plan.tuner_hosting_step_names):
             self._require("adaptation", "tuner-hosting adaptation step resolved")
+        if plan.event_census:
+            energy: EnergyRecord = self._require("energy", "event census declared")
+            if energy.synaptic_events is None:
+                raise ValueError("seal: energy.synaptic_events missing (event census declared)")
 
     def _require_provenance(self) -> None:
         missing = sorted(set(self._fragments) - set(self._provenance))

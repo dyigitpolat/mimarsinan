@@ -1,8 +1,9 @@
 """[U-C C-7] The owner's confirmations of 2026-10-27 (decisions C1 and C3), pinned.
 
 C1: the owner-reviewed cost-only set of S0 (26 rows) grows by the lane block's two pricing fields to 28. The tree's set
-holds those 28 and the five rows that later amendments added, each under its own record, so the set this tree pins
-(33 rows, the theorem box's) is that composition and no other ([U-E3] the fifth: U-E's ``cores.compute_physics``).
+holds those 28 and the six rows that later amendments added, each under its own record, so the set this tree pins
+(34 rows, the theorem box's) is that composition and no other ([U-E3] the fifth: U-E's ``cores.compute_physics``;
+[U-S2] the sixth: U-S's ``event_census_samples``).
 C3: one geometry may carry a static and an operand core type (a chip may have identical arrays in two roles); every
 door admits it."""
 
@@ -36,11 +37,13 @@ S0_SET = frozenset({
 #: Decision C1 (2026-10-27, "confirm"): the lane block's two pricing fields (RA/11_wave2/lanes/step2_report.md sec. 10).
 LANE_FIELDS = frozenset({"onchip_arithmetic.lane_block", "onchip_arithmetic.lanes_per_core"})
 #: The later amendments, each with its own record: sign-off L1 (CL-SG), the N2 design's sec. 2.9 table (accepted by
-#: the owner, 2026-10-22) for the operand write source and N2b's write technology, the pack unit's W02, and [U-E3]
+#: the owner, 2026-10-22) for the operand write source and N2b's write technology, the pack unit's W02, [U-E3]
 #: U-E's E-6 (finalization plan sec. 2.2, N2 follow-up F5: the per-core-type compute physics, a pricing-only key,
-#: ``certification/randomized/cost_draws.py``).
+#: ``certification/randomized/cost_draws.py``), and [U-S2] U-S's S-2 (finalization plan sec. 2.2, decision B6 of
+#: 2026-10-27: the opt-in event census's sample count, a pricing-only key,
+#: ``config_schema/registry/decision_classes.py`` and ``certification/randomized/cost_draws.py``).
 LATER = frozenset({"cores.weight_sign_granularity", "cores.operand.write_source", "cores.write_physics",
-                   "position_multiplexing", "cores.compute_physics"})
+                   "position_multiplexing", "cores.compute_physics", "event_census_samples"})
 
 
 def _cost_only():
@@ -60,9 +63,9 @@ class TestCostOnlySet:
         assert len(S0_SET) == 26 and len(S0_SET | LANE_FIELDS) == 28
         assert S0_SET | LANE_FIELDS <= _cost_only()
 
-    def test_the_tree_s_set_is_the_confirmed_28_and_the_five_later_amendments(self):
+    def test_the_tree_s_set_is_the_confirmed_28_and_the_six_later_amendments(self):
         assert _cost_only() == S0_SET | LANE_FIELDS | LATER
-        assert len(_cost_only()) == 33
+        assert len(_cost_only()) == 34
 
 
 ONE_GEOMETRY = [{"max_axons": 64, "max_neurons": 64, "count": 6, "has_bias": True},

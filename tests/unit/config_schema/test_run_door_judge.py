@@ -817,6 +817,7 @@ AUDITED_LEGAL_SETS = {
     "endpoint_target_margin": "FLOAT in [0, 1]",
     "eval_max_samples": "INT >= 0",
     "eval_subsample_target": "INT >= 1",
+    "event_census_samples": "INT >= 0",
     "fast_lr_scale": "FLOAT >= 0",
     "finetune_epochs": "INT >= 0",
     "finetune_lr": "FLOAT in [0, 1]",

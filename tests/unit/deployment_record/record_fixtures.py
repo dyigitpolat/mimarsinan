@@ -54,6 +54,7 @@ class PlanView:
     spike_count_gate_armed: bool = False
     nevresim_applies: bool = False
     tuner_hosting_step_names: AbstractSet[str] = frozenset()
+    event_census: bool = False
 
 
 def make_provenance(kind: str = "measured", step: str = "Hard Core Mapping") -> Provenance:

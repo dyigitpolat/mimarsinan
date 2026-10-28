@@ -167,6 +167,19 @@ class SpikingHybridCoreFlow(
             self._recorder = None
         return out, record
 
+    def forward_with_recordings(
+        self, x: torch.Tensor, *, first_sample_index: int = 0,
+    ) -> tuple[torch.Tensor, list[RunRecord]]:
+        """[U-S] Forward a batch one sample at a time (the recorder runs at batch 1): the outputs stacked in batch
+        order and one record per sample, ``sample_index`` counting from ``first_sample_index``."""
+        outs: list[torch.Tensor] = []
+        records: list[RunRecord] = []
+        for i in range(int(x.shape[0])):
+            out, record = self.forward_with_recording(x[i:i + 1], sample_index=int(first_sample_index) + i)
+            outs.append(out)
+            records.append(record)
+        return torch.cat(outs, dim=0), records
+
 
 def refuse_lossy_count_carry(hybrid_mapping, *, spiking_mode: str, ttfs_cycle_schedule: str, spike_mode: str,
                              pass_transfer: str) -> None:

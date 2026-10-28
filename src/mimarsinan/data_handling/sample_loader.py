@@ -1,4 +1,4 @@
-"""Load deterministic test-set samples by index for parity steps.
+"""Load deterministic test-set (or validation-set) samples by index for parity and census steps.
 
 These samples ARE the deployment claim: ``loihi_simulation_step`` and
 ``sanafe_simulation_step`` feed them to a chip simulator and compare the result
@@ -56,6 +56,22 @@ def load_test_samples_by_index(
     num_workers: int = 4,
 ) -> List[torch.Tensor]:
     """Return one batch tensor per index in ``indices`` (order preserved)."""
+    return _samples_by_index(data_provider_factory, indices, num_workers=num_workers, split="test")
+
+
+def load_validation_samples_by_index(
+    data_provider_factory,
+    indices: Sequence[int],
+    *,
+    num_workers: int = 4,
+) -> List[torch.Tensor]:
+    """[U-S] The same verified read on the validation split: the inputs of a measurement that must never read the
+    test split (the event census)."""
+    return _samples_by_index(data_provider_factory, indices, num_workers=num_workers, split="validation")
+
+
+def _samples_by_index(data_provider_factory, indices: Sequence[int], *, num_workers: int,
+                      split: str) -> List[torch.Tensor]:
     wanted = set(int(i) for i in indices)
     if not wanted:
         return []
@@ -64,7 +80,10 @@ def load_test_samples_by_index(
 
     factory = DataLoaderFactory(data_provider_factory, num_workers=num_workers)
     provider = factory.create_data_provider()
-    loader = factory.create_test_loader(provider.get_test_batch_size(), provider)
+    if split == "validation":
+        loader = factory.create_validation_loader(provider.get_validation_batch_size(), provider)
+    else:
+        loader = factory.create_test_loader(provider.get_test_batch_size(), provider)
     source = f"the parity sample loader ({type(loader).__name__})"
 
     try:
@@ -76,7 +95,7 @@ def load_test_samples_by_index(
 
     if remaining:
         raise IndexError(
-            f"sample indices {sorted(remaining)} exceed the test set size (seen {seen})"
+            f"sample indices {sorted(remaining)} exceed the {split} set size (seen {seen})"
         )
     return [out[i] for i in indices]
 

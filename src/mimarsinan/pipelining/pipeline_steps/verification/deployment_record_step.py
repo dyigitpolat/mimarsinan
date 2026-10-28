@@ -51,6 +51,7 @@ from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_adaptat
 )
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_assembly import (
     cross_check_sealed_sources,
+    energy_with_event_census,
     floorplan_derivation,
     fold_compute_walls,
     host_ops_wall_s,
@@ -90,6 +91,8 @@ class DeploymentRecordStep(PipelineStep):
             requires.append("sanafe_simulation_results")
         if nevresim_applies(plan):
             requires.append("deployment_record_nevresim")
+        if plan.event_census_samples > 0:  # [U-S] the opt-in census, sealed as energy.synaptic_events
+            requires.append("event_census")
         super().__init__(requires, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
         self.metric = None
 
@@ -219,11 +222,10 @@ class DeploymentRecordStep(PipelineStep):
                 _prov("measured", "spike-count gate reduction + SANA-FE NoC",
                       STEP_NAME),
             )
+        energy, energy_provenance = energy_with_event_census(
+            energy, self.get_entry("event_census") if "event_census" in self.requires else None)
         if energy is not None:
-            builder.attach(
-                "energy", energy,
-                _prov("measured", "SANA-FE energy trace", "SANA-FE Simulation"),
-            )
+            builder.attach("energy", energy, energy_provenance)
         if "output_stage" in scm:  # [W08] a chip declaring onchip_arithmetic
             builder.attach(
                 "output_stage", dict(scm["output_stage"]),
@@ -248,7 +250,7 @@ class DeploymentRecordStep(PipelineStep):
         self.add_entry("deployment_record", record.to_dict(), "basic")
 
         cost_path = None
-        if energy is not None:
+        if "sanafe_simulation_results" in self.requires:  # the legacy projection of SANA-FE's fragments
             cost_path = save_cost_record(
                 cost_record_from_deployment_record(record),
                 self.pipeline.working_directory,

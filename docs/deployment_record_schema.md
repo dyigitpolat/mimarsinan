@@ -182,6 +182,10 @@ EnergyRecord:
     breakdown: tuple[EnergyTermRecord, ...]
     energy_proxy_neuron_steps: int                        # derived; legacy continuity
     total_spikes: int
+    synaptic_events: Optional[float]                      # measured arrivals per inference (mean over samples)
+    # [U-S] a declared event census (event_census_samples > 0) seals its mean per inference here: beside
+    # SANA-FE's fields, or alone on a run without SANA-FE, where total_energy_mj, mj_per_sample,
+    # energy_proxy_neuron_steps and total_spikes are None, breakdown is empty and sample_count counts the census
 ```
 
 ### 2.6 Accuracy + adaptation
@@ -228,7 +232,7 @@ DeploymentRecord:
     accuracy: AccuracyRecord
     timing: TimingRecord                 # static part always; measured parts optional inside
     traffic: Optional[TrafficRecord]
-    energy: Optional[EnergyRecord]       # None ⟺ SANA-FE disabled
+    energy: Optional[EnergyRecord]       # None ⟺ SANA-FE disabled and no event census declared
     adaptation: Optional[AdaptationRecord]
     provenance: Mapping[str, Provenance] # one entry per attached fragment group (seal-enforced)
     format_version: int = 1
@@ -295,6 +299,7 @@ re-typed on read — resume-safe, inspectable, and exactly how `ir_graph` /
 | `enable_sanafe_simulation` | `energy`, `timing.per_segment`, `traffic.noc`, `placement.floorplan` |
 | nevresim applies | a `"nevresim"` read in `accuracy.reads` |
 | a tuner-hosting adaptation step in the resolved step list | `adaptation` |
+| `event_census_samples` > 0 (the Event Census step) | `energy.synaptic_events` |
 
 Seal cross-checks (the three formerly-disconnected surfaces must agree):
 `schedule.pass_count == utilization.layout.schedule_pass_count`;

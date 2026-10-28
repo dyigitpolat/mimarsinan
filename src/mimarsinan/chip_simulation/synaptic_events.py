@@ -2,9 +2,62 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, Optional, Sequence
 
+import numpy as np
+
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import enumerate_execution_stages
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
+
+
+class EventCensusRefusal(ToolchainRefusal, ValueError):
+    """A run record that cannot answer the event census of its program: a stage or a core it lacks, named."""
+
+
+def census_by_unit(record: Any, mapping: Any) -> Dict[int, int]:
+    """[U-S] Measured synaptic events of one executed sample per neural execution unit, keyed as the record is.
+
+    ``record`` is a ``RunRecord`` (the Hard Core Mapping recorder's, or any backend's projection to it): per core,
+    the per-axon input counts the core integrated inside its window. A core's events are its recorded arrivals
+    times its used columns (the estimand of ``synaptic_event_census``, read on the consumer side). The record's
+    index is the executor's (``enumerate_execution_stages``: level stages included); a unit or a used core the
+    record lacks, or counts over other axons than the core uses, refuse by name rather than undercount.
+    """
+    out: Dict[int, int] = {}
+    for index, _stage, unit in enumerate_execution_stages(mapping.stages):
+        if unit.kind != "neural":
+            continue
+        where = f"neural stage {index} ({getattr(unit, 'name', '?')!r})"
+        segment = record.segments.get(index)
+        occupancies = [CoreOccupancy.from_hard_core(core) for core in unit.hard_core_mapping.cores]
+        if segment is None and any(o.neurons_used > 0 for o in occupancies):
+            raise EventCensusRefusal(
+                f"{where} has no segment in the run record (sample {record.sample_index}); the census refuses "
+                f"rather than undercount")
+        recorded = {} if segment is None else {int(c.core_index): c for c in segment.cores}
+        events = 0
+        for core_index, occupancy in enumerate(occupancies):
+            if occupancy.neurons_used <= 0:
+                continue
+            counts = recorded.get(core_index)
+            if counts is None:
+                raise EventCensusRefusal(
+                    f"{where}: core {core_index} has no recorded input counts in the run record (sample "
+                    f"{record.sample_index}); the census refuses rather than undercount")
+            arrivals = np.asarray(counts.input_spike_count, dtype=np.int64)
+            if arrivals.size != max(occupancy.axons_used, 1):
+                raise EventCensusRefusal(
+                    f"{where}: core {core_index} records {arrivals.size} axons but uses {occupancy.axons_used}; "
+                    f"the record and the program's index books disagree")
+            events += int(arrivals.sum()) * int(occupancy.neurons_used)
+        out[index] = events
+    return out
+
+
+def census_from_run_record(record: Any, mapping: Any) -> int:
+    """[U-S] Measured synaptic events of one executed sample: the sum of ``census_by_unit``."""
+    return int(sum(census_by_unit(record, mapping).values()))
 
 
 def census_from_trace_groups(

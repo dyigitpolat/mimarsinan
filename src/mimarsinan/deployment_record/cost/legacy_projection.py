@@ -36,6 +36,10 @@ def cost_record_from_deployment_record(record: DeploymentRecord) -> CostRecord:
             "cost_record projection requires the energy fragment "
             "(SANA-FE disabled runs never wrote cost_record.json)"
         )
+    if energy.mj_per_sample is None or energy.total_spikes is None or energy.energy_proxy_neuron_steps is None:
+        raise ValueError(
+            "cost_record projection requires SANA-FE's measured energy: an event census alone (U-S) seals only "
+            "synaptic_events")
     timing = record.timing
     if not timing.per_segment:
         raise ValueError(

@@ -68,6 +68,8 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "enable_loihi_simulation": (_AB, "arms the Loihi spike-parity refusal"),
     "enable_sanafe_simulation": (_AB, "arms the SANA-FE spike-parity refusal"),
     "sanafe_sample_count": (_AB, "sample count of the SANA-FE parity refusal: fewer samples admit more"),
+    "event_census_samples": (_CO, "sample count of the event census whose mean prices the record's spike-dependent "
+                                  "energy; outputs and admission unchanged"),
     "loihi_parity_sample_index": (_AB, "selects the sample the Loihi parity refusal reads"),
     "max_simulation_samples": (_AB, "subsamples the nevresim refusal's samples, and the deployed "
                                     "metric's when full eval is off"),

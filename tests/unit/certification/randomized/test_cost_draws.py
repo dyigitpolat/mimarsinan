@@ -18,8 +18,9 @@ class TestPartition:
         # closure amendment: cores.weight_sign_granularity; N2 amendment: cores.operand.write_source; N2b amendment:
         # cores.write_physics (the last two pricing-only); W02 (pack): position_multiplexing (deferred by name);
         # W08 (lanes): onchip_arithmetic.lane_block and onchip_arithmetic.lanes_per_core (pricing-only); E-6:
-        # cores.compute_physics (pricing-only)
-        assert len(cd.cost_only_set()) == 33
+        # cores.compute_physics (pricing-only); U-S (the event census): event_census_samples (pricing-only, a
+        # measurement of the built program)
+        assert len(cd.cost_only_set()) == 34
 
     @pytest.mark.parametrize("change", ["add", "drop"])
     def test_registry_drift_breaks_the_partition(self, monkeypatch, change):

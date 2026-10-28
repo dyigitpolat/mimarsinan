@@ -125,6 +125,8 @@ FROZEN_COST_ONLY = frozenset({
     # N2b key amendment: a core type's write technology, priced per core type (design §2.9).
     "cores.write_physics",
     "cores.write_units_in_parallel", "cores_per_tile",
+    # U-S key amendment: the event census's sample count, a measurement the record's energy axis prices.
+    "event_census_samples",
     "inference_batch_K", "max_axons", "max_neurons",
     "max_schedule_passes", "onchip_arithmetic.lane_block", "onchip_arithmetic.lanes_per_core",
     "platform_physics_overrides", "platform_physics_profile",
@@ -192,8 +194,8 @@ class TestPlanClasses:
         cost_only = {path for path, cls in _every_path_class() if cls == COST_ONLY}
         # 26 owner-reviewed rows + the closure's CL-SG amendment (weight_sign_granularity) + the N2 key amendment
         # (write_source) + the N2b one (write_physics) + W02's position_multiplexing (pack) + W08's two lane-block
-        # pricing fields (lanes) + E-6's compute_physics
-        assert len(FROZEN_COST_ONLY) == 33
+        # pricing fields (lanes) + E-6's compute_physics + U-S's event_census_samples (the event census)
+        assert len(FROZEN_COST_ONLY) == 34
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 

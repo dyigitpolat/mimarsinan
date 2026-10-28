@@ -125,6 +125,9 @@ class DeploymentCostModel:
                 "the cost model requires the record's energy fragment; a "
                 "SANA-FE-disabled run carries no measured energy to cost"
             )
+        if record_energy.total_energy_mj is None:
+            raise ValueError("the cost model requires SANA-FE's measured energy: an event census alone (U-S) "
+                             "seals only synaptic_events")
         segments = self.segment_initialization(record)
         measured_total = float(record_energy.total_energy_mj)
         terms: List[CostTerm] = [

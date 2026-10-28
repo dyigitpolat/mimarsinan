@@ -68,6 +68,8 @@ _STEP_PLAN = StepPlan([
     StepSpec("Core Quantization Verification", CoreQuantizationVerificationStep, group="core_verification"),
     StepSpec("Hard Core Mapping",              HardCoreMappingStep,              group="hardware"),
     _backend_tail,
+    # [U-S] the opt-in event census (event_census_samples): the record seals its mean as the synaptic events.
+    StepSpec("Event Census",                   EventCensusStep,                  group="simulation"),
     # [W4.4] the terminal record step joins EVERY resolved pipeline, after the
     # simulation tail, and seals deployment_record.json against the plan.
     StepSpec("Deployment Record",              DeploymentRecordStep,             group="record"),

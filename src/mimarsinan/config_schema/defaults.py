@@ -161,6 +161,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "onchip_arithmetic",
     # Wave 2 WI-5g (registry/entries_core_types.py): no default, absent binds no layer to a core type.
     "layer_core_types",
+    # U-S (registry/entries_census.py): no default, absent runs no event census and seals every record byte for byte.
+    "event_census_samples",
 }
 
 

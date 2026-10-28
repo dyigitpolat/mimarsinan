@@ -123,7 +123,8 @@ def energy_field(name: str) -> Backing:
         record = view.record
         if record is None or record.energy is None:
             return None
-        return float(getattr(record.energy, name))
+        value = getattr(record.energy, name)  # None on an event-census-only fragment (U-S)
+        return None if value is None else float(value)
 
     return Backing(requires=_ENERGY_REQUIRES, reader=read)
 
