@@ -41,7 +41,8 @@ _SLOW = {"t_program_per_byte": {"low": 10.0, "nominal": 100.0, "high": 500.0, "u
 _HOST = {"p_host": constant(10.0, unit="W", note="host power (test)"),
          "host_macs_per_s": constant(1.0, unit="G/s", note="host rate (test)")}
 #: The shipped chips that state no commit energy (``e_write_per_cell`` or ``e_program_per_byte``).
-_NO_COMMIT_ENERGY = {"hermes_64", "neurram"}
+#: [U-C3, B3] NeuRRAM declares its derived write energy per pulse; HERMES-64's is not determinable from its primaries.
+_NO_COMMIT_ENERGY = {"hermes_64"}
 
 
 def _ends(band):
@@ -181,7 +182,7 @@ class TestEveryChipComposesWithEveryStore:
             assert "e_dma_per_byte x period_rewrite_bytes / K" in energy.band.basis
             assert "unpriced: e_dma_per_byte" not in energy.band.basis
 
-    def test_the_chips_without_a_commit_energy_are_exactly_neurram_and_hermes(self):
+    def test_the_chips_without_a_commit_energy_are_exactly_hermes(self):
         missing = {name for name in available_profiles()
                    if not {"e_write_per_cell", "e_program_per_byte"} & set(get_platform_physics(name).constants)}
         assert missing == _NO_COMMIT_ENERGY

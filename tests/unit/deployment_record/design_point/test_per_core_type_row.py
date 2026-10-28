@@ -12,6 +12,10 @@ cell energy, the exposed write time.
 Two vehicles (``programs.attention_on_hybrid``, the small softmax block at test counts): static tiles rotated over one
 NeuRRAM core (scheduled; the NeuRRAM share rewrites its most-written core M = 6 times per period), and static tiles
 resident (8 NeuRRAM cores, 4 macros; nothing static rewritten, operand cells written every inference).
+
+[U-C3R] NeuRRAM declares its commit energy (U-C3, decision B3: the derived band per pulse), so the rotated row's write
+energy prices as the per-technology sum; the refusal by name is pinned on the same row with its static tiles written
+under a technology that declares no commit energy (HERMES-64).
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from mimarsinan.deployment_record.design_point.endurance import CORNERS, k_star
 from mimarsinan.deployment_record.design_point.timeline import program_writes
 from mimarsinan.deployment_record.design_point.wear import wear_problems
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics, get_platform_physics
+from mimarsinan.deployment_record.platform_physics.resolve import with_write_technology, write_physics_profile
 from unit.chip_simulation.value_run.integer_programs import integer_inputs
 
 from . import programs as P
@@ -34,8 +39,11 @@ STATIC = {"role": "static", "max_axons": 256, "max_neurons": 256, "count": 1, "w
           "write_physics": "neurram"}
 OPERAND = {"role": "operand", "max_axons": 128, "max_neurons": 1024, "count": 1, "write_technology": "sram_cim_macro",
            "write_physics": "sram_cim_macro", "operand": {"payload_bits": 8, "write_source": "host"}}
-ROLES = {"neurram": "static", "sram_cim_macro": "operand"}
+ROLES = {"neurram": "static", "hermes_64": "static", "sram_cim_macro": "operand"}
 GRID = (1, 16, 64)
+#: [U-C3R] A static write technology that declares no commit energy (HERMES-64: no e_write_per_cell, no
+#: e_program_per_byte; its write energy is refused by name, U-C3), the refusal branch's vehicle.
+NO_COMMIT_ENERGY = "hermes_64"
 
 
 class TestTheDeclarationRoute:
@@ -47,9 +55,9 @@ class TestTheDeclarationRoute:
         assert [r["name"] for r in declaration_refusals([STATIC, bare])] == [PER_CORE_TYPE_WRITE_TECHNOLOGY]
 
 
-def _judged(static, operand, scheduling, k=1):
+def _judged(static, operand, scheduling, k=1, static_write_physics=None):
     from mimarsinan.deployment_record.design_point.rows import judged_row
-    program, hybrid, platform = P.attention_on_hybrid(static, operand, scheduling)
+    program, hybrid, platform = P.attention_on_hybrid(static, operand, scheduling, static_write_physics)
     platform = {**platform, "weight_bits": 8, "inference_batch_K": k}
     return judged_row(nf=program.model, ir_graph=program.ir, hybrid=hybrid, x_int=integer_inputs(program, 8),
                       platform=platform, physics=PlatformPhysics.from_dict(platform["platform_physics_resolved"]),
@@ -76,6 +84,34 @@ def rotated():
 @pytest.fixture(scope="module")
 def resident():
     return _judged(8, 4, True)
+
+
+@pytest.fixture(scope="module")
+def rotated_without_commit_energy():
+    """[U-C3R] The rotated row with its static tiles written under ``NO_COMMIT_ENERGY``'s write rows."""
+    return _judged(1, 1, True, static_write_physics=NO_COMMIT_ENERGY)
+
+
+def _per_technology_write_energy_mj(row, platform):
+    """[U-C3R] The write energy per inference of a row of several write technologies, recomputed from the row's own
+    census split and each technology's declared constants, corner by corner: per core type, its cells written per
+    inference (static cells per period / K + operand cells per inference) x write_verify_iterations x
+    (e_write_per_cell + e_verify_read_per_cell where declared), under the chip's physics with that type's write rows
+    (``with_write_technology``, the physics the law prices the type under), in mJ, summed over the types."""
+    chip = PlatformPhysics.from_dict(platform["platform_physics_resolved"])
+    k = row["writes"]["declared_K"]
+    total = [0.0, 0.0, 0.0]
+    for entry in row["writes"]["per_core_type"]:
+        physics = with_write_technology(chip, write_physics_profile(entry["write_technology"],
+                                                                    platform.get("write_physics_resolved")))
+        # the decomposition's premise: no transfer or per-core programming term enters this technology's share
+        assert not physics.has("e_dma_per_byte") and not physics.has("e_core_program"), physics.name
+        cells = entry["static_written_cells_per_period"] / k + entry["operand_written_cells_per_inference"]
+        per_pulse = [physics.band(key) for key in ("e_write_per_cell", "e_verify_read_per_cell") if physics.has(key)]
+        iterations = physics.band("write_verify_iterations")
+        for i, corner in enumerate(CORNERS):
+            total[i] += sum(getattr(b, corner) for b in per_pulse) * getattr(iterations, corner) * cells * 1e3
+    return total
 
 
 class TestRotatedStaticTiles:
@@ -119,11 +155,26 @@ class TestRotatedStaticTiles:
         assert by_k[low - 1]["verdict"] == "straddles" and by_k[low]["verdict"] == "admitted"
         assert reading["checked"]
 
-    def test_the_write_terms_price_per_technology_or_refuse_by_name(self, rotated):
-        row, _platform, _ = rotated
+    def test_the_write_terms_price_per_technology_or_refuse_by_name(self, rotated, rotated_without_commit_energy):
+        # [U-C3R] refuse by name: a static technology without a commit energy refuses the row's write energy by its
+        # name, and not the operand technology that declares one; the write time still prices
+        row, _platform, _ = rotated_without_commit_energy
+        assert {e["write_technology"] for e in row["writes"]["per_core_type"]} == {NO_COMMIT_ENERGY, "sram_cim_macro"}
         assert row["writes"]["latency_write_exposed_s"] is not None  # both technologies declare t_write_per_unit
         refused = {r["name"]: r["reason"] for r in row["writes"]["refusals"]}
-        assert row["writes"]["energy_write_mj"] is None and "neurram" in refused["energy_write_mj"]  # no commit energy
+        reason = refused["energy_write_mj"]
+        assert row["writes"]["energy_write_mj"] is None and NO_COMMIT_ENERGY in reason and "no commit energy" in reason
+        assert "sram_cim_macro" not in reason
+        # price per technology: NeuRRAM declares its commit energy (U-C3's derived band), so the rotated row prices
+        # its write energy as each technology's share summed, with no energy refusal (at the shipped bands about
+        # 2.470e-4 / 2.745e-3 / 3.066e-2 mJ, NeuRRAM's share above 0.999)
+        row, platform, _ = rotated
+        assert row["writes"]["latency_write_exposed_s"] is not None  # both technologies declare t_write_per_unit
+        refused = {r["name"]: r["reason"] for r in row["writes"]["refusals"]}
+        assert "energy_write_mj" not in refused, refused.get("energy_write_mj")
+        assert row["writes"]["energy_write_mj"] is not None
+        assert row["writes"]["energy_write_mj"] == pytest.approx(_per_technology_write_energy_mj(row, platform),
+                                                                 rel=1e-9)
 
 
     def test_the_record_of_a_program_cut_into_passes_states_its_carry_on_the_value_domain(self, rotated):

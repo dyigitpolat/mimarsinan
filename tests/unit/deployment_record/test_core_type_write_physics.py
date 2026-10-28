@@ -348,8 +348,14 @@ def test_the_mixed_lifetime_is_the_shortest_technologys_and_the_verdict_the_wors
     assert (hours.low, hours.high) == pytest.approx((nvm.low / 3 / (RATE * 3600), nvm.high / 3 / (RATE * 3600)))
     verdict = _verdict(priced)
     assert verdict.verdict == "inadmissible" and "64 x 64" in verdict.reason and "32 x 32" not in verdict.reason
-    # NeuRRAM declares no commit energy: the static writes refuse the energy, by the technology's name
-    assert priced.energy is None and "64 x 64" in (_refusal(priced, ENERGY_WRITE) or "")
+    # [U-C3, B3] NeuRRAM declares its derived commit energy: the static writes price under their technology
+    assert priced.energy is not None and _refusal(priced, ENERGY_WRITE) is None
+    assert "per write technology" in priced.energy.basis
+    # a static technology without one (HERMES-64, not determinable) refuses the energy, by the type's name
+    hermes_static = _platform(_core(S, 2, write_physics="hermes_64"),
+                              _core(O, 1, write_physics="sram_cim_macro", operand=True), k=1)
+    _, refused = _price(_rotating(), hermes_static, chip)
+    assert refused.energy is None and "64 x 64" in (_refusal(refused, ENERGY_WRITE) or "")
 
 
 def test_a_technology_without_endurance_refuses_the_chips_lifetime_by_name():
@@ -449,7 +455,8 @@ def _form():
 
 
 def _operand_platform(static_physics=None, operand_physics=None):
-    """NeuRRAM's chip (no commit energy, no DMA row): only a declared write technology prices the regions."""
+    """NeuRRAM's chip (no DMA row; [U-C3] its derived commit energy): the operand type's technology prices the
+    regions, the chip's where the operand type declares none."""
     return {"cores": [_core(S, 4, write_physics=static_physics), _core(O, 2, write_physics=operand_physics,
                                                                        operand=True)],
             "activation_bits": 8, "platform_physics_profile": "neurram"}
@@ -462,7 +469,12 @@ def test_the_lowering_price_reads_the_operand_core_types_write_physics():
     base = lowering_price(_operand_platform())(lowering)
     static_only = lowering_price(_operand_platform(static_physics="generic_estimated_22nm"))(lowering)
     operand = lowering_price(_operand_platform(operand_physics="generic_estimated_22nm"))(lowering)
-    assert base == static_only == 0.0  # the static type's technology never prices operand regions
+    # the static type's technology never prices operand regions: they take the chip's (NeuRRAM's, [U-C3] its derived
+    # write and verify energy per pulse) unless the operand type declares its own
+    neurram = get_platform_physics("neurram")
+    chip_writes = 60 * (neurram.band("e_write_per_cell").nominal + neurram.band("e_verify_read_per_cell").nominal) * (
+        neurram.band("write_verify_iterations").nominal)
+    assert base == static_only == pytest.approx(chip_writes, rel=1e-12)
     generic = get_platform_physics("generic_estimated_22nm")
     writes = 60 * generic.band("e_write_per_cell").nominal * generic.band("write_verify_iterations").nominal
     assert operand == pytest.approx(writes, rel=1e-12)

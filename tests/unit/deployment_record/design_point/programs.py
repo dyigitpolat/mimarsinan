@@ -61,16 +61,20 @@ HOST_BLOCK = {"host_macs_per_s": {"nominal": 20.0, "unit": "G/s", "evidence_kind
 
 
 def hybrid_declaration(static: int, operand: int, *, scheduling: bool, k: int = 1,
-                       overrides: Any = None) -> Dict[str, Any]:
+                       overrides: Any = None, static_write_physics: Any = None) -> Dict[str, Any]:
     """The fixture's platform constraints at ``static`` + ``operand`` cores, the run keys of the instance. [U-C C-5]
     The 8-bit value grid departs from the target's input width, so it is a declared departure (``target_overrides``
-    with its note), as the instance script declares it."""
+    with its note), as the instance script declares it. [U-C3R] ``static_write_physics`` names another write physics
+    for the static core type (its cells are written under that profile's write rows; every other constant stays the
+    fixture's), so a test can judge the same row under a technology with other write constants."""
     import json
     from pathlib import Path
     root = Path(__file__).resolve().parents[4]
     declared = json.loads((root / HYBRID).read_text())["platform_constraints"]
     cores = [dict(c) for c in declared["target_overrides"]["cores"]["value"]]
     cores[0]["count"], cores[1]["count"] = int(static), int(operand)
+    if static_write_physics is not None:
+        cores[0]["write_physics"] = str(static_write_physics)
     width = {"value": 8, "note": "the vehicle's 8-bit value grid (the integer readout law's), a declared departure"}
     return {**declared, "target_overrides": {"cores": {**declared["target_overrides"]["cores"], "value": cores},
                                              "activation_bits": width},
@@ -80,22 +84,24 @@ def hybrid_declaration(static: int, operand: int, *, scheduling: bool, k: int = 
             **({"platform_physics_overrides": overrides} if overrides else {})}
 
 
-def resolved_hybrid(static: int, operand: int, *, scheduling: bool, k: int = 1, overrides: Any = None) -> Dict[str, Any]:
+def resolved_hybrid(static: int, operand: int, *, scheduling: bool, k: int = 1, overrides: Any = None,
+                    static_write_physics: Any = None) -> Dict[str, Any]:
     from mimarsinan.config_schema.runtime import run_config
     from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved
     return build_platform_constraints_resolved(run_config({}, hybrid_declaration(
-        static, operand, scheduling=scheduling, k=k, overrides=overrides)))
+        static, operand, scheduling=scheduling, k=k, overrides=overrides, static_write_physics=static_write_physics)))
 
 
 @functools.lru_cache(maxsize=4)
-def attention_on_hybrid(static: int, operand: int, scheduling: bool) -> Any:
+def attention_on_hybrid(static: int, operand: int, scheduling: bool, static_write_physics: Any = None) -> Any:
     """(program, hybrid mapping, resolved platform) of the small softmax block on the hybrid declaration, the IR's
-    latencies tagged as Soft Core Mapping tags them (``IRLatency``) before the build."""
+    latencies tagged as Soft Core Mapping tags them (``IRLatency``) before the build ([U-C3R] ``static_write_physics``
+    as ``hybrid_declaration`` takes it)."""
     import contextlib
     import io
     from mimarsinan.mapping.latency.ir import IRLatency
     from unit.chip_simulation.value_run.operand_programs import LAW, attention_block, build_operand_program
-    platform = resolved_hybrid(static, operand, scheduling=scheduling)
+    platform = resolved_hybrid(static, operand, scheduling=scheduling, static_write_physics=static_write_physics)
     with contextlib.redirect_stdout(io.StringIO()):
         program = build_operand_program(attention_block(depth=1), (3, 8, 8), num_classes=5,
                                         platform={**platform, "readout_law": dict(LAW),

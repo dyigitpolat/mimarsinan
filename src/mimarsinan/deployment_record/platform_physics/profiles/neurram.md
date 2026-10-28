@@ -18,6 +18,8 @@ Table 1: 4-bit inputs, 4-bit weights, 6-bit outputs (the `neurram` bundle's inpu
 | `e_mac` | 125 fJ | published | the same row: "TOPS/W 43 / 40 / 16 / 7"; 16 TOPS/W at 4-bit inputs, 2 / 16e12 J per MAC |
 | `write_verify_iterations` | 8.52 | published | wan2022a Methods, PDF p.10: "On average each cell requires 8.52 set/reset pulses." |
 | `t_write_per_unit` | 2 - 11 us per cell iteration, nominal 6.57 us | derived | a 1 us pulse plus a 1-10 us verify read; 56 us per cell over 8.52 pulses (wan2022a Methods, PDF p.10) |
+| `e_write_per_cell` | 5.33 / 58.9 / 650.8 pJ per pulse into one RRAM device (log-space centre) | derived | low: the 432 fF word line (wan2022a Methods, PDF p.14) at the 3.0 V set gate bias plus the first set pulse at gmin (1.2 V, 1 uS, 1 us; PDF p.10); high: the 4.0 V amplitude ceiling across 40 uS for 1 us plus the word line at the 5.0 V reset gate bias (the code release, `python/wupdate_control.py:79, :90, :371-413`, notebooks' `end_voltage=4.0`, `vset_wl` 3.0 / 3.3) |
+| `e_verify_read_per_cell` | 0.04 / 0.8 / 16 pJ per verify read (log-space centre) | derived | 0.2 V across the cell (the code's `vread=1.1, vref=0.9`, `python/adc_control.py:142`) at 1 - 40 uS for 1 - 10 us (wan2022a Methods, PDF p.10) |
 | `endurance_cycles` | 1e10 - 1e11 (nominal 3.16e10) | published, device-class proxy | lee2011a p.627, Fig. 2c, a Pt/Ta2O5-x/TaO2-x/Pt bilayer cell (NeuRRAM's TiN/HfOx/TaOx/TiN cell is not measured in either NeuRRAM paper) |
 | `pulses_per_write` | 8.52 | published | wan2022a Methods, PDF p.10: each set or reset pulse counted as one endurance cycle (an upper reading of the wear) |
 | `conductance_levels` | 16 | published | 4-bit weights |
@@ -26,8 +28,21 @@ The write path is the bundle's: one cell at a time ("In the weight-programming m
 selected for read and write.", wan2022a Methods, PDF p.10), so the `neurram` bundle's cores declare
 `write_granularity` cell and `write_units_in_parallel` 1.
 
+The write energy is derived (owner decision B3, from the primaries the owner fetched; fetch intake
+`constants_write_energy_b3.md` sec. 2.3): no write current or write energy is printed in the chip paper, its refs. 41
+(`zhao2017investigation`) and 52 (`wu2018a`) or its code release (Zenodo 10.5281/zenodo.6558399). The band rests on
+four named readings (the full pulse amplitude across the cell, an ohmic cell, one word-line swing per pulse,
+inter-wire capacitance excluded); its high corner is a reading, not a bound. One device write prices
+(`e_write_per_cell` + `e_verify_read_per_cell`) x 8.52 = 45.7 / 508.5 / 5,681 pJ, replacing the earlier cell-level
+12.3 pJ to 1.32 nJ. The rows are per RRAM device; a signed weight is a differential pair of devices
+(`python/nn_layers.py:33-37`) while the census counts the `neurram_like` geometry's weight cells, so the priced write
+energy, write time and wear of a signed weight are half the chip's (a geometry decision outside B3). Paper and code
+differ in two places: the reset start (1.5 V in the paper; 1.2 V in range or 2.5 V for a zero target in the code) and
+the time-out (30 set-reset polarity reversals in the paper; 50, 30 or 20 iterations in the code). The paper governs
+`write_verify_iterations`.
+
 ## Absent, refused by name
 
-Write energy (not stated; the fetch intake `constants_write_energy.md` sec. 2.2 derives a cell-level band of 12.3 pJ
-to 1.32 nJ per cell write under named assumptions, owner decision B3: not declared until a primary value is on
-disk), static power, periphery and NoC rows, area and the host group.
+Static power, periphery and NoC rows, area and the host group. A published write energy is absent too: the declared
+band is derived, and the missing quantity is the selector's write current at 3.0 V (set) and 5.0 V (reset) gate bias,
+or a measured programming energy.

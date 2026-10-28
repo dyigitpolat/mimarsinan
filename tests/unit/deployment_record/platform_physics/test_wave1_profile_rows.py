@@ -137,9 +137,12 @@ class TestThePageSourcedProfiles:
         assert "area_per_core_total" in refused["chip_area_mm2"]
         assert refused["e2e_latency_s"] == "t_cycle is declared but the latency_steps census is absent"
 
-    def test_neurram_refuses_its_write_energy_by_name(self):
+    def test_neurram_prices_its_write_energy_from_the_derived_band(self):
+        """[U-C3, B3] NeuRRAM declares its write energy per pulse (a derived band, test_write_energy_b3_uc3): the
+        write law prices it where it refused by name before; HERMES-64 still refuses (below)."""
         pricing = price_write_terms(_census(), get_platform_physics("neurram"), WritePolicy(batch_k=1))
-        assert "e_write_per_cell" in {r.name: r.reason for r in pricing.refusals}["energy_write_mj"]
+        assert "energy_write_mj" in {t.name for t in pricing.terms}
+        assert "energy_write_mj" not in {r.name for r in pricing.refusals}
 
     def test_hermes_prices_its_lifetime_and_refuses_its_write_energy(self):
         pricing = price_write_terms(_census(), get_platform_physics("hermes_64"), WritePolicy(batch_k=1),

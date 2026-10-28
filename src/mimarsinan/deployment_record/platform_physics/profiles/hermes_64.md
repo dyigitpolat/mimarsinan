@@ -33,6 +33,28 @@ iteration was no lower bound and repeated the RESET and SET in every iteration (
 
 ## Absent, refused by name
 
-Write energy (the pulse voltage is not stated), static power, every periphery and NoC row, the host group,
-programming DMA and commit energies. The write energy refuses whenever a program rewrites cells; the
-lifetime is priced from the endurance band, worn in programming pulses.
+Write energy, static power, every periphery and NoC row, the host group, programming DMA and commit energies. The
+write energy refuses whenever a program rewrites cells; the lifetime is priced from the endurance band, worn in
+programming pulses.
+
+The write energy is not determinable from the primaries (owner decision B3; fetch intake
+`constants_write_energy_b3.md` sec. 3). The missing quantity is the programming-rail voltage: the paper of the
+single-core chip HERMES-64's core is based on (`khaddamaljameh2022hermescorea` p.1028, HERMES-64's ref. 18) prints only
+a floor, "To support the high voltages beyond 2.5 V that are required for PCM programming, a pair of stacked nMOS
+devices is used as a selector.", with no value or upper limit. A measured energy per programming pulse would also
+close it.
+
+Boundary (derived; a floor, not a value). If the programming units draw each published current pulse (p.689-690) from
+one rail above 2.5 V, a pulse takes more than 2.5 V x I x t. The floors are > 218.75 pJ per RESET pulse (700 uA x
+125 ns), > 70.3-85.9 pJ per SET pulse (125 uA for 250 ns with its 50 ns trailing edge, read two ways), and the
+iterative floor > 39.06-218.75 pJ per iterative pulse (125-700 uA x 125 ns); a unit-cell set-up (four RESETs and one
+SET, the one-device case) takes > 945.3-960.9 pJ per unit-cell set-up. Which rail feeds the programming units is not stated.
+Even with a band, the set-up energy has no vocabulary row: it needs a generic setup-energy row first, the energy twin
+of `t_write_setup_per_event`. The cell-level verify read (0.0020-0.205 pJ, ADC excluded; `constants_write_energy.md`
+sec. 3.2) is not declared beside an absent write energy.
+
+Not transferable. The multi-memristive unit-cell prototype (`khaddamaljameh2021a`, HERMES-64's ref. 28: 90 nm, a
+different device and a different algorithm) programs with 100 ns block pulses, its region of interest "in between
+1.125 V and 1.275 V" (Fig. 7), within a budget of at most 10 iterative steps per unit cell (Fig. 6, "<=10 OPS").
+`papandreou2011programming` (ref. 30) plots the spread of the iteration count, not its mean, so
+`write_verify_iterations` keeps 1 - 30 with no published mean.

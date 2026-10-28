@@ -9,7 +9,7 @@
     "supply_v": null,
     "temperature_c": null,
     "array_size_assumed": "48 cores of 256 x 256 1T1R RRAM, a weight a differential pair of cells (wan2021edge p.2-3; wan2022a p.10); 4-bit output",
-    "notes": "MVM time and energy from one operating point of the Nature paper (Extended Data Table 1: 4-bit inputs, 4-bit weights, 6-bit outputs, wan2022a PDF p.28); write-verify parameters page-sourced (wan2022a Methods, PDF p.10), one cell written at a time; the write energy is not stated and refuses by name; the endurance is a device-class proxy (lee2011a, a TaOx bilayer RRAM cell), worn by 8.52 pulses per cell write.",
+    "notes": "MVM time and energy from one operating point of the Nature paper (Extended Data Table 1: 4-bit inputs, 4-bit weights, 6-bit outputs, wan2022a PDF p.28); write-verify parameters page-sourced (wan2022a Methods, PDF p.10), one cell written at a time; the write energy per pulse is a derived band (no write current or write energy is printed in the chip paper, its refs. 41 and 52 or its code release; the band rests on the paper's word-line capacitance and the release's gate biases, amplitude ceiling and verify voltage), per RRAM device, two devices holding a signed weight; the endurance is a device-class proxy (lee2011a, a TaOx bilayer RRAM cell), worn by 8.52 pulses per cell write.",
     "geometry": {
       "axons": 256,
       "neurons": 256,
@@ -42,6 +42,26 @@
       "evidence_kind": "published",
       "citation": "wan2022a Methods, PDF p.10",
       "note": "'With such settings, 99% of the RRAM cells can be programmed to the acceptance range within the time-out limit. On average each cell requires 8.52 set/reset pulses.'"
+    },
+    "e_write_per_cell": {
+      "low": 5.328,
+      "nominal": 58.88516281713077,
+      "high": 650.8,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "wan2022a Methods, PDF p.10 and p.14; NeuRRAM code release v1.0 (wan2022a ref. 47, Zenodo 10.5281/zenodo.6558399, archive root weierwan-Neurram_48core-2ed5f8d) python/wupdate_control.py:79, :90, :371-413 and the deployment notebooks' end_voltage=4.0 and vset_wl 3.0 (CNN, MNIST, RBM) / 3.3 (LSTM)",
+      "derivation": "[U-C3, B3] One programming pulse into one RRAM device, a band between two named corners (fetch intake constants_write_energy_b3.md sec. 2.3). Word line: 'each of the 256 access transistors contributes about 1.5 fF to a WL; WL drivers combined contribute about 48 fF to each WL' (PDF p.14), so 256 x 1.5 fF + 48 fF = 432 fF, charged once per pulse at C V^2 (the paper's 'P = fCV2'; the code pulses the word line with every pulse, '# WL, BL and SL all get pulsed', wupdate_control.py:79). Cell: V^2 g t over a 1 us pulse ('we set the initial set pulse voltage to be 1.2 V and the reset pulse voltage to be 1.5 V, both with an increment of 0.1 V and pulse width of 1 μs', PDF p.10; the code's pulse_width=1e-6, wupdate_control.py:372) at a conductance between 'We used gmin = 1 μS for all the models, and gmax = 40 μS for CNNs' (PDF p.10). Low: the set word line at its 3.0 V gate bias (vset_wl=3.0), 432 fF x 3.0^2 = 3.888 pJ, plus the first set pulse at gmin (vset_start=1.2, wupdate_control.py:388), 1.2^2 x 1 uS x 1 us = 1.44 pJ: 3.888 + 1.44 = 5.328 pJ. High: the amplitude ceiling of every deployment call (end_voltage=4.0) across a 40 uS cell, 4.0^2 x 40 uS x 1 us = 640 pJ, plus the reset word line at its 5.0 V gate bias (vreset_wl=5.0, wupdate_control.py:90), 432 fF x 5.0^2 = 10.8 pJ: 10.8 + 640 = 650.8 pJ. Nominal at the band's log-space centre, sqrt(5.328 x 650.8) = 58.885 pJ (the arithmetic: final_units/uc3/probes/arith_uc3.out).",
+      "note": "[U-C3, B3] Readings, named: R1 the full pulse amplitude across the cell (the 1T1R selector lowers the cell voltage, so R1 over-states the cell term); R2 an ohmic cell at its conductance during the pulse; R3 one full word-line swing per pulse; R4 inter-wire capacitance excluded, which keeps the word-line term a floor. Not priced: BL and SL line charging (capacitance not stated), the off-chip DAC and ADC, the board. The high corner is a reading, not a bound: RRAM is super-linear at high field and the scheme lets a cell overshoot past its target. The row is per pulse into one RRAM device, and write_verify_iterations (8.52) counts pulses per device, so one device write prices (e_write_per_cell + e_verify_read_per_cell) x 8.52 = 45.7 / 508.5 / 5,681 pJ, which replaces the earlier cell-level 12.3 pJ to 1.32 nJ (constants_write_energy.md sec. 2.2). A signed weight is a differential pair of devices ('G[0::2, :] = (W>0) * W * scale' / 'G[1::2, :] = -((W<0) * W) * scale', python/nn_layers.py:33-37), while the census counts the weight cells of the neurram_like geometry, so the priced write energy of a signed weight is half the chip's, as are its write time and wear (a geometry decision, B3 intake open item 4). Missing quantity for a published value: the selector's write current at 3.0 V (set) and 5.0 V (reset) gate bias, or a measured programming energy; neither is printed in the chip paper, refs. 41 (zhao2017investigation) and 52 (wu2018a), or the release. Paper and code differ in two places: the reset start is 1.5 V in the paper but 1.2 V (in range) or 2.5 V (zero target) in the code (wupdate_control.py:411, :389); the time-out is 30 set-reset polarity reversals in the paper but 50, 30 or 20 iterations in the code (iteration_limit). The paper governs write_verify_iterations; the code fixes the amplitude ceiling, the gate biases and the verify voltage, which the paper does not state."
+    },
+    "e_verify_read_per_cell": {
+      "low": 0.04,
+      "nominal": 0.8,
+      "high": 16.0,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "wan2022a Methods, PDF p.10; NeuRRAM code release v1.0 (Zenodo 10.5281/zenodo.6558399) python/adc_control.py:142 and python/wupdate_control.py:224-225, :241-242",
+      "derivation": "[U-C3, B3] One verify read of one RRAM device after each pulse. The code reads 'return (vread - vref) / currents_avg' (adc_control.py:142) after every pulse, with vread=1.1, vref=0.9 in every deployment call, so 0.2 V across the cell; 'A RRAM read takes 1–10 μs, depending on its conductance.' (PDF p.10), at 1 uS to 40 uS (gmin, gmax). V^2 g t: 0.2^2 x 1 uS x 1 us = 0.04 pJ, 0.2^2 x 40 uS x 10 us = 16 pJ, nominal at the log-space centre 0.8 pJ.",
+      "note": "[U-C3, B3] The cell term only, a read being in the ohmic regime; the off-chip ADC and the line charging are not priced, as for e_write_per_cell, and one read per pulse is the integrated projection's (the board averages read_cycles=8, wupdate_control.py:198). Which read time goes with which conductance is not stated, so the corners pair the extremes."
     },
     "t_write_per_unit": {
       "low": 2.0,

@@ -165,8 +165,10 @@ class TestMReadsTheWriteLaw:
 
 
 class TestAChipWithoutACommitEnergyBehindAStore:
-    """Review R1's case on the shipped NeuRRAM description: a store prices the transfer, the time Pi carries the
-    write-verify wall the write law prices, and the energy Pi is absent by the write law's refusal."""
+    """Review R1's case on the shipped descriptions: a store prices the transfer, the time Pi carries the
+    write-verify wall the write law prices, and the energy Pi is absent by the write law's refusal on a chip that
+    declares no commit energy. [U-C3, B3] NeuRRAM now declares its derived write energy per pulse, so its energy Pi
+    prices; HERMES-64 (not determinable from its primaries) is the shipped chip without one."""
 
     STORE = {"e_dma_per_byte": {"nominal": 162.5, "unit": "pJ", "evidence_kind": "published",
                                 "citation": "DDR4 I/O (test)"},
@@ -174,7 +176,7 @@ class TestAChipWithoutACommitEnergyBehindAStore:
                                     "evidence_kind": "published", "citation": "DDR4 channel (test)",
                                     "combine": "slower"}}
 
-    def test_neurram_behind_a_store_prices_the_wall_and_refuses_the_energy_by_name(self):
+    def test_neurram_behind_a_store_prices_the_wall_and_the_energy(self):
         physics = resolve_platform_physics("neurram", merge_override_blocks({"backing_store": self.STORE}))
         assert physics is not None
         row = _row(payload=physics.to_dict(), cores=F_HAND - 1, k=1, granularity="cell")
@@ -184,5 +186,19 @@ class TestAChipWithoutACommitEnergyBehindAStore:
                                            (wall.high, iterations.high))]
         assert row["time"]["terms"]["once"] == pytest.approx(want, rel=1e-12)
         assert row["time"]["regime"]["reading"] == "resident-dominant"
+        # [U-C3] the fetch (the store's e_dma_per_byte) plus the commit, (e_write + e_verify) x iterations per cell
+        write, verify = physics.band("e_write_per_cell"), physics.band("e_verify_read_per_cell")
+        dma = physics.band("e_dma_per_byte").nominal
+        once = [(dma * PAYLOAD + (w + v) * i * CELLS) * 1e3 for w, v, i in (
+            (write.low, verify.low, iterations.low), (write.nominal, verify.nominal, iterations.nominal),
+            (write.high, verify.high, iterations.high))]
+        assert row["energy"]["terms"]["once"] == pytest.approx(once, rel=1e-12)
+        assert row["energy"]["pi"] is not None and row["energy"]["absent"] is None
+
+    def test_hermes_behind_a_store_prices_the_wall_and_refuses_the_energy_by_name(self):
+        physics = resolve_platform_physics("hermes_64", merge_override_blocks({"backing_store": self.STORE}))
+        assert physics is not None
+        row = _row(payload=physics.to_dict(), cores=F_HAND - 1, k=1, granularity="core")
+        assert row["time"]["pi"] is not None and row["time"]["absent"] is None
         assert row["energy"]["pi"] is None and row["energy"]["regime"] is None
         assert "declares no commit energy" in row["energy"]["absent"]
