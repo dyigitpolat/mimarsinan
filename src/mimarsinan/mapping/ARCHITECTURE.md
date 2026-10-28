@@ -106,7 +106,11 @@ scale and a lane's readout range mean one thing. `lanes/ir/fusion.py` removes th
 (`lanes/ir/rewire.py`), gives each fused add's accumulator columns one operand row each (`lanes/ir/operand_rows.py`:
 zero crossbar weights, before any bias row; a weight bank gains its rows once; a pruned, psum or coalescing core is
 refused by name) and turns each pool into 0/1 reduction cores with `theta` the window size (`lanes/ir/pool_cores.py`,
-owner key `lane_owner`), refusing a planned op the IR cannot fuse (`LaneFusionError`, `lanes/ir/refusal.py`). An
+owner key `lane_owner`), refusing a planned op the IR cannot fuse (`LaneFusionError`, `lanes/ir/refusal.py`). Fusion
+finds each absorbed op by its call site (`lanes/ir/call_sites.py`), never by its payload alone: the IR op carrying the
+site's payload under the site's name, so one module called at several sites (an activation a block calls after each of
+its sums) gives each site its own role; an unnamed site is told by its payload, and one its payload does not single out
+is refused by name. An
 average pool its perceptron alone feeds, on an open lane (no add, no clamp yet), is that lane's producer-side
 reduction (D11, `PerceptronLane.reduce`): `lanes/ir/reduce_cores.py` replaces the producer's cores by reduced cores,
 each pool output stacking its present window instances' rows on the producer's own weight codes (every code stays on

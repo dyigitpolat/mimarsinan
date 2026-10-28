@@ -5,21 +5,22 @@ is removed: each accumulator column of its producing cores gains one operand row
 input's element as its source) and the add's readers read the cores. A producer-side reduction replaces its
 producer's cores by reduced cores (``reduce_cores``: each pool output stacks its window instances on the producer's
 weights, one rounding). Any other average pool becomes reduction cores (0/1 weights over each window, ``theta`` the
-window size) that requantize onto the pool lane's grid. Everything is
-keyed on the plan's payload objects, so the IR and the model absorb the same ops; a planned op the IR cannot fuse
-is refused by name.
+window size) that requantize onto the pool lane's grid. Every role is keyed on the plan's call sites (one per
+call of a module, ``call_sites``), so the IR and the model absorb the same ops; a planned op the IR cannot fuse is
+refused by name.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.ir.source import encode_ir_sources
 from mimarsinan.mapping.lanes.forms import PoolForm, pool_form
+from mimarsinan.mapping.lanes.ir.call_sites import call_site_roles, planned_call_sites
 from mimarsinan.mapping.lanes.ir.operand_rows import insert_operand_rows
 from mimarsinan.mapping.lanes.ir.pool_cores import PoolLaneError, pool_lane_cores
 from mimarsinan.mapping.lanes.ir.reduce_cores import reduced_lane_cores, refuse_unreducible
@@ -220,33 +221,19 @@ class _Fuser:
         self.report.reduce_forms[perceptrons.pop()] = form
 
 
-def _module_roles(plan: LanePlan, first_owner: int) -> Dict[int, Tuple[str, object]]:
-    roles: Dict[int, Tuple[str, object]] = {}
-    for lane in plan.perceptron_lanes:
-        if lane.add is not None:
-            roles[id(lane.add.module)] = ("add", lane.operand_index)
-        if lane.reduce is not None:
-            roles[id(lane.reduce.module)] = ("reduce", None)
-        if lane.clamp is not None:
-            roles[id(lane.clamp.module)] = ("clamp", None)
-    for k, lane in enumerate(plan.pool_lanes):
-        roles[id(lane.pool.module)] = ("pool", first_owner + k)
-    return roles
-
-
 def fuse_ir_lanes(ir_graph: IRGraph, plan: LanePlan, *, first_owner: int, max_axons: Optional[int] = None,
                   max_neurons: Optional[int] = None) -> LaneFusion:
     """Fuse ``plan``'s ops into ``ir_graph`` in place; pool lanes take owner keys from ``first_owner`` on."""
-    roles = _module_roles(plan, first_owner)
+    sites = planned_call_sites(plan, first_owner)
+    roles, carried = call_site_roles(ir_graph, sites)
     fuser = _Fuser(ir_graph, plan, max_axons, max_neurons)
-    removed, matched = set(), set()
+    removed = set()
     for node in list(ir_graph.nodes):
         if not isinstance(node, ComputeOp):
             continue
-        role = roles.get(id(node.params.get("module")))
+        role = roles.get(int(node.id))
         if role is None:
             continue
-        matched.add(id(node.params.get("module")))
         kind, argument = role
         if kind == "clamp":
             fuser.clamp(node)
@@ -257,8 +244,8 @@ def fuse_ir_lanes(ir_graph: IRGraph, plan: LanePlan, *, first_owner: int, max_ax
         else:
             fuser.pool(node, int(argument))  # pyright: ignore[reportArgumentType] -- the pool role carries an int
         removed.add(int(node.id))
-    if len(matched) != len(roles):
-        raise LaneFusionError(f"the lane plan absorbs {len(roles)} host ops but the IR carries {len(matched)} of "
+    if carried != len(sites):
+        raise LaneFusionError(f"the lane plan absorbs {len(sites)} host ops but the IR carries {carried} of "
                               f"them: the IR was mapped from another model")
     fuser.report.operand_rows = insert_operand_rows(ir_graph, fuser.operands, OPERAND_ROWS)
     nodes = []
