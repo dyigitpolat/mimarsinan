@@ -75,14 +75,13 @@
       "derivation": "[TS6] The paper reports no weight-load energy, so the commit energy is anchored on this profile's own access-scale constant. An ODIN synapse is 4 bits (3-bit weight + 1 mapping bit, conductance_levels = 8), so a byte of synaptic SRAM holds two synapses and the per-byte access anchor is 2 x e_mac = 2 x 8.43 = 16.86 pJ/B. An SRAM write costs about 1-3x its read, so the ratio band is [0.5x, 3x] the anchor = 8.43 - 50.58 pJ/B, with the nominal at the band's log-space centre, sqrt(8.43 x 50.58) = 20.6492 pJ/B.",
       "note": "e_mac here is the INCREMENTAL energy per SOP, which the paper states already contains the weight read AND update, the neuron state read and update, and the controller and scheduler overheads - so it overstates the bare SRAM access, which is why the ratio band reaches down to 0.5x. DERIVED, not measured."
     },
-    "t_program_per_byte": {
-      "low": 5.09091,
-      "nominal": 285.402,
-      "high": 1272.73,
-      "unit": "ns",
+    "t_core_program": {
+      "nominal": 78.6432,
+      "unit": "ms",
       "evidence_kind": "derived",
-      "derivation": "[TS6] ODIN publishes no configuration-interface rate (its SPI bus width and clock are not stated per byte), so the wall is DONOR-SCALED from the two profiles that declare one, along validity.technology_node_nm: truenorth 800 ns/B at 28 nm stays 800 ns/B at ODIN's own 28 nm, and generic_estimated_22nm 4 / 80 / 1000 ns/B at 22 nm becomes 5.09091 / 101.818 / 1272.73 ns/B. The band is the ENVELOPE of both scaled donors, 5.09091 - 1272.73 ns/B, and the nominal is the geometric mean of their scaled nominals, sqrt(800 x 101.818) = 285.402 ns/B.",
-      "note": "Two orders of magnitude wide because the two donors disagree by that much - a scan chain against a parallel bus. Only the amortized latency_programming_s term reads it."
+      "citation": "ChFrenkel/ODIN @ 1781931 (the authors' published RTL and documentation of frenkel2019odin): src/spi_slave.v, doc/README.md Sec. 2.1",
+      "derivation": "[U-C2 G-1] DERIVED from ODIN's published SPI frame and core image. One SPI transaction is 40 SCK: the frame counter wraps at 39 (src/spi_slave.v:82-84), a 20-bit address then a 20-bit data word carrying one byte and its write mask (:86-89, :119-125); 'SCK must be at least 4x slower than CLK' (doc/README.md Sec. 2.1), so SCK runs at most at CLK/4 and one byte takes at least 40 SCK x 4 = 160 clock cycles, 2,133.3 ns at the declared 75 MHz. A program load writes the core's whole image, whatever the program occupies: 8,192 32-bit synapse words and 256 128-bit neuron words, 8,192 x 4 + 256 x 16 = 36,864 byte transactions. One core load therefore takes 36,864 x 160 / 75 MHz = 78.6432 ms.",
+      "note": "A floor: the RTL bounds SCK from above only, so a slower SPI master is a slower load (restate it by override). MEASURED check, not the declaration: the card's programming run of one stock image took 6,345,255 device cycles (147,565 program words) for its 36,864 bytes at the 100 MHz kernel clock, 172.13 cycles per byte, 7.6% above the frame floor with the register and sequencer writes included; in cycles that is 84.60 ms at this profile's 75 MHz (hardware power session of 2026-10-26, stock core, deployment_report.json per_core programming_run). Read wherever the programming wall is: latency_programming_s (x reprogrammed_cores), the write law's per-pass walls (x rewritten cores holding a static program), and through them Pi's numerator, M's period writes, the regime labels and the write-bandwidth batch (k_bandwidth). No per-byte wall is declared: a per-byte constant on the occupied cells would underprice a partly used core by the image over its payload."
     },
     "e_core_program": {
       "low": 1.07904,
@@ -94,13 +93,13 @@
       "derivation": "[TS6] ODIN declares no e_core_init, so the payload-independent part of a program load is anchored on the core-state SWEEP this profile's own geometry defines: 256 neurons in the core (validity.array_size_assumed) x e_mac 8.43 pJ = 2.15808 nJ of per-core control work, the same compartment-sweep anchor loihi's measured e_core_init sits about 1.7x below. The ratio band [0.5x, 2x] gives 1.07904 - 4.31616 nJ, with the nominal at the band's log-space centre, 2.15808 nJ.",
       "note": "Charged per program LOAD (x reprogrammed_cores). ODIN is a SINGLE core, so this term is paid at most once per load on this target."
     },
-    "t_cycle": {
+    "t_synaptic_op": {
       "nominal": 26.6667,
       "unit": "ns",
       "evidence_kind": "derived",
-      "citation": "frenkel2019odin Section II and Section IV-A, p.3 and p.8",
-      "derivation": "'the maximum SOP rate ODIN can handle is equal to fclk/2 as each SOP takes two clock cycles to complete' — 2 / 75 MHz = 26.667 ns per synaptic operation at the declared clock.",
-      "note": "ODIN's pipeline step IS one SOP; there is no separate network timestep at this level."
+      "citation": "frenkel2019odin Section II (Fig. 3) and Section IV-A, p.3 and p.8; ChFrenkel/ODIN @ 1781931 src/controller.v (state POP_NEUR)",
+      "derivation": "[U-C2 G-2] 'the maximum SOP rate ODIN can handle is equal to fclk/2 as each SOP takes two clock cycles to complete' (Section IV-A; Fig. 3: 'Each SOP lasts two clock cycles') - 2 / 75 MHz = 26.667 ns per synaptic operation at the declared clock. One input event is one sweep of the core: 'all N neurons of ODIN will be updated with the synaptic weight found at synapse i ... each neuron spike event thus leads to N SOPs' (Section II) and '256 SOPs = 512 clock cycles' (Fig. 3); the RTL's POP_NEUR state runs 512 cycles per event, one neuron per two cycles (src/controller.v:208, :228-231, :449-455), so a core spends 512 / 75 MHz = 6.827 us per input event, whatever the mapping uses of its 256 neurons.",
+      "note": "The time twin of e_mac, on the same event census. The core runs one synaptic operation per input event and neuron of its sweep, 256 per input event whatever the mapping uses of its 256 neurons; a census that counts an arrival once per used column states fewer operations than a partly used core runs, so the time priced on it (and the e_mac energy) is low by the core's neuron occupancy. ODIN has no fixed network timestep, so t_cycle is undeclared: its latency, throughput and static energy are priced from the event census, its total on one core and, on a chip of several concurrent cores, the busiest core of each pass, which the candidate plane states from the energy's own model (as-mapped cells x timesteps x activity_factor); refused by name without a census or a declared activity_factor, or where a view states the census as one total on several cores (a sealed record's census)."
     },
     "conductance_levels": {
       "nominal": 8.0,

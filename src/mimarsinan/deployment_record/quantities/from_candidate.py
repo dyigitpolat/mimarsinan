@@ -117,6 +117,10 @@ class CandidateQuantityContext:
     #: [CL2] The ``(name, reason)`` pair of a target that declares no physics
     #: (``target_bundles.absolute_pricing_refusal``): the candidate's report carries it alone.
     pricing_refusal: Optional[Any] = None
+    #: [targeted M2] Per (pass, segment) row, the synaptic events of its busiest physical core by the same model as
+    #: ``synaptic_events`` (``compute_time.busiest_core_events``); formed only where the resolved physics prices
+    #: compute per synaptic operation, None elsewhere (so no other chip's quantities change).
+    pass_core_events: Optional[Tuple[float, ...]] = None
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
@@ -233,6 +237,10 @@ def from_candidate(
             provenance="modeled",
         )
 
+    # [targeted M2] The per-core event census beside the total it splits, by the same model, where the context forms it.
+    if "synaptic_events" in values and context.pass_core_events is not None:
+        values["synaptic_events_busiest_core"] = QuantityValue(
+            value=float(sum(context.pass_core_events)), provenance=values["synaptic_events"].provenance)
     values.update(dict(context.lane_quantities))
     held = {**dict(getattr(context.value_rule, "withheld", ()) or ()), **dict(context.lane_withheld),
             **dict(withheld or {})}

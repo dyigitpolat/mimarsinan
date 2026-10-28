@@ -74,24 +74,25 @@ def physics_completeness(
 
 
 #: Which constant each absolute axis needs FIRST, for a readout that names one thing
-#: rather than a list nobody reads. Derived from the pricer's own refusal order.
+#: rather than a list nobody reads. Derived from the pricer's own refusal order; each tuple
+#: lists ALTERNATIVES ([U-C2 G-2] the compute time per timestep, or per synaptic operation
+#: on a chip without a fixed timestep).
 _AXIS_HEAD_CONSTANT = {
     "chip_area_mm2": ("area_per_core_total", "area_per_cell"),
     "energy_per_inference_mj": ("e_synaptic_event_total", "e_mac"),
-    "e2e_latency_s": ("t_cycle",),
-    "throughput_inferences_s": ("t_cycle",),
+    "e2e_latency_s": ("t_cycle", "t_synaptic_op"),
+    "throughput_inferences_s": ("t_cycle", "t_synaptic_op"),
 }
 
 
 def _first_missing(physics: Optional[PlatformPhysics], axis: str) -> str:
-    """The constant this axis needs and does not have — named, not enumerated."""
+    """The constant this axis needs and does not have — named, not enumerated. A
+    declared alternative is never named missing: the axis then waits on a quantity."""
     candidates = _AXIS_HEAD_CONSTANT.get(axis, ())
     if physics is None:
         return candidates[0] if candidates else "a declared physics profile"
-    for key in candidates:
-        if physics.has(key):
-            continue
-        return key
+    if candidates and not any(physics.has(key) for key in candidates):
+        return candidates[0]
     return "a quantity this run does not produce"
 
 

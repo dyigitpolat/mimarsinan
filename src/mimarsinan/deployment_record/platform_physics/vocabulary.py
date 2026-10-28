@@ -60,6 +60,16 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Array energy of one multiply-accumulate, excluding conversion and periphery. "
      "On an event-driven chip one synaptic event IS one MAC, so the event census "
      "is the multiplicand."),
+    # [U-C2 G-2] The time twin of e_mac: a chip without a fixed timestep prices its compute per synaptic operation.
+    ("t_synaptic_op", ARRAY, TIME, "ns", "synaptic_events",
+     "Wall time of one synaptic operation on an event-driven core that runs its operations one at a time: the time "
+     "twin of e_mac, on the same event census (one operation per input event and neuron the core processes for it; a "
+     "core that visits every neuron per input event counts its whole sweep). A chip without a fixed timestep declares "
+     "it and leaves t_cycle undeclared; its compute time is t_synaptic_op x synaptic_events where one core runs every "
+     "event and, on several concurrent cores, t_synaptic_op x synaptic_events_busiest_core (each pass at its busiest "
+     "core, which the candidate plane states); refused by name without an event census or a declared activity_factor, "
+     "or on several cores where a view states the census as one total (a sealed record). A declared t_cycle takes "
+     "precedence: a timestep's wall holds its events."),
     ("t_array_read", ARRAY, TIME, "ns", "timesteps",
      "Wall time of one array read (column integration) at the declared array size; "
      "one integration happens per timestep."),
@@ -141,6 +151,12 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Wire size of one connectivity (axon source span) entry in this target's format."),
     ("e_core_program", PROGRAMMING, ENERGY, "pJ", "reprogrammed_cores",
      "Fixed energy of programming one core, beyond its payload bytes."),
+    # [U-C2 G-1] The time twin of e_core_program.
+    ("t_core_program", PROGRAMMING, TIME, "us", "reprogrammed_cores",
+     "Fixed wall time of programming one core, beyond its payload bytes: the time twin of e_core_program, read "
+     "wherever the programming wall is (latency_programming_s, the write law's per-pass walls, so Pi, M and the "
+     "write-bandwidth batch). An interface that writes a whole core image per reprogrammed core, whatever the "
+     "program occupies, declares that image's wall here and no t_program_per_byte."),
     ("e_core_init", PROGRAMMING, ENERGY, "pJ", "segment_cores",
      "Energy to reset one core's neuron state at the start of a pass."),
     ("t_program_per_byte", PROGRAMMING, TIME, "ns", "reprogrammed_bytes",
@@ -180,7 +196,9 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
     # --- global: whole-chip constants ---------------------------------------------------
     ("t_cycle", GLOBAL, TIME, "ns", "latency_steps",
      "Wall time of one timestep. The single constant that converts the record's integer "
-     "latency_steps into seconds, and therefore gates E2E latency and throughput."),
+     "latency_steps into seconds, and therefore gates E2E latency and throughput. A chip "
+     "without a fixed timestep (an event-driven core that runs its synaptic operations one "
+     "at a time) declares t_synaptic_op instead and leaves t_cycle undeclared."),
     ("area_global_fixed", GLOBAL, AREA, "mm^2", "declared, not multiplied",
      "Whole-chip area that scales with neither cores nor tiles (pads, PLLs, host "
      "interface)."),

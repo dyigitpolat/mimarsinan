@@ -97,7 +97,7 @@
       "name": "odin_biological_time",
       "overrides_applied": {
         "p_static_per_core": 2.314,
-        "t_cycle": 1538.4615
+        "t_synaptic_op": 1538.4615
       },
       "passed": true,
       "profile": "odin"

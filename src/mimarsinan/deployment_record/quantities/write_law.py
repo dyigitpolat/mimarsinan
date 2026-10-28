@@ -225,6 +225,9 @@ class PlaneWrites:
     unavailable: Optional[str] = None
     #: N2b: the census split by write technology, where the policy states several (``policy.core_technologies``).
     by_technology: Optional[wt.TechnologySplit] = None
+    #: [targeted M2] Per census pass, its busiest core's synaptic events (``compute_time.busiest_core_events``), where
+    #: the plane states them (the candidate plane on a chip priced per synaptic operation): the overlapped compute.
+    pass_sops: Optional[Tuple[float, ...]] = None
 
 
 def spans_match_carry(passes: ProgramPasses, carry: Optional[Mapping[str, Any]], timesteps: Optional[int]) -> bool:

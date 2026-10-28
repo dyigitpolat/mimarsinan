@@ -359,3 +359,28 @@ width (`build/program_census.core_record`, `mapping/crossbar_utilization.Crossba
 `programming_bits`), the record's platform lists each type's width, and the one-width quantity `weight_bits` is
 withheld where the types carry different widths (`quantities/from_record.py`), so every per-bit term (cell area per
 bit, an aggregate's bit validity) refuses by name instead of pricing every cell at the platform width.
+
+## Event-driven compute time and the per-core programming wall (U-C2)
+
+`cost/compute_time.py` holds the one compute-time law the latency headline, the overlapped write exposure and the
+ladder read. A chip with a fixed timestep prices its compute per step (`t_cycle` x `latency_steps`); a chip without
+one, an event-driven core that runs its synaptic operations one at a time, declares `t_synaptic_op`, the time twin of
+`e_mac`, and leaves `t_cycle` undeclared: its compute is `t_synaptic_op` x `synaptic_events`, the event census the
+energy reads (one operation per input event and neuron the core processes; a core that sweeps every neuron per input
+event counts the whole sweep). The census total states one core's wall exactly. On several declared cores the cores
+of one (pass, segment) row run concurrently and the rows in turn, so the wall is each row's busiest core summed over
+the rows (`synaptic_events_busiest_core`). [targeted M2] The candidate plane states it from the energy's own model (per
+physical tile its as-mapped cells x timesteps x `activity_factor`, `compute_time.busiest_core_events`), formed in
+`objectives/context.py` only where the resolved physics prices compute per event, so no other chip's quantities move;
+the same per-row events reach the write law (`PlaneWrites.pass_sops`), so an overlapped write hides behind each
+pass's busiest-core compute (`compute_time.pass_compute_walls`). A view that states the census as one total (a sealed
+record) refuses the latency by name on several cores and the overlapped exposure on any core count, as it does without
+a census or a declared `activity_factor`; with the latency refused, the throughput, the static energy over it, Pi's
+time denominator and the regime labels refuse by the same name. A declared `t_cycle` takes precedence (a step's wall
+holds its events). The ladder's layer-pipelined bound is the whole compute-only time on one event-serial core and the
+busiest core's operations of one pass on several (`scaling_ladder_law.layer_pipelined`, `compute_time.busiest_stage`). `t_core_program` is the time twin of `e_core_program`: the wall of
+programming one core beyond its payload bytes, priced in `latency_programming_s` (x `reprogrammed_cores`) and in the
+write law's per-pass walls (x the rewritten cores holding a static program, `write_census.pass_programmed_cores`),
+so Pi's numerator, M's period writes and the write-bandwidth batch read it. An interface that writes a whole core
+image per load, whatever the program occupies (ODIN's SPI), declares its image's wall there and no
+`t_program_per_byte`, whose occupied-cell payload would underprice a partly used core.

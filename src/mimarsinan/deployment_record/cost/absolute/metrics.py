@@ -37,6 +37,7 @@ from mimarsinan.deployment_record.cost.absolute.writes import (
     WritePricing,
     price_write_inputs,
 )
+from mimarsinan.deployment_record.cost.compute_time import CORE_PROGRAM, compute_time
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -134,17 +135,29 @@ def price_area(ctx: PricingContext) -> None:
 
 
 def _programming_latency(ctx: PricingContext) -> None:
-    """The per-program-load wall — an overhead term, never the steady-state headline."""
-    if not ctx.priced("t_program_per_byte"):
+    """The per-program-load wall — an overhead term, never the steady-state headline. [U-C2 G-1] Its payload bytes at
+    ``t_program_per_byte`` and its reprogrammed cores at ``t_core_program`` (the time twin of ``e_core_program``: a
+    whole-image interface's wall per core), each where declared and its census exists; a part whose census the view
+    withholds is named unpriced with the reason, as the per-load energy term names it, and [targeted M1] where that
+    part is the term's only declared part the term is refused by name with the reason, never dropped silently."""
+    parts: List[Band] = []
+    payload = programming_payload_bytes(ctx.quantities, ctx.physics) if ctx.priced("t_program_per_byte") else None
+    if payload is not None:
+        value = ctx.physics.band("t_program_per_byte")
+        parts.append(scale_band(value, payload[0], f"t_program_per_byte [{value.basis}] x {payload[1]}"))
+    held = ctx.quantities.withheld_reason("reprogrammed_cores")
+    if ctx.priced(CORE_PROGRAM) and ctx.quantities.has("reprogrammed_cores"):
+        core = ctx.physics.band(CORE_PROGRAM)
+        parts.append(scale_band(core, ctx.quantities.get("reprogrammed_cores").value,
+                                f"{CORE_PROGRAM} [{core.basis}] x reprogrammed_cores"))
+    if not parts and ctx.priced(CORE_PROGRAM) and held:
+        ctx.refuse("latency_programming_s",
+                   f"{CORE_PROGRAM} is declared but its multiplicand reprogrammed_cores is withheld: {held}")
         return
-    payload = programming_payload_bytes(ctx.quantities, ctx.physics)
-    if payload is None:
-        return
-    payload_bytes, note = payload
-    value = ctx.physics.band("t_program_per_byte")
-    source = f"t_program_per_byte [{value.basis}] x {note}"
-    ctx.term("latency_programming_s", "s",
-             scale_band(value, payload_bytes, source), source)
+    if parts:
+        band = parts[0] if len(parts) == 1 else add_bands(parts, " + ".join(p.basis for p in parts))
+        unpriced = f"; unpriced: {CORE_PROGRAM}(core_program; {held})" if ctx.priced(CORE_PROGRAM) and held else ""
+        ctx.term("latency_programming_s", "s", band, band.basis + unpriced)
 
 
 def _host_unpriced(host) -> List[str]:
@@ -156,22 +169,17 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
 
     ``t_hop`` is deliberately NOT added: execution is timestep-synchronous, so hop
     time is already inside the timestep the cycle constant prices — the same
-    no-double-count discipline the measured ``sim_time_s`` carries.
+    no-double-count discipline the measured ``sim_time_s`` carries. [U-C2 G-2] The
+    compute is ``cost.compute_time``'s: per timestep (``t_cycle``) or, on a chip
+    without a fixed timestep, per synaptic operation on the event census.
     """
-    if not ctx.priced("t_cycle"):
-        ctx.refuse(LATENCY_HEADLINE, "t_cycle is undeclared — the one constant that "
-                                     "converts latency_steps to seconds")
+    compute = compute_time(ctx.physics, ctx.quantities, ctx.priced)  # [U-C2 G-2] per timestep or per event
+    if compute.band is None:
+        ctx.refuse(LATENCY_HEADLINE, compute.refusal or "the compute time is not priced")
         _programming_latency(ctx)
         return None
-    if not ctx.quantities.has("latency_steps"):
-        ctx.refuse(LATENCY_HEADLINE, "t_cycle is declared but the latency_steps "
-                                     "census is absent")
-        _programming_latency(ctx)
-        return None
-    t_cycle = ctx.physics.band("t_cycle")
-    steps = ctx.quantities.get("latency_steps").value
-    components = [scale_band(t_cycle, steps, "t_cycle x latency_steps")]
-    evidence = [f"compute: t_cycle [{t_cycle.basis}]"]
+    components = [compute.band]
+    evidence = [compute.evidence]
 
     bands, notes, unpriced = ctx.component_bands(LATENCY_COMPONENTS, 1.0)
     components.extend(bands)

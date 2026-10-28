@@ -118,3 +118,10 @@ class PricedProgram:
     endurance_band: Optional[Tuple[float, float, float]] = None
     #: [U-C C-1] The pulses per write (low, nominal, high) where the technology declares them.
     pulses_band: Optional[Tuple[float, float, float]] = None
+    #: [U-C2 G-2] The physics' compute-time law (``cost.compute_time.compute_law``): ``t_cycle`` per timestep or
+    #: ``t_synaptic_op`` per synaptic operation; None without physics.
+    compute_law: Optional[str] = None
+    #: [targeted M2] On several event-serial cores, the layer-pipelined stage floor (low, nominal, high):
+    #: ``t_synaptic_op`` x the most loaded core's events of any pass (``cost.compute_time.busiest_stage``); None
+    #: elsewhere.
+    event_stage: Optional[Tuple[float, float, float]] = None

@@ -6,13 +6,16 @@ from mimarsinan.deployment_record.platform_physics import vocabulary
 from mimarsinan.deployment_record.units import ENERGY, TIME
 
 _PRICERS = Path(vocabulary.__file__).resolve().parents[1] / "cost" / "absolute"
+#: [U-C2] The compute-time law (per timestep or per synaptic operation) and the per-core programming wall, which the
+#: absolute pricer reads, live beside it (``cost/compute_time.py``: ``cost/absolute`` holds its ten-module budget).
+_COMPUTE_TIME = _PRICERS.parent / "compute_time.py"
 _DECLARED = "declared, not multiplied"
 #: Shrink-only: time rows no formula reads until a compute model per core class (E187, E188) lands.
 UNREAD_ALLOWLIST = frozenset({"t_array_read", "t_adc_conversion", "t_hop"})
 
 
 def _pricing_source() -> str:
-    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(_PRICERS.glob("*.py")))
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(_PRICERS.glob("*.py")) + [_COMPUTE_TIME])
 
 
 def unread_rows(rows, source: str):

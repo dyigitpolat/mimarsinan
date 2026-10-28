@@ -7,6 +7,7 @@ from typing import Any, Mapping, Optional
 
 import mimarsinan.mapping.platform.target_bundles as target_bundles
 from mimarsinan.deployment_record.cost.absolute.validity import declared_geometry
+from mimarsinan.deployment_record.cost.compute_time import busiest_core_events, prices_per_event
 from mimarsinan.deployment_record.quantities.lanes import lane_block_quantities
 from mimarsinan.mapping.lanes.declaration import lane_declaration, lanes_executed
 from mimarsinan.deployment_record.quantities.from_candidate import (
@@ -62,7 +63,7 @@ def candidate_context_from_platform(
                       pricing_refusal=target_bundles.absolute_pricing_refusal(pcfg))
     context = _lane_context(context, pcfg, lane_ops)
     if not names_value_domain(pcfg):
-        return context
+        return _event_census(context, pcfg, passes)
     refuse_spiking_activity(pcfg)
     sized, withheld = value_carry(carry, context.timesteps, value_bits(pcfg))
     rule = ValueDomainFacts(
@@ -72,11 +73,34 @@ def candidate_context_from_platform(
         carry_out_bytes=sized.get("carry_out_bytes"), carry_in_bytes=sized.get("carry_in_bytes"),
         withheld=tuple(sorted(withheld.items())),
     )
-    return replace(
+    return _event_census(replace(
         context, timesteps=1, activity_factor=None, carried_raster_bytes=None,
         latency_steps=rule.latency_steps, mac_events=rule.mac_events, carry_out_bytes=rule.carry_out_bytes,
         carry_in_bytes=rule.carry_in_bytes, value_bits=value_bits(pcfg), value_rule=rule,
-    )
+    ), pcfg, passes)
+
+
+def _event_census(context: CandidateQuantityContext, pcfg: Mapping[str, Any],
+                  passes: Optional[Any]) -> CandidateQuantityContext:
+    """[targeted M2] The per-core event census of a chip priced per synaptic operation (``prices_per_event``): per
+    (pass, segment) row its busiest physical core's events by the model ``synaptic_events`` uses (the value rule's one
+    event per committed cell, or cells x timesteps x the declared activity_factor), for the latency and, through the
+    write law's inputs, the overlapped compute. The context unchanged on every other chip, or without the census."""
+    if passes is None or not prices_per_event(pcfg.get("platform_physics_resolved")):
+        return context
+    value_rule = context.mac_events is not None
+    if not value_rule and (context.timesteps is None or context.activity_factor is None):
+        return context
+    steps, activity = float(context.timesteps or 1), float(context.activity_factor or 1.0)
+
+    def per_cell(cells: int) -> float:  # the order of from_candidate's product: cells x timesteps x activity_factor
+        return float(cells) if value_rule else float(cells) * steps * activity
+
+    events = busiest_core_events(passes, per_cell)
+    writes = context.writes
+    if writes is not None and writes.census is not None and len(writes.census.census.passes) == len(events):
+        writes = replace(writes, pass_sops=events)
+    return replace(context, pass_core_events=events, writes=writes)
 
 
 #: [W08] What the candidate plane's output stage cannot see: it prices the lane-free shape's layout and host census.

@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.payload_sizes import pass_program_bytes
 from mimarsinan.deployment_record.cost.absolute import price_absolute
+from mimarsinan.deployment_record.cost.compute_time import busiest_stage, compute_law
 import mimarsinan.deployment_record.introspection.scaling_ladder_law as law
 import mimarsinan.deployment_record.introspection.scaling_ladder_reading as point_reading
 from mimarsinan.deployment_record.introspection.scaling_ladder_types import (
@@ -213,6 +214,8 @@ def price_scheduled(
         if context.writes is not None:
             at_k = price_absolute(q, physics, writes=WriteInputs.of(context.writes))
             write_law = point_reading.write_law_columns(at_k, platform.get("inference_batch_K"))
+    several = not (q.has("cores_physical") and q.get("cores_physical").value <= 1)
+    stage = None if physics is None or not several else busiest_stage(physics, context.pass_core_events)
     return PricedProgram(
         platform=platform, packed_tiles=tiles, passes=len(noc.pass_placements), latency_steps=facts.latency_steps,
         census_passes=None if facts.passes is None else len(facts.passes.rows),
@@ -220,6 +223,8 @@ def price_scheduled(
         period_bytes=period_bytes, once_bytes=once_bytes, once_cores=once_tiles,
         max_writes=max_writes, terms=terms, refusals=refusals, wall_s=scheduled.wall_s + time.time() - start,
         write_law=write_law, **point_reading.endurance_fields(physics),
+        compute_law=None if physics is None else compute_law(physics),
+        event_stage=None if stage is None else (stage.low, stage.nominal, stage.high),
     )
 
 

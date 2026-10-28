@@ -40,33 +40,57 @@ at **−76 %**. Both are in the correlation suite; the second is the regression 
   `1.78 µW/MHz × 75 MHz` evaluated at this profile's declared clock. A run at a
   different clock must restate it — the biological-time reference case does exactly
   that, through an override that the correlation report prints.
-- **`t_cycle` is one synaptic operation**, because on ODIN it is: "each SOP takes two
-  clock cycles to complete", so 2 / 75 MHz = 26.667 ns. There is no separate network
-  timestep at this level of the architecture.
+- **ODIN has no timestep, so `t_cycle` is undeclared; its compute is priced per synaptic
+  operation** (`t_synaptic_op`, the time twin of `e_mac`): "each SOP takes two clock cycles
+  to complete", so 2 / 75 MHz = 26.667 ns per operation. One input event is one sweep of the
+  core: "all N neurons of ODIN will be updated ... each neuron spike event thus leads to N
+  SOPs", "256 SOPs = 512 clock cycles" (Fig. 3), and the RTL's `POP_NEUR` state runs those
+  512 cycles whatever the mapping uses of the 256 neurons (`src/controller.v:208`). The
+  latency, the throughput and the static energy are therefore priced on the event census
+  (256 operations per input event, the whole sweep; a census that counts an arrival once per
+  used column prices a partly used core low by its neuron occupancy, the energy too), and
+  refused by name without a census or
+  a declared `activity_factor`, as the energy is. The census total is one core's events. On a
+  chip of several concurrent ODIN cores the cores of a pass run at once and the passes in turn,
+  so the candidate plane prices each pass at its busiest core (its as-mapped cells x timesteps x
+  `activity_factor`, the energy's own model, `synaptic_events_busiest_core`); a view that states
+  the census as one total (a sealed record) refuses the latency by name on several cores. A
+  `t_cycle` of one synaptic operation priced a timestep of the executed
+  census at 26.67 ns, at least 256 times too fast for any step that carries an input event.
 - **`area_per_cell` (0.68 µm²/synapse) is declared but never summed** with the
   aggregate `area_per_core_total`. It is the only per-cell area among the three
   correlated targets that can be checked against a published total: 65,536 × 0.68 µm²
   = 51.6 % of the core, leaving roughly half for the neurons, the SDSP update logic,
   the scheduler and the controller.
 
-## The programming group — DERIVED, and how (TS6)
+## The programming group — DERIVED, and how (TS6, U-C2)
 
-Frenkel reports no weight-load energy and no per-byte configuration rate, so all three
-programming constants are **authored derivations** (`evidence_kind: derived`), each
-naming its anchor and arithmetic, each with its nominal at the band's log-space centre
-(`sqrt(low x high)`):
+Frenkel reports no weight-load energy, so the two programming energies are **authored
+derivations** anchored on `e_mac` (`evidence_kind: derived`), each with its nominal at the
+band's log-space centre (`sqrt(low x high)`). The programming wall is derived from ODIN's own
+published SPI frame and core image (the authors' RTL and documentation):
 
 - **`e_program_per_byte` = 8.43 / 20.649 / 50.58 pJ/B.** An ODIN synapse is 4 bits
   (3-bit weight + 1 mapping bit), so a byte of synaptic SRAM holds two synapses and the
   per-byte access anchor is `2 x e_mac` = 16.86 pJ/B. An SRAM write costs ~1–3× its
   read → band `[0.5x, 3x]`. `e_mac` already contains the weight read *and* update, the
   neuron state access and the controller overheads, so it overstates the bare SRAM
-  access: that is what the 0.5× corner is for.
-- **`t_program_per_byte` = 5.09 / 285.4 / 1272.7 ns/B.** Donor-scaled along
-  `validity.technology_node_nm` from TrueNorth's scan chain (800 ns/B, same 28 nm node)
-  and the generic 22 nm exemplar (4/80/1000 → 5.09/101.8/1272.7). Band = the envelope
-  of both scaled donors; nominal = the geometric mean of their scaled nominals. Two
-  orders of magnitude wide because the donors genuinely disagree by that much.
+  access: that is what the 0.5× corner is for. It multiplies the occupied payload bytes,
+  while a load writes the whole 36,864-byte image: the commit energy of the unoccupied
+  image words is not priced.
+- **`t_core_program` = 78.6432 ms per core load (U-C2).** A load writes the whole core
+  image, whatever the program occupies: 8,192 32-bit synapse words and 256 128-bit neuron
+  words, 36,864 byte transactions. One transaction is 40 SCK (`src/spi_slave.v:82-84`) and
+  "SCK must be at least 4x slower than CLK" (`doc/README.md` Sec. 2.1), so a byte takes at
+  least 160 clock cycles: 36,864 x 160 / 75 MHz = 78.6432 ms, a floor (a slower SPI master
+  is a slower load). It is the time twin of `e_core_program`, read by `latency_programming_s`,
+  the write law's per-pass walls, Pi, M, the regime labels and the write-bandwidth batch.
+  The card's measured programming run, 6,345,255 cycles for the 36,864-byte image at
+  100 MHz (172.13 cycles per byte, 7.6% above the floor), is printed beside it as a check,
+  never as the declaration. No `t_program_per_byte` is declared: the donor-scaled
+  5.09 to 1,272.73 ns per byte it replaces lay below the frame's own 2,133.3 ns per byte at
+  every corner, and multiplied the occupied-cell bytes, a fraction of the image a load
+  writes.
 - **`e_core_program` = 1.079 / 2.158 / 4.316 nJ.** No `e_core_init` exists here, so the
   anchor is the **core-state sweep** the geometry defines: 256 neurons × `e_mac` =
   2.158 nJ. Band `[0.5x, 2x]`. ODIN is a single core, so a program load pays this once.
@@ -77,7 +101,9 @@ The whole `interconnect` group: ODIN is a **single core** with no NoC, so hop an
 packet energies are not absent-for-lack-of-data, they are structurally zero — and a
 multi-core deployment mapped onto "ODIN" would be a different chip, not this one.
 
-Also absent: the `host` group (a property of the deployment host), `e_dma_per_byte`
+Also absent: `t_cycle` (no fixed timestep; the compute is `t_synaptic_op` on the event
+census), `t_program_per_byte` (a load writes the whole image; its wall is `t_core_program`),
+the `host` group (a property of the deployment host), `e_dma_per_byte`
 (the SPI transfer energy onto the chip is unpublished — only the *commit* above is
 derived), `e_core_init` / `t_core_init` (no reset measurement exists),
 `e_sync_barrier` / `t_sync_barrier` (nothing to synchronize across), and

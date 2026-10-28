@@ -95,10 +95,11 @@ class TestDispatchWithoutHostMacs:
         assert {t.name: t for t in pricing.terms}["latency_host_s"].value == pytest.approx(100e-6, rel=1e-6)
 
     def test_a_measured_wall_without_host_macs_keeps_an_empty_host_time(self):
-        """ODIN declares no host_compute_rate: a record's measured wall must not turn into a refusal."""
+        """ODIN declares no host_compute_rate: a record's measured wall must not turn into a refusal. [U-C2 G-2] ODIN
+        prices its compute on the event census of one core, so the census here is one ODIN core's."""
         odin = get_platform_physics("odin")
         pricing = price_absolute(
-            _quantities(**_NO_HOST_MACS, compute_op_count=3, host_ops_s=0.002), odin)
+            _quantities(**dict(_NO_HOST_MACS, cores_physical=1), compute_op_count=3, host_ops_s=0.002), odin)
         assert "latency_host_s" not in {t.name for t in pricing.terms}
         assert not any("host" in r.reason for r in pricing.refusals)
         assert "t_host_op_overhead" not in {t.name: t for t in pricing.terms}["e2e_latency_s"].source

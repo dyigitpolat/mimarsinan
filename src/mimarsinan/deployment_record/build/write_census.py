@@ -130,10 +130,15 @@ def written_cores(census: Any) -> int:
     return sum(p.cores - p.resident_cores for p in census.passes if p.written_cells_backing_store)
 
 
+def pass_programmed_cores(p: Any) -> int:
+    """[U-C2] One pass's share of ``programmed_cores``: its rewritten cores less its rewritten operand-only cores."""
+    return p.cores - p.resident_cores - p.operand_only_cores if p.written_cells_backing_store else 0
+
+
 def programmed_cores(census: Any) -> int:
     """[consts, U-C C-6] e_core_program's count: the rewritten cores whose static program a period writes, W less the
     rewritten operand-only cores (every placement a bound bank, whose operand writes the operand law prices)."""
-    return written_cores(census) - sum(p.operand_only_cores for p in census.passes if p.written_cells_backing_store)
+    return sum(pass_programmed_cores(p) for p in census.passes)
 
 
 def programmed_basis(census: Any) -> str:

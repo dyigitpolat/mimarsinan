@@ -14,6 +14,7 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.context import external_refusals
 from mimarsinan.deployment_record.cost.absolute.formulas import add_bands, mul_bands, scale_band
+from mimarsinan.deployment_record.cost.compute_time import exposed_beyond, pass_compute_walls, plus_core_walls
 from mimarsinan.deployment_record.cost.write_lifetime import (
     LIFETIME_HOURS, LIFETIME_INFERENCES, LIFETIME_VERDICT, SECONDARY_MARKERS, WritePricing, join_lifetimes,
     price_lifetime,
@@ -52,6 +53,7 @@ class WriteInputs:
     producer_slots: Optional[Sequence[Tuple[int, int]]] = None
     #: N2b: the census split by write technology (``PlaneWrites.by_technology``), where the policy states several.
     by_technology: Optional[TechnologySplit] = None
+    pass_sops: Optional[Tuple[float, ...]] = None  #: [targeted M2] per census pass, its busiest core's events
 
     @classmethod
     def of(cls, writes: Any) -> "WriteInputs":
@@ -63,7 +65,8 @@ class WriteInputs:
                    most_written=None if census is None else census.most_written_core,
                    pass_core_types=None if census is None else census.pass_core_types,
                    producer_slots=None if census is None else census.producer_slots,
-                   by_technology=getattr(writes, "by_technology", None))
+                   by_technology=getattr(writes, "by_technology", None),
+                   pass_sops=getattr(writes, "pass_sops", None))
 
 
 def _zero(basis: str) -> Band:
@@ -141,37 +144,32 @@ def _pass_write_times(census: Any, physics: PlatformPhysics, policy: WritePolicy
         step = mul_bands(physics.band("t_write_per_unit"), iterations, "t_write_per_unit x iterations")
         if physics.has("t_write_setup_per_event"):
             step = add_bands([step, physics.band("t_write_setup_per_event")], "write step + setup")
-        walls = [scale_band(step, events, "write_events x write step") for events in pass_events(units, policy)]
+        walls = plus_core_walls([scale_band(step, events, "write_events x write step")  # [U-C2 G-1] + t_core_program
+                                 for events in pass_events(units, policy)], census, physics)
         if producer and policy.write_granularity != "cell":
             return None, None, "producer writes are counted in cells; their units at another granularity are unstated"
         steps = sum(pass_events([p.written_cells_producer for p in passes], policy))  # no step spans two passes
         return walls, scale_band(step, steps, "producer write steps, per pass"), ""
-    if physics.has("t_program_per_byte") and not producer:
-        per_byte = physics.band("t_program_per_byte")
-        return [scale_band(per_byte, p.payload_bytes, "t_program_per_byte x payload_bytes")
-                for p in passes], _zero("no producer write"), ""
+    if ((byte := physics.has("t_program_per_byte")) or physics.has("t_core_program")) and not producer:
+        walls = [scale_band(physics.band("t_program_per_byte"), p.payload_bytes, "t_program_per_byte x payload_bytes")
+                 for p in passes] if byte else None
+        return plus_core_walls(walls, census, physics), _zero("no producer write"), ""
     if producer:
         return None, None, ("producer cells are written per inference and need t_write_per_unit; t_program_per_byte "
                             "prices backing-store bytes only")
     return None, None, "cells are written but the target declares no write time (t_write_per_unit or t_program_per_byte)"
 
 
-def _exposed(write: Band, k: int, compute: Band) -> Band:
-    """max(0, t_w / K - t_c) corner-wise (monotone up in the write, down in the compute)."""
-    return Band(max(0.0, write.low / k - compute.high), max(0.0, write.nominal / k - compute.nominal),
-                max(0.0, write.high / k - compute.low), "max(0, t_w(q+1) / K - t_c(q))")
-
-
-def _exposed_write(census: Any, physics: PlatformPhysics, policy: WritePolicy, extents: Any,
-                   compute_sealed: bool, pass_types: Any = None) -> Tuple[Optional[Band], str]:
+def _exposed_write(census: Any, physics: PlatformPhysics, policy: WritePolicy, extents: Any, compute_sealed: bool,
+                   pass_types: Any = None, pass_sops: Any = None) -> Tuple[Optional[Band], str]:
     walls, producer, reason = _pass_write_times(census, physics, policy, extents)
     if walls is None or producer is None:
         return None, reason
-    return _expose(walls, producer, census, physics, policy, compute_sealed, pass_types)
+    return _expose(walls, producer, census, physics, policy, compute_sealed, pass_types, pass_sops)
 
 
 def _expose(walls: Sequence[Band], producer: Band, census: Any, physics: PlatformPhysics, policy: WritePolicy,
-            compute_sealed: bool, pass_types: Any) -> Tuple[Optional[Band], str]:
+            compute_sealed: bool, pass_types: Any, pass_sops: Any = None) -> Tuple[Optional[Band], str]:
     """The exposure rule over per-pass write walls and the per-inference producer wall (serial or overlapped)."""
     k = policy.batch_k
     if all(w.high == 0.0 for w in walls) and producer.high == 0.0:
@@ -185,12 +183,11 @@ def _expose(walls: Sequence[Band], producer: Band, census: Any, physics: Platfor
         return None, room
     if not compute_sealed:
         return None, "overlapped writes hide behind compute, and this census states no compute steps"
-    if not physics.has("t_cycle"):
-        return None, "overlapped writes hide behind compute, which needs t_cycle"
-    cycle = physics.band("t_cycle")
+    computes, no_compute = pass_compute_walls(physics, census, pass_sops)  # [U-C2 G-2] per step or per event
+    if computes is None:
+        return None, no_compute
     q = len(walls)
-    terms = [_exposed(walls[(i + 1) % q], k, scale_band(cycle, census.passes[i].compute_steps, "t_c"))
-             for i in range(q)] + [producer]
+    terms = [exposed_beyond(walls[(i + 1) % q], k, computes[i]) for i in range(q)] + [producer]
     return add_bands(terms, "overlapped: sum_q max(0, t_w(q+1) / K - t_c(q)) + producer writes"), ""
 
 
@@ -222,7 +219,7 @@ def price_write_inputs(writes: WriteInputs, physics: PlatformPhysics) -> WritePr
     return price_write_terms(writes.census, physics, writes.policy,
                              written_extents=writes.written_extents, compute_sealed=writes.compute_sealed,
                              most_written=writes.most_written, pass_core_types=writes.pass_core_types,
-                             producer_slots=writes.producer_slots)
+                             producer_slots=writes.producer_slots, pass_sops=writes.pass_sops)
 
 
 def _price_technologies(writes: WriteInputs, split: TechnologySplit, chip: PlatformPhysics) -> WritePricing:
@@ -232,7 +229,8 @@ def _price_technologies(writes: WriteInputs, split: TechnologySplit, chip: Platf
         part, physics = shares[0]
         return price_write_terms(part.census, physics, part.policy, written_extents=part.written_extents,
                                  compute_sealed=writes.compute_sealed, most_written=part.most_written,
-                                 pass_core_types=part.pass_core_types, producer_slots=part.producer_slots)
+                                 pass_core_types=part.pass_core_types, producer_slots=part.producer_slots,
+                                 pass_sops=writes.pass_sops)
     out = WritePricing()
     energies = [(part.label, _write_energy(part.census, physics, part.policy)) for part, physics in shares]
     refused = [f"{label}: {reason}" for label, (band, reason) in energies if band is None]
@@ -253,7 +251,7 @@ def _price_technologies(writes: WriteInputs, split: TechnologySplit, chip: Platf
                  for q in range(len(writes.census.passes))]
         producer = add_bands([p for _, (_, p, _) in timed if p is not None], "every technology's producer writes")
         exposed, reason = _expose(walls, producer, writes.census, chip, writes.policy, writes.compute_sealed,
-                                  writes.pass_core_types)
+                                  writes.pass_core_types, writes.pass_sops)
         if exposed is None:
             out.refuse(LATENCY_WRITE, reason)
         else:
@@ -270,7 +268,8 @@ def _price_technologies(writes: WriteInputs, split: TechnologySplit, chip: Platf
 def price_write_terms(census: Any, physics: PlatformPhysics, policy: WritePolicy, *,
                       written_extents: Optional[Sequence[Sequence[Tuple[int, int]]]] = None,
                       compute_sealed: bool = True, most_written: Optional[int] = None, pass_core_types: Any = None,
-                      producer_slots: Optional[Sequence[Tuple[int, int]]] = None) -> WritePricing:
+                      producer_slots: Optional[Sequence[Tuple[int, int]]] = None, pass_sops: Any = None
+                      ) -> WritePricing:
     """Write energy, exposed write time and lifetime of one period census at the declared K.
 
     ``most_written`` is the period writes of the most-written physical core (``WriteCensus.most_written_core``). A
@@ -291,7 +290,8 @@ def price_write_terms(census: Any, physics: PlatformPhysics, policy: WritePolicy
         out.refuse(ENERGY_WRITE, reason)
     else:
         out.energy = out.term(ENERGY_WRITE, "mJ", energy)
-    exposed, reason = _exposed_write(census, physics, policy, written_extents, compute_sealed, pass_core_types)
+    exposed, reason = _exposed_write(census, physics, policy, written_extents, compute_sealed, pass_core_types,
+                                     pass_sops)
     if exposed is None:
         out.refuse(LATENCY_WRITE, reason)
     else:

@@ -27,6 +27,7 @@ from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.writes import ENERGY_WRITE, LATENCY_WRITE, WriteInputs, price_write_inputs
+from mimarsinan.deployment_record.introspection.scaling_ladder_law import layer_pipelined
 from mimarsinan.deployment_record.quantities import write_technology as wt
 from mimarsinan.deployment_record.quantities.write_law import (
     PlaneWrites, WritePolicy, plane_write_census, write_policy_of, write_quantities,
@@ -36,8 +37,6 @@ TIME_PER_INFERENCE = "time per inference (batch period / K)"
 CARRY_HOME = ("read out of the arrays after its producing pass and re-injected before its consumer "
               "(carry_readout, carry_inject): held off the arrays, in the buffer the transfer reads; no on-chip carry "
               "buffer is declared")
-PIPELINED = ("layer-pipelined lower bound on the time per inference of a resident program (no pass rewrites cores): "
-             "one inference per stage time, a stage at least one latency step (compute-only time / latency_steps)")
 CORNER_PAIRS = ("favourable", "nominal", "adverse")
 NO_WRITES = "neither (no weight writes per period)"
 _S_PER_H = 3600.0
@@ -137,8 +136,12 @@ def min_batch(*, x_fluid: float, x_packed: float, max_writes: Optional[float], r
 
 def latency_semantics(*, time_per_inference: Optional[Corners], compute_only: Optional[Corners], k: Optional[int],
                       rate_hz: Optional[float], carry: Mapping[str, Any], passes: int,
-                      latency_steps: Optional[int], multiplexed: bool, source: str) -> Dict[str, Any]:
-    """Batch period, request latency, throughput, carry buffer per K and the layer-pipelined bound."""
+                      latency_steps: Optional[int], multiplexed: bool, source: str,
+                      compute_law: Optional[str] = None,
+                      event_stage: Optional[Sequence[float]] = None) -> Dict[str, Any]:
+    """Batch period, request latency, throughput, carry buffer per K and the layer-pipelined bound (``compute_law``:
+    the physics' compute-time law, ``cost.compute_time``; ``event_stage``: on several event-serial cores, the most
+    loaded core's operations of one pass, ``PricedProgram.event_stage``)."""
     kk = int(k or 1)
     out: Dict[str, Any] = {"time_per_inference_label": TIME_PER_INFERENCE, "time_per_inference_source": source,
                            "time_per_inference_s": None if time_per_inference is None else list(time_per_inference)}
@@ -158,13 +161,8 @@ def latency_semantics(*, time_per_inference: Optional[Corners], compute_only: Op
     live = carry.get("peak_live_bytes", carry.get("carry_peak_live_bytes"))
     out["carry_buffer_bytes"] = None if live is None and carry else int(live or 0) * kk
     out["carry_buffer_home"] = CARRY_HOME
-    if not multiplexed and compute_only is not None and latency_steps:
-        out["layer_pipelined_bound_s"] = [v / latency_steps for v in compute_only]
-        out["layer_pipelined_label"] = PIPELINED
-    else:
-        out["layer_pipelined_bound_s"] = None
-        out["layer_pipelined_absent"] = (f"multiplexed: {passes} passes rewrite cores in sequence" if multiplexed
-                                         else "the compute-only time or latency_steps is absent")
+    out.update(layer_pipelined(compute_only, latency_steps, multiplexed=multiplexed, passes=passes,
+                               compute_law=compute_law, event_stage=event_stage))
     return out
 
 
@@ -296,5 +294,6 @@ def row_readings(priced: Any, *, x_fluid: float, x_packed: float, k: Optional[in
         "latency_semantics": latency_semantics(time_per_inference=tpi, compute_only=compute, k=k, rate_hz=rate_hz,
                                                carry=dict(priced.carry or {}), passes=priced.passes,
                                                latency_steps=priced.latency_steps, multiplexed=multiplexed,
-                                               source=tpi_source),
+                                               source=tpi_source, compute_law=priced.compute_law,
+                                               event_stage=priced.event_stage),
     }

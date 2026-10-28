@@ -41,6 +41,18 @@ from unit.deployment_record.record_fixtures import make_full_record
 
 PROFILES = ("loihi", "truenorth", "odin", "isaac_like", "generic_estimated_22nm")
 PROGRAMMING_CONSTANTS = ("e_program_per_byte", "t_program_per_byte", "e_core_program")
+#: [U-C2 G-1] A chip whose interface writes a whole core image per reprogrammed core declares that image's wall per
+#: core (``t_core_program``, derived from its published frame) in place of a per-byte wall on the occupied cells.
+WHOLE_IMAGE_PROFILES = ("odin",)
+
+
+def _programming(profile):
+    """The programming constants ``profile`` declares: the per-core wall in place of the per-byte one on a
+    whole-image interface."""
+    if profile in WHOLE_IMAGE_PROFILES:
+        return ("e_program_per_byte", "t_core_program", "e_core_program")
+    return PROGRAMMING_CONSTANTS
+
 
 #: The evidence kind each profile's derived constants must carry: an anchor that is
 #: itself an estimate cannot produce anything stronger than an estimate.
@@ -146,11 +158,11 @@ class TestVocabularyConformance:
     def test_every_profile_declares_every_programming_constant(self, profile):
         """All five, or a DOM/programming headline refuses by name on the target
         the campaign happens to need."""
-        assert _physics(profile).missing(PROGRAMMING_CONSTANTS) == ()
+        assert _physics(profile).missing(_programming(profile)) == ()
 
     @pytest.mark.parametrize("profile", PROFILES)
     def test_each_declared_value_validates_in_its_own_unit(self, profile):
-        for key in PROGRAMMING_CONSTANTS:
+        for key in _programming(profile):
             value = _value(profile, key)
             assert unit_for(value.unit).dimension == spec_for(key).dimension
             assert 0.0 < value.low <= value.nominal <= value.high
@@ -163,12 +175,12 @@ class TestTheWrittenEvidence:
 
     @pytest.mark.parametrize("profile", PROFILES)
     def test_every_new_constant_shows_its_derivation(self, profile):
-        for key in PROGRAMMING_CONSTANTS:
+        for key in _programming(profile):
             assert _value(profile, key).derivation.strip(), f"{profile}/{key}"
 
     @pytest.mark.parametrize("profile", PROFILES)
     def test_the_mandated_evidence_kind(self, profile):
-        for key in PROGRAMMING_CONSTANTS:
+        for key in _programming(profile):
             assert _value(profile, key).evidence_kind == MANDATED_EVIDENCE[profile]
 
     @pytest.mark.parametrize("profile", ACCESSES_PER_BYTE)
@@ -182,7 +194,7 @@ class TestTheWrittenEvidence:
         for profile, anchor in anchors.items():
             assert anchor in _value(profile, "e_core_program").derivation, profile
 
-    @pytest.mark.parametrize("profile", ("loihi", "odin", "isaac_like"))
+    @pytest.mark.parametrize("profile", ("loihi", "isaac_like"))
     def test_the_donor_scaled_wall_names_its_donors_and_the_scaling_axis(self, profile):
         derivation = _value(profile, "t_program_per_byte").derivation
         for token in DONORS + ("technology_node_nm",):
@@ -198,7 +210,7 @@ class TestTheWrittenEvidence:
     @pytest.mark.parametrize("profile", PROFILES)
     def test_the_description_file_carries_the_derivations_in_prose(self, profile):
         text = profile_description_path(profile).read_text(encoding="utf-8")
-        for key in PROGRAMMING_CONSTANTS:
+        for key in _programming(profile):
             assert key in text, f"{profile}.md never mentions {key}"
 
 
@@ -235,7 +247,7 @@ class TestTheDerivationRules:
         assert band.high == pytest.approx(CORE_SETUP_RATIO[1] * anchor.high, rel=1e-4)
         assert band.nominal == pytest.approx(_log_centre(band), rel=1e-4)
 
-    @pytest.mark.parametrize("profile", ("loihi", "odin", "isaac_like"))
+    @pytest.mark.parametrize("profile", ("loihi", "isaac_like"))
     def test_the_wall_band_spans_both_scaled_donors(self, profile):
         scaled = _donor_scaled_walls(profile)
         band = _physics(profile).band("t_program_per_byte")
@@ -245,10 +257,11 @@ class TestTheDerivationRules:
         assert band.nominal == pytest.approx(math.sqrt(product), rel=1e-4)
 
     def test_the_scaled_wall_follows_the_technology_node(self):
-        """Donor scaling is the only thing separating these three: a finer node
-        must not come out slower, or the scaling axis is not the one declared."""
+        """Donor scaling is the only thing separating these two: a finer node
+        must not come out slower, or the scaling axis is not the one declared. [U-C2 G-1] ODIN left the
+        donor-scaled set: its wall is derived from its published SPI frame (``t_core_program``)."""
         walls = [_physics(name).band("t_program_per_byte").nominal
-                 for name in ("loihi", "odin", "isaac_like")]
+                 for name in ("loihi", "isaac_like")]
         assert walls == sorted(walls)
 
 

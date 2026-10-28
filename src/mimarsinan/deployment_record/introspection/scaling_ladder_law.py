@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.formulas import add_bands, div_band, scale_band
+from mimarsinan.deployment_record.cost.compute_time import EVENT_LAW
 from mimarsinan.deployment_record.schema.provenance import Band
 
 CORNERS = ("low", "nominal", "high")
@@ -197,6 +198,38 @@ def axis_columns(
         "overhead": overhead(compute=compute, boundary=boundary, period_writes=period if multiplexed else None,
                              once=once, k=k, x=x, passes=passes) if passes >= 2 else None,
     }
+
+
+PIPELINED = ("layer-pipelined lower bound on the time per inference of a resident program (no pass rewrites cores): "
+             "one inference per stage time, a stage at least one latency step (compute-only time / latency_steps)")
+#: [U-C2 G-2] On a chip priced per synaptic operation the compute-only time is one core's, which runs every event of
+#: every stage in turn: a layer pipeline overlaps no stage, so the bound is the compute-only time itself.
+PIPELINED_ONE_CORE = ("layer-pipelined lower bound on the time per inference of a resident program: one core runs "
+                      "every synaptic operation of every stage in turn (t_synaptic_op), so stages cannot overlap and "
+                      "the bound is the compute-only time")
+#: [targeted M2] On several event-serial cores a layer pipeline overlaps the cores, never a core with itself.
+PIPELINED_EVENT_CORES = ("layer-pipelined lower bound on the time per inference of a resident program on several "
+                         "event-serial cores: each core runs its own synaptic operations one at a time "
+                         "(t_synaptic_op), so no stage is shorter than the busiest core's operations of one pass "
+                         "(core init and inter-core delivery not counted)")
+
+
+def layer_pipelined(compute_only: Optional[Sequence[float]], latency_steps: Optional[int], *, multiplexed: bool,
+                    passes: int, compute_law: Optional[str] = None,
+                    event_stage: Optional[Sequence[float]] = None) -> Dict[str, Any]:
+    """The layer-pipelined bound of a resident program (``latency_semantics``): the compute-only time per latency
+    step under the step law, the whole compute-only time on one event-serial core, [targeted M2] the busiest core's
+    operations of one pass on several (``event_stage``); absent by name otherwise."""
+    if not multiplexed and compute_law == EVENT_LAW and event_stage is not None:
+        return {"layer_pipelined_bound_s": list(event_stage), "layer_pipelined_label": PIPELINED_EVENT_CORES}
+    if not multiplexed and compute_only is not None and latency_steps:
+        one_core = compute_law == EVENT_LAW
+        bound = list(compute_only) if one_core else [v / latency_steps for v in compute_only]
+        label = PIPELINED_ONE_CORE if one_core else PIPELINED
+        return {"layer_pipelined_bound_s": bound, "layer_pipelined_label": label}
+    return {"layer_pipelined_bound_s": None,
+            "layer_pipelined_absent": (f"multiplexed: {passes} passes rewrite cores in sequence" if multiplexed
+                                       else "the compute-only time or latency_steps is absent")}
 
 
 def k_star(

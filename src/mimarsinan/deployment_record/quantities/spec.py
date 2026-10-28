@@ -122,6 +122,13 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
      "chip. No producer seals this yet: at candidate time it is MODELED from the "
      "declared activity factor; at record time it is absent until an event census "
      "is sealed."),
+    ("synaptic_events_busiest_core", _COUNT,
+     "[U-C2] Per (pass, segment) row, the synaptic events of its busiest physical core, summed over the rows: the "
+     "multiplicand of an event-serial core's wall (t_synaptic_op) on a chip of several concurrent cores, whose cores "
+     "of one row run at once and whose rows run in turn. MODELED at candidate time by the energy's own model (a "
+     "core's as-mapped cells x timesteps x the declared activity_factor; the value rule's one event per cell), and "
+     "formed only where the resolved physics prices compute per synaptic operation; no record states it, since a "
+     "sealed event census is one total per inference."),
     ("noc_total_packets", _COUNT, "All NoC packets of the execution."),
     ("noc_intra_tile_packets", _COUNT, "Packets delivered within their source tile."),
     ("noc_inter_tile_packets", _COUNT, "Packets that left their source tile."),
