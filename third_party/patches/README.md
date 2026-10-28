@@ -9,9 +9,13 @@ No third-party source mimarsinan depends on needs patching today:
   monkeypatches `multiprocessing.set_start_method` /
   `torch.multiprocessing.set_start_method` to be idempotent before the first
   lava import, because lava's message infrastructure sets `fork` at import
-  time. It applies itself through `_subtractive_lif_cls()` and stays where it
-  is. lava-nc's stale `numpy<2` / `networkx<=2.8.7` / `asteval<0.10` metadata
-  is handled declaratively by `[tool.uv] override-dependencies`.
+  time. It applies itself through `_subtractive_lif_cls()`, which every lava
+  import of the executor follows (`_lava_executor_api()`, so a process whose
+  context another caller set, an xdist worker included, imports lava cleanly);
+  a process whose default start method is not `fork` is refused by name, since
+  lava's actors run only under `fork`. lava-nc's stale `numpy<2` /
+  `networkx<=2.8.7` / `asteval<0.10` metadata is handled declaratively by
+  `[tool.uv] override-dependencies`.
 - **SANA-FE** is extended through its own `plugin:` mechanism: the six
   `libmimarsinan_*.so` in `src/mimarsinan/chip_simulation/sanafe/plugins/` are
   mimarsinan source compiled against SANA-FE's headers.

@@ -7,7 +7,9 @@ checkable on a base install and enforced on a full one.
 from __future__ import annotations
 
 import importlib.metadata as md
+import json
 import multiprocessing
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -98,11 +100,30 @@ class TestLava:
         assert getattr(torch_mp.set_start_method, "_mimarsinan_lava_safe", False)
         # The contract the patch exists for: lava sets `fork` at import, so a
         # later set_start_method must be a no-op instead of a RuntimeError.
-        established = multiprocessing.get_start_method(allow_none=True)
-        assert established is not None, "importing lava must establish a start method"
-        multiprocessing.set_start_method("spawn")
-        multiprocessing.set_start_method("spawn")
-        assert multiprocessing.get_start_method(allow_none=True) == established, (
+        # Probed in a fresh interpreter: a set_start_method in this (shared,
+        # xdist) process would change every later test's context if the
+        # patch ever regressed.
+        probe = (
+            "import json, multiprocessing\n"
+            "from mimarsinan.chip_simulation.lava_loihi.core_lava import _subtractive_lif_cls\n"
+            "_subtractive_lif_cls()\n"
+            "established = multiprocessing.get_start_method(allow_none=True)\n"
+            "error = None\n"
+            "try:\n"
+            "    multiprocessing.set_start_method('spawn')\n"
+            "    multiprocessing.set_start_method('spawn')\n"
+            "except RuntimeError as exc:\n"
+            "    error = str(exc)\n"
+            "print(json.dumps({'established': established, 'error': error,\n"
+            "                  'after': multiprocessing.get_start_method(allow_none=True)}))\n"
+        )
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(REPO / "src"), os.environ.get("PYTHONPATH", "")])}
+        run = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, env=env, timeout=300)
+        assert run.returncode == 0, run.stderr[-2000:]
+        state = json.loads(run.stdout.strip().splitlines()[-1])
+        assert state["established"] is not None, "importing lava must establish a start method"
+        assert state["error"] is None, f"a later set_start_method raised: {state['error']}"
+        assert state["after"] == state["established"], (
             "the patch must leave the established start method alone"
         )
 

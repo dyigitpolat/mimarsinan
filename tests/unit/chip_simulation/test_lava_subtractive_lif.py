@@ -1,195 +1,180 @@
-"""SubtractiveLIFReset process-model correctness.
+"""SubtractiveLIFReset process-model exactness against the reference executor.
 
-Pin that a Lava SubtractiveLIFReset neuron fed through a Dense matches the
-T-level saturated staircase rate that ``LIFActivation`` / ``nevresim``
-``firing_mode='Default'`` produce for the same inputs.  This is the
-critical correctness check for the Loihi simulation path: if this fails,
-the Lava runtime is not matching our trained model's forward and no
-accuracy target is reachable.
+The toolchain's Lava executor (``LavaCoreMixin._run_core_lava``: Source -> Dense ->
+SubtractiveLIFReset -> Sink, with its 2-cycle latency pad and one warm-up window) must
+reproduce, spike for spike at atol 0, the reference executor's single-core cycle
+(``lif_core_contribute_and_fire``, the hardware-core model's step: integrate ``W x + b``,
+compare by the declared ``thresholding_mode``, reset by the declared ``firing_mode``),
+with the membrane cleared at each sample. This is the critical correctness check for the
+Loihi simulation path: if it fails, the Lava runtime does not run the trained model's
+forward and no accuracy target is reachable.
 
-Every test in this file builds a fresh Lava process graph and calls
-``lif.run(...) / lif.stop()`` once per case. Each cycle pays Lava's
-compile + spawn-workers + run + stop overhead, so they are marked
-``pytest.mark.slow`` and excluded from default runs (``-m "not slow"``).
-Opt in with ``-m slow`` when validating SubtractiveLIFReset semantics.
+The comparator and the reset come from ONE ``NeuralBehaviorConfig`` that the executor and
+the reference both receive, so no expectation can encode a comparator the executor did not
+run. The seven original cases read the deployment default (``thresholding_mode`` "<=",
+inclusive); their expectations had been computed with a strict ``v > vth`` reference,
+written at a48cf940 when the hardware-core model's and Lava's default comparator was "<",
+and left behind when 80f644fd moved both defaults to "<=" together.
+
+Every slow test here builds a fresh Lava process graph through the executor (the start-method
+guard precedes every lava import there; see ``test_lava_start_method_isolation.py``), so
+they are marked ``pytest.mark.slow``, and each holds the ``lava_graph_slot`` (conftest): the
+graphs run one at a time across xdist workers, since four at once reached a 150-task
+process-tree cap.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
+
+from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+from mimarsinan.chip_simulation.lava_loihi import _uniform_rate_encode
+from mimarsinan.chip_simulation.lava_loihi.core_worker import _WaveCoreHost
+from mimarsinan.models.spiking.lif_core_step import lif_core_contribute_and_fire
+
+COMPARATORS = ("<", "<=")
+
+
+def _behavior(*, firing_mode: str = "Default", thresholding_mode: str | None = None) -> NeuralBehaviorConfig:
+    """The deployment's behavior; ``thresholding_mode`` None keeps the deployment default."""
+    cfg = {"spiking_mode": "lif", "firing_mode": firing_mode, "spike_generation_mode": "Uniform"}
+    if thresholding_mode is not None:
+        cfg["thresholding_mode"] = thresholding_mode
+    return NeuralBehaviorConfig.for_lava(cfg)
 
 
 def _reference_spikes(
     weights: np.ndarray,
     vth: float,
-    sample_spikes: np.ndarray,
+    spikes: np.ndarray,
+    behavior: NeuralBehaviorConfig,
     *,
-    zero_reset: bool = False,
+    bias: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Strict-threshold IF reference for one packed sample."""
+    """``(N, n_in, T)`` spikes -> ``(n_out, N*T)`` by the reference executor's cycle."""
+    n_samples, _, T = spikes.shape
     n_out = weights.shape[0]
-    T = sample_spikes.shape[1]
-    v = np.zeros((n_out,), dtype=np.float64)
-    out = np.zeros((n_out, T), dtype=np.float32)
-    for cycle in range(T):
-        v += weights @ sample_spikes[:, cycle]
-        fired = v > vth
-        out[:, cycle] = fired.astype(np.float32)
-        if zero_reset:
-            v[fired] = 0.0
-        else:
-            v[fired] -= vth
+    w = torch.tensor(weights, dtype=torch.float64)
+    theta = torch.tensor(float(vth), dtype=torch.float64)
+    hw_bias = None if bias is None else torch.tensor(bias, dtype=torch.float64).reshape(1, -1)
+    out = np.zeros((n_out, n_samples * T), dtype=np.float64)
+    for i in range(n_samples):
+        memb = torch.zeros((1, n_out), dtype=torch.float64)
+        for cycle in range(T):
+            inp = torch.tensor(spikes[i, :, cycle], dtype=torch.float64).reshape(1, -1)
+            fired = lif_core_contribute_and_fire(
+                memb, w, inp, theta,
+                hw_bias=hw_bias,
+                thresholding_mode=behavior.thresholding_mode,
+                firing_mode=behavior.firing_mode,
+                output_dtype=torch.float64,
+            )
+            out[:, i * T + cycle] = fired.reshape(-1).numpy()
     return out
 
 
-def _run_single_core_lava(
-    weights: np.ndarray,
-    threshold: float,
-    input_spikes: np.ndarray,
+def _assert_executor_exact(
+    weights,
+    vth: float,
+    rates,
     T: int,
+    behavior: NeuralBehaviorConfig,
     *,
-    zero_reset: bool = False,
-) -> np.ndarray:
-    """Build Source→Dense→SubtractiveLIFReset→Sink and return output spikes.
+    bias=None,
+) -> None:
+    """Run the executor on uniform-rate inputs and compare every spike with the reference."""
+    weights = np.asarray(weights, dtype=np.float32)
+    rate_array = np.asarray(rates, dtype=np.float32)
+    bias_array = None if bias is None else np.asarray(bias, dtype=np.float32)
+    spikes = _uniform_rate_encode(rate_array, T)  # (N, n_in, T)
+    packed = spikes.transpose(1, 0, 2).reshape(weights.shape[1], -1)
 
-    Uses the same 2-cycle latency pad + 1-window warmup layout as
-    ``LavaLoihiRunner._run_core_lava``.
-    """
-    from mimarsinan.chip_simulation.lava_loihi import (
-        _subtractive_lif_cls,
+    actual = np.asarray(
+        _WaveCoreHost(T, behavior)._run_core_lava(
+            weights=weights,
+            threshold=vth,
+            hardware_bias=bias_array,
+            input_spikes=packed,
+        ),
+        dtype=np.float64,
     )
-    from lava.magma.core.run_conditions import RunSteps
-    from lava.magma.core.run_configs import Loihi2SimCfg
-    from lava.proc.dense.process import Dense
-    from lava.proc.io.sink import RingBuffer as Sink
-    from lava.proc.io.source import RingBuffer as Source
-
-    SubLIF = _subtractive_lif_cls()
-    total = input_spikes.shape[1]
-    assert total % T == 0
-    N = total // T
-
-    PAD_HEAD = 2
-    TAIL = 3
-    PIPELINE_DELAY = 1
-    pad_head_block = np.zeros((input_spikes.shape[0], PAD_HEAD), dtype=np.float32)
-    warmup = input_spikes[:, :T]
-    tail_block = np.zeros((input_spikes.shape[0], TAIL), dtype=np.float32)
-    data = np.concatenate(
-        [pad_head_block, warmup, input_spikes, tail_block], axis=1
-    ).astype(np.float32)
-    total_steps = data.shape[1]
-    reset_offset = (PAD_HEAD + T + PIPELINE_DELAY + 1) % T
-
-    n_out = weights.shape[0]
-    src = Source(data=data)
-    dense = Dense(weights=weights.astype(np.float32))
-    lif = SubLIF(
-        shape=(n_out,),
-        du=1, dv=0,
-        vth=float(threshold),
-        bias_mant=np.zeros((n_out,), dtype=np.float32),
-        reset_interval=T,
-        reset_offset=reset_offset,
-        zero_reset=zero_reset,
+    expected = _reference_spikes(
+        weights.astype(np.float64), vth, spikes.astype(np.float64), behavior,
+        bias=None if bias_array is None else bias_array.astype(np.float64),
     )
-    sink = Sink(shape=(n_out,), buffer=total_steps)
-    src.s_out.connect(dense.s_in)
-    dense.a_out.connect(lif.a_in)
-    lif.s_out.connect(sink.a_in)
-
-    try:
-        lif.run(
-            condition=RunSteps(num_steps=total_steps),
-            run_cfg=Loihi2SimCfg(select_tag="floating_pt"),
-        )
-        raw = sink.data.get()
-    finally:
-        lif.stop()
-
-    start = PAD_HEAD + T + PIPELINE_DELAY
-    return np.asarray(raw[:, start : start + N * T], dtype=np.float32)
+    n_samples = rate_array.shape[0]
+    np.testing.assert_array_equal(
+        actual, expected,
+        err_msg=(
+            f"{behavior.firing_mode} reset, thresholding_mode={behavior.thresholding_mode!r}: "
+            f"rates per (out, sample) expected={expected.reshape(-1, n_samples, T).mean(axis=2).tolist()}, "
+            f"got={actual.reshape(-1, n_samples, T).mean(axis=2).tolist()}, input rates={rate_array.tolist()}"
+        ),
+    )
 
 
-@pytest.mark.slow
-@pytest.mark.parametrize(
-    "rates",
-    [
-        [1.0],
-        [0.5],
-        [0.25],
-        [0.0],
-        [1.0, 0.5, 0.25, 0.0],
+_SINGLE_RATES = [
+    [1.0],
+    [0.5],
+    [0.25],
+    [0.0],
+    [1.0, 0.5, 0.25, 0.0],
+]
+
+# (name, weights, vth, per-sample input rates, T, firing_mode, hardware bias)
+_CASES = [
+    *[
+        (f"single{i}", [[1.0]], 1.0, [[r] for r in rates], 4, "Default", None)
+        for i, rates in enumerate(_SINGLE_RATES)
     ],
+    ("multi", [[1.0, 1.0, 1.0], [2.0, 0.0, 1.0]], 2.0,
+     [[1.0, 0.5, 0.25], [0.5, 0.5, 0.5]], 8, "Default", None),
+    ("novena", [[1.0]], 1.0, [[1.0]], 4, "Novena", None),
+    ("bias", [[1.0, -1.0], [0.5, 1.0]], 2.0,
+     [[1.0, 0.25], [0.5, 0.75]], 8, "Default", [0.5, -0.25]),
+]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("rates", _SINGLE_RATES)
+def test_single_core_matches_reference_staircase(rates, lava_graph_slot):
+    """One neuron, one input, constant per-sample rate -> the reference's spikes, at the deployment default."""
+    _assert_executor_exact([[1.0]], 1.0, [[r] for r in rates], 4, _behavior())
+
+
+@pytest.mark.slow
+def test_multi_input_multi_output_matches_reference(lava_graph_slot):
+    """3 inputs -> 2 outputs, mixed weights, at the deployment default."""
+    _assert_executor_exact(
+        [[1.0, 1.0, 1.0], [2.0, 0.0, 1.0]], 2.0,
+        [[1.0, 0.5, 0.25], [0.5, 0.5, 0.5]], 8, _behavior(),
+    )
+
+
+@pytest.mark.slow
+def test_novena_zero_reset_matches_reference(lava_graph_slot):
+    """Novena zero-reset semantics (``firing_mode='Novena'``) at the deployment default comparator."""
+    _assert_executor_exact([[1.0]], 1.0, [[1.0]], 4, _behavior(firing_mode="Novena"))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("thresholding_mode", COMPARATORS)
+@pytest.mark.parametrize(
+    "name,weights,vth,rates,T,firing_mode,bias", _CASES, ids=[c[0] for c in _CASES],
 )
-def test_single_core_matches_reference_staircase(rates):
-    """One neuron, one input, constant per-sample rate → matches reference."""
-    from mimarsinan.chip_simulation.lava_loihi import _uniform_rate_encode
-
-    T = 4
-    vth = 1.0
-    weights = np.array([[1.0]], dtype=np.float32)  # one input → one output
-    N = len(rates)
-
-    rate_array = np.array(rates, dtype=np.float32).reshape(N, 1)
-    spikes = _uniform_rate_encode(rate_array, T)  # (N, 1, T)
-    packed = spikes.transpose(1, 0, 2).reshape(1, N * T)
-
-    out = _run_single_core_lava(weights, vth, packed, T)  # (1, N*T)
-
-    for i, r in enumerate(rates):
-        actual_rate = float(out[0, i * T : (i + 1) * T].mean())
-        expected = float(
-            _reference_spikes(weights, vth, spikes[i].astype(np.float64))[0].mean()
-        )
-        assert actual_rate == pytest.approx(expected, abs=1e-5), (
-            f"sample {i}: input_rate={r}, expected={expected}, got={actual_rate}"
-        )
+def test_each_comparator_is_exact_to_the_reference(
+    name, weights, vth, rates, T, firing_mode, bias, thresholding_mode, lava_graph_slot,
+):
+    """Every case under each declared comparator (strict and inclusive), hardware bias included."""
+    _assert_executor_exact(
+        weights, vth, rates, T,
+        _behavior(firing_mode=firing_mode, thresholding_mode=thresholding_mode),
+        bias=bias,
+    )
 
 
-@pytest.mark.slow
-def test_multi_input_multi_output_matches_reference():
-    """3 inputs → 2 outputs, mixed weights."""
-    from mimarsinan.chip_simulation.lava_loihi import _uniform_rate_encode
-
-    T = 8
-    vth = 2.0
-    weights = np.array(
-        [[1.0, 1.0, 1.0], [2.0, 0.0, 1.0]], dtype=np.float32
-    )  # out0 sums all, out1 weighted
-    rates = np.array([[1.0, 0.5, 0.25], [0.5, 0.5, 0.5]], dtype=np.float32)
-    N = rates.shape[0]
-
-    spikes = _uniform_rate_encode(rates, T)
-    packed = spikes.transpose(1, 0, 2).reshape(3, N * T)
-
-    out = _run_single_core_lava(weights, vth, packed, T)
-
-    for i in range(N):
-        expected_spikes = _reference_spikes(weights, vth, spikes[i].astype(np.float64))
-        for j in range(2):
-            actual = float(out[j, i * T : (i + 1) * T].mean())
-            expected = float(expected_spikes[j].mean())
-            assert actual == pytest.approx(expected, abs=1e-5), (
-                f"(sample {i}, out {j}): expected={expected}, got={actual}, "
-                f"rates={rates[i]}"
-            )
-
-
-@pytest.mark.slow
-def test_novena_zero_reset_matches_reference():
-    """Novena zero-reset semantics via ``zero_reset=True``."""
-    from mimarsinan.chip_simulation.lava_loihi import _uniform_rate_encode
-
-    T = 4
-    vth = 1.0
-    weights = np.array([[1.0]], dtype=np.float32)
-    rates = np.array([[1.0]], dtype=np.float32)
-    spikes = _uniform_rate_encode(rates, T)
-    packed = spikes.transpose(1, 0, 2).reshape(1, T)
-
-    out = _run_single_core_lava(weights, vth, packed, T, zero_reset=True)
-    expected = _reference_spikes(weights, vth, spikes[0].astype(np.float64), zero_reset=True)
-    np.testing.assert_array_equal(out, expected)
-
+def test_the_original_cases_read_the_deployment_default_comparator():
+    """The seven original cases run the comparator a deployment runs when it declares none."""
+    assert _behavior().thresholding_mode == NeuralBehaviorConfig.from_deployment_config({}).thresholding_mode == "<="
