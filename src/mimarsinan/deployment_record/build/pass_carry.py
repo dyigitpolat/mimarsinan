@@ -1,14 +1,10 @@
-"""Seal what crossed the intra-segment pass boundaries, and under which discipline; the candidate's carry census,
-and its programming census less a wavefront head's dark cores (over ``payload_sizes``' one census)."""
+"""Seal what crossed the intra-segment pass boundaries, and under which discipline; the candidate's carry census and
+each wavefront group's on-chip carry (the programming census is ``payload_sizes``' one census)."""
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
-from mimarsinan.deployment_record.build.payload_sizes import (
-    CandidateProgramming, candidate_programming_census as programming_census_of_passes,
-)
 from mimarsinan.deployment_record.build.write_census import BoundaryWidths
 from mimarsinan.mapping.noc.fragments import delayed_carry_wires, spec_segments
 from mimarsinan.mapping.support.period_census import boundary_crossings
@@ -112,25 +108,3 @@ def boundary_widths_of(crossings: Iterable[Tuple[int, int, int]],
     per delayed slice beyond one per producer and pass, one more re-injection before its reading pass.
     The one rule of every plane, the plan's included [W03]: ``period_census.boundary_crossings``."""
     return boundary_crossings(crossings, replayed)
-
-
-def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProgramming:
-    """[E2] The programming multiplicands of a candidate's pass structure: ``payload_sizes``' one census
-    (``programming_census_of_passes``), with [U-F4] a wavefront head's dark cores out of its segment cores and
-    committed cells. The head writes (loads) them but neither initializes nor evaluates them, so the reprogrammed
-    cores, bytes and cells keep them.
-    """
-    census = programming_census_of_passes(noc, weight_bits=weight_bits)
-    programs = () if noc is None else noc.pass_programs
-    return replace(
-        census,
-        segment_cores=census.segment_cores - sum(_dark(program, lambda i: program.core_tiles(i))
-                                                 for program in programs),
-        committed_cells=census.committed_cells - sum(_dark(program, lambda i: program.core_cells[i])
-                                                     for program in programs),
-    )
-
-
-def _dark(program: Any, measure) -> int:
-    """``measure`` summed over the program's dark cores (none on a program that states none)."""
-    return sum(int(measure(i)) for i in (getattr(program, "dark_cores", None) or ()))

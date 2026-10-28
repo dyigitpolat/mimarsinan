@@ -299,7 +299,7 @@ class TestTheCandidateCensus:
                 compute_steps=4, producer_cells=25, producer_cores=frozenset({1}), producer_core_cells=(0, 25)),
     ))
     PROGRAMMING = type("Programming", (), {"segment_cores": 4, "committed_cells": 90, "reprogrammed_cores": 4,
-                                           "reprogrammed_bytes": None, "reprogram_passes": 2})()
+                                           "reprogrammed_bytes": None, "reprogram_passes": 2, "pass_cores": (2, 2)})()
 
     def _context(self, physics, **declared):
         pcfg = {"cores": [{"max_axons": 8, "max_neurons": 8, "count": 4}], "simulation_steps": 4,

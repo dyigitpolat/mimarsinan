@@ -7,12 +7,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps
-from mimarsinan.deployment_record.build.pass_carry import (  # the candidate's censuses (programming less dark cores)
+from mimarsinan.deployment_record.build.pass_carry import (  # the candidate's carry census: re-exported
     boundary_widths_of, candidate_carry_census as candidate_carry_census,
-    candidate_programming_census as candidate_programming_census,
 )
-from mimarsinan.deployment_record.build.payload_sizes import (  # the candidate's programming census type: re-exported
-    CandidateProgramming as CandidateProgramming,
+from mimarsinan.deployment_record.build.payload_sizes import (  # the candidate's one programming census and its type
+    CandidateProgramming as CandidateProgramming, candidate_programming_census as candidate_programming_census,
     core_connectivity_entries, core_payload_bytes, core_sign_rows, pass_program_bytes as pass_program_bytes,
 )
 from mimarsinan.deployment_record.build.producer_census import (

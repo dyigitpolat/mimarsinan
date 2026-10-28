@@ -192,6 +192,8 @@ def _spiking_rule_context(
         # [E2] Duck-typed: the search layer's programming census. Absent
         # census -> absent quantities -> the programming terms refuse.
         segment_cores=None if programming is None else int(programming.segment_cores),
+        # [U-N] Every core each pass allocates (a wavefront head's dark cores too): the record's cores_allocated.
+        cores_allocated=None if programming is None else sum(int(c) for c in programming.pass_cores),
         cells_committed=(
             None if programming is None else int(programming.committed_cells)
         ),

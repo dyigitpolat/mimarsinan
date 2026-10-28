@@ -47,7 +47,7 @@ class _ProbeLayout:
 #: axes at the capability level — the drift this table ends.
 FRAGMENT_CONTEXT_KEYS = {
     "layout": (
-        "latency_steps", "segment_cores", "cells_committed",
+        "latency_steps", "segment_cores", "cores_allocated", "cells_committed",
         "reprogrammed_cores", "reprogrammed_bytes", "reprogram_passes",
         "carried_raster_bytes", "carry_peak_live_bytes",
         "carry_out_bytes", "carry_in_bytes",

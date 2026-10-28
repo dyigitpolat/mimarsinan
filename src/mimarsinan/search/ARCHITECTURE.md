@@ -77,13 +77,17 @@ layout and host census are the lane-free shape's.
 `candidate_program_facts` returns the executed wall (`candidate_latency_steps`
 applies `chip_simulation.stage_timesteps` — the runner's own rule — to the
 candidate's per-execution-stage latencies) and the programming census
-(`candidate_programming_census`: cores over every pass, plus cores/bytes over
+(`candidate_programming_census`, `deployment_record.build.payload_sizes`'
+one census: the evaluated cores over every pass, plus cores/bytes over
 the passes that actually install weights, under the DEPLOYED residency law
 `mapping.support.schedule.pass_planner.resident_passes` that
 `mark_bank_residency` also reads). Both are ABSENT together when there is no
 pass structure, so the terms multiplying them refuse by name instead of
-pricing zero; `cores_allocated` is that same per-pass count, the meaning the
-record gives it. Payload bytes go through the record's own
+pricing zero. `cores_allocated` is the census's per-pass cores summed
+(`pass_cores`: every core a pass allocates), the meaning the record gives it;
+it equals `segment_cores` except on a wavefront program, whose heads allocate
+dark cores (loaded, never evaluated) that `segment_cores` leaves out [U-N].
+Payload bytes go through the record's own
 `deployment_record.build.payload_sizes.params_bytes`, and stay absent when the
 platform declares no weight width. [H2] The same facts also size the CARRY of
 the planned program: `candidate_program_facts` runs the record's own

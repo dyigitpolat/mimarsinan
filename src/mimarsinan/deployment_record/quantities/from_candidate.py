@@ -66,6 +66,10 @@ class CandidateQuantityContext:
     #: passes that actually install weights. Absent without a pass structure,
     #: so the programming terms refuse instead of pricing zero.
     segment_cores: Optional[int] = None
+    #: [U-N] The allocated physical cores over every pass (the census's per-pass cores summed): a wavefront head's
+    #: dark cores are allocated (loaded) but not initialized, so this is the record's ``cores_allocated`` and may
+    #: exceed ``segment_cores``.
+    cores_allocated: Optional[int] = None
     #: [R1] The as-mapped committed cells of the planned program — the
     #: catalog's ``macs``/``cells_used`` at candidate completeness, and the
     #: event model's multiplicand (replicas really fire).
@@ -178,9 +182,10 @@ def from_candidate(
 
     # [E2] Programming multiplicands under the residency law — a resident pass
     # pays core init and nothing else. ``cores_allocated`` is the SAME count
-    # the record means (cores over every pass), not the declared chip's core
-    # count the candidate used to report under that name.
-    _put(values, "cores_allocated", context.segment_cores)
+    # the record means (the allocated cores over every pass, a wavefront head's
+    # dark cores included [U-N]), not the declared chip's core count the
+    # candidate used to report under that name.
+    _put(values, "cores_allocated", context.cores_allocated)
     _put(values, "segment_cores", context.segment_cores)
     # [R1] One figure, two catalog names at this completeness (stated): the
     # committed rectangle IS the as-mapped MAC-site census of the shape.

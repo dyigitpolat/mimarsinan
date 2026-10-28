@@ -1,18 +1,32 @@
 """[U-F4, P-2] The candidate plane prices the pipelined schedule the builder builds: on lane programs (U-E2's lane-aware
 shape-only walk, whose wires through absorbed ops are core-to-core) both planes state the same passes, physical cores
 and cells per pass, the cores each pass writes per period, the carry census, one evaluation per wavefront pass, and
-the same MAC events and core initializations (a head's dark cores loaded, never evaluated)."""
+the same MAC events and core initializations (a head's dark cores loaded, never evaluated).
+
+[U-N] One programming census (``payload_sizes.candidate_programming_census``, which ``program_census`` re-exports): on
+any pass programs it is the every-core figures less the dark cores' physical tiles and cells, and on the lane programs
+it is the sealed record of the program the builder builds, field by field, through a full ``from_record`` call."""
 
 from __future__ import annotations
 
+import dataclasses
+import random
+from types import SimpleNamespace
+
 import pytest
 
-from mimarsinan.deployment_record.build.pass_carry import candidate_programming_census
+from mimarsinan.deployment_record.build import payload_sizes as PS
+from mimarsinan.deployment_record.build import program_census as PCN
+from mimarsinan.deployment_record.build.program_census import candidate_programming_census, declared_core_geometries
+from mimarsinan.deployment_record.design_point.pricing import executed_record
+from mimarsinan.deployment_record.quantities.from_record import from_record
 from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
+from mimarsinan.mapping.noc.pass_program import PassProgram
+from mimarsinan.mapping.packing.residency_tiles import declared_tiles
 from mimarsinan.mapping.support.wavefront_stages import dark_cores
 from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline
 
-from unit.mapping.lanes.lane_planes import builder_plane, candidate_plane
+from unit.mapping.lanes.lane_planes import STEPS, TRANSFER, builder_plane, candidate_plane
 from unit.mapping.lanes.test_lane_shape_walk import FIXTURES, _assert_same, _fixture
 
 #: Lane chips the residual and LeNet fixtures run pipelined on: copies of every level together (8 cores), and in
@@ -96,3 +110,132 @@ def test_the_quarter_width_resnet18_with_fo_star_s_pass_shape(geometry):
     platform["pipelined_multiplexing"] = True
     candidate, builder = candidate_plane(program, platform, 10), builder_plane(program, platform)
     _assert_same(candidate, builder)
+
+
+# --- [U-N] one programming census (R-1 review, minors 1 and 2) --------------------------------------------------------
+
+FIELDS = tuple(field.name for field in dataclasses.fields(PS.CandidateProgramming))
+#: The lane programs: each fixture at each geometry, pipelined and position-multiplexed one level per pass.
+CASES = [(fixture, geometry, pipelined) for fixture in ("residual", "lenet") for geometry in sorted(GEOMETRIES)
+         for pipelined in (True, False)]
+
+
+def _row(census):
+    return {name: getattr(census, name) for name in FIELDS}
+
+
+def _every_core_less_dark(noc, weight_bits):
+    """The seven fields by the arithmetic of every core a pass loads (``PassProgram.tiles``, every core's cells), then
+    each wavefront head's dark cores out: their physical tiles (``core_tile_cells``) out of the segment cores and their
+    cells out of the committed cells. The written cores, bytes, passes and cells and the per-pass cores keep them (the
+    head loads its dark cores). Returns the fields and the number of dark cores."""
+    programs = () if noc is None else noc.pass_programs
+    written = [p for p in programs if not p.resident]
+    dark = [(p, i) for p in programs for i in sorted(p.dark_cores or ())]
+    return {
+        "segment_cores": sum(p.tiles for p in programs)
+        - sum(len(p.core_tile_cells[i]) if p.core_tile_cells else 1 for p, i in dark),
+        "committed_cells": sum(sum(p.core_cells) for p in programs) - sum(p.core_cells[i] for p, i in dark),
+        "reprogrammed_cores": sum(p.tiles for p in written),
+        "reprogrammed_bytes": None if weight_bits is None else sum(
+            b for p in written for b in PS.pass_program_bytes(p, weight_bits)),
+        "reprogram_passes": len(written),
+        "pass_cores": tuple(p.tiles for p in programs),
+        "reprogrammed_cells": tuple(cells for p in written for cells in p.core_cells),
+    }, len(dark)
+
+
+def _random_program(rng):
+    """A pass program of 0 to 6 cores: fused tiles, sign rows, residency and a dark subset each drawn at random."""
+    n = rng.randint(0, 6)
+    cells = tuple(rng.randint(0, 4096) for _ in range(n))
+    fused = n and rng.random() < 0.5
+    tile_cells = tuple(tuple(rng.randint(0, 2048) for _ in range(rng.randint(1, 3))) for _ in range(n)) if fused else ()
+    signs = tuple(rng.randint(0, 256) for _ in range(n)) if rng.random() < 0.5 else ()
+    subset = frozenset(i for i in range(n) if rng.random() < 0.35)
+    dark = rng.choice([None, frozenset(), subset, subset])
+    return PassProgram(core_cells=cells, resident=rng.random() < 0.4, core_sign_rows=signs, core_tile_cells=tile_cells,
+                       wavefront=bool(dark), dark_cores=dark)
+
+
+def test_one_programming_census_on_every_import_path():
+    """One definition, in ``payload_sizes``: ``program_census`` and the search's candidate facts hand out that one
+    function and type, and the carry module states no census of its own."""
+    from mimarsinan.deployment_record.build import pass_carry
+    from mimarsinan.search.problems.joint import candidate_fragments
+
+    assert PCN.candidate_programming_census is PS.candidate_programming_census
+    assert candidate_fragments.candidate_programming_census is PS.candidate_programming_census
+    assert PCN.CandidateProgramming is PS.CandidateProgramming is candidate_fragments.CandidateProgramming
+    assert not hasattr(pass_carry, "candidate_programming_census")
+
+
+def test_the_census_is_every_core_less_the_dark_ones_on_random_pass_programs():
+    rng = random.Random(20261029)
+    seen = {True: 0, False: 0}
+    for _ in range(2000):
+        noc = None if rng.random() < 0.02 else SimpleNamespace(
+            pass_programs=tuple(_random_program(rng) for _ in range(rng.randint(0, 7))))
+        bits = rng.choice([None, 1, 3, 4, 8])
+        expected, dark = _every_core_less_dark(noc, bits)
+        assert _row(PS.candidate_programming_census(noc, weight_bits=bits)) == expected
+        seen[dark > 0] += 1
+    assert min(seen.values()) > 500, seen
+
+
+def test_a_program_stating_no_tiles_or_dark_cores_counts_each_core_once_and_evaluates_all():
+    """A ``PassProgram`` twin that states no physical tiles and no dark cores (``g3_fixtures.HandPassProgram``) reads
+    one tile per core, every core evaluated."""
+    from unit.deployment_record.g3_fixtures import HandPassProgram
+
+    noc = SimpleNamespace(pass_programs=(HandPassProgram(core_cells=(6, 4, 9)), HandPassProgram((5,), resident=True)))
+    census = PS.candidate_programming_census(noc, weight_bits=None)
+    assert (census.segment_cores, census.committed_cells, census.pass_cores) == (4, 24, (3, 1))
+    assert (census.reprogrammed_cores, census.reprogram_passes, census.reprogrammed_cells) == (3, 1, (6, 4, 9))
+
+
+def _lane_program(fixture, geometry, pipelined):
+    platform, program = _pipelined(fixture, geometry)
+    if not pipelined:
+        platform = {k: v for k, v in platform.items() if k != "pipelined_multiplexing"}
+    scheduled, _specs = _ladder_noc(program, platform, FIXTURES[fixture][2])
+    return platform, program, scheduled
+
+
+@pytest.mark.parametrize("fixture,geometry,pipelined", CASES)
+def test_the_census_is_every_core_less_the_dark_ones_on_the_lane_programs(fixture, geometry, pipelined):
+    _platform, _program, scheduled = _lane_program(fixture, geometry, pipelined)
+    for bits in (None, 4, 8):
+        expected, dark = _every_core_less_dark(scheduled.noc, bits)
+        assert _row(PS.candidate_programming_census(scheduled.noc, weight_bits=bits)) == expected
+    assert (dark > 0) == (fixture == "residual" and pipelined)  # LeNet's heads load no unused core
+
+
+@pytest.mark.parametrize("fixture,geometry,pipelined", CASES)
+def test_the_candidate_census_is_the_sealed_record_field_by_field(fixture, geometry, pipelined):
+    """The candidate's census of a lane program against the record of the program the builder builds, sealed from its
+    mapping as the deployment-record step seals it (``executed_record``) and read by a full ``from_record`` call: the
+    five scalar fields, the pass count and the allocation (``pass_cores`` summed); the per-pass physical cores and the
+    written cells off the sealed segments by ``from_record``'s tile rule (``declared_tiles``)."""
+    platform, program, scheduled = _lane_program(fixture, geometry, pipelined)
+    census = candidate_programming_census(scheduled.noc, weight_bits=4)
+    record = executed_record(build_hybrid_mapping_for_pipeline(program.ir, platform), platform, weight_bits=4,
+                             label="pipelined lane program", timesteps=STEPS, pass_transfer=TRANSFER)
+    segments = list(record.schedule.segments())
+    assert any(s.dark_core_indices for s in segments) == (fixture == "residual" and pipelined)
+    sealed = from_record(record)
+    assert not sealed.withheld, sealed.withheld
+    declared = declared_core_geometries(platform)
+
+    def tiles(core):
+        return len(declared_tiles(core.axons, core.neurons, declared) or ()) if declared else 1
+
+    stated = {**_row(census), "pass_count": len(census.pass_cores), "cores_allocated": sum(census.pass_cores),
+              "macs": census.committed_cells}
+    read = {key: sealed.get(key).value for key in ("segment_cores", "reprogrammed_cores", "reprogrammed_bytes",
+                                                   "reprogram_passes", "pass_count", "cores_allocated", "macs")}
+    read.update(committed_cells=sealed.get("cells_used").value,
+                pass_cores=tuple(sum(tiles(c) for c in s.cores) for s in segments),
+                reprogrammed_cells=tuple(c.cells_used for s in segments if s.programming == "reprogram"
+                                         for c in s.cores))
+    assert stated == read

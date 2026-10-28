@@ -49,19 +49,35 @@ def test_layout_quantities_are_static_facts_of_the_packing():
 
 
 def test_the_programming_census_rides_in_as_the_allocation_and_payload():
+    """[U-N] The allocation is its own context field (the census's per-pass cores summed, a wavefront head's dark
+    cores included), never the segment cores under a second name: here 9 allocated, 7 initialized."""
     quantities = from_candidate(
         layout=make_layout(), chip_param_capacity=1.0, total_params=None,
         host_side_segment_count=None,
         context=_context(
-            segment_cores=7, reprogrammed_cores=3,
+            segment_cores=7, cores_allocated=9, reprogrammed_cores=3,
             reprogrammed_bytes=42560, reprogram_passes=1,
         ),
     )
-    assert quantities.get("cores_allocated").value == 7.0
+    assert quantities.get("cores_allocated").value == 9.0
     assert quantities.get("segment_cores").value == 7.0
     assert quantities.get("reprogrammed_cores").value == 3.0
     assert quantities.get("reprogrammed_bytes").value == 42560.0
     assert quantities.get("reprogram_passes").value == 1.0
+
+
+def test_the_candidate_context_allocates_the_census_per_pass_cores():
+    """[U-N] The census states its segment cores (dark cores out) and its per-pass cores (every core a pass loads):
+    the context's allocation is the per-pass cores summed, the record's ``cores_allocated``."""
+    from types import SimpleNamespace
+
+    from mimarsinan.deployment_record.objectives.context import candidate_context_from_platform
+
+    census = SimpleNamespace(segment_cores=7, committed_cells=70, reprogrammed_cores=4, reprogrammed_bytes=None,
+                             reprogram_passes=1, pass_cores=(4, 3, 2), reprogrammed_cells=(10, 10, 10, 10))
+    context = candidate_context_from_platform({}, programming=census)
+    assert (context.cores_allocated, context.segment_cores) == (9, 7)
+    assert candidate_context_from_platform({}).cores_allocated is None
 
 
 def test_context_declarations_ride_in_as_static():

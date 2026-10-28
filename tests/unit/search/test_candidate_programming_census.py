@@ -123,11 +123,29 @@ class TestTheCandidateMatchesTheDeployedCensus:
         } == deployed
 
 
+def _stated(census, platform, key):
+    """``key`` as the candidate plane states it: the census through the candidate's quantity context
+    (``candidate_context_from_platform``) and ``from_candidate``."""
+    from mimarsinan.deployment_record.objectives.context import candidate_context_from_platform
+    from mimarsinan.deployment_record.quantities.from_candidate import from_candidate
+
+    quantities = from_candidate(
+        layout=None, chip_param_capacity=None, total_params=None, host_side_segment_count=None,
+        context=candidate_context_from_platform(platform, programming=census),
+    )
+    return quantities.get(key).value
+
+
 class TestAllocationMeansTheSameThingOnBothSides:
     """``cores_allocated`` named the DECLARED chip's core count at candidate
     time and the mapping's allocated cores in the record — one name, two
     meanings, off by the whole chip (36 vs 3 on the study MLP). Nothing
-    priced it yet, which is exactly why it could drift unnoticed."""
+    priced it yet, which is exactly why it could drift unnoticed.
+
+    [U-N] On a wavefront program (U-F4) the record allocates each head's dark
+    cores too (loaded, never evaluated), so the candidate states its per-pass
+    cores summed (``pass_cores``) under the name, not its segment cores, which
+    leave the dark cores out as core initialization does."""
 
     def test_the_candidate_allocates_what_the_deployed_mapping_allocates(self):
         from mimarsinan.mapping.crossbar_utilization import (
@@ -150,6 +168,32 @@ class TestAllocationMeansTheSameThingOnBothSides:
         )
         deployed = CrossbarUtilizationReport.from_hybrid_mapping(hybrid)
         assert _census().segment_cores == deployed.cores_allocated
+        platform = {"cores": [dict(ct) for ct in TWO_CORES]}
+        assert _stated(_census(), platform, "cores_allocated") == deployed.cores_allocated
+
+    @pytest.mark.parametrize("geometry", ["together", "groups"])
+    def test_a_wavefront_program_allocates_its_dark_cores_on_both_planes(self, geometry):
+        """The residual lane program, pipelined (its heads load cores their first pass does not use): the candidate
+        plane's ``cores_allocated`` is the record's (``from_record`` on the record of the program the builder builds),
+        while its ``segment_cores`` stay the evaluated cores."""
+        from mimarsinan.deployment_record.design_point.pricing import executed_record
+        from mimarsinan.deployment_record.quantities.from_record import from_record
+        from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline
+
+        from unit.mapping.lanes.lane_planes import STEPS, TRANSFER
+        from unit.mapping.lanes.test_lane_shape_walk import FIXTURES
+        from unit.mapping.pipelined_multiplexing import test_planes as planes
+
+        platform, program = planes._pipelined("residual", geometry)
+        scheduled, _specs = planes._ladder_noc(program, platform, FIXTURES["residual"][2])
+        census = candidate_programming_census(scheduled.noc, weight_bits=WEIGHT_BITS)
+        record = executed_record(build_hybrid_mapping_for_pipeline(program.ir, platform), platform,
+                                 weight_bits=WEIGHT_BITS, label="wavefront program", timesteps=STEPS,
+                                 pass_transfer=TRANSFER)
+        assert any(s.dark_core_indices for s in record.schedule.segments())
+        allocated = from_record(record).get("cores_allocated").value
+        assert _stated(census, platform, "cores_allocated") == allocated == sum(census.pass_cores)
+        assert _stated(census, platform, "segment_cores") == census.segment_cores < allocated
 
 
 class TestResidencyIsWorthMoney:

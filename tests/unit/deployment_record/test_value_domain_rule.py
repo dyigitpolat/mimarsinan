@@ -32,7 +32,7 @@ from unit.deployment_record.g3_fixtures import (
 from unit.deployment_record.record_fixtures import make_full_record
 
 _PROGRAMMING = type("P", (), dict(segment_cores=5, committed_cells=1234, reprogrammed_cores=5,
-                                   reprogrammed_bytes=1234, reprogram_passes=2))()
+                                   reprogrammed_bytes=1234, reprogram_passes=2, pass_cores=(3, 2)))()
 #: A dense crossing census at T = 32: widths 10 and 6, each 4 B per element per direction.
 _CARRY = {"carried_wires": 2, "carried_bytes": 64, "peak_live_bytes": 64,
           "boundary_out_bytes": 64, "boundary_in_bytes": 64}
@@ -256,7 +256,7 @@ class TestRecordPlane:
         carry = {"boundary_out_bytes": 64, "boundary_in_bytes": 80, "carried_bytes": 0,
                  "peak_live_bytes": 0, "carried_wires": 2}
         programming = type("P", (), dict(segment_cores=5, committed_cells=210, reprogrammed_cores=5,
-                                          reprogrammed_bytes=210, reprogram_passes=3))()
+                                          reprogrammed_bytes=210, reprogram_passes=3, pass_cores=(2, 2, 1)))()
         context = _context(_pcfg(core_semantics="mvm", activation_bits=8), programming=programming,
                            carry=carry, passes=_passes((0,), (0,), (1,)))
         candidate_values = _candidate_quantities(context)
