@@ -8,6 +8,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple, Union
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.support.period_census import natural, settle_residency_segment
 from mimarsinan.mapping.support.schedule.pass_cut import TRANSFER_DISCIPLINES
+from mimarsinan.deployment_record.schema.wavefront import WavefrontRecord, settle_core_fields, wavefronts_from
 from mimarsinan.deployment_record.schema.serde import (
     declared_only,
     require_choice,
@@ -92,9 +93,16 @@ class SegmentRecord:
     #: core). Sealed on every pass of a program that binds dynamic banks; declared-only, so any other record keeps
     #: its bytes.
     operand_core_cells: Optional[Tuple[int, ...]] = declared_only()
+    #: [U-F4] A wavefront group's first pass: its cores no instance of the pass uses (loaded, not evaluated).
+    dark_core_indices: Optional[Tuple[int, ...]] = declared_only()
+    #: [U-F4] A wavefront group's later pass: per core, the ordinal of the head core it runs on.
+    core_ordinals: Optional[Tuple[int, ...]] = declared_only()
 
     def __post_init__(self) -> None:
         require_choice("SegmentRecord", "pass_reason", self.pass_reason, PASS_REASONS)
+        dark, ordinals = settle_core_fields("SegmentRecord", len(self.cores), self.dark_core_indices, self.core_ordinals)
+        object.__setattr__(self, "dark_core_indices", dark)
+        object.__setattr__(self, "core_ordinals", ordinals)
         require_choice("SegmentRecord", "programming", self.programming, PROGRAMMING_KINDS)
         if self.resident_core_indices is not None:
             object.__setattr__(self, "resident_core_indices", _core_indices(self.resident_core_indices))
@@ -167,11 +175,10 @@ class PassCarryRecord:
     carried_bytes: int
     peak_live_bytes: int
     timesteps: int
-    #: [E3] What CROSSED the chip boundary, per direction and per inference —
-    #: a different question from what was buffered between the passes. Dense
-    #: under both disciplines (the chip emits and consumes per cycle; the
-    #: collapse to counts is host-side), so under COLLAPSE these exceed
-    #: ``carried_bytes``. Default 0 keeps records sealed before E3 loadable.
+    #: [E3] What CROSSED the chip boundary, per direction and per inference — a different question from what was
+    #: buffered between the passes. Dense under both disciplines (the chip emits and consumes per cycle; the collapse to
+    #: counts is host-side), so under COLLAPSE these exceed ``carried_bytes``. Default 0 keeps records sealed before E3
+    #: loadable.
     boundary_out_bytes: int = 0
     boundary_in_bytes: int = 0
 
@@ -258,15 +265,16 @@ class ScheduleRecord:
     reuse_passes: int
     params_reloaded: int
     compute_op_count: int
-    # Additive-optional (the ``invocations`` / ``partition`` precedent): a program
-    # with no intra-segment pass boundary carries nothing, and pre-carry records
-    # load with None rather than forcing a format-version bump.
+    # Additive-optional (the ``invocations`` / ``partition`` precedent): a program with no intra-segment pass boundary
+    # carries nothing, and pre-carry records load with None rather than forcing a format-version bump.
     carry: Optional["PassCarryRecord"] = None
     #: The executed residency plan; declared-only, so a record without one keeps its bytes.
     residency_plan: Optional[ResidencyPlanRecord] = declared_only()
     #: [KA-G3-1] A value-domain build's NoC wire census (value-hops on the resolved floorplan; the value rule reads
     #: it at ``activation_bits`` as ``noc_value_bytes``); declared-only, so a record without one keeps its bytes.
     value_noc_wire_hops: Optional[int] = declared_only()
+    #: [U-F4] The wavefront groups a pipelined program runs; declared-only, so a record without one keeps its bytes.
+    wavefronts: Optional[Tuple[WavefrontRecord, ...]] = declared_only()
 
     def segments(self) -> Tuple[SegmentRecord, ...]:
         return tuple(s for s in self.stages if isinstance(s, SegmentRecord))
@@ -288,4 +296,5 @@ class ScheduleRecord:
         plan = kwargs.get("residency_plan")
         if plan is not None and not isinstance(plan, ResidencyPlanRecord):
             kwargs["residency_plan"] = ResidencyPlanRecord.from_dict(plan)
+        kwargs["wavefronts"] = wavefronts_from(kwargs.get("wavefronts"))
         return cls(**kwargs)

@@ -1,9 +1,14 @@
-"""Seal what crossed the intra-segment pass boundaries, and under which discipline."""
+"""Seal what crossed the intra-segment pass boundaries, and under which discipline; the candidate's carry census,
+and its programming census less a wavefront head's dark cores (over ``payload_sizes``' one census)."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
+from mimarsinan.deployment_record.build.payload_sizes import (
+    CandidateProgramming, candidate_programming_census as programming_census_of_passes,
+)
 from mimarsinan.deployment_record.build.write_census import BoundaryWidths
 from mimarsinan.mapping.noc.fragments import delayed_carry_wires, spec_segments
 from mimarsinan.mapping.support.period_census import boundary_crossings
@@ -14,6 +19,7 @@ from mimarsinan.mapping.support.schedule.pass_carry import (
     pass_carry_census,
 )
 from mimarsinan.deployment_record.schema import PassCarryRecord
+from mimarsinan.mapping.support.wavefront_stages import program_groups, stage_groups
 
 
 def carry_record_from_mapping(
@@ -79,8 +85,23 @@ def candidate_carry_census(softcores: Sequence[Any], noc: Any, *, timesteps: Any
         carried_softcore_spans(softcores, noc.pass_placements, noc.census.pair_wires,
                                spec_segments(softcores, getattr(noc, "runs", None))),
         boundary_count=len(noc.pass_placements), timesteps=int(timesteps), transfer=str(pass_transfer),
-        extra_in=delayed_carry_wires(softcores, noc),
+        extra_in=delayed_carry_wires(softcores, noc), groups=program_groups(noc.pass_programs),
     )
+
+
+def wavefront_carry(stages: Any, timesteps: Any, transfer: Any) -> Dict[int, Dict[str, int]]:
+    """[U-F4] Per wavefront group (by its first pass's stage index), the census of the wires it produces and reads
+    (``onchip_*``); empty for a program without one, or a build stating no window or discipline."""
+    groups = stage_groups(stages)
+    if timesteps is None or transfer is None or not any(g is not None for g in groups):
+        return {}
+    out: Dict[int, Dict[str, int]] = {}
+    for head in sorted({g for g in groups if g is not None}):
+        own = tuple(g if g == head else None for g in groups)
+        census = pass_carry_census(stages, int(timesteps), str(transfer), groups=own)
+        out[head] = {k: int(census.get(k, 0)) for k in ("onchip_out_bytes", "onchip_in_bytes",
+                                                        "onchip_peak_live_bytes", "onchip_peak_live_elements")}
+    return out
 
 
 def boundary_widths_of(crossings: Iterable[Tuple[int, int, int]],
@@ -91,3 +112,25 @@ def boundary_widths_of(crossings: Iterable[Tuple[int, int, int]],
     per delayed slice beyond one per producer and pass, one more re-injection before its reading pass.
     The one rule of every plane, the plan's included [W03]: ``period_census.boundary_crossings``."""
     return boundary_crossings(crossings, replayed)
+
+
+def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProgramming:
+    """[E2] The programming multiplicands of a candidate's pass structure: ``payload_sizes``' one census
+    (``programming_census_of_passes``), with [U-F4] a wavefront head's dark cores out of its segment cores and
+    committed cells. The head writes (loads) them but neither initializes nor evaluates them, so the reprogrammed
+    cores, bytes and cells keep them.
+    """
+    census = programming_census_of_passes(noc, weight_bits=weight_bits)
+    programs = () if noc is None else noc.pass_programs
+    return replace(
+        census,
+        segment_cores=census.segment_cores - sum(_dark(program, lambda i: program.core_tiles(i))
+                                                 for program in programs),
+        committed_cells=census.committed_cells - sum(_dark(program, lambda i: program.core_cells[i])
+                                                     for program in programs),
+    )
+
+
+def _dark(program: Any, measure) -> int:
+    """``measure`` summed over the program's dark cores (none on a program that states none)."""
+    return sum(int(measure(i)) for i in (getattr(program, "dark_cores", None) or ()))

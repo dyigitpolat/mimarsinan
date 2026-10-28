@@ -163,6 +163,9 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "residency_plan": (_CO, "join of its fields: the executed pass partition and pinned set"),
     "position_multiplexing": (_CO, "one copy of each shared bank serves its positions in turn: the pass "
                                    "partition, latency, carry and programmed cells only"),
+    "pipelined_multiplexing": (_CO, "layers share passes as a wavefront over resident copies: the pass "
+                                    "partition, latency, carry and programmed cells only"),
+    "carry_buffer_bytes": (_AB, "an on-chip carry buffer: a wavefront group whose live carry exceeds it is refused"),
 }
 
 

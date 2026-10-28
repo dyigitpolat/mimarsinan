@@ -14,6 +14,7 @@ from mimarsinan.chip_simulation.sanafe.runner.segment_io import SanafeSegmentIOM
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
+from mimarsinan.mapping.support.wavefront_stages import refuse_wavefront_backend
 from mimarsinan.chip_simulation.sanafe.runner.constants import _COMPUTE_DTYPE, _RAW_INPUT_NODE_ID
 from mimarsinan.chip_simulation.sanafe.runner.custom_floorplan import adopt_custom_arch_floorplan  # noqa: E501
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import CUSTOM_PRESET_NAME
@@ -101,13 +102,12 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.T = int(simulation_length)
         self.arch_preset = arch_preset
         self.custom_arch_path = custom_arch_path
-        from mimarsinan.chip_simulation.spiking_mode_policy import (
-            policy_for_spiking_mode,
-        )
+        from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
         policy_for_spiking_mode(
             self.spiking_mode, self.ttfs_cycle_schedule
         ).require_backend_supported(backend="sanafe", context="SanafeRunner")
+        refuse_wavefront_backend(mapping.stages, "sanafe")  # [U-F4]
         self.log_potential_trace = log_potential_trace
         self.log_message_trace = log_message_trace
         # [C2] default-off final-membrane read: lands end-of-window soma

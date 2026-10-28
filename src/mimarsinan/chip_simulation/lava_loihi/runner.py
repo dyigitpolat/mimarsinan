@@ -20,6 +20,7 @@ from mimarsinan.chip_simulation.lava_loihi.segment_runner import LavaSegmentMixi
 from mimarsinan.chip_simulation.lava_loihi.timing import _RunProfile, _StageTrace
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord, SegmentSpikeRecord
 from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
+from mimarsinan.mapping.support.wavefront_stages import refuse_wavefront_backend
 from mimarsinan.models.spiking.hybrid.carry import (
     carried_output_ids, run_pass_transfer)
 from mimarsinan.data_handling import batch_integrity
@@ -43,6 +44,7 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         pass_transfer: str | None = None,
     ):
         self.pipeline = pipeline
+        refuse_wavefront_backend(mapping.stages, "lava")  # [U-F4]
         self.mapping = mapping
         self.T = int(simulation_length)
         self._behavior = behavior

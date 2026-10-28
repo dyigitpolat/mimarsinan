@@ -64,20 +64,23 @@ class _PreparedValueSegment:
     ``resident_from`` aliases the residency-chain head's uploaded weight and
     bias tensors ([wsm V3]: ``schedule_weights_resident`` passes reuse the
     programmed bank content per ordinal — verified at build by the
-    placement-geometry SUBSET check — so re-upload is pure waste)."""
+    placement-geometry SUBSET check — so re-upload is pure waste). [U-F4]
+    ``ordinals``: per core, the head ordinal it runs on (a wavefront pass's cores; default the prefix)."""
 
     def __init__(
         self, hcm, device: torch.device, dtype: torch.dtype,
         resident_from: "_PreparedValueSegment | None" = None,
         upload_memo: "dict | None" = None,
         plan_cache: "dict | None" = None,
+        ordinals: "Sequence[int] | None" = None,
     ) -> None:
         ensure_core_latencies(hcm)
         self.order: List[int] = segment_walk_order(hcm)
         if resident_from is not None:
-            assert len(hcm.cores) <= len(resident_from.weights)
-            self.weights = resident_from.weights[: len(hcm.cores)]
-            self.biases = resident_from.biases[: len(hcm.cores)]
+            at = list(range(len(hcm.cores))) if ordinals is None else [int(o) for o in ordinals]
+            assert len(at) == len(hcm.cores) and all(0 <= o < len(resident_from.weights) for o in at)
+            self.weights = [resident_from.weights[o] for o in at]
+            self.biases = [resident_from.biases[o] for o in at]
         else:
             self.weights = [
                 _upload(core, dtype, device, upload_memo)
@@ -201,7 +204,7 @@ class ValueSegmentScope:
         self.head_hcm = hcm
 
     def prepared(
-        self, hcm, device: torch.device, dtype: torch.dtype, resident_head=None,
+        self, hcm, device: torch.device, dtype: torch.dtype, resident_head=None, ordinals=None,
     ) -> _PreparedValueSegment:
         by_key = self._prepared.setdefault(hcm, {})
         key = (str(device), dtype)
@@ -213,7 +216,7 @@ class ValueSegmentScope:
             )
             prepared = _PreparedValueSegment(
                 hcm, device, dtype, resident_from=head,
-                upload_memo=self._upload_memo, plan_cache=self.plan_cache,
+                upload_memo=self._upload_memo, plan_cache=self.plan_cache, ordinals=ordinals,
             )
             by_key[key] = prepared
         return prepared
@@ -232,7 +235,7 @@ def _operand_cores(prepared: _PreparedValueSegment, hcm, bindings) -> List[list]
 
 def run_neural_segment_values(
     hcm, seg_input: torch.Tensor, resident_head=None,
-    scope: "ValueSegmentScope | None" = None, payloads=None, bindings=None, payload_recorder=None,
+    scope: "ValueSegmentScope | None" = None, payloads=None, bindings=None, payload_recorder=None, ordinals=None,
 ) -> torch.Tensor:
     """Execute one packed segment in the value domain: y_core = (x @ W + b) / theta.
 
@@ -247,7 +250,7 @@ def run_neural_segment_values(
     device, dtype = seg_input.device, seg_input.dtype
     if scope is None:
         scope = ValueSegmentScope()  # standalone call: single-call lifetime
-    prepared = scope.prepared(hcm, device, dtype, resident_head=resident_head)
+    prepared = scope.prepared(hcm, device, dtype, resident_head=resident_head, ordinals=ordinals)
     batch = seg_input.shape[0]
 
     operand = _operand_cores(prepared, hcm, bindings) if bindings else None

@@ -79,6 +79,10 @@ MUTANTS = {
     ("H10", "no_programming_pass"): ("test_a_first_pass_marked_weight_resident",),
     ("H10", "pin_out_of_range"): ("test_a_pin_of_a_core_the_pass_does_not_hold",),
     ("H10", "undeclared_pool"): ("test_pinned_cores_without_a_declared_pool",),
+    # [U-F4] a wavefront group's head and its later passes (``test_wavefront_forms``)
+    ("H10", "wavefront_layout"): ("test_a_head_stating_another_layout_than_it_loads",
+                                  "test_a_later_pass_that_reprograms_its_cores"),
+    ("H10", "wavefront_dark_core"): ("test_a_dark_core_holding_a_placement",),
     ("H1-theta", "threshold"): ("test_a_threshold_stored_differently",),
     ("H1-theta", "activation_scale"): ("test_a_stored_singleton_of_the_core_changed",),
     ("H1-theta", "parameter_scale"): ("test_a_stored_singleton_of_the_core_changed",),

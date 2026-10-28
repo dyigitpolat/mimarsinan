@@ -10,6 +10,7 @@ from mimarsinan.mapping.verification.layout_verification_types import LayoutVeri
 from mimarsinan.mapping.support.schedule.pass_planner import (
     plan_program_passes,
 )
+from mimarsinan.mapping.support.pipelined_multiplexing import census_producers
 from mimarsinan.mapping.support.residency_rules import fit_rule_applies, passes_pinned, unscheduled_pack_holds
 from mimarsinan.mapping.support.schedule.residency_composition import ShapeOnlyResidency, refuse_without_cut_census
 from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal, named_message
@@ -28,6 +29,7 @@ def compute_mapping_stats(
     position_multiplexing: Optional[bool] = None,
     census: Optional[Any] = None,
     program: Optional[Any] = None,
+    pipelined_multiplexing: Optional[bool] = None,
 ) -> Tuple[LayoutVerificationStats, Optional[str]]:
     """Pack softcores and compute verification statistics with scheduling support.
 
@@ -57,6 +59,7 @@ def compute_mapping_stats(
     [E-3] With the builder's segments (``runs``, else the census's) the unscheduled pack is the builder's single
     pool (``pack_layout(runs=...)``: segment by segment from one pool), so the unscheduled feasibility and the fit
     rule judge the program the builder builds, and refuse where it refuses, by the same name.
+    [U-F4] A declared ``pipelined_multiplexing`` reads each spec's producers off the ``census``.
     """
     if census is None or program is None:
         refuse_without_cut_census("compute_mapping_stats", residency_plan)
@@ -98,6 +101,8 @@ def compute_mapping_stats(
         residency=None if residency_plan is None else ShapeOnlyResidency(residency_plan, census, program),
         runs=segment_runs,
         position_multiplexing=position_multiplexing,
+        pipelined_multiplexing=pipelined_multiplexing,
+        producers=census_producers(census, len(softcores)) if pipelined_multiplexing else None,
     )
 
     if not plan.feasible:

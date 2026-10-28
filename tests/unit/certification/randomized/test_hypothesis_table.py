@@ -41,7 +41,12 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: Integration re-pin (tcad/wave1-merged, us2 onto E-6): the fixture is the union of the two re-pins (both keys), merged
 #: with no conflict and equal byte for byte to U-S's union table (RA/11_wave2/final_units/us/integration/
 #: hypothesis_table.union_us_ue.json), 34 cost-only rows; RA/10_wave1/thm/ is regenerated from the fixture.
-TABLE_SHA256 = "09537a21349b8b49dcd5eb73028eeb1cebba81249a6fd1761e41974627cbe1b9"
+#: U-F4 re-pin (w2-uf4 on fd006ea6 + U-E + U-E2): ``pipelined_multiplexing`` (position multiplexing's pipelined form)
+#: joins the cost-only list (X3a ``DEFERRED``, its ``cost_only_hypotheses`` row position_multiplexing's), 34 rows there.
+#: Integration re-pin (tcad/wave1-merged, uf4 onto us2): the fixture is the union of the three re-pins, merged with no
+#: conflict and equal to the JSON union of 1e6d5f72's table and U-F4's two changes, 35 cost-only rows;
+#: RA/10_wave1/thm/ is regenerated from the fixture.
+TABLE_SHA256 = "4c3edcb8f38915e70cef85a6900582f6551a9888c3ece576c95a90d0bf93dc82"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -57,7 +62,7 @@ def test_the_fixture_is_the_pinned_one():
 
 def test_the_class_list_is_the_registry_cost_only_set(table):
     assert set(table["cost_only"]) == cost_only_set()
-    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 34
+    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 35
 
 
 #: The proof check's split (PC1): conditions on the two deployments, and conditions on every run (the

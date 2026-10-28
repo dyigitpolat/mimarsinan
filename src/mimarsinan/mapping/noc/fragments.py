@@ -11,6 +11,7 @@ from mimarsinan.mapping.layout.layout_types import (
     LayoutSoftCoreSpec,
 )
 from mimarsinan.mapping.noc.pass_program import PassProgram, packed_pass_program
+from mimarsinan.mapping.noc.wavefront_fragments import wavefront_passes
 from mimarsinan.mapping.noc.wire_census import LayoutWireCensus
 from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 from mimarsinan.mapping.packing.pass_timing import project_planned_passes
@@ -18,6 +19,7 @@ from mimarsinan.mapping.noc.stages import spec_segments as spec_segments  # the 
 from mimarsinan.mapping.noc.stages import execution_stage_latencies as execution_stage_latencies
 from mimarsinan.mapping.noc.stages import execution_stage_placements as execution_stage_placements
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
+from mimarsinan.mapping.support.pipelined_multiplexing import census_producers
 from mimarsinan.mapping.support.residency_rules import (
     ProgramGraph, check_pinned_fit, declared_pool, fit_pins, fit_rule_applies, unscheduled_pack_holds)
 from mimarsinan.mapping.support.schedule.pass_planner import (
@@ -72,6 +74,7 @@ def collect_noc_fragments(
     runs: Optional[Sequence[int]] = None,
     declared_cores: Sequence[Mapping[str, Any]] = (),
     position_multiplexing: Optional[bool] = None,
+    pipelined_multiplexing: Optional[bool] = None,
 ) -> LayoutNocFragments:
     """Place every pass of the candidate program and seal the placements.
 
@@ -114,6 +117,8 @@ def collect_noc_fragments(
                 residency_plan, census, program),
             runs=runs,
             position_multiplexing=position_multiplexing,
+            pipelined_multiplexing=pipelined_multiplexing,
+            producers=census_producers(census, len(softcores)) if pipelined_multiplexing else None,
         )
         residency = plan.residency
         if not plan.feasible:  # [W04] the capacity refusal both planes name
@@ -126,14 +131,17 @@ def collect_noc_fragments(
         # Residency is a per-SEGMENT question: only a segment whose passes
         # the residency composition produced keeps weights installed.
         pass_resident = list(plan.resident_flags)
+        layouts = wavefront_passes(plan, softcores, global_index, core_types, allow_neuron_splitting,
+                                   allow_coalescing, declared_cores, _core_operand_axons)
     else:
         pass_lists = [softcores]
         pass_resident = [False]
+        layouts = {}
     # [E-3, targeted pass] Without scheduling the one planned pass is packed as the builder's single pool (segment by
     # segment from one pool, ``pack_layout(runs=...)``), the pack ``compute_mapping_stats`` judges.
     pass_runs = [runs] if not allow_scheduling and runs is not None else None
     per_pass, programs = _placed_passes(pass_lists, pass_resident, global_index, core_types, residency,
-                                        allow_neuron_splitting, allow_coalescing, declared_cores, pass_runs)
+                                        allow_neuron_splitting, allow_coalescing, declared_cores, pass_runs, layouts)
     fit = allow_scheduling and fit_rule_applies(residency_plan) and not all(
         p.schedule_resident_cores == frozenset(range(p.cores)) for p in programs) and unscheduled_pack_holds(
         pack_layout(softcores=softcores, core_types=core_types, allow_neuron_splitting=allow_neuron_splitting,
@@ -148,15 +156,22 @@ def collect_noc_fragments(
 
 
 def _placed_passes(pass_lists, pass_resident, global_index, core_types, residency, allow_neuron_splitting,
-                   allow_coalescing, declared_cores, pass_runs=None
+                   allow_coalescing, declared_cores, pass_runs=None, layouts=None
                    ) -> Tuple[List[Tuple[Tuple[int, int], ...]], List[PassProgram]]:
     """Every planned pass packed with its placements, and its programs (``packed_pass_program``: per physical tile
     its cells and signed rows, per core its geometry) with the residency marks. ``pass_runs`` (per pass, its specs'
-    builder segments, or None): [E-3, targeted pass] a pass packed as the builder's single pool."""
+    builder segments, or None): [E-3, targeted pass] a pass packed as the builder's single pool. [U-F4] ``layouts``:
+    the wavefront passes, placed on their group's layout (``wavefront_fragments``)."""
     per_pass: List[Tuple[Tuple[int, int], ...]] = []
     programs: List[PassProgram] = []
     pass_types: List[Tuple[CoreTiles, ...]] = []
     for index, (pass_softcores, resident) in enumerate(zip(pass_lists, pass_resident)):
+        if layouts and index in layouts:
+            placed, placed_program, placed_tiles = layouts[index]
+            per_pass.append(placed)
+            programs.append(placed_program)
+            pass_types.append(placed_tiles)
+            continue
         pack = pack_layout(
             softcores=pass_softcores, core_types=core_types,
             allow_neuron_splitting=allow_neuron_splitting,

@@ -7,9 +7,7 @@ from typing import Any, Literal, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.support.period_census import RESIDENCY_STEP_RULES, STEP_INDEX
-from mimarsinan.mapping.platform.platform_constraints import (
-    resolve_platform_mapping_params,
-)
+from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 
 #: Field metadata of a capability served only when declared, so an undeclared one leaves every dict unchanged.
 DECLARED_ONLY = {"declared_only": True}
@@ -109,6 +107,8 @@ class ChipCapabilities:
     residency_plan: Optional[Mapping[str, Any]] = field(default=None, hash=False, metadata=DECLARED_ONLY)
     # [W02] One copy of each shared bank serves its instances in turn; None = undeclared (one copy per instance).
     position_multiplexing: Optional[bool] = field(default=None, metadata=DECLARED_ONLY)
+    # [U-F4] Under position multiplexing, levels share passes as a wavefront; None = undeclared (one level per pass).
+    pipelined_multiplexing: Optional[bool] = field(default=None, metadata=DECLARED_ONLY)
 
     def __post_init__(self) -> None:
         if self.residency_plan is not None:
@@ -123,6 +123,11 @@ class ChipCapabilities:
             raise PositionMultiplexingError(
                 "position_multiplexing serves a bank's instances in turn over passes: it needs allow_scheduling "
                 "and is not planned together with a residency_plan")
+        if self.pipelined_multiplexing is not None and not isinstance(self.pipelined_multiplexing, bool):
+            raise PositionMultiplexingError(f"pipelined_multiplexing must be a bool, got {self.pipelined_multiplexing!r}")
+        if self.pipelined_multiplexing and not self.position_multiplexing:
+            raise PositionMultiplexingError("pipelined_multiplexing shares passes between the levels position "
+                                            "multiplexing serves: it needs position_multiplexing")
 
     @classmethod
     def from_platform_constraints(
@@ -130,15 +135,12 @@ class ChipCapabilities:
     ) -> "ChipCapabilities":
         """Read the WHOLE declaration from a platform-constraints / wizard body dict.
 
-        The permission/scheduling flags come off the dict directly; the geometry
-        (``max_axons``/``max_neurons``/``hardware_bias``) is resolved from the
-        declared core grid — ``cores`` (a resolved platform) or ``core_types`` (a
-        wizard body) — by :func:`resolve_platform_mapping_params`, the SAME SSOT
-        the layout mapper is configured from. They are therefore the EFFECTIVE
-        per-core limits the tiling decision consumes: the grid maximum, minus the
-        bias axon when the cores carry no hardware bias. A dict declaring no core
-        grid leaves them at their "not declared" defaults (``None``/``False``)
-        rather than inventing a chip.
+        The permission/scheduling flags come off the dict directly; the geometry (``max_axons``/``max_neurons``/
+        ``hardware_bias``) is resolved from the declared core grid — ``cores`` (a resolved platform) or ``core_types``
+        (a wizard body) — by :func:`resolve_platform_mapping_params`, the SAME SSOT the layout mapper is configured
+        from: the EFFECTIVE per-core limits the tiling decision consumes (the grid maximum, minus the bias axon when the
+        cores carry no hardware bias). A dict declaring no core grid leaves them at their "not declared" defaults
+        (``None``/``False``) rather than inventing a chip.
         """
         cores = constraints.get("cores") or constraints.get("core_types") or ()
         allow_coalescing = bool(constraints.get("allow_coalescing", False))
@@ -163,6 +165,7 @@ class ChipCapabilities:
                 else _declared_residency_plan(constraints["residency_plan"])
             ),
             position_multiplexing=constraints.get("position_multiplexing"),
+            pipelined_multiplexing=constraints.get("pipelined_multiplexing"),
         )
 
     def declared_fields(self) -> dict[str, Any]:

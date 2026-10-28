@@ -168,31 +168,35 @@ class TestTheLegalValueSets:
         # is a spatial cut of a segment's core DAG, so membrane state never crosses
         # one and the boundary carries the spike raster verbatim. position_multiplexing
         # locks false on lif: the LIF recipe arms the depth-balancing relays, whose
-        # cores the shape-only plane cannot plan (carried minor N1 of the pack verify).
+        # cores the shape-only plane cannot plan (carried minor N1 of the pack verify). [U-F4] pipelined_multiplexing
+        # is legal true only where position_multiplexing is and on runs that are not windowed LIF, so it locks false
+        # with position_multiplexing on every LIF state below.
         lif = legal_values_view({"spiking_family": "lif"})
         ttfs = legal_values_view({"spiking_family": "ttfs"})
         assert sorted(k for k, v in lif.items() if len(v) == 1) == [
-            "position_multiplexing", "s_allocation",
+            "pipelined_multiplexing", "position_multiplexing", "s_allocation",
         ]
         assert lif["position_multiplexing"] == [False]
         relays_off = legal_values_view({"spiking_family": "lif", "lif_depth_balancing_relays": False})
         assert relays_off["position_multiplexing"] == [False, True]
+        assert relays_off["pipelined_multiplexing"] == [False, True]
         windowed = legal_values_view(
             {"spiking_family": "lif", "spiking_variant": "synchronized"}
         )
         assert sorted(k for k, v in windowed.items() if len(v) == 1) == [
-            "position_multiplexing", "s_allocation",
+            "pipelined_multiplexing", "position_multiplexing", "s_allocation",
         ]
         assert sorted(k for k, v in ttfs.items() if len(v) == 1) == [
             "firing_mode", "s_allocation", "spike_generation_mode",
         ]
+        assert ttfs["pipelined_multiplexing"] == [False, True]
         # streamed lif is cuttable too: the carry is what keeps a cut exact, and a
         # backend that cannot replay one refuses by name rather than collapsing it.
         streamed = legal_values_view(
             {"spiking_family": "lif", "spiking_variant": "streamed"}
         )
         assert sorted(k for k, v in streamed.items() if len(v) == 1) == [
-            "position_multiplexing", "s_allocation",
+            "pipelined_multiplexing", "position_multiplexing", "s_allocation",
         ]
         assert streamed["spiking_variant"] == ["streamed", "synchronized"]
 

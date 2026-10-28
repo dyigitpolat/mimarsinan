@@ -14,6 +14,12 @@ class CoreCapacityRefusal(ToolchainRefusal, RuntimeError):
     the executed plane raises it, the shape-only plane's message states it (``refusal_name_of_message``)."""
 
 
+class PlannedPassPackingRefusal(ToolchainRefusal, RuntimeError):
+    """A pass the planner made that the packer cannot place on the declared cores, refused by name: the planner packs
+    shape-only specs under their residency classes (a unique fallback per spec without the layout's), the packer the
+    soft cores under theirs (the source perceptron's), so a class the planner kept apart can be merged, or not."""
+
+
 #: A message's stated refusal: ``[verdict] Name: reason`` or ``Name: reason`` (``named_message``).
 _NAMED = re.compile(r"^(?:\[[a-z_]+\] )?([A-Z][A-Za-z0-9]*(?:Refusal|Error)): ")
 

@@ -7,8 +7,14 @@ from typing import Dict, Optional
 from mimarsinan.deployment_record.quantities.lanes import lane_block_quantities
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import (
+    BUFFER_CAPACITY,
+    ONCHIP_CARRY,
+    ONCHIP_CENSUS,
     apply_value_rule,
+    declared_buffer_bytes,
     names_value_domain,
+    onchip_carry,
+    record_carry_census,
     record_value_facts,
     refuse_spiking_activity,
 )
@@ -61,11 +67,13 @@ def from_record(record: DeploymentRecord) -> Quantities:
     values: Dict[str, QuantityValue] = {}
 
     crossbar = record.utilization.crossbar
-    values["cells_used"] = _measured(crossbar.cells_used)
+    # [U-F4] a wavefront head's dark cores are loaded, never evaluated: the occupancy and MAC census leave them out
+    dark = [s.cores[i] for s in record.schedule.segments() for i in (s.dark_core_indices or ())]
+    values["cells_used"] = _measured(crossbar.cells_used - sum(c.cells_used for c in dark))
     values["cores_allocated"] = _measured(crossbar.cores_allocated)
-    values["neurons_used"] = _measured(crossbar.neurons_used)
-    values["axons_used"] = _measured(crossbar.axons_used)
-    values["macs"] = _measured(crossbar.macs)
+    values["neurons_used"] = _measured(crossbar.neurons_used - sum(c.neurons_used for c in dark))
+    values["axons_used"] = _measured(crossbar.axons_used - sum(c.axons_used for c in dark))
+    values["macs"] = _measured(crossbar.macs - sum(c.cells_used for c in dark))
     # The *_physical totals are the DECLARED chip's — area and static power price
     # the chip as declared, never just the cores this mapping happened to allocate.
     cores = list(record.identity.platform.get("cores") or ())
@@ -114,10 +122,15 @@ def from_record(record: DeploymentRecord) -> Quantities:
         float(0 if carry is None else carry.carried_bytes), "static")
     values["carry_peak_live_bytes"] = QuantityValue(
         float(0 if carry is None else carry.peak_live_bytes), "static")
-    values["carry_out_bytes"] = QuantityValue(
-        float(0 if carry is None else carry.boundary_out_bytes), "static")
-    values["carry_in_bytes"] = QuantityValue(
-        float(0 if carry is None else carry.boundary_in_bytes), "static")
+    held, refusal = onchip_carry(record_carry_census(schedule), record.identity.platform)  # [U-F4]
+    assert held is not None
+    values["carry_out_bytes"] = QuantityValue(float(held["boundary_out_bytes"]), "static")
+    values["carry_in_bytes"] = QuantityValue(float(held["boundary_in_bytes"]), "static")
+    if refusal is not None:
+        typed_withheld[ONCHIP_CARRY] = refusal
+    elif ONCHIP_CENSUS in held:
+        values[ONCHIP_CARRY] = QuantityValue(float(held[ONCHIP_CENSUS]), "static")
+    _put(values, BUFFER_CAPACITY, declared_buffer_bytes(record.identity.platform), provenance="static")
     segments = list(schedule.segments())
     reprogrammed = [s for s in segments if s.programming == "reprogram"]
     counts_withheld = _physical_core_counts(values, record, segments, reprogrammed)
@@ -197,7 +210,8 @@ def _physical_core_counts(values: Dict[str, QuantityValue], record: DeploymentRe
                   f"and no unique fused core of one (declared: {', '.join(f'{a} x {n}' for a, n in declared)}): "
                   "their physical cores are not determined")
         return {key: reason for key in _CORE_COUNTS}
-    values["segment_cores"] = _measured(sum(tiles[id(c)] for c in cores))
+    dark = {id(s.cores[i]) for s in segments for i in (s.dark_core_indices or ())}  # [U-F4] loaded, never reset
+    values["segment_cores"] = _measured(sum(tiles[id(c)] for c in cores if id(c) not in dark))
     values["cores_allocated"] = _measured(
         record.utilization.crossbar.cores_allocated + sum(tiles[id(c)] - 1 for c in cores))
     # [U-C C-6] e_core_program's multiplicand: the reprogrammed cores holding a static program (an operand-only core

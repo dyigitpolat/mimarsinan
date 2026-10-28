@@ -94,6 +94,8 @@ def compute_split(platform: Mapping[str, Any], passes: Optional[Any]) -> Optiona
                                              "attributed to the declared core types"))
         producer = row.producer_core_cells or (0,) * len(row.core_cells)
         for index, cells in enumerate(row.core_cells):
+            if index in row.dark:  # [U-F4] a dark core is loaded, never evaluated: no MAC event
+                continue
             kind = only if types is None else (int(types[index][0]), int(types[index][1]))
             if kind is None or kind not in events:
                 tile = "an untyped tile" if kind is None else f"a tile of {kind[0]} x {kind[1]}"

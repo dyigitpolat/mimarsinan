@@ -8,7 +8,7 @@ dividing-coefficient discipline).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.compute_technology import share_physics
@@ -115,11 +115,48 @@ ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[Factor, ...], str], ...] = (
     # figure (carried_raster_bytes), which sizes what is HELD in between.
     ("e_dma_per_byte", ("carry_in_bytes",), "carry_inject"),
     ("e_readout_per_byte", ("carry_out_bytes",), "carry_readout"),
+    # [U-F4] A declared on-chip carry buffer's accesses: a wavefront group's own values, written once and read once.
+    ("e_carry_buffer_per_byte", ("carry_onchip_bytes",), "carry_buffer"),
     # [CH-D2] A value-domain program's inter-core values, per byte-hop.
     ("e_noc_value_per_byte_hop", ("noc_value_bytes",), "noc_value"),
     # Element operations on arithmetic lanes (present only when a capability census supplies them).
     ("e_lane_op", ("lane_ops",), "lane"),
 )
+
+#: [U-F4] The declared on-chip carry buffer's capacity quantity and the constants priced on it: its static power
+#: (over the priced latency) and its area (beside the compute footprint, ``CHIP_AREA_ADDERS``).
+BUFFER_CAPACITY = "carry_buffer_capacity_bytes"
+BUFFER_STATIC = "p_carry_buffer_static_per_byte"
+_BUFFER_CONSTANTS = ((BUFFER_STATIC, "the buffer's static power per declared byte"),
+                     ("area_carry_buffer_per_byte", "the buffer's area per declared byte"))
+
+
+def carry_buffer_refusals(quantities: Any, physics: Any) -> Dict[str, str]:
+    """[U-F4] The declared on-chip carry buffer refuses the energy by name where the program does not fit it (the
+    carry census withheld with the reason) or the target states no access energy for it, and the energy (its static
+    power) or the chip area by name where the target states no constant for the declared capacity."""
+    refused: Dict[str, str] = {}
+    constant, key = "e_carry_buffer_per_byte", "carry_onchip_bytes"
+    if key in getattr(quantities, "withheld", {}):
+        refused[constant] = quantities.withheld[key]
+    elif quantities.has(key) and quantities.get(key).value and not physics.has(constant):
+        refused[constant] = (f"the declared on-chip carry buffer holds carried bytes, and the target declares no "
+                             f"{constant} (the buffer's access energy, with its source)")
+    capacity = quantities.get(BUFFER_CAPACITY).value if quantities.has(BUFFER_CAPACITY) else 0
+    for name, what in _BUFFER_CONSTANTS:
+        if capacity and not physics.has(name):
+            refused[name] = (f"the chip declares an on-chip carry buffer of {int(capacity)} B, and the target declares "
+                             f"no {name} ({what}, with its source)")
+    return refused
+
+
+def carry_buffer_static_watts(quantities: Quantities, physics: PlatformPhysics) -> Optional[Band]:
+    """[U-F4] The declared on-chip carry buffer's static power on its declared capacity, None without both."""
+    if not (physics.has(BUFFER_STATIC) and quantities.has(BUFFER_CAPACITY)):
+        return None
+    return scale_band(physics.band(BUFFER_STATIC), quantities.get(BUFFER_CAPACITY).value,
+                      f"{BUFFER_STATIC} x {BUFFER_CAPACITY}")
+
 
 #: [TS6] The per-byte program-load energies, in the order a byte incurs them:
 #: (constant, component label). Both multiply the SAME payload bytes and are
@@ -145,6 +182,7 @@ AREA_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
 #: Area beside the compute footprint, on EITHER area path (an aggregate supersedes none of it).
 CHIP_AREA_ADDERS: Tuple[Tuple[str, Tuple[Factor, ...], str], ...] = (
     ("area_per_lane", (LANES,), "lanes"),
+    ("area_carry_buffer_per_byte", (BUFFER_CAPACITY,), "carry_buffer"),  # [U-F4] on the declared capacity
 )
 
 #: Steady-state latency adders beyond t_cycle × latency_steps.

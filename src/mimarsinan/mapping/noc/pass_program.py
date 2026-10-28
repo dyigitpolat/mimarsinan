@@ -32,6 +32,11 @@ class PassProgram:
     #: [W03] Per core, the (axons, neurons) it is packed at (a fused instance: its components summed), which the
     #: period census types the cores by; None where a caller states no geometry.
     core_geometry: Optional[Tuple[Tuple[int, int], ...]] = None
+    #: [U-F4] A wavefront pass (one evaluation: its cores read carried inputs only), the cores a group's first pass
+    #: loads unused (dark) and a later pass's head ordinals; defaults: none of them.
+    wavefront: bool = False
+    dark_cores: Optional[FrozenSet[int]] = None
+    core_ordinals: Optional[Tuple[int, ...]] = None
 
     @property
     def cores(self) -> int:
@@ -42,6 +47,13 @@ class PassProgram:
     def tiles(self) -> int:
         """Physical cores (a fused core counts its members): what every priced core count reads."""
         return sum(map(len, self.core_tile_cells)) if self.core_tile_cells else self.cores
+
+    def evaluated(self) -> Tuple[int, ...]:
+        """The cores this pass evaluates: every core but its dark ones."""
+        return tuple(i for i in range(self.cores) if i not in (self.dark_cores or ()))
+
+    def core_tiles(self, i: int) -> int:
+        return len(self.core_tile_cells[i]) if self.core_tile_cells else 1
 
     @property
     def tile_cells(self) -> Tuple[int, ...]:

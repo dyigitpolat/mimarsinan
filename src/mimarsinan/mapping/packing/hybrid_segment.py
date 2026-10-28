@@ -49,6 +49,7 @@ def _flush_neural_segment(
     skip_coalescing_check: bool = False,
     identity: bool = False,
     sign_granularity: str = PER_SYNAPSE,
+    arrange=None,
 ) -> tuple[HybridStage, dict[int, dict[int, int]]]:
     """Pack a neural segment using cores drawn from shared_pool.
 
@@ -56,7 +57,8 @@ def _flush_neural_segment(
     exactly-sized hard core (``HardCoreMapping.map_identity``), its axon
     sources columnar (``SpikeSourceColumns``, coverage W9). Under per-axon
     ``sign_granularity`` each compacted soft core splits its mixed-sign rows
-    before packing (packing is block-diagonal, so the split is per soft core).
+    before packing (packing is block-diagonal, so the split is per soft core). [U-F4] ``arrange`` (soft cores to the
+    ordered list the packer places) fixes a wavefront pass's packing to its group's layout.
     """
     segment_node_ids = {n.id for n in current_neural}
 
@@ -95,6 +97,8 @@ def _flush_neural_segment(
 
     reindex_maps = compact_soft_core_mapping(soft.cores, soft.output_sources)
     apply_sign_split(soft.cores, sign_granularity)
+    if arrange is not None:
+        soft.cores = arrange(soft.cores)
 
     output_map = []
     current_offset = 0
@@ -209,6 +213,7 @@ def _flush_scheduled_segment(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
     pass_index: int = 0,
+    arrange=None,
 ) -> tuple[list[HybridStage], dict[int, dict[int, int]]]:
     """One segment → one HybridStage on a fresh hardware pool."""
     if allow_coalescing:
@@ -227,6 +232,7 @@ def _flush_scheduled_segment(
         allow_coalescing=allow_coalescing,
         skip_coalescing_check=True,
         sign_granularity=pool_sign_granularity(cores_config),
+        arrange=arrange,
     )
     stage.schedule_segment_index = segment_index
     stage.schedule_pass_index = pass_index

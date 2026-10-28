@@ -73,6 +73,8 @@ class PassRow:
     producer_core_cells: Optional[Tuple[int, ...]] = None
     #: [U-C C-6] The cores whose every placement reads a bound bank (no static program), where the plane states them.
     operand_only_cores: FrozenSet[int] = frozenset()
+    #: [U-F4] Tiles of a wavefront group's first pass that it loads (writes) but does not evaluate (its dark cores').
+    dark: FrozenSet[int] = frozenset()
 
     def core_bytes(self, i: int, weight_bits: int) -> int:
         """Core ``i``'s payload by the one rule (``core_payload_bytes``): its cells and its sign register."""

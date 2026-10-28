@@ -72,6 +72,7 @@ def candidate_latency_steps(
     stages = execution_stage_latencies(
         softcores, noc.pass_placements, retimed=semantics.retimed,
         census=noc.census, runs=getattr(noc, "runs", None),
+        transparent=tuple(bool(getattr(p, "wavefront", False)) for p in noc.pass_programs),
     )
     return program_latency_steps(
         stage_max_latencies=stages, timesteps=int(timesteps),

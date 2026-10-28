@@ -19,7 +19,8 @@ from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSof
 from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError
 from mimarsinan.mapping.support.schedule.schedule_partitioner import estimate_passes_for_layout_validated
 
-__all__ = ["MultiplexedPasses", "PositionMultiplexingError", "multiplexed_segment_passes", "shares_a_bank"]
+__all__ = ["CopyKey", "MultiplexedPasses", "PositionMultiplexingError", "copy_keys", "multiplexed_segment_passes",
+           "shares_a_bank"]
 
 #: An instance's copy key: instances of one bank with one extent share one copy.
 CopyKey = Tuple[int, int, int]
@@ -34,7 +35,7 @@ class MultiplexedPasses:
     feasible: bool
 
 
-def _copy_keys(specs: Sequence[LayoutSoftCoreSpec], shares: Optional[Sequence[bool]]) -> List[Optional[CopyKey]]:
+def copy_keys(specs: Sequence[LayoutSoftCoreSpec], shares: Optional[Sequence[bool]]) -> List[Optional[CopyKey]]:
     return [
         None if spec.bank_id is None or (shares is not None and not shares[i])
         else (int(spec.bank_id), int(spec.input_count), int(spec.output_count))
@@ -44,7 +45,7 @@ def _copy_keys(specs: Sequence[LayoutSoftCoreSpec], shares: Optional[Sequence[bo
 
 def shares_a_bank(specs: Sequence[LayoutSoftCoreSpec], shares: Optional[Sequence[bool]] = None) -> bool:
     """Whether the segment holds a copy key with two or more instances (else the decision changes nothing)."""
-    counts = Counter(key for key in _copy_keys(specs, shares) if key is not None)
+    counts = Counter(key for key in copy_keys(specs, shares) if key is not None)
     return any(n >= 2 for n in counts.values())
 
 
@@ -66,7 +67,7 @@ def multiplexed_segment_passes(
     n instances is n passes, each the same multiset of shapes, so every pass packs as the run's first. ``shares``
     (aligned with ``specs``) excludes instances that do not read their bank's copy (the builder's compacted ones).
     """
-    keys = _copy_keys(specs, shares)
+    keys = copy_keys(specs, shares)
     levels = sorted({int(spec.latency_tag or 0) for spec in specs})
     passes: List[Tuple[LayoutSoftCoreSpec, ...]] = []
     heads: List[bool] = []

@@ -803,6 +803,9 @@ AUDITED_LEGAL_SETS = {
     "bias_resolution": "ENUM weight_grid | law",
     "activity_factor": "FLOAT in [0, 1]",
     "batch_size": "INT >= 1",
+    # [U-F4] audited against its one consumer, deployment_record/quantities/value_domain.py onchip_carry: a declared
+    # on-chip carry buffer's capacity in bytes, compared with each wavefront group's live carry (above it refuses).
+    "carry_buffer_bytes": "INT >= 1",
     "conversion_draws": "INT >= 1",
     "core_semantics": "ENUM spiking | mvm",
     "cores_per_tile": "INT >= 0",

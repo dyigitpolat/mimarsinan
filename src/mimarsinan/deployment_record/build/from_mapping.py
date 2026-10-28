@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from mimarsinan.deployment_record.build.pass_carry import carry_record_from_mapping
+from mimarsinan.deployment_record.build.pass_carry import carry_record_from_mapping, wavefront_carry
 from mimarsinan.deployment_record.build.payload_sizes import require_weight_bits
 from mimarsinan.deployment_record.build.program_census import (
     residency_plan_record, segment_record,
@@ -27,7 +27,9 @@ from mimarsinan.deployment_record.schema import (
     SoftcorePlacementRecord,
     UtilizationRecord,
 )
+from mimarsinan.deployment_record.schema.wavefront import WavefrontRecord
 from mimarsinan.mapping.crossbar_utilization import CrossbarUtilizationReport
+from mimarsinan.mapping.support.wavefront_stages import wavefront_head
 from mimarsinan.mapping.verification.layout_verification_hybrid import (
     stats_dict_from_hybrid_mapping,
 )
@@ -152,7 +154,20 @@ def schedule_record_from_mapping(
         carry=carry_record_from_mapping(hybrid_mapping, timesteps, pass_transfer),
         residency_plan=residency_plan_record(hybrid_mapping),
         value_noc_wire_hops=None if value_noc_wire_hops is None else int(value_noc_wire_hops),
+        wavefronts=_wavefronts(hybrid_mapping, timesteps, pass_transfer),
     )
+
+
+def _wavefronts(hybrid_mapping: Any, timesteps: Any, transfer: Any) -> Optional[Tuple[WavefrontRecord, ...]]:
+    """[U-F4] Every wavefront group of the program, read off its first pass, with the carry it holds itself
+    (``wavefront_carry``); None for a program without one."""
+    carry = wavefront_carry(hybrid_mapping.stages, timesteps, transfer)
+    rows = tuple(WavefrontRecord(segment_index=int(stage.schedule_segment_index),
+                                 first_pass=int(stage.schedule_pass_index), passes=int(head.passes),
+                                 levels=tuple(head.levels), layout_cores=int(head.layout_cores),
+                                 **carry.get(index, {}))
+                 for index, stage in enumerate(hybrid_mapping.stages) if (head := wavefront_head(stage)) is not None)
+    return rows or None
 
 
 def placement_record_from_mapping(hybrid_mapping: Any) -> PlacementRecord:

@@ -42,6 +42,8 @@ STAGE: Dict[str, Readers] = {
     "schedule_weights_resident": ("H10",), "retimed_level_stages": ("tiles", "R5", "H0"),
     "is_retimed_level": ("R5", "H0"), "replay_delays": ("R2", "H5-collapse"), "schedule_resident_cores": ("H10",),
     "schedule_residency_pass": (UNREAD,),
+    # [U-F4] a wavefront group's head (its layout, the cores it loads unused) and each later pass's head ordinals.
+    "schedule_wavefront": ("H10",), "schedule_dark_cores": ("tiles", "H10"), "schedule_core_ordinals": ("H10",),
 }
 IO_SLICE: Dict[str, Readers] = _same(("tiles", "H9"), "node_id", "offset", "size")
 CORE_MAPPING: Dict[str, Readers] = {

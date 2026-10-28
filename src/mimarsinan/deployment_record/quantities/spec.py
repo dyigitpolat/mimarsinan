@@ -84,6 +84,14 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
      "Payload the host RE-INJECTS across the same boundaries per inference. The "
      "chip's input interface takes spike trains, so this direction is dense too — "
      "and it rides the DMA channel that programming payloads ride."),
+    ("carry_onchip_bytes", (DATA, "B"),
+     "[U-F4] Byte accesses of a DECLARED on-chip carry buffer per inference: the values a wavefront group "
+     "produces and reads itself, each written into the buffer once and read out once (both accesses counted; their "
+     "crossings leave carry_out_bytes / carry_in_bytes). Absent without a declared carry_buffer_bytes."),
+    ("carry_buffer_capacity_bytes", (DATA, "B"),
+     "[U-F4] The DECLARED capacity of the on-chip carry buffer (carry_buffer_bytes): a chip component that leaks "
+     "and occupies silicon whether or not a program fills it, so its static power and area are priced on it. Absent "
+     "without the declaration."),
     # --- the write law (E49 period census at the declared batch K) ---------------------
     ("period_rewrite_bytes", (DATA, "B"),
      "Payload rewritten once per schedule period (K inferences): 0 when the programmed tiles "

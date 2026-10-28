@@ -108,7 +108,7 @@ RULES: Dict[str, Tuple[str, ...]] = {
     "R2": ("delivery_delay", "delay_on_encoded_slice"),
     "H6": ("partial_sums",),
     "H10": ("resident_content", "no_programming_pass", "pinned_slot_overwritten", "pin_out_of_range",
-            "undeclared_pool", "undeclared_core"),
+            "undeclared_pool", "undeclared_core", "wavefront_layout", "wavefront_dark_core"),
     "R3": ("carry_scope", "mixed_segments", "boundary_edge_in_unit", "stale_memo"),
     "R4": ("phase_channel", "slice_kind", "multi_home_unit"),
     "R5": ("unit_kind", "mixed_levels", "level_flag"),

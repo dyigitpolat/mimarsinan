@@ -19,8 +19,8 @@ class TestPartition:
         # cores.write_physics (the last two pricing-only); W02 (pack): position_multiplexing (deferred by name);
         # W08 (lanes): onchip_arithmetic.lane_block and onchip_arithmetic.lanes_per_core (pricing-only); E-6:
         # cores.compute_physics (pricing-only); U-S (the event census): event_census_samples (pricing-only, a
-        # measurement of the built program)
-        assert len(cd.cost_only_set()) == 34
+        # measurement of the built program); U-F4: pipelined_multiplexing (deferred by name)
+        assert len(cd.cost_only_set()) == 35
 
     @pytest.mark.parametrize("change", ["add", "drop"])
     def test_registry_drift_breaks_the_partition(self, monkeypatch, change):
@@ -77,9 +77,11 @@ class TestDraws:
         assert set(report["pricing_only"]) == set(cd.PRICING_ONLY)
         assert set(report["pricing_only"].values()) == {cd.PRESERVED_BY_CONSTRUCTION}
         assert set(report["drawn_by_fields"]) == {"residency_plan"}
-        # residency_plan is drawn by its fields (CL1); W02's position_multiplexing stays deferred by name
-        assert set(report["deferred_to_cl1"]) == {"position_multiplexing"}
-        assert set(report["deferred_to_cl1"].values()) == {cd.DEFERRED_REASONS["position_multiplexing"]}
+        # residency_plan is drawn by its fields (CL1); W02's position_multiplexing and U-F4's pipelined form stay
+        # deferred by name
+        assert set(report["deferred_to_cl1"]) == {"position_multiplexing", "pipelined_multiplexing"}
+        assert set(report["deferred_to_cl1"].values()) == {cd.DEFERRED_REASONS["position_multiplexing"],
+                                                           cd.DEFERRED_REASONS["pipelined_multiplexing"]}
 
     def test_the_registry_cost_only_keys_exist(self):
         for path in cd.PROGRAM_CHANGING + cd.PRICING_ONLY + cd.DERIVED_GEOMETRY + cd.DRAWN_BY_FIELDS + cd.DEFERRED:

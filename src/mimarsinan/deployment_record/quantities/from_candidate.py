@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Protocol, Tuple
 
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
+from mimarsinan.deployment_record.quantities.value_domain import BUFFER_CAPACITY, ONCHIP_CARRY
 from mimarsinan.deployment_record.quantities.write_law import write_quantities
 
 
@@ -79,6 +80,11 @@ class CandidateQuantityContext:
     carry_peak_live_bytes: Optional[int] = None
     carry_out_bytes: Optional[int] = None
     carry_in_bytes: Optional[int] = None
+    #: [U-F4] The carried bytes a declared on-chip carry buffer holds, and why the program does not fit it.
+    carry_onchip_bytes: Optional[int] = None
+    carry_onchip_refusal: Optional[str] = None
+    #: [U-F4] The declared on-chip carry buffer's capacity (``carry_buffer_bytes``), which its leakage and area price.
+    carry_buffer_capacity_bytes: Optional[int] = None
     activity_factor: Optional[float] = None
     weight_bits: Optional[int] = None
     tiles: Optional[int] = None
@@ -189,6 +195,8 @@ def from_candidate(
     _put(values, "carry_peak_live_bytes", context.carry_peak_live_bytes)
     _put(values, "carry_out_bytes", context.carry_out_bytes)
     _put(values, "carry_in_bytes", context.carry_in_bytes)
+    _put(values, ONCHIP_CARRY, None if context.carry_onchip_refusal else context.carry_onchip_bytes)
+    _put(values, BUFFER_CAPACITY, context.carry_buffer_capacity_bytes)
 
     _put(values, "timesteps", context.timesteps)
     _put(values, "weight_bits", context.weight_bits)
@@ -248,5 +256,6 @@ def from_candidate(
             value=float(sum(context.pass_core_events)), provenance=values["synaptic_events"].provenance)
     values.update(dict(context.lane_quantities))
     held = {**dict(getattr(context.value_rule, "withheld", ()) or ()), **dict(context.lane_withheld),
-            **dict(withheld or {})}
+            **dict(withheld or {}),
+            **({ONCHIP_CARRY: context.carry_onchip_refusal} if context.carry_onchip_refusal else {})}
     return Quantities(values, withheld={key: reason for key, reason in held.items() if key not in values})

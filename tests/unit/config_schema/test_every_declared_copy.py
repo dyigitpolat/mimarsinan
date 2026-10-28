@@ -83,9 +83,14 @@ def _fixture_of(key):
 
 
 def _admitted_value(key, document):
+    """A value the key's schema admits and, where the key declares a legal set, one the document's state admits
+    ([U-F4] a platform declaration the legal set refuses is refused by that rule first, which is not the rule these
+    cases pin: ``pipelined_multiplexing`` admits only false without ``position_multiplexing``)."""
     entry = REGISTRY[key]
-    candidates = (document[PC].get(key), document.get(key), *(entry.resolved_options() or ()), *_ADMITTED)
-    return next(value for value in candidates if value is not None and not entry_value_errors(entry, value))
+    legal = None if entry.legal_values is None else tuple(entry.legal_values({**document.get(DP, {}), **document[PC]}))
+    candidates = (document[PC].get(key), document.get(key), *(entry.resolved_options() or ()), *_ADMITTED, False)
+    return next(value for value in candidates if value is not None and not entry_value_errors(entry, value)
+                and (legal is None or value in legal))
 
 
 def _shadow(name, key, bad):

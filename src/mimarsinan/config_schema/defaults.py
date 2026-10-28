@@ -153,7 +153,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # Wave 2 N2 declaration (registry/entries_readout.py): no default, absent is G2's per-perceptron law.
     "readout_ranges",
     # Wave 2 (registry/entries_residency.py): no default, an absent key leaves every program byte for byte.
-    "position_multiplexing",
+    "position_multiplexing", "pipelined_multiplexing", "carry_buffer_bytes",
     # Wave 2 WI-5a to WI-5c declarations (registry/entries_grids.py): no default, absent is the calibrated,
     # integer-lattice, weight-grid-bias program.
     "quantizer_state", "weight_scale_rule", "bias_resolution",

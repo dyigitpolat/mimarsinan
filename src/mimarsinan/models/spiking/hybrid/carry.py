@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
+from mimarsinan.mapping.support.wavefront_stages import refuse_wavefront_backend
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.models.spiking.hybrid.executors.carry_record import (  # noqa: F401 (re-exported)
     carry_plan_for, record_carry, record_reference_carry, require_carry_capable)
@@ -246,6 +247,8 @@ def require_backend_replay(hybrid_mapping, backend: str, *, transfer: str, spike
     an in-tree read, or a probe of the source tree the backend runs, asked only here), any stage-input row, carried or
     host-encoded, read above latency 0 in a unit the backend executes, and any delayed slice."""
     refuse_stochastic_replay(hybrid_mapping, spike_mode=spike_mode, pass_transfer=transfer)
+    if backend != "hcm":  # [U-F4] the HCM runs a wavefront program; the backends refuse it by name
+        refuse_wavefront_backend(hybrid_mapping.stages, backend)
     if backend in IN_TREE_CORE_LOCAL_BACKENDS or not is_cycle_based(spiking_mode):
         return
     for stage in hybrid_mapping.stages if stages is None else stages:

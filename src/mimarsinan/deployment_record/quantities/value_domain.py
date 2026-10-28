@@ -29,7 +29,16 @@ NO_VALUE_GRID = "activation_bits undeclared: the value carry has no grid"
 NO_VALUE_NOC_GRID = "activation_bits undeclared: the value NoC traffic has no grid"
 #: Why a sealed record states no value NoC census (it seals no ``value_noc_wire_hops``: every archived record).
 NO_RECORD_WIRES = "the sealed record keeps no wire census (KA-G3-1)"
-_CARRY_KEYS = (("carry_out_bytes", "boundary_out_bytes"), ("carry_in_bytes", "boundary_in_bytes"))
+#: [U-F4] The quantity of the carried bytes a declared on-chip carry buffer holds (each written once, read once), its
+#: census key, and the platform component that declares the buffer (its capacity in bytes).
+ONCHIP_CARRY, ONCHIP_CENSUS, CARRY_BUFFER_KEY = "carry_onchip_bytes", "onchip_bytes", "carry_buffer_bytes"
+#: [U-F4] The quantity of the buffer's declared capacity, which its static power and area multiply.
+BUFFER_CAPACITY = "carry_buffer_capacity_bytes"
+#: [U-F4] Why a value-domain group's live carry has no size in a declared on-chip carry buffer without the grid.
+NO_BUFFER_GRID = (f"activation_bits undeclared: the live values a wavefront group holds in the declared "
+                  f"{CARRY_BUFFER_KEY} have no grid, so their fit is not decided")
+_CARRY_KEYS = (("carry_out_bytes", "boundary_out_bytes"), ("carry_in_bytes", "boundary_in_bytes"),
+               (ONCHIP_CARRY, ONCHIP_CENSUS))
 
 
 class ValueDomainActivityError(ToolchainRefusal, ValueError):
@@ -127,6 +136,8 @@ def value_carry(
     sized: Dict[str, int] = {}
     withheld: Dict[str, str] = {}
     for key, census_key in _CARRY_KEYS:
+        if census_key not in carry:  # [U-F4] a census of no on-chip carry states no such bytes
+            continue
         total = natural(int(carry[census_key]), "carry boundary bytes", error=ValueDomainCensusError)
         if total == 0:
             sized[key] = 0
@@ -135,6 +146,52 @@ def value_carry(
         else:
             sized[key] = value_bytes(crossing_elements(total, int(timesteps)), bits)
     return sized, withheld
+
+
+def declared_buffer_bytes(platform: Mapping[str, Any]) -> Optional[int]:
+    """[U-F4] The declared on-chip carry buffer's capacity in bytes (``carry_buffer_bytes``), None when undeclared."""
+    capacity = platform.get(CARRY_BUFFER_KEY)
+    return None if capacity is None else natural(capacity, CARRY_BUFFER_KEY, error=ValueDomainCensusError)
+
+
+def buffer_live_bytes(carry: Mapping[str, Any], platform: Mapping[str, Any]) -> Tuple[Optional[int], str]:
+    """[U-F4] ``(bytes, what they are)`` of the largest live carry a wavefront group holds in a declared on-chip carry
+    buffer, in the run's domain, one rule on both planes: a value-domain buffer holds the carried values at the value
+    grid (``value_bytes`` at ``activation_bits``; None without the grid), a spiking buffer what the pass transfer
+    buffers (the census's raster under verbatim, its window counts under collapse)."""
+    if not names_value_domain(platform):
+        return int(carry["onchip_peak_live_bytes"]), "the pass transfer's live rasters or window counts"
+    if "onchip_peak_live_elements" not in carry:
+        raise ValueDomainCensusError("the carry census states no onchip_peak_live_elements: a value-domain buffer "
+                                     "sizes the live carried values, not the transfer's bytes")
+    bits = value_bits(platform)
+    if bits is None:
+        return None, NO_BUFFER_GRID
+    return value_bytes(int(carry["onchip_peak_live_elements"]), bits), f"live values at activation_bits {bits}"
+
+
+def onchip_carry(carry: Optional[Mapping[str, Any]], platform: Mapping[str, Any]
+                 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """[U-F4] ``carry`` held as the platform declares it: without a declared ``carry_buffer_bytes`` every carried value
+    crosses the boundary (the census unchanged); with one, a wavefront group's own values (``onchip_*``) stay in the
+    buffer (their crossings leave the boundary census and enter ``onchip_bytes``), and the reason a group's live carry,
+    sized in the run's domain (``buffer_live_bytes``), does not fit the buffer, which refuses the program by name. A
+    census without wavefront groups is unchanged."""
+    capacity = declared_buffer_bytes(platform)
+    if carry is None or capacity is None or "onchip_out_bytes" not in carry:
+        return (None if carry is None else dict(carry)), None
+    need, what = buffer_live_bytes(carry, platform)
+    held = {k: v for k, v in carry.items() if not k.startswith("onchip_peak_live")}
+    out, inbound = int(held.pop("onchip_out_bytes")), int(held.pop("onchip_in_bytes"))
+    held["boundary_out_bytes"] = int(held["boundary_out_bytes"]) - out
+    held["boundary_in_bytes"] = int(held["boundary_in_bytes"]) - inbound
+    held[ONCHIP_CENSUS] = out + inbound
+    if need is None:
+        return held, what
+    refusal = None if need <= capacity else (
+        f"a wavefront group holds {need} B ({what}) on chip, above the declared {CARRY_BUFFER_KEY} {capacity}: "
+        "the program does not fit the on-chip carry buffer")
+    return held, refusal
 
 
 @dataclass(frozen=True)
@@ -149,17 +206,19 @@ class ValueDomainFacts:
     withheld: Tuple[Tuple[str, str], ...] = ()
     #: [KA-G3-1] The record's value NoC byte-hops (the candidate plane states them on its view).
     noc_value_bytes: Optional[float] = None
+    #: [U-F4] The value bytes a declared on-chip carry buffer holds (each written once, read once), else None.
+    onchip_bytes: Optional[int] = None
 
 
 def apply_value_rule(values: Dict[str, QuantityValue], facts: ValueDomainFacts) -> Dict[str, str]:
     """Replace a plane's spiking-rule quantities by the value rule's, in place; returns the
     quantities the rule withholds (``Quantities(withheld=)``)."""
-    for key in RASTER_ONLY + ("carry_out_bytes", "carry_in_bytes", "latency_steps"):
+    for key in RASTER_ONLY + ("carry_out_bytes", "carry_in_bytes", "latency_steps", ONCHIP_CARRY):
         values.pop(key, None)
     values["timesteps"] = QuantityValue(1.0, "static")
     for key, value in (("synaptic_events", facts.mac_events), ("latency_steps", facts.latency_steps),
                        ("carry_out_bytes", facts.carry_out_bytes), ("carry_in_bytes", facts.carry_in_bytes),
-                       ("noc_value_bytes", facts.noc_value_bytes)):
+                       ("noc_value_bytes", facts.noc_value_bytes), (ONCHIP_CARRY, facts.onchip_bytes)):
         if value is not None:
             values[key] = QuantityValue(float(value), "static")
     return {key: reason for key, reason in facts.withheld if key not in values}
@@ -171,12 +230,13 @@ def record_value_facts(record: Any) -> ValueDomainFacts:
     spans = [stage_latency([c.static_delay_levels for c in segment.cores]) for segment in segments]
     latencies = None if any(span is None for span in spans) else [int(span) for span in spans if span is not None]
     carry = record.schedule.carry
-    # A sealed schedule that carries nothing seals no carry census: a known zero.
-    sized, withheld = value_carry(
-        {"boundary_out_bytes": 0 if carry is None else carry.boundary_out_bytes,
-         "boundary_in_bytes": 0 if carry is None else carry.boundary_in_bytes},
-        None if carry is None else carry.timesteps, value_bits(record.identity.platform),
-    )
+    # A sealed schedule that carries nothing seals no carry census: a known zero. [U-F4] held as the chip declares it.
+    held, refusal = onchip_carry(record_carry_census(record.schedule), record.identity.platform)
+    if refusal is not None and held is not None:  # the program does not fit the buffer: no on-chip carry is sized
+        held.pop(ONCHIP_CENSUS, None)
+    sized, withheld = value_carry(held, None if carry is None else carry.timesteps, value_bits(record.identity.platform))
+    if refusal is not None:
+        withheld[ONCHIP_CARRY] = refusal
     sealed = getattr(record.schedule, "value_noc_wire_hops", None)
     noc_value, noc_withheld = value_noc_reading(sealed, value_bits(record.identity.platform))
     if sealed is None and any(len(segment.cores) > 1 for segment in segments):
@@ -184,11 +244,28 @@ def record_value_facts(record: Any) -> ValueDomainFacts:
     if noc_withheld is not None:
         withheld["noc_value_bytes"] = noc_withheld
     return ValueDomainFacts(
-        mac_events=sum(c.cells_used for s in segments for c in s.cores),
+        mac_events=sum(c.cells_used for s in segments for i, c in enumerate(s.cores)
+                       if i not in (s.dark_core_indices or ())),  # [U-F4] a dark core is loaded, never evaluated
         latency_steps=None if latencies is None else value_window(latencies),
         carry_out_bytes=sized.get("carry_out_bytes"), carry_in_bytes=sized.get("carry_in_bytes"),
-        withheld=tuple(sorted(withheld.items())), noc_value_bytes=noc_value,
+        withheld=tuple(sorted(withheld.items())), noc_value_bytes=noc_value, onchip_bytes=sized.get(ONCHIP_CARRY),
     )
+
+
+def record_carry_census(schedule: Any) -> Dict[str, int]:
+    """A sealed schedule's carry census as the planes' census states it: its boundary crossings and, [U-F4] where it
+    runs wavefront groups, the share each group holds itself (summed; the peaks, in bytes and in values, the largest
+    group's)."""
+    carry = schedule.carry
+    census = {"boundary_out_bytes": 0 if carry is None else int(carry.boundary_out_bytes),
+              "boundary_in_bytes": 0 if carry is None else int(carry.boundary_in_bytes)}
+    groups = getattr(schedule, "wavefronts", None) or ()
+    if groups:
+        census.update(onchip_out_bytes=sum(g.onchip_out_bytes for g in groups),
+                      onchip_in_bytes=sum(g.onchip_in_bytes for g in groups),
+                      onchip_peak_live_bytes=max(g.onchip_peak_live_bytes for g in groups),
+                      onchip_peak_live_elements=max(g.onchip_peak_live_elements for g in groups))
+    return census
 
 
 def domain_bytes_of(platform: Mapping[str, Any], timesteps: Optional[int]) -> Optional[Any]:

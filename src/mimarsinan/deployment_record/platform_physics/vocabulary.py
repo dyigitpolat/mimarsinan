@@ -137,6 +137,18 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "host reads back. Its own constant because the readout path need not "
      "cost what the inbound DMA path costs; a target that does not declare it "
      "prices no readout term rather than borrowing the inbound number."),
+    ("e_carry_buffer_per_byte", PROGRAMMING, ENERGY, "pJ", "carry_onchip_bytes",
+     "[U-F4] Energy of one byte access of a declared on-chip carry buffer (a carried byte is written once and read "
+     "once; carry_onchip_bytes counts both accesses): the buffer's own figure, priced only where the chip declares "
+     "carry_buffer_bytes; a target that does not declare it (with its source) refuses the energy by name rather "
+     "than borrowing another store's figure."),
+    ("p_carry_buffer_static_per_byte", PROGRAMMING, POWER, "nW", "carry_buffer_capacity_bytes x e2e_latency_s",
+     "[U-F4] Static (leakage) power of one declared byte of the on-chip carry buffer while the chip is powered, "
+     "priced on the capacity the chip declares (carry_buffer_bytes), filled or not; a target declaring the buffer "
+     "without it (with its source) refuses the energy by name."),
+    ("area_carry_buffer_per_byte", PROGRAMMING, AREA, "um^2", "carry_buffer_capacity_bytes",
+     "[U-F4] Silicon area of one declared byte of the on-chip carry buffer, beside the compute footprint on either "
+     "area path; a target declaring the buffer without it (with its source) refuses the chip area by name."),
     ("e_program_per_byte", PROGRAMMING, ENERGY, "pJ", "reprogrammed_bytes",
      "Energy to COMMIT one byte of programming payload into the target's weight "
      "store — the write itself, beyond moving the byte onto the chip. Its own "

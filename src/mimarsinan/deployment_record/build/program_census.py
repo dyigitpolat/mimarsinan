@@ -7,11 +7,12 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps
-from mimarsinan.deployment_record.build.pass_carry import (  # candidate_carry_census moved there: re-export
+from mimarsinan.deployment_record.build.pass_carry import (  # the candidate's censuses (programming less dark cores)
     boundary_widths_of, candidate_carry_census as candidate_carry_census,
+    candidate_programming_census as candidate_programming_census,
 )
-from mimarsinan.deployment_record.build.payload_sizes import (  # the candidate's programming census: re-exported
-    CandidateProgramming as CandidateProgramming, candidate_programming_census as candidate_programming_census,
+from mimarsinan.deployment_record.build.payload_sizes import (  # the candidate's programming census type: re-exported
+    CandidateProgramming as CandidateProgramming,
     core_connectivity_entries, core_payload_bytes, core_sign_rows, pass_program_bytes as pass_program_bytes,
 )
 from mimarsinan.deployment_record.build.producer_census import (
@@ -32,6 +33,7 @@ from mimarsinan.mapping.support.period_census import (
 from mimarsinan.mapping.support.schedule.pass_carry import (
     carried_softcore_spans, carried_wire_spans, delayed_input_slices,
 )
+from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_CORE_ORDINALS, dark_cores
 from mimarsinan.mapping.weight_programming import weight_programming_report
 from mimarsinan.transformations.quantization_bounds import core_weight_bits
 
@@ -99,6 +101,8 @@ def segment_record(stage_index: int, segment_index: int, pass_index: int, stage:
                                    if getattr(core, "latency", None) is not None}),
         resident_core_indices=marks,
         operand_core_cells=tuple(operand_cells_by_core(segment, banks)) if banks else None,
+        dark_core_indices=tuple(sorted(dark_cores(stage))) or None,  # [U-F4] a wavefront head's dark cores
+        core_ordinals=getattr(stage, SCHEDULE_CORE_ORDINALS, None),  # [U-F4] a later wavefront pass's head ordinals
     )
 
 
@@ -142,11 +146,13 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
         for softcore, hardcore in placements:
             previous = owner.get(hardcore)
             owner[hardcore] = segment_of[softcore] if previous is None else min(previous, segment_of[softcore])
+        dark = frozenset(getattr(program, "dark_cores", None) or ())  # [U-F4] loaded by the pass, unused by it
+        owner.update({h: min(owner.values()) for h in dark})
         for segment in sorted({segment_of[softcore] for softcore, _ in placements}):
             cores = sorted(h for h, s in owner.items() if s == segment)
             latencies = execution_stage_latencies(
                 softcores, [[pl for pl in placements if segment_of[pl[0]] == segment]],
-                retimed=bool(semantics.retimed), runs=runs)
+                retimed=bool(semantics.retimed), runs=runs, transparent=(bool(getattr(program, "wavefront", False)),))
             position[(index, segment)] = len(rows)
             tiles = [split[h] if split else (program.core_cells[h],) for h in cores]
             first = [sum(len(t) for t in tiles[:i]) for i in range(len(cores))]
@@ -158,6 +164,7 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
                 operand_only_cores=operand_only_tiles(
                     candidate_operand_only(softcores, placements, cores, dynamic_banks or ()), tiles),
                 marks=frozenset(first[i] + j for i, h in enumerate(cores) if h in kept for j in range(len(tiles[i]))),
+                dark=frozenset(first[i] + j for i, h in enumerate(cores) if h in dark for j in range(len(tiles[i]))),
                 core_extents=None,
                 compute_steps=None if timesteps is None else program_latency_steps(
                     stage_max_latencies=latencies, timesteps=int(timesteps), is_cycle=semantics.is_cycle,
@@ -206,13 +213,14 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
             resident_core_indices(stage, len(cores)) if getattr(stage, SCHEDULE_RESIDENT_CORES, None) is not None
             else ())
         only = operand_only_tiles(operand_only_by_core(stage.hard_core_mapping, banks), tiles) if banks else frozenset()
+        dark = expand_to_tiles([(0, None, t) for t in tiles], dark_cores(stage))[1]  # [U-F4]
         operand = operand_cells_per_tile(operand, tiles)
         rows.append(PassRow(
             segment_index=int(stage.schedule_segment_index if stage.schedule_segment_index is not None
                               else len(rows)),
             resident=bool(getattr(stage, "schedule_weights_resident", False)),
             **producer_split(cells, operand), operand_only_cores=only, marks=marks, core_extents=extents,
-            compute_steps=None, stage_latencies=latencies, core_types=types,
+            compute_steps=None, stage_latencies=latencies, core_types=types, dark=dark,
             core_sign_rows=tuple(r for c, o, t in zip(cores, occupancy, tiles)
                                  for r in tile_rows(core_sign_rows(c, o), t)),
         ))
@@ -245,11 +253,12 @@ def record_program_passes(record: Any) -> ProgramPasses:
         cells, marks, extents, types = expand_to_tiles(
             [(c.cells_used, (c.axons_used, c.neurons_used), t) for c, t in zip(segment.cores, tiles)],
             segment.resident_core_indices or ())
+        dark = expand_to_tiles([(0, None, t) for t in tiles], segment.dark_core_indices or ())[1]  # [U-F4]
         rows.append(PassRow(
             segment_index=segment.segment_index, resident=segment.programming == "resident",
             **producer_split(cells, operand_cells_per_tile(segment.operand_core_cells, tiles) if stated else None),
             marks=marks, core_extents=extents, compute_steps=steps, stage_latencies=latencies, core_types=types,
-            operand_only_cores=operand_only_tiles([bool(c.operand_only) for c in segment.cores], tiles),
+            operand_only_cores=operand_only_tiles([bool(c.operand_only) for c in segment.cores], tiles), dark=dark,
             core_sign_rows=tuple(r for c, t in zip(segment.cores, tiles)
                                  for r in tile_rows(c.sign_register_rows or 0, t)),
         ))

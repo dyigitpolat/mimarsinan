@@ -9,9 +9,11 @@ from mimarsinan.deployment_record.cost.absolute.context import (
     PricingContext,
 )
 from mimarsinan.deployment_record.cost.absolute.formulas import (
+    BUFFER_STATIC,
     ENERGY_COMPONENTS,
     PROGRAMMING_BYTE_ENERGIES,
     add_bands,
+    carry_buffer_static_watts,
     per_core_type_compute,
     programming_payload_bytes,
     scale_band,
@@ -75,10 +77,12 @@ def _compute_constant(ctx: PricingContext) -> Optional[str]:
 def _static_band(
     ctx: PricingContext, e2e: Optional[Band]
 ) -> Tuple[Optional[Band], bool]:
-    """(static energy over the priced latency, declared-but-unpriceable)."""
+    """(static energy over the priced latency, declared-but-unpriceable). [U-F4] A declared on-chip carry buffer
+    leaks beside the chip's own static power, on either path (no aggregate contains a component the run adds)."""
     per_core = ctx.priced("p_static_per_core") and ctx.quantities.has("cores_physical")
     global_ = ctx.priced("p_static_global")
-    if not per_core and not global_:
+    buffer = carry_buffer_static_watts(ctx.quantities, ctx.physics)
+    if not per_core and not global_ and buffer is None:
         return None, False
     if e2e is None:
         return None, True
@@ -90,8 +94,10 @@ def _static_band(
             "p_static_per_core x cores_physical"))
     if global_:
         watts.append(ctx.physics.band("p_static_global"))
+    if buffer is not None:
+        watts.append(buffer)
     total = add_bands(watts, "static power")
-    basis = "static power x e2e_latency_s"
+    basis = "static power x e2e_latency_s" + ("" if buffer is None else f" (with {buffer.basis})")
     return Band(total.low * e2e.low * _J_TO_MJ,
                 total.nominal * e2e.nominal * _J_TO_MJ,
                 total.high * e2e.high * _J_TO_MJ, basis), False
@@ -244,6 +250,10 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     ctx.term(ENERGY_DYNAMIC, "mJ", add_bands(components, dynamic_source),
              dynamic_source)
 
+    if BUFFER_STATIC in ctx.refused_constants:  # [U-F4] the declared buffer leaks at a power the target never stated
+        _refuse(ctx, ctx.refused_constants[BUFFER_STATIC])
+        _programming_energy(ctx)
+        return
     static, static_blocked = _static_band(ctx, e2e)
     if static_blocked:
         root = ctx.refusal_reason("e2e_latency_s") or "no reason was recorded"

@@ -113,6 +113,8 @@ class TestCoverage:
 #: CL9 final re-pin: the 32 rows are the union of the units' amendments (closure, N2, N2b, pack, lanes), equal to the
 #: theorem box fixture's ``cost_only`` list (test_hypothesis_table.py) and to the X3a partition (test_cost_draws.py).
 #: CL9 of integration pass 2: no unit of the pass (explore, exact, E1, E6, P1) amends the set, so it keeps its 32 rows.
+#: U-F4 (owner answer of 2026-10-28, "Build it"): ``pipelined_multiplexing``, position multiplexing's pipelined form, a
+#: cost-only mapping decision, is a further row.
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",
@@ -130,7 +132,7 @@ FROZEN_COST_ONLY = frozenset({
     "inference_batch_K", "max_axons", "max_neurons",
     "max_schedule_passes", "onchip_arithmetic.lane_block", "onchip_arithmetic.lanes_per_core",
     "platform_physics_overrides", "platform_physics_profile",
-    "residency_plan", "residency_plan.index", "residency_plan.step", "position_multiplexing",
+    "residency_plan", "residency_plan.index", "residency_plan.step", "position_multiplexing", "pipelined_multiplexing",
     "tile_grid_cols", "tile_grid_rows",
     "write_overlap", "write_overlap.mode", "write_overlap.shadow_capacity_fraction", "write_ports",
 })
@@ -194,8 +196,9 @@ class TestPlanClasses:
         cost_only = {path for path, cls in _every_path_class() if cls == COST_ONLY}
         # 26 owner-reviewed rows + the closure's CL-SG amendment (weight_sign_granularity) + the N2 key amendment
         # (write_source) + the N2b one (write_physics) + W02's position_multiplexing (pack) + W08's two lane-block
-        # pricing fields (lanes) + E-6's compute_physics + U-S's event_census_samples (the event census)
-        assert len(FROZEN_COST_ONLY) == 34
+        # pricing fields (lanes) + E-6's compute_physics + U-S's event_census_samples (the event census) + U-F4's
+        # pipelined_multiplexing
+        assert len(FROZEN_COST_ONLY) == 35
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 

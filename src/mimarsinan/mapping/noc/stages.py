@@ -17,6 +17,7 @@ def execution_stage_latencies(
     retimed: bool,
     census: Optional[LayoutWireCensus] = None,
     runs: Optional[Sequence[int]] = None,
+    transparent: Optional[Sequence[bool]] = None,
 ) -> Tuple[int, ...]:
     """Per-execution-stage max core latency, one entry per stage.
 
@@ -26,7 +27,8 @@ def execution_stage_latencies(
     reproduces the step count the runner executes (measured: the MLP study run's 3 levels at T=4 → 3 x 5 = 15,
     exactly its sealed ``compute_steps``). [U1 W10] With the walk's wire census, a pass the fused segment pins spans
     its pinned latencies; with the walk's ``runs`` (``spec_runs``), the builder's segments (its fused segments) group
-    the specs, else their depth segments do.
+    the specs, else their depth segments do. [U-F4] A ``transparent`` pass (a wavefront pass: its cores read carried
+    inputs only) runs at its own timing, every stage at latency 0, as the builder stores it.
     """
     segment_of = spec_segments(softcores, runs)
     pinned = (project_planned_passes([int(s.output_count) for s in softcores],
@@ -34,7 +36,11 @@ def execution_stage_latencies(
                                      segment_of).pinned_spans
               if census is not None and not retimed else (None,) * len(pass_placements))
     stages: List[int] = []
-    for placements, span in zip(pass_placements, pinned):
+    flat = tuple(transparent) if transparent is not None else (False,) * len(pass_placements)
+    for placements, span, own in zip(pass_placements, pinned, flat):
+        if own:
+            stages.extend(0 for _ in sorted({int(segment_of[i]) for i, _h in placements}))
+            continue
         if span is not None:
             stages.append(span)
             continue

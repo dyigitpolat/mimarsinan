@@ -107,6 +107,7 @@ def carry_census_from_spans(
     timesteps: int,
     transfer: str,
     extra_in: Sequence[Tuple[int, int, int]] = (),
+    groups: Optional[Sequence[Optional[int]]] = None,
 ) -> Dict[str, int]:
     """The carry census of ANY pass structure that can state its spans.
 
@@ -118,7 +119,10 @@ def carry_census_from_spans(
     the total — the register-allocation shape, priced under whichever
     discipline the run actually executes. ``extra_in``: ``(node, width, pass)``
     per delayed slice beyond one per producer and pass (:func:`delayed_input_slices`,
-    ``delayed_carry_wires``), each one more boundary-in crossing of the buffered raster.
+    ``delayed_carry_wires``), each one more boundary-in crossing of the buffered raster. [U-F4] ``groups`` (per
+    boundary position, its wavefront group or None) adds the share of the census held inside one group
+    (``onchip_*``), which a declared on-chip carry buffer keeps off the boundary; its live peak is stated in carried
+    values too (``onchip_peak_live_elements``), so each domain sizes it at its own grid.
     """
     total = sum(carried_wire_bytes(w, timesteps, transfer) for _, w, _, _ in spans)
     peak = 0
@@ -133,7 +137,7 @@ def carry_census_from_spans(
         for _, w, _, _ in spans
     )
     replayed = sum(boundary_transfer_bytes(width=w, timesteps=timesteps) for _, w, _ in extra_in)
-    return {
+    census = {
         "carried_wires": len(spans),
         "carried_bytes": total,
         "peak_live_bytes": peak,
@@ -142,16 +146,35 @@ def carry_census_from_spans(
         "boundary_out_bytes": crossing,
         "boundary_in_bytes": crossing + replayed,
     }
+    if groups is not None and any(g is not None for g in groups):
+        census.update(_onchip_share(spans, extra_in, groups, timesteps=timesteps, transfer=transfer))
+    return census
+
+
+def _onchip_share(spans, extra_in, groups, *, timesteps: int, transfer: str) -> Dict[str, int]:
+    """[U-F4] The census of the wires one wavefront group produces and reads: its crossings (out, and in with the
+    group's own replays) and the peak live carry over its pass boundaries, in the transfer's buffered bytes and in
+    carried values (every wire's bytes are its width times one per-value size, so one boundary holds both peaks)."""
+    inside = [(n, w, a, b) for n, w, a, b in spans if groups[a] is not None and groups[a] == groups[b]]
+    held = {n: groups[a] for n, _w, a, _b in inside}
+    out = sum(boundary_transfer_bytes(width=w, timesteps=timesteps) for _, w, _, _ in inside)
+    again = sum(boundary_transfer_bytes(width=w, timesteps=timesteps) for n, w, reader in extra_in
+                if n in held and groups[reader] == held[n])
+    live = [[w for _, w, a, b in inside if a <= boundary < b] for boundary in range(len(groups))]
+    peak = max((sum(carried_wire_bytes(w, timesteps, transfer) for w in wires) for wires in live), default=0)
+    return {"onchip_out_bytes": out, "onchip_in_bytes": out + again, "onchip_peak_live_bytes": peak,
+            "onchip_peak_live_elements": max((sum(wires) for wires in live), default=0)}
 
 
 def pass_carry_census(
-    stages: Sequence, timesteps: int, transfer: str
+    stages: Sequence, timesteps: int, transfer: str, groups: Optional[Sequence[Optional[int]]] = None,
 ) -> Dict[str, int]:
-    """The sealed program's census — spans and delayed slices from its own hybrid stages."""
+    """The sealed program's census — spans and delayed slices from its own hybrid stages (``groups``: per stage, its
+    wavefront group, [U-F4])."""
     return carry_census_from_spans(
         carried_wire_spans(stages),
         boundary_count=len(stages), timesteps=timesteps, transfer=transfer,
-        extra_in=delayed_input_slices(stages),
+        extra_in=delayed_input_slices(stages), groups=groups,
     )
 
 

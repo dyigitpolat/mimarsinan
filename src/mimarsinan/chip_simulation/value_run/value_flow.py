@@ -8,6 +8,7 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
+from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_CORE_ORDINALS
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_torch,
     decref_consumers,
@@ -114,6 +115,7 @@ class ValueHybridCoreFlow(nn.Module):
             seg_output = run_neural_segment_values(
                 stage.hard_core_mapping, seg_input,
                 resident_head=scope.head_hcm, scope=scope, payloads=payloads, bindings=bindings,
+                ordinals=getattr(stage, SCHEDULE_CORE_ORDINALS, None),
                 payload_recorder=None if payload_hook is None
                 else (lambda *args, s=stage, hook=payload_hook: hook(s, *args)),
             )

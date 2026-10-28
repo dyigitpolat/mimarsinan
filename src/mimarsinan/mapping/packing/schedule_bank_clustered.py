@@ -95,7 +95,7 @@ def mark_bank_residency(pass_stages: list) -> None:
         stage.schedule_weights_resident = resident
 
 
-def _stage_copies(stage) -> list:
+def stage_copies(stage) -> list:
     """Per physical core: its shape and the bank regions it holds (bank, bank ranges, extent, offsets)."""
     segment = stage.hard_core_mapping
     return [
@@ -117,7 +117,7 @@ def mark_multiplexed_residency(pass_stages: list, run_heads) -> None:
             f"position_multiplexing: {len(pass_stages)} executed passes for {len(run_heads)} planned ones")
     head = None
     for stage, is_head in zip(pass_stages, run_heads):
-        copies = _stage_copies(stage)
+        copies = stage_copies(stage)
         if is_head:
             head = copies
             continue

@@ -20,6 +20,7 @@ from mimarsinan.mapping.packing.segment_specs import segment_specs_for
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.support.schedule.pass_carry import pass_carry_census
 from mimarsinan.mapping.support.schedule.pass_cut import transfer_for
+from mimarsinan.mapping.support.wavefront_stages import stage_groups
 from mimarsinan.mapping.verification.onchip_fraction import estimate_onchip_fractions
 from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline
 
@@ -119,7 +120,8 @@ def builder_plane(program, platform: Dict[str, Any]) -> Dict[str, Any]:
     specs = [spec_row(s) for segment in segments for s in reader(segment.nodes, ir_graph=program.ir)[0]]
     return {"segments": len(segments), "host_ops": sum(isinstance(n, ComputeOp) for n in program.ir.nodes),
             "specs": specs, **period_rows(mapping_program_passes(mapping)),
-            "carry": pass_carry_census(mapping.stages, STEPS, TRANSFER)}
+            # [U-F4] with the stages' wavefront groups, as the record seals them (none: the census unchanged)
+            "carry": pass_carry_census(mapping.stages, STEPS, TRANSFER, groups=stage_groups(mapping.stages))}
 
 
 def builder_depth_specs(program, platform: Dict[str, Any]) -> list:

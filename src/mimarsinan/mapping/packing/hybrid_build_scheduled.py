@@ -5,7 +5,6 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.packing.hybrid_segment import _flush_scheduled_segment, _validate_coalescing_budget
 from mimarsinan.mapping.packing.hybrid_segment_helpers import (
@@ -13,8 +12,9 @@ from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_types import HybridStage
-from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
+from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal, PlannedPassPackingRefusal
 from mimarsinan.mapping.packing.pass_timing import PassTimingError, project_passes
+from mimarsinan.mapping.packing.pipelined_build import flush_wavefront_segment, ir_producers, refuse_with_retiming
 from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
 from mimarsinan.mapping.packing.schedule_residency_plan import (
     compose_builder_program,
@@ -30,12 +30,6 @@ from mimarsinan.mapping.layout.segmentation import (
     partition_ir_graph,
     segment_depth_groups,
 )
-
-
-class PlannedPassPackingRefusal(ToolchainRefusal, RuntimeError):
-    """A pass the planner made that the packer cannot place on the declared cores, refused by name: the planner packs
-    shape-only specs under their residency classes (a unique fallback per spec without the layout's), the packer the
-    soft cores under theirs (the source perceptron's), so a class the planner kept apart can be merged, or not."""
 
 
 def _is_capacity_failure(exc: BaseException) -> bool:
@@ -83,6 +77,7 @@ def _flush_scheduled_subsegments(
     retimed_level_stages: bool = False,
     planned_chunks: "Sequence[Sequence[NeuralCore]] | None" = None,
     position_multiplexing: "bool | None" = None,
+    pipelined_multiplexing: "bool | None" = None,
 ) -> int:
     """Flush one IR segment as the planner's passes of one shared budget.
 
@@ -141,16 +136,22 @@ def _flush_scheduled_subsegments(
             max_schedule_passes=max_schedule_passes,
             coalescing_group_ids=coalescing_group_ids,
             position_multiplexing=position_multiplexing,
-            shares=shares,
+            shares=shares, pipelined_multiplexing=pipelined_multiplexing,
+            producers=ir_producers(cores) if pipelined_multiplexing else None,
         )
         if not plan.feasible:  # [W04] the shape-only plane's verdict and name, before anything is materialized
             if allow_coalescing:  # the specific cause first: a wide core needs more coalescing cores than declared
                 _validate_coalescing_budget(cores, cores_config, allow_neuron_splitting)
             raise CoreCapacityRefusal(f"segment {segment_label_base!r} ({len(cores)} IR cores): no pass plan packs it "
                                       "on the declared cores (a soft core or a coalescing group exceeds one pass)")
-        chunks = [
-            [spec_to_core[id(spec)] for spec in chunk] for chunk in plan.pass_lists
-        ]
+        if plan.wavefront is not None:  # [U-F4] each group's passes on its one load layout
+            flush_wavefront_segment(plan=plan, specs=specs, spec_to_core=spec_to_core, cores=cores, ir_graph=ir_graph,
+                                    segment_index=segment_index_start, label=segment_label_base,
+                                    consumed_by=consumed_by, cores_config=cores_config, weight_banks=weight_banks,
+                                    allow_neuron_splitting=allow_neuron_splitting, allow_coalescing=allow_coalescing,
+                                    all_reindex_maps=all_reindex_maps, stages=stages)
+            return segment_index_start + 1
+        chunks = [[spec_to_core[id(spec)] for spec in chunk] for chunk in plan.pass_lists]
         residency_applied, run_heads = plan.residency_applied, plan.run_heads
     if not chunks:
         return segment_index_start
@@ -221,6 +222,7 @@ def _build_scheduled(
     max_schedule_passes: int = 8,
     residency_plan: "Mapping[str, Any] | None" = None,
     position_multiplexing: "bool | None" = None,
+    pipelined_multiplexing: "bool | None" = None,
 ) -> "tuple[ResidencySegmentPlan, ...] | None":
     """Scheduled compilation: the planner's passes of one shared budget per segment.
 
@@ -234,6 +236,8 @@ def _build_scheduled(
     """
     from mimarsinan.mapping.packing.hybrid_build_pool import segment_specs_for
 
+    refuse_with_retiming(pipelined_multiplexing, retimed_level_stages=retimed_level_stages,
+                         per_hop_neural_segments=per_hop_neural_segments)
     segment_index = 0
     segments = partition_ir_graph(ir_graph, per_hop=per_hop_neural_segments)
     builder = None
@@ -271,6 +275,7 @@ def _build_scheduled(
                 retimed_level_stages=retimed_level_stages,
                 planned_chunks=planned,
                 position_multiplexing=position_multiplexing,
+                pipelined_multiplexing=pipelined_multiplexing,
             )
         else:
             node = segment.compute_op

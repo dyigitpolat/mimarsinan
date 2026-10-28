@@ -22,6 +22,7 @@ from mimarsinan.deployment_record.cost.absolute.formulas import (
     CHIP_AREA_ADDERS,
     LATENCY_COMPONENTS,
     add_bands,
+    carry_buffer_refusals,
     invert_band,
     programming_payload_bytes,
     scale_band,
@@ -126,6 +127,10 @@ def price_area(ctx: PricingContext) -> None:
         return
     # Beside the footprint on either path, and named unpriced where a census shows the work.
     bands, notes, missing = ctx.component_bands(CHIP_AREA_ADDERS, _M2_TO_MM2)
+    blocked = [ctx.blocked[c] for c, _f, _l in CHIP_AREA_ADDERS if c in ctx.blocked]
+    if blocked:  # [U-F4] a declared component whose area the target never stated
+        ctx.refuse(AREA_HEADLINE, blocked[0])
+        return
     components.extend(bands)
     evidence.extend(notes)
     unpriced.extend(missing)
@@ -258,7 +263,7 @@ def price_absolute(
         return AbsolutePricing(terms=(), refusals=refusals + named)
     physics, converter_refused = resolve_converter(physics, readout_bits)
     ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities),
-                                refused_constants=converter_refused)
+                                refused_constants={**converter_refused, **carry_buffer_refusals(quantities, physics)})
     priced_writes = None if writes is None else price_write_inputs(writes, physics)
     price_area(ctx)
     e2e = price_latency(ctx, priced_writes)

@@ -156,6 +156,8 @@ class TestRegistryEntries:
         # position_multiplexing (registry/entries_residency.py); Wave 2 WI-5a to WI-5c (registry/entries_grids.py),
         # WI-5e and W08 (onchip_arithmetic) and WI-5g (layer_core_types) add the declared value grids and lanes.
         assert set(passthrough_keys()) == set(PLATFORM_KEYS) | {"readout_ranges", "position_multiplexing",
+                                                                "pipelined_multiplexing",  # U-F4
+                                                                "carry_buffer_bytes",  # U-F4
                                                                 "quantizer_state", "weight_scale_rule",
                                                                 "bias_resolution",
                                                                 "onchip_arithmetic",  # Wave 2 WI-5e, W08

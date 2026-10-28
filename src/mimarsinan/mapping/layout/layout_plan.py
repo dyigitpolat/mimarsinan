@@ -171,6 +171,7 @@ def build_layout_plan(
     max_schedule_passes: int = 8,
     residency_plan: Optional[dict] = None,
     position_multiplexing: Optional[bool] = None,
+    pipelined_multiplexing: Optional[bool] = None,
 ) -> LayoutPlan:
     """Build a ``LayoutPlan`` from a shape-only ``MappingVerificationResult``.
 
@@ -189,6 +190,7 @@ def build_layout_plan(
         residency_plan=residency_plan,
         runs=getattr(verification, "runs", None),
         position_multiplexing=position_multiplexing,
+        pipelined_multiplexing=pipelined_multiplexing,
     )
 
     stats_dict = dict(hw.get("stats") or {})

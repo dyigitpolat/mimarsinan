@@ -18,6 +18,10 @@ from mimarsinan.deployment_record.quantities.value_domain import (
     names_value_domain,
     refuse_spiking_activity,
     value_bits,
+    ONCHIP_CARRY,
+    ONCHIP_CENSUS,
+    declared_buffer_bytes,
+    onchip_carry,
     value_carry,
     value_window,
 )
@@ -56,6 +60,7 @@ def candidate_context_from_platform(
     (``mapping.lanes.output_stage.planned_lane_ops``; absent without a model). ``lane_walked``: the layout walk
     applied the lane plan (``lanes.shape_walk``), so the lane work is the walk's fusion count and the stage says so.
     """
+    carry, carry_refusal = onchip_carry(carry, pcfg)  # [U-F4] each carried value held as the chip declares it
     context = _spiking_rule_context(
         pcfg, host_macs=host_macs, onchip_macs=onchip_macs, host_params=host_params,
         onchip_params=onchip_params, latency_steps=latency_steps,
@@ -67,6 +72,8 @@ def candidate_context_from_platform(
                       pricing_refusal=target_bundles.absolute_pricing_refusal(pcfg),
                       compute=compute_split(pcfg, passes), readout_bits=declared_adc_bits(pcfg))
     context = _lane_context(context, pcfg, lane_ops, lane_walked)
+    context = replace(context, carry_onchip_bytes=None if carry is None else carry.get(ONCHIP_CENSUS),
+                      carry_onchip_refusal=carry_refusal, carry_buffer_capacity_bytes=declared_buffer_bytes(pcfg))
     if not names_value_domain(pcfg):
         return _event_census(context, pcfg, passes)
     refuse_spiking_activity(pcfg)
@@ -82,6 +89,7 @@ def candidate_context_from_platform(
         context, timesteps=1, activity_factor=None, carried_raster_bytes=None,
         latency_steps=rule.latency_steps, mac_events=rule.mac_events, carry_out_bytes=rule.carry_out_bytes,
         carry_in_bytes=rule.carry_in_bytes, value_bits=value_bits(pcfg), value_rule=rule,
+        carry_onchip_bytes=sized.get(ONCHIP_CARRY),
     ), pcfg, passes)
 
 
