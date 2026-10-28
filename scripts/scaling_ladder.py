@@ -188,9 +188,9 @@ def attempt(seconds: Optional[float], work: Callable[[StageClock], Any]) -> Tupl
         reason = str(refused).splitlines()[0][:400] if str(refused) else ""
         return None, {"refusal": {"name": type(refused).__name__, "stage": clock.stage, "reason": reason}}
     except ValueError as refused:
-        # [CL5] A toolchain error class that refuses by name without deriving from ToolchainRefusal (for example
-        # WideFanInUnsupportedError on a chip that cannot coalesce) is recorded as that refusal, marked so; any other
-        # error propagates.
+        # [CL5] A toolchain error class that refuses by name without deriving from ToolchainRefusal is recorded as
+        # that refusal, marked so; any other error propagates. ([W12] WideFanInUnsupportedError, this branch's first
+        # case, is a ToolchainRefusal now and takes the branch above.)
         if not type(refused).__module__.startswith("mimarsinan."):
             raise
         reason = str(refused).splitlines()[0][:400] if str(refused) else ""

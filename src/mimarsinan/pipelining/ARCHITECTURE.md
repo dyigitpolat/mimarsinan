@@ -59,6 +59,22 @@ leaves the built cores' latencies as built. `pipeline_steps/mapping/deployment_r
 fragment seals `value_noc_wire_hops` (`deployment_record/quantities/value_domain.record_value_noc_wire_hops`) on
 value-domain runs.
 
+## The IR at unbounded geometry and the host condition at Hard Core Mapping (Wave 2 final unit ux)
+
+[E1 open item 1] Soft Core Mapping derives the IR through one method (`_derive_ir`: mapping, core-type binding, boundary
+grids, negative-shift transfer, relays, weight quantization, IR latency, IR pruning, readout laws, bank validation,
+core codes) and runs it twice: at the declared geometry (the deployed `ir_graph`, unchanged) and, on a copy of the model
+taken as the first mapping finds it (`model_copy_for_reference`), with no core limits and no coalescing, its stdout,
+records (the softcore-elimination record, the pre-pruning heatmap) and random draws kept out of the run. It promises
+the result as `ir_graph_unbounded` (`{"ir": the IR or None, "note": "built" or the exception's name and text}`; a
+second mapping that cannot run is recorded by name, never a refusal of the run). Hard Core Mapping requires it and
+passes it to the static check (`gates/static_program_gate.run_static_program_check(unbounded_ir=...)`), so a pipeline
+verdict establishes `ir-tiling` against the IR at unbounded geometry instead of assuming it; without it the condition
+stays assumed with the note in its own note. [W49] Hard Core Mapping runs its sampled certificates (spike-count twin,
+value twin, operand program) under `certification.host_condition.host_kernel_replay`; `gates/host_condition_gate.py`
+prints Theorem 1's host condition (`[HostCondition] Theorem 1 host condition: ...`) and appends its `host_condition`
+record after the static check's two in `deployment_record_hcm`. Neither refuses a run.
+
 ## Dependencies
 - `chip_simulation` — spiking-mode semantics and `SpikingDeploymentContract` read by `DeploymentPlan`; `BACKEND_REGISTRY` splices the simulation-step tail; simulation runners, cost extraction, and record comparison for the verification steps and parity gates.
 - `deployment_record` — fragment converters (`build.from_mapping`, `build.from_certificates`) and schema types the mapping steps and the spike-count gate use to persist deployment-record fragments; the direction is one-way (`deployment_record` never imports `pipelining`).

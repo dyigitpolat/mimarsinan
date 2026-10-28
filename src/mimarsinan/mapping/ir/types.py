@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Tuple
@@ -207,6 +208,11 @@ class NeuralCore(IRNode):
         return out
 
 
+#: [W49] The armed host-kernel replay (``certification.host_condition``), None by default: while armed, every call of
+#: the deployment seam hands it the op, the kernel input, the result and the kernel, which it replays sample by sample.
+HOST_KERNEL_REPLAY: "contextvars.ContextVar" = contextvars.ContextVar("host_kernel_replay", default=None)
+
+
 @dataclass
 class ComputeOp(IRNode):
     """Non-neural compute op (pooling, norm, attention, etc.)."""
@@ -225,8 +231,15 @@ class ComputeOp(IRNode):
         return self._exec_module(x)
 
     def execute_on_gathered(self, flat_input: torch.Tensor) -> torch.Tensor:
-        """DEPLOYMENT seam: places the host module on the buffer device."""
-        return self._exec_module(flat_input)
+        """DEPLOYMENT seam: places the host module on the buffer device. An armed host-kernel replay gets copies (the
+        input taken before the kernel runs, which may write it in place, and the result); the call is the unarmed one."""
+        replay = HOST_KERNEL_REPLAY.get()
+        if replay is None:
+            return self._exec_module(flat_input)
+        as_given = flat_input.detach().clone()
+        result = self._exec_module(flat_input)
+        replay(self, as_given, result.detach().clone(), self._exec_module)
+        return result
 
     def probe_on_gathered(self, flat_input: torch.Tensor) -> torch.Tensor:
         """ANALYSIS seam: same execution, borrowed placement restored exactly.

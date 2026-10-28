@@ -2,6 +2,8 @@ from collections import defaultdict
 
 import numpy as np
 
+from mimarsinan.common.refusal import ToolchainRefusal
+
 #: A pass's hard-core-mapping attribute: per core, the latency the fused segment runs it at (set only where pinned).
 PINNED_LATENCIES = "pinned_latencies"
 
@@ -22,6 +24,11 @@ def _source_arrays(sources):
             column(lambda s: bool(getattr(s, "is_off_", False)), bool),
             column(lambda s: bool(getattr(s, "is_input_", False)), bool),
             column(lambda s: bool(getattr(s, "is_always_on_", False)), bool))
+
+
+class CyclicCoreGraphError(ToolchainRefusal, RuntimeError):
+    """[W12] A hard-core graph with a cycle: no core order exists to walk it, so the program is refused by name
+    (Lemma A; the pass projection's H1-latency refusal comes first on a shipped build)."""
 
 
 class ChipLatency:
@@ -138,7 +145,7 @@ class ChipLatency:
                 if indegree[c] == 0:
                     ready.append(c)
         if len(order) != n_cores:
-            raise RuntimeError(
+            raise CyclicCoreGraphError(
                 "ChipLatency: cyclic core dependency; the recursive walk "
                 "would not terminate either"
             )

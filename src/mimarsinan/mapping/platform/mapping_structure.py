@@ -57,8 +57,9 @@ def compute_core_input_count(
 TilingMode = Literal["single", "coalescing", "output_tiled"]
 
 
-class WideFanInUnsupportedError(ValueError):
-    """A layer's fan-in exceeds one core and the chip cannot coalesce; raised instead of emitting an unrunnable mapping."""
+class WideFanInUnsupportedError(ToolchainRefusal, ValueError):
+    """A layer's fan-in exceeds one core and the chip cannot coalesce; raised instead of emitting an unrunnable mapping.
+    [W12] A refusal by name (Lemma A): the declaration cannot hold the layer."""
 
 
 def compute_fc_tiling_mode(

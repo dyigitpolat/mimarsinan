@@ -14,6 +14,7 @@ accuracy(oracle) + counts(oracle == backend) derives accuracy(backend)
 | `spike_certificate.py` | `certify_spike_counts` + `SpikeCountCertificate`: typed reference↔backend count comparison; per-backend exactness classes (`exact` / `counts-export`), fail-loud on unclassified backends. |
 | `value_certificate.py` | `certify_twin_flow_values` + `ValueWindowCertificate` [mvm]: node-granular fp64 value-window twin edge (identity ↔ packed value programs) with the measured `VALUE_TWIN_FP64_ATOL`; no vacuous pass. `exposed_nodes(hybrid_mapping)` [WI-5e]: the nodes a packed program's stages write (segment outputs and pass carries); the value twin gate builds its identity reference exposing them (`fp64_identity_program(ir, exposed=)`, `build_identity_hybrid_mapping(exposed=)`), so a scheduled lane program, one segment, has its carries compared instead of refused as backend-only; a program whose backend writes no node the identity keeps inside is unchanged. |
 | `operand_certificate.py` | [N2] `certify_payload_cells` (the payload edge: every cell the executor programs into an operand core against the golden's codes, per sample, and within its bank's `payload_bits`; a payload cached across samples fails, so does a code beyond the width) and `certify_operand_program` (R, C on common nodes, C on carried nodes against the golden, golden on both programs, host ops bitwise, the golden on the first samples alone against the batch, the payload edge, and the nonzero census of payload codes, operand-core outputs, host-op outputs by op kind and outputs; every edge counts a mismatch by equality, so a NaN is one; a program without dynamic operand banks refuses by name, `OperandCertificateError`). |
+| `host_condition.py` | [W49] Theorem 1's host condition checked by the sampled run: `host_kernel_replay()` (every host-kernel call of the deployment seam replayed, on copies of its input as it came in, on each sampled input alone and on the repeated batch, at atol 0), `HostConditionCertificate` (each batch-dependent, nondeterministic or several-placement kernel named; `established`, `outside_scope` by name or `not_checked`, batch invariance included where a kernel only ran on a batch of one; the deployment record's `host_condition` row), `host_condition_of(run, samples)` for any deployed program's flow (section below). |
 | `count_alignment.py` | `PerceptronCountAssembler` (backend stage counts → perceptron channel vectors via IR provenance: `perceptron_index`/`perceptron_output_column`/`perceptron_output_slice`; placement = column × channels + slice), `certify_twin_flow_counts` (the FATAL edge: identity-IR twin ↔ packed program; returns `(cert, report, backend_node_counts)` so gate callers can reduce the backend's `{node_id: (B, n)}` counts — boundary traffic — without a second simulation), `certify_flow_counts`/`nf_perceptron_counts` (the model↔grid WQ-residual measurement, atol-governed elsewhere), `flow_perceptron_counts`, `intersect_aligned`. |
 | `twin_schedule.py` | `twin_schedule_diagnostic`: per-node (stage, core-latency) table comparison printed on twin-cert FAILURE — triage aid, not a predicate (packed programs can preserve effective schedules while latency tables differ). |
 | `record_certificates.py` | `certify_run_records`: typed Edge-B certificate over two backend `RunRecord`s (per-core in/out + segment output counts); used by the SANA-FE and Loihi steps after their first-diff asserts. |
@@ -30,6 +31,33 @@ draws it, the pack unit's follow-up P5), and its atol-0 evidence is the unit sui
 (`tests/unit/mapping/position_multiplexing/`): the four TTFS variants with their one legal input encoding and firing,
 and a direct residency certificate that checks every resident hard core against its run head's (matrix, bias,
 threshold, latency and readout law) on value and LIF vehicles.
+
+## Theorem 1's host condition (Wave 2 final unit ux, W49)
+
+`host_condition.py`: Theorem 1's host condition (deterministic, batch-invariant host kernels on one device and dtype)
+checked by the sampled run. `host_kernel_replay()` arms the hook of the host ops' deployment seam
+(`mapping/ir/types.HOST_KERNEL_REPLAY`, read by `ComputeOp.execute_on_gathered`, which the one host evaluator
+`execute_compute_op_torch` calls): every call inside the block replays the same kernel, in the same context, on each
+sampled input alone and once more on the whole batch,
+comparing both with the batch's values at atol 0 (a NaN equals a NaN), with the random streams and a training-mode
+module's buffers restored afterwards. The seam hands the replay copies (the input as it came in, taken before the kernel
+runs, and the result) and every replayed call runs on its own copy, so a module that writes its input in place is
+replayed on its own input and the deployment's output is the unarmed one. `HostConditionCertificate` names each
+batch-dependent, nondeterministic or several-placement kernel (op id, name, kind, elements that differed); its status
+is `outside_scope` where a kernel breaks the condition (the deployment is outside the per-sample certified scope by
+name), else `not_checked` where the program holds host ops that no sampled certificate evaluated or a kernel only ran
+on a batch of one (alone is then the batch call, so batch invariance is not checked; named, never a vacuous pass), else
+`established`; `record()` is the deployment record's `host_condition` certificate row (backend `host`), passed only
+where established. `host_condition_of(run, samples)` runs any deployed program's flow under the replay; a replay armed
+inside another one feeds the outer one too. Hard Core Mapping arms it around its sampled certificates
+(`pipelining/core/gates/host_condition_gate.py`); it never refuses. The operand certificate keeps its whole-golden
+batch-of-one spot check of the first two samples (the golden costs about 11 s per call on ViT-Lite-7/4, fixed overhead)
+and adds the host-kernel edge (`HOST_ALONE`): every sampled input alone through every host kernel the golden runs, its
+reading carried as `OperandProgramCertificate.host_condition`. One rule for both edges (`judged_edges`): `HOST_ALONE`
+never fails the program, it is the host condition's reading, carried by name; `BATCH_OF_ONE` fails the program unless
+the replay names its cause (status `outside_scope`), in which case it is that condition's reading too. A batch-dependent
+host kernel on an operand program is thus outside the per-sample certified scope by name, never an unnamed stop of
+Hard Core Mapping, while batch dependence outside every host kernel still fails the certificate.
 
 ## Dependencies
 

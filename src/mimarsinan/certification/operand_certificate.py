@@ -4,11 +4,13 @@ payload edge over every written cell within its payload width, and a nonzero cen
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import torch
 
 from mimarsinan.certification.count_alignment import flow_node_counts
+from mimarsinan.certification.host_condition import OUTSIDE_SCOPE, HostConditionCertificate, host_kernel_replay
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 from mimarsinan.chip_simulation.value_run.int64_golden import GoldenTrace, run_golden
 from mimarsinan.chip_simulation.value_run.operand_blocks import operand_blocks
@@ -16,10 +18,14 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.capability.op_kinds import op_kind
 from mimarsinan.models.nn.activations.integer_law import grid_levels
 
-#: Samples the golden replays alone against their place in the batch (the batch-of-one edge, a spot check of the
-#: first two; batch invariance at the certified shapes is pinned per host-op kind by the batch-invariance tests).
+#: Samples the whole golden replays alone against their place in the batch (the batch-of-one edge: a structural spot
+#: check of the first two; the whole golden costs about 11 s per call on ViT-Lite-7/4, fixed overhead, so every sample
+#: of a 512-input certificate would add about 1.6 h).
 BATCH_OF_ONE_SAMPLES = 2
 BATCH_OF_ONE = "batch of one (golden alone/in the batch)"
+#: [W49] The host-kernel edge: every sampled input alone through every host kernel the golden runs, and the batch
+#: once more (``certification.host_condition``), at atol 0: Theorem 1's host condition on this program.
+HOST_ALONE = "host kernels alone (every sample)"
 
 
 class OperandCertificateError(ToolchainRefusal, ValueError):
@@ -101,11 +107,13 @@ class OperandProgramCertificate:
     payload: PayloadCellCertificate
     nonzero_census: dict
     passed: bool
+    host_condition: Optional[HostConditionCertificate] = None
 
     def summary(self) -> str:
         parts = [f"{e.name}: {e.mismatched}/{e.compared}" for e in self.edges]
         parts.append(f"payload: {self.payload.mismatched}/{self.payload.cells_compared}")
-        return "; ".join(parts) + f"; nonzero {self.nonzero_census}; passed={self.passed}"
+        host = f"; host condition {self.host_condition.verdict()}" if self.host_condition is not None else ""
+        return "; ".join(parts) + f"; nonzero {self.nonzero_census}{host}; passed={self.passed}"
 
 
 def _cat(parts) -> np.ndarray:
@@ -135,11 +143,8 @@ def _flow_outputs(mapping, samples):
 
 def _batch_of_one_edge(identity_mapping, samples: torch.Tensor, codes: np.ndarray, trace: GoldenTrace) -> EdgeResult:
     """The golden on the first ``BATCH_OF_ONE_SAMPLES`` samples alone against the same samples in the batch, every
-    output code and host value. The host edge compares golden and executor on one batch, so this edge is a spot check
-    of design §3.2's per-sample replay: it sees a host op whose fp64 output depends on batch composition only where
-    the first samples differ (torch's fp64 ELU and GELU at small shapes differ mostly in later samples). Batch and
-    thread invariance at the certified shapes rests on the per-shape pins of
-    ``tests/unit/chip_simulation/test_host_op_batch_invariance.py``, not on this edge."""
+    output code and host value: a structural spot check of design §3.2's per-sample replay. Every sample alone through
+    the host kernels is the host-kernel edge (``HOST_ALONE``), the part a batch-dependent host op moves."""
     got, want = [], []
     for i in range(min(BATCH_OF_ONE_SAMPLES, int(samples.shape[0]))):
         alone = GoldenTrace()
@@ -150,6 +155,29 @@ def _batch_of_one_edge(identity_mapping, samples: torch.Tensor, codes: np.ndarra
             got.append(values)
             want.append(trace.host_values[op_id][i])
     return _edge(BATCH_OF_ONE, _cat(got), _cat(want))
+
+
+def _host_alone_edge(host_condition) -> EdgeResult:
+    """The host-kernel edge from the replay's certificate: every output element of every host kernel call compared,
+    an element mismatched where it differed alone or on the repeat; one device and dtype per kernel required."""
+    kernels = host_condition.kernels
+    compared = sum(k.elements for k in kernels)
+    mismatched = sum(max(k.batch_dependent, k.nondeterministic) for k in kernels)
+    mismatched += sum(k.elements for k in host_condition.several_placements)
+    return EdgeResult(HOST_ALONE, compared, mismatched, max((k.max_abs_delta for k in kernels), default=0.0))
+
+
+def judged_edges(edges, host_condition: HostConditionCertificate) -> tuple:
+    """[W49] The edges whose mismatches fail the program certificate. One rule for the two edges that read the host
+    condition (a sample's host values a function of that sample alone): ``HOST_ALONE`` is the condition's own reading,
+    never a failure of the program, carried by name (``OperandProgramCertificate.host_condition``, and Hard Core
+    Mapping's ``host_condition`` record, whose replay sees the same calls). ``BATCH_OF_ONE`` fails the program unless
+    the replay names its cause: where a host kernel breaks the condition (status ``outside_scope``: batch-dependent,
+    nondeterministic, or on several devices or dtypes), its mismatch is that condition's reading, carried by name;
+    where none does, the mismatch is a defect of the program (batch dependence outside every host kernel) and fails
+    it, as before the host-kernel replay."""
+    carried = {HOST_ALONE} | ({BATCH_OF_ONE} if host_condition.status == OUTSIDE_SCOPE else set())
+    return tuple(e for e in edges if e.name not in carried)
 
 
 def certify_operand_program(nf_model, identity_mapping, packed_mapping, samples: torch.Tensor
@@ -166,7 +194,8 @@ def certify_operand_program(nf_model, identity_mapping, packed_mapping, samples:
     scm_flow, scm, scm_state = _flow_outputs(identity_mapping, samples)
     hcm_flow, hcm, _state = _flow_outputs(packed_mapping, samples)
     trace = GoldenTrace()
-    codes, steps = run_golden(identity_mapping, samples.numpy(), trace=trace)
+    with host_kernel_replay() as replay:  # [W49] every sampled input alone through every host kernel the golden runs
+        codes, steps = run_golden(identity_mapping, samples.numpy(), trace=trace)
     packed_codes, packed_steps = run_golden(packed_mapping, samples.numpy())
     reference, packed = flow_node_counts(scm_flow, samples), flow_node_counts(hcm_flow, samples)
     common = sorted(set(reference) & set(packed))
@@ -186,6 +215,8 @@ def certify_operand_program(nf_model, identity_mapping, packed_mapping, samples:
     edges.append(_edge("host ops (bitwise)", np.concatenate([h.reshape(-1) for h in host_got]) if host_got else [],
                        np.concatenate([h.reshape(-1) for h in host_want]) if host_want else []))
     edges.append(_batch_of_one_edge(identity_mapping, samples, codes, trace))
+    host_condition = replay.certificate(program_host_ops=len(host))
+    edges.append(_host_alone_edge(host_condition))
     payload = certify_payload_cells(hcm_flow, identity_mapping, samples)
     operand_cores = [core for s in identity_mapping.stages if s.kind == "neural"
                      for core, blocks in zip(s.hard_core_mapping.cores,
@@ -201,5 +232,6 @@ def certify_operand_program(nf_model, identity_mapping, packed_mapping, samples:
     }
     required = {"R (NF/SCM)", "golden/SCM", "golden/HCM", "C (SCM/HCM windows)", BATCH_OF_ONE}
     passed = (payload.passed and twin_ok and census["operand_core_outputs"] > 0 and census["outputs"] > 0
-              and all(e.mismatched == 0 for e in edges) and all(e.compared > 0 for e in edges if e.name in required))
-    return OperandProgramCertificate(tuple(edges), payload, census, passed)
+              and all(e.mismatched == 0 for e in judged_edges(edges, host_condition))
+              and all(e.compared > 0 for e in edges if e.name in required))
+    return OperandProgramCertificate(tuple(edges), payload, census, passed, host_condition)

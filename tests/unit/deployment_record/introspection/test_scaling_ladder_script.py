@@ -272,6 +272,8 @@ class TestRefusedDeclarations:
         assert "x_packed" in rows[1] and "refusal" not in rows[1]
 
     def test_a_named_toolchain_value_error_is_recorded_as_a_marked_refusal(self):
+        """[W12] ``WideFanInUnsupportedError`` is a refusal by name (Lemma A), recorded as one with no marker; a
+        toolchain ``ValueError`` that is no ``ToolchainRefusal`` is still recorded, marked; any other propagates."""
         from mimarsinan.mapping.platform.mapping_structure import WideFanInUnsupportedError
 
         script = _script()
@@ -282,6 +284,15 @@ class TestRefusedDeclarations:
 
         result, mark = script.attempt(None, refuse)
         assert result is None and mark["refusal"]["name"] == "WideFanInUnsupportedError"
+        assert mark["refusal"]["stage"] == "layout" and "toolchain_refusal" not in mark["refusal"]
+        stand_in = type("StandInValueError", (ValueError,), {"__module__": "mimarsinan.mapping.stand_in"})
+
+        def refuse_unnamed(clock):
+            clock.enter("layout")
+            raise stand_in("a toolchain value error without the refusal base (test)")
+
+        result, mark = script.attempt(None, refuse_unnamed)
+        assert result is None and mark["refusal"]["name"] == "StandInValueError"
         assert mark["refusal"]["stage"] == "layout" and mark["refusal"]["toolchain_refusal"] is False
         with pytest.raises(ValueError, match="plain"):
             script.attempt(None, lambda clock: (_ for _ in ()).throw(ValueError("plain")))

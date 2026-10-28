@@ -28,6 +28,7 @@ from mimarsinan.pipelining.core.gates.value_gates import (
     run_value_twin_certificate_gate,
 )
 from mimarsinan.pipelining.core.gates.static_program_gate import run_static_program_check
+from mimarsinan.pipelining.core.gates.host_condition_gate import host_condition_records, host_kernel_replay
 
 import torch
 import os
@@ -63,7 +64,7 @@ def _vram_probe(tag: str) -> None:
 class HardCoreMappingStep(PipelineStep):
     REQUIRES = (
         "model", "ir_graph", "platform_constraints_resolved",
-        "deployment_record_scm",
+        "deployment_record_scm", "ir_graph_unbounded",
     )
     PROMISES = ("hard_core_mapping", "deployment_record_hcm")
 
@@ -132,13 +133,17 @@ class HardCoreMappingStep(PipelineStep):
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")
         _vram_probe("after_pickle_save")
 
-        # [W15] the static per-deployment check beside the sampled certificates (read-only, never refuses).
+        # [W15] the static per-deployment check beside the sampled certificates (read-only, never refuses);
+        # [E1 open item 1] against Soft Core Mapping's IR at unbounded geometry, so ir-tiling is established.
+        reference = self.get_entry("ir_graph_unbounded") or {}
         with phase_profiler(_HCM, "static_program_check"):
             _, static_certificates = run_static_program_check(
                 self.pipeline, ir_graph, hybrid_mapping,
                 cores=platform_constraints.get("cores"), compile_wall_s=compile_wall_s,
-                compile_source=compile_source,
+                compile_source=compile_source, unbounded_ir=reference.get("ir"),
+                unbounded_note=reference.get("note", "absent from the cache"),
             )
+        del reference
 
         # [wsm V0'] the weight-programming boundary, measured on every run.
         with phase_profiler(_HCM, "reports"):
@@ -164,15 +169,18 @@ class HardCoreMappingStep(PipelineStep):
 
         _vram_probe("before_test")
         plan = DeploymentPlan.of(self.pipeline)
-        with phase_profiler(_HCM, "spike_count_gate"):
-            spike_gate_result = run_spike_count_certificate_gate(
-                self.pipeline, model, ir_graph, hybrid_mapping,
-            )
-        # Self-guarding: the gate SKIPs unless the policy observes values.
-        with phase_profiler(_HCM, "value_twin_gate"):
-            run_value_twin_certificate_gate(
-                self.pipeline, model, ir_graph, hybrid_mapping,
-            )
+        # [W49] the sampled certificates run under the host-kernel replay: Theorem 1's host condition, every input alone.
+        with host_kernel_replay() as host_replay:
+            with phase_profiler(_HCM, "spike_count_gate"):
+                spike_gate_result = run_spike_count_certificate_gate(
+                    self.pipeline, model, ir_graph, hybrid_mapping,
+                )
+            # Self-guarding: the gate SKIPs unless the policy observes values.
+            with phase_profiler(_HCM, "value_twin_gate"):
+                run_value_twin_certificate_gate(
+                    self.pipeline, model, ir_graph, hybrid_mapping,
+                )
+        static_certificates = static_certificates + host_condition_records(host_replay, hybrid_mapping)
         plan_cap = plan.simulation_batch_size
         _metric_phase = phase_profiler(_HCM, "mapping_metric")
         _metric_phase.__enter__()

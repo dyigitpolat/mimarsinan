@@ -15,6 +15,7 @@ from mimarsinan.mapping.packing.softcore import (
 from mimarsinan.mapping.packing.softcore.sign_split import apply_sign_split
 from mimarsinan.mapping.packing.hybrid_types import HybridStage, SegmentIOSlice
 from mimarsinan.mapping.platform.platform_constraints import PER_SYNAPSE, pool_sign_granularity
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 
 from mimarsinan.mapping.packing.hybrid_segment_helpers import (
@@ -22,6 +23,19 @@ from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _make_available_hardware_cores,
     _remap_external_sources_to_segment_inputs,
 )
+
+
+def reraise_packing_failure(error: BaseException, diagnostic: str):
+    """Raise ``diagnostic`` from a packing failure: [W04] a capacity failure keeps its name (``CoreCapacityRefusal``),
+    [W12] as does any refusal by name the packer raised (Lemma A), each under its own class; an anonymous failure stays
+    anonymous (a ``RuntimeError``: a crash, never a refusal)."""
+    if isinstance(error, ToolchainRefusal):
+        try:
+            named = type(error)(diagnostic)
+        except TypeError:  # a refusal whose constructor takes more than a message is re-raised as itself, unwrapped
+            raise error from None
+        raise named from error
+    raise RuntimeError(diagnostic) from error
 
 def _flush_neural_segment(
     *,
@@ -125,8 +139,7 @@ def _flush_neural_segment(
             f"  Pool size: {len(shared_pool)} (types head: {hw_summary})\n"
             f"  Softcore heads:\n" + "\n".join(rows[:5])
         )
-        # [W04] A capacity failure keeps its name (``CoreCapacityRefusal``, the shape-only plane's); any other stays.
-        raise (CoreCapacityRefusal if isinstance(e, CoreCapacityRefusal) else RuntimeError)(diag) from e
+        reraise_packing_failure(e, diag)
 
     return HybridStage(
         kind="neural",

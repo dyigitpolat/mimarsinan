@@ -46,19 +46,26 @@ def backend_accumulation(pipeline: Any) -> Dict[str, str]:
 
 def run_static_program_check(
     pipeline: Any, ir_graph: Any, hybrid_mapping: Any, *, cores: Any, compile_wall_s: Optional[float] = None,
-    compile_source: str = "built",
+    compile_source: str = "built", unbounded_ir: Any = None, unbounded_note: Optional[str] = None,
 ) -> Tuple[Any, List[Dict[str, Any]]]:
     """``(report or None, certificate record dicts)`` for the run's built program; a mapping loaded from the cache
-    (``compile_source`` "loaded") is recorded as loaded, its load wall never priced as a compile."""
+    (``compile_source`` "loaded") is recorded as loaded, its load wall never priced as a compile. [E1 open item 1]
+    ``unbounded_ir`` (Soft Core Mapping's second mapping, without core limits) is the reference of ``ir-tiling``, so
+    the verdict establishes the IR tiling; without it the condition stays assumed, with ``unbounded_note`` (why the
+    second mapping is absent) in its note."""
     try:
         declaration = program_check.declaration_from_config(pipeline.config, cores=cores,
                                                             has_laws=graph_carries_laws(ir_graph),
                                                             backends=backend_accumulation(pipeline))
         report = program_check.check_deployment(hybrid_mapping, ir_graph=ir_graph, declaration=declaration,
-                                                compile_wall_s=compile_wall_s, compile_source=compile_source)
+                                                compile_wall_s=compile_wall_s, compile_source=compile_source,
+                                                unbounded_ir=unbounded_ir)
     except CHECK_ERRORS as exc:  # recorded by name as a failed check, never a pass
         print(f"[StaticProgramCheck] the check did not run: {type(exc).__name__}: {exc}")
         return None, _error_records(exc)
+    tiling = report.results.get("ir-tiling")
+    if unbounded_ir is None and unbounded_note and tiling is not None:
+        tiling.note = f"{tiling.note} (the IR at unbounded geometry: {unbounded_note})"
     print(report.summary())
     with best_effort("write the static program check report"):
         with open(os.path.join(pipeline.working_directory, REPORT_FILENAME), "w") as handle:

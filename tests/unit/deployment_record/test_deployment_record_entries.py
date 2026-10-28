@@ -134,13 +134,13 @@ _SCM_ENTRY = {
 }
 
 
-def _run_hard_core_mapping(pipeline, monkeypatch, *, gate_result=None):
+def _run_hard_core_mapping(pipeline, monkeypatch, *, gate_result=None, value_gate=None):
     import mimarsinan.pipelining.pipeline_steps.mapping.hard_core_mapping_step as hcm
 
     monkeypatch.setattr(
         hcm, "run_spike_count_certificate_gate", lambda *a, **k: gate_result,
     )
-    monkeypatch.setattr(hcm, "run_value_twin_certificate_gate", lambda *a, **k: None)
+    monkeypatch.setattr(hcm, "run_value_twin_certificate_gate", value_gate or (lambda *a, **k: None))
     monkeypatch.setattr(hcm, "run_value_mapping_metric", lambda *a, **k: 0.875)
 
     pipeline.seed("model", _stamped_tiny_flow())
@@ -214,10 +214,12 @@ class TestHardCoreMappingEntry:
         _run_hard_core_mapping(pipeline, monkeypatch)
         entry = pipeline.cache["HardCoreMappingStep.deployment_record_hcm"]
         assert entry["boundary_traffic"] is None
-        # [W15] the static program check's two records are the only certificates when the sampled gate skips.
+        # [W15] the static program check's two records, then [W49] the host condition's, when the sampled gate skips.
         assert [c["name"] for c in entry["certificates"]] == [
-            "static_program_check_theorem1", "static_program_check_proposition2"]
-        assert {c["backend"] for c in entry["certificates"]} == {"static"}
+            "static_program_check_theorem1", "static_program_check_proposition2", "host_condition"]
+        assert [c["backend"] for c in entry["certificates"]] == ["static", "static", "host"]
+        host = CertificateRecord.from_dict(entry["certificates"][-1])
+        assert json.loads(host.detail)["program_host_ops"] == 0 and host.passed  # no host kernel: vacuous
 
     def test_gate_pass_persists_boundary_traffic_and_certificate(
         self, tmp_path, monkeypatch
@@ -232,14 +234,51 @@ class TestHardCoreMappingEntry:
             BoundaryTrafficRecord.from_dict(b) for b in entry["boundary_traffic"]
         ]
         assert boundary.total_count == 12
-        # [W15] the sampled run's record first, then the static program check's two (Theorem 1, Proposition 2).
-        certificate, *static = [
+        # [W15] the sampled run's record first, then the static program check's two (Theorem 1, Proposition 2),
+        # then [W49] the host condition's.
+        certificate, *static, host = [
             CertificateRecord.from_dict(c) for c in entry["certificates"]
         ]
         assert [c.name for c in static] == ["static_program_check_theorem1", "static_program_check_proposition2"]
+        assert (host.name, host.backend) == ("host_condition", "host")
         assert certificate.name == "spike_count_streaming_twin"
         assert certificate.passed is True
         assert certificate.neuron_windows_compared == 16
+
+    def test_the_sampled_certificates_run_under_the_host_kernel_replay(self, tmp_path, monkeypatch, capsys):
+        """[W49] Every host kernel the sampled certificates evaluate is replayed on each sampled input alone; a
+        batch-dependent one is named in the printed host condition and in its record, never refused."""
+        import numpy as np
+        import torch
+
+        from mimarsinan.chip_simulation.hybrid_run.host_compute import execute_compute_op_torch
+        from mimarsinan.mapping.ir import ComputeOp, IRSource
+
+        class _BatchMean(nn.Module):
+            def forward(self, x):
+                return x + 1e-3 * x.mean(dim=0, keepdim=True)
+
+        op = ComputeOp(id=99, name="mixing_pool", input_sources=np.array([IRSource(-2, i) for i in range(4)],
+                                                                          dtype=object),
+                       op_type="BatchMean", params={"module": _BatchMean(), "input_shape": (4,)},
+                       input_shape=(4,), output_shape=(4,))
+
+        def gate(*args, **kwargs):
+            x = torch.rand(3, 4, dtype=torch.float64)
+            execute_compute_op_torch(op, x, {-2: x}, gather_dtype=torch.float64)
+            return None
+
+        pipeline = _hcm_pipeline(tmp_path)
+        import mimarsinan.pipelining.pipeline_steps.mapping.hard_core_mapping_step as hcm
+        monkeypatch.setattr(hcm, "run_value_twin_certificate_gate", gate)
+        _run_hard_core_mapping(pipeline, monkeypatch, value_gate=gate)
+        entry = pipeline.cache["HardCoreMappingStep.deployment_record_hcm"]
+        host = CertificateRecord.from_dict(entry["certificates"][-1])
+        detail = json.loads(host.detail)
+        assert host.name == "host_condition" and not host.passed
+        assert detail["verdict"].startswith("outside_scope: ") and "mixing_pool" in detail["verdict"]
+        out = capsys.readouterr().out
+        assert "[HostCondition] Theorem 1 host condition: outside_scope: " in out
 
     def test_existing_artifacts_and_prints_stay_intact(
         self, tmp_path, monkeypatch, capsys

@@ -41,8 +41,9 @@ def emit_softcore_elimination_record(step, ir_graph, arms):
     return report
 
 
-def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
-    """Compact zeroed rows/columns when pruning was applied."""
+def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str, *, report: bool = True):
+    """Compact zeroed rows/columns when pruning was applied; ``report`` off (the second mapping at unbounded
+    geometry, [E1 open item 1]) compacts the same way without the softcore-elimination record."""
     plan = DeploymentPlan.of(step.pipeline)
     if not plan.pruning:
         return ir_graph
@@ -84,7 +85,7 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
                 "ensure mapper assigns perceptron_index for tiled IR)."
             )
 
-    store_heatmap = True
+    store_heatmap = report   # the second mapping keeps no pre-pruning heatmap
     heatmap_budget_bytes = int(step.pipeline.config.get(
         "pre_pruning_heatmap_budget_bytes", 2 * 1024**3,
     ))
@@ -129,7 +130,8 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     # pre-elimination a x n) and the per-arm kill sets. One step later
     # `prune_ir_graph` compacts owned matrices away and the weaker arms are
     # gone, so the denominator and the C1 columns become unrecoverable.
-    emit_softcore_elimination_record(step, ir_graph, arms)
+    if report:
+        emit_softcore_elimination_record(step, ir_graph, arms)
 
     with phase_profiler(phase_tag, "prune_ir_graph"):
         ir_graph = prune_ir_graph(

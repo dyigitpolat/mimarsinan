@@ -354,6 +354,28 @@ left, in order; a scheduled pass's fresh pool (`hybrid_segment._flush_scheduled_
 level pool (`retimed_levels.attach_retimed_level_stages`) are freed with the call that made them. `unused_cores` stays
 an attribute (the program forms' `core_mapping` row); nothing reads it after placement.
 
+## Host-kernel replay hook (Wave 2 final unit ux, W49)
+
+`ir/types.py` holds `HOST_KERNEL_REPLAY`, a context variable that is None by default: while
+`certification.host_condition.host_kernel_replay()` arms it, `ComputeOp.execute_on_gathered` (the deployment seam the
+one host evaluator, `chip_simulation/hybrid_run/host_compute.execute_compute_op_torch`, calls for every executor)
+hands each call's op, a copy of the kernel input taken before the kernel runs, a copy of the result and the kernel
+(`_exec_module`) to the replay, which re-runs that kernel on copies in the same context per sample and on the batch to
+check Theorem 1's host condition (a module that writes its input in place leaves the deployment's output the unarmed
+one). Unarmed, the seam's outputs and cost are unchanged.
+
+## Infeasible declarations refused by name (Wave 2 final unit ux, W12)
+
+Lemma A (admission): every program the toolchain admits meets the program and executor conditions, or the toolchain
+refuses it by name (a `ToolchainRefusal`). The integrated screen's residue, every one a `WideFanInUnsupportedError`
+(a layer's fan-in beyond one core on a chip that cannot coalesce, `platform/mapping_structure.py`), and the hypothesis
+table's other guard sites are refusals by name, each keeping its builtin base: `WideFanInUnsupportedError(ToolchainRefusal,
+ValueError)`, `CoreResidencyViolation(ToolchainRefusal, AssertionError)` (co-resident singletons that disagree,
+`platform/core_residency.adopt_or_check`, H1-theta's guard) and `CyclicCoreGraphError(ToolchainRefusal, RuntimeError)`
+(`latency/chip.ChipLatency`'s cyclic core graph). The packer's wrapper (`packing/hybrid_segment.reraise_packing_failure`)
+keeps the name of any refusal raised inside `HardCoreMapping.map` under its own class (it kept `CoreCapacityRefusal`
+only); an anonymous failure stays a `RuntimeError`, a crash, never a refusal.
+
 ## Dependencies
 - `code_generation` — `cpp_chip_model` chip types (`SpikeSource`, chip model) for export, softcore packing, and spike-source spans.
 - `models` — `Perceptron` and nn layers consumed by mappers; builders registry for the wizard layout verify.

@@ -9,6 +9,8 @@ from typing import Any, Callable, Hashable, Iterable
 
 import numpy as np
 
+from mimarsinan.common.refusal import ToolchainRefusal
+
 
 def _scalar_equal(a: Any, b: Any) -> bool:
     if a is None or b is None:
@@ -158,8 +160,9 @@ def provenance_group_id(perceptron_index: int | None, *, fallback: int) -> int:
     return int(perceptron_index) if perceptron_index is not None else int(fallback)
 
 
-class CoreResidencyViolation(AssertionError):
-    """A softcore was placed in a hardware core that cannot represent its per-core values."""
+class CoreResidencyViolation(ToolchainRefusal, AssertionError):
+    """A softcore was placed in a hardware core that cannot represent its per-core values. [W12] A refusal by name
+    (Lemma A, H1-theta's guard): the core stores one value, so the residents may not share it."""
 
 
 def adopt_or_check(

@@ -86,7 +86,16 @@ from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_viz import (
 import torch.nn as nn
 import torch
 
+import contextlib
+import copy
+import io
 import os
+import pickle
+import random
+
+import numpy as np
+
+from mimarsinan.common.refusal import ToolchainRefusal
 
 
 def print_weight_reuse_report(ir_graph) -> None:
@@ -98,9 +107,45 @@ def print_weight_reuse_report(ir_graph) -> None:
     )
 
 
+_PHASE_TAG_SCM = "SoftCoreMappingStep"
+#: [E1 open item 1] What a second mapping that cannot run raises: recorded by name (``_derive_unbounded_ir``), never a
+#: refusal of the run; anything else (memory, interrupts) propagates.
+REFERENCE_ERRORS = (ToolchainRefusal, ArithmeticError, AssertionError, AttributeError, LookupError, RuntimeError,
+                    TypeError, ValueError, copy.Error, pickle.PicklingError)
+
+
+def model_copy_for_reference(model):
+    """A copy of the model the second mapping runs on, so its passes (laws stamped, taps appended) never reach the
+    deployed model."""
+    return copy.deepcopy(model)
+
+
+def _reference_source(model) -> tuple:
+    """``(model copy, "built")``, or ``(None, why)`` when the model cannot be copied."""
+    try:
+        return model_copy_for_reference(model), "built"
+    except REFERENCE_ERRORS as exc:
+        return None, f"{type(exc).__name__}: {str(exc)[:300]}"
+
+
+@contextlib.contextmanager
+def _run_state_kept():
+    """The random streams (python, numpy, torch CPU and CUDA) as they were before the block."""
+    states = (random.getstate(), np.random.get_state(), torch.random.get_rng_state(),
+              torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None)
+    try:
+        yield
+    finally:
+        random.setstate(states[0])
+        np.random.set_state(states[1])
+        torch.random.set_rng_state(states[2])
+        if states[3] is not None:
+            torch.cuda.set_rng_state_all(states[3])
+
+
 class SoftCoreMappingStep(PipelineStep):
     REQUIRES = ("fused_model", "platform_constraints_resolved")
-    PROMISES = ("ir_graph", "deployment_record_scm")
+    PROMISES = ("ir_graph", "deployment_record_scm", "ir_graph_unbounded")
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
@@ -244,46 +289,14 @@ class SoftCoreMappingStep(PipelineStep):
         # Fail loud if any bias/weight write since the commit above broke the
         # committed-pruning contract (mask * param == param) about to be mapped.
         self._verify_pruning_committed(model)
-        with _phase("ir_mapping.map"):
-            ir_graph = ir_mapping.map(mapper_repr)
         # [WI-5g] every core binds to its layer's core type before its codes quantize on that type's grid.
         refuse_unbuilt_domain(platform_constraints, value_domain=is_mvm_core_semantics(plan.core_semantics),
                               weight_quantization=plan.weight_quantization)
-        bind_core_types(ir_graph, model, platform_constraints)
-        # [mvm AQ] realize the model's boundary grids onto the mapped cores.
-        install_boundary_grids(ir_graph, model, quantizer_state=platform_constraints.get("quantizer_state"))
-
-        if bool(self.pipeline.config.get("negative_value_shift", True)):
-            transfer_negative_shifts_to_ir(model, ir_graph)
-
-        relays_enabled, relay_cores_inserted = self._apply_depth_balancing_relays(
-            ir_graph, plan,
+        # [E1 open item 1] the model as the declared mapping finds it, for the second mapping without core limits.
+        reference_source = _reference_source(model)
+        ir_graph, relay_cores_inserted, max_latency = self._derive_ir(
+            model, ir_mapping, plan, platform_constraints, bits, phase=_phase, report=True,
         )
-
-        wt_q = plan.weight_quantization
-        with _phase("weight_quantization"):
-            quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q, grids=ParameterGrids.from_config(platform_constraints))
-        if relays_enabled:
-            # [C5/V9] the strict-'<' exact-theta dead-relay lattice guard, on
-            # the QUANTIZED graph (threshold = scale after integerization).
-            assert_relays_alive(
-                ir_graph,
-                thresholding_mode=build_deployment_contract(
-                    self.pipeline
-                ).thresholding_mode,
-            )
-
-        with _phase("ir_latency"):
-            max_latency = IRLatency(ir_graph).calculate()
-        print(f"[SoftCoreMappingStep] IR Graph max latency: {max_latency}")
-
-        ir_graph = apply_ir_pruning_if_enabled(self, model, ir_graph, _PHASE_TAG)
-        install_readout_laws(  # [E282.S] declared-only: absent readout_law is a no-op
-            ir_graph, model, platform_constraints, weight_quantization=plan.weight_quantization, weight_bits=bits,
-        )
-        validate_bindings(ir_graph, packaging=packaging_contract_for(plan))  # [N2] no-op without operand banks
-        if bind_core_types(ir_graph, model, platform_constraints):  # [WI-5g] lane cores bind too; codes checked
-            check_core_codes(ir_graph)
 
         with _phase("onchip_validity_gate"):
             self._run_onchip_validity_gate(model, ir_graph)
@@ -293,6 +306,13 @@ class SoftCoreMappingStep(PipelineStep):
 
         with _phase("pickle_save"):
             self.add_entry("ir_graph", ir_graph, 'pickle')
+        with _phase("unbounded_ir"):
+            unbounded_mapping = IRMapping(  # [E1 open item 1] the same mapping with no core limits, no coalescing
+                q_max=q_max, firing_mode=self.pipeline.config["firing_mode"], max_axons=None, max_neurons=None,
+                allow_coalescing=False, hardware_bias=resolved_hardware_bias,
+            )
+            self.add_entry("ir_graph_unbounded", self._derive_unbounded_ir(
+                reference_source, unbounded_mapping, plan, platform_constraints, bits), 'pickle')
 
         write_ir_graph_visualizations(self, model, ir_graph)
 
@@ -363,6 +383,74 @@ class SoftCoreMappingStep(PipelineStep):
                 )
             self._soft_core_spiking_metric = float(acc)
             print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
+
+    def _derive_ir(self, model, ir_mapping, plan, platform_constraints, bits, *, phase, report: bool):
+        """The IR of ``model`` at ``ir_mapping``'s geometry through every post-mapping pass, in their order:
+        ``(ir_graph, relay cores inserted, IR max latency)``. ``report`` off runs the passes without their records,
+        reporter events and prints (the second mapping, ``_derive_unbounded_ir``)."""
+        with phase("ir_mapping.map"):
+            ir_graph = ir_mapping.map(model.get_mapper_repr())
+        bind_core_types(ir_graph, model, platform_constraints)
+        # [mvm AQ] realize the model's boundary grids onto the mapped cores.
+        install_boundary_grids(ir_graph, model, quantizer_state=platform_constraints.get("quantizer_state"))
+
+        if bool(self.pipeline.config.get("negative_value_shift", True)):
+            transfer_negative_shifts_to_ir(model, ir_graph)
+
+        relays_enabled, relay_cores_inserted = self._apply_depth_balancing_relays(
+            ir_graph, plan,
+        )
+
+        wt_q = plan.weight_quantization
+        with phase("weight_quantization"):
+            quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q, grids=ParameterGrids.from_config(platform_constraints))
+        if relays_enabled:
+            # [C5/V9] the strict-'<' exact-theta dead-relay lattice guard, on
+            # the QUANTIZED graph (threshold = scale after integerization).
+            assert_relays_alive(
+                ir_graph,
+                thresholding_mode=build_deployment_contract(
+                    self.pipeline
+                ).thresholding_mode,
+            )
+
+        with phase("ir_latency"):
+            max_latency = IRLatency(ir_graph).calculate()
+        print(f"[SoftCoreMappingStep] IR Graph max latency: {max_latency}")
+
+        ir_graph = apply_ir_pruning_if_enabled(self, model, ir_graph,
+                                               _PHASE_TAG_SCM if report else f"{_PHASE_TAG_SCM}.unbounded_ir",
+                                               report=report)
+        install_readout_laws(  # [E282.S] declared-only: absent readout_law is a no-op
+            ir_graph, model, platform_constraints, weight_quantization=plan.weight_quantization, weight_bits=bits,
+        )
+        validate_bindings(ir_graph, packaging=packaging_contract_for(plan))  # [N2] no-op without operand banks
+        if bind_core_types(ir_graph, model, platform_constraints):  # [WI-5g] lane cores bind too; codes checked
+            check_core_codes(ir_graph)
+        return ir_graph, relay_cores_inserted, max_latency
+
+    def _derive_unbounded_ir(self, reference_source, unbounded, plan, platform_constraints, bits) -> dict:
+        """[E1 open item 1] The same network's IR at unbounded geometry, for the static check's ``ir-tiling``: the
+        model copy (``reference_source``, taken as the declared mapping found the model) mapped again by
+        ``unbounded`` (no core limits, no coalescing) through ``_derive_ir``'s passes, its stdout, records and random
+        draws kept out of the run. ``{"ir": the IR or None, "note": "built" or why not}``; never a refusal of the run."""
+        model_copy, note = reference_source
+        if model_copy is None:
+            print(f"[SoftCoreMappingStep] IR at unbounded geometry not derived: {note}")
+            return {"ir": None, "note": note}
+        try:
+            with _run_state_kept(), contextlib.redirect_stdout(io.StringIO()):
+                ir_graph, _relays, _latency = self._derive_ir(
+                    model_copy, unbounded, plan, platform_constraints, bits,
+                    phase=lambda _name: contextlib.nullcontext(), report=False,
+                )
+        except REFERENCE_ERRORS as exc:  # recorded by name; the static check then keeps ir-tiling assumed
+            note = f"{type(exc).__name__}: {str(exc)[:300]}"
+            print(f"[SoftCoreMappingStep] IR at unbounded geometry not derived: {note}")
+            return {"ir": None, "note": note}
+        print(f"[SoftCoreMappingStep] IR at unbounded geometry (the static check's ir-tiling reference): "
+              f"{len(ir_graph.get_neural_cores())} neural cores")
+        return {"ir": ir_graph, "note": "built"}
 
     def _emit_deployment_record_scm(
         self, ir_graph, relay_cores_inserted: int, ir_max_latency: int, output_stage=None,

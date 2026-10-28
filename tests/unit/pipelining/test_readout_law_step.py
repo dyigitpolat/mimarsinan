@@ -94,9 +94,11 @@ class TestPlacement:
         assert undeclared == [name for name in names if name != "Readout Law"]
 
     def test_soft_core_mapping_calls_the_hook_after_ir_pruning(self):
+        """The IR derivation Soft Core Mapping runs at both geometries ([E1 open item 1], ``_derive_ir``) calls the
+        law hook after IR pruning."""
         path = ROOT / "src" / "mimarsinan" / "pipelining" / "pipeline_steps" / "mapping" / "soft_core_mapping_step.py"
         process = next(n for n in ast.walk(ast.parse(path.read_text()))
-                       if isinstance(n, ast.FunctionDef) and n.name == "process")
+                       if isinstance(n, ast.FunctionDef) and n.name == "_derive_ir")
         calls = [ast.unparse(c.func) for c in ast.walk(process) if isinstance(c, ast.Call)]
         lines = {name: next(c.lineno for c in ast.walk(process) if isinstance(c, ast.Call)
                             and ast.unparse(c.func) == name) for name in ("apply_ir_pruning_if_enabled",

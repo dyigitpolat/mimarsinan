@@ -7,12 +7,14 @@ off by one, the head index of one bank permuted, the softmax replayed in float32
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import numpy as np
 import pytest
 import torch
 
 from mimarsinan.certification import operand_certificate
+from mimarsinan.certification.host_condition import ESTABLISHED, OUTSIDE_SCOPE
 from mimarsinan.certification.operand_certificate import OperandCertificateError, certify_operand_program
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.chip_simulation.value_run import host_ops, int64_golden, operand_payloads, value_flow
@@ -291,6 +293,122 @@ def test_a_host_op_that_depends_on_batch_composition_is_caught(monkeypatch):
     edges = {e.name: e for e in certificate.edges}
     assert edges["host ops (bitwise)"].mismatched == 0
     assert edges[operand_certificate.BATCH_OF_ONE].mismatched > 0 and not certificate.passed
+
+
+def _softmax_kernel_moved(monkeypatch, moved):
+    """Patch the host kernel itself (``ComputeOp._exec_module``, what the host-kernel replay replays): the softmax's
+    output moves by 1e-9 on the rows ``moved(batch)`` selects (None: none) inside the batch it runs in."""
+    from mimarsinan.mapping.ir import ComputeOp
+
+    kernel = ComputeOp._exec_module
+
+    def patched(self, x):
+        out = kernel(self, x)
+        rows = moved(int(out.shape[0]))
+        if op_kind(self) == "softmax" and rows is not None:
+            out = out.clone()
+            out[rows] = out[rows] + 1e-9
+        return out
+
+    monkeypatch.setattr(ComputeOp, "_exec_module", patched)
+
+
+def _late_rows(batch):
+    return slice(2, None) if batch > 2 else None
+
+
+def test_every_sample_alone_through_the_host_kernels_catches_what_the_spot_check_misses(monkeypatch):
+    """[W49, review M3] A host kernel (the softmax) whose output moves only for samples 2 and later of a batch of
+    several: the whole-golden spot check of the first two samples alone passes it; the host-kernel edge, every sampled
+    input alone through every host kernel the golden runs, catches it. That edge reads Theorem 1's host condition, so
+    the kernel is named and the program is outside the per-sample certified scope by name; the program's own edges
+    hold, and the certificate is not failed by it (no unnamed stop)."""
+    _softmax_kernel_moved(monkeypatch, _late_rows)
+    program = attention_program("softmax")
+    certificate = certify_operand_program(program.nf(), program.identity_mapping(),
+                                          program.packed_mapping(**GEOMETRY), image_inputs(8))
+    edges = {e.name: e for e in certificate.edges}
+    assert edges[operand_certificate.BATCH_OF_ONE].mismatched == 0   # the first two samples alone: unchanged
+    host_alone = edges[operand_certificate.HOST_ALONE]
+    assert host_alone.compared > 0 and host_alone.mismatched > 0
+    assert certificate.host_condition.status == OUTSIDE_SCOPE
+    assert {k.kind for k in certificate.host_condition.batch_dependent} == {"softmax"}
+    assert certificate.passed, certificate.summary()
+    assert "host condition outside_scope" in certificate.summary()
+
+
+def test_one_rule_reads_both_batch_dependence_edges_where_the_replay_names_the_kernel(monkeypatch):
+    """[review M3] The rule for both batch-dependence edges (the whole golden's batch-of-one spot check and the
+    host-kernel edge): where the host-kernel replay names a kernel that breaks the host condition, their mismatches
+    are readings of that condition, carried by name, not failures of the program. A softmax that moves every row of a
+    batch of several moves both edges."""
+    _softmax_kernel_moved(monkeypatch, lambda batch: slice(None) if batch > 1 else None)
+    program = attention_program("softmax")
+    certificate = certify_operand_program(program.nf(), program.identity_mapping(),
+                                          program.packed_mapping(**GEOMETRY), image_inputs(8))
+    edges = {e.name: e for e in certificate.edges}
+    assert edges[operand_certificate.BATCH_OF_ONE].mismatched > 0
+    assert edges[operand_certificate.HOST_ALONE].mismatched > 0
+    assert certificate.host_condition.status == OUTSIDE_SCOPE
+    assert certificate.passed, certificate.summary()
+
+
+def test_a_batch_of_one_mismatch_no_host_kernel_explains_still_fails_the_program(monkeypatch):
+    """[review M3] The rule's other side: batch dependence outside every host kernel (in the evaluator around it, both
+    in the executor and the golden) leaves the replay naming no kernel, the host condition established, so the
+    batch-of-one edge's mismatch is a defect of the program and fails the certificate, as at RC0."""
+    program = attention_program("softmax")
+    original = host_ops.execute_host_op
+
+    def batch_dependent(op, x_flat, state, *, dtype, twins):
+        out = original(op, x_flat, state, dtype=dtype, twins=twins)
+        return out + 1e-9 if op_kind(op) == "softmax" and out.shape[0] > 1 else out
+
+    for module in (int64_golden, value_flow):
+        monkeypatch.setattr(module, "execute_host_op", batch_dependent)
+    certificate = certify_operand_program(program.nf(), program.identity_mapping(),
+                                          program.packed_mapping(**GEOMETRY), image_inputs(8))
+    edges = {e.name: e for e in certificate.edges}
+    assert certificate.host_condition.status == ESTABLISHED
+    assert edges[operand_certificate.BATCH_OF_ONE].mismatched > 0 and not certificate.passed
+
+
+def test_the_host_kernel_edge_reads_the_host_condition_established_on_the_program_as_built():
+    program = attention_program("softmax")
+    certificate = certify_operand_program(program.nf(), program.identity_mapping(),
+                                          program.packed_mapping(**GEOMETRY), image_inputs(8))
+    edges = {e.name: e for e in certificate.edges}
+    assert edges[operand_certificate.HOST_ALONE].compared > 0 and edges[operand_certificate.HOST_ALONE].mismatched == 0
+    assert certificate.host_condition.status == ESTABLISHED
+    assert certificate.passed, certificate.summary()
+
+
+def test_through_the_value_twin_gate_a_batch_dependent_host_kernel_is_named_not_a_failure(monkeypatch, capsys):
+    """[review M3] Hard Core Mapping's value twin gate on an operand program: a batch-dependent host kernel does not stop
+    the run with an unnamed failure. The gate passes on the program's own edges, and the host condition read around it
+    (as Hard Core Mapping's replay reads it) names the kernel outside the per-sample certified scope, in its record."""
+    from types import SimpleNamespace
+
+    from mimarsinan.deployment_record.schema import CertificateRecord
+    from mimarsinan.pipelining.core.gates import value_gates
+    from mimarsinan.pipelining.core.gates.host_condition_gate import host_condition_records, host_kernel_replay
+
+    _softmax_kernel_moved(monkeypatch, _late_rows)
+    program = attention_program("softmax")
+    monkeypatch.setattr(value_gates, "value_certificate_gate_armed", lambda pipeline: True)
+    monkeypatch.setattr(value_gates, "_certificate_samples", lambda pipeline, model, n: image_inputs(n))
+    packed = program.packed_mapping(**GEOMETRY)
+    with host_kernel_replay() as replay:
+        certificate = value_gates.run_value_twin_certificate_gate(
+            SimpleNamespace(config={"value_parity_samples": 8}), program.model, program.ir, packed)
+    assert certificate.passed and certificate.host_condition.status == OUTSIDE_SCOPE
+    (row,) = host_condition_records(replay, packed)
+    record = CertificateRecord.from_dict(row)
+    detail = json.loads(record.detail)
+    assert not record.passed and detail["verdict"].startswith("outside_scope: ")
+    assert any(k["kind"] == "softmax" and k["batch_dependent"] > 0 for k in detail["kernels"])
+    out = capsys.readouterr().out
+    assert "[ValueTwinCertificate] PASS operand program" in out and "host condition outside_scope" in out
 
 
 def test_the_operand_certificate_refuses_a_program_without_operand_banks():

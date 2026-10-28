@@ -84,6 +84,9 @@ CLASSIFIED = {
     ("data_handling/preprocessing.py", "register_normalization_preset"): (OTHER, {"lower": 1}),
     ("chip_simulation/pareto.py", "_norm_dataset"): (OTHER, {"lower": 1, "strip": 1}),
     # Process output, logs, files, HTTP and GUI strings, notes, coverage rows and axes, display labels.
+    # U-X (W49): the host condition's status (established, outside_scope, not_checked), derived by the replay and
+    # never a declared value, upper-cased in its display line.
+    ("certification/host_condition.py", "HostConditionCertificate.summary"): (OTHER, {"upper": 1}),
     ("chip_simulation/coverage_ci.py", "assert_axes_screening_sound"): (OTHER, {"strip": 1}),
     ("chip_simulation/coverage_reporting.py", "FlagMetadata.is_unowned"): (OTHER, {"strip": 1}),
     ("chip_simulation/coverage_rows.py", "classify_validity_tier"): (OTHER, {"upper": 1}),
