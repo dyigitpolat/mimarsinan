@@ -14,20 +14,18 @@ nodes that read it before, on the run's alias edges); none reads one of its valu
 ``read_after`` (a write an opaque call was seen making), is ordered around one (``RUN_AFTER``), keeps one
 (``KEPT_OPERANDS``) or guards one as a copy (``COPY_GUARD``). A value so touched excludes the whole computation of it.
 
-A METADATA READ (coverage W8) is a receiver factory (``method_rules.RECEIVER_FACTORIES``: ``x.new_zeros(size)``,
-``new_ones``, ``new_full``) whose every operand but the receiver is a literal: its value is a function of the literals
-and of the receiver's dtype and device alone, which are the program's (the converter follows the source model's dtype
-on its device, and a body Dynamo captured is specialized to them). Its receiver is not part of the computation: a
-metadata read is batch-free whatever declared operators compute its receiver (a receiver a call outside the declared
-set reaches may change its dtype at run time, so it does not count), and the converted model computes it on a
-zero-element stand-in of the receiver's traced dtype on the program's device, a buffer of the shared state in a child
-named apart from every attribute of the program (no copied value shares its path), so it follows the converted model's
-casts and moves as the state does (Swin's attention mask, ``x.new_zeros((pad_H, pad_W))`` filled at literal indices,
-computed out of place by ``fx_rewrites/body_rules/local_writes``).
+A METADATA READ (coverage W8, ``metadata_reads``) is a receiver factory (``x.new_zeros(size)``, ``new_ones``,
+``new_full``) whose every operand but the receiver is a literal: its value is a function of the literals and of the
+receiver's dtype and device alone. Its receiver is not part of the computation: a metadata read is batch-free whatever
+declared operators compute its receiver (a receiver a call outside the declared set reaches may change its dtype at run
+time, so it does not count), and the converted model computes it on a zero-element stand-in of the receiver's dtype on
+the program's device, in the shared state apart from every attribute of the program, which follows a cast of the model
+exactly when the native receiver's dtype does (``metadata_reads.receiver_dtype_rule``, soundness review S2).
 
 Lemma. Under the trust base (T1-T3) and trace fidelity, a batch-free value is, at every batch and input of a call, the
-value its traced operators compute from the state as it stands at the start of the call (and from the program's dtype
-and device, for a metadata read: its stand-in has them): no placeholder lies upstream,
+value its traced operators compute from the state as it stands at the start of the call (and from the receiver's dtype
+and the program's device, for a metadata read: its stand-in has them, after any floating cast of the model as the
+native receiver has them, by the rule above): no placeholder lies upstream,
 so no input value or extent reaches it, and its shape is its traced shape; no node of the program writes that state,
 so every one of its nodes reads the same state whenever it runs within the call; no node reads one of its values after
 a write of it but through the write's own result (``define_writes``; the tracer refuses any other read of a written
@@ -54,7 +52,13 @@ from torch.fx.node import map_arg
 
 from mimarsinan.mapping.support.batch_free_value import BatchFreeValue
 from mimarsinan.mapping.support.compute_modules import read_after
-from mimarsinan.torch_mapping.converter_handlers.rules.method_rules import RECEIVER_FACTORIES
+from mimarsinan.torch_mapping.converter_handlers.symbolic.metadata_reads import (
+    MetadataReadDtypeRefusal,
+    metadata_read,
+    receiver_dtype_rule,
+    receiver_in_program,
+    stand_in,
+)
 from mimarsinan.torch_mapping.converter_handlers.symbolic.operand_writes import (
     COPY_GUARD,
     KEPT_OPERANDS,
@@ -71,7 +75,7 @@ from mimarsinan.torch_mapping.converter_handlers.symbolic.purity import (
 )
 from mimarsinan.torch_mapping.converter_handlers.symbolic.trace_values import graph_device, rng_neutral
 
-__all__ = ["BatchFreeValues", "batch_free_nodes", "metadata_read"]
+__all__ = ["BatchFreeValues", "MetadataReadDtypeRefusal", "batch_free_nodes", "metadata_read", "receiver_dtype_rule"]
 
 _CALLS = ("call_function", "call_method", "call_module")
 _MARKS = (RUN_AFTER, KEPT_OPERANDS, COPY_GUARD)
@@ -145,21 +149,9 @@ def _inputs(node: fx.Node) -> List[fx.Node]:
     return node.all_input_nodes
 
 
-def metadata_read(node: fx.Node) -> bool:
-    """``node`` is a receiver factory whose every operand but the receiver is a literal (the module docstring)."""
-    return node.op == "call_method" and node.target in RECEIVER_FACTORIES and bool(node.args) and isinstance(
-        node.args[0], fx.Node) and node.all_input_nodes == [node.args[0]] and hasattr(
-        node.args[0].meta.get("tensor_meta"), "dtype")
-
-
 def _cone_inputs(node: fx.Node) -> List[fx.Node]:
     """The inputs of ``node``'s computation: all of them, but the receiver of a metadata read."""
     return [] if metadata_read(node) else node.all_input_nodes
-
-
-def stand_in(node: fx.Node, device: torch.device) -> torch.Tensor:
-    """A zero-element tensor of the dtype the metadata read ``node``'s receiver was traced with, on ``device``."""
-    return torch.empty(0, dtype=node.args[0].meta["tensor_meta"].dtype, device=device)  # type: ignore[union-attr]
 
 
 def _random_state(device: torch.device) -> Tuple[torch.Tensor, ...]:
@@ -236,6 +228,7 @@ class BatchFreeValues:
         self._memo: Dict[int, Any] = {}
         self._programs: Dict[fx.Node, fx.GraphModule] = {}
         self._values: Dict[Tuple[fx.Node, Tuple[int, ...]], BatchFreeValue] = {}
+        self._dtype_rule: Optional[Dict[fx.Node, str]] = None
 
     def evaluate(self, node: fx.Node) -> torch.Tensor:
         """``node``'s value now, from the copied state (no gradient, the random state untouched)."""
@@ -258,11 +251,18 @@ class BatchFreeValues:
                     if node.op in ("get_attr", "call_module"):
                         self._install(str(node.target), module=node.op == "call_module")
                     if metadata_read(node):  # its receiver: the stand-in of the receiver's dtype, in the state
-                        env[node.args[0]] = graph.get_attr(self._stand_in(node))
+                        env[node.args[0]] = self._receiver(graph, node)
                     env[node] = graph.node_copy(node, env.__getitem__)
             graph.output(env[value])
             self._programs[value] = fx.GraphModule(self._state, graph).eval()
         return self._programs[value]
+
+    def _receiver(self, graph: fx.Graph, node: fx.Node) -> fx.Node:
+        """The metadata read ``node``'s receiver in a value's program, by the batch-free reads' dtype rule (S2)."""
+        if self._dtype_rule is None or node not in self._dtype_rule:
+            reads = [n for n in self._gm.graph.nodes if (n in self.nodes or n is node) and metadata_read(n)]
+            self._dtype_rule = receiver_dtype_rule(self._gm, reads)
+        return receiver_in_program(graph, node, self._stand_in(node), self._dtype_rule[node])
 
     def _stand_in(self, node: fx.Node) -> str:
         """The stand-in of the dtype the metadata read ``node`` reads, in a child no attribute of the program names."""

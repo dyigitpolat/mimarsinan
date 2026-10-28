@@ -49,6 +49,12 @@ ALLOWLIST = {
     # re-raises when EVERY draw failed - nothing degrades silently.
     "tuning/orchestration/conversion_draws.py": 1,
     "torch_mapping/conversion_probe.py": 1,
+    # [U-K S2] re-raising boundary: receiver_dtype_rule's meta evaluation of a
+    # metadata read's receivers under each floating cast; any failure there makes
+    # the receiver's dtype undecidable and re-raises as MetadataReadDtypeRefusal
+    # (a ToolchainRefusal) from the cause - a refusal by name, nothing degrades.
+    # Not narrowed: an exception type a tuple missed would escape as a crash.
+    "torch_mapping/converter_handlers/symbolic/metadata_reads/receivers.py": 1,
     "torch_mapping/torch_graph_tracer.py": 2,
     "visualization/graphviz/common.py": 1,
     "visualization/graphviz/hybrid_combined_dot.py": 1,

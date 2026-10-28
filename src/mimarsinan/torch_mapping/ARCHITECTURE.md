@@ -73,10 +73,21 @@ operand. A METADATA READ (W8), a receiver factory (`method_rules.RECEIVER_FACTOR
 whatever declared operators compute its receiver, and `BatchFreeValues` computes it on a zero-element stand-in buffer
 of the receiver's traced dtype, `_receiver_<dtype>` in a child of the shared state named apart from every attribute of
 the program (`_receivers`, extended by underscores until free); `_install` keeps an attribute at a copied path only when
-it is the copy of the program's value there (integration fix of the soundness review's S1). A receiver factory converts
-by the method rule as the host op of `torch.Tensor.<method>`; a value of it without a batch axis is refused at stage 2.
+it is the copy of the program's value there (integration fix of the soundness review's S1). The stand-in follows a cast
+of the converted model only when the receiver's dtype follows a cast of the program (soundness review S2, U-K):
+`converter_handlers/symbolic/metadata_reads/` (`receiver_dtype_rule`, decided once for the batch-free metadata reads)
+evaluates the receivers' computations on meta copies of the program's state and inputs at
+float16, bfloat16, float32 and float64 (a traced plain tensor attribute at its own dtype); FOLLOWS (the dtype at every
+one) keeps the buffer, PINNED (the traced dtype at every one, a declared factory with a `dtype` argument) makes the
+stand-in at every call at the traced dtype on the buffer's device (`torch.empty((0,), dtype=..., device=<buffer>.device)`),
+and any other receiver, or one the meta evaluation cannot decide, is refused by name (`MetadataReadDtypeRefusal`). A
+receiver factory converts by the method rule as the host op of `torch.Tensor.<method>`; a value of it without a batch
+axis is refused at stage 2.
 `value_parity/certificate.py`: `CONVERTER_VERSION` is `wave2-cov-w78-int1` (W6 set `wave2-cov-w6`, W7/W8
-`wave2-cov-w78`, the Swin integration the S1 and S3 fixes); `value_parity/program_binding.py` reads a `get_attr` value
+`wave2-cov-w78`, the Swin integration the S1 and S3 fixes; S2 keeps it: a program whose metadata reads all follow
+casts converts as under int1, as Swin's and Swin V2's do, and a pinned receiver's stand-in has int1's value at the traced
+dtype, so S2 differs from int1 only after a cast the certificate does not claim, or by a refusal by name, and the cached
+flows of the runs of record carry int1); `value_parity/program_binding.py` reads a `get_attr` value
 through `symbolic.purity.attribute_at`.
 
 **Batch-merge push-forward (W7).** `fx_rewrites/batch_merge/`: a `view`, `reshape` or `flatten` of a batch-leading value

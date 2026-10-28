@@ -118,6 +118,45 @@ class CollideConeFirst(_Base):
         return self.finish(y + y.new_full((4, 1), 0.5))
 
 
+class PinnedFactory(_Base):
+    """The receiver's dtype pinned by a declared factory with a ``dtype`` argument (soundness review S2,
+    ``11_wave2/swin/review_soundness/p3_standin_cast.py``, case pinned_factory): a cast of the model leaves it float32."""
+
+    def __init__(self):
+        super().__init__()
+        self.p = nn.Parameter(torch.randn(C))
+
+    def forward(self, x):
+        y = self.a(x)
+        return self.finish(y + torch.zeros_like(self.p, dtype=torch.float32).new_full((4, 1), 0.1))
+
+
+class MixedPromotion(_Base):
+    """A receiver whose dtype follows some casts of the model only: the state promoted with a value the program pins
+    to float32 (built in float64 it is float64; a float32 cast gives float32, a float16 cast float32 too)."""
+
+    def __init__(self):
+        super().__init__()
+        self.p = nn.Parameter(torch.randn(C))
+
+    def forward(self, x):
+        y = self.a(x)
+        return self.finish(y + (self.p + torch.zeros_like(self.p, dtype=torch.float32)).new_full((4, 1), 0.1))
+
+
+class FreeBesideOpaque(_Base):
+    """A batch-free metadata read (of a parameter) beside one whose receiver a call outside the declared set reaches
+    (no meta evaluation runs that call): the dtype rule is decided for the batch-free read alone, which follows."""
+
+    def __init__(self):
+        super().__init__()
+        self.p = nn.Parameter(torch.randn(C))
+
+    def forward(self, x):
+        z = opaque_cast(self.a(x))
+        return self.finish(z + self.p.new_full((4, 1), 0.1) + z.new_ones(C))
+
+
 READS = {"zeros": Zeros, "ones": Ones, "full": Full}
 COLLIDING = {"meta_first": CollideMetaFirst, "cone_first": CollideConeFirst}
 
@@ -211,3 +250,42 @@ def test_a_factory_reading_the_input_keeps_the_base_path_and_stage_2_is_refused_
     with pytest.raises(ToolchainRefusal):
         quietly(convert_torch_model, copy.deepcopy(native(FromTheInput)), SHAPE, 4, packaging=MVM_PACKAGING,
                 value_program_stage=True)
+
+
+
+@pytest.mark.parametrize("built", ["float64", "float32"])
+def test_a_receiver_whose_dtype_the_program_pins_keeps_it_under_a_cast_of_the_converted_model(built):
+    """S2: the converted model cast to float64 equals the native model cast alike, at either converted dtype (the
+    stand-in of a pinned receiver is no cast-following buffer)."""
+    torch.manual_seed(0)
+    model = PinnedFactory().eval() if built == "float32" else native(PinnedFactory)
+    flow = convert(model, SHAPE, "mvm").double()
+    x = inputs(SHAPE, 3, "normal")
+    with torch.no_grad():
+        assert torch.allclose(flow(x), model.double()(x), atol=1e-12, rtol=0)
+
+
+def test_a_pinned_stand_in_keeps_its_dtype_and_a_following_one_follows_the_states_cast():
+    for factory, follows in ((PinnedFactory, False), (Full, True)):
+        gm, found = _free(factory)
+        values = BatchFreeValues(gm)
+        values.evaluate(found[0])
+        for dtype in (torch.float32, torch.float64, torch.float16):
+            values._program(found[0]).to(dtype)  # the value's program holds the state it reads (as a flow's cast does)
+            got = values.evaluate(found[0]).dtype
+            assert got == (dtype if follows else torch.float32), (factory.__name__, dtype, got)
+
+
+def test_a_receiver_whose_dtype_follows_some_casts_only_is_refused_by_name():
+    with pytest.raises(ToolchainRefusal, match="metadata read"):
+        convert(native(MixedPromotion), SHAPE, "mvm")
+
+
+@pytest.mark.parametrize("contract", CONTRACTS)
+def test_a_pinned_receiver_converts_exactly(contract):
+    assert_converted_exact(native(PinnedFactory), SHAPE, contract, batches=(1, 2, 3, 9))
+
+
+@pytest.mark.parametrize("contract", CONTRACTS)
+def test_a_read_outside_the_batch_free_values_takes_no_part_in_the_dtype_rule(contract):
+    assert_converted_exact(native(FreeBesideOpaque), SHAPE, contract, batches=(1, 2, 3))
