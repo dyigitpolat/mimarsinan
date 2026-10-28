@@ -62,12 +62,18 @@ def _from_spike_source(core_idx, neuron, *, is_input):
 
 
 def _run_genuine(mapping, rates):
+    from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
     from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
+    # The runner takes its semantics declared (2bb39fb3): the TTFS family's
+    # firing mode, comparator and its one legal input encoding.
+    behavior = NeuralBehaviorConfig(
+        spiking_mode="ttfs_cycle_based", firing_mode="TTFS",
+        thresholding_mode="<=", spike_generation_mode="TTFS",
+    )
     runner = SanafeRunner(
         mapping=mapping, simulation_length=S, arch_preset="loihi",
-        spiking_mode="ttfs_cycle_based", firing_mode="TTFS",
-        ttfs_cycle_schedule="synchronized",
-        thresholding_mode="<=", log_potential_trace=True,
+        behavior=behavior, ttfs_cycle_schedule="synchronized",
+        log_potential_trace=True,
     )
     rec = runner.run(rates.astype(np.float32), sample_index=0)
     return np.asarray(rec.segments[0].per_neuron_potential_trace)[:, -1]

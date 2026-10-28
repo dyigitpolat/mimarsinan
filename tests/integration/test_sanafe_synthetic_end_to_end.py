@@ -43,6 +43,22 @@ pytestmark = [
 ]
 
 
+def _declared_behavior():
+    """The semantics these fixtures ran under before 2bb39fb3, now STATED.
+
+    2bb39fb3 deleted the runner's defaulted scalars (``spiking_mode="lif"``,
+    ``firing_mode="Default"``, ``thresholding_mode="<="``) and the
+    ``spike_generation_mode="Uniform"`` its fallback built from them: a runner
+    now refuses undeclared semantics. The integration harness's declaration
+    differs from that fallback in the comparator only (``"<"``), so the
+    comparator is stated here as the ``"<="`` these fixtures were written
+    against.
+    """
+    from integration.parity_harness import default_behavior
+
+    return default_behavior(thresholding_mode="<=")
+
+
 def _build_tiny_mapping():
     """One neural stage with one HardCore (4 axons, 3 neurons)."""
     from types import SimpleNamespace
@@ -101,7 +117,7 @@ def test_runner_end_to_end_on_tiny_mapping():
     mapping = _build_tiny_mapping()
 
     runner = SanafeRunner(mapping=mapping, simulation_length=32,
-                          arch_preset="loihi")
+                          arch_preset="loihi", behavior=_declared_behavior())
     rates = np.asarray([[1.0, 0.5, 0.25, 0.0]], dtype=np.float32)
     rec = runner.run(rates, sample_index=0)
 
@@ -120,7 +136,8 @@ def test_runner_declared_capacity_floorplan_with_idle_tiles_runs(tmp_path):
     mapping = _build_tiny_mapping()
 
     runner = SanafeRunner(mapping=mapping, simulation_length=32,
-                          arch_preset="loihi", declared_core_capacity=40)
+                          arch_preset="loihi", declared_core_capacity=40,
+                          behavior=_declared_behavior())
     rates = np.asarray([[1.0, 1.0, 0.0, 0.0]], dtype=np.float32)
     rec = runner.run(rates, sample_index=0)
 
@@ -151,7 +168,8 @@ def test_runner_custom_preset_runs_user_yaml_end_to_end(tmp_path):
 
     runner = SanafeRunner(mapping=mapping, simulation_length=32,
                           arch_preset="custom",
-                          custom_arch_path=str(yaml_path))
+                          custom_arch_path=str(yaml_path),
+                          behavior=_declared_behavior())
     rates = np.asarray([[1.0, 1.0, 0.0, 0.0]], dtype=np.float32)
     rec = runner.run(rates, sample_index=0)
 
@@ -163,7 +181,7 @@ def test_runner_custom_preset_runs_user_yaml_end_to_end(tmp_path):
 def test_runner_produces_positive_total_energy():
     from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
     runner = SanafeRunner(mapping=_build_tiny_mapping(), simulation_length=32,
-                          arch_preset="loihi")
+                          arch_preset="loihi", behavior=_declared_behavior())
     rates = np.asarray([[1.0, 1.0, 1.0, 1.0]], dtype=np.float32)
     rec = runner.run(rates, sample_index=0)
     assert rec.aggregate_energy.total_j > 0.0
@@ -175,7 +193,7 @@ def test_runner_produces_positive_total_energy():
 def test_runner_produces_positive_sim_time():
     from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
     runner = SanafeRunner(mapping=_build_tiny_mapping(), simulation_length=32,
-                          arch_preset="loihi")
+                          arch_preset="loihi", behavior=_declared_behavior())
     rates = np.asarray([[1.0, 0.5, 0.25, 0.0]], dtype=np.float32)
     rec = runner.run(rates, sample_index=0)
     assert rec.aggregate_sim_time_s > 0.0
@@ -185,7 +203,7 @@ def test_runner_records_per_core_output_spikes():
     """Per-core record fields are populated."""
     from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
     runner = SanafeRunner(mapping=_build_tiny_mapping(), simulation_length=32,
-                          arch_preset="loihi")
+                          arch_preset="loihi", behavior=_declared_behavior())
     rates = np.asarray([[1.0, 1.0, 0.0, 0.0]], dtype=np.float32)
     rec = runner.run(rates, sample_index=0)
     seg = rec.segments[0]
@@ -206,7 +224,7 @@ def test_runner_to_hcm_subset_returns_valid_run_record():
     from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
     from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
     runner = SanafeRunner(mapping=_build_tiny_mapping(), simulation_length=32,
-                          arch_preset="loihi")
+                          arch_preset="loihi", behavior=_declared_behavior())
     rec = runner.run(np.asarray([[1.0, 0.5, 0.25, 0.0]], dtype=np.float32),
                      sample_index=3)
     sub = rec.to_hcm_subset()
@@ -304,7 +322,8 @@ def test_runner_handles_real_mnist_subset_with_cross_core_wiring():
     mapping = _build_subset_hybrid(work_dir, n_cores=20)
 
     runner = SanafeRunner(mapping=mapping, simulation_length=32,
-                          arch_preset="loihi", log_message_trace=False)
+                          arch_preset="loihi", log_message_trace=False,
+                          behavior=_declared_behavior())
     seg_in_size = sum(s.size for s in mapping.stages[0].input_map)
     rates = np.random.RandomState(0).uniform(0.0, 0.3,
                                              size=(1, seg_in_size)).astype(np.float32)
