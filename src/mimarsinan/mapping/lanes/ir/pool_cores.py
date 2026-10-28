@@ -40,7 +40,7 @@ def pool_windows(form: PoolForm, shape: Tuple[int, int, int]) -> Tuple[Tuple[int
     return (channels, out_h, out_w), windows
 
 
-def _groups(windows: List[List[int]], max_axons: Optional[int], max_neurons: Optional[int]) -> List[List[int]]:
+def window_groups(windows: List[List[int]], max_axons: Optional[int], max_neurons: Optional[int]) -> List[List[int]]:
     """Outputs per core in order: a core grows while its union of rows and its columns fit the geometry."""
     groups: List[List[int]] = []
     current: List[int] = []
@@ -78,7 +78,7 @@ def pool_lane_cores(op: ComputeOp, sources: np.ndarray, *, owner: int, first_id:
         raise PoolLaneError(f"pool lane {op.name!r}: windows give {out_shape}, the op writes {op.output_shape}")
     cores: List[NeuralCore] = []
     outputs = np.empty(len(windows), dtype=object)
-    for g, members in enumerate(_groups(windows, max_axons, max_neurons)):
+    for g, members in enumerate(window_groups(windows, max_axons, max_neurons)):
         rows = sorted({k for m in members for k in windows[m]})
         position = {k: r for r, k in enumerate(rows)}
         matrix = np.zeros((len(rows), len(members)), dtype=dtype)

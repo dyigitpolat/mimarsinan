@@ -39,6 +39,7 @@ def candidate_context_from_platform(
     carry: Optional[Any] = None,
     passes: Optional[Any] = None,
     lane_ops: Optional[Mapping[str, int]] = None,
+    lane_walked: bool = False,
 ) -> CandidateQuantityContext:
     """The declarations a candidate's platform carries, as quantity context.
 
@@ -52,7 +53,8 @@ def candidate_context_from_platform(
     when ``inference_batch_K`` is declared, the period census of the write law.
     A chip declaring ``onchip_arithmetic`` [W08] prices its lane block as its
     record does: ``lane_ops`` is the lane plan's estimate by kind
-    (``mapping.lanes.output_stage.planned_lane_ops``; absent without a model).
+    (``mapping.lanes.output_stage.planned_lane_ops``; absent without a model). ``lane_walked``: the layout walk
+    applied the lane plan (``lanes.shape_walk``), so the lane work is the walk's fusion count and the stage says so.
     """
     context = _spiking_rule_context(
         pcfg, host_macs=host_macs, onchip_macs=onchip_macs, host_params=host_params,
@@ -64,7 +66,7 @@ def candidate_context_from_platform(
                                           timesteps=context.timesteps, label="candidate", carry=carry),
                       pricing_refusal=target_bundles.absolute_pricing_refusal(pcfg),
                       compute=compute_split(pcfg, passes), readout_bits=declared_adc_bits(pcfg))
-    context = _lane_context(context, pcfg, lane_ops)
+    context = _lane_context(context, pcfg, lane_ops, lane_walked)
     if not names_value_domain(pcfg):
         return _event_census(context, pcfg, passes)
     refuse_spiking_activity(pcfg)
@@ -110,10 +112,15 @@ def _event_census(context: CandidateQuantityContext, pcfg: Mapping[str, Any],
 CANDIDATE_STAGE_NOTE = ("candidate plane: lane work estimated from the lane plan on the candidate's model; its "
                         "layout, pass structure and host census are the lane-free shape's (no pool reduction cores, "
                         "the absorbed host ops still counted on the host)")
+#: [U-E2 H-1] What a candidate plane whose walk applied the lane plan (``lanes.shape_walk``) prices.
+CANDIDATE_LANE_WALK_NOTE = ("candidate plane: the lane plan applied in the shape-only walk as the build applies it "
+                            "(absorbed host ops off the host census and the segmentation, operand rows of fused "
+                            "adds, reduction cores of pool lanes, wires through absorbed ops carried); lane work "
+                            "counted as the fusion counts it")
 
 
 def _lane_context(context: CandidateQuantityContext, pcfg: Mapping[str, Any],
-                  lane_ops: Optional[Mapping[str, int]]) -> CandidateQuantityContext:
+                  lane_ops: Optional[Mapping[str, int]], walked: bool = False) -> CandidateQuantityContext:
     """The lane block of a chip declaring ``onchip_arithmetic``, by the record plane's rule
     (``lane_block_quantities``); the context itself on every other chip."""
     declaration = lane_declaration(pcfg)
@@ -130,7 +137,8 @@ def _lane_context(context: CandidateQuantityContext, pcfg: Mapping[str, Any],
         values.pop("lane_ops")  # no model, no estimate: the lane energy term names the census absent
     stage = {"label": "estimated" if executed else "no lanes executed", "classes": sorted(declaration.classes),
              "lanes_per_core": declaration.lanes_per_core, "lane_block": declaration.lane_block, "deployed": None,
-             "lane_ops": work if executed and work is not None else {}, "notes": [CANDIDATE_STAGE_NOTE]}
+             "lane_ops": work if executed and work is not None else {},
+             "notes": [CANDIDATE_LANE_WALK_NOTE if walked and executed else CANDIDATE_STAGE_NOTE]}
     return replace(context, lane_quantities=tuple(sorted(values.items())),
                    lane_withheld=tuple(sorted(withheld.items())), output_stage=stage)
 

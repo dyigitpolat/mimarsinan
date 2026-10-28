@@ -82,6 +82,12 @@ class ShapeCensus:
     #: [fix_b] Per spec, its builder segment (``residency_rules.spec_runs``: the host ops before its node in the
     #: walk's program order); U1 plans these segments, as the builder does (``partition_ir_graph``).
     runs: Optional[Tuple[int, ...]] = None
+    #: [U-E2 H-1] On a chip that runs its declared lanes (``scaling_ladder_lanes``): the host-op units the lanes
+    #: absorb (they leave the host census), the lane work by kind as the IR fusion counts it, and the specs a declared
+    #: ``residency_plan`` composes (segmented by the fused program's depth segments); 0 and None on any other chip.
+    lane_absorbed: int = 0
+    lane_ops: Optional[Mapping[str, int]] = None
+    residency_softcores: Optional[Tuple[Any, ...]] = None
 
 
 @dataclass(frozen=True)

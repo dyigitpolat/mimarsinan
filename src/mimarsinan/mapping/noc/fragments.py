@@ -173,7 +173,8 @@ def _placed_passes(pass_lists, pass_resident, global_index, core_types, residenc
             for local, hardcore in pack.placements
         ))
         pass_program, tiles = packed_pass_program(pack.used_core_snapshots or (), resident=bool(resident),
-                                                  core_types=core_types, declared_cores=declared_cores)
+                                                  core_types=core_types, declared_cores=declared_cores,
+                                                  operand_axons=_core_operand_axons(pass_softcores, pack))
         programs.append(pass_program)
         pass_types.append(tiles)
     return per_pass, _resident_programs(programs, pass_types, residency, core_types)
@@ -197,11 +198,24 @@ def _single_pool_passes(softcores, runs, global_index, core_types, allow_neuron_
         for count in pack.segment_cores:
             per_pass.append(tuple((origin, core - start) for origin, core in pack.placements
                                   if start <= core < start + count))
+            port = _core_operand_axons(softcores, pack)
             program, _tiles = packed_pass_program(snapshots[start:start + count], resident=False,
-                                                  core_types=core_types, declared_cores=declared_cores)
+                                                  core_types=core_types, declared_cores=declared_cores,
+                                                  operand_axons=port[start:start + count])
             programs.append(program)
             start += count
     return per_pass, [replace(p, schedule_resident_cores=frozenset(range(p.cores))) for p in programs]
+
+
+def _core_operand_axons(softcores: Sequence[LayoutSoftCoreSpec], pack: Any) -> Tuple[int, ...]:
+    """[U-E2 H-1] Per packed core, the fused-add operand rows of the specs placed on it (each placed fragment keeps
+    its spec's rows, as a built core sums its soft cores'); () where no spec carries any."""
+    if not any(int(s.operand_axons) for s in softcores):
+        return ()
+    port = [0] * len(pack.used_core_snapshots or ())
+    for origin, core in pack.placements or ():
+        port[int(core)] += int(softcores[int(origin)].operand_axons)
+    return tuple(port)
 
 
 def delayed_carry_wires(softcores: Sequence[LayoutSoftCoreSpec], frag: LayoutNocFragments,

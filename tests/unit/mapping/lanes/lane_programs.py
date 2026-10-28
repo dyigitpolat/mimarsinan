@@ -63,7 +63,7 @@ def write_state(path, perceptrons, lanes=None) -> dict:
 def build_lane_program(model: nn.Module, input_shape: tuple, *, num_classes: int, platform: dict,
                        weight_bits: int = 4, max_axons=None, max_neurons=None, prune: Optional[dict] = None,
                        hardware_bias: bool = False, seed: int = 0, calibration_size: int = 32,
-                       state_hook=None) -> IntegerProgram:
+                       state_hook=None, allow_coalescing: bool = False) -> IntegerProgram:
     """Boundary Quantization (lane-aware entries), Readout Law (lanes installed, ranges at lane ends), the
     integer weight grid, IR mapping, quantization, pruning and the law hook (lanes fused), as the pipeline orders
     them. ``state_hook(flow, entries, grids, perceptrons, quantizers, lanes)`` may write a declared map into
@@ -106,7 +106,7 @@ def build_lane_program(model: nn.Module, input_shape: tuple, *, num_classes: int
     repr_ = flow.get_mapper_repr()
     repr_.assign_perceptron_indices()
     ir = IRMapping(q_max=q_max, firing_mode="Default", max_axons=max_axons, max_neurons=max_neurons,
-                   hardware_bias=hardware_bias).map(repr_)
+                   hardware_bias=hardware_bias, allow_coalescing=allow_coalescing).map(repr_)
     install_boundary_grids(ir, flow, quantizer_state=platform.get("quantizer_state"))
     typed = {"weight_bits": weight_bits, **platform}
     bind_core_types(ir, flow, typed)

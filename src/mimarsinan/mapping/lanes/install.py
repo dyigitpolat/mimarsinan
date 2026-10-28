@@ -21,7 +21,8 @@ def lanes_report(ir_graph) -> Optional[Dict[str, Any]]:
     return getattr(ir_graph, LANE_REPORT, None)
 
 
-def _geometry(platform: Mapping[str, Any]) -> Tuple[Optional[int], Optional[int]]:
+def lane_core_geometry(platform: Mapping[str, Any]) -> Tuple[Optional[int], Optional[int]]:
+    """The declared core geometry a reduction core stays within (the widest axons and neurons of the chip's types)."""
     cores = platform.get("cores") or ()
     axons = [int(c["max_axons"]) for c in cores if c.get("max_axons") is not None]
     neurons = [int(c["max_neurons"]) for c in cores if c.get("max_neurons") is not None]
@@ -40,7 +41,7 @@ def install_lane_laws(ir_graph, model, platform: Mapping[str, Any], spec: Readou
     plan = plan_lanes(repr_, declaration)
     quantizers = readout_quantizers_by_perceptron(repr_)
     first_owner = len(list(repr_.get_perceptrons()))
-    max_axons, max_neurons = _geometry(platform)
+    max_axons, max_neurons = lane_core_geometry(platform)
     fusion = fuse_ir_lanes(ir_graph, plan, first_owner=first_owner, max_axons=max_axons, max_neurons=max_neurons)
     owners: Dict[int, LaneGrid] = {index: _grid(entry[2]) for index, entry in quantizers.items()}
     for k, lane in enumerate(plan.pool_lanes):

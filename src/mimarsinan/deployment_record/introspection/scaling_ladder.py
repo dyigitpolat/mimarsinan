@@ -3,19 +3,18 @@
 Free of workloads: the caller hands in a built mapper representation and resolved platform dicts (cores,
 capabilities, ``platform_physics_resolved``, declarations), plus the toolchain's candidate-plane program census as a
 callable, so this module never re-implements the census the search and the record build share. Per network and core
-geometry, one shape-only layout (``shape_census``); per resolved platform (one core budget), one packed and scheduled
+geometry one shape-only layout (``shape_census``); per resolved platform (one core budget) one packed and scheduled
 program (``schedule_program``), priced per physics declaration and batch (``price_scheduled``; ``price_program``
-composes both); per declared batch K, rate and lifetime, one row (``ladder_row``).
+composes both); per declared batch K, rate and lifetime one row (``ladder_row``).
 
 Cells: logical weight cells are the network's stationary weights (``stationary_weight_cells``: per on-chip perceptron
 its weight tensor once plus a bias row, the same on every target [fix_b]); as-mapped cells count every replica (every
 conv output position or token is its own softcore), so replication is their ratio. Only x_fluid is free of resolution.
-
-The value types and the refusals by name live in ``scaling_ladder_types``.
-"""
+The value types and the refusals by name live in ``scaling_ladder_types``."""
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import resource
@@ -27,6 +26,7 @@ from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.compute_time import busiest_stage, compute_law
 import mimarsinan.deployment_record.introspection.scaling_ladder_law as law
 import mimarsinan.deployment_record.introspection.scaling_ladder_reading as point_reading
+from mimarsinan.deployment_record.introspection.scaling_ladder_lanes import host_census, lane_census, layout_walk
 from mimarsinan.deployment_record.introspection.scaling_ladder_types import (  # [U-E3] the keys: re-exported
     PRICE_KEYS as PRICE_KEYS, ROW_KEYS as ROW_KEYS, LadderDeclarationError, LadderGeometryError, LadderNetwork,
     LadderScheduleRefusal, PricedProgram, ScheduledProgram, ShapeCensus, certificate_record,
@@ -38,12 +38,11 @@ from mimarsinan.deployment_record.platform_physics import PlatformPhysics
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.schema.provenance import Band
-from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
+from mimarsinan.mapping.lanes.shape_walk import LaneWalk
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, core_types_from_declaration
 from mimarsinan.mapping.noc import census_of_walk, collect_noc_fragments
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
-from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.support.residency_rules import ProgramGraph, spec_runs
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
 
@@ -66,24 +65,20 @@ __all__ = ["LadderDeclarationError", "LadderGeometryError", "LadderNetwork", "La
 
 def shape_census(network: LadderNetwork, platform: Mapping[str, Any], *, wire_census: bool = True) -> ShapeCensus:
     """Lay the network out on the platform's core geometry; count logical and as-mapped cells. A program with no
-    on-chip softcore (every op on the host) has no cell to count and is refused by name (``LadderGeometryError``)."""
+    on-chip softcore (every op on the host) has no cell to count and is refused by name (``LadderGeometryError``).
+    [U-E2 H-1] Where the chip runs its lanes the walk applies them as the build does (``scaling_ladder_lanes``)."""
     start = time.time()
-    geometry = resolve_platform_mapping_params(platform["cores"],
-                                               allow_coalescing=bool(platform.get("allow_coalescing", False)))
-    layout = LayoutIRMapping(
-        max_axons=geometry.effective_max_axons, max_neurons=geometry.effective_max_neurons,
-        allow_coalescing=geometry.allow_coalescing, hardware_bias=geometry.hardware_bias,
-        collect_wire_census=wire_census, rows_per_input=geometry.rows_per_input,
-    )
     if hasattr(network.mapper_repr, "assign_perceptron_indices"):
         network.mapper_repr.assign_perceptron_indices()
-    softcores = tuple(layout.collect_layout_softcores(network.mapper_repr))
+    lanes = LaneWalk.of(network.mapper_repr, platform)
+    layout = layout_walk(network, platform, wire_census=wire_census, lanes=lanes)
+    softcores = tuple(layout.layout_softcores)
     runs = spec_runs(layout)
     logical = point_reading.stationary_weight_cells(network.mapper_repr, softcores)
     if logical == 0:
         raise LadderGeometryError(
             f"the program holds no on-chip softcore ({len(softcores)} softcores, 0 logical cells)")
-    return ShapeCensus(
+    census = ShapeCensus(
         softcores=softcores, wire_census=census_of_walk(layout) if wire_census else None,
         host_segments=int(getattr(layout, "host_side_segment_count", 0)),
         segments=len(set(runs)),
@@ -91,18 +86,20 @@ def shape_census(network: LadderNetwork, platform: Mapping[str, Any], *, wire_ce
         as_mapped_cells=sum(int(s.input_count) * int(s.output_count) for s in softcores),
         wall_s=time.time() - start, program=ProgramGraph.of_walk(layout) if wire_census else None, runs=runs,
     )
+    if lanes is None:
+        return census
+    census = lane_census(census, layout, lanes, layout_walk(network, platform, wire_census=wire_census))
+    return dataclasses.replace(census, wall_s=time.time() - start)
 
 
 def packed_tiles(census: ShapeCensus, platform: Mapping[str, Any]) -> int:
     """Physical cores the whole program packs into with an unbounded count of each declared core type.
 
-    With coalescing declared, the layout packer keeps a softcore wider than one core whole on a
-    fused instance of ceil(a / A) cores, as the hard-core packer does, and reports the instance
-    as one used core, so a fused instance counts its member cores here (``LayoutCoreSnapshot.tiles``).
-    Without it, nothing fuses and such a softcore does not pack (refused by name). [E-3] With the census's runs the
-    pack is the builder's single pool (segment by segment, each segment on cores of its own), so F is the
-    footprint the builder's fit rule reads.
-    """
+    With coalescing declared, the layout packer keeps a softcore wider than one core whole on a fused instance of
+    ceil(a / A) cores, as the hard-core packer does, and reports the instance as one used core, so a fused instance
+    counts its member cores here (``LayoutCoreSnapshot.tiles``). Without it, nothing fuses and such a softcore does
+    not pack (refused by name). [E-3] With the census's runs the pack is the builder's single pool (segment by
+    segment, each on cores of its own), so F is the footprint the builder's fit rule reads."""
     kwargs = ChipCapabilities.from_platform_constraints(platform).layout_kwargs()
     declared = core_types_from_declaration(platform["cores"])
     widths = {(t.max_axons, t.max_neurons) for t in declared}
@@ -141,16 +138,18 @@ def schedule_program(
     core_types = core_types_from_declaration(platform["cores"])
     kwargs = ChipCapabilities.from_platform_constraints(platform).layout_kwargs()
     planned = {} if kwargs.get("residency_plan") is None else {"program": census.program}
-    stats, error = compute_mapping_stats(census.softcores, core_types, census=census.wire_census, **planned,
+    # [U-E2 H-1] a declared plan composes the lane program's specs on its depth segments, as the builder's
+    specs = census.residency_softcores if planned and census.residency_softcores is not None else census.softcores
+    stats, error = compute_mapping_stats(specs, core_types, census=census.wire_census, **planned,
                                          runs=census.runs, **kwargs)
     if not stats.feasible:
         refusal = {"name": LadderScheduleRefusal.__name__,
                    "reason": error or "the planner reports the program infeasible"}
         return ScheduledProgram(platform=platform, packed_tiles=tiles, refusal=refusal, wall_s=time.time() - start)
-    noc = collect_noc_fragments(softcores=census.softcores, core_types=core_types,
+    noc = collect_noc_fragments(softcores=specs, core_types=core_types,
                                 census=census.wire_census, declared_cores=platform["cores"], **planned,
                                 runs=census.runs, **kwargs)
-    noc, facts = program_facts(census.softcores, noc, platform)
+    noc, facts = program_facts(specs, noc, platform)
     return ScheduledProgram(platform=platform, packed_tiles=tiles, stats=stats, noc=noc, facts=facts,
                             wall_s=time.time() - start)
 
@@ -180,11 +179,12 @@ def price_scheduled(
         return PricedProgram(platform=platform, packed_tiles=tiles, refusal=scheduled.refusal, wall_s=scheduled.wall_s)
     (on_stage or (lambda name: None))("price")
     stats, noc, facts = scheduled.stats, scheduled.noc, scheduled.facts
-    host: Dict[str, Any] = dict(network.host_census or {})
+    host: Dict[str, Any] = host_census(network, census)  # [U-E2 H-1] less the host ops the chip's lanes absorb
     context = candidate_context_from_platform(
         platform, latency_steps=facts.latency_steps, programming=facts.programming, carry=facts.carry,
         passes=facts.passes, **{k: host.get(k) for k in ("host_macs", "onchip_macs", "host_params",
                                                           "onchip_params", "compute_op_count")},
+        lane_ops=census.lane_ops, lane_walked=census.lane_ops is not None,
     )
     payload = platform.get("platform_physics_resolved")
     physics = PlatformPhysics.from_dict(payload) if payload else None

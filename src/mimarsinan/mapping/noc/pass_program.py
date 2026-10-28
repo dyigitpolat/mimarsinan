@@ -49,20 +49,24 @@ class PassProgram:
 
 
 def packed_pass_program(snapshots: Sequence[Any], *, resident: bool, core_types: Sequence[LayoutHardCoreType],
-                        declared_cores: Sequence[Mapping[str, Any]]) -> Tuple[PassProgram, Tuple[CoreTiles, ...]]:
+                        declared_cores: Sequence[Mapping[str, Any]],
+                        operand_axons: Sequence[int] = ()) -> Tuple[PassProgram, Tuple[CoreTiles, ...]]:
     """One packed pass's program from the layout packer's used-core snapshots, and each core's physical tiles (a
     fused core's members, ``core_type_tiles``). [CL-SG] ``declared_cores`` (the platform's ``cores``) signs each
-    core of a per-axon type (``carries_sign_register``): its used rows, and per tile the rows the tile holds."""
+    core of a per-axon type (``carries_sign_register``): its used rows, and per tile the rows the tile holds.
+    [U-E2 H-1] ``operand_axons`` (per core, the fused-add operand rows placed on it) are axons but no used row,
+    cell or programmed byte, as ``CoreOccupancy`` reads a built core."""
     snapshots = tuple(snapshots)
+    used = [int(snap.used_axons) - (int(operand_axons[i]) if operand_axons else 0) for i, snap in enumerate(snapshots)]
     tiles = tuple(core_type_tiles(snap.axons_per_core, snap.neurons_per_core, core_types, snap.component_axons)
                   for snap in snapshots)
-    extents = [tile_extents(snap.used_axons, snap.used_neurons, t) for snap, t in zip(snapshots, tiles)]
+    extents = [tile_extents(a, snap.used_neurons, t) for a, snap, t in zip(used, snapshots, tiles)]
     signed = [bool(declared_cores) and carries_sign_register(snap.axons_per_core, snap.neurons_per_core,
                                                              declared_cores) for snap in snapshots]
     return PassProgram(
-        core_cells=tuple(int(snap.used_axons) * int(snap.used_neurons) for snap in snapshots),
+        core_cells=tuple(a * int(snap.used_neurons) for a, snap in zip(used, snapshots)),
         resident=bool(resident),
-        core_sign_rows=tuple(int(snap.used_axons) if s else 0 for snap, s in zip(snapshots, signed))
+        core_sign_rows=tuple(a if s else 0 for a, s in zip(used, signed))
         if declared_cores else (),
         core_tile_cells=tuple(tuple(rows * cols for rows, cols in e) for e in extents),
         core_tile_sign_rows=tuple(tuple(rows if s else 0 for rows, _ in e) for e, s in zip(extents, signed))

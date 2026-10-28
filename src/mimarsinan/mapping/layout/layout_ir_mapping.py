@@ -34,6 +34,8 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
     collect_wire_census: bool = False
     # Rows per logical input (2 under per-axon sign): no weights, so the worst case.
     rows_per_input: int = 1
+    # [U-E2 H-1] The declared lane plan applied as the walk goes (``lanes.shape_walk.LaneWalk``); None: lane-free.
+    lane_walk: Any = None
 
     def __post_init__(self):
         self.max_axons = int(self.max_axons) if self.max_axons is not None else None
@@ -81,9 +83,11 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         input_sources,
         perceptron_index: Optional[int],
         coalescing_group_id: Optional[int] = None,
+        psum_group_id: Optional[int] = None,
     ) -> LayoutSourceView:
-        """Record a softcore shape under ``node_id`` and return a 1-D
-        ``LayoutSourceView`` over its outputs ([W04] with the IR core's coalescing group)."""
+        """Record a softcore shape under ``node_id``; a 1-D view over its outputs ([W04] its coalescing group)."""
+        if self.lane_walk is not None:
+            self.lane_walk.on_emit(self, node_id, input_sources, perceptron_index, psum_group_id)
         self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
         if self.collect_wire_census:
             record_emission_census(
@@ -118,6 +122,8 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             lower_residual_adds_to_onchip_merge(model_representation)
         output_sources = model_representation.map_to_ir(self)
         self.output_sources = output_sources
+        if self.lane_walk is not None:
+            self.lane_walk.finalize(self)
         self._finalize_softcores()
         return output_sources
 
@@ -145,9 +151,9 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         output_shape=None,
         name: Optional[str] = None,
     ) -> LayoutSourceView:
-        """Record a compute-op's dependency structure and return a
-        ``LayoutSourceView`` over its outputs.  Shape-only: no ComputeOp
-        node is built."""
+        """Record a compute-op's dependencies; a view over its outputs (shape-only: no ComputeOp is built)."""
+        if self.lane_walk is not None and self.lane_walk.absorbs(params, name):
+            return self.lane_walk.absorb(self, input_sources, params, input_shape, output_shape, name)
         if output_shape is not None:
             output_size = 1
             for d in output_shape:
@@ -221,11 +227,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         coalescing_group_id: Optional[int] = None,
         coalescing_role: Optional[str] = None,
     ) -> LayoutSourceView:
-        """Emit a single neural softcore (owned weights).
-
-        Base implementation records shape only.  ``IRMapping`` overrides to
-        additionally construct a concrete ``NeuralCore`` node.
-        """
+        """Emit a single neural softcore (owned weights); shape only (``IRMapping`` builds the core)."""
         in_features = total_size(input_sources)
         out_features = int(getattr(weights, "shape", [0])[0])
         has_bias = biases is not None
@@ -242,6 +244,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             input_sources=input_sources,
             perceptron_index=perceptron_index,
             coalescing_group_id=coalescing_group_id,
+            psum_group_id=psum_group_id,
         )
 
     def add_shared_neural_core(
@@ -262,11 +265,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         coalescing_group_id: Optional[int] = None,
         coalescing_role: Optional[str] = None,
     ) -> LayoutSourceView:
-        """Emit a bank-backed neural softcore (one conv position).
-
-        Base implementation records shape only.  ``IRMapping`` overrides to
-        also build the concrete ``NeuralCore`` referencing the bank.
-        """
+        """Emit a bank-backed neural softcore (one conv position); shape only (``IRMapping`` builds the core)."""
         bank_shape = self._layout_weight_banks.get(weight_bank_id)
         if bank_shape is None:
             raise ValueError(f"Unknown weight_bank_id={weight_bank_id}")
@@ -291,6 +290,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             input_sources=input_sources,
             perceptron_index=perceptron_index,
             coalescing_group_id=coalescing_group_id,
+            psum_group_id=psum_group_id,
         )
         if self.rows_per_input == 1:  # a per-axon split instance is not its bank's region: no bank residency
             self._sc_idx_to_bank_id[sc_idx] = weight_bank_id

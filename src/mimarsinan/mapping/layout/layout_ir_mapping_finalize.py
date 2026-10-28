@@ -208,6 +208,7 @@ class _LayoutIRMappingFinalize:
                 ),
                 name=old.name, core_role=old.core_role,
                 coalescing_group_id=old.coalescing_group_id,
+                operand_axons=old.operand_axons,  # [U-E2 H-1] a fused add's operand rows (the lane walk's)
             )
 
         self.layout_preview = self._build_layout_preview(segment_ids, latencies)
