@@ -27,14 +27,17 @@ DERIVED_GEOMETRY: Tuple[str, ...] = ("max_axons", "max_neurons")
 DRAWN_BY_FIELDS: Tuple[str, ...] = ("residency_plan",)
 #: Program-changing, not drawn on this tree: W02's position multiplexing (added after the declared draw space;
 #: certified at atol 0 by its own suite). A later CL1 round draws it (the pack unit's follow-up P5). [U-F4] Its
-#: pipelined form likewise (certified at atol 0 by its own suite).
-DEFERRED: Tuple[str, ...] = ("position_multiplexing", "pipelined_multiplexing")
+#: pipelined form likewise (certified at atol 0 by its own suite); [U-L2] and its banked reduction cores.
+DEFERRED: Tuple[str, ...] = ("position_multiplexing", "pipelined_multiplexing", "reduction_core_banks")
 #: Why each deferred key (by its root) is not drawn.
 DEFERRED_REASONS: Mapping[str, str] = {
     "position_multiplexing": "W02's decision, added after the declared draw space; not drawn on this tree (a later "
                              "CL1 round draws it, the pack unit's follow-up P5)",
     "pipelined_multiplexing": "U-F4's decision (position multiplexing's pipelined form), added after the declared draw "
                               "space; not drawn on this tree (drawn with position_multiplexing by a later CL1 round)",
+    "reduction_core_banks": "U-L2's decision (a pool lane's banked reduction cores under position multiplexing), added "
+                            "after the declared draw space; not drawn on this tree (drawn with position_multiplexing "
+                            "by a later CL1 round)",
 }
 #: Cost-only paths no program reads: pricing constants, the priced floorplan, the write law, the lane block
 #: (W08: its constants and lane count price the lane rows only) and the event census's sample count (U-S: a

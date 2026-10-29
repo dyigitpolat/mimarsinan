@@ -4,9 +4,9 @@ The builder maps the lane-free program (its layout records, ``IRGraph.layout_sof
 IR at Soft Core Mapping, and plans each segment's passes from ``packing/segment_specs.py``'s specs: a core's layout
 record where it has one (its extent plus its operand rows), for a core the fusion inserted (a pool lane's or a
 reduction's) the record the fusion wrote for it ([U-L] ``lanes/ir/layout_records.py``: the reconstruction's values,
-no bank, segment 0, the fused IR's latency), and one source per segment for the order facts the capacity split
-reads: the walk's records' where every core of the segment has one, else the fused program's (segment 0, the fused
-IR's latency). Here the walk runs twice: lane-free (the records) and with the lane plan applied (``lanes.shape_walk``, the
+its bank where its reduction cores are banked ([U-L2]) else none, segment 0, the fused IR's latency), and one source
+per segment for the order facts the capacity split reads: the walk's records' where every core of the segment has
+one, else the fused program's (segment 0, the fused IR's latency). Here the walk runs twice: lane-free (the records) and with the lane plan applied (``lanes.shape_walk``, the
 fused program: its cells, runs, wire census and program graph), and the specs follow that one rule per builder
 segment (the IR runs), and per depth segment of the fused program for a declared ``residency_plan`` (the builder's
 ``depth_partition``). The host census loses the absorbed units; the lane work is the fusion's count.
@@ -57,7 +57,8 @@ def builder_specs(specs: Sequence[Any], records: Sequence[Any], record_of: Seque
                   groups: Sequence[int], *, depth: bool) -> List[Any]:
     """Per fused spec, the spec the builder's planner reads (``segment_specs._segment_specs``) in its segment of
     ``groups``: a kept core is its layout record's (``record_of``: its index there) with the fused extent; a core
-    the fusion inserted is its own record's (no bank, segment 0, the fused latency, as the walk states it); a segment
+    the fusion inserted is its own record's (its bank where [U-L2] its reduction cores are banked, else none; segment
+    0, the fused latency, as the walk states it); a segment
     holding an inserted core reads every core's order facts off the fused program, any other the walk's records'. ``depth``: the segments are the
     fused program's depth segments (a declared plan's), which the specs keep."""
     members: Dict[int, List[int]] = {}
@@ -72,8 +73,8 @@ def builder_specs(specs: Sequence[Any], records: Sequence[Any], record_of: Seque
             fallback = ungrouped_fallback_id(record if record is not None else base + position)
             row = replace(spec, residency_basis=BASIS_PROVENANCE,
                           residency_class_id=provenance_group_id(spec.perceptron_index, fallback=fallback))
-            if record is None:
-                row = replace(row, segment_id=0, bank_id=None)
+            if record is None:  # [U-L2] an inserted core keeps the walk's bank: a banked reduction core's, else none
+                row = replace(row, segment_id=0)
             elif mixed:
                 row = replace(row, segment_id=0)
             else:

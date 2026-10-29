@@ -111,7 +111,12 @@ Every core the fusion inserts (a pool lane's, a reduction's) gets a layout recor
 its extent and its level in the fused program, appended to `IRGraph.layout_softcores`, the core marked
 `lane_law.INSERTED_RECORD` because the walk's records predate the fusion), so position multiplexing (W02) and its
 pipelined form (U-F4) order and run a pool lane's cores; the planner's one source of order facts per segment and the
-runtime soft core's residency class (the source-perceptron proxy) still tell the walk's records apart. Fusion
+runtime soft core's residency class (the source-perceptron proxy) still tell the walk's records apart. [U-L2] Declared
+`reduction_core_banks` (a cost-only decision under position multiplexing), a pool lane's window groups of one 0/1
+matrix over one producer grid become the instances of one shared bank (`lanes/ir/reduction_banks.py`: one bank per
+distinct pattern and producer lane owners, numbered after every bank the program holds; the instances' solved laws are
+checked equal, refused by name otherwise), so W02 serves them in turn on one copy and their records state the bank; the
+shape-only walk applies the same rule (`WalkBanks`). A reduction's reduced cores keep their own weights. Fusion
 finds each absorbed op by its call site (`lanes/ir/call_sites.py`), never by its payload alone: the IR op carrying the
 site's payload under the site's name, so one module called at several sites (an activation a block calls after each of
 its sums) gives each site its own role; an unnamed site is told by its payload, and one its payload does not single out

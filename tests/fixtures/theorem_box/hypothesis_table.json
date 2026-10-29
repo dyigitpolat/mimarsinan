@@ -73,6 +73,7 @@
   "platform_physics_overrides",
   "platform_physics_profile",
   "position_multiplexing",
+  "reduction_core_banks",
   "residency_plan",
   "residency_plan.index",
   "residency_plan.step",
@@ -161,6 +162,19 @@
    "H8"
   ],
   "pipelined_multiplexing": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "H10",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "reduction_core_banks": [
    "H5-collapse",
    "H5-skew",
    "R3",

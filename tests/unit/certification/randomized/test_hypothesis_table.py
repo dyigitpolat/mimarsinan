@@ -52,7 +52,14 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: Integration re-pin (tcad/wave1-merged, uc4 onto uc3r 480828a8): the fixture is 480828a8's table with U-C4's two
 #: keys inserted in sorted position and nothing else changed (RA/11_wave2/integration8/uc4/fixture_union_check.txt),
 #: 37 cost-only rows; RA/10_wave1/thm/ is regenerated from the fixture.
-TABLE_SHA256 = "fb3efdaf54f1129a32b9b804e3f9d946e7931f48de528b72ac671cd702919a63"
+#: [U-L2] re-pin: ``reduction_core_banks`` (a pool lane's banked reduction cores under position multiplexing) joins the
+#: cost-only list (X3a ``DEFERRED``, its ``cost_only_hypotheses`` row position_multiplexing's), 35 rows;
+#: RA/10_wave1/thm/ is regenerated from the fixture at integration.
+#: Integration re-pin (tcad/wave1-merged, ul2 onto ul 478b6db2): the fixture is 478b6db2's table with U-L2's key in
+#: sorted position in ``cost_only`` and its ``cost_only_hypotheses`` row after pipelined_multiplexing's, nothing else
+#: changed (RA/11_wave2/integration8/ul2/fixture_union_check.txt), 38 cost-only rows; RA/10_wave1/thm/ is
+#: regenerated from the fixture.
+TABLE_SHA256 = "ef954b700c0acbad5dbcabd2b6e09d8bbd143448052e61761ef6597b4b8c4a4f"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -68,7 +75,7 @@ def test_the_fixture_is_the_pinned_one():
 
 def test_the_class_list_is_the_registry_cost_only_set(table):
     assert set(table["cost_only"]) == cost_only_set()
-    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 37
+    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 38  # [U-L2] reduction_core_banks
 
 
 #: The proof check's split (PC1): conditions on the two deployments, and conditions on every run (the

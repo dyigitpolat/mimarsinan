@@ -59,6 +59,13 @@ def window_groups(windows: List[List[int]], max_axons: Optional[int], max_neuron
     return groups
 
 
+def window_rows(windows: List[List[int]], max_axons: Optional[int],
+                max_neurons: Optional[int]) -> List[Tuple[List[int], List[int]]]:
+    """[U-L2] Per core its outputs and its rows (its windows' inputs, sorted), as both planes state them."""
+    return [(members, sorted({k for m in members for k in windows[m]}))
+            for members in window_groups(windows, max_axons, max_neurons)]
+
+
 #: The attribute a reduction core carries: per column, the flat (channel-major) index of the pool output it writes.
 LANE_OUTPUTS = "lane_outputs"
 
@@ -78,8 +85,7 @@ def pool_lane_cores(op: ComputeOp, sources: np.ndarray, *, owner: int, first_id:
         raise PoolLaneError(f"pool lane {op.name!r}: windows give {out_shape}, the op writes {op.output_shape}")
     cores: List[NeuralCore] = []
     outputs = np.empty(len(windows), dtype=object)
-    for g, members in enumerate(window_groups(windows, max_axons, max_neurons)):
-        rows = sorted({k for m in members for k in windows[m]})
+    for g, (members, rows) in enumerate(window_rows(windows, max_axons, max_neurons)):
         position = {k: r for r, k in enumerate(rows)}
         matrix = np.zeros((len(rows), len(members)), dtype=dtype)
         for column, m in enumerate(members):

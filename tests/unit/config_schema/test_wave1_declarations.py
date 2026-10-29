@@ -158,6 +158,7 @@ class TestRegistryEntries:
         assert set(passthrough_keys()) == set(PLATFORM_KEYS) | {"readout_ranges", "position_multiplexing",
                                                                 "pipelined_multiplexing",  # U-F4
                                                                 "carry_buffer_bytes",  # U-F4
+                                                                "reduction_core_banks",  # U-L2
                                                                 "quantizer_state", "weight_scale_rule",
                                                                 "bias_resolution",
                                                                 "onchip_arithmetic",  # Wave 2 WI-5e, W08

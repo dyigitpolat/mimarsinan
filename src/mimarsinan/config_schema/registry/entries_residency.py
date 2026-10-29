@@ -1,4 +1,5 @@
-"""Registry entries: the executed residency plan selection, position multiplexing and its pipelined form."""
+"""Registry entries: the executed residency plan selection, position multiplexing, its pipelined form and its banked
+reduction cores."""
 
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
 )
 from mimarsinan.config_schema.registry.value_schema import RequiredIff, ValueSchema
+from mimarsinan.mapping.lanes.ir.reduction_banks import KEY as REDUCTION_BANKS
 from mimarsinan.mapping.support.period_census import RESIDENCY_STEP_RULES, STEP_INDEX
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
@@ -78,6 +80,19 @@ ENTRIES = (
            "Undeclared, every carried value crosses the boundary (off chip), as the chip without one runs it.",
        passthrough=True, relevant=R.when_true("pipelined_multiplexing"), bounds=(1, None),
        empty_means="no on-chip carry buffer: the carry crosses the chip boundary"),
+    _E(REDUCTION_BANKS, domain="value", section="platform_constraints", group="mapping_strategy",
+       owner="mapping/lanes/ir/reduction_banks", type=T.BOOL,
+       category=Category.ADVANCED, exposure="user", label="Shared Reduction Banks",
+       effect="A pool lane's reduction cores of one matrix share one bank, served in turn on one copy",
+       doc="Mapping decision under position multiplexing: true makes the window groups of each pool lane that hold "
+           "one 0/1 matrix and read one producer grid the instances of one shared bank, so the one copy of each bank "
+           "serves them in turn over passes (one bank per distinct matrix and grid, not one core per window group): "
+           "the chip commits fewer cells and keeps a resident program on fewer cores, at the cost of passes; false or "
+           "absent gives every window group its own core. A reduction's reduced cores keep their own weights. "
+           "Outputs are unchanged.",
+       passthrough=True, relevant=R.when_true("position_multiplexing"),
+       legal_values=lambda cfg: _reduction_banks_legal(cfg),
+       empty_means="every window group of a pool lane its own core, the lane fusion byte for byte"),
 )
 
 #: Declarations whose cores the shape-only plane cannot see: IR elimination compacts bank instances into owned cores
@@ -126,3 +141,8 @@ def _pipelined_legal(cfg):
     except ValueError:
         windowed = False
     return (False,) if windowed else (False, True)
+
+
+def _reduction_banks_legal(cfg):
+    """True exactly where position multiplexing may be true: the decision shapes what its one copy serves."""
+    return (False,) if True not in _multiplexing_legal(cfg) else (False, True)

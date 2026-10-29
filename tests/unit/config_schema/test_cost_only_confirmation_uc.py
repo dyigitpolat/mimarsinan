@@ -1,10 +1,11 @@
 """[U-C C-7] The owner's confirmations of 2026-10-27 (decisions C1 and C3), pinned.
 
 C1: the owner-reviewed cost-only set of S0 (26 rows) grows by the lane block's two pricing fields to 28. The tree's set
-holds those 28 and the nine rows that later amendments added, each under its own record, so the set this tree pins
-(37 rows, the theorem box's) is that composition and no other ([U-E3] the fifth: U-E's ``cores.compute_physics``;
+holds those 28 and the ten rows that later amendments added, each under its own record, so the set this tree pins
+(38 rows, the theorem box's) is that composition and no other ([U-E3] the fifth: U-E's ``cores.compute_physics``;
 [U-S2] the sixth: U-S's ``event_census_samples``; [U-F4] the seventh: U-F4's ``pipelined_multiplexing``; [U-C4] the
-eighth and ninth: U-C4's ``cores.cells_per_weight`` and ``cores.weight_cell_rows``, ``WEIGHT_CELLS``).
+eighth and ninth: U-C4's ``cores.cells_per_weight`` and ``cores.weight_cell_rows``, ``WEIGHT_CELLS``; [U-L2] the
+tenth: U-L2's ``reduction_core_banks``, cost-only with position multiplexing's hypotheses).
 C3: one geometry may carry a static and an operand core type (a chip may have identical arrays in two roles); every
 door admits it."""
 
@@ -42,13 +43,14 @@ LANE_FIELDS = frozenset({"onchip_arithmetic.lane_block", "onchip_arithmetic.lane
 #: U-E's E-6 (finalization plan sec. 2.2, N2 follow-up F5: the per-core-type compute physics, a pricing-only key,
 #: ``certification/randomized/cost_draws.py``), [U-S2] U-S's S-2 (finalization plan sec. 2.2, decision B6 of
 #: 2026-10-27: the opt-in event census's sample count, a pricing-only key,
-#: ``config_schema/registry/decision_classes.py`` and ``certification/randomized/cost_draws.py``), and [U-F4] U-F4's
+#: ``config_schema/registry/decision_classes.py`` and ``certification/randomized/cost_draws.py``), [U-F4] U-F4's
 #: P-1 (owner answer "Build it", 2026-10-28: pipelined position multiplexing, a declared decision of the pass planner,
 #: cost-only in ``config_schema/registry/decision_classes.py``, deferred by name in
-#: ``certification/randomized/cost_draws.py``).
+#: ``certification/randomized/cost_draws.py``), and [U-L2] U-L2's B-1 (W02's banked reduction cores, cost-only in
+#: ``decision_classes.py``, deferred by name in ``cost_draws.py``; final_units/ul2, plan item B-1).
 LATER = frozenset({"cores.weight_sign_granularity", "cores.operand.write_source", "cores.write_physics",
                    "position_multiplexing", "cores.compute_physics", "event_census_samples",
-                   "pipelined_multiplexing"})
+                   "pipelined_multiplexing", "reduction_core_banks"})
 #: [U-C4] The cells per stored weight (B3 intake open item 4): two pricing-only core-type fields, recorded in
 #: RA/11_wave2/final_units/uc4/report.md.
 WEIGHT_CELLS = frozenset({"cores.cells_per_weight", "cores.weight_cell_rows"})
@@ -73,7 +75,7 @@ class TestCostOnlySet:
 
     def test_the_tree_s_set_is_the_confirmed_28_and_the_later_amendments(self):
         assert _cost_only() == S0_SET | LANE_FIELDS | LATER | WEIGHT_CELLS
-        assert len(_cost_only()) == 37
+        assert len(_cost_only()) == 38
 
 
 ONE_GEOMETRY = [{"max_axons": 64, "max_neurons": 64, "count": 6, "has_bias": True},

@@ -10,6 +10,7 @@ from mimarsinan.mapping.export.output_law import identity_output_indices
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.lanes.declaration import LaneDeclaration
 from mimarsinan.mapping.lanes.ir.fusion import LANE_REPORT, fuse_ir_lanes
+from mimarsinan.mapping.lanes.ir.reduction_banks import declared_reduction_banks, refuse_split_bank_laws
 from mimarsinan.mapping.lanes.law.lane_grids import LaneGrid
 from mimarsinan.mapping.lanes.plan import plan_lanes
 from mimarsinan.mapping.lanes.law.solve import solve_lane_laws
@@ -42,7 +43,8 @@ def install_lane_laws(ir_graph, model, platform: Mapping[str, Any], spec: Readou
     quantizers = readout_quantizers_by_perceptron(repr_)
     first_owner = len(list(repr_.get_perceptrons()))
     max_axons, max_neurons = lane_core_geometry(platform)
-    fusion = fuse_ir_lanes(ir_graph, plan, first_owner=first_owner, max_axons=max_axons, max_neurons=max_neurons)
+    fusion = fuse_ir_lanes(ir_graph, plan, first_owner=first_owner, max_axons=max_axons, max_neurons=max_neurons,
+                           reduction_banks=declared_reduction_banks(platform))
     owners: Dict[int, LaneGrid] = {index: _grid(entry[2]) for index, entry in quantizers.items()}
     for k, lane in enumerate(plan.pool_lanes):
         owners[first_owner + k] = _grid(lane.pool.module.quantizer)
@@ -52,6 +54,7 @@ def install_lane_laws(ir_graph, model, platform: Mapping[str, Any], spec: Readou
     laws = solve_lane_laws(ir_graph, owners, spec, real_bias=ParameterGrids.from_config(platform).law_bias,
                            identity_outputs=identity,
                            channel_keys=lane_channel_keys(ir_graph, plan, fusion, first_owner))
+    refuse_split_bank_laws(ir_graph, laws, fusion.bank_ids)  # [U-L2] one law per reduction bank's instances
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
             node.readout_law = laws[int(node.id)]  # pyright: ignore[reportAttributeAccessIssue] -- declared-only

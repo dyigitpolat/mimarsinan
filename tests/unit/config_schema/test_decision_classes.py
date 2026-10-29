@@ -117,6 +117,9 @@ class TestCoverage:
 #: cost-only mapping decision, is a further row.
 #: U-C4 amendment (cells per stored weight, B3 intake open item 4): two pricing-only core-type fields, 34 rows on the
 #: unit's base; 37 with the chain's rows (integration8/uc4).
+#: [U-L2] (finalization plan item B-1, from U-L's finding): ``reduction_core_banks``, a pool lane's banked reduction
+#: cores under position multiplexing, a cost-only mapping decision, is a further row; 35 rows on the unit's base, 38
+#: with the chain's rows (integration8/ul2).
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",
@@ -137,6 +140,7 @@ FROZEN_COST_ONLY = frozenset({
     "max_schedule_passes", "onchip_arithmetic.lane_block", "onchip_arithmetic.lanes_per_core",
     "platform_physics_overrides", "platform_physics_profile",
     "residency_plan", "residency_plan.index", "residency_plan.step", "position_multiplexing", "pipelined_multiplexing",
+    "reduction_core_banks",  # [U-L2]
     "tile_grid_cols", "tile_grid_rows",
     "write_overlap", "write_overlap.mode", "write_overlap.shadow_capacity_fraction", "write_ports",
 })
@@ -201,8 +205,9 @@ class TestPlanClasses:
         # 26 owner-reviewed rows + the closure's CL-SG amendment (weight_sign_granularity) + the N2 key amendment
         # (write_source) + the N2b one (write_physics) + W02's position_multiplexing (pack) + W08's two lane-block
         # pricing fields (lanes) + E-6's compute_physics + U-S's event_census_samples (the event census) + U-F4's
-        # pipelined_multiplexing + U-C4's two weight-cell fields (cells_per_weight, weight_cell_rows)
-        assert len(FROZEN_COST_ONLY) == 37
+        # pipelined_multiplexing + U-C4's two weight-cell fields (cells_per_weight, weight_cell_rows) + U-L2's
+        # reduction_core_banks
+        assert len(FROZEN_COST_ONLY) == 38
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 

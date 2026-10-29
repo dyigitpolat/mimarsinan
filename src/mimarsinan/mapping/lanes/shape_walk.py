@@ -10,7 +10,7 @@ placed as axons and counted as no cell (``operand_axons``); a pool lane's output
 windows (``pool_cores``' windows and core groups); a reduction replaces its producer's cores by reduced cores
 (``reduce_cores``' groups). So the absorbed ops leave the host census and the segmentation, and the wires through
 them are core-to-core. Weights, grids and laws stay the builder's. A plan the walk cannot apply is refused by the
-fusion's own name (``LaneFusionError``, ``PoolLaneError``).
+fusion's own name (``LaneFusionError``, ``PoolLaneError``). [U-L2] A pool lane's banks: ``reduction_banks.WalkBanks``.
 """
 
 from __future__ import annotations
@@ -25,7 +25,8 @@ from mimarsinan.mapping.lanes.declaration import lanes_executed
 from mimarsinan.mapping.lanes.forms import pool_form
 from mimarsinan.mapping.lanes.install import lane_core_geometry
 from mimarsinan.mapping.lanes.ir.call_sites import planned_call_sites
-from mimarsinan.mapping.lanes.ir.pool_cores import PoolLaneError, pool_windows, window_groups
+from mimarsinan.mapping.lanes.ir.pool_cores import PoolLaneError, pool_windows, window_rows
+from mimarsinan.mapping.lanes.ir.reduction_banks import WalkBanks, declared_reduction_banks
 from mimarsinan.mapping.lanes.ir.refusal import LaneFusionError
 from mimarsinan.mapping.lanes.plan import LanePlan, plan_lanes
 from mimarsinan.mapping.layout.layout_source_view_ops import node_ids_of, total_size
@@ -41,8 +42,8 @@ class LaneWalk:
     lane work by kind)."""
 
     def __init__(self, plan: LanePlan, *, first_owner: int, max_axons: Optional[int],
-                 max_neurons: Optional[int]) -> None:
-        self.plan, self.sites = plan, planned_call_sites(plan, first_owner)
+                 max_neurons: Optional[int], reduction_banks: bool = False) -> None:
+        self.plan, self.sites, self.banks = plan, planned_call_sites(plan, first_owner), WalkBanks(reduction_banks)
         self._payloads = {id(site.module) for site, _role in self.sites}
         self.max_axons, self.max_neurons = max_axons, max_neurons
         self.absorbed_units = len(plan.absorbed())
@@ -68,7 +69,7 @@ class LaneWalk:
             return None
         max_axons, max_neurons = lane_core_geometry(platform)
         walk = cls(plan_lanes(model_repr, declaration), first_owner=len(list(model_repr.get_perceptrons())),
-                   max_axons=max_axons, max_neurons=max_neurons)
+                   max_axons=max_axons, max_neurons=max_neurons, reduction_banks=declared_reduction_banks(platform))
         order, _, _ = model_repr._ensure_exec_graph()
         walk._keep = {int(n.perceptron_index) for n in order
                       if id(n) in walk._holders and getattr(n, "perceptron_index", None) is not None}
@@ -127,9 +128,9 @@ class LaneWalk:
         if kind == "pool":
             self._require_cores(mapping, flat, "pool", name)
             windows = [[k for k in window if not flat[k].is_off()] for window in windows]
-            outputs = self._insert(mapping, name, "lane", [(list(g), sorted({k for m in g for k in windows[m]}))
-                                                           for g in window_groups(windows, self.max_axons,
-                                                                                  self.max_neurons)], flat)
+            groups = window_rows(windows, self.max_axons, self.max_neurons)  # [U-L2] one rule with the fusion's
+            outputs = self.banks.pool(mapping, groups, windows, flat, self._insert(mapping, name, "lane", groups, flat),
+                                      int(argument))  # type: ignore[arg-type]
         else:
             outputs = self._reduce(mapping, flat, windows, name)
         self.lane_ops["pool"] += int(outputs.size)
@@ -143,6 +144,7 @@ class LaneWalk:
         self._refuse_split_banks(mapping)
         for node, columns in sorted(self.operands.items()):
             self._operand_rows(mapping, node, columns)
+        self.banks.apply(mapping)  # [U-L2] the pool lanes' banks, before the reduced producers' indices move
         self._drop_reduced(mapping)
 
     # ---------------------------------------------------------------- fused ops

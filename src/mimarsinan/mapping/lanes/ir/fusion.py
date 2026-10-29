@@ -8,13 +8,15 @@ weights, one rounding). Any other average pool becomes reduction cores (0/1 weig
 window size) that requantize onto the pool lane's grid. Every role is keyed on the plan's call sites (one per
 call of a module, ``call_sites``), so the IR and the model absorb the same ops; a planned op the IR cannot fuse is
 refused by name. [U-L] Every core the fusion inserts gets a layout record of its own, its level in the fused program
-(``layout_records.py``), so the planners that order passes by the records order it too.
+(``layout_records.py``), so the planners that order passes by the records order it too. [U-L2] Declared
+``reduction_core_banks``, each pool lane's window groups of one matrix over one producer grid become the instances of
+one shared bank (``reduction_banks.py``) before their records are written, so each record states its bank.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -25,6 +27,7 @@ from mimarsinan.mapping.lanes.ir.call_sites import call_site_roles, planned_call
 from mimarsinan.mapping.lanes.ir.layout_records import record_inserted_cores
 from mimarsinan.mapping.lanes.ir.operand_rows import insert_operand_rows
 from mimarsinan.mapping.lanes.ir.pool_cores import PoolLaneError, pool_lane_cores
+from mimarsinan.mapping.lanes.ir.reduction_banks import bank_ir_cores
 from mimarsinan.mapping.lanes.ir.reduce_cores import reduced_lane_cores, refuse_unreducible
 from mimarsinan.mapping.lanes.ir.refusal import LaneFusionError
 from mimarsinan.mapping.lanes.ir.rewire import rewire_removed
@@ -55,12 +58,18 @@ class LaneFusion:
     reduced_cores: int = 0
     #: perceptron index -> the window its reduction sums (for the model's stamp).
     reduce_forms: Dict[int, PoolForm] = field(default_factory=dict)
+    #: [U-L2] The banks the pool lanes' cores became instances of (None: the decision undeclared), and their ids.
+    reduction_banks: Optional[int] = None
+    bank_ids: Tuple[int, ...] = ()
 
     def as_dict(self) -> Dict[str, object]:
-        return {"clamps": self.clamps, "adds": self.adds, "pools": self.pools, "pool_cores": self.pool_cores,
-                "operand_rows": self.operand_rows, "lane_ops": dict(self.lane_ops),
-                "pool_owners": dict(self.pool_owners), "reductions": self.reductions,
-                "reduced_cores": self.reduced_cores}
+        out: Dict[str, object] = {
+            "clamps": self.clamps, "adds": self.adds, "pools": self.pools, "pool_cores": self.pool_cores,
+            "operand_rows": self.operand_rows, "lane_ops": dict(self.lane_ops), "pool_owners": dict(self.pool_owners),
+            "reductions": self.reductions, "reduced_cores": self.reduced_cores}
+        if self.reduction_banks is not None:  # declared-only: an undeclared report is the one it was
+            out["reduction_banks"] = self.reduction_banks
+        return out
 
 
 def _readers(ir_graph: IRGraph) -> Dict[int, set]:
@@ -88,6 +97,7 @@ class _Fuser:
         self.replace: Dict[int, np.ndarray] = {}  # removed op id -> the sources its output elements become
         self.operands: Dict[int, Dict[int, IRSource]] = {}  # core id -> {column: operand source}
         self.inserted: Dict[int, List[NeuralCore]] = {}  # removed pool op id -> its reduction cores
+        self.pooled: List[int] = []  # [U-L2] the pool lanes' op ids, in the order they were fused
         self.removed_cores: set = set()  # producer cores a reduction replaced
         self.next_id = 1 + max((int(n.id) for n in ir_graph.nodes), default=0)
         self.report = LaneFusion()
@@ -183,6 +193,7 @@ class _Fuser:
             self.cores[int(core.id)] = core
         self.next_id += len(cores)
         self.inserted[int(op.id)] = cores
+        self.pooled.append(int(op.id))
         self.replace[int(op.id)] = outputs
         self.report.pools += 1
         self.report.pool_cores += len(cores)
@@ -192,6 +203,19 @@ class _Fuser:
         self.report.pool_owners[str(op.name)] = owner
         self.report.pool_forms[owner] = form
 
+
+    def bank_pools(self) -> int:
+        """[U-L2] Each pool lane's cores of one matrix over one producer grid (the grids of their producers' lane
+        owners) become the instances of one bank (``reduction_banks.bank_ir_cores``); the banks added."""
+        def owners(core: NeuralCore) -> frozenset:
+            producers = (self.cores.get(int(s.node_id)) for s in core.input_sources.flatten() if int(s.node_id) >= 0)
+            return frozenset(p.perceptron_index if p.perceptron_index is not None else getattr(p, LANE_OWNER, None)
+                             for p in producers if p is not None)
+
+        before = set(self.ir.weight_banks)
+        added = sum(bank_ir_cores(self.ir, self.inserted[op], owners) for op in self.pooled)
+        self.report.bank_ids = tuple(sorted(set(self.ir.weight_banks) - before))
+        return added
 
     def reduce(self, op: ComputeOp) -> None:
         sources = self.resolved(op)
@@ -224,8 +248,9 @@ class _Fuser:
 
 
 def fuse_ir_lanes(ir_graph: IRGraph, plan: LanePlan, *, first_owner: int, max_axons: Optional[int] = None,
-                  max_neurons: Optional[int] = None) -> LaneFusion:
-    """Fuse ``plan``'s ops into ``ir_graph`` in place; pool lanes take owner keys from ``first_owner`` on."""
+                  max_neurons: Optional[int] = None, reduction_banks: bool = False) -> LaneFusion:
+    """Fuse ``plan``'s ops into ``ir_graph`` in place; pool lanes take owner keys from ``first_owner`` on; [U-L2]
+    ``reduction_banks``: their cores of one matrix and grid become instances of one bank."""
     sites = planned_call_sites(plan, first_owner)
     roles, carried = call_site_roles(ir_graph, sites)
     fuser = _Fuser(ir_graph, plan, max_axons, max_neurons)
@@ -249,6 +274,8 @@ def fuse_ir_lanes(ir_graph: IRGraph, plan: LanePlan, *, first_owner: int, max_ax
     if carried != len(sites):
         raise LaneFusionError(f"the lane plan absorbs {len(sites)} host ops but the IR carries {carried} of "
                               f"them: the IR was mapped from another model")
+    if reduction_banks:  # before the orphan cleanup: banks are numbered after every bank the walk recorded
+        fuser.report.reduction_banks = fuser.bank_pools()
     fuser.report.operand_rows = insert_operand_rows(ir_graph, fuser.operands, OPERAND_ROWS)
     nodes = []
     for node in ir_graph.nodes:
