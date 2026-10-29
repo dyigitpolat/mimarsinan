@@ -1,0 +1,82 @@
+# COMPASS-geometry tile of the co-design study: the study's own chip as a profile
+
+The co-design study (its estimator `RA/06_build/codesign/cd_preview.py`, `RA/06_build/x9/x9_0_v3.py`,
+`RA/06_build/codesign/v41/cd41_chip.py`, `v42/cd42_common.py`, `v43/cd43_common.py`; its record
+`RA/06_parts/codesign.md` and `RA/06_parts/constants.md`; its tile model, the nangate45 physical-design probe of
+`RA/06_build/audit_v4/pd.md` with `RA/06_build/pd_probe/pd_table.json`) prices its designs on three tiles. This
+profile is the COMPASS-geometry tile: the geometry of park2025compass Table I p.4 (256 x 256 one-bit arrays; chips
+S, M and L of 144, 256 and 576 arrays) declared with exact digital accumulation, so one tile holds 256 rows by 64
+four-bit weights (four one-bit columns per weight): 65,536 bits, 8 KiB, 16,384 MACs per activation
+(constants.md sec. 2). COMPASS itself is analog and ADC-read; the study borrows its geometry only.
+
+The study prices this tile on its SRAM-DDR technology row: jiang2023a's digital SRAM-CIM MAC energy (16 nm silicon,
+full text) with a DDR3/4 backing store (jouppi2021ten Table 2), and its area from the probe's routed G3 tile (256 x
+64 x 4 at nangate45, fakeram45 macro views). Each constant below is the study's own value mapped one to one onto
+this vocabulary, with the study's source and class. The target bundle `study_compass` declares the core (256 axons
+by 64 neurons of 4-bit weights, 576 tiles: the study's budget chip A_L), the lanes and the permissions.
+
+## Validity
+
+`technology_node_nm` 45 and `supply_v` 1.1 name the probe's nangate45 typical corner, the node of the study's tile
+area (`cd_preview.TILE_MM2`): the lane block `ng45_os_lane` (45 nm, 1.1 V) then enters unscaled, which is how the
+study's capability-on tile-area factor s_AU reads that same block (codesign.md sec. 2.2, D136; arith_toggle.md sec.
+6). The MAC energy is jiang2023a's at 16 nm, as the study prices it: the study mixes the two nodes, and this profile
+keeps its mix. `measurement_kind` mixed: silicon (MAC energy), simulation (tile area), estimates (the rows the study
+does not price). The structured geometry is the toolchain's core of 256 x 64 four-bit slots; no aggregate constant
+is declared, so it bounds nothing priced.
+
+## Rows
+
+| constant | value | evidence | basis |
+|---|---|---|---|
+| `e_mac` | 0.158730 pJ per MAC | derived | `cd_preview.A_TILE_J['SRAM-DDR']` = 2.6006 nJ per activation of a 65,536-bit tile over its 16,384 MACs: jiang2023a p.4, 12.6 TOPS/W non-weight-stationary 8b-W x 4b-input MAC, normalized to 4b-W x 8b-A by operand bits (constants.md sec. 4) |
+| `t_cycle` | 5.333 - 87.912 ns, nominal 87.912 ns | derived | one latency step is one tile activation: T_ACT = 8 cycles (8-bit activations bit-serial, `cd41_chip.T_ACT`) at 91 MHz (jiang2023a p.4, the counted context) and 1.5 GHz (fujiwara2024344, abstract) |
+| `area_per_cell` | 4.149200 um2 per 4-bit slot | derived | the probe's macro area per bit, 1.0373 um2 (`pd_table.json` g3 `macro_um2_per_bit`), times 4 bits |
+| `area_per_neuron_logic` | 741.798 um2 per column | derived | the routed tile's 47,475.1 um2 of standard cells (MAC, adder tree, accumulators, input register, write and read ports) over 64 columns |
+| `area_per_cell_per_weight_bit` | 0 | derived | inside `area_per_cell`: a slot's area is its 4 bits whatever the program's width |
+| `area_per_row_driver` | 0 | derived | inside `area_per_neuron_logic`: the input register is standard cells of the tile |
+| `e_core_init` | 0 | derived | inside `e_mac`: an accumulator clear is part of a tile activation |
+| `e_dma_per_byte` | 162.5 pJ, high 325 pJ | derived | DDR3/4 I/O 1300 pJ per 64 bits (jouppi2021ten Table 2 p.3): the study's write and carry cost per byte; high end x 2, the write-and-carry factor f at its admissibility end (codesign.md sec. 3.3) |
+| `e_readout_per_byte` | 162.5 pJ, high 325 pJ | derived | the same DDR3/4 I/O crossing for the read-back of a carried value: the study counts a carried value in both directions, written out and read back (`x9_0_v3._front_mincarry`, 2 x the live elements at each cut; one crossing per direction at 8 bits), so the read-back is its carry term as the re-injection on `e_dma_per_byte` is; high end x 2, the factor f |
+| `e_write_per_cell` | 38 fJ, high 342 fJ | derived | the array write per byte, 76 fJ (the study's end of jiang2023a's 76 to 342 fJ bracket, constants.md sec. 5) per half-byte slot; high end the bracket's top at f = 2 |
+| `e_program_per_byte` | 0.076 pJ, high 0.684 pJ | derived | the same array write per byte, for a program load's commit |
+| `write_verify_iterations` | 1 | derived | a digital SRAM write has no verify loop |
+| `t_program_per_byte` | 0.0278 - 0.3434 ns, nominal 0.3434 ns | derived | the study's write port, one 256-bit tile row per cycle (`cd41_chip.PORT_DEFAULT`, pd.md sec. 3), at 91 MHz; at 1.5 GHz the two DDR4 channels (36 GB/s, wang2020shuhai Table V p.7) bind |
+| `pulses_per_write` | 1 | derived | one SRAM write is one write cycle |
+| `conductance_levels` | 16 | derived | a 4-bit weight slot |
+| `write_sigma`, `read_sigma` | 0 | derived | exact digital storage and accumulation (constants.md sec. 3, 4) |
+| `membrane_bits` | 24 | derived | the probe tile's accumulators, A = 24 (pd.md sec. 3) |
+| `host_compute_rate` | 1 | derived | identity on a measured host wall (the host is not part of the study's chip) |
+
+## Not priced by the study
+
+The study's energy is compute, writes and carry; its area is tiles (and port area beyond the default 256-bit port,
+zero here); its time is compute and writes. Every other quantity the toolchain prices carries a sourced value with
+its class and band, never zero, and its note starts `[not priced by the study]`:
+
+| constant | value | evidence | source |
+|---|---|---|---|
+| `p_static_per_core` | 1 / 50 / 2,963.86 uW | estimated | low and nominal the generic 22 nm bundle's band (TrueNorth 10.25 uW and Loihi 815 uW per core bracket it); high the study's own routed G3 tile's leakage, 2.96386 mW (OpenSTA at default activity, nangate45 typical, `pd_table.json` g3 `leak_mw`) |
+| `p_static_global` | 0.5 / 5 / 50 mW | estimated | the generic bundle's band, its low end raised from 0 to an order below its nominal |
+| `e_noc_value_per_byte_hop` | 0.5 / 1 / 4 pJ | estimated | the generic bundle's band (Horowitz-scale wire plus router) |
+| `e_inter_tile_hop`, `e_intra_tile_packet`, `t_hop` | the generic bundle's bands | estimated | TrueNorth and Loihi published points (spike traffic only) |
+| `e_sync_barrier`, `t_sync_barrier` | 0.1 / 1 / 10 nJ; 100 / 465 / 2,000 ns | estimated | the generic bundle's bands; the study declares an on-chip pass sequencer at t_sync 0, without a source |
+| `area_per_router`, `area_per_tile_fixed` | 1,000 / 4,000 / 15,000 um2; 2,000 / 8,000 / 30,000 um2 | estimated | the generic bundle's bands, per NoC tile |
+| `area_global_fixed` | 2 / 10 / 40 mm2 | estimated | the generic bundle's band (TrueNorth's periphery, scaled); the study's A_L counts tiles only |
+| `e_core_program` | 64 / 512 / 4,096 pJ | estimated | the generic bundle's band (a core-state sweep); the study's tile write is its bytes only |
+| `bytes_per_connectivity_entry` | 4 / 8 / 16 B | estimated | the generic bundle's band; the study's payload is the tile bytes only |
+| `endurance_cycles` | 1e16 | published | ielmini2018inmemory p.7 (embedded SRAM); the study's SRAM rows carry no endurance limit |
+
+## Terms that differ from the study's estimator
+
+On one resident design the toolchain's compute term equals the study's n_act x A_tile where every layer fills its
+tiles; otherwise it is the study's times the tile occupancy, because the study charges every tile activation in
+full (its census counts whole tiles). The toolchain adds the lane block's energy (the study prices none) and the
+value NoC; its area adds the routers, NoC-tile overhead and the fixed global area, and prices one lane per core slot
+of its floorplan, where the study multiplies every tile by s_AU = 1.130 (the block's high end is 13.0% of a G3 tile:
+15,000.1 um2 against the study's 15,015 um2). The tile part is the probe's instance area (0.115456 mm2), which the
+study rounds to 0.1155 mm2. Carry: both count two crossings per carried value, written out (`e_readout_per_byte`) and read back in (`e_dma_per_byte`);
+the study at its 8-bit activations (one byte per element per direction) and at its residency plan's cuts only (a resident
+design carries nothing), the toolchain at the program's value grid (`activation_bits`) and at every pass boundary of its
+schedule. The pinned
+reconciliation is `tests/unit/deployment_record/introspection/test_study_cost_cell_ue4.py`.

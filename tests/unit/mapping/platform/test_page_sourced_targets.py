@@ -169,6 +169,8 @@ class TestGeometryOnlyPumaNode:
 OWN_VALIDITY_REFUSALS = {
     "odin": ("area_per_core_total",), "truenorth": (), "loihi": (), "isaac_like": (),
     "generic_estimated_22nm": (), "hermes_64": (), "neurram": (), "sram_cim_macro": (),
+    # [U-E4 A-1] the co-design study's three chips: no aggregate constant, so nothing to refuse
+    "study_compass": (), "study_vr_like": (), "study_isaac_like": (),
 }
 
 

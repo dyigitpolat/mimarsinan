@@ -36,13 +36,18 @@ PHYSICS_BUNDLES = {
     "generic_estimated_22nm": "generic_estimated_22nm",
     # [CL2] the three page-sourced profiles (G3's sub-deliverable)
     "hermes_64": "hermes_64", "neurram": "neurram", "sram_cim_macro": "sram_cim_macro",
+    # [U-E4 A-1] the co-design study's chips (COMPASS, VR-like and ISAAC-like tiles at the study's constants)
+    "study_compass": "study_compass", "study_vr_like": "study_vr_like", "study_isaac_like": "study_isaac_like",
 }
 #: The geometries of five shipped profiles are bundled once, as physics bundles (plan sections 8.1 and 14 CL2).
 PHYSICS_GEOMETRY = {"truenorth": "truenorth_like", "loihi": "loihi_dense_equiv_128x1024", "isaac_like": "isaac_like",
                     "neurram": "neurram_like", "hermes_64": "hermes_64"}
 #: Physics bundles whose geometry is declared in bundle data (no registered geometry): name -> geometry.
 DECLARED_GEOMETRY = {"odin": "odin_stock_core", "generic_estimated_22nm": "generic_22nm_256x256",
-                     "sram_cim_macro": "dimc_macro_128x1024"}
+                     "sram_cim_macro": "dimc_macro_128x1024",
+                     # [U-E4 A-1]
+                     "study_compass": "study_compass_256x256x1", "study_vr_like": "study_vr_like_256x64x4",
+                     "study_isaac_like": "study_isaac_like_128x128x2"}
 SYNTHETIC_GRIDS = {"imc_128x128", "imc_256x256", "imc_512x512", "imc_mixed_tile"}
 TARGETS_DIR = Path(mimarsinan.__file__).parent / "mapping" / "platform" / "targets"
 LITERATURE = set(imc_platform_names()) - SYNTHETIC_GRIDS
@@ -62,8 +67,9 @@ def _write(directory, *bundles):
 
 
 class TestShippedRegistry:
-    def test_eight_physics_bundles_and_ten_geometry_only_bundles(self):
-        """[U-C C-4] Loihi 2 (``loihi2_like``) is the tenth geometry-only bundle."""
+    def test_eleven_physics_bundles_and_ten_geometry_only_bundles(self):
+        """[U-C C-4] Loihi 2 (``loihi2_like``) is the tenth geometry-only bundle. [U-E4 A-1] The co-design study's
+        three chips are the ninth to eleventh physics bundles."""
         bundles = target_bundles()
         physics = {name for name, b in bundles.items() if "platform_physics_profile" in b.values}
         assert {name: bundles[name].values["platform_physics_profile"] for name in physics} == PHYSICS_BUNDLES

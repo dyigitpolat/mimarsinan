@@ -468,6 +468,21 @@ T0 = [
          note="NeuRRAM bundle (48 RRAM cores of 256 x 256, 4-bit weights, 4-bit inputs, value "
               "domain), the minimal pair of t0_44: the program runs in scheduled passes, so "
               "the cell rewrites RRAM cores between passes"),
+    # [U-E4 A-1] the co-design study's three chips (its own tiles at its constants): LeNet-5's
+    # unrolled program fits each 576-tile chip (286 and 566 packed cores), so each cell is the
+    # minimal pair of t0_41 with the target replaced, as t0_64 and t0_65.
+    dict(n=69, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["pruned"],
+         target="study_compass",
+         note="the co-design study's COMPASS-geometry tile (576 tiles of 256 x 64 four-bit "
+              "weights, value domain, the study's constants), the minimal pair of t0_41"),
+    dict(n=70, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["pruned"],
+         target="study_vr_like",
+         note="the co-design study's VR-like tile (576 tiles of 256 x 64 four-bit cells, value "
+              "domain, the study's constants), the minimal pair of t0_41"),
+    dict(n=71, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["pruned"],
+         target="study_isaac_like",
+         note="the co-design study's ISAAC-geometry tile (576 tiles of 128 x 64 four-bit "
+              "weights, value domain, the study's constants), the minimal pair of t0_41"),
 ]
 
 

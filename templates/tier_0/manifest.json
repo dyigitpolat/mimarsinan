@@ -980,6 +980,75 @@
       ],
       "expected_wall_min": 10,
       "note": "NeuRRAM bundle (48 RRAM cores of 256 x 256, 4-bit weights, 4-bit inputs, value domain), the minimal pair of t0_44: the program runs in scheduled passes, so the cell rewrites RRAM cores between passes"
+    },
+    {
+      "name": "t0_69_mvm_lenet5_wq_pruned_study_compass",
+      "config": "t0_69_mvm_lenet5_wq_pruned_study_compass.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "none",
+        "target": "study_compass"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 10,
+      "note": "the co-design study's COMPASS-geometry tile (576 tiles of 256 x 64 four-bit weights, value domain, the study's constants), the minimal pair of t0_41"
+    },
+    {
+      "name": "t0_70_mvm_lenet5_wq_pruned_study_vr_like",
+      "config": "t0_70_mvm_lenet5_wq_pruned_study_vr_like.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "none",
+        "target": "study_vr_like"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 10,
+      "note": "the co-design study's VR-like tile (576 tiles of 256 x 64 four-bit cells, value domain, the study's constants), the minimal pair of t0_41"
+    },
+    {
+      "name": "t0_71_mvm_lenet5_wq_pruned_study_isaac_like",
+      "config": "t0_71_mvm_lenet5_wq_pruned_study_isaac_like.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "none",
+        "target": "study_isaac_like"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 10,
+      "note": "the co-design study's ISAAC-geometry tile (576 tiles of 128 x 64 four-bit weights, value domain, the study's constants), the minimal pair of t0_41"
     }
   ],
   "coverage_notes": [

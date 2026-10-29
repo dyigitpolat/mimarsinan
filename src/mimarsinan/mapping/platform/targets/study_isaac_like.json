@@ -1,0 +1,45 @@
+{
+  "name": "study_isaac_like",
+  "display_name": "ISAAC-geometry SRAM-CIM tile of the co-design study (128 x 128 two-bit cells as 128 x 64 four-bit weights; the study's estimate, not ISAAC)",
+  "geometry": {
+    "name": "study_isaac_like_128x128x2",
+    "cores": [
+      {
+        "max_axons": 128,
+        "max_neurons": 64,
+        "count": 576,
+        "has_bias": true
+      }
+    ],
+    "weight_bits": 4,
+    "provenance": "The co-design study's ISAAC-like tile as the toolchain's core: 128 rows by 128 cells of 2 bit(s) hold 128 x 64 four-bit weights (a tile of R rows, C columns and b bits per cell holds R x C // ceil(4 / b) 4-bit weights, route (b)'s translation, e2e/driver/declarations.py); 576 tiles, the study's budget chip A_L (cd41_chip.A_L = 576 tiles; park2025compass Table I's L chip). The tile count is a study axis (the study's ladder cd_preview.CAPS, 144 to 1,152 tiles), declared per point through target_overrides with a note. has_bias: the study's census holds no bias row (x9_0_v3.census counts ceil(cin k^2 / R) rows), the bias enters at the output stage.",
+    "claim_class": "synthetic"
+  },
+  "keys": {
+    "core_semantics": "mvm",
+    "platform_physics_profile": "study_isaac_like",
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "onchip_arithmetic": {
+      "classes": [
+        "L",
+        "E",
+        "P"
+      ],
+      "lanes_per_core": 1,
+      "lane_block": "ng45_os_lane"
+    }
+  },
+  "faithfulness": {
+    "class": "approximate",
+    "named": [
+      "the study's modelled tile, not a fabricated chip",
+      "MAC energy per committed cell (the study charges whole tile activations)",
+      "quantities the study does not price declared from sourced bands",
+      "output-stage lanes estimated",
+      "one ADC on the fused accumulator (per-array ADC not built, W47)"
+    ],
+    "note": "The study's chip as its estimator prices it (codesign.md, constants.md, audit_v4/pd.md); every departure is named in the profile's rows and description."
+  },
+  "notes": "The certified function applies one ADC (the run's readout law) to each column's fused accumulator, as on every lane bundle; the study's tile accumulates its 32-bit partial sums exactly and converts nothing, and its cost model prices no conversion (W47's per-array ADC is not built). allow_coalescing and allow_neuron_splitting are true: the study's census splits a layer's rows over ceil(cin k^2 / R) tiles and its columns over ceil(cout / 64) tiles, accumulating 32-bit full-precision partial sums (constants.md sec. 4, jiang2023a p.2-3). onchip_arithmetic declares the lane subset L, E and P on the ng45_os_lane block, one lane per 64 output columns (one per tile): the block the study's capability-on tile-area factor s_AU reads (arith_toggle.md sec. 6; codesign.md sec. 2.2, D136: 1.069 to 1.130 of a G3 tile, frozen picks at 1.130). The study prices no lane energy (about 0.4% of MAC energy); the toolchain prices the block's e_lane_op. activation_bits is not set: the study carries 8-bit activations at its cuts and prices a tile activation at 8 bit-serial cycles, while a program declares its own value grid."
+}

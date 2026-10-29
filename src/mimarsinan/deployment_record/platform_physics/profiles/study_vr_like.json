@@ -1,0 +1,273 @@
+{
+  "format_version": 1,
+  "name": "study_vr_like",
+  "display_name": "VR-like SRAM-CIM tile of the co-design study (256 x 64 four-bit cells; the study's estimate, not a fabricated chip)",
+  "description_file": "study_vr_like.md",
+  "validity": {
+    "measurement_kind": "mixed",
+    "technology_node_nm": 45.0,
+    "supply_v": 1.1,
+    "temperature_c": null,
+    "array_size_assumed": "one tile of the study's VR-like geometry: 256 rows by 64 four-bit cells, one 4-bit weight per cell (vr.md sec. 6, the VR template R = 256, C = 64, w = 4), 65,536 bits, 16,384 MACs per activation; area the probe's G3 tile, the VR tile itself (audit_v4/pd.md sec. 3)",
+    "notes": "The co-design study's own chip (RA/06_build/codesign, RA/06_parts/codesign.md and constants.md), its constants mapped one to one onto this vocabulary: the MAC energy of its SRAM-DDR row (jiang2023a, 16 nm silicon), the tile area of its nangate45 physical-design probe (technology_node_nm and supply_v name that probe's node and typical corner, so the lane block's 45 nm area enters unscaled, as the study's s_AU lane cost reads it), the DDR3/4 backing store, the study's write port and clock. Quantities the study does not price carry sourced values, never zero, each note starting '[not priced by the study]': area_global_fixed, area_per_router, area_per_tile_fixed, bytes_per_connectivity_entry, e_core_program, e_inter_tile_hop, e_intra_tile_packet, e_noc_value_per_byte_hop, e_sync_barrier, endurance_cycles, p_static_global, p_static_per_core, t_hop, t_sync_barrier. An ESTIMATE of a modelled chip, never hardware evidence.",
+    "geometry": {
+      "axons": 256,
+      "neurons": 64,
+      "cell_bits": 4,
+      "core_count": null,
+      "scaling": null
+    }
+  },
+  "constants": {
+    "e_mac": {
+      "nominal": 0.15873015873015872,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.4 via constants.md sec. 4; cd_preview.py A_TILE_J['SRAM-DDR']",
+      "derivation": "The study prices one activation of a 65,536-bit tile at A_TILE_J = 2.6006 nJ (cd_preview.py; the SRAM-DDR row 'SRAM-CIM digital, DDR3/4 backing, full-text MAC' of x9_0_v3.tech_rows), jiang2023a's 12.6 TOPS/W non-weight-stationary 8b-W x 4b-input MAC (1 MAC = 2 OPs) normalized to the declared 4b-W x 8b-A operands by the product of operand bits (constants.md sec. 4), times the tile's 16,384 MACs; per MAC 2.6006e-9 J / 16,384 = 0.158730 pJ. A 32,768-bit tile is priced at A_TILE_J x 32,768 / 65,536 over its 8,192 MACs: the same per MAC.",
+      "note": "Per MAC of a committed cell (the toolchain's synaptic_events of a value program). The study charges every activation of a tile in full (its census counts whole tiles, n_act = sum of ceil(rows needed / R) x ceil(columns needed / 64) x positions), so on a partly filled tile the study's compute energy exceeds this term by the tile occupancy; the study's point is the non-WS anchor (its DCIM range row, 13.7 to 158.7 fJ, is not a counted row)."
+    },
+    "t_cycle": {
+      "low": 5.333333333333333,
+      "nominal": 87.91208791208791,
+      "high": 87.91208791208791,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.4 (91 MHz at 1 V); fujiwara2024344 abstract (1.5 GHz at 0.9 V)",
+      "derivation": "One latency step is one tile activation: T_ACT = 8 cycles (cd41_chip.py: 8-bit activations bit-serial, bit-parallel weights, constants.md sec. 4 convention) at the study's clock contexts (cd41_chip.CTX): 8 / 91 MHz = 87.912 ns (the counted 'DDR4, 91 MHz' context, nominal and high) and 8 / 1.5 GHz = 5.333 ns ('DDR4, 1.5 GHz', low)."
+    },
+    "conductance_levels": {
+      "nominal": 16.0,
+      "unit": "levels",
+      "evidence_kind": "derived",
+      "derivation": "A weight slot holds one 4-bit weight (constants.md sec. 2: 256 rows by 64 four-bit weights per tile), 2^4 = 16 levels."
+    },
+    "write_sigma": {
+      "nominal": 0.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "derivation": "A digital SRAM write stores its bits exactly: every counted row of the study is declared with exact integer accumulation (constants.md sec. 3)."
+    },
+    "read_sigma": {
+      "nominal": 0.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "derivation": "Exact digital accumulation (full-width adder trees, constants.md sec. 4): a read carries no analog noise."
+    },
+    "membrane_bits": {
+      "nominal": 24.0,
+      "unit": "bit",
+      "evidence_kind": "derived",
+      "derivation": "The probe tile's accumulators are A = 24 bits wide (audit_v4/pd.md sec. 3: the VR template R = 256, C = 64, w = a = 4, A = 24, accumulator-out mode)."
+    },
+    "area_per_cell": {
+      "nominal": 4.149200439453125,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "RA/06_build/pd_probe/pd_table.json row g3_ng45_256x64x4 (audit_v4/pd.md sec. 5.1)",
+      "derivation": "The study's tile area is the ORFS instance area of the routed g3_ng45_256x64x4 tile (0.115456 mm2, rounded to 0.1155 mm2 in cd_preview.TILE_MM2): its SRAM macros (fakeram45_128x256 views) take 1.037300 um2 per bit (pd_table.json macro_um2_per_bit), so one weight slot of 4 bits takes 4.149200 um2 whatever the program's weight width (a cell of the toolchain's core is one 4-bit weight slot); the rest of the tile is standard cells (area_per_neuron_logic)."
+    },
+    "area_per_neuron_logic": {
+      "nominal": 741.7984375,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "RA/06_build/pd_probe/pd_table.json row g3_ng45_256x64x4 (audit_v4/pd.md sec. 5.1)",
+      "derivation": "The routed tile's standard-cell area 47475.1 um2 (the per-column bit-parallel MAC, adder tree, accumulator, input register and the weight write and accumulator read ports, pd.md sec. 3) over its 64 output columns: 741.7984 um2 per column (pd_table.json logic_um2_per_lane)."
+    },
+    "area_per_cell_per_weight_bit": {
+      "nominal": 0.0,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "derivation": "No area per program weight bit beside the slot: a slot's 4 bits of macro are inside area_per_cell, whatever the program's weight width."
+    },
+    "area_per_row_driver": {
+      "nominal": 0.0,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "derivation": "The tile's input register and row drive are standard cells of the routed tile, inside area_per_neuron_logic (pd.md sec. 3)."
+    },
+    "e_core_init": {
+      "nominal": 0.0,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "derivation": "Clearing a tile's accumulators at a pass start is part of a tile activation, inside e_mac (the study prices every activation at A_TILE_J, jiang2023a's measured macro energy with its 32-bit partial sums)."
+    },
+    "e_dma_per_byte": {
+      "low": 162.5,
+      "nominal": 162.5,
+      "high": 325.0,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "jouppi2021ten Table 2 p.3 via constants.md sec. 5",
+      "derivation": "DDR3/4 I/O 1300 pJ per 64 bits (I/O only) / 8 B = 162.5 pJ per byte: the study's backing-store cost of a written tile's byte (W_tile, pi_inputs_out.json row '[full-text anchor] DDR3/4 I/O + jiang2023a_16nm_local_block') and of a carried byte's re-injection: the study counts a carried value in both directions, written out and read back (x9_0_v3._front_mincarry: 2 x the live elements at each cut of its residency plan, 'both directions'; _io_cratio: one I/O crossing per direction, c_byte = 162.5 pJ), at its 8-bit activations (carry_bits = ACT_BITS = 8, one byte per element per direction); the toolchain charges the same two directions, the read-back (e_readout_per_byte x carry_out_bytes) and the re-injection (e_dma_per_byte x carry_in_bytes), at the program's value grid (activation_bits, bits / 8 bytes per element per direction) at every pass boundary of its schedule, where the study carries only at its plan's cuts (a resident design carries nothing); high end x 2: the study's write-and-carry factor f at its admissibility end (codesign.md sec. 3.3, D111: f in {1, 2}, every frozen pick admissible at f = 2, the declared read's f; RA/06_build/headline_v46/headline_result.json declared_read.combo [2.0, 0, 0.05])."
+    },
+    "e_readout_per_byte": {
+      "low": 162.5,
+      "nominal": 162.5,
+      "high": 325.0,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "jouppi2021ten Table 2 p.3 via constants.md sec. 5",
+      "derivation": "The same DDR3/4 I/O crossing, 162.5 pJ per byte, for the read-back direction of a carried value: the study counts a carried value in both directions, written out and read back (x9_0_v3._front_mincarry: 2 x the live elements at each cut of its residency plan, 'both directions'; _io_cratio: one I/O crossing per direction, c_byte = 162.5 pJ), at its 8-bit activations (carry_bits = ACT_BITS = 8, one byte per element per direction); the toolchain charges the same two directions, the read-back (e_readout_per_byte x carry_out_bytes) and the re-injection (e_dma_per_byte x carry_in_bytes), at the program's value grid (activation_bits, bits / 8 bytes per element per direction) at every pass boundary of its schedule, where the study carries only at its plan's cuts (a resident design carries nothing); high end x 2: the study's write-and-carry factor f at its admissibility end (codesign.md sec. 3.3, D111: f in {1, 2}, every frozen pick admissible at f = 2, the declared read's f; RA/06_build/headline_v46/headline_result.json declared_read.combo [2.0, 0, 0.05]).",
+      "note": "Priced by the study: its carry counts the read-back as one of its two directions, so this row is the study's carry term, as the re-injection on e_dma_per_byte is."
+    },
+    "e_write_per_cell": {
+      "low": 38.0,
+      "nominal": 38.0,
+      "high": 342.0,
+      "unit": "fJ",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.4 via constants.md sec. 5",
+      "derivation": "The array write per byte is bracketed between 1x the 20 MHz DIMC local-block read byte energy (76 fJ) and 2x the 91 MHz one (342 fJ) (constants.md sec. 5); the study prices the bracket's low end (W/A 512.1144, x9_0_v3.price end 0). Per 4-bit weight slot (half a byte): 38 fJ nominal; high end 171 fJ x 2 = 342 fJ, the bracket's high end at high end x 2: the study's write-and-carry factor f at its admissibility end (codesign.md sec. 3.3, D111: f in {1, 2}, every frozen pick admissible at f = 2, the declared read's f; RA/06_build/headline_v46/headline_result.json declared_read.combo [2.0, 0, 0.05])."
+    },
+    "e_program_per_byte": {
+      "low": 0.076,
+      "nominal": 0.076,
+      "high": 0.684,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.4 via constants.md sec. 5",
+      "derivation": "The commit of one programmed byte at a program load: the same array write per byte, 76 fJ (nominal, the study's end 0) to 342 fJ, high end x 2 (high end x 2: the study's write-and-carry factor f at its admissibility end (codesign.md sec. 3.3, D111: f in {1, 2}, every frozen pick admissible at f = 2, the declared read's f; RA/06_build/headline_v46/headline_result.json declared_read.combo [2.0, 0, 0.05]))."
+    },
+    "write_verify_iterations": {
+      "nominal": 1.0,
+      "unit": "iterations",
+      "evidence_kind": "derived",
+      "derivation": "A digital SRAM write is one full-swing write with no program-verify loop (constants.md sec. 5)."
+    },
+    "t_program_per_byte": {
+      "low": 0.027777777777777776,
+      "nominal": 0.3434065934065934,
+      "high": 0.3434065934065934,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "jiang2023a p.4; fujiwara2024344 abstract; wang2020shuhai Table V p.7",
+      "derivation": "The study's write port writes one 256-bit tile row per cycle (cd41_chip.PORT_DEFAULT, the probe tile's write port, pd.md sec. 3; every study tile has a 256-bit row), fed by two DDR4 channels at 36 GB/s (cd41_chip.CTX; the port's ceiling p_ceil = 8 B / f): at 91 MHz 1 B / (32 B x 91 MHz) = 0.343407 ns per byte (the port binds; nominal and high), at 1.5 GHz the store binds, 1 B / 36 GB/s = 0.027778 ns per byte (low).",
+      "note": "The study's latency runs (D101) price this port; its energy cells price no time. A backing-store block declared with combine 'slower' composes with it corner by corner."
+    },
+    "endurance_cycles": {
+      "nominal": 1e+16,
+      "unit": "cycles",
+      "evidence_kind": "published",
+      "citation": "ielmini2018inmemory p.7",
+      "note": "[not priced by the study] The study's SRAM rows carry no endurance limit; the toolchain's embedded-SRAM figure, 'about 1e16 cycles over the expected lifetime of embedded SRAM' (as generic_estimated_22nm)."
+    },
+    "pulses_per_write": {
+      "nominal": 1.0,
+      "unit": "pulses",
+      "evidence_kind": "derived",
+      "derivation": "An SRAM bit cell is written by one write operation, the unit in which ielmini2018inmemory p.7 counts its 1e16 cycles: one pulse per write."
+    },
+    "e_core_program": {
+      "low": 64.0,
+      "nominal": 512.0,
+      "high": 4096.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The study's tile write is its bytes' I/O and array write only. The generic 22 nm bundle's band (generic_estimated_22nm.json e_core_program: a core-state sweep of 256 neurons x 0.5 / 2.0 / 8.0 pJ, ratio band 0.5x to 2x; expected error about an order of magnitude)."
+    },
+    "bytes_per_connectivity_entry": {
+      "low": 4.0,
+      "nominal": 8.0,
+      "high": 16.0,
+      "unit": "B",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The study's program payload is the tile bytes only. The generic 22 nm bundle's 4/8/16 B band (span entries are exact counts; their byte size is modeled until a real wire format exists)."
+    },
+    "p_static_per_core": {
+      "low": 1.0,
+      "nominal": 50.0,
+      "high": 2963.86,
+      "unit": "uW",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The study's energy is compute, writes and carry only. Low and nominal: the generic 22 nm bundle's band (it brackets TrueNorth's derived 10.25 uW per core at 28 nm and Loihi's derived 815 uW per core at 14 nm; expected error an order of magnitude). High: the leakage of the study's own routed tile, 2.96386 mW (OpenSTA at default activity, nangate45 typical, fakeram45 Liberty views; pd_probe/pd_table.json g3_ng45_256x64x4 leak_mw, audit_v4/pd.md sec. 5.1)."
+    },
+    "p_static_global": {
+      "low": 0.5,
+      "nominal": 5.0,
+      "high": 50.0,
+      "unit": "mW",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] Whole-chip leakage outside the tiles (I/O ring, PLLs, host interface): the generic 22 nm bundle's band (a small fraction of a populated chip's core leakage, expected error an order of magnitude), with its low end raised from 0 to one order of magnitude below its nominal, 0.5 mW, because a quantity the study does not price is declared, never zero."
+    },
+    "e_noc_value_per_byte_hop": {
+      "low": 0.5,
+      "nominal": 1.0,
+      "high": 4.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The study moves no value between tiles at a price (its only data movement is the backing-store carry). The generic 22 nm bundle's band: Horowitz-scale wire energy (0.1-0.2 pJ per bit per mm, a link of about 1 mm) plus the router traversal."
+    },
+    "e_inter_tile_hop": {
+      "low": 0.5,
+      "nominal": 2.0,
+      "high": 4.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The generic 22 nm bundle's band (TrueNorth 2.3 pJ per hop at 28 nm, Loihi 3.0-4.0 pJ per hop at 14 nm)."
+    },
+    "e_intra_tile_packet": {
+      "low": 0.1,
+      "nominal": 0.4,
+      "high": 1.5,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The generic 22 nm bundle's band (TrueNorth's intra-core transport 1.5 pJ, Loihi 1.7 pJ within a tile)."
+    },
+    "t_hop": {
+      "low": 1.0,
+      "nominal": 4.0,
+      "high": 8.0,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The generic 22 nm bundle's band (TrueNorth 4 ns, Loihi 4.1-6.5 ns); not added to the step law's latency."
+    },
+    "e_sync_barrier": {
+      "low": 100.0,
+      "nominal": 1000.0,
+      "high": 10000.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The generic 22 nm bundle's 0.1 / 1 / 10 nJ band (no chip publishes a barrier energy)."
+    },
+    "t_sync_barrier": {
+      "low": 100.0,
+      "nominal": 465.0,
+      "high": 2000.0,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The study declares an on-chip pass sequencer at t_sync = 0 (cd41_chip.CTX, declared, no source); the generic 22 nm bundle's band anchored on Loihi's published 113-465 ns mesh-wide barrier."
+    },
+    "area_per_router": {
+      "low": 1000.0,
+      "nominal": 4000.0,
+      "high": 15000.0,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The study's area counts tiles (and port area beyond the default port) only. The generic 22 nm bundle's band for one mesh router (typical published NoC routers, low thousands of um2; expected error a factor of about 4)."
+    },
+    "area_per_tile_fixed": {
+      "low": 2000.0,
+      "nominal": 8000.0,
+      "high": 30000.0,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] Per NoC-tile overhead beside the crossbars (scheduler, controller, local buffers): the generic 22 nm bundle's band (about 2x the router, TrueNorth's floorplan ratio; expected error a factor of about 4). The crossbar tile's own control is in area_per_neuron_logic."
+    },
+    "area_global_fixed": {
+      "low": 2.0,
+      "nominal": 10.0,
+      "high": 40.0,
+      "unit": "mm^2",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] The study's budget A_L counts tiles only (576 COMPASS tiles, cd41_chip.A_L). Whole-chip area beside the tiles (pads, PLLs, host interface): the generic 22 nm bundle's band, anchored on TrueNorth's derived 46.6 mm2 periphery at 28 nm for a 4.3 cm2 die, scaled down (expected error a factor of about 4)."
+    },
+    "host_compute_rate": {
+      "nominal": 1.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
+      "note": "The derate a measured host wall is divided by (as generic_estimated_22nm); the host is not part of the study's chip."
+    }
+  }
+}
