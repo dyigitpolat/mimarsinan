@@ -15,7 +15,6 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
 )
 from mimarsinan.config_schema.registry.value_schema import RequiredIff, ValueSchema
-from mimarsinan.mapping.lanes.declaration import POOL, LaneDeclarationError, lanes_executed
 from mimarsinan.mapping.support.period_census import RESIDENCY_STEP_RULES, STEP_INDEX
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
@@ -106,11 +105,12 @@ def _multiplexing_legal(cfg):
     such key is judged as the run reads it (``_run_value``; carried minor N1 of the pack verify: a LIF document that
     leaves the relays undeclared runs them). An operand core type (N2) is one too: the shape-only plane keeps a product
     as a host op that the executed plane lowers onto operand cores, whose payload is rewritten every pass, so no run of
-    passes serves one copy of it. Executed pool lanes (WI-5e, class P) are one too until a pool lane core carries a
-    layout record: the multiplexing planner cannot order it, and the builder refuses it by name."""
+    passes serves one copy of it. [U-L] Executed pool lanes (WI-5e, class P) are admitted: every core the lane fusion
+    inserts carries a layout record of its own (``lanes/ir/layout_records.py``), which the multiplexing planner orders
+    by its level in the fused program, and the shape-only plane walks the same fused program."""
     operand = any(isinstance(c, Mapping) and c.get("operand") is not None for c in cfg.get("cores") or ())
     unseen = any(_run_value(cfg, key) for key in _UNSEEN_BY_THE_SHAPE_ONLY_PLANE)
-    return (False,) if operand or unseen or _pool_lanes(cfg) else (False, True)
+    return (False,) if operand or unseen else (False, True)
 
 
 def _pipelined_legal(cfg):
@@ -126,12 +126,3 @@ def _pipelined_legal(cfg):
     except ValueError:
         windowed = False
     return (False,) if windowed else (False, True)
-
-
-def _pool_lanes(cfg) -> bool:
-    """Whether the run executes pool lanes; a malformed lane declaration is left to its own rule."""
-    try:
-        declaration = lanes_executed(cfg)
-    except LaneDeclarationError:
-        return False
-    return declaration is not None and declaration.declares(POOL)

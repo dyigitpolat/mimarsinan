@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.mapping.ir.graph import IRGraph
-from mimarsinan.mapping.ir.lane_law import OPERAND_AXONS
+from mimarsinan.mapping.ir.lane_law import OPERAND_AXONS, inserted_record
 from mimarsinan.mapping.ir.types import NeuralCore
 from mimarsinan.mapping.ir.source import IRSource
 from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
@@ -87,7 +87,8 @@ def _residency_class_of(neural_core: NeuralCore, graph, pi):
     """
     specs = getattr(graph, "layout_softcores", None) if graph is not None else None
     idx = getattr(neural_core, "layout_softcore_index", None)
-    if specs and idx is not None and 0 <= int(idx) < len(specs):
+    # [U-L] A record a pass wrote for a core it inserted after the walk keys no class on the core's values: the proxy.
+    if specs and idx is not None and 0 <= int(idx) < len(specs) and not inserted_record(neural_core):
         return int(specs[int(idx)].residency_class_id)
     return int(pi) if pi is not None else None
 

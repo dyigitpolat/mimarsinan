@@ -18,7 +18,7 @@ import pytest
 import torch
 
 from mimarsinan.mapping.ir import NeuralCore
-from mimarsinan.mapping.ir.lane_law import operand_axons
+from mimarsinan.mapping.ir.lane_law import inserted_record, operand_axons
 from mimarsinan.mapping.lanes.ir.fusion import OPERAND_ROWS
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.packing.hybrid_build_pool import _segment_specs
@@ -90,13 +90,15 @@ def test_an_accumulator_is_planned_at_the_axons_the_builder_places_and_states_it
     """The lane residual net: every accumulator (a fused add's core) is planned at the axons the builder's packer
     places for it (its layout record's extent, which predates the fusion, plus its operand rows), and states those
     operand rows (``operand_axons``), which the plan plane counts as no programmed cell, as the record plane does
-    (``CoreOccupancy``, W08). Under L, E, P the segment also holds the pool lane's inserted cores (no record): the head
-    rebuilt every spec of it; under L, E the head planned the record's extent, below the placed axons."""
+    (``CoreOccupancy``, W08). Under L, E, P the segment also holds the pool lane's inserted cores ([U-L] each with its
+    own record, marked as written after the walk): the head rebuilt every spec of it; under L, E the head planned the
+    record's extent, below the placed axons."""
     with torch.no_grad():
         program = build_lane_program(residual_block_net(), (3, 16, 16), num_classes=10, platform=lane_platform(classes))
     ir = program.ir
     cores = [n for n in ir.nodes if isinstance(n, NeuralCore)]
-    assert any(c.layout_softcore_index is None for c in cores) == ("P" in classes)   # the pool lane's inserted cores
+    assert any(inserted_record(c) for c in cores) == ("P" in classes)   # [U-L] the pool lane's inserted cores
+    assert all(c.layout_softcore_index is not None for c in cores)   # [U-L] each with a layout record
     accumulators = [c for c in cores if getattr(c, OPERAND_ROWS, None) is not None]
     assert accumulators
     specs = _segment_specs(cores, ir_graph=ir)[0]

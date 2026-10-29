@@ -28,6 +28,16 @@ def operand_axons(core) -> int:
     return int(getattr(core, OPERAND_AXONS, 0) or 0)
 
 
+#: [U-L] The mark of a core whose layout record the fusion wrote after the layout walk, for a core it inserted (a pool
+#: lane's or a reduction's, ``lanes/ir/layout_records.py``): the record states the fused program, the walk's predate it.
+INSERTED_RECORD = "layout_record_inserted"
+
+
+def inserted_record(core) -> bool:
+    """Whether ``core``'s layout record was written after the walk, by the pass that inserted the core."""
+    return bool(getattr(core, INSERTED_RECORD, False))
+
+
 class LaneLawRowError(ToolchainRefusal, ValueError):
     """A row operation that would drop or move a fused operand's row off the core."""
 

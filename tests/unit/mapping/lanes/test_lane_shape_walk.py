@@ -90,8 +90,9 @@ def test_every_class_subset_is_applied_as_the_build_applies_it(classes):
 
 @pytest.mark.parametrize("fixture", ["residual", "lenet"])
 def test_position_multiplexing_runs_the_same_passes_on_both_planes(fixture):
-    # E without P: position multiplexing is illegal beside executed pool lanes (entries_residency)
-    _assert_same(*_planes(fixture, ("L", "E"), axons=1024, neurons=32, count=8, passes=4096, multiplexing=True))
+    # [U-L] with and without P: the pool lane's inserted cores carry layout records (``lanes/ir/layout_records.py``)
+    for classes in (("L", "E"), ALL):
+        _assert_same(*_planes(fixture, classes, axons=1024, neurons=32, count=8, passes=4096, multiplexing=True))
 
 
 def test_absorbed_ops_leave_the_host_census_and_the_segmentation():

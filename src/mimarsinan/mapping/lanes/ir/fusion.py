@@ -7,7 +7,8 @@ producer's cores by reduced cores (``reduce_cores``: each pool output stacks its
 weights, one rounding). Any other average pool becomes reduction cores (0/1 weights over each window, ``theta`` the
 window size) that requantize onto the pool lane's grid. Every role is keyed on the plan's call sites (one per
 call of a module, ``call_sites``), so the IR and the model absorb the same ops; a planned op the IR cannot fuse is
-refused by name.
+refused by name. [U-L] Every core the fusion inserts gets a layout record of its own, its level in the fused program
+(``layout_records.py``), so the planners that order passes by the records order it too.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.ir.source import encode_ir_sources
 from mimarsinan.mapping.lanes.forms import PoolForm, pool_form
 from mimarsinan.mapping.lanes.ir.call_sites import call_site_roles, planned_call_sites
+from mimarsinan.mapping.lanes.ir.layout_records import record_inserted_cores
 from mimarsinan.mapping.lanes.ir.operand_rows import insert_operand_rows
 from mimarsinan.mapping.lanes.ir.pool_cores import PoolLaneError, pool_lane_cores
 from mimarsinan.mapping.lanes.ir.reduce_cores import reduced_lane_cores, refuse_unreducible
@@ -259,4 +261,6 @@ def fuse_ir_lanes(ir_graph: IRGraph, plan: LanePlan, *, first_owner: int, max_ax
         ir_graph._cleanup_orphan_weight_banks()  # a reduced producer's bank, if no core reads it now
     rewire_removed(ir_graph, fuser.replace)
     IRLatency(ir_graph).calculate()
+    inserted = {int(c.id) for cores in fuser.inserted.values() for c in cores}  # [U-L] each its own layout record
+    record_inserted_cores(ir_graph, [n for n in ir_graph.nodes if int(n.id) in inserted])
     return fuser.report

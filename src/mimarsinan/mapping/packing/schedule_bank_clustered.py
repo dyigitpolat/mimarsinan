@@ -131,7 +131,8 @@ def mark_multiplexed_residency(pass_stages: list, run_heads) -> None:
 def multiplexing_shares(cores: list, ir_graph, label: str, position_multiplexing) -> list:
     """[W02] Per IR core whether it shares its bank's one copy (a bank instance IR elimination left whole), for the
     pass planner; under ``position_multiplexing`` an IR without the layout walk's record, or a compacted bank instance,
-    refuses by name (moved from ``hybrid_build_scheduled``)."""
+    refuses by name (moved from ``hybrid_build_scheduled``). [U-L] A core the lane fusion inserted carries a record of
+    its own (its level in the fused program), so a pool lane's cores pass; a core inserted without one does not."""
     if position_multiplexing and not (getattr(ir_graph, "layout_softcores", None) and all(
             getattr(c, "layout_softcore_index", None) is not None for c in cores)):
         raise PositionMultiplexingError(

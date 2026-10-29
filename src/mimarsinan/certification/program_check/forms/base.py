@@ -100,8 +100,9 @@ _NODE: Dict[str, Readers] = {
     "pre_pruning_col_mask": ("R4", "ir-tiling", IDENTITY),
     **_same((UNREAD,), "pre_pruning_heatmap", "pre_pruning_row_mask"),
     # [N2] an operand instance's role (the packer's and the sign split's read); [WI-5g] its layer's cell width and
-    # [W08] its fused-add operand rows, both carried to its soft core and hard core (``legacy_convert``).
-    **_same((IDENTITY,), "core_role", "weight_bits", "lane_operand_axons"),
+    # [W08] its fused-add operand rows, both carried to its soft core and hard core (``legacy_convert``); [U-L] the mark
+    # of a layout record the lane fusion wrote for a core it inserted (the soft core's residency class reads it).
+    **_same((IDENTITY,), "core_role", "weight_bits", "lane_operand_axons", "layout_record_inserted"),
     # [WI-5e] the law solver's and stamp's records: each column's operand row (the stamped law carries it, read by
     # ``laws``), a pool lane's owner key, a reduction's instance counts and producer theta.
     **_same((UNREAD,), "lane_operand_rows", "lane_owner", "lane_reduced_instances", "lane_producer_theta"),

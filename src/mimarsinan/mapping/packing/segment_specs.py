@@ -9,7 +9,7 @@ from dataclasses import replace
 from typing import Sequence
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.ir.lane_law import operand_axons
+from mimarsinan.mapping.ir.lane_law import inserted_record, operand_axons
 from mimarsinan.mapping.layout.softcore_spec_adapter import (
     spec_at_compacted_extent,
     spec_at_deployed_extent,
@@ -54,30 +54,36 @@ def _segment_specs(
     The order facts the capacity split reads (``segment_id``, ``latency_tag``)
     have one source per segment: the records' where every core has one, else
     every core's reconstruction (the records' predate the inserted cores).
+    [U-L] A core the lane fusion inserted carries a record of its own
+    (``lanes/ir/layout_records.py``), written as the fused program holds it,
+    the reconstruction's values: its spec is that record, and it counts as an
+    inserted core for the segment's one source (the walk's records predate it).
     """
     global _SPLIT_FALLBACK_LOGGED
     if not cores:
         return [], {}, []
 
     layout_specs = list(getattr(ir_graph, "layout_softcores", None) or [])
-    recorded = [bool(layout_specs) and getattr(c, "layout_softcore_index", None) is not None for c in cores]
+    has_record = [bool(layout_specs) and getattr(c, "layout_softcore_index", None) is not None for c in cores]
+    recorded = [r and not inserted_record(c) for r, c in zip(has_record, cores)]  # the walk's records
     fallback_base, mixed = (len(layout_specs) if any(recorded) else 0), any(recorded) and not all(recorded)
 
     specs: list = []
     coalescing_group_ids: list[int | None] = []
     spec_to_core: dict[int, NeuralCore] = {}
     for idx, core in enumerate(cores):
-        if recorded[idx]:
+        if has_record[idx]:
             sc_idx = int(core.layout_softcore_index)  # type: ignore[arg-type]
-            spec = spec_at_compacted_extent(layout_specs[sc_idx], core)
+            # [U-L] An inserted core's own record already states its compacted extent, operand rows and fused level.
+            spec = spec_at_compacted_extent(layout_specs[sc_idx], core) if recorded[idx] else layout_specs[sc_idx]
             # [W04] The class the packer reads on this core's soft core (a segment subgraph carries no layout record:
             # the source perceptron's), as the shape-only walk keys it; the record's values class merged layers the
             # packer keeps apart, and the build refused its own plan (``PlannedPassPackingRefusal``).
             spec = replace(spec, residency_basis=BASIS_PROVENANCE, residency_class_id=provenance_group_id(
                 getattr(core, "perceptron_index", None), fallback=ungrouped_fallback_id(sc_idx)))
-            if operand_axons(core):
+            if recorded[idx] and operand_axons(core):
                 spec = replace(spec, input_count=int(spec.input_count) + operand_axons(core))
-            if mixed:
+            if recorded[idx] and mixed:
                 rebuilt = spec_from_neural_core(core, hardware_bias=hardware_bias, fallback_residency_class_id=0)
                 spec = replace(spec, segment_id=rebuilt.segment_id, latency_tag=rebuilt.latency_tag)
         else:
