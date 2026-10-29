@@ -21,8 +21,9 @@ from mimarsinan.config_schema.registry import REGISTRY, Category
 from mimarsinan.config_schema.registry.build import declared_paths, effective_class
 from mimarsinan.config_schema.registry.decision_classes import COMPOSITE, FUNCTION_BEARING, class_of_path
 from mimarsinan.config_schema.registry.entries_write import CORE_TYPE_SCHEMA
-from mimarsinan.config_schema.registry.value_schema import entry_value_errors
+from mimarsinan.config_schema.registry.value_schema import entry_value_errors, value_errors
 from mimarsinan.mapping.platform.imc_platforms import IMCPlatform, get_imc_platform, imc_platform_names
+from mimarsinan.mapping.platform.weight_cells import CELLS_PER_WEIGHT, WEIGHT_CELL_ROWS, weight_capacity
 
 DP, PC = "deployment_parameters", "platform_constraints"
 _TARGETS_DIRNAME = "targets"
@@ -142,14 +143,22 @@ def _faithfulness(source: str, spec: Any) -> Faithfulness:
 
 def _with_core_fields(source: str, cores: List[Dict[str, Any]], fields: Any) -> List[Dict[str, Any]]:
     """[U-C C-2] The geometry's cores with the bundle's declared core fields (its cores' write path) on every core;
-    a field the geometry sets refuses by name (the registry's ``cores`` schema judges the rest below)."""
+    a field the geometry sets refuses by name (the registry's ``cores`` schema judges the rest below). [U-C4] The
+    geometry counts cells: a declared ``cells_per_weight`` turns them into the cores' weight capacity
+    (``weight_cells.weight_capacity``), and a count the cells cannot hold as whole weights refuses by name."""
     if not isinstance(fields, Mapping):
         raise _refuse(source, f"core_fields must be an object, got {type(fields).__name__}")
     if clash := sorted(f for f in fields if any(f in core for core in cores)):
         raise _refuse(source, f"core_fields {clash} are set by the geometry")
     if unknown := sorted(set(fields) - set(CORE_TYPE_SCHEMA.fields)):  # the cores schema is open; a bundle's is not
         raise _refuse(source, f"core_fields {unknown} are no core-type field of the registry")
-    return [{**core, **copy.deepcopy(dict(fields))} for core in cores]
+    if errors := [m for key in (CELLS_PER_WEIGHT, WEIGHT_CELL_ROWS) if key in fields
+                  for m in value_errors(CORE_TYPE_SCHEMA.fields[key], fields[key], f"core_fields.{key}")]:
+        raise _refuse(source, "; ".join(errors))
+    cores, contradiction = weight_capacity([{**core, **copy.deepcopy(dict(fields))} for core in cores])
+    if contradiction is not None:
+        raise _refuse(source, contradiction)
+    return cores
 
 
 def load_bundle(path: Path) -> TargetBundle:

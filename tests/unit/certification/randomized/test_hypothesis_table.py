@@ -46,7 +46,13 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: Integration re-pin (tcad/wave1-merged, uf4 onto us2): the fixture is the union of the three re-pins, merged with no
 #: conflict and equal to the JSON union of 1e6d5f72's table and U-F4's two changes, 35 cost-only rows;
 #: RA/10_wave1/thm/ is regenerated from the fixture.
-TABLE_SHA256 = "4c3edcb8f38915e70cef85a6900582f6551a9888c3ece576c95a90d0bf93dc82"
+#: U-C4 re-pin (cells per stored weight): ``cores.cells_per_weight`` and ``cores.weight_cell_rows`` join the cost-only
+#: list (pricing-only, X3a ``PRICING_ONLY``: a program reads neither; a chip description derives max_axons or
+#: max_neurons from them, drawn as themselves), 34 rows; RA/10_wave1/thm/ is regenerated from it at integration.
+#: Integration re-pin (tcad/wave1-merged, uc4 onto uc3r 480828a8): the fixture is 480828a8's table with U-C4's two
+#: keys inserted in sorted position and nothing else changed (RA/11_wave2/integration8/uc4/fixture_union_check.txt),
+#: 37 cost-only rows; RA/10_wave1/thm/ is regenerated from the fixture.
+TABLE_SHA256 = "fb3efdaf54f1129a32b9b804e3f9d946e7931f48de528b72ac671cd702919a63"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -62,7 +68,7 @@ def test_the_fixture_is_the_pinned_one():
 
 def test_the_class_list_is_the_registry_cost_only_set(table):
     assert set(table["cost_only"]) == cost_only_set()
-    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 35
+    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 37
 
 
 #: The proof check's split (PC1): conditions on the two deployments, and conditions on every run (the

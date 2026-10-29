@@ -20,11 +20,13 @@ from mimarsinan.deployment_record.quantities.value_domain import (
 )
 from mimarsinan.deployment_record.quantities.write_law import (
     record_write_census,
+    summed_cells,
     write_quantities,
 )
 from mimarsinan.deployment_record.schema import DeploymentRecord
 from mimarsinan.deployment_record.build.program_census import declared_core_geometries
 from mimarsinan.mapping.packing.residency_tiles import declared_tiles
+from mimarsinan.mapping.platform.weight_cells import array_totals
 from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
 
 
@@ -87,16 +89,12 @@ def from_record(record: DeploymentRecord) -> Quantities:
     else:
         _put(values, "weight_bits", crossbar.weight_bits, provenance="static")
     if cores:
-        counts = [int(core.get("count", 1)) for core in cores]
-        axons = [int(core["max_axons"]) for core in cores]
-        neurons = [int(core["max_neurons"]) for core in cores]
-        values["cores_physical"] = QuantityValue(float(sum(counts)), "static")
-        values["axons_physical"] = QuantityValue(
-            float(sum(a * c for a, c in zip(axons, counts))), "static")
-        values["neurons_physical"] = QuantityValue(
-            float(sum(n * c for n, c in zip(neurons, counts))), "static")
-        values["cells_physical"] = QuantityValue(
-            float(sum(a * n * c for a, n, c in zip(axons, neurons, counts))), "static")
+        # [U-C4] The declared chip's array: its rows, columns and cells (a weight of several cells counts each).
+        axons, neurons, cells = array_totals(cores)
+        values["cores_physical"] = QuantityValue(float(sum(int(core.get("count", 1)) for core in cores)), "static")
+        values["axons_physical"] = QuantityValue(float(axons), "static")
+        values["neurons_physical"] = QuantityValue(float(neurons), "static")
+        values["cells_physical"] = QuantityValue(float(cells), "static")
 
     partition = record.utilization.partition
     if partition is not None:
@@ -183,11 +181,12 @@ def from_record(record: DeploymentRecord) -> Quantities:
         refuse_spiking_activity(platform)
         withheld.update(apply_value_rule(values, record_value_facts(record)))
     writes = record_write_census(record)
-    if writes is not None and writes.census is not None:
-        values.update(write_quantities(writes.census.census, writes.policy,
-                                       written_extents=writes.census.written_extents,
-                                       most_written=writes.census.most_written_core,
-                                       producer_slots=writes.census.producer_slots))
+    if writes is not None and writes.census is not None:  # [U-C4 targeted M2] each core type's cells
+        quantities, held = summed_cells(writes, write_quantities(
+            writes.census.census, writes.policy, written_extents=writes.census.written_extents,
+            most_written=writes.census.most_written_core, producer_slots=writes.census.producer_slots))
+        values.update(quantities)
+        withheld.update(held)
     return Quantities(values, withheld={**counts_withheld, **withheld})
 
 

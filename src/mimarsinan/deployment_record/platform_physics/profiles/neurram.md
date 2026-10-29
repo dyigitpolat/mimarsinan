@@ -35,8 +35,10 @@ four named readings (the full pulse amplitude across the cell, an ohmic cell, on
 inter-wire capacitance excluded); its high corner is a reading, not a bound. One device write prices
 (`e_write_per_cell` + `e_verify_read_per_cell`) x 8.52 = 45.7 / 508.5 / 5,681 pJ, replacing the earlier cell-level
 12.3 pJ to 1.32 nJ. The rows are per RRAM device; a signed weight is a differential pair of devices
-(`python/nn_layers.py:33-37`) while the census counts the `neurram_like` geometry's weight cells, so the priced write
-energy, write time and wear of a signed weight are half the chip's (a geometry decision outside B3). Paper and code
+(`python/nn_layers.py:33-37`; "two RRAM cells on adjacent rows along the same column", wan2022a PDF p.10), which the
+`neurram` bundle declares (U-C4: `cells_per_weight` 2, `weight_cell_rows` 2): a core holds 128 x 256 weights of the geometry's
+256 x 256 devices, and a written weight is priced for both devices (91.5 / 1,017 / 11,362 pJ per signed weight, two
+write steps), each device worn by every write of its weight. Paper and code
 differ in two places: the reset start (1.5 V in the paper; 1.2 V in range or 2.5 V for a zero target in the code) and
 the time-out (30 set-reset polarity reversals in the paper; 50, 30 or 20 iterations in the code). The paper governs
 `write_verify_iterations`.

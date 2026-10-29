@@ -55,10 +55,16 @@ class TestCoreFields:
         assert "only 32 SLs are programmed in parallel" in _file("hermes_64")["notes"]
 
     def test_the_core_fields_extend_the_registered_geometry(self):
+        """[U-C4] The registered geometry counts cells: its array is the bundle's cores at their cells per weight
+        (NeuRRAM's 256 x 256 cells hold 128 x 256 weights; HERMES-64 stores one weight per cell)."""
+        from mimarsinan.mapping.platform.weight_cells import array_extent
+        dims = ("max_axons", "max_neurons")
         for name, geometry in (("neurram", "neurram_like"), ("hermes_64", "hermes_64")):
             core, = target_bundles()[name].values["cores"]
             registered, = get_imc_platform(geometry).cores
-            assert {k: v for k, v in core.items() if k in registered} == dict(registered)
+            assert {k: v for k, v in core.items() if k in registered and k not in dims} == {
+                k: v for k, v in registered.items() if k not in dims}
+            assert array_extent(core) == tuple(registered[d] for d in dims)
 
     def test_a_resolved_run_carries_them(self):
         core, = _pcfg("neurram", activation_bits=4)["cores"]

@@ -28,6 +28,7 @@ from mimarsinan.deployment_record.quantities.value_domain import (
 from mimarsinan.deployment_record.platform_physics.converter import declared_adc_bits
 from mimarsinan.deployment_record.quantities.compute_technology import compute_split
 from mimarsinan.deployment_record.quantities.write_law import plane_writes
+from mimarsinan.mapping.platform.weight_cells import cell_factors
 
 
 def candidate_context_from_platform(
@@ -160,7 +161,8 @@ def _spiking_rule_context(
     def _capacity(field: str) -> Optional[int]:
         if not cores:
             return None
-        return sum(int(ct.get("count", 1)) * int(ct.get(field, 0)) for ct in cores)
+        axis = 0 if field == "max_axons" else 1  # [U-C4] the array's slots: each cell of a weight along this axis
+        return sum(int(ct.get("count", 1)) * int(ct.get(field, 0)) * cell_factors(ct)[axis] for ct in cores)
 
     rows = int(pcfg.get("tile_grid_rows_resolved", 0) or 0)
     cols = int(pcfg.get("tile_grid_cols_resolved", 0) or 0)

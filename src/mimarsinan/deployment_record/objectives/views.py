@@ -8,6 +8,7 @@ reads ``None`` and the objectives over it are simply unavailable.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping as MappingABC
 from collections.abc import Sequence as SequenceABC
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ from mimarsinan.deployment_record.quantities import (
 )
 from mimarsinan.deployment_record.quantities.value_domain import value_noc_reading
 from mimarsinan.deployment_record.schema import DeploymentRecord
+from mimarsinan.mapping.platform.weight_cells import array_extent
 
 CORE_CAPACITY_KEYS = ("max_axons", "max_neurons", "count")
 
@@ -42,13 +44,9 @@ SEARCH_MODES = ("model", "hardware", "joint")
 
 
 def chip_param_capacity(cores: Sequence[Mapping[str, Any]]) -> float:
-    """Σ ``max_axons × max_neurons × count`` — the platform's declared cell capacity."""
-    return float(
-        sum(
-            int(ct["max_axons"]) * int(ct["max_neurons"]) * int(ct["count"])
-            for ct in cores
-        )
-    )
+    """Σ ``max_axons × max_neurons × count`` — the platform's declared cell capacity; [U-C4] times each core type's
+    ``cells_per_weight`` (the array's cells, ``weight_cells.array_extent``)."""
+    return float(sum(math.prod(array_extent(ct)) * int(ct["count"]) for ct in cores))
 
 
 def declared_core_capacity(platform: Mapping[str, Any]) -> Optional[float]:

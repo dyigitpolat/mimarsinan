@@ -96,6 +96,19 @@ class ProgramPasses:
     operands_unstated: Optional[str] = None
 
 
+def spans_match_carry(passes: ProgramPasses, carry: Optional[Mapping[str, Any]], timesteps: Optional[int]) -> bool:
+    """Whether the per-boundary widths (one crossing per direction per carried wire) account for
+    every train the plane's carry census counts; a census that counts more (a delayed slice's extra
+    re-injection) states its totals, never a per-boundary split the spans cannot attribute.
+    ([U-C4 targeted] moved here unchanged from ``quantities/write_law.py``, which re-exports it.)"""
+    if carry is None or timesteps is None:
+        return True
+    per = (int(timesteps) + 7) // 8
+    out = sum(w for _, w, _ in passes.boundary_widths) * per
+    inbound = sum(w for _, _, w in passes.boundary_widths) * per
+    return (out, inbound) == (int(carry["boundary_out_bytes"]), int(carry["boundary_in_bytes"]))
+
+
 @dataclass(frozen=True)
 class WriteCensus:
     """A plane's ``PassPeriodCensus`` with what the write pricer reads beside it."""

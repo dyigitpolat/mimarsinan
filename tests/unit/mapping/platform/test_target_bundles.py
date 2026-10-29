@@ -86,12 +86,17 @@ class TestShippedRegistry:
             assert target_bundles()[name].geometry == geometry and geometry not in imc_platform_names()
 
     def test_a_registered_geometry_is_taken_from_the_registry(self):
-        """[U-C C-2] with the bundle's own core fields (its cores' write path) beside the geometry's."""
+        """[U-C C-2] with the bundle's own core fields (its cores' write path) beside the geometry's; [U-C4] the
+        geometry counts cells, so the cores hold it over their cells per weight and their array is the geometry."""
+        from mimarsinan.mapping.platform.weight_cells import array_extent, weight_capacity
         for bundle in target_bundles().values():
             if bundle.geometry in imc_platform_names():
                 platform = get_imc_platform(bundle.geometry)
                 fields = json.loads((TARGETS_DIR / f"{bundle.name}.json").read_text()).get("core_fields", {})
-                assert bundle.values["cores"] == [{**dict(core), **fields} for core in platform.cores]
+                declared = [{**dict(core), **fields} for core in platform.cores]
+                assert bundle.values["cores"] == weight_capacity(declared)[0]
+                assert [array_extent(c) for c in bundle.values["cores"]] == [
+                    (core["max_axons"], core["max_neurons"]) for core in platform.cores]
                 assert bundle.values["weight_bits"] == platform.weight_bits
                 assert bundle.claim_class == platform.claim_eligibility
 

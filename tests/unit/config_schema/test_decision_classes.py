@@ -115,9 +115,13 @@ class TestCoverage:
 #: CL9 of integration pass 2: no unit of the pass (explore, exact, E1, E6, P1) amends the set, so it keeps its 32 rows.
 #: U-F4 (owner answer of 2026-10-28, "Build it"): ``pipelined_multiplexing``, position multiplexing's pipelined form, a
 #: cost-only mapping decision, is a further row.
+#: U-C4 amendment (cells per stored weight, B3 intake open item 4): two pricing-only core-type fields, 34 rows on the
+#: unit's base; 37 with the chain's rows (integration8/uc4).
 FROZEN_COST_ONLY = frozenset({
     "activity_factor", "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
     "core_value_granularity", "cores.count", "cores.max_axons", "cores.max_neurons",
+    # U-C4 key amendment: the cells one stored weight occupies and those on adjacent rows (written cells, wear, area).
+    "cores.cells_per_weight", "cores.weight_cell_rows",
     # E-6 key amendment (U-E, N2 follow-up F5): a core type's compute technology, priced per core type.
     "cores.compute_physics",
     # N2 (Wave 2) key amendment: who writes an operand core type's payloads, priced apart (design §2.9).
@@ -197,8 +201,8 @@ class TestPlanClasses:
         # 26 owner-reviewed rows + the closure's CL-SG amendment (weight_sign_granularity) + the N2 key amendment
         # (write_source) + the N2b one (write_physics) + W02's position_multiplexing (pack) + W08's two lane-block
         # pricing fields (lanes) + E-6's compute_physics + U-S's event_census_samples (the event census) + U-F4's
-        # pipelined_multiplexing
-        assert len(FROZEN_COST_ONLY) == 35
+        # pipelined_multiplexing + U-C4's two weight-cell fields (cells_per_weight, weight_cell_rows)
+        assert len(FROZEN_COST_ONLY) == 37
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 
@@ -444,9 +448,11 @@ class TestJoin:
             "write_overlap": {"mode": "serial"},
         }
         assert declared_paths(values) == (
+            "cores.cells_per_weight",  # U-C4: absent, one cell per weight (cost-only)
             "cores.compute_physics", "cores.count", "cores.has_bias", "cores.max_axons", "cores.max_neurons",
             "cores.operand.payload_bits", "cores.operand.write_source",
             "cores.weight_bits",  # Wave 2 WI-5g: absent, the platform weight_bits (function-bearing)
+            "cores.weight_cell_rows",  # U-C4: absent, required above one cell per weight (cost-only)
             "cores.weight_sign_granularity",
             "cores.write_granularity", "cores.write_physics", "cores.write_units_in_parallel",
             "weight_bits", "write_overlap.mode", "write_overlap.shadow_capacity_fraction",

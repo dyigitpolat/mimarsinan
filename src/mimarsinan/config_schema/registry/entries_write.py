@@ -7,11 +7,7 @@ from __future__ import annotations
 from typing import Any, List, Mapping, Optional, Tuple
 
 from mimarsinan.config_schema.registry.decision_classes import COST_ONLY, FUNCTION_BEARING
-from mimarsinan.config_schema.registry.types import (
-    Category,
-    ConfigKeySchema as _E,
-    FieldType as T,
-)
+from mimarsinan.config_schema.registry.types import Category, ConfigKeySchema as _E, FieldType as T
 from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set, schema_of, value_errors
 from mimarsinan.data_handling.preprocessing import PreprocessingSpec, interpolation_mode_names
 from mimarsinan.config_schema.registry.core_type_doors import platform_sign_errors as platform_sign_errors
@@ -67,6 +63,14 @@ CORE_TYPE_SCHEMA = ValueSchema(
         "write_units_in_parallel": ValueSchema(kind=T.INT, low=1, decision_class=COST_ONLY,
                                                doc="units one write commits at once: write time only",
                                                absent_means="1"),
+        "cells_per_weight": ValueSchema(kind=T.INT, low=1, decision_class=COST_ONLY, doc=(
+            "[U-C4] array cells one stored weight occupies (a differential pair 2, a weight bit-sliced over narrower "
+            "cells its slices): the cells a weight write writes and wears, and the cells area scales with; "
+            "max_axons x max_neurons stay the weights the mapping packs, so cost only"),
+            absent_means="1: one cell stores one weight"),
+        "weight_cell_rows": ValueSchema(kind=T.INT, low=1, decision_class=COST_ONLY, doc=(
+            "[U-C4] of a weight's cells_per_weight cells, those on adjacent rows of its column (a differential pair 2); "
+            "the rest on adjacent columns of its row: cost only"), absent_means="required where cells_per_weight exceeds 1"),
         "write_physics": ValueSchema(kind=T.STR, min_length=1, decision_class=COST_ONLY,
                                      doc="the write technology of this core type's cells (N2b): a shipped physics "
                                          "profile whose write rows price their write energy, write time and "

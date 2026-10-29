@@ -7,7 +7,7 @@ from typing import Any, Dict, Mapping, Optional, Protocol, Tuple
 
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import BUFFER_CAPACITY, ONCHIP_CARRY
-from mimarsinan.deployment_record.quantities.write_law import write_quantities
+from mimarsinan.deployment_record.quantities.write_law import summed_cells, write_quantities
 
 
 class _NocEstimateView(Protocol):
@@ -219,11 +219,13 @@ def from_candidate(
 
     _put(values, "noc_value_bytes", noc_value_bytes)
     writes = context.writes
-    if writes is not None and writes.census is not None:
-        values.update(write_quantities(
+    writes_held: Dict[str, str] = {}
+    if writes is not None and writes.census is not None:  # [U-C4 targeted M2] each core type's cells
+        quantities, writes_held = summed_cells(writes, write_quantities(
             writes.census.census, writes.policy, written_extents=writes.census.written_extents,
             most_written=writes.census.most_written_core, producer_slots=writes.census.producer_slots,
         ))
+        values.update(quantities)
 
     if noc is not None:
         for key, value in (
@@ -261,6 +263,6 @@ def from_candidate(
             value=float(sum(context.pass_core_events)), provenance=values["synaptic_events"].provenance)
     values.update(dict(context.lane_quantities))
     held = {**dict(getattr(context.value_rule, "withheld", ()) or ()), **dict(context.lane_withheld),
-            **dict(withheld or {}),
+            **dict(withheld or {}), **writes_held,
             **({ONCHIP_CARRY: context.carry_onchip_refusal} if context.carry_onchip_refusal else {})}
     return Quantities(values, withheld={key: reason for key, reason in held.items() if key not in values})

@@ -22,7 +22,17 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.build.write_census import CoreType, PassRow, ProgramPasses, WriteCensus
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.deployment_record.quantities.spec import QuantityValue
+from mimarsinan.mapping.platform.weight_cells import WEIGHT_CELL_ROWS, block_factors, cells_per_weight
 from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensus
+
+#: [U-C4] The write law's commit-energy basis (``cost/absolute/writes.py``): written cells count each weight's cells.
+WRITTEN_CELLS_BASIS = "e_write_per_cell x runtime_written_cells x write_verify_iterations"
+#: [U-C4 targeted M2] The write-law quantities that count cells (``write_law.write_quantities``): each written weight's.
+CELL_QUANTITIES = ("runtime_written_cells", "written_units", "write_events")
+#: [U-C4 targeted M2] A share of a period census whose written weights take one block of cells: (its passes, the write
+#: policy at that block, its written extents).
+CellShare = Tuple[PassPeriodCensus, Any, Optional[Tuple[Tuple[Tuple[int, int], ...], ...]]]
 
 #: The resolved surface's key holding each named write physics as sealed (``PlatformPhysics.to_dict``).
 WRITE_PHYSICS_RESOLVED = "write_physics_resolved"
@@ -50,10 +60,14 @@ class CoreTechnology:
     write_granularity: Optional[str]
     write_units_in_parallel: int
     operand: bool = False
+    #: [U-C4] The cells one stored weight of the type occupies and those on adjacent rows (``weight_cells``).
+    cells_per_weight: int = 1
+    weight_cell_rows: Optional[int] = None
 
     @property
     def key(self) -> Tuple[Any, ...]:
-        return (self.write_physics, self.write_granularity, self.write_units_in_parallel)
+        return (self.write_physics, self.write_granularity, self.write_units_in_parallel, self.cells_per_weight,
+                self.weight_cell_rows)
 
     @property
     def label(self) -> str:
@@ -65,19 +79,19 @@ def core_technologies(platform: Mapping[str, Any]) -> Optional[Tuple[CoreTechnol
     write physics of its own (the chip's one law). Refuses by name two technologies on one geometry (a write physics
     no profile ships refuses where it is resolved: at the platform's resolution, or at pricing)."""
     cores = [dict(ct) for ct in platform.get("cores") or ()]
-    keys = [(ct.get("write_physics"), ct.get("write_granularity"), int(ct.get("write_units_in_parallel", 1)))
-            for ct in cores]
+    keys = [(ct.get("write_physics"), ct.get("write_granularity"), int(ct.get("write_units_in_parallel", 1)),
+             cells_per_weight(ct), ct.get(WEIGHT_CELL_ROWS)) for ct in cores]  # [U-C4] a count differs: a technology
     if not any(key[0] for key in keys) and len(set(keys)) <= 1:
         return None
     if any("max_axons" not in ct or "max_neurons" not in ct for ct in cores):
         return None  # no core type is known to hold any tile: the period census refuses by name, every write term too
     sealed = platform.get(WRITE_PHYSICS_RESOLVED)
     by_kind: Dict[CoreType, CoreTechnology] = {}
-    for ct, (name, granularity, units) in zip(cores, keys):
+    for ct, (name, granularity, units, cells, rows) in zip(cores, keys):
         kind = (int(ct["max_axons"]), int(ct["max_neurons"]))
         copy = None if name is None or not sealed or name not in sealed else PlatformPhysics.from_dict(sealed[name])
         tech = CoreTechnology(kind, int(ct.get("count", 1)), name, copy, granularity, units,
-                              ct.get("operand") is not None)
+                              ct.get("operand") is not None, cells, rows)
         prior = by_kind.get(kind)
         if prior is not None and prior.key != tech.key:
             raise WriteTechnologyError(
@@ -101,6 +115,7 @@ def technology_policy(policy: Any, group: Sequence[CoreTechnology]) -> Any:
     """The chip's write policy at one technology's write declarations and cores (``write_law.WritePolicy``)."""
     return replace(policy, write_granularity=group[0].write_granularity,
                    write_units_in_parallel=group[0].write_units_in_parallel, mixed_core_writes=None,
+                   cells_per_weight=group[0].cells_per_weight, weight_cell_rows=group[0].weight_cell_rows,
                    core_capacity=tuple(sorted((t.core_type, t.count) for t in group)),
                    physical_cores=sum(t.count for t in group), core_technologies=None)
 
@@ -212,6 +227,44 @@ def split_by_technology(passes: ProgramPasses, written: WriteCensus, policy: Any
                 tuple((kind, n) for kind, n in types_of if kind in kinds) for types_of in written.pass_core_types),
         ))
     return TechnologySplit(parts=tuple(parts))
+
+
+def _weights(census: Any) -> int:
+    return sum(p.written_cells_backing_store + p.written_cells_producer for p in census.passes)
+
+
+def cell_shares(written: WriteCensus, policy: Any, split: Optional[TechnologySplit]
+                ) -> Tuple[Optional[Tuple[CellShare, ...]], Optional[str]]:
+    """[U-C4 targeted M2] A plane's period census as shares of one block of cells per stored weight: the whole census
+    at the chip's policy where every write technology stores a weight in one block, else the split's parts at their
+    own blocks (the shares the write terms are priced on). None with the reason where no split is stated or its parts
+    miss a written weight: no one count turns the census's written weights into written cells."""
+    technologies = policy.core_technologies or ()
+    if len({block_factors(t.cells_per_weight, t.weight_cell_rows) for t in technologies}) <= 1:
+        return ((written.census, policy, written.written_extents),), None
+    why = "the census is not split by write technology" if split is None else str(split.refused)
+    if split is not None and split.refused is None:
+        held, total = sum(_weights(p.census) for p in split.parts), _weights(written.census)
+        if held == total:
+            return tuple((p.census, p.policy, p.written_extents) for p in split.parts), None
+        why = (f"the write technologies' shares hold {held} of the {total} written weights (a core of no declared "
+               "type, such as a fused one, is in no share)")
+    counts = "; ".join(f"{t.label}: cells_per_weight {t.cells_per_weight}" for t in technologies)
+    return None, f"the core types store a weight in different numbers of cells ({counts}), and {why}"
+
+
+def cell_sums(parts: Sequence[Mapping[str, Any]], shares: Sequence[CellShare]) -> Dict[str, QuantityValue]:
+    """[U-C4 targeted M2] The shares' cell quantities summed: the written cells, and the write units and events where
+    every share states them at one write granularity."""
+    one = len({policy.write_granularity for _, policy, _ in shares}) == 1
+    return {key: QuantityValue(float(sum(q[key].value for q in parts)), "static") for key in CELL_QUANTITIES
+            if all(key in q for q in parts) and (one or key == "runtime_written_cells")}
+
+
+def cells_basis(policy: Any) -> str:
+    """``WRITTEN_CELLS_BASIS``, naming the cells per weight where a stored weight takes several."""
+    count = int(getattr(policy, "cells_per_weight", 1))
+    return WRITTEN_CELLS_BASIS + ("" if count == 1 else f" (cells_per_weight {count}: every cell of each weight)")
 
 
 def shadow_room_refusal(capacity: Optional[Sequence[Tuple[CoreType, int]]], fraction: float,

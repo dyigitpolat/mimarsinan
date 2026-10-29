@@ -18,11 +18,12 @@ from unit.mapping.residency.executed import templates as TV
 from unit.search.test_search_route_packaging import _problem, _searched_softcores, _shapes
 
 #: (template, target, declared cores as (max_axons, max_neurons, count)): the bundle geometry; the macro's count is
-#: the cell's target_overrides entry ("cores declared").
+#: the cell's target_overrides entry ("cores declared"); [U-C4] NeuRRAM's 256 x 256 cells hold 128 x 256 weights (two
+#: cells per signed weight, along axons).
 _CELLS = [
     ("t0_66", "hermes_64", [(256, 256, 64)]),
     ("t0_67", "sram_cim_macro", [(128, 1024, 8)]),
-    ("t0_68", "neurram", [(256, 256, 48)]),
+    ("t0_68", "neurram", [(128, 256, 48)]),
 ]
 
 

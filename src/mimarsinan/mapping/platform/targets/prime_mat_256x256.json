@@ -3,11 +3,16 @@
   "display_name": "PRIME (Chi 2016): ReRAM mats of 256 x 256",
   "geometry": "prime_mat_256x256",
   "keys": {},
+  "core_fields": {
+    "cells_per_weight": 2,
+    "weight_cell_rows": 1
+  },
   "faithfulness": {
     "class": "refused",
     "named": [
       "no physics profile"
     ],
     "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
-  }
+  },
+  "notes": "[U-C4 targeted M1] The geometry counts ReRAM cells (\"for each mat, there are 256×256 ReRAM cells\", chi2016prime Section V-A, p.36) at their bound 4-bit weights (\"for each ReRAM cell, we assume 4-bit MLC for computation\", same sentence), and a signed weight takes two of them, one in each crossbar of a pair on the same input: \"Finally, we employ two crossbar arrays store positive and negative weights, respectively, and allow them to share the same input port.\" (chi2016prime Section III-A1 'Decoder and Driver', p.30). So core_fields cells_per_weight 2 with weight_cell_rows 1: the partner cell sits on the same input row, in the paired crossbar, so each 256 x 256 cell mat holds 256 x 128 signed weights (the bundle's cores, derived from the geometry), its cells, rows and columns stay 256 x 256, and a weight write writes both cells. This is the tree's card's reading (docs/research/physics/prime_constants_research.md section 3.3(b): \"the ± split puts the negative half in a second mat ... the composing-aware one is the physically correct one\"); the paper's own \"256 − 256 mat\" capacity framing (Section IV-B1, Section V-C) ignores the pair and is not used. The count is the chip's at its bound 4-bit weights: the paper's deployed 8-bit weights compose two of them (\"two 4-bit cells to represent one 8-bit synaptic weight\", Section III-D1, p.33, on adjacent bitlines), so 4 cells per 8-bit signed weight; a run that overrides weight_bits keeps the count of 2, a boundary stated here. A mat pair declared as one core of 256 x 256 signed weights (count 64) would hold the same weights on the same cells; the bundle keeps the registered mats."
 }

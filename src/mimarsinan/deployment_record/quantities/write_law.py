@@ -14,15 +14,15 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.build.program_census import record_program_passes
 from mimarsinan.deployment_record.build.write_census import (  # the core counts re-exported for their readers
     CoreType, ProgramPasses, WriteCensus, WriteCensusError, core_capacity_of, period_census,
-    programmed_basis as programmed_basis, programmed_cores as programmed_cores, written_cores,
+    programmed_basis as programmed_basis, programmed_cores as programmed_cores, spans_match_carry, written_cores,
 )
 from mimarsinan.deployment_record.quantities.spec import QuantityValue
 from mimarsinan.deployment_record.quantities import write_technology as wt
 from mimarsinan.deployment_record.quantities.value_domain import domain_bytes_of, names_value_domain, value_window
+from mimarsinan.mapping.platform.weight_cells import CELLS_PER_WEIGHT, WEIGHT_CELL_ROWS, block_factors
 from mimarsinan.mapping.support.period_census import WRITE_OVERLAP_MODES, natural
 
-WRITE_KEYS = ("inference_batch_K", "write_overlap", "write_ports", "inference_rate_hz",
-              "min_lifetime_hours")
+WRITE_KEYS = ("inference_batch_K", "write_overlap", "write_ports", "inference_rate_hz", "min_lifetime_hours")
 #: A write unit read off a written core's used (rows, columns).
 _EXTENT_UNITS = {"row": 0, "column": 1}
 
@@ -58,6 +58,10 @@ class WritePolicy:
     payload_bits: Optional[int] = None
     #: N2b: per core geometry its write technology; None where every core type writes by one (the chip's one law).
     core_technologies: Optional[Tuple[wt.CoreTechnology, ...]] = None
+    #: [U-C4] The cells one stored weight occupies and those on adjacent rows (``weight_cells``), every core type's: a
+    #: weight write writes each of them (written cells and units count cells; payload bytes count weights; wear per cell).
+    cells_per_weight: int = 1
+    weight_cell_rows: Optional[int] = None
 
 
 def _common(cores: Sequence[Mapping[str, Any]], field: str, default: Any) -> Tuple[Any, Optional[str]]:
@@ -81,6 +85,7 @@ def write_policy_of(platform: Mapping[str, Any]) -> Optional[WritePolicy]:
     cores = [dict(ct) for ct in platform.get("cores") or ()]
     granularity, mixed = _common(cores, "write_granularity", None)
     units, mixed_units = _common(cores, "write_units_in_parallel", 1)
+    (cells, mix_c), (rows, mix_r) = _common(cores, CELLS_PER_WEIGHT, 1), _common(cores, WEIGHT_CELL_ROWS, None)
     rate = platform.get("inference_rate_hz")
     floor = platform.get("min_lifetime_hours")
     capacity = core_capacity_of(platform)
@@ -92,7 +97,7 @@ def write_policy_of(platform: Mapping[str, Any]) -> Optional[WritePolicy]:
         write_ports=natural(platform.get("write_ports", 1), "write_ports", error=WriteLawError),
         write_granularity=granularity,
         write_units_in_parallel=natural(units, "write_units_in_parallel", error=WriteLawError),
-        mixed_core_writes=mixed or mixed_units,
+        mixed_core_writes=mixed or mixed_units or mix_c or mix_r,
         inference_rate_hz=None if rate is None else float(rate),
         min_lifetime_hours=None if floor is None else float(floor),
         core_capacity=None if capacity is None else tuple(sorted(capacity.items())),
@@ -100,6 +105,7 @@ def write_policy_of(platform: Mapping[str, Any]) -> Optional[WritePolicy]:
         producer_write_source=None if operand is None else str(operand.get("write_source", "host")),
         payload_bits=None if operand is None else int(operand["payload_bits"]),
         core_technologies=wt.core_technologies(platform),
+        cells_per_weight=natural(cells, CELLS_PER_WEIGHT, error=WriteLawError), weight_cell_rows=rows,
     )
 
 
@@ -109,14 +115,15 @@ def pass_units(census: Any, policy: WritePolicy,
     granularity = policy.write_granularity
     if granularity is None or policy.mixed_core_writes is not None:
         return None
-    if granularity == "cell":
-        return tuple(p.written_cells_backing_store for p in census.passes)
+    if granularity == "cell":  # [U-C4] every cell of each written weight
+        return tuple(p.written_cells_backing_store * policy.cells_per_weight for p in census.passes)
     if granularity == "core":
         return tuple(p.cores - p.resident_cores for p in census.passes)
     if written_extents is None:
         return None
     axis = _EXTENT_UNITS[granularity]
-    return tuple(sum(extent[axis] for extent in cores) for cores in written_extents)
+    per = block_factors(policy.cells_per_weight, policy.weight_cell_rows)[axis]  # [U-C4] cell rows or columns
+    return tuple(sum(extent[axis] for extent in cores) * per for cores in written_extents)
 
 
 def pass_events(units: Sequence[int], policy: WritePolicy) -> Tuple[int, ...]:
@@ -141,11 +148,11 @@ def write_quantities(census: Any, policy: WritePolicy, *,
     """The write-law quantities of a period census at the declared batch K (static facts); ``most_written`` and
     ``producer_slots`` are the slot rule's placement (``WriteCensus``), where the plane states it. The most-written
     cell's wear is the lifetime's (``cell_wear``), stated only where it has an upper end."""
-    k = policy.batch_k
-    producer = sum(p.written_cells_producer for p in census.passes)
+    k, per = policy.batch_k, policy.cells_per_weight  # [U-C4] written cells: every cell of each written weight
+    producer = sum(p.written_cells_producer for p in census.passes) * per
     values = {
         "period_rewrite_bytes": float(sum(p.payload_bytes for p in census.passes)),
-        "runtime_written_cells": sum(p.written_cells_backing_store for p in census.passes) / k + producer,
+        "runtime_written_cells": sum(p.written_cells_backing_store for p in census.passes) * per / k + producer,
     }
     if most_written is not None:
         wear, _ = cell_wear(census, policy, most_written, producer_slots)
@@ -156,9 +163,21 @@ def write_quantities(census: Any, policy: WritePolicy, *,
         values["written_units"] = sum(units) / k + producer
         events = sum(pass_events(units, policy)) / k
         if producer:
-            events += sum(pass_events([p.written_cells_producer for p in census.passes], policy))
+            events += sum(pass_events([p.written_cells_producer * per for p in census.passes], policy))
         values["write_events"] = events
     return {key: QuantityValue(float(value), "static") for key, value in values.items()}
+
+
+def summed_cells(writes: Any, values: Dict[str, QuantityValue]) -> Tuple[Dict[str, QuantityValue], Dict[str, str]]:
+    """[U-C4 targeted M2] ``values`` (``write_quantities`` of a plane's census) with its cell quantities summed over its
+    shares of one cell block per weight (``write_technology.cell_shares``), and those withheld by name without them."""
+    shares, reason = wt.cell_shares(writes.census, writes.policy, writes.by_technology)
+    if shares is not None and len(shares) == 1:
+        return values, {}
+    kept = {key: value for key, value in values.items() if key not in wt.CELL_QUANTITIES}
+    parts = [write_quantities(census, policy, written_extents=extents) for census, policy, extents in shares or ()]
+    return ({**kept, **wt.cell_sums(parts, shares)}, {}) if shares else (
+        kept, dict.fromkeys(wt.CELL_QUANTITIES, str(reason)))
 
 
 @dataclass(frozen=True)
@@ -228,18 +247,6 @@ class PlaneWrites:
     #: [targeted M2] Per census pass, its busiest core's synaptic events (``compute_time.busiest_core_events``), where
     #: the plane states them (the candidate plane on a chip priced per synaptic operation): the overlapped compute.
     pass_sops: Optional[Tuple[float, ...]] = None
-
-
-def spans_match_carry(passes: ProgramPasses, carry: Optional[Mapping[str, Any]], timesteps: Optional[int]) -> bool:
-    """Whether the per-boundary widths (one crossing per direction per carried wire) account for
-    every train the plane's carry census counts; a census that counts more (a delayed slice's extra
-    re-injection) states its totals, never a per-boundary split the spans cannot attribute."""
-    if carry is None or timesteps is None:
-        return True
-    per = (int(timesteps) + 7) // 8
-    out = sum(w for _, w, _ in passes.boundary_widths) * per
-    inbound = sum(w for _, _, w in passes.boundary_widths) * per
-    return (out, inbound) == (int(carry["boundary_out_bytes"]), int(carry["boundary_in_bytes"]))
 
 
 def plane_write_census(passes: ProgramPasses, platform: Mapping[str, Any], *, weight_bits: Any,

@@ -43,7 +43,9 @@ from mimarsinan.config_schema.registry.declaration_places import (
     section_placement_errors,
 )
 from mimarsinan.config_schema.registry.domain_rules import mvm_document_errors
-from mimarsinan.config_schema.registry.core_type_doors import platform_lane_errors, platform_residency_errors
+from mimarsinan.config_schema.registry.core_type_doors import (
+    platform_lane_errors, platform_residency_errors, platform_weight_cell_errors,
+)
 from mimarsinan.config_schema.registry.entries_write import platform_bias_errors, platform_sign_errors
 from mimarsinan.config_schema.registry.types import Category
 from mimarsinan.config_schema.registry.value_schema import domain_errors, entry_value_errors, value_errors
@@ -90,15 +92,16 @@ def _once(*messages: str) -> List[str]:
 def _layout_errors(config: Mapping[str, Any], run_domain: Optional[str]) -> List[str]:
     """``declaration_errors``, then the cross-key rules of a layout's declarations: the platform bias rule (which
     judges each bias declaration by its schema itself), and the floorplan pairing, the per-axon sign rule
-    (``platform_sign_errors``), the lane rule (``platform_lane_errors``) and the residency rule
-    (``platform_residency_errors``) over the declarations their schemas admit (a value outside its schema is the
-    schema's to name, once). [F2, F3] A residency plan is composed beside executed lanes and operand core types; [G2]
-    on a chip that packs per axon it is refused until the plan and record planes agree."""
+    (``platform_sign_errors``), the lane rule (``platform_lane_errors``), the residency rule
+    (``platform_residency_errors``) and [U-C4] the weight-cell rule (``platform_weight_cell_errors``) over the
+    declarations their schemas admit (a value outside its schema is the schema's to name, once). [F2, F3] A residency
+    plan is composed beside executed lanes and operand core types; [G2] on a chip that packs per axon it is refused
+    until the plan and record planes agree."""
     admitted = {key: value for key, value in config.items()
                 if key not in REGISTRY or not entry_value_errors(REGISTRY[key], value)}
     return _once(*declaration_errors(config, run_domain), *platform_bias_errors(config, REGISTRY["has_bias"]),
                  *floorplan_config_errors(admitted), *platform_sign_errors(admitted), *platform_lane_errors(admitted),
-                 *platform_residency_errors(admitted))
+                 *platform_residency_errors(admitted), *platform_weight_cell_errors(admitted))
 
 
 def run_door_errors(pipeline_config: Mapping[str, Any]) -> List[str]:

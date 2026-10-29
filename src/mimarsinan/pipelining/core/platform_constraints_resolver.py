@@ -29,6 +29,7 @@ from mimarsinan.deployment_record.quantities.write_technology import WRITE_PHYSI
 from mimarsinan.mapping.lanes.declaration import LANE_KEY, declared_lane_block
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY, resolve_residency_policy
+from mimarsinan.mapping.platform.weight_cells import check_conversion_agreement
 
 _Read = TypeVar("_Read")
 
@@ -144,6 +145,9 @@ def build_platform_constraints_resolved(
                                          pipeline_config.get("platform_physics_overrides") or {},
                                          lane_block=declared_lane_block(pipeline_config)))
     pcfg["platform_physics_resolved"] = physics.to_dict() if physics else None
+    # [U-C4] The conversion model's cells_per_weight is the core types' own count, stated twice: they agree.
+    _read_by_consumer(pipeline_config, ("cores", "platform_physics_profile"),
+                      lambda: check_conversion_agreement(cores, physics.conversion_model if physics else None))
     # N2b: each core type's named write physics, sealed the same way (only when a core type names one).
     sealed = _read_by_consumer(pipeline_config, ("cores",), lambda: _sealed_write_physics(cores))
     if sealed:

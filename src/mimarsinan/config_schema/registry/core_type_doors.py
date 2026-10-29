@@ -9,6 +9,7 @@ from mimarsinan.mapping.lanes.declaration import lane_operand_conflict
 from mimarsinan.mapping.platform.platform_constraints import (
     PER_AXON, PER_SYNAPSE, SIGN_GRANULARITY_FIELD, SignGranularityError, operand_sign_conflict, pool_sign_granularity,
 )
+from mimarsinan.mapping.platform.weight_cells import weight_cell_errors
 
 
 def platform_sign_errors(config: Mapping[str, Any]) -> List[str]:
@@ -53,3 +54,9 @@ def platform_residency_errors(config: Mapping[str, Any]) -> List[str]:
             "which the residency planner's plan plane does not read: the plan's period census (resident cores, "
             "backing-store cells) and the built program's record disagree, refused until the two planes agree "
             f"(declare '{PER_SYNAPSE}' on every core type, or no residency_plan)"]
+
+
+def platform_weight_cell_errors(config: Mapping[str, Any]) -> List[str]:
+    """[U-C4] Why a core type's weight cells refuse at both doors, else []: a ``cells_per_weight`` above 1 without its
+    ``weight_cell_rows``, or rows that do not divide it (``weight_cells.weight_cell_errors``)."""
+    return weight_cell_errors(config.get("cores"))

@@ -23,7 +23,8 @@ from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysic
 from mimarsinan.deployment_record.platform_physics.resolve import technology_physics
 from mimarsinan.deployment_record.quantities.write_law import (
     WritePolicy, pass_events, pass_units, programmed_basis, programmed_cores)
-from mimarsinan.deployment_record.quantities.write_technology import TechnologySplit, shadow_room_refusal
+from mimarsinan.deployment_record.quantities.write_technology import (
+    TechnologySplit, cells_basis, shadow_room_refusal)
 from mimarsinan.deployment_record.schema.provenance import Band
 
 __all__ = ["ENERGY_WRITE", "LATENCY_WRITE", "LIFETIME_HOURS", "LIFETIME_INFERENCES", "LIFETIME_VERDICT",
@@ -108,9 +109,8 @@ def _write_energy(census: Any, physics: PlatformPhysics, policy: WritePolicy) ->
         if physics.has("e_verify_read_per_cell"):
             per_cell = add_bands([per_cell, physics.band("e_verify_read_per_cell")],
                                  "e_write_per_cell + e_verify_read_per_cell")
-        parts.append(scale_band(mul_bands(per_cell, iterations, "per-cell write-verify energy"),
-                                (cells / k + producer) * _J_TO_MJ,
-                                "e_write_per_cell x runtime_written_cells x write_verify_iterations"))
+        parts.append(scale_band(mul_bands(per_cell, iterations, "per-cell write-verify energy"),  # [U-C4] each cell
+                                (cells / k + producer) * policy.cells_per_weight * _J_TO_MJ, cells_basis(policy)))
     elif physics.has("e_program_per_byte") and not producer:
         parts.append(scale_band(physics.band("e_program_per_byte"), payload / k * _J_TO_MJ,
                                 "e_program_per_byte x period_rewrite_bytes / K"))
@@ -148,7 +148,7 @@ def _pass_write_times(census: Any, physics: PlatformPhysics, policy: WritePolicy
                                  for events in pass_events(units, policy)], census, physics)
         if producer and policy.write_granularity != "cell":
             return None, None, "producer writes are counted in cells; their units at another granularity are unstated"
-        steps = sum(pass_events([p.written_cells_producer for p in passes], policy))  # no step spans two passes
+        steps = sum(pass_events([p.written_cells_producer * policy.cells_per_weight for p in passes], policy))
         return walls, scale_band(step, steps, "producer write steps, per pass"), ""
     if ((byte := physics.has("t_program_per_byte")) or physics.has("t_core_program")) and not producer:
         walls = [scale_band(physics.band("t_program_per_byte"), p.payload_bytes, "t_program_per_byte x payload_bytes")

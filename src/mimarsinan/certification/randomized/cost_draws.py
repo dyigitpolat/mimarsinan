@@ -38,10 +38,12 @@ DEFERRED_REASONS: Mapping[str, str] = {
 }
 #: Cost-only paths no program reads: pricing constants, the priced floorplan, the write law, the lane block
 #: (W08: its constants and lane count price the lane rows only) and the event census's sample count (U-S: a
-#: measurement of the built program, run after Hard Core Mapping; the record prices its mean).
+#: measurement of the built program, run after Hard Core Mapping; the record prices its mean), [U-C4] and the cells
+#: per stored weight (a core type's written cells and array; a chip description derives max_axons or max_neurons from
+#: it, drawn as themselves).
 PRICING_ONLY: Tuple[str, ...] = (
-    "activity_factor", "cores.compute_physics", "cores.operand.write_source", "cores.write_granularity",
-    "cores.write_physics",
+    "activity_factor", "cores.cells_per_weight", "cores.compute_physics", "cores.operand.write_source",
+    "cores.weight_cell_rows", "cores.write_granularity", "cores.write_physics",
     "cores.write_units_in_parallel", "cores_per_tile", "event_census_samples",
     "inference_batch_K", "onchip_arithmetic.lane_block", "onchip_arithmetic.lanes_per_core",
     "platform_physics_overrides", "platform_physics_profile", "tile_grid_cols",

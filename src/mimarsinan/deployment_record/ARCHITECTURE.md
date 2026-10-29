@@ -390,3 +390,29 @@ write law's per-pass walls (x the rewritten cores holding a static program, `wri
 so Pi's numerator, M's period writes and the write-bandwidth batch read it. An interface that writes a whole core
 image per load, whatever the program occupies (ODIN's SPI), declares its image's wall there and no
 `t_program_per_byte`, whose occupied-cell payload would underprice a partly used core.
+
+## Cells per stored weight (U-C4)
+
+A core type whose stored weight takes several array cells, in the unit its chip description's per-cell rows are
+declared for, declares `cells_per_weight` and `weight_cell_rows` (`mapping/platform/weight_cells.py`; absent: one cell
+per weight): a weight is a block of `weight_cell_rows` cells on adjacent rows of its column by `cells_per_weight /
+weight_cell_rows` on adjacent columns of its row. `max_axons` x `max_neurons` keep counting the weights the mapping
+packs; the write law counts every cell of each written weight (`WritePolicy.cells_per_weight`: `runtime_written_cells`,
+the cell, row and column write units, the commit energy and write steps, the timeline's written cells), while payload
+bytes count weights and the wear stays per cell (both cells of a pair take each write of their weight, so the
+most-written cell and the lifetime are the weight's). The declared chip's `cells_physical`, `axons_physical` and
+`neurons_physical` and the core the aggregates' validity is judged at (`validity.geometry_of`) are the array's cells,
+rows and columns, so area, row drivers, converters and per-slot rows scale with cells; on a chip of one cell per weight
+they are its weights, unchanged. Core types that differ in their block are priced per write technology
+(`write_technology.CoreTechnology.key`), and [targeted M2] every written-cell quantity of such a chip (written cells,
+write units and write events on the record, candidate and level planes, and the design-point timeline's written cells,
+units and events) is the sum of the census's shares by write technology, each at its own block
+(`write_technology.cell_shares`, `write_law.summed_cells`: the shares the write terms are priced on), withheld by name
+(the timeline refuses) where no split holds every written weight. A target bundle's geometry counts cells and its cores
+hold that geometry over the block (`target_bundles`, refused by name where the cells hold no whole weights): `neurram`
+2 cells on 2 rows (wan2022a Methods, PDF p.10, the differential-row mapping), `isaac_like` 8 cells on 1 row
+(shafiee2016isaac p.5, the count its bit-sliced conversion model declares; the run door refuses a core type stating
+another beside it), [targeted M1] `prime_mat_256x256` 2 cells on 1 row (chi2016prime Section III-A1, p.30: positive and
+negative weights in two crossbars sharing one input port, the reading of `docs/research/physics/prime_constants_research.md`
+section 3.3(b), at the bound 4-bit weights), every other bundle 1. Both doors refuse a count above 1 without its rows,
+and rows that do not divide it.

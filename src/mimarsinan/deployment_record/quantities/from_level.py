@@ -36,11 +36,14 @@ from mimarsinan.deployment_record.quantities.value_domain import (
     refuse_spiking_activity,
     value_window,
 )
-from mimarsinan.deployment_record.quantities.write_law import PlaneWrites, domain_bytes_of, plane_writes, write_quantities
+from mimarsinan.deployment_record.quantities.write_law import (
+    PlaneWrites, domain_bytes_of, plane_writes, summed_cells, write_quantities,
+)
 from mimarsinan.mapping.capability.census import LevelCensus
 from mimarsinan.mapping.capability.level_schedule import LevelSchedule
 from mimarsinan.mapping.capability.mac_split import MacCounters, mac_statement
 from mimarsinan.mapping.capability.pricing_inputs import level_quantities
+from mimarsinan.mapping.platform.weight_cells import array_extent
 from mimarsinan.mapping.support.period_census import natural
 
 #: Field-map quantities that hold as stated whatever the budget (``mapping/capability/pricing_inputs.py``).
@@ -82,7 +85,7 @@ def level_chip(platform: Mapping[str, Any], budget: int) -> Dict[str, Any]:
 def chip_facts(chip: Mapping[str, Any]) -> Dict[str, QuantityValue]:
     """The declared chip's static facts (one core per tile: a requirement placement has no floorplan)."""
     (core,) = chip["cores"]
-    count, axons, neurons = int(core["count"]), int(core["max_axons"]), int(core["max_neurons"])
+    (axons, neurons), count = array_extent(core), int(core["count"])  # [U-C4] the array's cells, rows and columns
     facts = {"cores_physical": count, "tiles": count, "axons_physical": count * axons,
              "neurons_physical": count * neurons, "cells_physical": count * axons * neurons}
     if chip.get("weight_bits") is not None:
@@ -173,11 +176,12 @@ def from_level(row: LevelCensus, schedule: LevelSchedule, platform: Mapping[str,
     label = f"level plane: {schedule.label}"
     writes = plane_writes(passes, chip, weight_bits=weight_bits, timesteps=None if value_domain else timesteps,
                           label=label)
-    if writes is not None and writes.census is not None:
-        values.update(write_quantities(writes.census.census, writes.policy,
-                                       written_extents=writes.census.written_extents,
-                                       most_written=writes.census.most_written_core,
-                                       producer_slots=writes.census.producer_slots))
+    if writes is not None and writes.census is not None:  # [U-C4 targeted M2] the one rule (one core type here)
+        quantities, held = summed_cells(writes, write_quantities(
+            writes.census.census, writes.policy, written_extents=writes.census.written_extents,
+            most_written=writes.census.most_written_core, producer_slots=writes.census.producer_slots))
+        values.update(quantities)
+        withheld.update(held)
     return LevelView(Quantities(values, withheld={k: v for k, v in withheld.items() if k not in values}),
                      writes, chip, label)
 

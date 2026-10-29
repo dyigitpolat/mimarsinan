@@ -91,8 +91,10 @@ class TestNeuRRAMWriteEnergyRow:
 
     def test_the_note_names_the_readings_the_missing_quantity_and_the_device_count(self):
         note = _row("neurram", "e_write_per_cell").note
+        # [U-C4] the device count is the bundle's (cells_per_weight 2): a written weight is priced for both devices
         for marker in ("a reading, not a bound", "one RRAM device", "selector's write current at 3.0 V (set) and 5.0 V "
-                       "(reset) gate bias", "measured programming energy", "differential pair", "half the chip's",
+                       "(reset) gate bias", "measured programming energy", "differential pair",
+                       "priced for both of its devices", "91.5 / 1,017 / 11,362 pJ",
                        "1.5 V in the paper", "1.2 V (in range) or 2.5 V (zero target) in the code",
                        "30 set-reset polarity reversals in the paper", "50, 30 or 20 iterations in the code",
                        "R1", "R2", "R3", "R4"):

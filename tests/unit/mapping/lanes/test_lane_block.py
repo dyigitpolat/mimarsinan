@@ -105,6 +105,8 @@ class TestBundles:
 
     @pytest.mark.parametrize("name,lanes", [("generic_estimated_22nm", 4), ("isaac_like", 2)])
     def test_one_lane_per_64_output_columns(self, name, lanes):
+        """The columns of the array (U-C4: ISAAC-like's 128 two-bit cell columns hold 16 weights of 8 cells each)."""
+        from mimarsinan.mapping.platform.weight_cells import array_extent
         bundle = target_bundles()[name]
-        columns = max(int(core["max_neurons"]) for core in bundle.values["cores"])
+        columns = max(array_extent(core)[1] for core in bundle.values["cores"])
         assert lane_declaration(bundle.values).lanes_per_core == lanes == columns // 64

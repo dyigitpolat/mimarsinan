@@ -13,6 +13,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple, Union
 from mimarsinan.deployment_record.cost.absolute.context import PricingRefusal
 from mimarsinan.deployment_record.platform_physics.constants import keys_in_group
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.mapping.platform.weight_cells import array_extent
 
 AGGREGATE_CONSTANTS: Tuple[str, ...] = keys_in_group("aggregate")
 
@@ -27,9 +28,9 @@ class CoreGeometry:
 
 
 def geometry_of(cores: Sequence[Mapping[str, Any]]) -> Tuple[CoreGeometry, ...]:
-    """The declared core types (a missing ``count`` is one core, the platform convention)."""
-    return tuple(CoreGeometry(int(ct["max_axons"]), int(ct["max_neurons"]), int(ct.get("count", 1)))
-                 for ct in cores)
+    """The declared core types (a missing ``count`` is one core, the platform convention) at their arrays' cells: [U-C4]
+    a weight of several cells counts each (``weight_cells.array_extent``), the core an aggregate was measured on."""
+    return tuple(CoreGeometry(*array_extent(ct), int(ct.get("count", 1))) for ct in cores)
 
 
 def declared_geometry(cores: Sequence[Mapping[str, Any]]) -> Optional[Tuple[CoreGeometry, ...]]:

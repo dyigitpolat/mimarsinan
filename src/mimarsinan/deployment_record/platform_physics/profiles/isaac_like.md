@@ -26,7 +26,10 @@ states its dataflow precisely enough to derive one.
 
 - Weights are bit-sliced across **columns**: *"we represent one 16-bit synaptic
   weight with 16/w w-bit cells located in the same row"* → 8 cells per weight at
-  w = 2.
+  w = 2. The `isaac_like` bundle declares the same count for its cores (U-C4:
+  `cells_per_weight` 8, `weight_cell_rows` 1), so each 128 × 128 array holds 128 × 16
+  weights and a weight write writes its 8 cells; a core type stating another count
+  beside this model refuses by name.
 - Inputs are bit-sliced across **time**: *"we provide 16 voltage levels sequentially
   … all 16 bits of the input have been handled in 16 cycles"*.
 - **Every column is converted every cycle**: *"128 bitline currents are latched in
