@@ -67,6 +67,44 @@ its class and band, never zero, and its note starts `[not priced by the study]`:
 | `e_core_program` | 64 / 512 / 4,096 pJ | estimated | the generic bundle's band (a core-state sweep); the study's tile write is its bytes only |
 | `bytes_per_connectivity_entry` | 4 / 8 / 16 B | estimated | the generic bundle's band; the study's payload is the tile bytes only |
 | `endurance_cycles` | 1e16 | published | ielmini2018inmemory p.7 (embedded SRAM); the study's SRAM rows carry no endurance limit |
+| `p_carry_buffer_static_per_byte` | 0.122 / 6.10 / 361.8 nW per byte | estimated | `p_static_per_core` over the core's 65,536 bit cells, x 8: the whole core leakage on its bitcells, an upper bound (section "On-chip carry buffer") |
+| `area_carry_buffer_per_byte` | 8.2984 um2 per byte | derived | the chip's own cells per bit (1.0373 um2, `pd_table.json` g3 `macro_um2_per_bit`), x 8; bitcells only |
+
+
+## On-chip carry buffer (U-G)
+
+The levers scout on the study chips (`RA/11_wave2/levers_study/scout.md` sections 2, 6, 8 and 9) found the carry
+the strongest lever: every pass boundary of a one-copy design crosses the DDR store. This chip states an on-chip
+carry buffer, U-F4's declared component: a run declares its capacity (`carry_buffer_bytes`), a wavefront group's own
+values then stay in it (written once, read once), and a group whose live values exceed the capacity is refused by
+name. The study's estimator holds no on-chip buffer, so every buffer constant is `[not priced by the study]`.
+
+- **Access energy over capacity** (the profile's `carry_buffer` table, rows of `e_carry_buffer_per_byte`): an SRAM's
+  access energy depends on its size, so each row is the 45 nm figure (the probe's node, `technology_node_nm` 45) of an
+  SRAM of that size, jouppi2021ten Table 2 p.3 ("Memory is pJ per 64-bit access"), over 8 bytes, a point value:
+
+  | capacity | Table 2 row (45 nm) | e_carry_buffer_per_byte | evidence |
+  |---|---|---|---|
+  | 8,192 B | 8 KB SRAM, 10 pJ per 64-bit access | 1.25 pJ per byte | derived |
+  | 32,768 B | 32 KB SRAM, 20 pJ | 2.5 pJ per byte | derived |
+  | 1,048,576 B | 1 MB SRAM, 100 pJ (footnote 1: a single bank SRAM) | 12.5 pJ per byte | derived |
+
+  The source's KB and MB are read as binary capacities. A run declaring a capacity the table does not state is
+  refused the buffer energy by name (the pricer never interpolates). The declared read does not scale these rows.
+- **Static power per byte** (`p_carry_buffer_static_per_byte`, 0.122 / 6.10 / 361.8 nW, estimated): the chip's declared leakage
+  per core (`p_static_per_core`, 1 / 50 / 2,963.86 uW) over the 65,536 bit cells of its declared core, x 8. The whole core
+  leakage is charged to its bitcells, so this is an upper bound on a buffer of the chip's own cells. It is priced on
+  the declared capacity, filled or not.
+- **Area per byte** (`area_carry_buffer_per_byte`, 8.2984 um2, derived): the chip's own cells per bit (a cell is a
+  4-bit weight slot, `area_per_cell`, plus 4 x `area_per_cell_per_weight_bit` = 0, over its 4 bits: the G3 tile's
+  macro area per bit, `pd_table.json` `macro_um2_per_bit`), x 8. Bitcells only: the buffer's decoder, sense-amplifier
+  and driver periphery is not priced.
+
+The capacity a study reading declares follows a size rule in its driver (`buffer_size_rule` of
+`RA/12_tcad_readiness/e2e/w48/w48_pipelined.py`): the smallest power of two holding the largest live peak of the
+priced members.
+The pins are `tests/unit/deployment_record/platform_physics/test_study_chip_carry_buffer_ug.py` and
+`test_carry_buffer_table_ug.py`.
 
 ## Terms that differ from the study's estimator
 

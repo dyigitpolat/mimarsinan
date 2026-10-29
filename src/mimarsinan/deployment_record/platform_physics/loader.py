@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from mimarsinan.deployment_record.platform_physics.constants import (  # [U-E3] the one constant judge
     constant_from_declaration, spec_for,
@@ -16,6 +16,8 @@ from mimarsinan.deployment_record.platform_physics.conversion import (
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
 from mimarsinan.deployment_record.platform_physics.profile import (
     PHYSICS_FORMAT_VERSION,
+    CarryBufferDeclarationError,
+    CarryBufferTable,
     ExternalComponent,
     PhysicsConstantValue,
     PlatformPhysics,
@@ -57,7 +59,7 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         if declared := [key for key in component.constants if key in constants]:
             raise ValueError(f"{data['name']}: external component {component.name!r} names {declared}, which the "
                              "profile declares itself; an external component's constants come from beside it")
-    return PlatformPhysics(
+    return with_carry_buffer(PlatformPhysics(
         name=str(data["name"]),
         display_name=str(data["display_name"]),
         description_file=str(data["description_file"]),
@@ -66,7 +68,16 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         conversion_model=conversion_model,
         external_components=external,
         converter=None if data.get("converter") is None else _converter(data["converter"]),
-    )
+    ), data.get("carry_buffer"))
+
+
+def with_carry_buffer(physics: PlatformPhysics, declaration: Optional[Mapping[str, Any]]) -> PlatformPhysics:
+    """[U-G] The physics with ``declaration`` as its carry-buffer table over capacity (None removes it), judged as a
+    profile's: a buffer constant the physics states flat may not be stated in a row as well (two values at once)."""
+    table = None if declaration is None else CarryBufferTable.from_dict(declaration)
+    if both := sorted(k for k in (table.keys() if table else ()) if k in physics.constants):
+        raise CarryBufferDeclarationError(f"{physics.name}: {both} stated both flat and in carry_buffer rows")
+    return replace(physics, carry_buffer=table)
 
 
 def _converter(data: Mapping[str, Any]) -> ConverterTable:
@@ -143,6 +154,7 @@ def apply_overrides(
         conversion_model=physics.conversion_model,
         external_components=physics.external_components,
         converter=physics.converter,
+        carry_buffer=physics.carry_buffer,
     )
 
 

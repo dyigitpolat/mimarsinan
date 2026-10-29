@@ -61,6 +61,8 @@ As `study_compass.md`, with the G6 tile's leakage at the static band's high end:
 | `e_core_program` | 64 / 512 / 4,096 pJ | estimated | the generic bundle's band |
 | `bytes_per_connectivity_entry` | 4 / 8 / 16 B | estimated | the generic bundle's band |
 | `endurance_cycles` | 1e16 | published | ielmini2018inmemory p.7 |
+| `p_carry_buffer_static_per_byte` | 0.244 / 12.2 / 450.7 nW per byte | estimated | `p_static_per_core` over the core's 32,768 bit cells, x 8: the whole core leakage on its bitcells, an upper bound (section "On-chip carry buffer") |
+| `area_carry_buffer_per_byte` | 8.2984 um2 per byte | derived | the chip's own cells per bit (1.0373 um2, `pd_table.json` g6 `macro_um2_per_bit`), x 8; bitcells only |
 
 ## Reconciliation with isaac_like
 
@@ -112,10 +114,48 @@ profiles describe different chips; `isaac_like` stays as it ships. Every constan
 | `write_sigma` | not declared | 0 | exact digital storage |
 | `read_sigma` | not declared | 0 | exact digital accumulation |
 | `host_compute_rate` | 1 | 1 | the same identity, its note naming that the host is not the study's chip |
+| `p_carry_buffer_static_per_byte` | not declared | 0.244 / 12.2 / 450.7 nW per byte | [U-G] the study chip's carry buffer: its own leakage over its 32,768 bit cells (not priced by the study) |
+| `area_carry_buffer_per_byte` | not declared | 8.2984 um2 per byte | [U-G] the study chip's carry buffer: its own cells per bit, bitcells only (not priced by the study) |
 
 Beside the constants: the node (32 nm against the probe's 45 nm), the supply (unstated against 1.1 V), the
 measurement kind (simulation against mixed), the conversion model and converter table (ISAAC's 8-bit ADC against
-none), and the geometry (128 x 128 two-bit cells as 128 axons by 128 neurons, against 128 x 64 four-bit slots).
+none), the carry buffer table (none against U-G's three 45 nm SRAM rows), and the geometry (128 x 128 two-bit cells as 128 axons by 128 neurons, against 128 x 64 four-bit slots).
+
+
+## On-chip carry buffer (U-G)
+
+The levers scout on the study chips (`RA/11_wave2/levers_study/scout.md` sections 2, 6, 8 and 9) found the carry
+the strongest lever: every pass boundary of a one-copy design crosses the DDR store. This chip states an on-chip
+carry buffer, U-F4's declared component: a run declares its capacity (`carry_buffer_bytes`), a wavefront group's own
+values then stay in it (written once, read once), and a group whose live values exceed the capacity is refused by
+name. The study's estimator holds no on-chip buffer, so every buffer constant is `[not priced by the study]`.
+
+- **Access energy over capacity** (the profile's `carry_buffer` table, rows of `e_carry_buffer_per_byte`): an SRAM's
+  access energy depends on its size, so each row is the 45 nm figure (the probe's node, `technology_node_nm` 45) of an
+  SRAM of that size, jouppi2021ten Table 2 p.3 ("Memory is pJ per 64-bit access"), over 8 bytes, a point value:
+
+  | capacity | Table 2 row (45 nm) | e_carry_buffer_per_byte | evidence |
+  |---|---|---|---|
+  | 8,192 B | 8 KB SRAM, 10 pJ per 64-bit access | 1.25 pJ per byte | derived |
+  | 32,768 B | 32 KB SRAM, 20 pJ | 2.5 pJ per byte | derived |
+  | 1,048,576 B | 1 MB SRAM, 100 pJ (footnote 1: a single bank SRAM) | 12.5 pJ per byte | derived |
+
+  The source's KB and MB are read as binary capacities. A run declaring a capacity the table does not state is
+  refused the buffer energy by name (the pricer never interpolates). The declared read does not scale these rows.
+- **Static power per byte** (`p_carry_buffer_static_per_byte`, 0.244 / 12.2 / 450.7 nW, estimated): the chip's declared leakage
+  per core (`p_static_per_core`, 1 / 50 / 1,846.22 uW) over the 32,768 bit cells of its declared core, x 8. The whole core
+  leakage is charged to its bitcells, so this is an upper bound on a buffer of the chip's own cells. It is priced on
+  the declared capacity, filled or not.
+- **Area per byte** (`area_carry_buffer_per_byte`, 8.2984 um2, derived): the chip's own cells per bit (a cell is a
+  4-bit weight slot, `area_per_cell`, plus 4 x `area_per_cell_per_weight_bit` = 0, over its 4 bits: the G6 tile's
+  macro area per bit, `pd_table.json` `macro_um2_per_bit`), x 8. Bitcells only: the buffer's decoder, sense-amplifier
+  and driver periphery is not priced.
+
+The capacity a study reading declares follows a size rule in its driver (`buffer_size_rule` of
+`RA/12_tcad_readiness/e2e/w48/w48_pipelined.py`): the smallest power of two holding the largest live peak of the
+priced members.
+The pins are `tests/unit/deployment_record/platform_physics/test_study_chip_carry_buffer_ug.py` and
+`test_carry_buffer_table_ug.py`.
 
 ## Terms that differ from the study's estimator
 

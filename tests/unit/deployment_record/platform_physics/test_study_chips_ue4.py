@@ -46,10 +46,14 @@ ISAAC_EQUAL_AREA_MM2 = 0.5 * 0.1155   # cd42_common.ISAAC_BAND[1]
 #: Quantities the study does not price: each declared from a sourced band (never zero), named in its note.
 #: [U-E4 targeted pass, M1] e_readout_per_byte is not among them: the study counts a carried value in both directions
 #: (x9_0_v3._front_mincarry), so the read-back crossing is the study's carry term, as the re-injection is.
+#: [U-G G-1] The on-chip carry buffer's flat constants (its static power and area per byte) join them: the study's
+#: estimator holds no on-chip buffer (its access energy over capacity is in the carry_buffer table,
+#: test_study_chip_carry_buffer_ug).
 UNPRICED = {"endurance_cycles", "e_core_program", "bytes_per_connectivity_entry",
             "p_static_per_core", "p_static_global", "e_noc_value_per_byte_hop", "e_inter_tile_hop",
             "e_intra_tile_packet", "t_hop", "e_sync_barrier", "t_sync_barrier", "area_per_router",
-            "area_per_tile_fixed", "area_global_fixed"}
+            "area_per_tile_fixed", "area_global_fixed",
+            "p_carry_buffer_static_per_byte", "area_carry_buffer_per_byte"}
 #: Terms the study prices inside another constant: declared at zero, the constant that holds them named.
 INSIDE = {"area_per_cell_per_weight_bit": "area_per_cell", "area_per_row_driver": "area_per_neuron_logic",
           "e_core_init": "e_mac"}
@@ -186,7 +190,9 @@ class TestTheThreeChips:
     def test_isaac_like_differs_from_compass_only_in_its_tile(self):
         compass, isaac = get_platform_physics("study_compass"), get_platform_physics("study_isaac_like")
         differ = {k for k in compass.constants if compass.constants[k].to_dict() != isaac.constants[k].to_dict()}
-        assert differ == {"area_per_cell", "area_per_neuron_logic", "p_static_per_core"}
+        # [U-G G-1] the buffer's static power and area per byte follow the tile's own leakage, bits and cell area
+        assert differ == {"area_per_cell", "area_per_neuron_logic", "p_static_per_core",
+                          "p_carry_buffer_static_per_byte", "area_carry_buffer_per_byte"}
 
     def test_the_isaac_like_area_band_is_the_study_one(self):
         """D111: the fakeram tile (0.07677 mm2) and, as the low end, equal area per bit (0.05775 mm2)."""

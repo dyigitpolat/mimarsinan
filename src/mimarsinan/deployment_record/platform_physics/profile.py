@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
+from mimarsinan.common.refusal import ToolchainRefusal
 # [U-E3] The value type and its evidence kinds live below the converter (``constants``), re-exported here.
 from mimarsinan.deployment_record.platform_physics.constants import (
-    EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, spec_for,
+    EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, constant_from_declaration, spec_for,
 )
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -121,6 +122,63 @@ class ExternalComponent:
         return cls(**kwargs)
 
 
+#: [U-G] The constants of a declared on-chip carry buffer (``carry_buffer_bytes``) a profile may state over capacity.
+CARRY_BUFFER_KEYS = ("e_carry_buffer_per_byte", "p_carry_buffer_static_per_byte", "area_carry_buffer_per_byte")
+
+
+class CarryBufferDeclarationError(ToolchainRefusal, ValueError):
+    """[U-G] A carry-buffer table the loader refuses, by the name of what it states wrong."""
+
+
+@dataclass(frozen=True)
+class CarryBufferTable:
+    """[U-G] An on-chip carry buffer's constants over its declared capacity (``carry_buffer_bytes``): an SRAM's
+    access energy (and, where its source says so, its leakage and area per byte) depends on its size, so a profile
+    states them per capacity; a buffer constant that holds at every size is stated flat in its constants instead."""
+
+    rows: Mapping[int, Mapping[str, PhysicsConstantValue]]
+    source: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def capacities(self) -> Tuple[int, ...]:
+        return tuple(sorted(self.rows))
+
+    def keys(self) -> Tuple[str, ...]:
+        return tuple(k for k in CARRY_BUFFER_KEYS if any(k in row for row in self.rows.values()))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dict(self.source)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, CarryBufferTable) and self.to_dict() == other.to_dict()
+
+    def __hash__(self) -> int:  # pragma: no cover - frozen dataclasses of mappings are not hashed in use
+        return hash(self.capacities)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CarryBufferTable":
+        if not isinstance(data, Mapping):
+            raise CarryBufferDeclarationError("carry_buffer must be an object of rows and an optional note")
+        if unknown := sorted(set(data) - {"rows", "note"}):
+            raise CarryBufferDeclarationError(f"carry_buffer declares unknown fields {unknown}")
+        rows: Dict[int, Dict[str, PhysicsConstantValue]] = {}
+        for raw in data.get("rows") or ():
+            size = raw.get("bytes")
+            if not isinstance(size, int) or isinstance(size, bool) or size < 1:
+                raise CarryBufferDeclarationError(f"carry_buffer row bytes {size!r} is no positive integer")
+            if size in rows:
+                raise CarryBufferDeclarationError(f"carry_buffer states the capacity {size} B twice")
+            if stray := sorted(k for k in raw if k not in ("bytes",) + CARRY_BUFFER_KEYS):
+                raise CarryBufferDeclarationError(f"carry_buffer row at {size} B states {stray}, outside "
+                                                  f"{list(CARRY_BUFFER_KEYS)}")
+            if not any(k in raw for k in CARRY_BUFFER_KEYS):
+                raise CarryBufferDeclarationError(f"carry_buffer row at {size} B states no buffer constant")
+            rows[size] = {k: constant_from_declaration(k, raw[k]) for k in CARRY_BUFFER_KEYS if k in raw}
+        if not rows:
+            raise CarryBufferDeclarationError("carry_buffer states no row")
+        return cls(rows=rows, source=dict(data))
+
+
 @dataclass(frozen=True)
 class PlatformPhysics:
     """A named target's physics. An undeclared constant is ABSENT, never defaulted."""
@@ -138,6 +196,8 @@ class PlatformPhysics:
     external_components: Tuple[ExternalComponent, ...] = ()
     #: [E-5] The converter over resolution (``readout_law.adc_bits``, ``converter.py``); serialized only when present.
     converter: Optional[ConverterTable] = None
+    #: [U-G] The on-chip carry buffer over capacity (``carry_buffer_bytes``); serialized only when present.
+    carry_buffer: Optional[CarryBufferTable] = None
 
     def __post_init__(self) -> None:
         if self.format_version != PHYSICS_FORMAT_VERSION:
@@ -182,6 +242,22 @@ class PlatformPhysics:
         """Constants an operator replaced, so a run states the physics it actually used."""
         return tuple(sorted(k for k, v in self.constants.items() if v.overridden))
 
+    def at_carry_buffer(self, capacity: Optional[int]) -> Tuple["PlatformPhysics", Dict[str, str]]:
+        """[U-G] (this physics at a declared carry-buffer ``capacity`` in bytes, {buffer constant: why the table leaves
+        it unstated there}): each row constant at the capacity's row; a flat constant (an operator's override) stands
+        at every capacity. Unchanged without a table or a declared capacity."""
+        table = self.carry_buffer
+        if table is None or capacity is None:
+            return self, {}
+        row, constants, unstated = table.rows.get(int(capacity), {}), dict(self.constants), {}
+        for key in (k for k in table.keys() if k not in self.constants):
+            if key in row:
+                constants[key] = row[key]
+            else:
+                unstated[key] = (f"{key} at carry_buffer_bytes {int(capacity)}: the chip's carry_buffer table states "
+                                 f"({', '.join(str(c) for c in table.capacities)}) B")
+        return replace(self, constants=constants), unstated
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "format_version": self.format_version,
@@ -194,6 +270,7 @@ class PlatformPhysics:
             **({"external_components": [c.to_dict() for c in self.external_components]}
                if self.external_components else {}),
             **({"converter": self.converter.to_dict()} if self.converter is not None else {}),
+            **({"carry_buffer": self.carry_buffer.to_dict()} if self.carry_buffer is not None else {}),
         }
 
     @classmethod
@@ -208,4 +285,6 @@ class PlatformPhysics:
         }
         kwargs["conversion_model"] = dict(kwargs.get("conversion_model") or {})
         kwargs["converter"] = None if kwargs.get("converter") is None else ConverterTable.from_dict(kwargs["converter"])
+        kwargs["carry_buffer"] = (None if kwargs.get("carry_buffer") is None
+                                  else CarryBufferTable.from_dict(kwargs["carry_buffer"]))
         return cls(**kwargs)

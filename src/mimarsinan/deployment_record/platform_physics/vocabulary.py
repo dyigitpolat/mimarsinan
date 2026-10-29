@@ -141,7 +141,8 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "[U-F4] Energy of one byte access of a declared on-chip carry buffer (a carried byte is written once and read "
      "once; carry_onchip_bytes counts both accesses): the buffer's own figure, priced only where the chip declares "
      "carry_buffer_bytes; a target that does not declare it (with its source) refuses the energy by name rather "
-     "than borrowing another store's figure."),
+     "than borrowing another store's figure. [U-G] An SRAM's access energy depends on its size: a profile may state "
+     "it over capacity (its carry_buffer table's rows), read at the declared capacity, refused by name elsewhere."),
     ("p_carry_buffer_static_per_byte", PROGRAMMING, POWER, "nW", "carry_buffer_capacity_bytes x e2e_latency_s",
      "[U-F4] Static (leakage) power of one declared byte of the on-chip carry buffer while the chip is powered, "
      "priced on the capacity the chip declares (carry_buffer_bytes), filled or not; a target declaring the buffer "

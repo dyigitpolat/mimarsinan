@@ -8,7 +8,7 @@ dividing-coefficient discipline).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.compute_technology import share_physics
@@ -131,22 +131,27 @@ _BUFFER_CONSTANTS = ((BUFFER_STATIC, "the buffer's static power per declared byt
                      ("area_carry_buffer_per_byte", "the buffer's area per declared byte"))
 
 
-def carry_buffer_refusals(quantities: Any, physics: Any) -> Dict[str, str]:
+def carry_buffer_refusals(quantities: Any, physics: Any,
+                          unstated: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
     """[U-F4] The declared on-chip carry buffer refuses the energy by name where the program does not fit it (the
     carry census withheld with the reason) or the target states no access energy for it, and the energy (its static
-    power) or the chip area by name where the target states no constant for the declared capacity."""
+    power) or the chip area by name where the target states no constant for the declared capacity. [U-G] A constant
+    the chip's carry-buffer table leaves unstated at the declared capacity refuses with the table's reason
+    (``unstated``, ``PlatformPhysics.at_carry_buffer``)."""
     refused: Dict[str, str] = {}
+    unstated = unstated or {}
     constant, key = "e_carry_buffer_per_byte", "carry_onchip_bytes"
     if key in getattr(quantities, "withheld", {}):
         refused[constant] = quantities.withheld[key]
     elif quantities.has(key) and quantities.get(key).value and not physics.has(constant):
-        refused[constant] = (f"the declared on-chip carry buffer holds carried bytes, and the target declares no "
-                             f"{constant} (the buffer's access energy, with its source)")
+        refused[constant] = unstated.get(constant) or (
+            f"the declared on-chip carry buffer holds carried bytes, and the target declares no {constant} (the "
+            "buffer's access energy, with its source)")
     capacity = quantities.get(BUFFER_CAPACITY).value if quantities.has(BUFFER_CAPACITY) else 0
     for name, what in _BUFFER_CONSTANTS:
         if capacity and not physics.has(name):
-            refused[name] = (f"the chip declares an on-chip carry buffer of {int(capacity)} B, and the target declares "
-                             f"no {name} ({what}, with its source)")
+            refused[name] = unstated.get(name) or (f"the chip declares an on-chip carry buffer of {int(capacity)} B, "
+                                                   f"and the target declares no {name} ({what}, with its source)")
     return refused
 
 

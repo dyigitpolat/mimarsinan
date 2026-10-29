@@ -9,7 +9,7 @@
     "supply_v": 1.1,
     "temperature_c": null,
     "array_size_assumed": "one tile of the study's ISAAC-like geometry (128 x 128 two-bit cells, constants.md sec. 2: ISAAC lends the geometry only) declared with exact digital accumulation: 128 rows by 64 four-bit weights (two two-bit cells per weight), 32,768 bits (4 KiB), 8,192 MACs per activation; area the probe's G6 tile (128 x 64 x 4, nangate45; the study's fakeram model, its equal-area-per-bit model as the band's low end)",
-    "notes": "The co-design study's own chip (RA/06_build/codesign, RA/06_parts/codesign.md and constants.md), its constants mapped one to one onto this vocabulary: the MAC energy of its SRAM-DDR row (jiang2023a, 16 nm silicon), the tile area of its nangate45 physical-design probe (technology_node_nm and supply_v name that probe's node and typical corner, so the lane block's 45 nm area enters unscaled, as the study's s_AU lane cost reads it), the DDR3/4 backing store, the study's write port and clock. Quantities the study does not price carry sourced values, never zero, each note starting '[not priced by the study]': area_global_fixed, area_per_router, area_per_tile_fixed, bytes_per_connectivity_entry, e_core_program, e_inter_tile_hop, e_intra_tile_packet, e_noc_value_per_byte_hop, e_sync_barrier, endurance_cycles, p_static_global, p_static_per_core, t_hop, t_sync_barrier. An ESTIMATE of a modelled chip, never hardware evidence.",
+    "notes": "The co-design study's own chip (RA/06_build/codesign, RA/06_parts/codesign.md and constants.md), its constants mapped one to one onto this vocabulary: the MAC energy of its SRAM-DDR row (jiang2023a, 16 nm silicon), the tile area of its nangate45 physical-design probe (technology_node_nm and supply_v name that probe's node and typical corner, so the lane block's 45 nm area enters unscaled, as the study's s_AU lane cost reads it), the DDR3/4 backing store, the study's write port and clock. Quantities the study does not price carry sourced values, never zero, each note starting '[not priced by the study]': area_carry_buffer_per_byte, area_global_fixed, area_per_router, area_per_tile_fixed, bytes_per_connectivity_entry, e_core_program, e_inter_tile_hop, e_intra_tile_packet, e_noc_value_per_byte_hop, e_sync_barrier, endurance_cycles, p_carry_buffer_static_per_byte, p_static_global, p_static_per_core, t_hop, t_sync_barrier, and the carry_buffer table's e_carry_buffer_per_byte rows (U-G: the on-chip carry buffer over capacity, 8,192, 32,768 and 1,048,576 B at jouppi2021ten Table 2's 45 nm SRAM figures, its static power and area per byte from the chip's own leakage and cells per bit, an upper bound and bitcells only). An ESTIMATE of a modelled chip, never hardware evidence.",
     "geometry": {
       "axons": 128,
       "neurons": 64,
@@ -264,6 +264,22 @@
       "evidence_kind": "estimated",
       "note": "[not priced by the study] The study's budget A_L counts tiles only (576 COMPASS tiles, cd41_chip.A_L). Whole-chip area beside the tiles (pads, PLLs, host interface): the generic 22 nm bundle's band, anchored on TrueNorth's derived 46.6 mm2 periphery at 28 nm for a 4.3 cm2 die, scaled down (expected error a factor of about 4)."
     },
+    "p_carry_buffer_static_per_byte": {
+      "low": 0.244140625,
+      "nominal": 12.20703125,
+      "high": 450.7373046875,
+      "unit": "nW",
+      "evidence_kind": "estimated",
+      "note": "[not priced by the study] ESTIMATE, an upper bound: the chip's declared leakage per core (p_static_per_core, 1 / 50 / 1846.22 uW: the generic 22 nm band's low and nominal, the study tile's own routed leakage high, pd_probe/pd_table.json g6_ng45_128x64x4 leak_mw) over the bit cells of its declared core (128 x 64 x 4 = 32768 bits), x 8 per byte: the whole core leakage (cells, logic and lane) charged to its bitcells, so a buffer of the chip's own cells leaks no more per byte at each band end. Priced on the declared capacity, filled or not (U-F4 targeted pass M2's rule, per bit cell of the chip's own core). The study's estimator holds no on-chip buffer: every pass-boundary value it carries crosses its DDR store (x9_0_v3._front_mincarry). The buffer is U-F4's declared component (carry_buffer_bytes, a run's declaration); a carried byte is written once and read once (carry_onchip_bytes counts both accesses)."
+    },
+    "area_carry_buffer_per_byte": {
+      "nominal": 8.2984130859375,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "RA/06_build/pd_probe/pd_table.json row g6_ng45_128x64x4 (audit_v4/pd.md sec. 5.1)",
+      "derivation": "The chip's own cells per bit: one cell is a 4-bit weight slot of area_per_cell 4.149207 um2 (plus 4 x area_per_cell_per_weight_bit, 0), so 1.037302 um2 per bit (the routed tile's fakeram45 macro area per bit, pd_table.json macro_um2_per_bit), x 8 per byte = 8.298413 um2 per byte, a point value as area_per_cell is.",
+      "note": "[not priced by the study] Bitcells only: the buffer's decoder, sense-amplifier and driver periphery is not priced (no source read here states an SRAM macro's array efficiency at 45 nm). The study's estimator holds no on-chip buffer: every pass-boundary value it carries crosses its DDR store (x9_0_v3._front_mincarry). The buffer is U-F4's declared component (carry_buffer_bytes, a run's declaration); a carried byte is written once and read once (carry_onchip_bytes counts both accesses)."
+    },
     "host_compute_rate": {
       "nominal": 1.0,
       "unit": "fraction",
@@ -271,5 +287,43 @@
       "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
       "note": "The derate a measured host wall is divided by (as generic_estimated_22nm); the host is not part of the study's chip."
     }
+  },
+  "carry_buffer": {
+    "rows": [
+      {
+        "bytes": 8192,
+        "e_carry_buffer_per_byte": {
+          "nominal": 1.25,
+          "unit": "pJ",
+          "evidence_kind": "derived",
+          "citation": "jouppi2021ten Table 2 p.3",
+          "derivation": "jouppi2021ten Table 2 (memory in pJ per 64-bit access), the 8 KB SRAM row at 45 nm, the study chips' node (technology_node_nm 45): 10 pJ per 64-bit access / 8 B = 1.25 pJ per byte access, for a buffer of 8192 B (the source's 8 KB read as a binary capacity). A point value: the source prints one 45 nm figure per size, and the study's declared read does not scale it.",
+          "note": "[not priced by the study] The study's estimator holds no on-chip buffer: every pass-boundary value it carries crosses its DDR store (x9_0_v3._front_mincarry). The buffer is U-F4's declared component (carry_buffer_bytes, a run's declaration); a carried byte is written once and read once (carry_onchip_bytes counts both accesses)."
+        }
+      },
+      {
+        "bytes": 32768,
+        "e_carry_buffer_per_byte": {
+          "nominal": 2.5,
+          "unit": "pJ",
+          "evidence_kind": "derived",
+          "citation": "jouppi2021ten Table 2 p.3",
+          "derivation": "jouppi2021ten Table 2 (memory in pJ per 64-bit access), the 32 KB SRAM row at 45 nm, the study chips' node (technology_node_nm 45): 20 pJ per 64-bit access / 8 B = 2.5 pJ per byte access, for a buffer of 32768 B (the source's 32 KB read as a binary capacity). A point value: the source prints one 45 nm figure per size, and the study's declared read does not scale it.",
+          "note": "[not priced by the study] The study's estimator holds no on-chip buffer: every pass-boundary value it carries crosses its DDR store (x9_0_v3._front_mincarry). The buffer is U-F4's declared component (carry_buffer_bytes, a run's declaration); a carried byte is written once and read once (carry_onchip_bytes counts both accesses)."
+        }
+      },
+      {
+        "bytes": 1048576,
+        "e_carry_buffer_per_byte": {
+          "nominal": 12.5,
+          "unit": "pJ",
+          "evidence_kind": "derived",
+          "citation": "jouppi2021ten Table 2 p.3",
+          "derivation": "jouppi2021ten Table 2 (memory in pJ per 64-bit access), the 1 MB SRAM row at 45 nm, the study chips' node (technology_node_nm 45): 100 pJ per 64-bit access / 8 B = 12.5 pJ per byte access, for a buffer of 1048576 B (the source's 1 MB read as a binary capacity). Table 2 footnote 1: Horowitz's 1 MB SRAM power is a single bank SRAM (most designs would use multiple banks). A point value: the source prints one 45 nm figure per size, and the study's declared read does not scale it.",
+          "note": "[not priced by the study] The study's estimator holds no on-chip buffer: every pass-boundary value it carries crosses its DDR store (x9_0_v3._front_mincarry). The buffer is U-F4's declared component (carry_buffer_bytes, a run's declaration); a carried byte is written once and read once (carry_onchip_bytes counts both accesses)."
+        }
+      }
+    ],
+    "note": "[U-G G-1] The on-chip carry buffer (U-F4's carry_buffer_bytes component) over its declared capacity: an SRAM's access energy depends on its size, so each row states the 45 nm figure of an SRAM of that size (jouppi2021ten Table 2 p.3); the static power and area per byte (bitcells, the chip's own) hold at every size and are flat constants. A run declares the capacity; one the table does not state refuses the buffer energy by name."
   }
 }

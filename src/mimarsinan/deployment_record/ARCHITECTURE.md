@@ -358,6 +358,21 @@ registry directly (W5.1).
   labelled `executed` or `estimated` (a requirement placement where the lanes do not run), in the record's cost
   report and in `candidate_cost_report` (a candidate's stage prints its lane plan's work).
 
+## On-chip carry buffer over capacity (U-G)
+
+U-F4's on-chip carry buffer is a run's declaration (`carry_buffer_bytes`, the quantity `carry_buffer_capacity_bytes`
+on both planes), its access energy, leakage and area per byte physics constants. An SRAM's access energy depends on
+its size, so a profile may state the buffer over capacity: `carry_buffer` (`platform_physics/profile.CarryBufferTable`,
+judged by `loader.with_carry_buffer`) holds rows of `bytes` with any of `CARRY_BUFFER_KEYS`, each a profile constant
+with its evidence; a constant that holds at every size (bitcells' leakage and area per byte) is stated flat in
+`constants` and never also in a row. `price_absolute` prices the physics at the declared capacity
+(`PlatformPhysics.at_carry_buffer`): each row constant at the capacity's row, a flat constant (an operator's override
+included) at every capacity, and a row constant the table leaves unstated there refused by the table's reason through
+`formulas.carry_buffer_refusals`, so only a headline whose buffer work exists is refused. A profile without the
+table, or a run without a buffer, prices exactly as before; the table is serialized only when present. The three
+study chips state it (45 nm SRAM rows of jouppi2021ten Table 2; static power and area per byte from their own leakage
+and cells per bit).
+
 ## Core types with their own weight bits (Wave 2 WI-5g)
 
 On a chip whose core types carry their own `weight_bits`, every core's programmed payload is sized at its own type's

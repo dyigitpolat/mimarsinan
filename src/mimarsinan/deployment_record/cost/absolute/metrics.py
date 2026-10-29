@@ -19,6 +19,7 @@ from mimarsinan.deployment_record.cost.absolute.context import (
 from mimarsinan.deployment_record.cost.absolute.energy import price_energy
 from mimarsinan.deployment_record.cost.absolute.formulas import (
     AREA_COMPONENTS,
+    BUFFER_CAPACITY,
     CHIP_AREA_ADDERS,
     LATENCY_COMPONENTS,
     add_bands,
@@ -257,13 +258,18 @@ def price_absolute(
     ``readout_bits`` (the run's ``readout_law.adc_bits``) prices a profile's converter at that resolution
     (``platform_physics.converter.resolve``); a converter constant its table does not state there refuses, by name,
     each headline whose converter work exists. A profile without a converter, or no declared bits, is unchanged.
+    [U-G] A declared carry buffer (``carry_buffer_capacity_bytes``) prices a profile's carry-buffer table at that
+    capacity (``PlatformPhysics.at_carry_buffer``); a buffer constant its table leaves unstated there refuses, by
+    name, each headline whose buffer work exists. A profile without the table, or no declared buffer, is unchanged.
     """
     if refusals := external_refusals(physics):
         named = () if writes is None else tuple(price_write_inputs(writes, physics).refusals)
         return AbsolutePricing(terms=(), refusals=refusals + named)
     physics, converter_refused = resolve_converter(physics, readout_bits)
-    ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities),
-                                refused_constants={**converter_refused, **carry_buffer_refusals(quantities, physics)})
+    physics, buffer_unstated = physics.at_carry_buffer(
+        int(quantities.get(BUFFER_CAPACITY).value) if quantities.has(BUFFER_CAPACITY) else None)
+    ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities), refused_constants={
+        **converter_refused, **carry_buffer_refusals(quantities, physics, unstated=buffer_unstated)})
     priced_writes = None if writes is None else price_write_inputs(writes, physics)
     price_area(ctx)
     e2e = price_latency(ctx, priced_writes)
