@@ -40,6 +40,7 @@ from integration._split_reassembly import (
     hcm_per_perceptron_counts,
     torch_lif_node_counts,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _build(
@@ -93,7 +94,7 @@ def _run_parity(**build_kwargs):
     x = torch.rand(1, 1, 28, 28)
 
     torch_counts = torch_lif_node_counts(
-        lambda: chip_aligned_segment_forward(flow, x, T), nodes, x, T)
+        lambda: chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW), nodes, x, T)
     with torch.no_grad():
         _, record = flow_hcm.forward_with_recording(x, sample_index=0)
     hcm_counts = hcm_per_perceptron_counts(record, hybrid)

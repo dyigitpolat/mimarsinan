@@ -228,20 +228,42 @@ def is_novena_firing_mode(firing_mode) -> bool:
 
 @dataclass(frozen=True)
 class BackendSpikingCapabilities:
+    """What one backend can execute: the four mode columns, then the soma-law
+    axes. The new columns default False so every declared entry keeps its
+    positional shape and every backend refuses a law nothing executes yet."""
+
     lif: bool
     ttfs: bool
     ttfs_quantized: bool
     ttfs_cycle_based: bool
+    per_event_firing: bool = False
+    saturating_membrane: bool = False
+    signed_membrane: bool = False
 
+
+#: Every mode and every soma-law column; the ODIN fabrics' row: LIF only (no TTFS executor on the crossbar).
+_EVERY_COLUMN = BackendSpikingCapabilities(True, True, True, True, True, True, True)
+_ODIN_ROW = BackendSpikingCapabilities(True, False, False, False, True, True, True)
 
 _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
-    "hcm": BackendSpikingCapabilities(True, True, True, True),
-    "nevresim": BackendSpikingCapabilities(True, True, True, True),
-    "unified": BackendSpikingCapabilities(True, True, True, True),
-    "hybrid": BackendSpikingCapabilities(True, True, True, True),
+    # [ODIN P2/P3] the torch executors (models/spiking/serial) and nevresim's integration policies implement the
+    # event-serial fold on the saturating unsigned membrane (nevresim where its tree carries them, which its driver
+    # probes: nevresim/integration_policy_read); every other backend refuses the point by name.
+    "hcm": _EVERY_COLUMN,
+    "nevresim": _EVERY_COLUMN,
+    "unified": _EVERY_COLUMN,
+    "hybrid": _EVERY_COLUMN,
+    # [ODIN P6, P7a, P8] the RTL cosimulation instrument (not a BACKEND_REGISTRY backend: the stock per-event core and
+    # every generated variant, the sync-fire core's two's-complement membrane included), the physical backend, and
+    # the HACC export, which freezes a bundle FOR that device and so can never admit a law the device refuses.
+    "odin_rtl": _ODIN_ROW,
+    "odin_fpga": _ODIN_ROW,
+    "odin_hacc": _ODIN_ROW,
     "sanafe": BackendSpikingCapabilities(True, True, True, True),
     "lava": BackendSpikingCapabilities(True, False, False, False),
     "loihi": BackendSpikingCapabilities(True, False, False, False),
+    # The NF twin executes the SAME fold as a parity instrument under eval, but no gradient is defined for a count
+    # fold, so training refuses the point rather than claim an executor it lacks.
     "training": BackendSpikingCapabilities(True, False, False, False),
 }
 

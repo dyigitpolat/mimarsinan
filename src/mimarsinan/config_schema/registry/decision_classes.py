@@ -168,6 +168,22 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "carry_buffer_bytes": (_AB, "an on-chip carry buffer: a wavefront group whose live carry exceeds it is refused"),
     "reduction_core_banks": (_CO, "a pool lane's window groups of one matrix share one bank copy: the pass "
                                   "partition, latency, carry and programmed cells only"),
+    # [U-H] The FPGA backend's keys (the ODIN port), each the class of what its consumers do.
+    "membrane_bits": (_FB, "a fixed-width membrane register: the soma law saturates at its rails, so counts move"),
+    "membrane_signed": (_FB, "the saturating register's rails (two's complement, or a floor at zero)"),
+    "weight_sign_granularity": (_AB, "the ODIN fabric claim in logical slots (the export's row-pair split is exact on "
+                                     "the integer grid): a fabric or bundle of another sign placement is refused"),
+    "bias_row_splitting": (_FB, "spreads a parameter-encoded bias over k always-on rows: the weight grid then comes "
+                                "from max|w| alone, so the weight codes move"),
+    "bias_rows_per_perceptron": (_FB, "the declared k of a fixed split: the bias grid's ratio and the rows"),
+    "enable_odin_fpga_simulation": (_AB, "arms the ODIN device's count refusal against the HCM reference"),
+    "odin_fpga_sample_count": (_AB, "sample count of the ODIN device's count refusal: fewer samples admit more"),
+    "enable_odin_hacc_export": (_AB, "arms the export's twin-versus-HCM count refusal; no bundle is written past it"),
+    "odin_fpga_xclbin_path": (_AB, "the device image the ODIN count refusal runs on (a bitstream of another fabric "
+                                   "is refused against the declared claims)"),
+    "odin_hacc_bundle_samples": (_AB, "the samples the export's twin-versus-HCM count refusal judges"),
+    "odin_hacc_certification_samples": (_AB, "the samples whose per-pass counts the bundle freezes for the board's "
+                                             "exact-count check: fewer samples admit more"),
 }
 
 

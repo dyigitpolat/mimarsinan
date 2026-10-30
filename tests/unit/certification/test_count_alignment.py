@@ -14,6 +14,7 @@ from mimarsinan.certification.count_alignment import (
     nf_perceptron_counts,
 )
 from mimarsinan.certification.spike_certificate import certify_spike_counts
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _tiny_with_provenance():
@@ -76,7 +77,7 @@ def test_nf_vs_hcm_counts_certify_via_perceptron_alignment():
     repr_, ir, hybrid = _tiny_with_provenance()
     x = torch.rand(3, 8) * 0.9
 
-    ref = nf_perceptron_counts(repr_, _T, x)
+    ref = nf_perceptron_counts(repr_, _T, x, soma_law=DEFAULT_SOMA_LAW)
     assert set(ref), "the NF walk recorded no perceptron counts"
 
     assembler = _captured_backend_counts(ir, hybrid, x)
@@ -160,7 +161,7 @@ def test_certify_flow_counts_one_call_on_the_tiny_fixture():
     x = torch.rand(3, 8) * 0.9
 
     flow = _flow(hybrid, synchronized=False)
-    cert, detail = certify_flow_counts(repr_, ir, flow, x, backend="hcm")
+    cert, detail = certify_flow_counts(repr_, ir, flow, x, backend="hcm", soma_law=DEFAULT_SOMA_LAW)
     assert cert.passed and cert.exact_match_fraction == 1.0
     assert "all covered" in detail
     assert flow.lif_execution_synchronized is False
@@ -254,7 +255,8 @@ def test_streaming_discipline_counts_certify_against_the_same_oracle():
     flow = _flow(hybrid, synchronized=True)
     cert, _detail = certify_flow_counts(
         repr_, ir, flow, x, backend="hcm", discipline="streaming",
-    )
+        soma_law=DEFAULT_SOMA_LAW,
+)
     assert cert.passed, cert.summary()
     assert cert.exact_match_fraction == 1.0
     assert flow.lif_execution_synchronized is True

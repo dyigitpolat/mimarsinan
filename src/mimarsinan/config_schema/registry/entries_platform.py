@@ -21,6 +21,7 @@ from mimarsinan.config_schema.registry.entries_platform_backends import (
     _meta_backend_enable,
     _why_backend_enable,
 )
+from mimarsinan.config_schema.registry.entries_platform_bias import ENTRIES as _BIAS_ENTRIES
 
 _PC = "platform_constraints"
 #: Where the weight grid applies: the derivation runs float weights under pipeline_mode 'vanilla' or
@@ -56,7 +57,7 @@ def _why_core_maximum(dim: str):
 
 
 
-ENTRIES = (
+ENTRIES = _BIAS_ENTRIES + (
     _E("cores", section=_PC, group="hardware", owner="ChipCapabilities/mapping",
        type=T.CORES, category=Category.BASIC, exposure="user", label="Core Types",
        doc="Core-type grid: max_axons x neurons x count (+ has_bias); search mode discovers it.",

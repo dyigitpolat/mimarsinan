@@ -9,6 +9,7 @@ import torch
 from mimarsinan.certification.count_alignment import certify_twin_flow_counts
 from mimarsinan.certification.twin_schedule import twin_schedule_diagnostic
 from mimarsinan.chip_simulation.certification import CertificationCell
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.deployment_record.build.from_certificates import (
@@ -56,6 +57,35 @@ def _stage_indices_by_node(hybrid_mapping) -> "dict[int, int]":
         for io_slice in getattr(stage, "output_map", []) or []:
             indices.setdefault(int(io_slice.node_id), int(stage_index))
     return indices
+
+
+def _report_synchronized_gauge(pipeline, ir_graph, backend_flow, samples):
+    """[§16] the streaming-vs-analytic-gauge transient REPORT (never a gate).
+
+    The gauge is the closed-form staircase, whose hypothesis a per-event point
+    denies outright — there is no analytic gauge to compare against there, so
+    the report says so by name instead of running a refused executor.
+    """
+    if SomaLaw.resolve(pipeline.config).is_per_event:
+        print(
+            "[SpikeTransientReport] SKIP under firing_granularity='per_event':"
+            " the analytic staircase gauge assumes a window's count depends "
+            "only on the total integrated charge, which the per-event law "
+            "denies — there is no gauge to measure the transient against."
+        )
+        return
+    gauge_cert, _, _ = certify_twin_flow_counts(
+        ir_graph, backend_flow, backend_flow, samples, backend="hcm",
+        discipline="streaming", reference_discipline="synchronized",
+    )
+    print(
+        "[SpikeTransientReport] streaming vs synchronized-gauge: "
+        f"exact={gauge_cert.exact_match_fraction:.6f} "
+        f"max|dcount|={gauge_cert.max_abs_delta:g} over "
+        f"{gauge_cert.neuron_windows_compared} neuron-windows "
+        "(per-cycle transient physics vs the analytic gauge; the streaming "
+        "census accuracy is the arbiter)"
+    )
 
 
 def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
@@ -119,17 +149,8 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
         stage_index_by_node=_stage_indices_by_node(hybrid_mapping),
     )
     del backend_counts
-    gauge_cert, _, _ = certify_twin_flow_counts(
-        ir_graph, backend_flow, backend_flow, samples, backend="hcm",
-        discipline="streaming", reference_discipline="synchronized",
-    )
-    print(
-        "[SpikeTransientReport] streaming vs synchronized-gauge: "
-        f"exact={gauge_cert.exact_match_fraction:.6f} "
-        f"max|dcount|={gauge_cert.max_abs_delta:g} over "
-        f"{gauge_cert.neuron_windows_compared} neuron-windows "
-        "(per-cycle transient physics vs the analytic gauge; the streaming "
-        "census accuracy is the arbiter)"
+    _report_synchronized_gauge(
+        pipeline, ir_graph, backend_flow, samples,
     )
     cell = CertificationCell.from_mode_policy(plan.mode_policy(), backend="hcm")
     print(f"[SpikeCountCertificate] cell {cell.cell_key}: streaming-twin PASS "

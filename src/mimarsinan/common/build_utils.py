@@ -1,7 +1,25 @@
+import fcntl
 import subprocess
 import shutil
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
+
+
+@contextmanager
+def exclusive_build_lock(path: Path) -> Iterator[None]:
+    """Hold an exclusive lock on ``path`` (created, with its parent) across processes.
+
+    Callers that may build ONE artifact at the same time (parallel test workers
+    asking a cache for the same build) take it per artifact and re-check the
+    artifact inside it, so exactly one of them builds and the others reuse it.
+    The lock is released when the block exits.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
 
 
 def _try_compiler(cmd: str, *, family: str = "gcc") -> bool:

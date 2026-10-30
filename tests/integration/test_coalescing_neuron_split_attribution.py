@@ -57,6 +57,7 @@ from integration._torch_sim_fidelity import (
     build_torch_and_hcm,
     mapping_structure,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 8
 INPUT_SHAPE = (16,)
@@ -159,7 +160,7 @@ def test_coalescing_output_tile_end_to_end_reassembly_is_exact():
 
     sample = _samples(1, seed=13).float()
     torch_counts = torch_lif_node_counts(
-        lambda: chip_aligned_segment_forward(flow, sample, T), nodes, sample, T,
+        lambda: chip_aligned_segment_forward(flow, sample, T, soma_law=DEFAULT_SOMA_LAW), nodes, sample, T,
     )
     with torch.no_grad():
         _, record = hcm.forward_with_recording(sample, sample_index=0)

@@ -29,7 +29,16 @@ from mimarsinan.deployment_record.quantities.write_technology import WRITE_PHYSI
 from mimarsinan.mapping.lanes.declaration import LANE_KEY, declared_lane_block
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY, resolve_residency_policy
+from mimarsinan.mapping.platform.platform_constraints import bias_mode_for_cores
 from mimarsinan.mapping.platform.weight_cells import check_conversion_agreement
+from mimarsinan.mapping.support.bias_rows import (
+    BIAS_ROW_SPLITTING_FIXED,
+    BIAS_ROW_SPLITTING_MODES,
+    BIAS_ROW_SPLITTING_OFF,
+    BiasRowSplitting,
+    MODE_KEY,
+    ROWS_KEY,
+)
 
 _Read = TypeVar("_Read")
 
@@ -218,18 +227,50 @@ def declared_surface(pipeline_config: dict[str, Any]) -> dict[str, Any]:
 def resolve_bias_mode(pipeline_config: dict[str, Any]) -> str:
     """Deployment bias delivery (``"on_chip"`` / ``"param_encoded"``) for this config.
 
-    Single source shared by the tuners and the mapping step: reuses the same
-    ``all(has_bias)`` resolution as ``SoftCoreMappingStep`` so training-time nodes and
-    the deployed mapping agree on the declared mode.
+    Single source shared by the tuners and the mapping step: normalizes the
+    declared grid the way ``SoftCoreMappingStep`` does, then asks the
+    bias-mode SSOT, so training-time nodes and the deployed mapping agree.
     """
-    from mimarsinan.mapping.platform.platform_constraints import (
-        resolve_platform_mapping_params,
+    return bias_mode_for_cores(
+        build_platform_constraints_resolved(pipeline_config)["cores"]
     )
-    from mimarsinan.models.nn.activations.bias_mode import bias_mode_from_hardware_bias
 
-    cores = build_platform_constraints_resolved(pipeline_config)["cores"]
-    params = resolve_platform_mapping_params(cores)
-    return bias_mode_from_hardware_bias(params.hardware_bias)
+
+def resolve_bias_row_splitting(config: dict[str, Any]) -> BiasRowSplitting:
+    """THE bias-row splitting decision for this config.
+
+    One function of the declared document, shared by the WQ projection, the
+    mapping backends and the advisories, so training-time grids and the
+    deployed core matrices never disagree about how many always-on rows a
+    bias occupies. A platform whose cores all carry an on-chip bias register
+    has no row to split, so the mode resolves inactive there.
+    """
+    mode = str(config.get(MODE_KEY, BIAS_ROW_SPLITTING_OFF) or BIAS_ROW_SPLITTING_OFF)
+    if mode not in BIAS_ROW_SPLITTING_MODES:
+        raise ValueError(
+            f"{MODE_KEY}={mode!r} is not one of {BIAS_ROW_SPLITTING_MODES}"
+        )
+    rows = int(config.get(ROWS_KEY, 0) or 0)
+    if mode == BIAS_ROW_SPLITTING_FIXED and rows < 1:
+        raise ValueError(
+            f"{MODE_KEY}='fixed' requires {ROWS_KEY} >= 1 (declare the row "
+            f"count, or use 'auto' for the computed bound)"
+        )
+    active = mode != BIAS_ROW_SPLITTING_OFF and resolve_bias_mode(config) == "param_encoded"
+    return BiasRowSplitting(mode=mode, fixed_rows=rows, active=active)
+
+
+def resolve_wq_weight_only_grid(config: dict[str, Any]) -> bool:
+    """Whether the WQ projection derives the weight grid from ``max|w|`` alone.
+
+    TWO routes to the same projection: an on-chip bias register takes the
+    two-scale flag, and a param-encoded bias takes bias-row splitting (the
+    coarser bias grid becomes k always-on rows instead of one register).
+    """
+    return (
+        resolve_wq_two_scale_projection(config)
+        or resolve_bias_row_splitting(config).active
+    )
 
 
 def resolve_wq_two_scale_projection(config: dict[str, Any]) -> bool:

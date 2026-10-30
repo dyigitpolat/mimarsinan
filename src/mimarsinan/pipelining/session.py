@@ -138,6 +138,8 @@ class PipelineSession:
             reporter=self.reporter,
             working_directory=parsed.working_directory,
         )
+        # [U-H] the run's name, for the records that name the run that made them (a deployment bundle's provenance).
+        self.pipeline.deployment_name = parsed.deployment_name
         apply_determinism(self.pipeline.plan.seed)
         if parsed.target_metric_override is not None:
             self.pipeline.set_target_metric(parsed.target_metric_override)

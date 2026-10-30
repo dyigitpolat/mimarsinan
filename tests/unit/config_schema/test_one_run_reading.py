@@ -432,6 +432,12 @@ WEIGHT_BITS_READERS = {
     "pipelining/core/simulation_factory.py": "every run",
     # Wave 2 WI-5g: the width of the layers no layer-to-type rule selects, read only on a chip with typed widths.
     "mapping/support/core_types.py": "grid",
+    # [U-H] the ODIN device step and the HACC export program the declared weight width (the resolved platform's,
+    # else the config's) in every run that enables them; the chip table reads a SEALED bundle's own chip_config
+    # block (a bundle's claim, not a run's declaration; the pattern matches its subscript).
+    "pipelining/pipeline_steps/verification/odin/odin_fpga_simulation_step.py": "every run",
+    "pipelining/pipeline_steps/verification/odin/odin_hacc_deployment_step.py": "every run",
+    "chip_simulation/odin_fpga/chip_configs.py": "a sealed bundle's claim",
 }
 _READ = re.compile(r"\.get\(\s*[\"']weight_bits[\"']|\[\s*[\"']weight_bits[\"']\s*\]|for key in \(\s*\"weight_bits\"")
 

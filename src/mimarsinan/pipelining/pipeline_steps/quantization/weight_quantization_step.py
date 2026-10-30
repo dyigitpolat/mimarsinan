@@ -1,8 +1,15 @@
+import math
 from typing import Iterable, cast
 
 import torch
 
 from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
+from mimarsinan.advisories.graph_common import name_of
+from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.mapping.support.bias_rows import bias_row_bound
+from mimarsinan.transformations.perceptron.perceptron_transformer import (
+    PerceptronTransformer,
+)
 from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
 from mimarsinan.mapping.support.bias_compensation import (
     LIF_HALF_STEP_FLAG,
@@ -17,6 +24,7 @@ from mimarsinan.mapping.support.grid_declarations import projection_grids
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     resolve_bias_mode,
     resolve_wq_two_scale_projection as resolve_wq_two_scale_projection,
+    resolve_wq_weight_only_grid,
 )
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
@@ -32,6 +40,57 @@ from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner 
 import torch.nn as nn
 
 _CANONICALIZATION_BATCHES = 4
+
+
+class BiasRowSplitEventSerialError(ValueError):
+    """Splitting a bias into k rows under an event-serial saturating soma."""
+
+
+def refuse_split_under_event_serial_soma(model_repr, bits: int, soma_law) -> None:
+    """Refuse a k>1 split on a soma that evaluates threshold per ARRIVING EVENT
+    with a fixed-width membrane register.
+
+    MEASURED, not conjectured: k=1 is bit-exact at every soma point, and k>1 is
+    bit-exact both with an unbounded membrane and under per_cycle firing — but
+    under per_event WITH a register the NF adds the bias as ONE number while the
+    deployed twin delivers it as k separately-thresholded event contributions,
+    and NF<->SCM raster exactness (atol=0) breaks. The mismatch count is
+    invariant to the register's width and signedness, so this is the event-serial
+    discipline itself, not a rail magnitude. Refused HERE, before a training
+    budget is spent, rather than at the parity gate an hour later.
+    """
+    if not (soma_law.is_per_event and soma_law.saturates):
+        return
+    q_max = float(2 ** (int(bits) - 1) - 1)
+    transformer = PerceptronTransformer()
+    worst_rows, worst_name = 1, None
+    for perceptron in model_repr.get_perceptrons():
+        weight = transformer.get_effective_weight(perceptron)
+        bias = transformer.get_effective_bias(perceptron)
+        w_max = float(weight.abs().max()) if weight.numel() else 0.0
+        b_max = float(bias.abs().max()) if bias.numel() else 0.0
+        if w_max <= 0.0:
+            continue
+        weight_scale = max(1.0, math.floor(q_max / w_max))
+        rows = bias_row_bound(b_max, weight_scale, q_max)
+        if rows > worst_rows:
+            worst_rows, worst_name = rows, name_of(perceptron)
+    if worst_rows <= 1:
+        return
+    raise BiasRowSplitEventSerialError(
+        f"WeightQuantizationStep: bias_row_splitting is active and {worst_name!r} "
+        f"needs {worst_rows} always-on rows, but this soma is "
+        f"{soma_law.point_tag()!r} — per-event thresholding with a fixed-width "
+        f"membrane register. There the split is NOT a value-preserving "
+        f"re-encoding: the training twin adds the bias as one number while the "
+        f"chip delivers it as {worst_rows} separately-thresholded event "
+        f"contributions, and NF<->SCM raster exactness (atol=0) breaks. "
+        f"Measured: k=1 exact at every soma point; k>1 exact under per_cycle and "
+        f"with an unbounded membrane; k>1 refused only here. Either deploy this "
+        f"vehicle at firing_granularity='per_cycle' / membrane_bits=0, or bring "
+        f"a vehicle whose computed bound is 1 row (max|b| <= max|w| * q_max / "
+        f"s_w). Modelling the split in the event-serial twin is the open work."
+    )
 
 
 class WeightQuantizationStep(TunerPipelineStep):
@@ -75,24 +134,41 @@ class WeightQuantizationStep(TunerPipelineStep):
                 )
         bits = self.pipeline.config["weight_bits"]
         print(f"Quantizing to {bits} bits")
-        two_scale = resolve_wq_two_scale_projection(self.pipeline.config)
-        if bool(self.pipeline.config.get("wq_two_scale_projection", False)) and not two_scale:
+        splitting = DeploymentPlan.of(self.pipeline).bias_row_splitting
+        weight_only = resolve_wq_weight_only_grid(self.pipeline.config)
+        if bool(self.pipeline.config.get("wq_two_scale_projection", False)) and not weight_only:
             print(
                 "[WeightQuantizationStep] wq_two_scale_projection requested but "
                 "the platform has no on-chip bias register (param-encoded bias "
                 "rows share the weight grid); using the shared-grid projection."
             )
-        if two_scale:
+        if splitting.mode != "off" and not splitting.active:
+            print(
+                f"[WeightQuantizationStep] bias_row_splitting={splitting.mode!r} "
+                "is inert: every declared core carries an on-chip bias register, "
+                "so no always-on row exists to split."
+            )
+        if splitting.active:
+            floor = '' if splitting.rows_override is None else f' (floor {splitting.rows_override})'
+            print(f"[WeightQuantizationStep] weight-only grid from max|w| alone; "
+                  f"bias split across always-on rows{floor} (integer-ratio-snapped).")
+        elif weight_only:
             print("[WeightQuantizationStep] two-scale projection: weight grid "
                   "from max|w| alone; bias on its own grid (integer-ratio-snapped).")
+        if splitting.active:
+            refuse_split_under_event_serial_soma(
+                model.get_mapper_repr(), int(bits),
+                SomaLaw.resolve(self.pipeline.config),
+            )
         self.run_tuner(
             NormalizationAwarePerceptronQuantizationTuner,
             model,
             adaptation_manager,
             quantization_bits=bits,
-            two_scale_projection=two_scale,
+            two_scale_projection=weight_only,
             fractional_scale=grids.fractional_scale,
             float_bias=grids.law_bias,
+            bias_rows_floor=splitting.rows_override,
         )
 
     def _freeze_exact_qat_theta(self, model) -> None:

@@ -25,8 +25,14 @@ SIMULATION_STEP_TIMEOUT_VAR = "MIMARSINAN_SIMULATION_STEP_TIMEOUT_S"
 UNSAFE_QUANT_OVERRIDES_VAR = "MIMARSINAN_UNSAFE_QUANT_OVERRIDES"
 DEGENERATE_ROUTING_DEBUG_VAR = "MIMARSINAN_DEGENERATE_ROUTING_DEBUG"
 COHORT_TOKEN_VAR = "MIMARSINAN_COHORT_TOKEN"
+HW_SIM_BIN_VAR = "MIMARSINAN_HW_SIM_BIN"
 NEVRESIM_ROOT_VAR = "MIMARSINAN_NEVRESIM_ROOT"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
+
+#: Where the RTL simulators (iverilog, vvp, verilator) live when the operator
+#: has not said otherwise. The suite ships none of them: the RTL gates skip
+#: LOUDLY, naming this path, rather than passing quietly on a host without it.
+DEFAULT_HW_SIM_BIN_DIR = "build/tools/oss-cad-suite/bin"
 
 
 # ``<repo>/src/mimarsinan/common/env.py`` -> ``<repo>``: the package's own
@@ -199,6 +205,15 @@ def simulation_step_timeout_override() -> float | None:
     """Operator override (seconds) of the external-simulator wall cap; None when unset/blank."""
     raw = os.environ.get(SIMULATION_STEP_TIMEOUT_VAR, "").strip()
     return float(raw) if raw else None
+
+
+def hw_sim_bin_dir() -> str:
+    """Directory holding the RTL simulator binaries; defaults to the vendored suite.
+
+    Blank or unset means the default, so an operator who exports an empty value
+    gets the documented path rather than a lookup in the process ``PATH``.
+    """
+    return os.environ.get(HW_SIM_BIN_VAR, "").strip() or DEFAULT_HW_SIM_BIN_DIR
 
 
 def imagenet_root() -> str:

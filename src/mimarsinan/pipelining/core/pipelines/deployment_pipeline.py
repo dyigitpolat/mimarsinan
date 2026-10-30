@@ -27,9 +27,11 @@ from mimarsinan.config_schema.runtime import (
 from mimarsinan.common.workload_profile import fold_workload_profiles
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 import mimarsinan.mapping.platform.target_expansion as target_expansion
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.pipelining.cache.legacy_placement import (
     resolve_cached_flow_placements,
 )
+from mimarsinan.pipelining.cache.legacy_soma_law import resolve_cached_forward_soma_laws
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode as derive_search_mode  # noqa: F401 — re-export
@@ -98,6 +100,10 @@ def apply_judged_workload_profiles(config: dict, data_provider, deployment_param
 class DeploymentPipeline(Pipeline):
     """Unified deployment pipeline with configurable quantization."""
 
+    #: [U-H] The run's name, as the session reads it from the document (empty for a pipeline built without one);
+    #: the records that name the run that made them read it here (a deployment bundle's provenance).
+    deployment_name: str = ""
+
     default_deployment_parameters = DEFAULT_DEPLOYMENT_PARAMETERS
     default_platform_constraints = DEFAULT_PLATFORM_CONSTRAINTS
 
@@ -153,6 +159,17 @@ class DeploymentPipeline(Pipeline):
             )
         self.accuracy_budget.budget_total = self.plan.degradation_budget_total
         self._resolve_legacy_cached_placements()
+        self._resolve_legacy_cached_soma_laws()
+
+    def _resolve_legacy_cached_soma_laws(self) -> None:
+        """[U-H] Give a pre-axes cached NF forward the run's point at the same safe moment (refused by name when the
+        run declares a non-default point); a no-op for a fresh run and for every forward written with a point."""
+        bound = resolve_cached_forward_soma_laws(self.cache, soma_law=SomaLaw.resolve(self.config))
+        if bound:
+            print(
+                f"[DeploymentPipeline] bound this run's default soma point to {len(bound)} cached NF "
+                f"forward(s) written before the soma axes existed: {bound}"
+            )
 
     def _resolve_legacy_cached_placements(self) -> None:
         """Give a pre-stamp cached flow its placement, at the one safe moment.

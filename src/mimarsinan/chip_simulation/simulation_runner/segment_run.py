@@ -117,12 +117,16 @@ def raster_from_spike_trains(
 ) -> np.ndarray:
     """One sample's ``(T, n_out)`` segment-output raster from SPKTRN trains.
 
-    SPKTRN records are already PRODUCER-LOCAL, so this is a row gather with no
-    time shift: ``core`` sources take the neuron's bitstring, ``on`` sources
-    spike every cycle, ``input`` passthroughs replay the segment input train
-    (which a SpikeTrain-mode segment has and a value-mode one reconstructs via
-    the encoder twin)."""
-    out = np.zeros((int(T), len(output_sources)), dtype=np.uint8)
+    The train records are already PRODUCER-LOCAL, so this is a row gather with
+    no time shift: ``core`` sources take the neuron's per-cycle emissions
+    (bits under a per-cycle law, COUNTS under a per-event one — the raster
+    carries whatever the producer emitted), ``on`` sources spike every cycle,
+    ``input`` passthroughs replay the segment input train (which a
+    SpikeTrain-mode segment has and a value-mode one reconstructs via the
+    encoder twin)."""
+    # int16 IS the count currency's word: a per-event producer's raster carries
+    # COUNTS, and a byte would silently wrap the ones a wide chip may reach.
+    out = np.zeros((int(T), len(output_sources)), dtype=np.int16)
     for j, (kind, core, neuron) in enumerate(output_sources):
         if kind == "on":
             out[:, j] = 1
@@ -137,10 +141,9 @@ def raster_from_spike_trains(
             rows = trains.get(core)
             if rows is None or neuron >= len(rows):
                 continue
-            bits = rows[neuron]
-            width = min(int(T), len(bits))
-            out[:width, j] = np.frombuffer(
-                bits[:width].encode(), dtype=np.uint8) - ord("0")
+            emissions = rows[neuron]
+            width = min(int(T), len(emissions))
+            out[:width, j] = np.asarray(emissions[:width], dtype=np.int16)
     return out
 
 

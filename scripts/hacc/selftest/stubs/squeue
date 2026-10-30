@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# squeue, with an empty queue: the stub sbatch above never leaves a job behind.
+set -euo pipefail
+echo "             JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)"

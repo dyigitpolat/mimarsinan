@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.dfq_bias_correction import (
     dfq_correct_biases,
@@ -11,7 +12,7 @@ from mimarsinan.spiking.dfq_bias_correction import (
 )
 
 
-def _lif_cascade_channel_means(model, cal_x, T) -> dict:
+def _lif_cascade_channel_means(model, cal_x, T, soma_law: SomaLaw) -> dict:
     """Per-perceptron deployed-cascade decoded value, keyed by perceptron index.
 
     Reads the values the LIF segment policy records through the forward's
@@ -19,7 +20,10 @@ def _lif_cascade_channel_means(model, cal_x, T) -> dict:
     """
     recorder: dict = {}
     with torch.no_grad():
-        chip_aligned_segment_forward(model, cal_x, int(T), node_value_recorder=recorder)
+        chip_aligned_segment_forward(
+            model, cal_x, int(T), soma_law=soma_law,
+            node_value_recorder=recorder,
+        )
     out: dict = {}
     for k, perceptron in enumerate(model.get_perceptrons()):
         value = recorder.get(id(perceptron))
@@ -29,8 +33,8 @@ def _lif_cascade_channel_means(model, cal_x, T) -> dict:
 
 
 def match_lif_activation_distributions(
-    model, teacher, cal_x, T, *, bias_iters: int, eta: float = 0.5,
-    probe=None, probe_patience: int | None = None,
+    model, teacher, cal_x, T, *, soma_law: SomaLaw, bias_iters: int,
+    eta: float = 0.5, probe=None, probe_patience: int | None = None,
 ) -> dict:
     """Match the deployed LIF cascade's per-neuron mean to the teacher ANN's.
 
@@ -43,7 +47,7 @@ def match_lif_activation_distributions(
     stats = dfq_correct_biases(
         model,
         ann_mean,
-        lambda: _lif_cascade_channel_means(model, cal_x, T),
+        lambda: _lif_cascade_channel_means(model, cal_x, T, soma_law),
         bias_iters=bias_iters,
         eta=eta,
         probe=probe,

@@ -1,0 +1,68 @@
+{
+  "provenance": {
+    "class": "CONSTRUCTED, NOT RECORDED: key structure transcribed from the XRT sources, values illustrative. No card was read to make this file.",
+    "repository": "github.com/Xilinx/XRT",
+    "branch": "2024.2",
+    "runtime": "XRT 2.18.179, the runtime the HACC@NUS board VM reported on 2026-09-01 (results/*/xbutil_examine.log)",
+    "sources": [
+      "src/runtime_src/core/common/sensor.cpp: read_electrical (legacy path: power_rails of {id, description, voltage{volts, is_present}, current{amps, is_present}}, power_consumption_watts from microwatts with 6 decimals, power_consumption_max_watts 75/150/225/N/A, power_consumption_warning), read_thermals (thermals of {location_id, description, temp_C, is_present}), msg 'No sensors present'",
+      "src/runtime_src/core/tools/common/reports/ReportElectrical.cpp: the electrical tree is added under 'electrical'",
+      "src/runtime_src/core/tools/common/reports/ReportThermal.cpp: the thermal tree is read_thermals itself, so its 'thermals' array sits on the device node",
+      "src/runtime_src/core/tools/common/XBHelpMenus.cpp produce_reports: schema_version{schema, creation_date}, system, devices[] of {interface_type 'pcie', device_id <BDF>, report children}",
+      "src/runtime_src/core/common/api/xrt_device.cpp: get_info(electrical) and get_info(thermal) return json_str(read_electrical) and json_str(read_thermals); get_info(bdf) a plain string"
+    ],
+    "fetched_utc": "2026-10-23",
+    "boost_write_json": "every value is serialized as a JSON string",
+    "replaced_by": "the first raw reports the H1 pilot records on the card (results/board_power/probe/raw_*.json and results/board_power/raw/raw_*.json); commit them beside this file and run the parser tests against them"
+  },
+  "xrt_smi_examine": {
+    "schema_version": {"schema": "JSON", "creation_date": "Fri Oct 23 00:00:00 2026 GMT"},
+    "system": {"host": {"os": {"sysname": "Linux"}}},
+    "devices": [
+      {
+        "interface_type": "pcie",
+        "device_id": "0000:81:00.1",
+        "electrical": {
+          "power_consumption_max_watts": "150",
+          "power_consumption_watts": "22.413207",
+          "power_consumption_warning": "false",
+          "power_rails": [
+            {"id": "12v_pex", "description": "12 Volts PCI Express",
+             "voltage": {"volts": "12.143", "is_present": "true"},
+             "current": {"amps": "1.420", "is_present": "true"}},
+            {"id": "3v3_pex", "description": "3.3 Volts PCI Express",
+             "voltage": {"volts": "3.311", "is_present": "true"},
+             "current": {"amps": "0.912", "is_present": "true"}},
+            {"id": "12v_aux", "description": "12 Volts Auxillary",
+             "voltage": {"volts": "12.150", "is_present": "true"},
+             "current": {"amps": "0.000", "is_present": "false"}},
+            {"id": "vccint", "description": "Internal FPGA Vcc",
+             "voltage": {"volts": "0.851", "is_present": "true"},
+             "current": {"amps": "11.094", "is_present": "true"}}
+          ]
+        },
+        "thermals": [
+          {"location_id": "pcb_top_front", "description": "PCB Top Front", "temp_C": "38", "is_present": "true"},
+          {"location_id": "fpga0", "description": "FPGA", "temp_C": "44", "is_present": "true"},
+          {"location_id": "fpga_hbm", "description": "FPGA HBM", "temp_C": "41", "is_present": "true"},
+          {"location_id": "cage_temp_0", "description": "Cage0", "temp_C": "0", "is_present": "false"}
+        ]
+      }
+    ]
+  },
+  "pyxrt_get_info_electrical": {
+    "power_consumption_max_watts": "150",
+    "power_consumption_watts": "22.413207",
+    "power_consumption_warning": "false",
+    "power_rails": [
+      {"id": "12v_pex", "description": "12 Volts PCI Express",
+       "voltage": {"volts": "12.143", "is_present": "true"},
+       "current": {"amps": "1.420", "is_present": "true"}}
+    ]
+  },
+  "pyxrt_get_info_thermal": {
+    "thermals": [
+      {"location_id": "fpga0", "description": "FPGA", "temp_C": "44", "is_present": "true"}
+    ]
+  }
+}

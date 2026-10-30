@@ -25,6 +25,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     def __init__(
         self, pipeline, model, quantization_bits, target_accuracy, lr,
         adaptation_manager, two_scale_projection=False, fractional_scale=False, float_bias=False,
+        bias_rows_floor=None,
     ):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits
@@ -36,6 +37,10 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
         # The declared value-domain grids (weight_scale_rule, bias_resolution), shared the same way.
         self.fractional_scale = bool(fractional_scale)
         self.float_bias = bool(float_bias)
+        # Bias-row splitting's declared k (None = the computed bound alone).
+        self.bias_rows_floor = (
+            None if bias_rows_floor is None else int(bias_rows_floor)
+        )
         self._axis = NAPQAxis(
             self._apply_rate, replica_apply_fn=self._apply_rate_to,
         )
@@ -59,6 +64,8 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
                 two_scale=self.two_scale_projection,
                 fractional_scale=self.fractional_scale,
                 float_bias=self.float_bias,
+                # A tuner built without __init__ (a test of the projection) declares no split.
+                bias_rows_floor=getattr(self, "bias_rows_floor", None),
             ).transform(perceptron)
         return transform
 

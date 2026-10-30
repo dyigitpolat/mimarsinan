@@ -32,10 +32,30 @@ class CoreOccupancy:
     unusable_space: int
     #: The physical cores this crossbar occupies: a fused core counts its members (``fused_component_axons``).
     tiles: int = 1
+    #: Physical rows per logical axon slot (``platform.physical_row_expansion``).
+    #: 1 on a substrate whose cell stores its own weight sign — the framework
+    #: default, under which every ``*_expanded`` figure equals its logical twin.
+    sign_expansion: int = 1
+
+    def __post_init__(self) -> None:
+        if int(self.sign_expansion) < 1:
+            raise ValueError(
+                f"sign_expansion is a physical row multiplier and must be >= 1, "
+                f"got {self.sign_expansion}")
 
     @property
     def cells_physical(self) -> int:
         return self.axons_physical * self.neurons_physical
+
+    @property
+    def rows_physical(self) -> int:
+        """Crossbar ROWS the declared substrate spends on ``axons_physical``."""
+        return self.axons_physical * int(self.sign_expansion)
+
+    @property
+    def cells_physical_expanded(self) -> int:
+        """The substrate-cost twin of ``cells_physical``; equal to it by default."""
+        return self.rows_physical * self.neurons_physical
 
     @property
     def cells_used(self) -> int:
@@ -46,10 +66,11 @@ class CoreOccupancy:
         return _ratio(self.cells_used, self.cells_physical)
 
     @classmethod
-    def from_hard_core(cls, core: Any) -> "CoreOccupancy":
+    def from_hard_core(cls, core: Any, *, sign_expansion: int = 1) -> "CoreOccupancy":
         """Read a ``HardCore``: used = geometry minus the capacity still available. [W08] A fused add's operand rows
         (zero crossbar weights) are the lane's operand port, priced as lane work: they are no used axon, cell, MAC
-        or programming byte here (the packed program still places them on axons; the output stage names that)."""
+        or programming byte here (the packed program still places them on axons; the output stage names that).
+        ``sign_expansion`` is the physical rows per logical axon slot of the core's substrate (1 by default)."""
         axons = int(getattr(core, "axons_per_core", 0) or 0)
         neurons = int(getattr(core, "neurons_per_core", 0) or 0)
         return cls(
@@ -59,6 +80,7 @@ class CoreOccupancy:
             neurons_physical=neurons,
             unusable_space=int(getattr(core, "unusable_space", 0) or 0),
             tiles=len(getattr(core, "fused_component_axons", None) or ()) or 1,
+            sign_expansion=int(sign_expansion),
         )
 
 
@@ -78,19 +100,24 @@ class CrossbarUtilizationReport:
 
     @classmethod
     def from_hard_cores(
-        cls, cores: Iterable[Any], *, weight_bits: int | None = None
+        cls, cores: Iterable[Any], *, weight_bits: int | None = None,
+        sign_expansion: int = 1,
     ) -> "CrossbarUtilizationReport":
         cores = list(cores)
         widths = [getattr(c, CORE_WEIGHT_BITS, None) for c in cores]
         return cls(
-            cores=tuple(CoreOccupancy.from_hard_core(c) for c in cores),
+            cores=tuple(
+                CoreOccupancy.from_hard_core(c, sign_expansion=sign_expansion)
+                for c in cores
+            ),
             weight_bits=None if weight_bits is None else int(weight_bits),
             core_widths=tuple(int(w) for w in widths if w is not None) if widths and None not in widths else None,
         )
 
     @classmethod
     def from_hybrid_mapping(
-        cls, hybrid_mapping: Any, *, weight_bits: int | None = None
+        cls, hybrid_mapping: Any, *, weight_bits: int | None = None,
+        sign_expansion: int = 1,
     ) -> "CrossbarUtilizationReport":
         """Aggregate every neural stage's packed cores across the whole program."""
         cores: list[Any] = []
@@ -98,7 +125,8 @@ class CrossbarUtilizationReport:
             hcm = getattr(stage, "hard_core_mapping", None)
             if hcm is not None:
                 cores.extend(hcm.cores)
-        return cls.from_hard_cores(cores, weight_bits=weight_bits)
+        return cls.from_hard_cores(
+            cores, weight_bits=weight_bits, sign_expansion=sign_expansion)
 
     @property
     def cores_allocated(self) -> int:
@@ -133,6 +161,20 @@ class CrossbarUtilizationReport:
     @property
     def cells_physical(self) -> int:
         return sum(c.cells_physical for c in self.cores)
+
+    @property
+    def rows_physical(self) -> int:
+        return sum(c.rows_physical for c in self.cores)
+
+    @property
+    def cells_physical_expanded(self) -> int:
+        """The physical twin the declared sign granularity buys; default-equal.
+
+        Deliberately NOT in ``to_dict()``: the flat record is the sealed
+        deployment record's 14-key mirror, and a signed-cell substrate's 2x is a
+        substrate-cost multiplier, never a re-reading of ``cells_used``.
+        """
+        return sum(c.cells_physical_expanded for c in self.cores)
 
     @property
     def unusable_space(self) -> int:

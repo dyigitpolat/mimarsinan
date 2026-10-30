@@ -144,6 +144,7 @@ logits.
 | finite window T | all activations on a 1/T grid | any windowed rate-coded chip | trained-for (activation quantization) |
 | input boundary | first layer runs value-side, once; inputs enter as even trains | input encoding hardware | idealized, uniform encode |
 | silicon backends | lava (Loihi), sanafe, nevresim exporters consume the same program | real silicon | each has its own consistency checks; fidelity claims end at the exporter seam |
+| within-segment dynamics (per-event soma point) | the threshold is evaluated after EVERY arriving event occurrence, in ascending slot order with one slot's multiplicity adjacent, on a saturating unsigned membrane of declared width; a neuron may emit several spikes in one cycle and those COUNTS travel the wire inside the segment | an event-driven chip whose soma fires per arriving synapse event (the ODIN-style law) | executed by the torch twins (`models/spiking/serial`) and by nevresim (`EventSerialIntegrate`), gated per-neuron at atol=0 between them; every other backend refuses the point BY NAME. NOT yet run on RTL or silicon — the cosimulation and board gates are later phases, so no hardware fidelity is claimed here |
 
 The clean summary of the deployment contract: the toolchain now carries BOTH
 disciplines honestly. **Windowed** (`lif_sync`, the ttfs family): a
@@ -159,6 +160,33 @@ special case. Every tier-0 accuracy number means:
 2.5-point / 0.84-agreement numbers measured what deploying MISMATCHED
 semantics costs — which is exactly why the discipline is a trained-for axis,
 never a deploy-time toggle.
+
+Since 2026-08-21 a THIRD, orthogonal thing is declarable inside the streamed
+discipline: the **soma point** (`firing_granularity` × `membrane_arithmetic` ×
+`membrane_bits`). The default point — one threshold evaluation per cycle on the
+whole reduced contribution, unbounded accumulator — is what every number above
+was measured under and is byte-identical. The per-event point evaluates the
+threshold after each arriving event on a fixed-width saturating register, which
+is a genuinely different physics: it is its own hypervolume cell
+(`lif+per_event-sat8`), its own certification cell, and its own tier row
+(t0_54), so a per-event run can never be reported against a per-cycle
+regression floor. What is honest to say today: two independent implementations
+(torch and nevresim) execute it and agree per neuron at zero difference on
+compiled fixtures; no hardware has run it yet; and the end-to-end tier cell
+(t0_54, simple_mlp) is **GREEN as of 2026-08-21** — 1542.2 s wall, deployed
+accuracy **0.9525 on the HCM torch metric and 0.96 on nevresim** (25 subsampled
+test images) against a trained 0.9533 read, with both streamed NF↔SCM arms
+(window counts AND the per-cycle raster) exact at atol=0 and both spike-count
+certificates exact (max|Δcount| = 0 over 20 neuron-windows, hcm streaming-twin
+and nevresim-vs-hcm). Its first run was RED at Soft Core Mapping — 1004/3152
+per-cycle emission mismatches, worst nf=1 vs scm=7 — because the chip-aligned
+NF forward the LIF adaptation step installs on the model carried no soma point
+and silently ran the DEFAULT per-cycle law (at most one spike per cycle) as the
+twin of a per-event deployment. The raster arm of the gate is what caught it;
+the window counts alone would not have. The point's honest price is wall time:
+the event-serial fold costs roughly 7× the per-cycle walk, and every endpoint
+stage that trains against the deployed composition pays it (1122 s of this
+cell's 1542 s is Weight Quantization's endpoint recovery).
 
 ---
 

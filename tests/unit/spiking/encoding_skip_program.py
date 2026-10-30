@@ -18,6 +18,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
 from mimarsinan.mapping.ir_mapping_class import IRMapping
@@ -48,12 +49,12 @@ WQ_THETA_ENC, WQ_THETAS, WQ_BITS = 2.289466619491577, (0.5244447588920593, 1.0),
 #: selects (streamed; windowed, the per-hop re-timed lifsync) and the synchronized count executor the X3a screen runs.
 SEMANTICS: Dict[str, Tuple[bool, dict, Callable[[], LifSegmentPolicy]]] = {
     "streamed_lif": (False, dict(spiking_mode="lif", cycle_accurate_lif_forward=True, pass_transfer=VERBATIM),
-                     lambda: LifSegmentPolicy()),
+                     lambda: LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW)),
     "windowed_lif": (True, dict(spiking_mode="lif", cycle_accurate_lif_forward=True, pass_transfer=COLLAPSE),
-                     lambda: LifSegmentPolicy(retime=True)),
+                     lambda: LifSegmentPolicy(retime=True, soma_law=DEFAULT_SOMA_LAW)),
     "synchronized_lif": (False, dict(spiking_mode="lif", cycle_accurate_lif_forward=True,
                                      lif_execution_synchronized=True, pass_transfer=COLLAPSE),
-                         lambda: LifSegmentPolicy(synchronized=True)),
+                         lambda: LifSegmentPolicy(synchronized=True, soma_law=DEFAULT_SOMA_LAW)),
 }
 DEPLOYED_SEMANTICS = ("streamed_lif", "windowed_lif")
 

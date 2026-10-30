@@ -5,6 +5,7 @@ include = [
   "run.py",
   "src/**",
   "nevresim/**",
+  "hw/**",
   "scripts/**",
   "tests/**",
   "templates/**",

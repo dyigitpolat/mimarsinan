@@ -5,17 +5,21 @@ from __future__ import annotations
 import torch
 
 from mimarsinan.certification.spike_certificate import certify_spike_counts
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.spiking.segment_forward import (
     LifSegmentPolicy,
     SegmentForwardDriver,
 )
 
 
-def nf_perceptron_counts(repr_, T: int, batch: torch.Tensor) -> dict[int, torch.Tensor]:
+def nf_perceptron_counts(
+    repr_, T: int, batch: torch.Tensor, *, soma_law: SomaLaw,
+) -> dict[int, torch.Tensor]:
     """Reference counts ``{perceptron_index: (B, n)}`` from the NF synchronized
     walk: decoded value / theta * T, flattened to canonical (column, channel)
     order — column = token/position — matching provenance placement."""
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(synchronized=True))
+    driver = SegmentForwardDriver(
+        repr_, T, LifSegmentPolicy(synchronized=True, soma_law=soma_law))
     rec: dict = {}
     with torch.no_grad():
         driver(batch, node_value_recorder=rec)
@@ -138,14 +142,15 @@ def flow_perceptron_counts(
 
 def certify_flow_counts(
     repr_, ir_graph, flow, samples: torch.Tensor, *, backend: str,
-    discipline: str = "synchronized",
+    soma_law: SomaLaw, discipline: str = "synchronized",
 ):
     """NF-oracle edge measurement: model-walk counts vs a hybrid flow's counts.
 
     NOT the exact certificate — the model walk carries the honest WQ/chip-grid
     residual, so counts flip at staircase boundaries (bounded by the atol
     parity gate). The exact edge is ``certify_twin_flow_counts``."""
-    ref = nf_perceptron_counts(repr_, int(flow.simulation_length), samples)
+    ref = nf_perceptron_counts(
+        repr_, int(flow.simulation_length), samples, soma_law=soma_law)
     got, cover = flow_perceptron_counts(
         ir_graph, flow, samples, discipline=discipline,
     )

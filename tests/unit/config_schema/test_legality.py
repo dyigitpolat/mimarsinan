@@ -34,7 +34,10 @@ from mimarsinan.models.spiking.spiking_config import (
     THRESHOLDING_MODES,
 )
 
-LEGALITY_KEYS = ("firing_mode", "spike_generation_mode", "thresholding_mode")
+LEGALITY_KEYS = (
+    "firing_mode", "spike_generation_mode", "thresholding_mode",
+    "firing_granularity", "membrane_arithmetic",
+)
 
 _MODES = sorted(ALL_SPIKING_MODES)
 
@@ -184,11 +187,15 @@ class TestTheLegalValueSets:
         windowed = legal_values_view(
             {"spiking_family": "lif", "spiking_variant": "synchronized"}
         )
+        # A windowed hop collapses counts, so the per-event soma law is not
+        # declarable there and the field LOCKS.
         assert sorted(k for k, v in windowed.items() if len(v) == 1) == [
-            "pipelined_multiplexing", "position_multiplexing", "reduction_core_banks", "s_allocation",
+            "firing_granularity", "pipelined_multiplexing", "position_multiplexing", "reduction_core_banks",
+            "s_allocation",
         ]
         assert sorted(k for k, v in ttfs.items() if len(v) == 1) == [
-            "firing_mode", "s_allocation", "spike_generation_mode",
+            "firing_granularity", "firing_mode", "membrane_arithmetic",
+            "s_allocation", "spike_generation_mode",
         ]
         assert ttfs["pipelined_multiplexing"] == [False, True]
         assert ttfs["reduction_core_banks"] == relays_off["reduction_core_banks"] == [False, True]  # [U-L2]
@@ -201,6 +208,8 @@ class TestTheLegalValueSets:
             "pipelined_multiplexing", "position_multiplexing", "reduction_core_banks", "s_allocation",
         ]
         assert streamed["spiking_variant"] == ["streamed", "synchronized"]
+        # The ONLY point where the per-event soma law is declarable.
+        assert streamed["firing_granularity"] == ["per_cycle", "per_event"]
 
 
 def _illegal_values(key: str, spiking_mode: str):

@@ -237,3 +237,50 @@ def test_build_runtime_exec_decl_all_modes(spiking_mode: str) -> None:
     )
     assert compute
     assert exec_decl.startswith("using exec =")
+
+
+@pytest.mark.parametrize(
+    "spiking_mode,schedule,family",
+    [
+        ("ttfs", None, "ttfs"),
+        ("ttfs_quantized", None, "ttfs"),
+        ("ttfs_cycle_based", "cascaded", "ttfs_cycle_based"),
+    ],
+)
+def test_a_ttfs_family_refuses_a_non_default_integration_policy(
+    spiking_mode: str, schedule, family: str,
+) -> None:
+    """[ODIN P3 fix] only the LIF executors have an integration slot.
+
+    ``resolve_exec_policy`` used to IGNORE the point on these families and emit
+    a whole-vector program while the deployment declared an event-serial soma.
+    Unreachable today (per_event resolves per_cycle-only granularities for
+    ttfs), but the emit site must never be the thing that decides.
+    """
+    params = NevresimExecParams(
+        compare="InclusiveCompare",
+        lif_fire_policy="LIFirePolicy<SubtractiveReset, InclusiveCompare>",
+        spike_gen_mode="TTFS", weight_type="int",
+        simulation_length=6, latency=1, output_count=2,
+        integration_policy="EventSerialIntegrate<8>",
+    )
+    policy = policy_for_spiking_mode(spiking_mode, schedule)
+    with pytest.raises(ValueError, match=f"no {family} executor"):
+        policy.nevresim_exec_policy(params)
+
+
+@pytest.mark.parametrize(
+    "spiking_mode,schedule",
+    [("ttfs", None), ("ttfs_quantized", None), ("ttfs_cycle_based", "cascaded")],
+)
+def test_the_same_families_are_untouched_at_the_default_integration(
+    spiking_mode: str, schedule,
+) -> None:
+    params = NevresimExecParams(
+        compare="InclusiveCompare",
+        lif_fire_policy="LIFirePolicy<SubtractiveReset, InclusiveCompare>",
+        spike_gen_mode="TTFS", weight_type="int",
+        simulation_length=6, latency=1, output_count=2,
+    )
+    spec = policy_for_spiking_mode(spiking_mode, schedule).nevresim_exec_policy(params)
+    assert "Integrate" not in spec.exec_decl

@@ -21,6 +21,7 @@ from mimarsinan.spiking.scale_aware_boundaries import read_boundary_out_scales
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.spiking.spike_trains import uniform_spike_train
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 class _HostRelay(nn.Module):
@@ -114,7 +115,7 @@ def test_host_boundary_train_is_value_domain() -> None:
     torch.manual_seed(7)
     x = 3.0 * torch.rand(2, 8)
 
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     with torch.no_grad():
         nf_out = driver(x)
 
@@ -147,7 +148,7 @@ def test_nf_driver_equals_hybrid_flow_across_host_boundary(theta_enc) -> None:
     torch.manual_seed(11)
     x = 3.0 * torch.rand(2, 8)
 
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     flow = SpikingHybridCoreFlow(
         (8,), hybrid, simulation_length=T,
         spiking_mode="lif", cycle_accurate_lif_forward=True,

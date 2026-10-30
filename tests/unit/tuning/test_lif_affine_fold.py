@@ -30,6 +30,7 @@ from mimarsinan.tuning.lif_affine_fold import (
     fold_affine_into_consumer,
     fold_affine_into_readout,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T_STEPS = 8
 
@@ -208,7 +209,7 @@ def _deployed_gap(model, x, targets):
     estimator's objective — the post-fold envelope is a different function)."""
     from mimarsinan.tuning.lif_affine_fold import deployed_rates_by_perceptron
 
-    dep = deployed_rates_by_perceptron(model, x, T_STEPS)
+    dep = deployed_rates_by_perceptron(model, x, T_STEPS, soma_law=DEFAULT_SOMA_LAW)
     gaps = [
         float((dep[k] - targets[k]).mean(0).abs().mean())
         for k in dep
@@ -220,25 +221,25 @@ def _deployed_gap(model, x, targets):
 class TestApplyLifAffineFold:
     def test_folds_both_kinds_and_reports(self):
         model = _deployed_lif_model()
-        report = apply_lif_affine_fold(model, _cal_x(), T_STEPS)
+        report = apply_lif_affine_fold(model, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert report["folded"] >= 2, f"expected both fold kinds: {report}"
         assert report["consumer_folds"] >= 1, f"no consumer fold: {report}"
         assert report["readout_folds"] == 1, f"no readout fold: {report}"
 
     def test_idempotent_second_pass_is_noop(self):
         model = _deployed_lif_model()
-        apply_lif_affine_fold(model, _cal_x(), T_STEPS)
+        apply_lif_affine_fold(model, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         params_after_first = [
             p.layer.weight.data.clone() for p in model.get_perceptrons()
         ]
-        report2 = apply_lif_affine_fold(model, _cal_x(), T_STEPS)
+        report2 = apply_lif_affine_fold(model, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert report2["folded"] == 0
         for p, saved in zip(model.get_perceptrons(), params_after_first):
             assert torch.equal(p.layer.weight.data, saved)
 
     def test_encoders_are_never_folded(self):
         model = _deployed_lif_model()
-        apply_lif_affine_fold(model, _cal_x(), T_STEPS)
+        apply_lif_affine_fold(model, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         for p in model.get_perceptrons():
             if getattr(p, "is_encoding_layer", False):
                 assert not getattr(p, "_lif_affine_folded", False)
@@ -250,7 +251,7 @@ class TestApplyLifAffineFold:
         targets = _frozen_float_targets(model, x)
 
         before = _deployed_gap(model, x, targets)
-        apply_lif_affine_fold(model, x, T_STEPS)
+        apply_lif_affine_fold(model, x, T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         after = _deployed_gap(model, x, targets)
         assert after <= before + 1e-9, (
             f"affine fold increased the calibrated gap: {before} -> {after}"
@@ -290,7 +291,7 @@ class TestRealConvertedGraphDiscovery:
 
     def test_fc_chain_finds_consumer_folds(self):
         flow = _converted_deep_mlp(depth=4)
-        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS)
+        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert report["consumer_folds"] == 2, f"FC chain must fold: {report}"
         assert report["folded"] == 2, f"FC chain must fold: {report}"
         folded_names = {
@@ -301,7 +302,7 @@ class TestRealConvertedGraphDiscovery:
 
     def test_fc_chain_host_classifier_seam_skipped_honestly(self):
         flow = _converted_deep_mlp(depth=4)
-        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS)
+        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert report["skipped"] == {"hidden_6": "host_compute_consumer"}, report
         assert report["readout_folds"] == 0, report
 
@@ -311,7 +312,7 @@ class TestRealConvertedGraphDiscovery:
         targets = _frozen_float_targets(flow, x)
 
         before = _deployed_gap(flow, x, targets)
-        report = apply_lif_affine_fold(flow, x, T_STEPS)
+        report = apply_lif_affine_fold(flow, x, T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         after = _deployed_gap(flow, x, targets)
         assert report["consumer_folds"] > 0, report
         assert after <= before + 1e-9, (
@@ -320,7 +321,7 @@ class TestRealConvertedGraphDiscovery:
 
     def test_mixer_intra_block_folds_found(self):
         flow = _converted_mixer()
-        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS)
+        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert report["consumer_folds"] == 4, f"fc1->fc2 folds missing: {report}"
         folded_names = {
             p.name for p in flow.get_perceptrons()
@@ -339,7 +340,7 @@ class TestRealConvertedGraphDiscovery:
         targets = _frozen_float_targets(flow, x)
 
         before = _deployed_gap(flow, x, targets)
-        report = apply_lif_affine_fold(flow, x, T_STEPS)
+        report = apply_lif_affine_fold(flow, x, T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         after = _deployed_gap(flow, x, targets)
         assert report["consumer_folds"] == 4, report
         assert after <= before + 1e-9, (
@@ -373,7 +374,7 @@ class TestRealConvertedGraphDiscovery:
         every consumer and the walk rejected every hop as
         ``channel_axis_not_preserved``."""
         flow = self._stamp_pipeline_fold_step_state(_converted_deep_mlp(depth=4))
-        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS)
+        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert report["consumer_folds"] == 2, f"adapted state must fold: {report}"
         folded_names = {
             p.name for p in flow.get_perceptrons()
@@ -388,7 +389,7 @@ class TestRealConvertedGraphDiscovery:
         targets = _frozen_float_targets(flow, x)
 
         before = _deployed_gap(flow, x, targets)
-        report = apply_lif_affine_fold(flow, x, T_STEPS)
+        report = apply_lif_affine_fold(flow, x, T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         after = _deployed_gap(flow, x, targets)
         assert report["consumer_folds"] == 2, report
         assert after <= before + 1e-9, (
@@ -397,7 +398,7 @@ class TestRealConvertedGraphDiscovery:
 
     def test_mixer_folds_survive_pipeline_fold_step_preamble(self):
         flow = self._stamp_pipeline_fold_step_state(_converted_mixer())
-        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS)
+        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert report["consumer_folds"] == 4, f"fc1->fc2 folds missing: {report}"
 
     def test_mixer_cross_compute_op_seams_skipped_honestly(self):
@@ -405,7 +406,7 @@ class TestRealConvertedGraphDiscovery:
         (blocks 0-2) or by the host classifier ComputeOp (block 3) — the walk
         voids them with the honest reason instead of folding."""
         flow = _converted_mixer()
-        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS)
+        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS, soma_law=DEFAULT_SOMA_LAW)
         assert report["skipped"] == {
             "mixer_blocks_0_fc2": "channel_axis_not_preserved",
             "mixer_blocks_1_fc2": "channel_axis_not_preserved",

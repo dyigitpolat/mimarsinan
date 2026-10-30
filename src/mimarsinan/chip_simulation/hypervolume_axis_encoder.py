@@ -6,8 +6,23 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
+
 _VALID_SYNC = ("cascaded", "synchronized")
 _DEPTH_IN_RUN_ID = re.compile(r"_d(\d+)_")
+
+
+def firing_axis(spiking_mode: Any, cfg: Mapping[str, Any]) -> str:
+    """The firing coordinate: the legacy mode string, plus the resolved soma
+    point when it is not the default one.
+
+    Every pre-axes configuration produces the exact same string it always did;
+    a per-event or saturating point occupies its OWN coverage cell, so a run is
+    never counted as coverage of a cell it did not exercise.
+    """
+    mode = str(spiking_mode)
+    tag = SomaLaw.resolve(cfg).point_tag()
+    return mode if tag is None else f"{mode}+{tag}"
 
 
 def _truthy(value: Any) -> bool:
@@ -168,7 +183,8 @@ class AxisCoordinates:
         dataset = normalize_dataset(cfg.get("dataset") or cfg.get("data_provider_name"))
         s_value = cfg.get("S", cfg.get("simulation_steps", axis_wildcard))
         return cls(
-            firing=str(getattr(plan, "spiking_mode", cfg.get("spiking_mode", "lif"))),
+            firing=firing_axis(
+                getattr(plan, "spiking_mode", cfg.get("spiking_mode", "lif")), cfg),
             sync=sync,
             backend=str(backend),
             vehicle=str(getattr(plan, "model_type", cfg.get("model_type", ""))),
@@ -225,7 +241,7 @@ def cell_coordinates_from_row(
             preload_weights=row.get("preload_weights", False),
         )
     return AxisCoordinates(
-        firing=str(row.get("spiking_mode") or row.get("mode") or "lif"),
+        firing=firing_axis(row.get("spiking_mode") or row.get("mode") or "lif", row),
         sync=sync,
         backend=str(row.get("backend") or "sanafe"),
         vehicle=str(row.get("model") or row.get("model_type") or ""),

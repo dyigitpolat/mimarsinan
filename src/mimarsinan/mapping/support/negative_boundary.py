@@ -263,6 +263,7 @@ def ensure_negative_boundary_policy(
     simulation_steps: int,
     device,
     shift_enabled: bool,
+    soma_law,
     n_batches: int = 2,
 ) -> NegativeBoundaryResult | None:
     """Calibrate + apply the policy from the trainer's validation cache.
@@ -281,5 +282,5 @@ def ensure_negative_boundary_policy(
         calibration_x,
         int(simulation_steps),
         shift_enabled=shift_enabled,
-        forward_fn=calibration_forward_for_mode(spiking_mode),
+        forward_fn=calibration_forward_for_mode(spiking_mode, soma_law=soma_law),
     )

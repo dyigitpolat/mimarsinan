@@ -12,10 +12,10 @@ shared across the pipeline.
 | File | Purpose |
 |---|---|
 | `best_effort.py` | `best_effort` context manager: the single sanctioned log-and-continue seam for non-critical telemetry/rendering side work |
-| `build_utils.py` | `find_cpp20_compiler`: probe-compiles to discover a working C++20 compiler (clang++ 17-20 with libc++, g++ 11-14, clang++ with libstdc++, plain g++), plus legacy wrappers |
+| `build_utils.py` | `find_cpp20_compiler`: probe-compiles to discover a working C++20 compiler (clang++ 17-20 with libc++, g++ 11-14, clang++ with libstdc++, plain g++), plus legacy wrappers; `exclusive_build_lock`: a cross-process lock per build artifact, so concurrent requests for one cached build run its compiler once |
 | `dependency_manifest.py` | Reads what `pyproject.toml` declares (base and extra requirements, a distribution's specifier, its `==` pin, its direct reference) so an install pin has one place to live; the SANA-FE pin-drift guard and the dependency-declaration tests read it instead of a script literal |
 | `diagnostics.py` | CUDA debugging/profiling helpers: `enable_cuda_debug`, `describe_tensor`, `phase_profiler` (time/RSS/CUDA-peak), `cuda_guard` (synchronize-bracketed blocks) |
-| `env.py` | Single source of truth for `MIMARSINAN_*` (and `IMAGENET_ROOT`) environment variables; one call-time accessor per flag so tests can monkeypatch |
+| `env.py` | Single source of truth for `MIMARSINAN_*` (and `IMAGENET_ROOT`) environment variables; one call-time accessor per flag so tests can monkeypatch. `hw_sim_bin_dir()` resolves the RTL simulator directory the ODIN cosimulation gates look in, defaulting to the vendored `build/tools/oss-cad-suite/bin`, so a host without it skips LOUDLY with the path named instead of passing quietly |
 | `file_utils.py` | Writers for pipeline artifacts: directory prep, per-sample simulator input files (scalar and spike-train), and chip weights/code emission (`save_weights_and_chip_code`) |
 | `instance_memo.py` | `InstanceMemo`: per-instance derived-value memo for unhashable hosts (id-keyed, finalizer-evicted); caches precomputed plans keyed on IR/segment objects |
 | `measurement/` | Baseline-agreement SSOT (`baseline.py`): `MetricTolerance` is the ONE definition of "matches" for a measured number against a recorded one (absolute + symmetric relative parts, plus `for_sampled_proportion`, which derives the bound from the record and the sample count it is judged over), and `assert_matches_recorded_baseline` raises `BaselineMismatchError` naming both numbers, the gap, the bound and the likely causes — preprocessing mismatch first, the defect it was built for. Workload-free: the expectation comes from the caller or a recorded artifact |
@@ -37,7 +37,7 @@ Both imports are deferred inside the function body; module import time keeps
 - `pipelining` — `refusal.ToolchainRefusal` (`UncertifiedCachedFlowError`), `best_effort`, `phase_profiler`/`cuda_guard`, env flags (vram probe, resource debug, NF-SCM parity debug), `prepare_containing_directory`, `DefaultReporter`, and `measurement` + `pretrained.unusable_baseline_reason` in `weight_preloading_step` (the preload's recorded-baseline gate).
 - `gui` — `best_effort`, env accessors (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key_from_node_name`.
 - `data_handling` — `best_effort`, FFCV/ImageNet/resource-debug env accessors, `DataWorkloadProfile` for the provider registration hook, and `lifecycle.owner` (every multi-worker `DataLoader` carries an owner-bound `worker_init_fn`).
-- `chip_simulation` — `find_cpp20_compiler`, `file_utils` input/chip-code writers, `loihi_quiet`, `measurement.MetricTolerance` (the parity record comparison's closeness predicate).
+- `chip_simulation` — `find_cpp20_compiler`, `exclusive_build_lock` (the RTL testbench cache), `file_utils` input/chip-code writers, `loihi_quiet`, `measurement.MetricTolerance` (the parity record comparison's closeness predicate).
 - `visualization` — `layer_key_from_node_name`, `safe_float`.
 - `search` — `best_effort`.
 - `mapping` — `best_effort`, `cuda_debug_enabled`, `refusal.ToolchainRefusal` (`support/shape_probe.py`'s `NonTensorHostValueError`).

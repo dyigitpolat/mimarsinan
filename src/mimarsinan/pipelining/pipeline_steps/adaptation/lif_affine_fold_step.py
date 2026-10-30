@@ -6,6 +6,7 @@ from typing import Iterable, cast
 
 import torch
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.mapping.support.bias_compensation import (
     apply_lif_half_step_bias_compensation,
@@ -120,7 +121,10 @@ class LIFAffineFoldStep(TrainerPipelineStep):
         # currency; idempotent in activation_scales.
         compute_per_source_scales(model.get_mapper_repr())
 
-        report = apply_lif_affine_fold(model, cal_x, simulation_steps)
+        report = apply_lif_affine_fold(
+            model, cal_x, simulation_steps,
+            soma_law=SomaLaw.resolve(config),
+        )
 
         with torch.no_grad():
             post_read = float(

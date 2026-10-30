@@ -892,6 +892,22 @@ AUDITED_LEGAL_SETS = {
     "wq_endpoint_recovery_steps": "INT >= 0",
     "write_ports": "INT >= 1",
     "weight_scale_rule": "ENUM integer | fractional",  # Wave 2 WI-5b
+    # [U-H] the FPGA backend's keys, each the set its consumer accepts and runs: the soma point (SomaLaw.resolve; the
+    # torch executors run every width and both rails, a generator refuses a width it cannot emit by name, which is
+    # that consumer's own refusal), the bias-row split (weight_quantization_step; k=0 is "undeclared"), the ODIN
+    # fabric sign claim (chip_selection), the device step's transport, card index and samples, the bundle's shipped
+    # and certified samples (odin_hacc/artifact.campaign_indices refuses certified > shipped by name).
+    "bias_row_splitting": "ENUM off | auto | fixed",
+    "bias_rows_per_perceptron": "INT >= 0",
+    "firing_granularity": "ENUM per_cycle | per_event",
+    "membrane_arithmetic": "ENUM unbounded | saturating_unsigned | saturating_signed",
+    "membrane_bits": "INT in [0, 64]",
+    "odin_fpga_device_index": "INT >= 0",
+    "odin_fpga_sample_count": "INT >= 1",
+    "odin_fpga_transport": "ENUM rtl_cosim | xrt",
+    "odin_hacc_bundle_samples": "INT >= 1",
+    "odin_hacc_certification_samples": "INT >= 1",
+    "weight_sign_granularity": "ENUM per_synapse | per_axon",
 }
 
 

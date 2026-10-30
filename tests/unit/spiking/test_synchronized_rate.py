@@ -15,6 +15,7 @@ import torch
 from mimarsinan.models.nn.activations.autograd import LIFCountStaircaseFunction
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.segment_policies import LifSegmentPolicy
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _two_window_counts(charge_seq: torch.Tensor, theta: torch.Tensor,
@@ -122,8 +123,8 @@ def test_policy_walk_and_accessor_carry_the_discipline():
         lif_execution_synchronized,
     )
 
-    assert LifSegmentPolicy(synchronized=True).synchronized is True
-    assert LifSegmentPolicy().synchronized is False
+    assert LifSegmentPolicy(synchronized=True, soma_law=DEFAULT_SOMA_LAW).synchronized is True
+    assert LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW).synchronized is False
     assert "synchronized" in inspect.signature(chip_aligned_segment_forward).parameters
     assert lif_execution_synchronized({}) is False
     assert lif_execution_synchronized(

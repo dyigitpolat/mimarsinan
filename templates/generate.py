@@ -55,6 +55,12 @@ PLATFORMS = {
     # sit INSIDE the streamed window — the raster-carry coverage grid.
     "I": {"cores": [{"max_axons": 784, "max_neurons": 64, "count": 3, "has_bias": True}],
           "max_axons": 784, "max_neurons": 64},
+    # [ODIN P8] the STOCK ODIN crossbar, as the exporter actually bounds it:
+    # 256 physical rows signed one PRE-synaptic row at a time, so a logical
+    # slot costs a row PAIR and a core holds at most 128 slots (127 usable once
+    # the always-on bias row is placed); 256 columns are 256 neurons.
+    "J": {"cores": [{"max_axons": 128, "max_neurons": 256, "count": 512, "has_bias": True}],
+          "max_axons": 128, "max_neurons": 256},
 }
 
 VEHICLES = {
@@ -99,6 +105,15 @@ MODES = {
     "lifs": {"spiking_family": "lif", "spiking_variant": "streamed",
              "firing_mode": "Default", "spike_generation_mode": "Uniform",
              "thresholding_mode": "<", "axis": ("lif", "streamed")},
+    # [ODIN P3] the per-event soma point on the streamed-lif discipline: the
+    # threshold is evaluated after EVERY arriving event occurrence and the
+    # membrane is a saturating 8-bit unsigned register, so a neuron may emit
+    # several spikes in one cycle. Its own hypervolume cell (a per-event run
+    # can never be counted as coverage of the streamed-LIF one).
+    "lifse": {"spiking_family": "lif", "spiking_variant": "streamed",
+              "firing_mode": "Novena", "spike_generation_mode": "Uniform",
+              "thresholding_mode": "<=",
+              "axis": ("lif+per_event-sat8", "streamed")},
     "ttfs": {"spiking_family": "ttfs", "spiking_variant": "analytical",
              "firing_mode": "TTFS", "spike_generation_mode": "TTFS",
              "thresholding_mode": "<=", "axis": ("ttfs", "none")},
@@ -124,7 +139,7 @@ QUANT = {
     "fp": {"weight_quantization": False},
     "wq": {"weight_quantization": True},
 }
-AQ_DERIVED_MODES = {"lifsync", "lifs", "ttfsq", "casc", "sync"}
+AQ_DERIVED_MODES = {"lifsync", "lifs", "lifse", "ttfsq", "casc", "sync"}
 
 
 def _quant_axis(row):
@@ -153,6 +168,7 @@ ENDPOINT_FLOOR_STEPS_BASE = 16000
 ENDPOINT_MODE_EXTRA_STEPS = {
     "lifsync": 2 * 600,
     "lifs": 2 * 600,
+    "lifse": 2 * 600,
     "sync": 600,
 }
 
@@ -303,6 +319,34 @@ T0 = [
          scheduling=True, platform="I", tags=["sched"],
          note="streamed x scheduling: 3 passes, VERBATIM raster carry on every "
               "backend, carry census sealed in the record"),
+    # [ODIN P3, plan §9] the per-event soma point's cell — the SMALLEST honest
+    # vehicle: t0_45's shape (streamed lif, simple_mlp, wq wb5, S=4, seed 1)
+    # with the point's axes declared. has_bias=false because per_event REQUIRES
+    # a param-encoded bias (the bias becomes an always-on row at the tail of
+    # the slot order, not a per-cycle scalar); coalescing and neuron splitting
+    # are off because both re-threshold a partial sum, which the fold refuses
+    # by name. hcm and nevresim execute it; sanafe and loihi derive OFF.
+    dict(n=54, mode="lifse", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1,
+         has_bias=False, coalescing=False, splitting=False,
+         firing_granularity="per_event", membrane_bits=8,
+         tags=["nobias"], wall_min=30,
+         note="the per-event / saturating-8-bit soma point on the streamed "
+              "discipline: threshold after every event occurrence, hard-zero "
+              "reset, counts (not bits) on the wire inside a segment. "
+              "MEASURED GREEN 2026-08-21 (ODIN P3 fix cycle, 1542.2 s wall, "
+              "rc 0): deployed accuracy hcm 0.9525 / nevresim 0.96 (25 "
+              "samples) against a trained 0.9533 read, both parity gates "
+              "green (streamed NF<->SCM counts AND per-cycle raster exact at "
+              "atol=0) and both spike-count certificates exact "
+              "(max|dcount|=0 over 20 neuron-windows, hcm streaming-twin and "
+              "nevresim-vs-hcm). The wall is the point's own price: the "
+              "event-serial fold is ~7x the per-cycle walk, and Weight "
+              "Quantization's endpoint recovery (1122 s of it) trains "
+              "through that fold. The first run of this cell (2026-08-21, "
+              "218.5 s) was RED at Soft Core Mapping with 1004/3152 "
+              "per-cycle emission mismatches: the NF forward the LIF "
+              "adaptation step installs carried no soma point and ran the "
+              "DEFAULT per-cycle law against a per-event deployment."),
     # n=52 IS DELIBERATELY UNUSED. A lifs/vitleaf/offload MIXED-DOMAIN SEAM cell
     # was authored here on 2026-08-13 and WITHDRAWN the same day: it runs to
     # Soft Core Mapping and then fails the FATAL streamed NF<->SCM exactness
@@ -315,6 +359,43 @@ T0 = [
     # coverage (tests/unit/spiking/test_wire_gauge_establishment.py and
     # tests/unit/pipelining/test_streamed_mixed_seam_exactness.py, both
     # mutation-verified end to end against the deployed executor).
+    # n=55 IS DELIBERATELY UNUSED. The ODIN-DEPLOYABLE sibling of t0_54 was
+    # authored here on 2026-08-28 and WITHDRAWN the same day, on its own
+    # measurement. It exists because t0_54's committed mapping cannot be
+    # deployed at all: measured against the exporter, every core's 512-slot
+    # table expands to 1024 physical rows over a 256-row crossbar, its wb=5
+    # grid reaches |w|=15 against a 3-bit UNSIGNED magnitude cell, and
+    # per_axon is the only sign expansion the stock layout represents. The
+    # sibling therefore declared platform J (the crossbar as the exporter
+    # bounds it), wb=4, per_axon, and widths 120/96 that fit the 127-slot
+    # usable fan-in with the encoding perceptron host-offloaded.
+    #
+    # It converts cleanly to the point — pretrain 0.9772, AQ 0.9746, LIF
+    # adaptation 0.9314 — and then Weight Quantization LANDS AT 0.61 and
+    # misses the 15% retention gate (0.6169 / 0.6139 / 0.62 over three
+    # ladders: the family lr=0.003, a 10x gentler lr=3e-4 with
+    # endpoint_floor_lr=2e-4, and the WQ endpoint recovery capped at 200
+    # steps instead of 16k). The VERDICT stands; the CAUSE first written here
+    # — "the 3-bit magnitude cell" — was wrong, and 2026-08-30 measured what
+    # it is. WeightQuantizationStep now refuses this vehicle BY NAME:
+    # BiasGridDominanceError, max|effective bias| / max|effective weight| =
+    # 5.7 at 4 bits against the q_max/2 = 3.5 limit. The per-perceptron grid
+    # is shared and scaled by max(|w|,|b|), so the BIAS sets it and the
+    # largest weight keeps 3 levels at 99.6% zeros. Two levers exist and both
+    # are closed at THIS soma point: bias_row_splitting='auto' computes k=6
+    # always-on rows and is then refused by BiasRowSplitEventSerialError
+    # (under per_event with a fixed-width membrane the split is not a
+    # value-preserving re-encoding — the twin adds one number, the chip
+    # delivers six separately-thresholded events, and NF<->SCM atol=0
+    # breaks); and a larger S was measured, not assumed — at S=16 the LIF leg
+    # lifts 0.9314 -> 0.9731 and Weight Quantization refuses at the very same
+    # bias-grid gate, so S is not the lever. wb=8 clears it (0.9423 measured)
+    # because q_max=127 puts 5.7 far under the bar, but the stock cell is
+    # 3-bit. THE PRECONDITION FOR RE-ADDING THE ROW is therefore exact: a
+    # vehicle whose computed bias-row bound is ONE row at the per_event point
+    # (max|b| <= max|w| * q_max / s_w), since k=1 is exact at every soma
+    # point. Platform J stays declared above: it is the stock crossbar's real
+    # shape, and the next attempt starts from it.
     # [W5.3] the ONE searched-hardware cell. Every other row in every tier
     # pins hw_config_mode "fixed", so the co-search path — ArchitectureSearchStep,
     # the objectives registry's per-mode availability, the live search_event
@@ -708,7 +789,7 @@ def _deployment(tier, row, vehicles, dataset):
     dp = {
         "lr": row.get("lr", 0.003),
         "tuning_budget_scale": row.get(
-            "budget", 0.25 if tier == 0 and row["mode"] in ("lifsync", "lifs", "ttfs") else 0.5 if tier == 0 else 1,
+            "budget", 0.25 if tier == 0 and row["mode"] in ("lifsync", "lifs", "lifse", "ttfs") else 0.5 if tier == 0 else 1,
         ),
         "degradation_tolerance": 0.15 if tier == 0 else 0.1,
         "model_config_mode": "user",

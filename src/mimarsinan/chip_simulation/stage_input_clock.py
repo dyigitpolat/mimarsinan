@@ -14,21 +14,19 @@ a late reader or a delayed slice, and refuses it by name on a backend whose read
 
 from __future__ import annotations
 
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Dict, FrozenSet, List, Mapping, Sequence, Tuple
 
 from mimarsinan.chip_simulation.nevresim.compile_cache import simulator_source_fingerprint
 from mimarsinan.chip_simulation.nevresim.compile_nevresim import constexpr_options
+from mimarsinan.chip_simulation.nevresim.source_probe import self_test_problem, site_problems
 from mimarsinan.chip_simulation.nevresim.stage_input_read import (
     SELF_TEST,
     STAGE_INPUT_READ_SITES,
     ReadSite,
     nevresim_tree,
 )
-from mimarsinan.common.build_utils import find_cpp20_compiler
 
 
 @dataclass(frozen=True)
@@ -60,7 +58,6 @@ IN_TREE_CORE_LOCAL_BACKENDS: Mapping[str, str] = {
 SOURCE_TREE_CORE_LOCAL_BACKENDS: Mapping[str, SourceTreeRead] = {
     "nevresim": SourceTreeRead(nevresim_tree, STAGE_INPUT_READ_SITES, SELF_TEST, constexpr_options),
 }
-SELF_TEST_TIMEOUT_S = 300.0
 #: (backend, include-tree fingerprint) -> (established, what the probe found).
 _VERDICTS: Dict[Tuple[str, str], Tuple[bool, str]] = {}
 
@@ -97,38 +94,3 @@ def probe_source_tree(backend: str, source: SourceTreeRead, root) -> StageInputR
             else (True, f"hold every read site, and the self-test {source.self_test[1]} holds"))
     established, found = _VERDICTS[key]
     return StageInputRead(established, f"the {backend} sources at {include} {found}")
-
-
-def site_problems(include: Path, sites: Sequence[ReadSite]) -> List[str]:
-    """Per read site, a missing file, a missing text, or a global-cycle read the site still holds."""
-    out: List[str] = []
-    for path, marker, replaced in sites:
-        file = include / path
-        if not file.is_file():
-            out.append(f"{path} is missing")
-            continue
-        text = file.read_text(errors="replace")
-        if marker not in text:
-            out.append(f"{path} does not hold {marker!r}")
-        out.extend(f"{path} still holds the global-cycle read {r!r}" for r in replaced if r in text)
-    return out
-
-
-def self_test_problem(include: Path, self_test: Tuple[str, str],
-                      compile_options: Callable[[str], List[str]]) -> Optional[str]:
-    """Why the tree's self-test does not hold under the backend's compiler, or None when it holds."""
-    header, function = self_test
-    compiler, family = find_cpp20_compiler()
-    if compiler is None or family is None:
-        return f"no C++20 compiler is found to evaluate the self-test {function}"
-    with tempfile.TemporaryDirectory() as work:
-        probe = Path(work) / "stage_input_read_probe.cpp"
-        probe.write_text(f'#include "{header}"\nstatic_assert({function}());\n')
-        cmd = [compiler, "-std=c++20", "-fsyntax-only", *compile_options(family), "-I", str(include), str(probe)]
-        try:
-            done = subprocess.run(cmd, capture_output=True, text=True, timeout=SELF_TEST_TIMEOUT_S)
-        except subprocess.TimeoutExpired:
-            return f"the self-test {function} did not finish within {SELF_TEST_TIMEOUT_S:.0f} s ({compiler})"
-    if done.returncode != 0:
-        return f"the self-test {function} does not hold ({compiler}: {' '.join(done.stderr.split())[-300:]})"
-    return None

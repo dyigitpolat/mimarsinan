@@ -158,6 +158,9 @@ FROZEN_NOT_A_DECISION = frozenset({
     "sanafe_log_potential_trace", "scheduling_latency_weight", "simulation_step_timeout_s",
     "start_step", "stop_step", "target_claim_class", "target_faithfulness_class",
     "target_overrides.*.note", "tuner_target_floor_ratio",
+    # [U-H] the FPGA backend's transport (RTL co-simulation or the card, the same count refusal on either), the
+    # card's index on the host and the bundle's file name: audited against the ODIN device step and the export.
+    "odin_fpga_transport", "odin_fpga_device_index", "odin_hacc_bundle_name",
 })
 
 #: Reserved keys: every ``src/mimarsinan`` file outside ``config_schema/`` and ``gui/`` that names
@@ -226,6 +229,34 @@ class TestPlanClasses:
     def test_a_refusing_gate_s_switch_and_sample_count_bear_on_admissibility(self, key):
         """Disarming a gate (false, or fewer samples) admits what the armed gate would refuse."""
         assert REGISTRY[key].decision_class == ADMISSIBILITY_BEARING
+
+    @pytest.mark.parametrize("key", [
+        "enable_odin_fpga_simulation", "odin_fpga_sample_count", "odin_fpga_xclbin_path",
+        "enable_odin_hacc_export", "odin_hacc_bundle_samples", "odin_hacc_certification_samples",
+    ])
+    def test_the_odin_backends_refusals_bear_on_admissibility(self, key):
+        """[U-H] The ODIN device step refuses a count divergence from the HCM reference on the samples it runs,
+        on the device image it is given (``odin_fpga_simulation_step.py``); the export refuses a twin-versus-HCM
+        divergence on every shipped sample and writes no bundle past it, and the certified subset is what the
+        board's exact-count check judges (``odin_hacc_deployment_step.py``, ``odin_hacc/artifact.py``)."""
+        assert REGISTRY[key].decision_class == ADMISSIBILITY_BEARING
+
+    @pytest.mark.parametrize("key", [
+        "membrane_bits", "membrane_signed", "bias_row_splitting", "bias_rows_per_perceptron",
+        "firing_granularity", "membrane_arithmetic",
+    ])
+    def test_the_soma_point_and_the_bias_rows_bear_on_the_function(self, key):
+        """[U-H] A saturating register moves counts at its rails; the event-serial law moves the fire order; a
+        bias spread over always-on rows takes the weight grid from max|w| alone (``soma_law.py``,
+        ``weight_quantization_step.py``)."""
+        assert REGISTRY[key].decision_class == FUNCTION_BEARING
+
+    def test_the_odin_fabric_sign_claim_bears_on_admissibility(self):
+        """[U-H] The top-level claim names the ODIN fabric (row pairs in logical slots); a bundle or a bitstream
+        of another sign placement is refused (``odin_fpga/chip_selection.py``). The per-core-type field stays the
+        release head's cost-only physical-row declaration."""
+        assert REGISTRY["weight_sign_granularity"].decision_class == ADMISSIBILITY_BEARING
+        assert REGISTRY["cores"].value_schema is not None
 
     @pytest.mark.parametrize("key", [
         "deployment_metric_full_eval", "max_simulation_samples", "simulation_batch_count",

@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.packing.softcore.hard_core_mapping import HardCoreMapping
 
@@ -61,23 +62,35 @@ def policy_hash(
     latency: int,
     connectivity_mode: str = "compile_time",
     simulator_source: str = "",
+    soma_law: SomaLaw | None = None,
 ) -> str:
-    payload = json.dumps(
-        {
-            "simulator_source": simulator_source,
-            "spiking_mode": spiking_mode,
-            "spike_generation_mode": spike_generation_mode,
-            "firing_mode": firing_mode,
-            "thresholding_mode": thresholding_mode,
-            "weight_type": weight_type_name,
-            "threshold_type": threshold_type_name,
-            "simulation_length": int(simulation_length),
-            "latency": int(latency),
-            "connectivity_mode": connectivity_mode,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    """Hash the FULL compile policy: everything that changes the emitted C++, and the simulator sources it compiles
+    against.
+
+    A binary is served on this key alone, so an axis that changes the program and not the key hands a caller a stale
+    binary of DIFFERENT physics with no diagnostic. The soma point therefore rides along — as a sub-object that is
+    omitted entirely at the default point, so every key of a default point is byte-identical to the key without the
+    axis and no existing cache is invalidated.
+    """
+    fields: dict[str, Any] = {
+        "simulator_source": simulator_source,
+        "spiking_mode": spiking_mode,
+        "spike_generation_mode": spike_generation_mode,
+        "firing_mode": firing_mode,
+        "thresholding_mode": thresholding_mode,
+        "weight_type": weight_type_name,
+        "threshold_type": threshold_type_name,
+        "simulation_length": int(simulation_length),
+        "latency": int(latency),
+        "connectivity_mode": connectivity_mode,
+    }
+    if soma_law is not None and not soma_law.is_default_point:
+        fields["semantics_point"] = {
+            "firing_granularity": soma_law.firing_granularity,
+            "membrane_arithmetic": soma_law.membrane_arithmetic,
+            "membrane_bits": int(soma_law.membrane_bits),
+        }
+    payload = json.dumps(fields, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
 
 

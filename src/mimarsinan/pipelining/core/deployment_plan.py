@@ -32,6 +32,7 @@ from mimarsinan.common.pretrained import (
     selected_source,
 )
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+from mimarsinan.mapping.support.bias_rows import BiasRowSplitting
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.transformations.channel_scale_equalization import DEFAULT_CLIP_RATIO
@@ -79,6 +80,7 @@ class DeploymentPlan(PlanPredicates):
 
     activation_quantization: bool
     weight_quantization: bool
+    bias_row_splitting: BiasRowSplitting
     enable_training_noise: bool
     cycle_accurate_lif_forward: bool
 
@@ -98,6 +100,8 @@ class DeploymentPlan(PlanPredicates):
     enable_sanafe_simulation: bool
     #: [U-S] validation samples of the opt-in event census (0: none, the default when undeclared).
     event_census_samples: int
+    enable_odin_fpga_simulation: bool
+    enable_odin_hacc_export: bool
 
     degradation_tolerance: float
     scm_degradation_tolerance: float | None
@@ -117,6 +121,12 @@ class DeploymentPlan(PlanPredicates):
     @classmethod
     def resolve(cls, config: dict[str, Any]) -> "DeploymentPlan":
         get = config.get
+
+        # Cycle-break (the module's standing allowlist reason): the resolver
+        # reaches chip_simulation/deployment_record, which import back here.
+        from mimarsinan.pipelining.core.platform_constraints_resolver import (
+            resolve_bias_row_splitting,
+        )
 
         core_semantics = resolve_core_semantics(config)
         mvm = is_mvm_core_semantics(core_semantics)
@@ -158,6 +168,7 @@ class DeploymentPlan(PlanPredicates):
             is_ttfs_cycle_based=is_ttfs_cycle_based(spiking),
             activation_quantization=bool(get("activation_quantization", False)),
             weight_quantization=bool(get("weight_quantization", False)),
+            bias_row_splitting=resolve_bias_row_splitting(config),
             enable_training_noise=bool(get("enable_training_noise", False)),
             cycle_accurate_lif_forward=bool(get("cycle_accurate_lif_forward", False)),
             optimization_driver=resolve_optimization_driver(config),
@@ -173,6 +184,10 @@ class DeploymentPlan(PlanPredicates):
             enable_loihi_simulation=bool(get("enable_loihi_simulation", False)),
             enable_sanafe_simulation=bool(get("enable_sanafe_simulation", False)),
             event_census_samples=int(get("event_census_samples", 0) or 0),
+            enable_odin_fpga_simulation=bool(
+                get("enable_odin_fpga_simulation", False)),
+            enable_odin_hacc_export=bool(
+                get("enable_odin_hacc_export", False)),
             degradation_tolerance=degradation_tolerance,
             scm_degradation_tolerance=None if scm_dt is None else float(scm_dt),
             degradation_budget_total=float(

@@ -44,6 +44,7 @@ from mimarsinan.tuning.orchestration.lif_exact_qat import (
     lif_subsumed_ladder_steps,
     model_trained_lif_exact,
 )
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _lif_cfg(*, exact=True, steps=8, thresholding="<"):
@@ -929,7 +930,7 @@ class TestDeployedLifGauge:
         x = torch.rand(4, 1, 8, 8)
         with torch.no_grad():
             out = forward(x)
-            ref = chip_aligned_segment_forward(model, x, 8, retime=True)
+            ref = chip_aligned_segment_forward(model, x, 8, retime=True, soma_law=DEFAULT_SOMA_LAW)
         torch.testing.assert_close(out, ref)
 
     def test_aq_gauge_dispatches_on_the_exact_arm(self, monkeypatch):

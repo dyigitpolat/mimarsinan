@@ -153,7 +153,8 @@ class TestTheRasterAgreesWithTheCounts:
             from mimarsinan.mapping.latency.chip import ChipLatency
 
             seg["latency"] = int(ChipLatency(stage.hard_core_mapping).calculate())
-        policy = cycle_neuron_policy("lif", "cascaded", "Default")
+        policy = cycle_neuron_policy(
+            "lif", "cascaded", "Default", soma_law=flow.soma_law)
         train = (torch.rand(T, 2, len(stage.input_map) and
                             max(s.offset + s.size for s in stage.input_map)) > 0.5
                  ).float()

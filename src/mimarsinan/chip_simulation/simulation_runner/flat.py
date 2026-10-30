@@ -30,6 +30,7 @@ class SimulationFlatMixin(SimulationHostContract):
             threshold_type=self.threshold_type,
             connectivity_mode=self.nevresim_connectivity_mode,
             simulation_step_timeout_s=self.simulation_step_timeout_s,
+            soma_law=self.soma_law,
         )
 
         simulation_steps = int(self.simulation_length)

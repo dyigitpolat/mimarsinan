@@ -32,6 +32,7 @@ from mimarsinan.spiking.scale_aware_boundaries import (
 )
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.torch_mapping.converter import convert_torch_model
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 8
 
@@ -88,7 +89,7 @@ def _mean(v) -> float:
 class TestUnarmedSeamFailsLoud:
     def test_residual_seam_without_establishment_raises(self):
         flow = _lif_thetas(_residual_flow())
-        driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy())
+        driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
         with pytest.raises(NotImplementedError, match="wire/absolute"):
             with torch.no_grad():
                 driver(torch.rand(4, 1, 1, 8))
@@ -116,7 +117,7 @@ class TestEstablishmentArmsTheSeam:
     def test_lif_twin_runs_on_the_established_graph(self):
         flow = _lif_thetas(_residual_flow())
         establish_wire_gauge(flow, input_data_scale=1.0)
-        driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy())
+        driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
         with torch.no_grad():
             out = driver(torch.rand(4, 1, 1, 8))
         assert out.shape == (4, 4)
@@ -136,7 +137,7 @@ class TestEstablishmentArmsTheSeam:
         x = torch.rand(4, 1, 1, 8)
         joins: dict = {}
         decoded: dict = {}
-        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
         with torch.no_grad():
             driver(x, join_value_recorder=joins, node_value_recorder=decoded)
 
@@ -223,7 +224,7 @@ class TestRepairIsScopedToUnclassifiableGraphs:
         # [0,1] clamp headroom and its consumers' weight fold with it.
         assert _mean(seam.output_scale) == pytest.approx(1.0)
         with torch.no_grad():
-            out = SegmentForwardDriver(repr_, T, LifSegmentPolicy())(
+            out = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))(
                 torch.rand(4, 1, 1, 8)
             )
         assert torch.isfinite(out).all()
@@ -243,14 +244,14 @@ class TestRepairIsScopedToUnclassifiableGraphs:
         torch.manual_seed(5)
         x = torch.rand(6, 1, 1, 8)
         with torch.no_grad():
-            before = SegmentForwardDriver(repr_, T, LifSegmentPolicy())(x)
+            before = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))(x)
 
         assert establish_gauge_for_mixed_domain_seams(
             flow, input_data_scale=1.0,
         ) == 0
         assert head.output_scale is None and head.per_source_scales is None
         with torch.no_grad():
-            after = SegmentForwardDriver(repr_, T, LifSegmentPolicy())(x)
+            after = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))(x)
         assert torch.equal(after, before)
 
     def test_full_establishment_would_have_changed_that_graph(self):

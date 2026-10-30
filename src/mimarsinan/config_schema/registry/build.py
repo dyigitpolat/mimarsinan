@@ -23,6 +23,8 @@ from mimarsinan.config_schema.registry.entries_grids import ENTRIES as _GRIDS
 from mimarsinan.config_schema.registry.entries_lanes import ENTRIES as _LANES
 from mimarsinan.config_schema.registry.entries_lowering import ENTRIES as _LOWERING
 from mimarsinan.config_schema.registry.entries_model import ENTRIES as _MODEL
+from mimarsinan.config_schema.registry.entries_odin_fpga import ENTRIES as _ODIN_FPGA
+from mimarsinan.config_schema.registry.entries_odin_hacc import ENTRIES as _ODIN_HACC
 from mimarsinan.config_schema.registry.entries_physics import ENTRIES as _PHYSICS
 from mimarsinan.config_schema.registry.entries_platform import ENTRIES as _PLATFORM
 from mimarsinan.config_schema.registry.entries_pruning import ENTRIES as _PRUNING
@@ -33,6 +35,7 @@ from mimarsinan.config_schema.registry.entries_semantics import (
     ENTRIES as _SEMANTICS,
 )
 from mimarsinan.config_schema.registry.entries_target import ENTRIES as _TARGET
+from mimarsinan.config_schema.registry.entries_soma import ENTRIES as _SOMA
 from mimarsinan.config_schema.registry.entries_tuning import ENTRIES as _TUNING
 from mimarsinan.config_schema.registry.entries_write import (
     ENTRIES as _WRITE, INJECTED_DECLARATIONS,
@@ -196,7 +199,8 @@ def _assert_domain_tags(entries) -> None:
 _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
         with_decision_class(_inject_domain_relevance(_inject_default(_inject_declarations(e))))
-        for e in (_RUN + _MODEL + _SEMANTICS + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM + _PHYSICS
+        for e in (_RUN + _MODEL + _SEMANTICS + _SOMA + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION
+                  + _PLATFORM + _ODIN_FPGA + _ODIN_HACC + _PHYSICS
                   + _LOWERING + _TARGET + _WRITE + _READOUT + _RESIDENCY + _GRIDS + _LANES + _CORE_TYPES + _CENSUS)
     )
 )

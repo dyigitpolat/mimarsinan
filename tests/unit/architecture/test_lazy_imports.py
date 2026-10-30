@@ -19,6 +19,11 @@ ALLOWLIST = {
     "chip_simulation/deployment_faithfulness.py",
     "chip_simulation/firing_strategy.py",
     "chip_simulation/lava_loihi/core_lava.py",
+    # [optional hardware dep] pyxrt ships with the Xilinx Runtime, not pip: a
+    # module-level import would make `import mimarsinan` fail on every machine
+    # without an Alveo installation, so the board transport imports it inside
+    # load_pyxrt() and refuses by name when it is absent.
+    "chip_simulation/odin_fpga/transports/xrt_transport.py",
     "chip_simulation/sanafe/arch_synth/spec.py",
     "chip_simulation/sanafe/net_synth/build.py",
     "chip_simulation/sanafe/net_synth/spike_trains.py",
@@ -104,7 +109,6 @@ ALLOWLIST = {
     # plan); relocation, not new lazy imports.
     "pipelining/core/plan/predicates.py",
     "pipelining/core/nf_scm_parity.py",
-    "pipelining/core/platform_constraints_resolver.py",
     "pipelining/core/registry/model_registry.py",
     "pipelining/pipeline_steps/config/architecture_search_helpers.py",
     "pipelining/pipeline_steps/mapping/hard_core_mapping_step.py",

@@ -7,6 +7,10 @@ from typing import Any, Mapping
 from mimarsinan.chip_simulation.activation_semantics import (
     effective_legacy_spiking_mode,
 )
+from mimarsinan.chip_simulation.soma_axes import (
+    firing_mode_for_granularity,
+    resolved_firing_granularity,
+)
 from mimarsinan.chip_simulation.spiking_semantics import (
     DEFAULT_THRESHOLDING_MODE,
     derived_firing_mode,
@@ -34,6 +38,17 @@ def _mode(cfg: Mapping[str, Any]) -> str:
     return effective_legacy_spiking_mode(cfg)
 
 
+def _derived_firing_mode(cfg: Mapping[str, Any]) -> str:
+    """The mode's derived reset, then the granularity's REQUIREMENT on it.
+
+    A document that declares only ``firing_granularity='per_event'`` therefore
+    resolves to the hard-zero reset that law is realizable under, instead of
+    silently keeping today's subtractive one (the row-pair lemma).
+    """
+    return firing_mode_for_granularity(
+        resolved_firing_granularity(cfg), derived_firing_mode(_mode(cfg)))
+
+
 # Relevance vocabulary: trees are evaluated over AUTHORED keys (the frontend
 # evaluates them against the draft), so they speak family/variant — never the
 # derivation-owned legacy twins.
@@ -58,11 +73,14 @@ ENTRIES = (
        exposure="user", label="Firing Mode",
        doc="Neuron firing semantics: Default (subtractive reset), Novena (zero reset), "
            "or TTFS. The legal set follows spiking_mode: the TTFS family admits only "
-           "'TTFS' (the field locks); LIF admits Default/Novena.",
+           "'TTFS' (the field locks); LIF admits Default/Novena. A per-event "
+           "firing_granularity requires 'Novena' — the row-pair realization is a "
+           "no-op only while every fire leaves the membrane below theta.",
        provenance="derivation rule",
-       derived_default=lambda cfg: derived_firing_mode(_mode(cfg)),
+       derived_default=_derived_firing_mode,
        legal_values=lambda cfg: legal_firing_modes(_mode(cfg)),
-       empty_means="derived from spiking_mode (TTFS modes force 'TTFS')"),
+       empty_means="derived from spiking_mode (TTFS modes force 'TTFS'; a "
+                   "per_event granularity forces 'Novena')"),
     _E("spike_generation_mode", domain="event", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
        options=("Uniform", "Deterministic", "Stochastic", "TTFS"),
        category=Category.ADVANCED, exposure="user",

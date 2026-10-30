@@ -55,6 +55,14 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "allow_scheduling": False,
     "nevresim_connectivity_mode": "runtime",
     "enable_training_noise": False,
+    # [ODIN P7a, P8] the device backend's selection and the HACC export's campaign; their enable keys carry NO default.
+    "odin_fpga_transport": "rtl_cosim",
+    "odin_fpga_sample_count": 1,
+    "odin_fpga_xclbin_path": None,
+    "odin_fpga_device_index": 0,
+    "odin_hacc_bundle_samples": 300,
+    "odin_hacc_certification_samples": 50,
+    "odin_hacc_bundle_name": None,
     "sanafe_sample_count": 1,
     "sanafe_arch_preset": "loihi",
     "sanafe_custom_arch_path": None,
@@ -70,6 +78,14 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "target_tq": 32,
     "simulation_steps": 32,
     "weight_bits": 8,
+    # [ODIN P1, P6] the soma-law platform widths: 0 = no fixed-width register, false = the unsigned one (the
+    # arithmetic falls out of the pair); per_synapse = the framework's signed weight grid.
+    "membrane_bits": 0,
+    "membrane_signed": False,
+    "weight_sign_granularity": "per_synapse",
+    # A param-encoded bias rides always-on rows; 'off' = one row on the shared weight grid (byte-identical).
+    "bias_row_splitting": "off",
+    "bias_rows_per_perceptron": 0,
     "allow_coalescing": False,
     "allow_neuron_splitting": False,
     "allow_per_layer_s": False,
@@ -100,6 +116,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "input_size", "num_classes", "model_config", "model_factory", "lr", "lr_range_min", "lr_range_max", "cores",
     "simulation_steps", "arch_search", "target_tq", "cores_per_tile", "tile_grid_rows", "tile_grid_cols", "allow_coalescing",
     "activity_factor", "pass_buffer_capacity_bytes",
+    # Bias-row splitting: how a param-encoded bias rides always-on core rows.
+    "bias_row_splitting", "bias_rows_per_perceptron",
     "allow_neuron_splitting", "allow_per_layer_s", "allow_scheduling", "max_schedule_passes",
     "scheduling_latency_weight", "weight_bits", "activation_bits", "tuning_budget_scale",
     "tuning_budget_scale_ramp_steps", "tuner_target_floor_ratio", "paired_confirm_batches", "s_allocation",
@@ -113,6 +131,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "scm_torch_sim_parity_check", "scm_torch_sim_parity_samples", "scm_torch_sim_parity_min_agreement",
     "onchip_majority_gate", "onchip_min_fraction", "onchip_majority_fraction", "pretrain_floor_chance_multiple",
     "capacity_gate", "loihi_parity_sample_index", "sanafe_sample_count", "sanafe_arch_preset", "sanafe_custom_arch_path",
+    # [ODIN P7a, P8] the device backend (enable + device selection) and the HACC export (enable + campaign).
+    "enable_odin_fpga_simulation", "odin_fpga_transport", "odin_fpga_sample_count", "odin_fpga_xclbin_path",
+    "odin_fpga_device_index", "enable_odin_hacc_export", "odin_hacc_bundle_samples",
+    "odin_hacc_certification_samples", "odin_hacc_bundle_name",
     "sanafe_log_potential_trace", "simulation_batch_count", "simulation_batch_size", "simulation_step_timeout_s",
     # Endpoint floor: RUN-total STEP budget (never wall) + [C3'] min-cover.
     "endpoint_floor_steps", "endpoint_floor_min_cover_steps",
@@ -140,6 +162,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "lif_execution_discipline", "spike_count_parity_samples", "aa_endpoint_recovery_steps",
     "tuning_lossless_entry_fast_path", "endpoint_target_margin", "activation_scale_policy", "core_semantics",
     "value_parity_samples",
+    # [ODIN P1] the soma-law axes (derived defaults, no schema default) and their platform widths.
+    "firing_granularity", "membrane_arithmetic", "membrane_bits", "membrane_signed", "weight_sign_granularity",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers", "proven_recovery_depth",
     # Keys with NO default, where absence is meaningful: workload-profile-injectable ones, and the target's declared physics (no profile => no absolute area/energy number at all, never a defaulted one).

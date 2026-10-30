@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
+from typing import Any, FrozenSet, Iterable, Mapping, MutableMapping, Optional, Set
 
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
+from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.chip_simulation.spiking_semantics import (
+    is_default_firing_mode,
+    is_lif,
+)
 from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 from mimarsinan.tuning.orchestration.mvm_conversion import derive_mvm_recipe
@@ -15,15 +19,35 @@ from mimarsinan.tuning.orchestration.mvm_conversion import derive_mvm_recipe
 RECIPE_OWNED_CORRECTNESS_KEYS = frozenset({"cycle_accurate_lif_forward"})
 
 
+def resolve_backend_enable(
+    *, supported: bool, declared: Any, opt_in: bool,
+) -> bool:
+    """The ONE backend-enable rule, shared by the fold and the wizard rows.
+
+    A capability-off backend is off. A supported backend that needs a DEVICE is
+    on only when the document declares it; every other supported backend is on
+    unless the document declares it off.
+    """
+    if not supported:
+        return False
+    return declared is True if opt_in else declared is not False
+
+
 def _fold_sim_enables(
     dp: MutableMapping[str, Any],
     sim_enables: Mapping[str, bool],
     spiking_mode: str,
     explicit_keys: Set[str],
+    opt_in: FrozenSet[str] | Set[str] = frozenset(),
 ) -> None:
-    """Backend enables: capability off is authoritative (an explicit ON is
-    rejected loudly); a supported backend defaults ON per the recipe and a
-    declared OFF is honored — a legitimate, stored override."""
+    """Backend enables, three states, in this order.
+
+    Capability OFF is authoritative (an explicit ON is rejected loudly). A
+    supported backend that needs a DEVICE is opt-in: it derives off and an
+    explicit ON is honored — capability admits it, availability declares it.
+    Everything else defaults ON per the recipe, and a declared OFF is honored:
+    a legitimate, stored override.
+    """
     for key, supported in sim_enables.items():
         declared = dp.get(key) if key in explicit_keys else None
         if not supported:
@@ -36,7 +60,53 @@ def _fold_sim_enables(
                 )
             dp[key] = False
         else:
-            dp[key] = declared is not False
+            dp[key] = resolve_backend_enable(
+                supported=True, declared=declared, opt_in=key in opt_in)
+
+
+def _soma_law_denies_membrane_readout(law: SomaLaw) -> Optional[str]:
+    """The membrane decode ``Q_T = theta*c_T + m_T`` needs a lossless membrane."""
+    bounds = law.membrane_bounds
+    if bounds is None:
+        return None
+    low, high = bounds
+    return (
+        f"membrane_arithmetic={law.membrane_arithmetic!r} "
+        f"(membrane_bits={law.membrane_bits}) confines the membrane to "
+        f"[{low:.0f}, {high:.0f}], and a fixed-width register cannot hold the "
+        f"residual charge in general, so the residual membrane is NOT the "
+        f"unemitted charge and the decode Q_T = theta*c_T + m_T reports a "
+        f"fiction. A per-deployment no-saturation bound is proved at "
+        f"GENERATION time against a mapped network, which this config-level "
+        f"fold cannot see"
+    )
+
+
+# Knobs whose THEOREM the resolved soma point denies. Same contract as
+# ``_fold_sim_enables``: the point is authoritative, so the knob derives OFF,
+# and an EXPLICIT arm is a keyed contradiction rather than a late crash deep
+# in the executor that refuses it.
+_SOMA_DENIED_KNOBS = (
+    ("lif_membrane_readout", _soma_law_denies_membrane_readout),
+)
+
+
+def _fold_soma_denied_knobs(
+    dp: MutableMapping[str, Any], explicit: Set[str],
+) -> None:
+    """Derive off every knob the resolved soma point's physics denies."""
+    law = SomaLaw.resolve(dp)
+    for key, denial_of in _SOMA_DENIED_KNOBS:
+        reason = denial_of(law)
+        if reason is None:
+            continue
+        if key in explicit and dp.get(key) is True:
+            raise ValueError(
+                f"{key}=true contradicts the resolved soma point: {reason}. "
+                f"Remove the explicit key to accept the derivation, or deploy "
+                f"an unbounded membrane."
+            )
+        dp[key] = False
 
 
 def _pair_lif_exact_qat_retiming(
@@ -51,7 +121,10 @@ def _pair_lif_exact_qat_retiming(
     if not bool(dp.get("lif_exact_qat", False)):
         return
     armed_explicitly = "lif_exact_qat" in explicit
-    novena = str(dp.get("firing_mode", "Default")) != "Default"
+    # The RESOLVED reset, not the raw key: a per_event document that stays
+    # silent resolves to Novena, and reading 'Default' here would arm exact-QAT
+    # against a law whose zero reset breaks its charge identity.
+    novena = not is_default_firing_mode(SomaLaw.resolve(dp).firing_mode)
     retiming_opt_out = "lif_per_hop_retiming" in explicit and not bool(
         dp.get("lif_per_hop_retiming", False)
     )
@@ -147,8 +220,10 @@ def fold_conversion_recipe(
     recipe = ConversionPolicy.derive(
         spiking_mode, dp.get("ttfs_cycle_schedule"),
         spiking_variant=dp.get("spiking_variant"),
+        soma_law=SomaLaw.resolve(dp),
     )
-    _fold_sim_enables(dp, recipe.sim_enables, spiking_mode, explicit)
+    _fold_sim_enables(
+        dp, recipe.sim_enables, spiking_mode, explicit, set(recipe.sim_opt_in))
     dp["optimization_driver"] = recipe.driver
     for key, value in recipe.knobs.items():
         if (
@@ -158,5 +233,6 @@ def fold_conversion_recipe(
         ):
             continue
         dp[key] = value
+    _fold_soma_denied_knobs(dp, explicit)
     _pair_lif_exact_qat_retiming(dp, explicit)
     _pair_lif_exact_qat_kd(dp, explicit)

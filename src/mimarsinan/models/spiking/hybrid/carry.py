@@ -26,11 +26,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import execution_
 from mimarsinan.chip_simulation.spiking_semantics import is_cycle_based
 from mimarsinan.chip_simulation.stage_input_clock import (  # noqa: F401 (re-exported)
     IN_TREE_CORE_LOCAL_BACKENDS, core_local_replay_backends, stage_input_read)
-from mimarsinan.mapping.support.schedule.pass_cut import (
-    COLLAPSE,
-    VERBATIM,
-    transfer_for,
-)
+from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM, raster_free_refusal, transfer_for
 
 
 def carried_output_ids(hybrid_mapping) -> Dict[int, Tuple[int, ...]]:
@@ -286,6 +282,8 @@ def require_replayable_program(hybrid_mapping, config, transfer: str) -> None:
         require_backend_replay(hybrid_mapping, backend, transfer=transfer,
                                spike_mode=str(config.get("spike_generation_mode", "")),
                                spiking_mode=effective_legacy_spiking_mode(config))
+    if refusal := raster_free_refusal(config, carried_output_ids(hybrid_mapping), transfer):  # [U-H]
+        raise PassReplayRefusal(refusal)
 
 
 #: Re-exported so a backend reads the discipline and its price from one import.

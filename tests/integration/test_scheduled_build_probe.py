@@ -57,6 +57,7 @@ from mimarsinan.models.builders.deep_cnn_builder import DeepCNNBuilder
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 T = 4
@@ -260,7 +261,7 @@ def test_c_scheduled_build_is_bit_exact_vs_reference_and_torch():
     torch.manual_seed(3)
     x = torch.rand(6, *INPUT_SHAPE)
     with torch.no_grad():
-        nf = chip_aligned_segment_forward(flow, x, T).double()
+        nf = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW).double()
         out_sched = hcm_sched(x).double() / float(T)
         out_ref = hcm_ref(x).double() / float(T)
 

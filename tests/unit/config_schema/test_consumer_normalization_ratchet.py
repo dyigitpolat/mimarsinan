@@ -68,6 +68,8 @@ CLASSIFIED = {
     ("common/env.py", "loihi_wave_workers"): (OTHER, {"strip": 1}),
     ("common/env.py", "nevresim_root"): (OTHER, {"strip": 1}),
     ("common/env.py", "simulation_step_timeout_override"): (OTHER, {"strip": 1}),
+    # [U-H] the RTL simulator suite's directory (MIMARSINAN_HW_SIM_BIN), blank meaning the vendored default.
+    ("common/env.py", "hw_sim_bin_dir"): (OTHER, {"strip": 1}),
     # IR op types and activation-type strings.
     ("mapping/pruning/boundary_policy.py", "_computeop_relays_deadness"): (OTHER, {"lower": 1}),
     ("mapping/pruning/certificate/dyadic_grid.py", "_op_preserves_dyadic_grid"): (OTHER, {"lower": 1}),
@@ -132,6 +134,13 @@ CLASSIFIED = {
     ("gui/templates.py", "name_and_deployment_from_post_body"): (OTHER, {"strip": 1}),
     ("gui/templates.py", "save_template"): (OTHER, {"strip": 1}),
     ("gui/viewmodel/step_metrics_vm.py", "metric_category"): (OTHER, {"lower": 1}),
+    # [U-H] the FPGA backend's process output and sources: the ODIN testbench's capture lines, yosys's stat cell names,
+    # error line and version banner, and the kernel's Verilog source text its block-RAM port census reads.
+    ("chip_simulation/odin_fpga/kernel_sim.py", "_indexed_references"): (OTHER, {"lstrip": 1}),
+    ("chip_simulation/odin_rtl/capture.py", "parse_capture"): (OTHER, {"strip": 5}),
+    ("chip_simulation/odin_rtl/synth_census.py", "primitive_cells"): (OTHER, {"lstrip": 2}),
+    ("chip_simulation/odin_rtl/synthesis.py", "_first_error"): (OTHER, {"strip": 1}),
+    ("chip_simulation/odin_rtl/synthesis.py", "yosys_version"): (OTHER, {"strip": 1}),
     # G7: a refusal's message text, its first line kept as the census verdict's reason.
     ("mapping/capability/member.py", "_refused"): (OTHER, {"strip": 1}),
     ("mapping/verification/suggester/hw_config_suggester_scheduled.py", "suggest_hardware_config_scheduled"):

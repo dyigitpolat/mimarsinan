@@ -7,11 +7,17 @@ import torch.nn.functional as F
 
 from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.mapping.mappers.conv_helpers import map_shared_weight_conv
+from mimarsinan.mapping.mappers.conv_unfold import (
+    ConvPatchGather,
+    conv_patch_gather,
+    conv_slot_unfold,
+)
 from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
 from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_boundary_scale,
     perceptron_per_source_scale,
 )
+from mimarsinan.mapping.mappers.slot_unfold import SerialSlotUnfold
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.pruning.committed_masks import commit_layer_pruning
 
@@ -91,6 +97,27 @@ class Conv2DPerceptronMapper(Mapper):
 
     def owned_perceptron_groups(self):
         return [[self.perceptron]]
+
+    def patch_gather(self, input_shape) -> ConvPatchGather:
+        """This convolution's unfold over an ``(C, H, W)`` input: the slot table the NF event-serial twin folds
+        through, pinned equal to the IR mapping's gather (``conv_helpers.gather_conv_patches``) by test."""
+        c_in, h_in, w_in = (int(v) for v in input_shape)
+        if c_in != self.in_channels:
+            raise ValueError(
+                f"{self.name}: expected in_channels={self.in_channels}, got {c_in}"
+            )
+        return conv_patch_gather(
+            in_channels=self.in_channels,
+            source_grid=(h_in, w_in),
+            kernel=self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+        )
+
+    def serial_slot_unfold(self, *, input_shape, n_slots: int) -> SerialSlotUnfold:
+        del n_slots  # the twin checks the table against its own weight
+        return conv_slot_unfold(self.patch_gather(input_shape))
 
     def propagate_source_scale(self, deps, out_scales):
         return perceptron_per_source_scale(self, deps, out_scales)

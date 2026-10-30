@@ -57,6 +57,7 @@ from mimarsinan.spiking.scale_aware_boundaries import (
 )
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.torch_mapping.converter import convert_torch_model
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 8
 D = 16
@@ -102,7 +103,7 @@ class _StreamedNFModel(nn.Module):
         return list(self._perceptrons)
 
     def forward(self, x):
-        return SegmentForwardDriver(self.repr_, T, LifSegmentPolicy())(x)
+        return SegmentForwardDriver(self.repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))(x)
 
 
 def _streamed_pipeline_stub():

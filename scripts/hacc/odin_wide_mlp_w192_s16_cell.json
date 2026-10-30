@@ -1,0 +1,89 @@
+{
+  "seed": 1,
+  "pipeline_mode": "phased",
+  "experiment_name": "odin_wide_mlp_w192_s16",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 1024,
+        "max_neurons": 256,
+        "count": 120,
+        "has_bias": false
+      }
+    ],
+    "max_axons": 1024,
+    "max_neurons": 256,
+    "has_bias": false,
+    "target_tq": 16,
+    "simulation_steps": 16,
+    "weight_bits": 8,
+    "allow_coalescing": false,
+    "allow_neuron_splitting": false,
+    "membrane_bits": 16,
+    "weight_sign_granularity": "per_synapse"
+  },
+  "deployment_parameters": {
+    "lr": 0.003,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.15,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "simple_mlp",
+    "model_config": {
+      "mlp_width_1": 192,
+      "mlp_width_2": 112
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 25,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": false,
+    "spiking_family": "lif",
+    "spiking_variant": "streamed",
+    "firing_mode": "Novena",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<=",
+    "encoding_layer_placement": "subsume",
+    "weight_quantization": true,
+    "scale_migration": true,
+    "endpoint_floor_steps": 17200,
+    "training_epochs": 6,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "firing_granularity": "per_event",
+    "enable_odin_hacc_export": true,
+    "odin_hacc_bundle_samples": 300,
+    "odin_hacc_certification_samples": 50,
+    "odin_hacc_bundle_name": "odin_wide_mlp192_mnist_wb8_s16"
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null,
+  "_note": "[ODIN C3] the informed attempt, sized by DECODED ARITHMETIC against BOTH gates it has to clear at once. The wide fabric lifts the two refusals that kept this family off the stock crossbar (1023 effective slots against 257 used; [-128, 127] against a grid reaching |w|=15) and the family then DEPLOYS at 0.9750 (S=4) and 0.9800 (S=16) against t0_54's 0.9618. It is refused at EXPORT by the COUNT CURRENCY, which no crossbar width lifts. Decoded from both mappings -- host-subsumed encode, then three on-chip cores: core 1 (256 -> 128) bound 18/15, core 2 (128 -> 256) bound 108/127, readout core 0 (256 -> 10, theta 409/378, positive column sum 1444/1290) bound 133/146 at S = 4/16. S is NOT the lever: a finer temporal grid makes the bound WORSE, because theta falls against the same weights. The bound tracks the POSITIVE DRIVE into each core, so the lever is FAN-IN -- but halving it (128/64) trips the OTHER gate, OnchipMajorityError, because the subsumed 784-wide encode is then 85% of the parameters and the floor is 20%. 192/112 is the point that clears both by arithmetic: readout fan-in 193/257 and core-2 fan-in 113/129 predict bounds ~96 and ~111 against 127, and the on-chip share is 45,242 of 195,962 = 23.1% against the 20% floor."
+}

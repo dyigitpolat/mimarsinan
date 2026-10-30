@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# vivado, standing in for the real thing: build_xclbn.sh packages the RTL
+# kernel by generating pack_kernel.tcl and running `vivado -mode batch
+# -source <tcl>`. This stub parses that Tcl for the `set xo_path "..."` line
+# the generator writes, creates the .xo, and checks nothing else. Its only
+# job is to let odin_build.sbatch run to the end off-cluster so the SMOKE
+# branch can be gated.
+#
+# It also answers the packaging's NC read-back the way a faithful Vivado does:
+# the `set kernel_cores N` the Tcl carries comes back as `ODIN_PACKAGED_NC N N`
+# in the log (`-log`) and on stdout. ODIN_STUB_PACKAGED_NC="<user> <hdl>"
+# replaces that answer, which is how a gate plays a packaging that ignored NC.
+set -euo pipefail
+tcl=""
+log=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -source) tcl="${2:-}"; shift ;;
+        -log) log="${2:-}"; shift ;;
+    esac
+    shift
+done
+[ -n "${tcl}" ] && [ -f "${tcl}" ] || { echo "stub vivado: no -source tcl" >&2; exit 2; }
+out="$(sed -n 's/^set xo_path "\(.*\)"$/\1/p' "${tcl}" | head -n 1)"
+[ -n "${out}" ] || { echo "stub vivado: no xo_path in ${tcl}" >&2; exit 2; }
+mkdir -p "$(dirname "${out}")"
+printf 'stub xo\n' > "${out}"
+nc="$(sed -n 's/^set kernel_cores \([0-9]*\)$/\1/p' "${tcl}" | head -n 1)"
+answer="${ODIN_STUB_PACKAGED_NC:-${nc:+${nc} ${nc}}}"
+{
+    echo "[stub vivado] packaged ${out} from ${tcl}"
+    if [ -n "${answer}" ]; then echo "ODIN_PACKAGED_NC ${answer}"; fi
+} | if [ -n "${log}" ]; then mkdir -p "$(dirname "${log}")"; tee "${log}"; else cat; fi

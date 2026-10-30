@@ -34,6 +34,7 @@ BUILD_SPECS: dict[str, tuple] = {
     "deep_cnn": ((1, 16, 16), 4, {"depth": 4, "width": 8}, {}),
     "lenet5": ((1, 28, 28), 10, {}, {}),
     "stream_cnn": ((1, 8, 8), 4, {}, {}),
+    "narrow_conv": ((1, 8, 8), 4, {"body_blocks": 1}, {}),
     "mlp_mixer": (
         (1, 8, 8), 4,
         {"patch_n_1": 2, "patch_m_1": 2, "patch_c_1": 8, "fc_w_1": 16, "fc_w_2": 16},

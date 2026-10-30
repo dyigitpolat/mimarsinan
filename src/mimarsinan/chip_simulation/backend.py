@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from mimarsinan.chip_simulation.backend_extensions import (
     EXECUTION_EXTENSIONS,
@@ -11,7 +11,9 @@ from mimarsinan.chip_simulation.backend_extensions import (
     declared_extensions,
     require_extensions,
 )
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_semantics import supports_spiking_mode
 
 __all__ = [
     "Backend",
@@ -30,6 +32,29 @@ def _spiking_mode_of(contract: Any) -> str:
     return str(mode or "lif")
 
 
+def _soma_law_of(contract: Any) -> Optional[SomaLaw]:
+    """The resolved soma point a plan / contract carries.
+
+    ``None`` for a raw mode STRING — the pinned legacy surface carries no
+    point and keeps its mode-keyed answer.
+    """
+    if isinstance(contract, str):
+        return None
+    config = getattr(contract, "config", None)
+    if isinstance(config, Mapping):
+        return SomaLaw.resolve(config)
+    if hasattr(contract, "firing_granularity"):
+        return SomaLaw.resolve(contract)
+    return None
+
+
+def _policy_of(contract: Any):
+    """The point-aware mode policy for a contract / plan / raw mode string."""
+    return policy_for_spiking_mode(
+        _spiking_mode_of(contract), soma_law=_soma_law_of(contract)
+    )
+
+
 class Backend(ABC):
     """A capability-declared deployment target with a build/run/parity-gate driver seam."""
 
@@ -43,14 +68,13 @@ class Backend(ABC):
     decodes_accuracy: bool = False
 
     def supports(self, contract: Any) -> bool:
-        """Whether this backend supports the contract's spiking mode (matrix-driven)."""
-        return policy_for_spiking_mode(_spiking_mode_of(contract)).supports_backend(
-            self.name
-        )
+        """Whether this backend supports the contract's mode AND soma point."""
+        return _policy_of(contract).supports_backend(self.name)
 
     def require_supported(self, contract: Any, *, context: str) -> None:
-        """Raise an actionable error if this backend cannot run the contract's mode."""
-        policy_for_spiking_mode(_spiking_mode_of(contract)).require_backend_supported(
+        """Raise an actionable error if this backend cannot run the contract's
+        mode or its resolved soma point."""
+        _policy_of(contract).require_backend_supported(
             backend=self.name, context=context
         )
 
@@ -109,10 +133,15 @@ class SimulationBackend(Backend):
         return True if self._applies_for is None else bool(self._applies_for(plan))
 
     def require_supported(self, contract: Any, *, context: str) -> None:
-        """Validate the backend×mode, preferring a backend-specific error message, then every execution extension
-        the plan declares (refused by name where this backend does not implement it)."""
+        """Validate the backend×mode×point, naming the cause that actually refused, then every execution
+        extension the plan declares (refused by name where this backend does not implement it).
+
+        The registered message explains this backend's MODE refusal only; a soma point with no executor refuses
+        through the shared typed error, so a refusal can never mis-report which axis it is about.
+        """
         if not self.supports(contract):
-            if self._unsupported_error is not None:
+            mode_refused = not supports_spiking_mode(self.name, _policy_of(contract).spiking_mode)
+            if self._unsupported_error is not None and mode_refused:
                 raise ValueError(self._unsupported_error(contract))
             super().require_supported(contract, context=context)
         config = getattr(contract, "config", None)
@@ -188,6 +217,8 @@ def _loihi_ttfs_error(contract: Any) -> str:
 def _build_default_registry() -> BackendRegistry:
     from mimarsinan.pipelining.pipeline_steps import (
         LoihiSimulationStep,
+        OdinFpgaDeploymentStep,
+        OdinHaccDeploymentStep,
         SanafeSimulationStep,
         SimulationStep,
     )
@@ -221,6 +252,25 @@ def _build_default_registry() -> BackendRegistry:
             enabled_for=lambda plan: plan.enable_sanafe_simulation,
             # Plugin somas expose get_potential via the potential trace.
             exports_final_membrane=True,
+        ),
+        SimulationBackend(
+            "odin_fpga",
+            step_name="ODIN FPGA Deployment",
+            step_class=OdinFpgaDeploymentStep,
+            # OPT-IN, never recipe-defaulted: it needs a DEVICE (an RTL simulator or an Alveo board), which no
+            # config can assume is present, so the capability derivation offers it and the document asks for it.
+            enabled_for=lambda plan: plan.enable_odin_fpga_simulation,
+            # Spikes only: the stock core has no live membrane read port (its memories are read back over SPI).
+            exports_final_membrane=False,
+        ),
+        SimulationBackend(
+            "odin_hacc",
+            step_name="HACC NUS - ODIN Deployment",
+            step_class=OdinHaccDeploymentStep,
+            # OPT-IN like the device it exports FOR: freezing a bundle costs a pass over the shipped samples.
+            enabled_for=lambda plan: plan.enable_odin_hacc_export,
+            # It FREEZES what the device will be asked to reproduce; it reads no membrane of its own.
+            exports_final_membrane=False,
         ),
     ])
 

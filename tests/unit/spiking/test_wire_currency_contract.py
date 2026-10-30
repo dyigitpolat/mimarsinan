@@ -32,6 +32,7 @@ from mimarsinan.mapping.support.per_source_scales import compute_per_source_scal
 from mimarsinan.spiking.segment_boundary import boundary_normalization_scales
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 32
 THETA_1 = 1.7   # producer theta == kappa_fold at the LN seam (the ViT's 1.03-4.14)
@@ -128,7 +129,7 @@ def test_t2_nf_equals_hcm_across_signed_seam():
     repr_, hybrid, _, p2, _ = _signed_seam_model()
     torch.manual_seed(11)
     x = 3.0 * torch.rand(2, 8)
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     flow = SpikingHybridCoreFlow(
         (8,), hybrid, simulation_length=T,
         spiking_mode="lif", cycle_accurate_lif_forward=True,
@@ -175,7 +176,7 @@ def test_t3_temporal_matches_value_domain_reference():
     repr_, _, p1, p2, host = _signed_seam_model()
     torch.manual_seed(13)
     x = torch.rand(64, 8)
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     with torch.no_grad():
         nf = driver(x)
     ref = _value_domain_reference(p1, p2, host, x)
@@ -294,7 +295,7 @@ def test_t4_sigma_policy_preserves_the_signed_band():
     repr_, _, p1, p2, host = _signed_seam_model()
     torch.manual_seed(21)
     x = torch.rand(64, 8)
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     recorder: dict = {}
     with torch.no_grad():
         driver(x, compute_min_recorder=recorder)
@@ -410,7 +411,7 @@ def test_t7_subsume_homogeneous_seam_nf_equals_hcm():
     )
     torch.manual_seed(11)
     x = 3.0 * torch.rand(2, 8)
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     flow = SpikingHybridCoreFlow(
         (8,), hybrid, simulation_length=T,
         spiking_mode="lif", cycle_accurate_lif_forward=True,

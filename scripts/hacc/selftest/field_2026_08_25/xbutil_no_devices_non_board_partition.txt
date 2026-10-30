@@ -1,0 +1,15 @@
+System Configuration
+  OS Name              : Linux
+  Release              : 5.15.0-generic
+  Machine              : x86_64
+  Model                : (unknown)
+  CPU Cores            : 128
+  Memory               : 515000 MB
+  Distribution         : Ubuntu 22.04 LTS
+
+XRT
+  Version              : 2.18.179
+  Branch               : 2024.2
+
+Devices present
+  0 devices found

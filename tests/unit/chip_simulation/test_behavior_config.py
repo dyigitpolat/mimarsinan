@@ -81,15 +81,24 @@ def test_lava_zero_reset():
     assert novena.lava_zero_reset() is True
 
 
-# Captured cell-by-cell from the pre-refactor literal comparisons; the SSOT
-# reroute must not move a single cell.
+# [ODIN P3, D2] the reset law has ONE resolver now
+# (chip_simulation.nevresim_policy_types). Both LIF cells are the historical
+# answer on both former call sites. TTFS is the cell the two resolvers
+# DISAGREED on — inert (a TTFS neuron never reads a LIF reset policy), and the
+# consolidation keeps the codegen answer, the one that reaches emitted C++.
+# Every other value now RAISES instead of silently becoming somebody's physics.
 NEVRESIM_RESET_BY_FIRING_MODE = {
     "Default": "SubtractiveReset",
     "Novena": "ZeroReset",
-    "TTFS": "ZeroReset",
-    "": "ZeroReset",
-    "Bogus": "ZeroReset",
+    "TTFS": "SubtractiveReset",
 }
+NEVRESIM_RESET_UNKNOWN_FIRING_MODES = ("", "Bogus")
+
+NEVRESIM_COMPARE_BY_THRESHOLDING_MODE = {
+    "<": "StrictCompare",
+    "<=": "InclusiveCompare",
+}
+NEVRESIM_COMPARE_UNKNOWN_THRESHOLDING_MODES = ("", "<==", "le")
 
 LAVA_ZERO_RESET_BY_FIRING_MODE = {
     "Default": False,
@@ -113,6 +122,42 @@ def test_nevresim_reset_policy_full_firing_mode_table():
     for firing_mode, expected in NEVRESIM_RESET_BY_FIRING_MODE.items():
         got = _behavior_with_firing_mode(firing_mode).nevresim_reset_policy()
         assert got == expected, firing_mode
+
+
+def test_an_unknown_firing_mode_has_no_reset_policy():
+    """The D2 defect, pinned shut: an unrecognized firing mode used to resolve
+    to ZeroReset here and SubtractiveReset in codegen. Now it resolves to
+    nothing at all."""
+    from mimarsinan.chip_simulation.nevresim_policy_types import (
+        NevresimPolicyTypeError,
+    )
+
+    for firing_mode in NEVRESIM_RESET_UNKNOWN_FIRING_MODES:
+        with pytest.raises(NevresimPolicyTypeError, match="firing_mode"):
+            _behavior_with_firing_mode(firing_mode).nevresim_reset_policy()
+
+
+def test_nevresim_compare_policy_full_thresholding_mode_table():
+    for mode, expected in NEVRESIM_COMPARE_BY_THRESHOLDING_MODE.items():
+        behavior = NeuralBehaviorConfig(
+            spiking_mode="lif", firing_mode="Novena", thresholding_mode=mode,
+            spike_generation_mode="Uniform",
+        )
+        assert behavior.nevresim_compare_policy() == expected, mode
+
+
+def test_an_unknown_thresholding_mode_has_no_compare_policy():
+    from mimarsinan.chip_simulation.nevresim_policy_types import (
+        NevresimPolicyTypeError,
+    )
+
+    for mode in NEVRESIM_COMPARE_UNKNOWN_THRESHOLDING_MODES:
+        behavior = NeuralBehaviorConfig(
+            spiking_mode="lif", firing_mode="Novena", thresholding_mode=mode,
+            spike_generation_mode="Uniform",
+        )
+        with pytest.raises(NevresimPolicyTypeError, match="thresholding_mode"):
+            behavior.nevresim_compare_policy()
 
 
 def test_lava_zero_reset_full_firing_mode_table():

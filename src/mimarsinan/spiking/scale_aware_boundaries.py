@@ -137,6 +137,25 @@ def propagate_boundary_input_scales(model_repr_or_model, input_data_scale: float
     model_repr.input_boundary_scale = default
 
 
+def boundary_scales_for_walk(model_repr_or_model, *, establish: bool) -> dict:
+    """The out-scale table a twin walk reads, gauge FIRST when it owes one.
+
+    A twin that decomposes hops through ``get_effective_weight`` (the
+    per-event fold) reads the stamped per-source scales, so it must run the
+    establishment seam before the walk; a twin that only re-encodes trains
+    reads the pure table and leaves the graph untouched.
+    """
+    model_repr = _as_model_repr(model_repr_or_model)
+    if establish:
+        establish_wire_gauge(
+            model_repr,
+            input_data_scale=stamped_input_boundary_scale(model_repr),
+        )
+    return read_boundary_out_scales(
+        model_repr, input_data_scale=stamped_input_boundary_scale(model_repr),
+    )
+
+
 def stamped_input_boundary_scale(model_repr_or_model) -> float:
     """The scale stamped by the last propagation; 1.0 (unit range) before any."""
     return float(

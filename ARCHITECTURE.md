@@ -42,16 +42,32 @@ docs in sync with the files they describe.
 
 ## Repository layout
 
-- `src/mimarsinan/` — the Python package (18 modules, one doc each).
+- `src/mimarsinan/` — the Python package (19 modules, one doc each).
 - `run.py` / `src/main.py` — the deployment entry points (below).
 - `tests/` — unit suite (`tests/unit/`), integration tests, shared fixtures.
 - `templates/` + `scripts/run_tier.py` — tiered end-to-end run matrices
   (doubling as the wizard's template library).
-- `scripts/` — commit gates: typecheck, module budget, undefined names.
+- `scripts/` — commit gates: typecheck, module budget, undefined names;
+  `scripts/hw_tests/run_hw_tests.sh` is the NAMED runner for the RTL
+  cosimulation gates, which the default suite deliberately does not run;
+  `scripts/hacc/` holds the HACC@NUS packaging (`build_xclbn.sh`,
+  `run_board.sh`, the `sbatch` template and the owner's `RUNBOOK.md`),
+  every script refusing loud when run off-cluster.
 - `nevresim/` — the co-owned C++ simulator, the one remaining submodule
   (consumed by path, not imported). Every other third-party inclusion is a
   declared dependency in `pyproject.toml`; `third_party/patches/` is the
   (currently empty) hook for patching one.
+- `hw/` — RTL only, never Python: `hw/vendor/odin/` (byte-identical
+  ChFrenkel/ODIN @ 1781931 under Solderpad SHL-2.0, hashed against a
+  recorded manifest and never edited), `hw/fpga/mem/` (the
+  upstream-mandated BRAM substitution, a source-file-order overlay),
+  `hw/gen/` (the parametric variant-core TEMPLATES the generator expands
+  from a `CoreSpec` — Modified Works under SHL-2.0 §4(b)), `hw/fpga/kernel/`
+  (the Vitis RTL kernel: per-core SPI masters, AER bridges, the on-fabric
+  sequencer that executes the SAME token program the testbench does, and
+  the AXI wrapper `v++` packages), and `hw/tb/` (the cosimulation
+  testbenches, for the vendored core, a generated variant, and the
+  kernel). See the root `NOTICE`.
 - `generated/` — per-run working directories (configs, caches, artifacts).
 
 ## Entry points and execution flow
@@ -120,6 +136,7 @@ their logic locally.
 | Tuning-loop behavior constants (checkpoint, recovery, rollback, commit gate) | `tuning/orchestration/tuning_policy.py` (frozen `TUNING_POLICY`) |
 | Core-semantics domain axis (`spiking` vs value-domain `mvm`) | `chip_simulation/core_semantics.py` |
 | Authored activation axes (family × variant), legacy bridge, retired keys | `chip_simulation/activation_semantics.py` |
+| Soma-law axes (firing granularity × membrane arithmetic), the resolved `SomaLaw` point, and the point-keyed backend refusal | `chip_simulation/soma_axes.py`, `chip_simulation/soma_law.py`, `chip_simulation/soma_capability.py` |
 | Spiking-mode taxonomy, mode predicates, per-backend capability matrix | `chip_simulation/spiking_semantics.py` |
 | Behavior-carrying per-`(firing × sync)` mode dispatch | `chip_simulation/spiking_mode_policy.py` (`policy_for_spiking_mode`); the mvm family's policy is `chip_simulation/mvm_core_policy.py` |
 | What op shapes a target's cores accept (packaging rule + boundary domain) | `mapping/platform/packaging_contract.py` (`packaging_contract_for`) |
@@ -161,7 +178,7 @@ before editing that module.
 | `transformations` | Pure weight/activation transforms: effective-parameter view, quantization, normalization fusion, pruning | [doc](src/mimarsinan/transformations/ARCHITECTURE.md) |
 | `mapping` | Mapper graph → IR → packed hard cores: pruning, packing, latency, layout estimation, verification, chip export | [doc](src/mimarsinan/mapping/ARCHITECTURE.md) |
 | `spiking` | Spike-train encoding, segment-boundary transcoding SSOT, unified segment-aware NF forward, cascade calibration | [doc](src/mimarsinan/spiking/ARCHITECTURE.md) |
-| `chip_simulation` | Simulation backends (nevresim, SANA-FE, Lava Loihi, TTFS), spiking-semantics SSOTs, certification/coverage/Pareto instruments | [doc](src/mimarsinan/chip_simulation/ARCHITECTURE.md) |
+| `chip_simulation` | Simulation backends (nevresim, SANA-FE, Lava Loihi, TTFS), the ODIN RTL cosimulation instrument (`odin_rtl/`, gate R11a), spiking-semantics SSOTs, certification/coverage/Pareto instruments | [doc](src/mimarsinan/chip_simulation/ARCHITECTURE.md) |
 | `certification` | Deployment-faithfulness certificates: the per-neuron spike-count observable, typed reference↔backend comparison, per-backend exactness classes | [doc](src/mimarsinan/certification/ARCHITECTURE.md) |
 | `deployment_record` | The typed, versioned, provenance-carrying per-run deployment artifact (`deployment_record.json` schema) and its attach-once, seal-validated builder | [doc](src/mimarsinan/deployment_record/ARCHITECTURE.md) |
 | `code_generation` | nevresim C++ source generation from mapped chips (`ChipModel`, main templates, span export) | [doc](src/mimarsinan/code_generation/ARCHITECTURE.md) |

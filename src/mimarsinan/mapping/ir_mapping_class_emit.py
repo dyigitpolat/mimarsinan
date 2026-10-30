@@ -8,10 +8,8 @@ import numpy as np
 import torch
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
-from mimarsinan.mapping.ir_mapping_class_base import (
-    IRMappingCore,
-    assert_bias_scale_param_encodable,
-)
+from mimarsinan.mapping.ir_mapping_class_base import IRMappingCore
+from mimarsinan.mapping.support.bias_rows import core_matrix_with_bias_rows
 
 
 class IRMappingEmitMixin(IRMappingCore):
@@ -79,13 +77,14 @@ class IRMappingEmitMixin(IRMappingCore):
                         core_matrix = np.ascontiguousarray(w_np.T, dtype=float)
                         hardware_bias_arr = self._to_numpy(biases).flatten()
                     else:
-                        assert_bias_scale_param_encodable(
-                            bias_scale, parameter_scale, name
+                        bias_rows = self.param_encoded_bias_rows(
+                            bias_scale, parameter_scale, name=name
                         )
-                        core_matrix = np.empty((in_features + 1, out_features), dtype=float)
-                        core_matrix[:in_features, :] = w_np.T
-                        core_matrix[-1, :] = self._to_numpy(biases).flatten()
-                        ir_input_list.append(IRSource(node_id=-3, index=0))
+                        core_matrix = core_matrix_with_bias_rows(
+                            w_np.T, self._to_numpy(biases).flatten(), bias_rows
+                        )
+                        for _ in range(bias_rows):
+                            ir_input_list.append(IRSource(node_id=-3, index=0))
                 else:
                     core_matrix = np.ascontiguousarray(w_np.T, dtype=float)
 
@@ -167,7 +166,8 @@ class IRMappingEmitMixin(IRMappingCore):
                     start, end = weight_row_slice
                     node_hw_bias = bank.hardware_bias[start:end]
                 else:
-                    ir_input_list.append(IRSource(node_id=-3, index=0))
+                    for _ in range(self._layout_bank_bias_rows[weight_bank_id]):
+                        ir_input_list.append(IRSource(node_id=-3, index=0))
 
             neural_core = NeuralCore(
                 id=node_id,

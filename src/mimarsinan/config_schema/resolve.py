@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Set
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.config_schema.derivation.soma import soma_contract_error_rows
 from mimarsinan.config_schema.deployment_derivation import legal_values_for, legality_bearing_keys
 from mimarsinan.config_schema.registry import (
     Category,
@@ -110,17 +111,21 @@ def _run_sections(draft: Mapping[str, Any], parsed: Any) -> Dict[str, Any]:
 
 def _contract_errors(draft: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """The quantization assembly contract over the run's layout of the draft (``run_sections``), as the CLI path
-    applies it; a draft whose sections the run cannot lay states it elsewhere."""
+    applies it, and the soma point's cross-key rows over the same layout (inert at the default point); a draft
+    whose sections the run cannot lay states it elsewhere."""
+    rows: List[Dict[str, Any]] = []
     try:
         if isinstance(draft.get("deployment_parameters"), Mapping):
-            enforce_run_contract(*run_sections(draft)[:2])
+            dp, pc = run_sections(draft)[:2]
+            rows = soma_contract_error_rows(dp, pc if isinstance(pc, Mapping) else {})
+            enforce_run_contract(dp, pc)
     except ValueError as exc:
         # The rule prescribes its remedies; the frontend only applies them.
-        return [{"key": "weight_quantization", "message": str(exc), "rule_id": "quantization_assembly",
-                 "remedies": [{"label": "Declare vanilla (float weights)", "action": "set",
-                               "key": "pipeline_mode", "value": "vanilla"},
-                              {"label": "Drop weight_bits", "action": "clear", "key": "weight_bits"}]}]
-    return []
+        return rows + [{"key": "weight_quantization", "message": str(exc), "rule_id": "quantization_assembly",
+                        "remedies": [{"label": "Declare vanilla (float weights)", "action": "set",
+                                      "key": "pipeline_mode", "value": "vanilla"},
+                                     {"label": "Drop weight_bits", "action": "clear", "key": "weight_bits"}]}]
+    return rows
 
 
 def effective_view(draft_dp: Mapping[str, Any]) -> Dict[str, Any]:

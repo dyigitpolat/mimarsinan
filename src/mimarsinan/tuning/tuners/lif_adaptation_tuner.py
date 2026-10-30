@@ -6,6 +6,7 @@ from typing import cast
 
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.tuning.orchestration.blend_ramp import (
     BlendActivation,
@@ -145,6 +146,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             n_batches=plan.distmatch_cal_batches,
             bias_iters=plan.distmatch_bias_iters,
             eta=plan.distmatch_bias_eta,
+            soma_law=SomaLaw.resolve(self.pipeline.config),
         )
 
     def _make_target_activation(self, perceptron) -> LIFActivation:
@@ -179,6 +181,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
                 model, self._T, retime=self._per_hop_retiming,
                 phase_dither=self._phase_dither,
                 synchronized=self._synchronized,
+                soma_law=SomaLaw.resolve(self.pipeline.config),
             )
         return None
 

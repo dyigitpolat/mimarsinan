@@ -28,7 +28,7 @@ directly, and this module reads it off a ladder of decreasing authority:
    a bank and the same column window read literally the same weight matrix,
    hence the same source layer. The window is part of the key because a
    weight-stationary tiled layer registers ONE BANK PER OUTPUT TILE
-   (``layout_ir_mapping_fc._map_fc_weight_stationary_tiled``), so distinct
+   (``ir_mapping.fc._map_fc_weight_stationary_tiled``), so distinct
    windows inside one bank would be distinct matrices; keeping it can only
    refuse to merge, never merge two unrelated layers.
 4. ``node.id`` — an owned crossbar with no provenance and no shared storage is

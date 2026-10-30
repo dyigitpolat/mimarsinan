@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.chip_simulation.value_run.value_execution import dependency_order
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
+from mimarsinan.models.spiking.serial.refusals import (
+    refuse_cycle_atomic,
+    refuse_saturating_membrane,
+)
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 from mimarsinan.models.spiking.wire_semantics import lif_window_count
 
@@ -15,19 +20,39 @@ def runs_synchronized_counts(flow, *, recording: bool) -> bool:
     spike record is asked for (the per-core reference loop records one). One predicate for the executed path
     (``_run_neural_segment_rate``) and for the input it reads (``_encode_segment_input``): the count executor reads
     each slice's window count, so a pass's delivery delay, a shift in time, does not apply to its input."""
-    policy = cycle_neuron_policy(flow.spiking_mode, flow.ttfs_cycle_schedule, flow.firing_mode)
+    policy = cycle_neuron_policy(flow.spiking_mode, flow.ttfs_cycle_schedule, flow.firing_mode,
+                                 soma_law=getattr(flow, "soma_law", DEFAULT_SOMA_LAW))
     return (bool(getattr(flow, "lif_execution_synchronized", False)) and flow.spiking_mode == "lif"
             and not policy.single_spike_io and not recording)
 
 
 def run_neural_segment_counts(
-    flow, input_spike_train, *, seg, T, batch_size, device,
+    flow, input_spike_train, *, seg, T, batch_size, device, soma_law,
     neuron_count_recorder: dict | None = None,
 ) -> torch.Tensor:
     """The synchronized count-domain reference: per core, memb = W·counts +
     bias·T (+ V0·θ) and the emitted count is the staircase's count of that charge — bit-equal
     to two-window execution for ANY arrival (§16 theorem), and latch-correct
-    for level-gapped consumers (counts have no windows)."""
+    for level-gapped consumers (counts have no windows).
+
+    That theorem's hypotheses are a lossless subtractive-or-zero reset on an
+    UNBOUNDED accumulator with at most one spike per cycle, so both soma axes
+    can deny it — and this executor then refuses instead of approximating.
+    """
+    refuse_cycle_atomic(
+        soma_law, mechanism="the synchronized count executor",
+        theorem=(
+            "its closed-form staircase is a THEOREM that a window's count "
+            "depends only on the total integrated charge, order-independently."
+        ),
+    )
+    refuse_saturating_membrane(
+        soma_law, mechanism="the synchronized count executor",
+        identity=(
+            "its closed form models the membrane as a linear accumulator over "
+            "the whole window."
+        ),
+    )
     cores = seg["cores"]
     counts_in = input_spike_train.sum(dim=0)
     buffers = [

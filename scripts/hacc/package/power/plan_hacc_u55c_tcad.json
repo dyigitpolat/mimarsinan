@@ -1,0 +1,120 @@
+{
+  "schema": "odin_power_plan/1",
+  "name": "hacc_u55c_tcad_h1_h3",
+  "description": "One U55C board allocation: shell-only baseline after reset, the stock telemetry pilot (the go or no-go gate), resident recertification of both archived bundles, the idle-subtracted protocol on both archived bitstreams with a stock transfer control (the as_run arm's buffer writes and syncs per sample, paced as in the loop, without ap_start), and the stock drift reference. Paths and bundle pins are the September 2026 campaigns' own (deployment_report.json device.xclbin and bundle.self_hash); xclbin sizes are the archived links' own (v++.log, misc/ tarballs); the UUID pins are filled in owner step 3.",
+  "budget_s": 3300,
+  "device_index": 0,
+  "reset_at_start": true,
+  "reset_settle_s": 10,
+  "overheads": {
+    "session_start_s": 60,
+    "reset_s": 60,
+    "xclbin_load_s": 30,
+    "teardown_s": 60,
+    "recertify_host_s": 10
+  },
+  "sampler": {
+    "source": "auto",
+    "routes": ["xrt-smi", "pyxrt"],
+    "interval_s": 0.25,
+    "probe_reads": 5,
+    "max_read_latency_s": 1.0,
+    "first_reading_timeout_s": 60
+  },
+  "designs": {
+    "stock": {
+      "xclbin": "/data/yigit/odin_stock/odin_fpga_hw.xclbin",
+      "bundle": "/data/yigit/odin_hacc_package/deployment/odin_narrowconv_mnist_wb4_s16.json",
+      "bundle_self_hash": "sha256:2c5de8ebd57c42644b551a90100f46b77c316739989093f988497e20a969d884",
+      "xclbin_identity": {
+        "archived": {
+          "size_bytes": 48395756,
+          "written": "2026-08-31 20:39:18, cluster local time (v++ link, xclbinutil step)",
+          "link_started": "2026-08-31 16:18:15",
+          "build_info": "/data/yigit/odin_hacc_package/build/hacc/hw_nc1/odin_fpga_hw.xclbin.info (xclbinutil --info, written by the link at 20:39:19)",
+          "source": "misc/odin_hacc_results_hacchead.tar.gz, build_logs/hw_nc1/link/v++.log lines 4 and 436",
+          "class": "MEASURED (link log)"
+        },
+        "uuid": null,
+        "uuid_source": "owner step 3: xclbinutil --info --input <xclbin>, compared with the link's .xclbin.info",
+        "rebuilt": false
+      },
+      "vivado": {
+        "odin_0_dynamic_w": 0.068,
+        "hmss_0_dynamic_w": 2.223,
+        "class": "ESTIMATE: Vivado 2022.2.2 report_power, routed, vectorless, confidence Low",
+        "source": "vivado_power_interim.json; impl_1_runme.log lines 2408 (odin_0) and 2407 (hmss_0) of misc/odin_hacc_results_hacchead.tar.gz",
+        "describes": "the archived 2026-08-31 stock build"
+      },
+      "chip": "odin_stock_256x256",
+      "samples": 64,
+      "campaign_s": {"as_run": 13.3, "resident": 6.0},
+      "campaign_s_class": "as_run MEASURED (wall_s 13.29 s, 2026-09-01); resident ESTIMATE (3.61 M enabled cycles per pass, scout_estimates.py)"
+    },
+    "wide": {
+      "xclbin": "/data/yigit/odin_wide/odin_fpga_hw.xclbin",
+      "bundle": "/data/yigit/wide/yigit/odin_hacc_package/deployment/odin_wide_mlp_mnist_wb8_s16.json",
+      "bundle_self_hash": "sha256:e1b44e0668f1d0168577cf669ea48d2a9a8026a30071ab0b33a4c2fc9de45fb1",
+      "xclbin_identity": {
+        "archived": {
+          "size_bytes": 47559659,
+          "written": "2026-08-31 11:20:37, cluster local time (v++ link, xclbinutil step)",
+          "link_started": "2026-08-31 09:13:20",
+          "build_info": "/data/yigit/wide/yigit/odin_hacc_package/build/hacc/hw_nc1_odin_wide_1024x256_mb16/odin_fpga_hw.xclbin.info (xclbinutil --info, written by the link at 11:20:38)",
+          "source": "misc/odin_hacc_results_hacchead_wide.tar.gz, build_logs/hw_nc1/link/v++.log lines 4 and 298",
+          "class": "MEASURED (link log)"
+        },
+        "uuid": null,
+        "uuid_source": "owner step 3: xclbinutil --info --input <xclbin>, compared with the link's .xclbin.info",
+        "rebuilt": false
+      },
+      "vivado": {
+        "odin_0_dynamic_w": 0.145,
+        "hmss_0_dynamic_w": 2.199,
+        "class": "ESTIMATE: Vivado 2022.2.2 report_power, routed, vectorless, confidence Low",
+        "source": "vivado_power_interim.json; impl_1_runme.log lines 2259 (odin_0) and 2258 (hmss_0) of misc/odin_hacc_results_hacchead_wide.tar.gz",
+        "describes": "the archived 2026-08-31 widened build"
+      },
+      "chip": "odin_wide_1024x256_mb16",
+      "samples": 64,
+      "campaign_s": {"as_run": 5.0, "resident": 4.5},
+      "campaign_s_class": "as_run MEASURED (wall_s 4.97 s, 2026-09-02); resident ESTIMATE (program stream removed, host share unchanged)"
+    }
+  },
+  "thresholds": {
+    "pilot": {
+      "availability_min": 0.95,
+      "refresh_max_s": 5.0,
+      "changes_min": 3,
+      "relative_half_width_max": 0.10,
+      "samples_per_condition_min": 300,
+      "quantum_max_fraction": 0.5,
+      "expected_differential_w": {"stock": 0.0626, "wide": 0.0652},
+      "expected_differential_class": "ESTIMATE: the kernel's expected share of the workload increment, the gate's sizing value: Vivado 2022.2 vectorless odin_0 dynamic power (0.068 W, 0.145 W; confidence Low) times the archived kernel duty (0.920, 0.449, MEASURED); it describes the archived builds only"
+    },
+    "estimate": {
+      "bootstrap": 2000,
+      "seed": 20261023,
+      "alpha": 0.05,
+      "warmup_samples": 5,
+      "warmup_refresh_multiple": 2.0,
+      "relative_half_width_max": 0.10,
+      "drift_band_sd_multiple": 3.0,
+      "drift_window_s": 60.0,
+      "rounds_min": 3
+    }
+  },
+  "steps": [
+    {"kind": "shell_only", "seconds": 120, "when": "always", "label": "H3 shell-only baseline after reset"},
+    {"kind": "pilot", "design": "stock", "seconds": 300, "when": "always", "label": "H1 telemetry pilot"},
+    {"kind": "recertify", "design": "stock", "arm": "resident", "when": "always", "label": "H2 resident recertification, stock"},
+    {"kind": "recertify", "design": "wide", "arm": "resident", "when": "always", "label": "H2 resident recertification, widened"},
+    {"kind": "protocol", "design": "stock", "when": "go", "label": "H3 protocol, stock, with the transfer control",
+     "conditions": ["kernel_idle", "loop_as_run", "loop_resident", "transfer_as_run"], "rounds": 5, "block_s": 60},
+    {"kind": "protocol", "design": "wide", "when": "go", "label": "H3 protocol, widened",
+     "conditions": ["kernel_idle", "loop_as_run", "loop_resident"], "rounds": 5, "block_s": 60},
+    {"kind": "protocol", "design": "stock", "when": "reduced", "label": "H3 reduced protocol, stock only, with the transfer control",
+     "conditions": ["kernel_idle", "loop_as_run", "loop_resident", "transfer_as_run"], "rounds": 5, "block_s": 110},
+    {"kind": "drift", "design": "stock", "seconds": 60, "when": "go_or_reduced", "label": "H3 drift reference, stock reloaded"}
+  ]
+}

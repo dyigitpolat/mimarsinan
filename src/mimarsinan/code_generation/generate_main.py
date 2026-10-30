@@ -2,21 +2,24 @@ from mimarsinan.common.file_utils import *
 from mimarsinan.code_generation.main_cpp_template import *
 from mimarsinan.code_generation.main_cpp_template_real_valued_exec import *
 from mimarsinan.code_generation.main_cpp_template_runtime import main_cpp_template_runtime
+from mimarsinan.chip_simulation.nevresim_policy_types import (
+    WHOLE_VECTOR_INTEGRATE,
+    nevresim_compare_policy,
+    nevresim_integration_policy,
+    nevresim_lif_fire_policy,
+)
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import (
     ExecPolicySpec,
     NevresimExecParams,
     policy_for_spiking_mode,
 )
 
-
-def resolve_compare_policy(thresholding_mode: str) -> str:
-    """Map ``thresholding_mode`` to the nevresim compare policy type."""
-    return "InclusiveCompare" if thresholding_mode == "<=" else "StrictCompare"
-
-
-def resolve_lif_fire_policy(firing_mode: str, thresholding_mode: str) -> str:
-    reset = "ZeroReset" if firing_mode == "Novena" else "SubtractiveReset"
-    return f"LIFirePolicy<{reset}, {resolve_compare_policy(thresholding_mode)}>"
+# The reset/compare/fire strings have ONE resolver (chip_simulation.
+# nevresim_policy_types); these names stay as this module's call surface.
+resolve_compare_policy = nevresim_compare_policy
+resolve_lif_fire_policy = nevresim_lif_fire_policy
+resolve_integration_policy = nevresim_integration_policy
 
 
 def _input_load_statement(spike_gen_mode: str, generated_files_path: str) -> str:
@@ -41,6 +44,7 @@ def resolve_exec_policy(
     simulation_length: int,
     latency: int,
     output_count: int,
+    integration_policy: str = WHOLE_VECTOR_INTEGRATE,
 ) -> ExecPolicySpec:
     """Return the (ComputePolicy, Execution) C++ types for nevresim main.
 
@@ -55,6 +59,7 @@ def resolve_exec_policy(
         simulation_length=simulation_length,
         latency=latency,
         output_count=output_count,
+        integration_policy=integration_policy,
     )
     return policy_for_spiking_mode(spiking_mode).nevresim_exec_policy(params)
 
@@ -70,6 +75,7 @@ def _build_chip_and_exec_decl(
     simulation_length: int,
     latency: int,
     output_count: int,
+    integration_policy: str = WHOLE_VECTOR_INTEGRATE,
 ) -> str:
     """Return C++ lines declaring ``chip`` and ``exec`` for compile-time connectivity."""
     spec = resolve_exec_policy(
@@ -81,6 +87,7 @@ def _build_chip_and_exec_decl(
         simulation_length=simulation_length,
         latency=latency,
         output_count=output_count,
+        integration_policy=integration_policy,
     )
     return (
         f"static constinit auto chip = \n"
@@ -97,7 +104,14 @@ def get_config(
     spiking_mode="lif",
     threshold_type=None,
     thresholding_mode="<=",
+    *,
+    soma_law: SomaLaw | None = None,
 ):
+    """The emitted-program config dict (the codegen SSOT the drivers build).
+
+    ``soma_law`` is the resolved soma point; ``None`` and the default point
+    both resolve to the default integration policy, which is never emitted.
+    """
     if threshold_type is None:
         threshold_type = weight_type
     return {
@@ -107,6 +121,7 @@ def get_config(
         "weight_type": weight_type,
         "threshold_type": threshold_type,
         "spiking_mode": spiking_mode,
+        "integration_policy": resolve_integration_policy(soma_law),
     }
 
 
@@ -120,6 +135,7 @@ def _build_runtime_exec_decl(
     simulation_length: int,
     latency: int,
     output_count: int,
+    integration_policy: str = WHOLE_VECTOR_INTEGRATE,
 ) -> tuple[str, str]:
     """Return (compute_policy_type, exec_type_decl) for runtime-chip main."""
     spec = resolve_exec_policy(
@@ -131,6 +147,7 @@ def _build_runtime_exec_decl(
         simulation_length=simulation_length,
         latency=latency,
         output_count=output_count,
+        integration_policy=integration_policy,
     )
     return spec.compute_policy, spec.exec_decl
 
@@ -158,6 +175,8 @@ def generate_main_function(
         simulation_length=simulation_length,
         latency=latency,
         output_count=output_count,
+        integration_policy=simulation_config.get(
+            "integration_policy", WHOLE_VECTOR_INTEGRATE),
     )
 
     main_cpp_code = cpp_code_template.format(
@@ -205,6 +224,8 @@ def generate_main_function_runtime(
         simulation_length=simulation_length,
         latency=latency,
         output_count=output_count,
+        integration_policy=simulation_config.get(
+            "integration_policy", WHOLE_VECTOR_INTEGRATE),
     )
 
     main_cpp_code = main_cpp_template_runtime.format(

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# v++ --link, standing in for Vitis: writes the xclbin and an empty report dir.
+#
+# ODIN_STUB_VXX_TRACE, when set, gets one line per invocation carrying the WHOLE
+# argument vector. That is what lets a gate assert which platform and which
+# connectivity config the card profile actually handed the linker, rather than
+# asserting what the build script printed about itself.
+set -euo pipefail
+if [ -n "${ODIN_STUB_VXX_TRACE:-}" ]; then
+    mkdir -p "$(dirname "${ODIN_STUB_VXX_TRACE}")"
+    { printf 'v++'; printf ' %s' "$@"; printf '\n'; } >> "${ODIN_STUB_VXX_TRACE}"
+fi
+out=""
+reports=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o) out="${2:-}"; shift ;;
+        --report_dir) reports="${2:-}"; shift ;;
+    esac
+    shift
+done
+[ -n "${out}" ] || { echo "stub v++: no -o" >&2; exit 2; }
+mkdir -p "$(dirname "${out}")"
+[ -n "${reports}" ] && mkdir -p "${reports}"
+printf 'stub xclbin\n' > "${out}"
+# The real link writes <xclbin>.info with the bitstream's UUID; the build reads
+# it into the xclbin's identity record. ODIN_STUB_XCLBIN_UUID plays a chosen one.
+printf '   UUID (xclbin):          %s\n' \
+    "${ODIN_STUB_XCLBIN_UUID:-5770b000-0000-4000-8000-000000000001}" > "${out}.info"
+echo "[stub v++] wrote ${out}"

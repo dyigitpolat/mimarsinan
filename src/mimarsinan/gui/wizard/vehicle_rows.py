@@ -13,6 +13,7 @@ from mimarsinan.config_schema.registry import (
     REGISTRY,
     parse_deployment_document,
 )
+from mimarsinan.config_schema.recipe_fold import resolve_backend_enable
 from mimarsinan.config_schema.resolve import effective_view
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
@@ -45,13 +46,15 @@ def vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
         semantics = resolve_activation_semantics(effective)
         mode = semantics.legacy_spiking_mode
         schedule = semantics.legacy_ttfs_cycle_schedule
-        sim_enables = dict(ConversionPolicy.derive(
-            mode, schedule, spiking_variant=semantics.variant,
-        ).sim_enables)
+        recipe = ConversionPolicy.derive(
+            mode, schedule, spiking_variant=semantics.variant)
+        sim_enables = dict(recipe.sim_enables)
+        opt_in = set(recipe.sim_opt_in)
     except ValueError:
         mode = str(effective.get("spiking_family"))
         schedule = None
         sim_enables = None
+        opt_in = set()
 
     rows: List[Dict[str, Any]] = []
     for key, entry in REGISTRY.items():
@@ -71,7 +74,8 @@ def vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
                            "the semantics to see vehicle support")
         else:
             supported = bool(sim_enables.get(key, False))
-            on = bool(supported and declared is not False)
+            on = resolve_backend_enable(
+                supported=supported, declared=declared, opt_in=key in opt_in)
             why = None
             if entry.why is not None:
                 why = entry.why({

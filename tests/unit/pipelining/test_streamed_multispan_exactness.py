@@ -27,6 +27,7 @@ from mimarsinan.pipelining.core.nf_scm_parity import (
 )
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 8
 
@@ -92,7 +93,7 @@ class _StreamedNFModel(nn.Module):
         return list(self._perceptrons)
 
     def forward(self, x):
-        driver = SegmentForwardDriver(self.repr_, T, LifSegmentPolicy())
+        driver = SegmentForwardDriver(self.repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
         return driver(x)
 
 

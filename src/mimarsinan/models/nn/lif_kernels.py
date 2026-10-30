@@ -32,6 +32,44 @@ def in_measurement_plane() -> bool:
 _THRESHOLD_OPS = {"<": torch.lt, "<=": torch.le}
 
 
+class MembraneRailTouchedError(ValueError):
+    """A membrane reached a rail of a register whose law says it cannot.
+
+    ``membrane_arithmetic='saturating_signed'`` claims to hold exactly the
+    number the unbounded accumulator holds, which is true only strictly inside
+    the register's interval. The deployment carries a static no-saturation
+    bound proving the rails are unreachable, so touching one is a broken proof,
+    not this law's physics — refused everywhere (torch, nevresim, RTL), never
+    clamped, because a clamp reports a number the contract denies.
+    """
+
+
+def enforce_membrane_rails(
+    memb: torch.Tensor, membrane_bounds: tuple[float, float]
+) -> None:
+    """Refuse a membrane that reached either rail of its declared register.
+
+    Armed only where the law asserts the rails are unreachable
+    (``SomaLaw.asserts_no_saturation``); a register whose saturation IS the
+    modelled substrate never calls this. Deliberately conservative: a value
+    that merely EQUALS a rail without having been clamped there also refuses,
+    because from the membrane alone the two are indistinguishable and the
+    honest answer is to widen the register rather than to guess.
+    """
+    low, high = membrane_bounds
+    if not bool(torch.any((memb <= low) | (memb >= high))):
+        return
+    raise MembraneRailTouchedError(
+        f"the membrane reached a rail of its declared register "
+        f"[{low}, {high}]: this law holds the same number the unbounded "
+        f"accumulator holds only strictly inside the interval, and the "
+        f"deployment's no-saturation bound said the rails were unreachable. "
+        f"Refused, never clamped — a clamp would report a number the "
+        f"deployment's own contract denies. Widen membrane_bits, lower the "
+        f"fan-in, or raise theta."
+    )
+
+
 def snap_membrane_to_lattice(memb: torch.Tensor, lattice_scale: float) -> None:
     """Project the membrane onto its exact arithmetic lattice, in place.
 

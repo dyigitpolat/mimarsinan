@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# sinfo, replaying scripts/hacc/selftest/field_2026_08_25/sinfo_a_N.txt.
+#
+# It understands only what run_all.sh asks for: `-a -N` with an optional
+# `-h` and `-o '%N %P %t'`. The transcript is the stock four-column table
+# (NODELIST NODES PARTITION STATE); this projects the requested columns out of
+# it rather than storing a second copy of the same facts.
+set -euo pipefail
+FIELD="${ODIN_STUB_FIELD:?ODIN_STUB_FIELD must point at the transcript dir}"
+TABLE="${FIELD}/sinfo_a_N.txt"
+
+no_header=0
+format=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--noheader) no_header=1 ;;
+        -o|--format) format="${2:-}"; shift ;;
+        -o*) format="${1#-o}" ;;
+        *) : ;;
+    esac
+    shift
+done
+
+if [ -z "${format}" ]; then
+    if [ "${no_header}" = "1" ]; then
+        tail -n +2 "${TABLE}"
+    else
+        cat "${TABLE}"
+    fi
+    exit 0
+fi
+
+case "${format}" in
+    '%N %P %t') : ;;
+    *)
+        echo "stub sinfo: unsupported --format '${format}'" >&2
+        exit 64
+        ;;
+esac
+
+awk -v skip="${no_header}" 'NR == 1 { if (skip == 1) next; print "NODELIST PARTITION STATE"; next }
+     { printf "%s %s %s\n", $1, $3, $4 }' "${TABLE}"

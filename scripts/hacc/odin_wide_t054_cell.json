@@ -1,0 +1,89 @@
+{
+  "seed": 1,
+  "pipeline_mode": "phased",
+  "experiment_name": "odin_wide_t054_simplemlp_s4",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 1024,
+        "max_neurons": 256,
+        "count": 120,
+        "has_bias": false
+      }
+    ],
+    "max_axons": 1024,
+    "max_neurons": 256,
+    "has_bias": false,
+    "target_tq": 4,
+    "simulation_steps": 4,
+    "weight_bits": 8,
+    "allow_coalescing": false,
+    "allow_neuron_splitting": false,
+    "membrane_bits": 16,
+    "weight_sign_granularity": "per_synapse"
+  },
+  "deployment_parameters": {
+    "lr": 0.003,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.15,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "simple_mlp",
+    "model_config": {
+      "mlp_width_1": 256,
+      "mlp_width_2": 128
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 25,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": false,
+    "spiking_family": "lif",
+    "spiking_variant": "streamed",
+    "firing_mode": "Novena",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<=",
+    "encoding_layer_placement": "subsume",
+    "weight_quantization": true,
+    "scale_migration": true,
+    "endpoint_floor_steps": 17200,
+    "training_epochs": 2,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "tuning_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0001,
+      "warmup_ratio": 0,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    },
+    "firing_granularity": "per_event",
+    "enable_odin_hacc_export": true,
+    "odin_hacc_bundle_samples": 300,
+    "odin_hacc_certification_samples": 50,
+    "odin_hacc_bundle_name": "odin_wide_mlp_mnist_wb8_s4"
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null,
+  "_note": "[ODIN C3] t0_54 RE-PLATFORMED onto the WIDE fabric, and the wall it found. The tier cell it comes from (t0_54_lifse_simplemlp_wq_s4_nobias, 0.9618 deployed) is not exportable on the stock crossbar and never was: its hard cores are 257 logical slots wide against a 127-slot effective fan-in, and its weight grid reaches |w|=15 against a cell that holds [-7, 7]. Nothing about the NETWORK changes here; the fabric it is declared against does: 1024 axon slots signed per SYNAPSE (one row per slot, [-128, 127] at wb=8) on a 16-bit membrane, which is chip configuration odin_wide_1024x256_mb16 and nothing else. MEASURED 2026-08-31, end to end: pretrain 0.9789, AQ 0.9812, LIF 0.9669, weight quantization at wb=8 0.9749 (a GAIN of +0.0080 -- the 8-bit cell does not cost this network anything, it recovers what the 4-bit one would have taken), NF 0.9747, HCM DEPLOYED 0.9750 against the stock point's 0.9618. Both geometry refusals are gone and the accuracy is better. IT IS THEN REFUSED AT EXPORT, by the one thing the wider crossbar does not lift: the COUNT CURRENCY. The readout core can emit 133 events in a cycle against the 127 ceiling. Decoded from the mapping: core 0 (257 slots -> 10 classes) theta=409, max positive column sum 1444, bound 133; core 1 theta=159 bound 18; core 2 theta=84 bound 108. theta is the divisor in that bound AND the folded quantization scale, so the lever the refusal names is the temporal grid, not the geometry and not the weight cell -- see the S=8 and S=16 siblings."
+}

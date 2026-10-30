@@ -1,11 +1,11 @@
 """The two-scale bias grid must ride the IR mapping: perceptron ``bias_scale``
 -> ``map_fc`` / ``register_weight_bank`` -> ``WeightBank`` / ``NeuralCore``.
 
-A platform WITHOUT an on-chip bias register encodes the bias as an always-on
-axon ROW of the core matrix, which must obey the ±q_max weight-register
-contract on the weight grid — a two-scale (coarser) bias grid is not mappable
-there and must fail loud (the WQ step's capability gate keeps recipes off this
-path; the mapping assert is the backstop).
+A platform WITHOUT an on-chip bias register encodes the bias as always-on axon
+ROWS of the core matrix, each bound by the ±q_max weight-register contract on
+the weight grid. A two-scale (coarser) bias grid is r whole weight-grid steps,
+so it maps as r such rows — bias-row splitting. What stays a loud refusal is a
+ratio that is not a whole number of steps, which has no row count at all.
 """
 
 import numpy as np
@@ -148,11 +148,15 @@ class TestTwoScaleEndToEndExport:
         )
 
 
-class TestParamEncodedBiasGuard:
-    def test_two_scale_bias_rejected_without_hardware_bias(self):
+class TestParamEncodedBiasDelivery:
+    def test_two_scale_bias_maps_as_r_always_on_rows(self):
+        """Bias-row splitting made this mappable: the coarser bias grid IS r
+        weight-grid steps, so it rides r always-on rows instead of refusing."""
         mapper = IRMapping(hardware_bias=False, max_axons=256, max_neurons=256)
-        with pytest.raises(ValueError, match="bias"):
-            _map_fc(mapper, bias_scale=torch.tensor(SCALE_B))
+        _map_fc(mapper, bias_scale=torch.tensor(SCALE_B))
+        core = mapper.nodes[-1]
+        assert core.hardware_bias is None
+        assert core.core_matrix.shape[0] == 4 + 13
 
     def test_shared_grid_bias_still_maps_without_hardware_bias(self):
         mapper = IRMapping(hardware_bias=False, max_axons=256, max_neurons=256)
@@ -166,12 +170,12 @@ class TestParamEncodedBiasGuard:
         _map_fc(mapper, bias_scale=None)
         assert mapper.nodes[-1].hardware_bias is None
 
-    def test_two_scale_bank_rejected_without_hardware_bias(self):
+    def test_a_two_scale_bank_splits_the_same_way(self):
         mapper = IRMapping(hardware_bias=False, max_axons=256, max_neurons=256)
-        with pytest.raises(ValueError, match="bias"):
-            mapper.register_weight_bank(
-                weights=torch.randn(3, 4) * 0.05,
-                biases=torch.randn(3) * 0.5,
-                parameter_scale=torch.tensor(SCALE_W),
-                bias_scale=torch.tensor(SCALE_B),
-            )
+        bank_id = mapper.register_weight_bank(
+            weights=torch.randn(3, 4) * 0.05,
+            biases=torch.randn(3) * 0.5,
+            parameter_scale=torch.tensor(SCALE_W),
+            bias_scale=torch.tensor(SCALE_B),
+        )
+        assert mapper._weight_banks[bank_id].core_matrix.shape[0] == 4 + 13

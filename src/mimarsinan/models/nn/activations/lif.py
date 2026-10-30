@@ -153,6 +153,8 @@ class LIFActivation(nn.Module):
     """Multi-timestep integrate-and-fire activation with surrogate gradient."""
 
     _VALID_THRESHOLDING_MODES = ("<", "<=")
+    # [ODIN P2] the armed event-serial fold; None is every historical instance.
+    _serial_fold = None
 
     def __init__(
         self,
@@ -267,34 +269,30 @@ class LIFActivation(nn.Module):
         spikes, _ = self._spikes_and_scale(x)
         return spikes
 
+    def _safe_scale(self, x: torch.Tensor) -> torch.Tensor | float:
+        """``activation_scale`` floored away from zero, on ``x``'s device/dtype."""
+        scale = self.activation_scale
+        if isinstance(scale, torch.Tensor):
+            return scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
+        return max(float(scale), 1e-12)
+
     def _forward_single_step(self, x: torch.Tensor) -> torch.Tensor:
         """One cycle of signed LIF integration; returns spike * scale. The membrane
         integrates the *signed* normalized input (no relu), matching the deployed
-        chip / HCM ``memb += W@s + b`` dynamics."""
-        scale = self.activation_scale
-        if isinstance(scale, torch.Tensor):
-            safe_scale = scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
-        else:
-            safe_scale = max(float(scale), 1e-12)
-
-        x_norm = x / safe_scale
-        spike = self.if_node(x_norm)
-        return spike * safe_scale
+        chip / HCM ``memb += W@s + b`` dynamics. An armed serial slot replaces
+        the single-spike node with the event-serial fold (ODIN P2)."""
+        safe_scale = self._safe_scale(x)
+        if self._serial_fold is not None:
+            return self._serial_fold.run_cycle(x, safe_scale) * safe_scale
+        return self.if_node(x / safe_scale) * safe_scale
 
     def _spikes_and_scale(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | float]:
         from spikingjelly.activation_based import functional
 
-        scale = self.activation_scale
-        if isinstance(scale, torch.Tensor):
-            safe_scale = scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
-        else:
-            safe_scale = max(float(scale), 1e-12)
-
+        safe_scale = self._safe_scale(x)
         x_norm = x / safe_scale
         x_t = x_norm.unsqueeze(0).expand(self.T, *x_norm.shape).contiguous()
-
         self.if_node.step_mode = "m"
         functional.reset_net(self.if_node)
-        spikes = self.if_node(x_t)
-        return spikes, safe_scale
+        return self.if_node(x_t), safe_scale
 

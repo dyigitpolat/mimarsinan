@@ -34,6 +34,28 @@ def transfer_for(*, streamed: bool) -> str:
     return VERBATIM if streamed else COLLAPSE
 
 
+#: [U-H] Backends that buffer NO spike raster across a pass boundary, with the config key that enables each: the ODIN
+#: device and the export that freezes a bundle for it. They run the verbatim discipline where a program carries no
+#: raster across a pass boundary (nothing to buffer); a program that carries one is refused by name.
+RASTER_FREE_BACKENDS: Mapping[str, str] = {
+    "odin_fpga": "enable_odin_fpga_simulation",
+    "odin_hacc": "enable_odin_hacc_export",
+}
+
+
+def raster_free_refusal(config: Mapping[str, Any], carried: Mapping[int, Sequence[int]], transfer: str):
+    """Why an enabled raster-free backend cannot run this program under ``transfer``, or None: the verbatim
+    discipline with a raster carried across a pass boundary (``carried``: stage index -> carried node ids), which
+    such a backend cannot replay and collapsing would change the function."""
+    enabled = sorted(b for b, key in RASTER_FREE_BACKENDS.items() if config.get(key))
+    held = {int(i): tuple(int(n) for n in ids) for i, ids in carried.items() if ids}
+    if transfer != VERBATIM or not enabled or not held:
+        return None
+    return (f"backend(s) {enabled} buffer no spike raster across a pass boundary, and this streamed program "
+            f"carries rasters across one (stage: carried node ids {dict(list(held.items())[:4])}); collapsing them "
+            f"to counts would change the function (run unscheduled, or disable {enabled})")
+
+
 def raster_bytes(width: int, timesteps: int) -> int:
     """One BIT per (neuron, cycle) — a spike raster is binary by construction."""
     if width < 0 or timesteps < 0:

@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.common.refusal.toolchain_refusal import ToolchainRefusal
+
+
+class SomaLawMissingError(ToolchainRefusal, RuntimeError):
+    """A persisted NF forward predates the soma axes and has no point."""
+
 
 class LazyExecutorForward:
     """Picklable ``model.forward`` override running a cross-layer NF forward.
@@ -48,12 +55,16 @@ class ChipAlignedNFForward(LazyExecutorForward):
 
     def __init__(
         self, model, T: int, retime: bool = False, phase_dither: bool = False,
-        synchronized: bool = False,
+        synchronized: bool = False, *, soma_law: SomaLaw,
     ):
         super().__init__(model, T)
         self.retime = bool(retime)
         self.phase_dither = bool(phase_dither)
         self.synchronized = bool(synchronized)
+        # Default-FREE and never re-defaulted on read: this object is PICKLED
+        # into the step cache and is the model's forward for every stage after
+        # the LIF install, so an assumed point becomes the whole run's physics.
+        self.soma_law = soma_law
 
     def _run(self, x):
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
@@ -62,7 +73,42 @@ class ChipAlignedNFForward(LazyExecutorForward):
             self.model, x, self.T, retime=getattr(self, "retime", False),
             phase_dither=getattr(self, "phase_dither", False),
             synchronized=getattr(self, "synchronized", False),
+            soma_law=self._resolved_soma_law(),
         )
+
+    def _resolved_soma_law(self) -> SomaLaw:
+        law = self.__dict__.get("soma_law")
+        if law is None:
+            raise SomaLawMissingError(
+                "the installed chip-aligned NF forward carries no soma_law: "
+                "it was unpickled from a step cache written before the soma "
+                "axes existed, and running it would execute the DEFAULT point "
+                "as this deployment's twin. Re-run the LIF adaptation step "
+                "(delete the cached model) so the forward is installed with "
+                "the resolved point."
+            )
+        return law
+
+    def bind_pre_axes_soma_law(self, run_law: SomaLaw, *, entry: str) -> bool:
+        """Give a forward unpickled WITHOUT a point (a cache written before the soma axes existed) the run's point.
+
+        Such a pickle was written by a tree that knew only the default point, so it is bound to the run's resolved
+        law when that law is a default point (the comparator and reset it carries are keys that tree read too), and
+        refused by name when the run declares any other point, whose physics the pickle does not carry. Called at
+        cache load only (``pipelining/cache/legacy_soma_law.py``); True when it bound, and a forward that carries
+        its point is never touched.
+        """
+        if self.__dict__.get("soma_law") is not None:
+            return False
+        if not run_law.is_default_point:
+            raise SomaLawMissingError(
+                f"cache entry {entry!r} holds a chip-aligned NF forward pickled before the soma axes existed, so "
+                f"it runs the default point, and this run declares the point {run_law.point_tag()!r}. Quarantine "
+                f"the entry (PipelineCache.quarantine_entry(<run dir>, {entry!r})) so the LIF adaptation step "
+                "re-installs the forward at the run's point."
+            )
+        self.soma_law = run_law
+        return True
 
 
 class CascadeForwardInstall:

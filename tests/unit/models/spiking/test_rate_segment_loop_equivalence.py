@@ -73,6 +73,7 @@ def _reference_run_neural_segment_rate(
     ]
     policy = cycle_neuron_policy(
         flow.spiking_mode, flow.ttfs_cycle_schedule, flow.firing_mode,
+        soma_law=flow.soma_law,
     )
     neuron_states = [
         policy.make_state(

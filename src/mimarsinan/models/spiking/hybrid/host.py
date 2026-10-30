@@ -10,6 +10,7 @@ from mimarsinan.chip_simulation.recording.spike_recorder import (
     RunRecord,
     SegmentSpikeRecord,
 )
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
@@ -34,6 +35,8 @@ if TYPE_CHECKING:
         thresholding_mode: str
         spiking_mode: str
         ttfs_cycle_schedule: str
+        soma_law: SomaLaw
+        stage_raster_recorder: "object | None"
         membrane_readout: bool
         membrane_readout_half_step: bool
         _boundary_config: BoundaryConfig

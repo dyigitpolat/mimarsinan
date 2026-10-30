@@ -72,12 +72,18 @@ AXES: Tuple[HypervolumeAxis, ...] = (
     HypervolumeAxis(
         name="firing",
         kind=AxisKind.INTERACTING,
-        values=("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"),
+        values=("lif", "lif+per_event", "ttfs", "ttfs_quantized",
+                "ttfs_cycle_based"),
         screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
         interacts_with=("sync", "quantization", "S"),
         justification=(
             "firing interacts with sync (the death-cascade is a firing×sync law) "
-            "and with quantization and S (the d_max(S) firing-gain budget)"
+            "and with quantization and S (the d_max(S) firing-gain budget). "
+            "[ODIN P2] the event-serial soma law executes on the torch backends, "
+            "so it is a REAL member here; a saturating membrane widens the same "
+            "member with its register width (lif+per_event-sat8, ...), which is "
+            "parametric rather than enumerable — the point, not this list, is "
+            "what CertificationCell keys on"
         ),
     ),
     HypervolumeAxis(

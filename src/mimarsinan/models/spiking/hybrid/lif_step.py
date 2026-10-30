@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Dict
 
-import numpy as np
 import torch
 
-from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
+from mimarsinan.chip_simulation.recording.spike_recorder import SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.models.spiking.hybrid.executors.carry_record import (
     record_reference_carry, require_carry_capable)
@@ -15,6 +14,9 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
 from mimarsinan.models.spiking.hybrid.executors import (
     run_neural_segment_counts, run_neural_segment_packed, runs_synchronized_counts)
+from mimarsinan.models.spiking.hybrid.executors.reference_loop import (
+    accumulate_output_spans, allocate_record_rasters, allocate_record_tensors,
+    append_core_spike_counts, build_cycle_activity_plan, fill_core_inputs)
 from mimarsinan.models.spiking.hybrid.executors.single_spike import (
     single_spike_output_step)
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
@@ -75,6 +77,7 @@ class HybridLifStepMixin(HybridFlowHost):
             integer_lattice=bool(
                 getattr(self, "membrane_integer_lattice", False)
             ),
+            soma_law=self.soma_law,
         )
         neuron_states = [
             policy.make_state(
@@ -89,15 +92,13 @@ class HybridLifStepMixin(HybridFlowHost):
             torch.zeros(batch_size, max(int(c.axons_per_core - c.available_axons), 1),
                         device=device, dtype=COMPUTE_DTYPE) for c in cores]
 
-        record_in_t: list[torch.Tensor] | None = None
-        record_out_t: list[torch.Tensor] | None = None
-        if recording:
-            record_in_t = [
-                torch.zeros(max(int(c.axons_per_core - c.available_axons), 1),
-                            device=device, dtype=torch.int64) for c in cores]
-            record_out_t = [
-                torch.zeros(max(int(c.neurons_per_core - c.available_neurons), 1),
-                            device=device, dtype=torch.int64) for c in cores]
+        record_in_t, record_out_t = (
+            allocate_record_tensors(cores, device) if recording else (None, None))
+        # The rhythm is only load-bearing where a cycle may emit more than
+        # one spike; every other law's count IS the complete record.
+        record_raster_t = (
+            allocate_record_rasters(cores, T, device)
+            if recording and self.soma_law.is_per_event else None)
 
         input_spike_train = input_spike_train.to(COMPUTE_DTYPE)
         latency_gated = policy.latency_gated
@@ -113,7 +114,7 @@ class HybridLifStepMixin(HybridFlowHost):
         if synchronized_path:
             return run_neural_segment_counts(
                 self, input_spike_train, seg=seg, T=T,
-                batch_size=batch_size, device=device)
+                batch_size=batch_size, device=device, soma_law=self.soma_law)
 
         # [cert-plan W1] stage-flat executor: same policy physics, batched
         # charge layout; recording/single-spike paths keep the per-core
@@ -141,43 +142,21 @@ class HybridLifStepMixin(HybridFlowHost):
                 T, batch_size, len(output_sources),
                 device=device, dtype=COMPUTE_DTYPE)
 
-        # A gated core only consumes its axon fill inside [latency, latency+T);
-        # filling outside that window is dead work (input_signals feed nothing),
-        # so both loops walk precomputed per-cycle active sets. Static per stage.
         core_latencies = [int(c.latency or 0) for c in cores]
         stepable = [i for i, c in enumerate(cores) if c.latency is not None]
-        if latency_gated:
-            active_by_cycle = seg.get("active_by_cycle")
-            if active_by_cycle is None or len(active_by_cycle) < cycles:
-                active_by_cycle = [
-                    [i for i in stepable if cores[i].latency <= cycle < T + cores[i].latency]
-                    for cycle in range(cycles)
-                ]
-                seg["active_by_cycle"] = active_by_cycle
-            fill_by_cycle = active_by_cycle
-        else:
-            # An ungated policy steps every core every cycle; fill everything.
-            active_by_cycle = [stepable] * cycles
-            fill_by_cycle = [list(range(len(cores)))] * cycles
+        active_by_cycle, fill_by_cycle = build_cycle_activity_plan(
+            seg, cores=cores, stepable=stepable, cycles=cycles, T=T,
+            latency_gated=latency_gated)
 
         for cycle in range(cycles):
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
 
-            for core_idx in fill_by_cycle[cycle]:
-                local_cycle = cycle - core_latencies[core_idx]
-                self._fill_signal_tensor_from_spans(
-                    input_signals[core_idx],
-                    input_spikes=(
-                        input_spike_train[local_cycle]
-                        if 0 <= local_cycle < T
-                        else zeros_in
-                    ),
-                    buffers=buffers,
-                    plan=axon_fill_plans[core_idx],
-                    cycle=cycle,
-                    single_spike=single_spike,
-                    latency=core_latencies[core_idx],
-                )
+            fill_core_inputs(
+                self, fill_by_cycle[cycle], input_signals=input_signals,
+                input_spike_train=input_spike_train, zeros_in=zeros_in,
+                buffers=buffers, plans=axon_fill_plans,
+                core_latencies=core_latencies, cycle=cycle, T=T,
+                single_spike=single_spike)
 
             for core_idx in active_by_cycle[cycle]:
                 buffers[core_idx] = policy.step(
@@ -192,7 +171,12 @@ class HybridLifStepMixin(HybridFlowHost):
 
                 if record_in_t is not None and record_out_t is not None:
                     record_in_t[core_idx] += input_signals[core_idx][0].to(torch.int64)
-                    record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64).detach()
+                    fired = buffers[core_idx][0].to(torch.int64).detach()
+                    record_out_t[core_idx] += fired
+                    if record_raster_t is not None:
+                        local = cycle - core_latencies[core_idx]
+                        if 0 <= local < T:
+                            record_raster_t[core_idx][local] = fired
 
             if reference_carry is not None:
                 record_reference_carry(
@@ -206,25 +190,9 @@ class HybridLifStepMixin(HybridFlowHost):
                     cycle=cycle, T=T, buffers=buffers, input_spikes=input_spikes)
                 continue
 
-            for sp in output_spans:
-                d0 = int(sp.dst_start)
-                d1 = int(sp.dst_end)
-                if sp.kind == "off":
-                    continue
-                if sp.kind == "on":
-                    if cycle < T:
-                        output_counts[:, d0:d1] += 1.0
-                    continue
-                if sp.kind == "input":
-                    if cycle < T:
-                        output_counts[:, d0:d1] += input_spikes[:, int(sp.src_start):int(sp.src_end)]
-                    continue
-                src_lat = cores[int(sp.src_core)].latency
-                if src_lat is None:
-                    continue
-                if cycle < int(src_lat) or cycle >= int(src_lat) + T:
-                    continue
-                output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+            accumulate_output_spans(
+                output_counts, output_spans, cores, cycle=cycle, T=T,
+                buffers=buffers, input_spikes=input_spikes)
 
         if output_train is not None:
             output_train.append(reference_carry)
@@ -243,23 +211,10 @@ class HybridLifStepMixin(HybridFlowHost):
 
         if recorder_seg is not None:
             assert record_in_t is not None and record_out_t is not None
-            for core_idx, core in enumerate(cores):
-                axon_span_list = axon_spans[core_idx]
-                n_always_on = sum(
-                    int(sp.length) for sp in axon_span_list if sp.kind == "on"
-                )
-                recorder_seg.cores.append(
-                    CoreSpikeCounts(
-                        core_index=core_idx,
-                        n_in_used=max(int(core.axons_per_core - core.available_axons), 1),
-                        n_out_used=max(int(core.neurons_per_core - core.available_neurons), 1),
-                        core_latency=int(core.latency) if core.latency is not None else -1,
-                        has_hardware_bias=getattr(core, "hardware_bias", None) is not None,
-                        n_always_on_axons=n_always_on,
-                        input_spike_count=record_in_t[core_idx].cpu().numpy().astype(np.int64),
-                        output_spike_count=record_out_t[core_idx].cpu().numpy().astype(np.int64),
-                    )
-                )
+            append_core_spike_counts(
+                recorder_seg, cores, axon_spans=axon_spans,
+                record_in_t=record_in_t, record_out_t=record_out_t,
+                record_raster_t=record_raster_t)
 
         return output_counts
 

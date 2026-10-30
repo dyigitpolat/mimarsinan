@@ -37,6 +37,7 @@ from mimarsinan.spiking.segment_boundary import (
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.spiking.spike_trains import uniform_spike_train
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 
 def _config(T: int) -> BoundaryConfig:
@@ -326,7 +327,7 @@ def test_lif_segment_policy_mirrors_uniform_boundary_emission() -> None:
     torch.manual_seed(7)
     x = 3.0 * torch.rand(2, 8)
 
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     with torch.no_grad():
         nf_out = driver(x)
 
@@ -355,7 +356,7 @@ def test_nf_driver_equals_hybrid_flow_with_scaled_encoder() -> None:
     torch.manual_seed(11)
     x = 3.0 * torch.rand(2, 8)
 
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
     flow = SpikingHybridCoreFlow(
         (8,), hybrid, simulation_length=T,
         spiking_mode="lif", cycle_accurate_lif_forward=True,

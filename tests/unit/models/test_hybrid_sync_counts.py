@@ -18,6 +18,7 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 8
 
@@ -63,7 +64,7 @@ def _flow(hybrid, synchronized: bool) -> SpikingHybridCoreFlow:
 def test_sync_flow_matches_nf_sync_walk():
     repr_, hybrid = _tiny()
     x = torch.rand(4, 8) * 0.9
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(synchronized=True))
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(synchronized=True, soma_law=DEFAULT_SOMA_LAW))
     with torch.no_grad():
         nf = driver(x)
         hcm = _flow(hybrid, synchronized=True)(x)
@@ -94,7 +95,7 @@ def test_per_neuron_counts_match_nf_walk_on_all_cores():
 
     repr_, hybrid = _tiny()
     x = torch.rand(3, 8) * 0.9
-    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(synchronized=True))
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(synchronized=True, soma_law=DEFAULT_SOMA_LAW))
     rec_nf = {}
     with torch.no_grad():
         driver(x, node_value_recorder=rec_nf)

@@ -12,6 +12,7 @@ from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.nn.activations.autograd import LIFCountStaircaseFunction
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.torch_mapping.converter import convert_torch_model
+from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 
 T = 8
 
@@ -77,9 +78,13 @@ class TestStaircaseHopWalk:
         x = torch.rand(5, 8)
         with torch.no_grad():
             out_lif = chip_aligned_segment_forward(
-                _lif_flow(), x, T, synchronized=True)
+                _lif_flow(), x, T, synchronized=True,
+                    soma_law=DEFAULT_SOMA_LAW,
+                )
             out_stair = chip_aligned_segment_forward(
-                _stair_flow(), x, T, synchronized=True)
+                _stair_flow(), x, T, synchronized=True,
+                    soma_law=DEFAULT_SOMA_LAW,
+                )
         torch.testing.assert_close(out_stair, out_lif, atol=1e-6, rtol=0.0)
 
     def test_walk_gradient_reaches_layers_behind_host_boundaries(self):
@@ -89,7 +94,7 @@ class TestStaircaseHopWalk:
         flow = _stair_flow()
         torch.manual_seed(4)
         x = torch.rand(6, 8)
-        out = chip_aligned_segment_forward(flow, x, T, synchronized=True)
+        out = chip_aligned_segment_forward(flow, x, T, synchronized=True, soma_law=DEFAULT_SOMA_LAW)
         out.sum().backward()
         first = flow.get_perceptrons()[0].layer.weight
         assert first.grad is not None and float(first.grad.abs().max()) > 0.0
@@ -99,6 +104,8 @@ class TestStaircaseHopWalk:
         round(rate*T)/T * scale — STE must not move the forward."""
         with torch.no_grad():
             out = chip_aligned_segment_forward(
-                _stair_flow(), torch.rand(4, 8), T, synchronized=True)
+                _stair_flow(), torch.rand(4, 8), T, synchronized=True,
+                    soma_law=DEFAULT_SOMA_LAW,
+                )
         grid = out * T  # scale == 1.0
         torch.testing.assert_close(grid, torch.round(grid), atol=1e-5, rtol=0.0)

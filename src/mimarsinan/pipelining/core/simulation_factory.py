@@ -126,6 +126,7 @@ def build_spiking_hybrid_flow(
         lif_execution_synchronized=contract.lif_execution_synchronized,
         membrane_integer_lattice=bool(plan.weight_quantization),
         pass_transfer=run_pass_transfer(cfg),
+        soma_law=contract.soma_law(),
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)
@@ -405,13 +406,25 @@ def record_hcm_reference(
     device: str | None = None,
 ):
     """Build HCM flow and return ``(flow, record)`` from ``forward_with_recording``."""
+    flow = hcm_reference_flow(pipeline, hybrid_mapping, device=device)
+    return flow, record_on_hcm_flow(
+        flow, sample, sample_index=sample_index,
+        device=device or pipeline.config["device"])
+
+
+def hcm_reference_flow(pipeline, hybrid_mapping, *, device: str | None = None):
+    """The HCM reference executor, built once — reusable across samples."""
     device = device or pipeline.config["device"]
-    flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping).to(device).eval()
+    return build_spiking_hybrid_flow(pipeline, hybrid_mapping).to(device).eval()
+
+
+def record_on_hcm_flow(flow, sample: torch.Tensor, *, sample_index: int, device):
+    """One sample's reference record on an ALREADY-built flow (no state carries)."""
     with torch.no_grad():
         _out, ref = flow.forward_with_recording(
             sample.to(device), sample_index=sample_index
         )
-    return flow, ref
+    return ref
 
 
 def run_hcm_mapping_metric(

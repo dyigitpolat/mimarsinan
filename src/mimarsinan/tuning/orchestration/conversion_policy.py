@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional
+from typing import Any, FrozenSet, Mapping, Optional
 
 from mimarsinan.tuning.orchestration.conversion_rationales import (
     _BIT_PARITY_LOSSLESS_RATIONALE,
@@ -176,6 +176,11 @@ __all__ = [
 ]
 
 
+#: Enable keys admitted by capability, turned on only by a declaration.
+DEVICE_OPT_IN_ENABLES: FrozenSet[str] = frozenset(
+    {"enable_odin_fpga_simulation", "enable_odin_hacc_export"})
+
+
 @dataclass(frozen=True)
 class ConversionRecipe:
     """The proven recipe derived for one deployment mode by ``ConversionPolicy.derive``.
@@ -183,11 +188,15 @@ class ConversionRecipe:
     ``driver`` is always the fast ladder; ``knobs`` is the per-mode recipe knob set;
     ``sim_enables`` is the capability-derived backend-enable set; ``special_case`` /
     ``rationale`` mark and justify the rows that diverge from the generic flow.
+
+    ``sim_opt_in`` names enables the capability derivation ADMITS but never
+    turns on: capability and AVAILABILITY (a device) are different questions.
     """
 
     driver: str
     knobs: Mapping[str, Any] = field(default_factory=dict)
     sim_enables: Mapping[str, bool] = field(default_factory=dict)
+    sim_opt_in: FrozenSet[str] = frozenset()
     special_case: Optional[str] = None
     rationale: str = ""
 
@@ -198,13 +207,16 @@ class ConversionPolicy:
     @classmethod
     def derive(
         cls, spiking_mode: str, schedule: Any = None,
-        spiking_variant: Any = None,
+        spiking_variant: Any = None, soma_law: Any = None,
     ) -> ConversionRecipe:
         """Derive the proven recipe for a deployment mode — the SSOT mode→recipe table.
 
         Maps ``(spiking_mode, schedule)`` to its empirically-proven recipe: the
         fast-ladder ``driver``, the per-mode ``knobs``, the capability-derived
         ``sim_enables``, and the ``special_case`` marker + ``rationale``.
+        ``soma_law`` carries the resolved soma point when the caller holds one,
+        so a backend with no executor for that point derives OFF rather than
+        being turned on by the mode alone.
         """
         # Lazy: chip_simulation has a fragile import cycle; a top-level import breaks
         # when this module loads before chip_simulation finishes initializing.
@@ -219,7 +231,7 @@ class ConversionPolicy:
         )
 
         mode = require_known_spiking_mode(spiking_mode)
-        policy = policy_for_spiking_mode(mode, schedule)
+        policy = policy_for_spiking_mode(mode, schedule, soma_law=soma_law)
         synchronized = is_synchronized_ttfs(mode, schedule)
         streamed_lif = mode == "lif" and str(spiking_variant or "") == "streamed"
 
@@ -261,9 +273,8 @@ class ConversionPolicy:
             rationale = rationale or _BIT_PARITY_LOSSLESS_RATIONALE
 
         sim_enables = {
-            "enable_nevresim_simulation": (
-                policy.supports_backend("nevresim") and not synchronized
-            ),
+            "enable_nevresim_simulation":
+                policy.supports_backend("nevresim") and not synchronized,
             "enable_sanafe_simulation": policy.supports_backend("sanafe"),
             # [N5 2026-08-09] streamed Loihi ENABLED: the wave runner's
             # per-core replay is free-running-equivalent on gap-1 graphs
@@ -272,12 +283,18 @@ class ConversionPolicy:
             # comparator/reset), and the integer-theta lattice makes vth
             # exactly representable. The step's spike-parity gate is FATAL.
             "enable_loihi_simulation": policy.supports_backend("loihi"),
+            # [ODIN P7a/P8] the point-keyed capability decides whether the
+            # crossbar executes this law; the opt-in set decides a run reaches
+            # for the hardware — or freezes a bundle for it — only when asked.
+            "enable_odin_fpga_simulation": policy.supports_backend("odin_fpga"),
+            "enable_odin_hacc_export": policy.supports_backend("odin_hacc"),
         }
 
         return ConversionRecipe(
             driver=OPTIMIZATION_DRIVER_FAST,
             knobs=dict(knobs),
             sim_enables=sim_enables,
+            sim_opt_in=DEVICE_OPT_IN_ENABLES,
             special_case=special_case,
             rationale=rationale,
         )

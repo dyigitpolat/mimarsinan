@@ -120,6 +120,7 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
         lif_per_hop_retiming_enabled,
         spike_phase_dither_enabled,
     )
+    from mimarsinan.chip_simulation.soma_law import SomaLaw
     from mimarsinan.models.nn.activations import LIFActivation
     from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
@@ -138,10 +139,12 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
     retime = lif_per_hop_retiming_enabled(pipeline_config)
     dither = spike_phase_dither_enabled(pipeline_config)
     sync = lif_execution_synchronized(pipeline_config)
+    soma_law = SomaLaw.resolve(pipeline_config)
 
     def _deployed_forward(x):
         return chip_aligned_segment_forward(
-            clone, x, T, retime=retime, phase_dither=dither, synchronized=sync
+            clone, x, T, retime=retime, phase_dither=dither, synchronized=sync,
+            soma_law=soma_law,
         )
 
     return _deployed_forward
