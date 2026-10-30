@@ -30,9 +30,9 @@ from mimarsinan.mapping.support.period_census import (
     SCHEDULE_RESIDENCY_PLAN, SCHEDULE_RESIDENT_CORES, resident_core_indices,
 )
 from mimarsinan.mapping.support.schedule.pass_carry import (
-    carried_softcore_spans, carried_wire_spans, delayed_input_slices,
+    carried_softcore_spans, carried_wire_spans, delayed_input_slices, group_held,
 )
-from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_CORE_ORDINALS, dark_cores
+from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_CORE_ORDINALS, dark_cores, program_groups, stage_groups
 from mimarsinan.mapping.weight_programming import weight_programming_report
 from mimarsinan.transformations.quantization_bounds import core_weight_bits
 
@@ -176,14 +176,23 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
                     split_signs[h] if split_signs else (int(signs[h]),) + (0,) * (len(t) - 1))) if signs else (),
             ))
     widths: Tuple[BoundaryWidths, ...] = ()
+    onchip: Tuple[BoundaryWidths, ...] = ()
     if noc.census is not None:
-        widths = boundary_widths_of(
-            ((w, position[(made, segment_of[node])], position[(last, segment_of[node])])
-             for node, w, made, last in carried_softcore_spans(softcores, noc.pass_placements,
-                                                                noc.census.pair_wires, segment_of)),
-            ((w, position[(reader, segment_of[node])]) for node, w, reader in delayed_carry_wires(softcores, noc)))
-    return ProgramPasses(rows=tuple(rows), boundary_widths=widths,
+        widths, onchip = _split_widths(
+            carried_softcore_spans(softcores, noc.pass_placements, noc.census.pair_wires, segment_of),
+            delayed_carry_wires(softcores, noc), program_groups(noc.pass_programs),
+            lambda node, made: position[(made, segment_of[node])])
+    return ProgramPasses(rows=tuple(rows), boundary_widths=widths, onchip_boundary_widths=onchip,
                          operands_unstated=None if dynamic_banks is not None else CANDIDATE_OPERANDS_UNSTATED)
+
+
+def _split_widths(spans, replays, groups, at) -> Tuple[Tuple[BoundaryWidths, ...], Tuple[BoundaryWidths, ...]]:
+    """[U-J targeted M2] A plane's per-boundary widths and their share one wavefront group holds itself
+    (``pass_carry.group_held``, the carry census's rule), ``at`` the row of a span's (node, pass position)."""
+    def widths(s, x) -> Tuple[BoundaryWidths, ...]:
+        return boundary_widths_of(((w, at(n, a), at(n, b)) for n, w, a, b in s), ((w, at(n, r)) for n, w, r in x))
+
+    return widths(spans, replays), widths(*group_held(spans, replays, groups))
 
 
 def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
@@ -223,10 +232,9 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
             core_sign_rows=tuple(r for c, o, t in zip(cores, occupancy, tiles)
                                  for r in tile_rows(core_sign_rows(c, o), t)),
         ))
-    widths = boundary_widths_of(((w, position[made], position[last])
-                                 for _node, w, made, last in carried_wire_spans(stages)),
-                                ((w, position[reader]) for _node, w, reader in delayed_input_slices(stages)))
-    return ProgramPasses(rows=tuple(rows), boundary_widths=widths)
+    widths, onchip = _split_widths(carried_wire_spans(stages), delayed_input_slices(stages), stage_groups(stages),
+                                   lambda _node, index: position[index])
+    return ProgramPasses(rows=tuple(rows), boundary_widths=widths, onchip_boundary_widths=onchip)
 
 
 def record_program_passes(record: Any) -> ProgramPasses:

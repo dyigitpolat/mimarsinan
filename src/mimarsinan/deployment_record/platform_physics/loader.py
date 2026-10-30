@@ -15,6 +15,7 @@ from mimarsinan.deployment_record.platform_physics.conversion import (
     conversion_model_for,
 )
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
+from mimarsinan.deployment_record.platform_physics.hosts.description import HOST_IDENTITY_FIELD, require_one_host
 from mimarsinan.deployment_record.platform_physics.profile import (
     PHYSICS_FORMAT_VERSION,
     CarryBufferDeclarationError,
@@ -33,9 +34,10 @@ from mimarsinan.deployment_record.units import TIME, to_canonical
 #: time is the larger of the two corner by corner, the pipelined bound of the link (a store-and-forward link, which
 #: adds its stages, is slower); a profile without its own stage takes the declared one).
 COMBINE_RULES = ("replace", "slower")
-#: [consts fix round] The closed field set of an override declaration; a field outside it refuses by name.
+#: [consts fix round] The closed field set of an override declaration; a field outside it refuses by name. [U-J]
+#: ``host``: the host a host row describes (``hosts.description``), one host per deployment.
 OVERRIDE_FIELDS = frozenset({"nominal", "low", "high", "unit", "evidence_kind", "citation", "derivation", "note",
-                             "combine"})
+                             "combine", HOST_IDENTITY_FIELD})
 #: Evidence classes weaker than a shown derivation: a composition (arithmetic) cannot strengthen such a stage.
 _BELOW_DERIVED = frozenset({"estimated"})
 
@@ -114,11 +116,14 @@ def apply_overrides(
 
     An override must say why it deviates; the replacement is marked so reports and the
     wizard can show it as a departure from the declared profile. A declaration stating
-    ``combine: slower`` composes with the profile's own value instead (``COMBINE_RULES``).
+    ``combine: slower`` composes with the profile's own value instead (``COMBINE_RULES``). [U-J] Host rows naming
+    their host (``HOST_IDENTITY_FIELD``) replace the profile's host rows whole, and host rows of two hosts refuse by
+    name (``hosts.description.require_one_host``).
     """
     if not overrides:
         return physics
-    constants = dict(physics.constants)
+    replaced = require_one_host(overrides, physics.constants)
+    constants = {key: value for key, value in physics.constants.items() if key not in replaced}
     for key, raw in overrides.items():
         spec = spec_for(key)
         existing = physics.constants.get(key)
@@ -128,6 +133,7 @@ def apply_overrides(
             raise ValueError(f"{key}: unknown fields {sorted(unknown)} in the declaration (an override declares "
                              f"{sorted(OVERRIDE_FIELDS)})")
         combine = str(data.pop("combine", "replace"))
+        host = data.pop(HOST_IDENTITY_FIELD, None)
         if combine not in COMBINE_RULES:
             raise ValueError(f"{key}: combine {combine!r} is not one of {list(COMBINE_RULES)}")
         if combine == "slower" and spec.dimension != TIME:
@@ -144,7 +150,7 @@ def apply_overrides(
             evidence_kind=str(data["evidence_kind"]),
             citation=str(data.get("citation", "")),
             derivation=str(data.get("derivation", "")),
-            note=str(data.get("note", "")),
+            note=(f"[host {host}] " if host else "") + str(data.get("note", "")),
             overridden=True,
         )
         constants[key] = _slower(value, existing) if combine == "slower" and existing is not None else value

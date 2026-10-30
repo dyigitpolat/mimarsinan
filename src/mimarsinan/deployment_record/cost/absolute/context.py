@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.formulas import (
@@ -13,6 +13,7 @@ from mimarsinan.deployment_record.cost.absolute.formulas import (
     add_bands,
     scale_band,
 )
+from mimarsinan.deployment_record.cost.host_terms import host_memory_time
 from mimarsinan.deployment_record.cost.terms import CostTerm
 from mimarsinan.deployment_record.platform_physics.constants import (
     resolve_supersessions,
@@ -20,6 +21,7 @@ from mimarsinan.deployment_record.platform_physics.constants import (
 from mimarsinan.deployment_record.platform_physics.conversion import (
     conversion_model_for,
 )
+from mimarsinan.deployment_record.platform_physics.hosts.description import describes_host
 from mimarsinan.deployment_record.platform_physics.profile import ExternalComponent, PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -113,6 +115,8 @@ class PricingContext:
     #: at the run's adc_bits): a component whose work exists blocks its headline by that reason (``blocked``).
     refused_constants: Mapping[str, str] = field(default_factory=dict)
     blocked: Dict[str, str] = field(default_factory=dict)
+    #: [U-J] The write law's payload bytes per inference over the host-chip link (``host_terms.write_link_bytes``).
+    write_link_bytes: Optional[float] = None
 
     @classmethod
     def create(
@@ -192,14 +196,31 @@ class PricingContext:
         return bands, evidence, unpriced
 
     def host_time(self) -> HostTime:
-        """The host wall, priced from a measured wall or the declared host rate."""
+        """The host wall, priced from a measured wall or the declared host rate; [U-J] plus the MAC-free host
+        operators' bytes at the host memory time (``host_terms.host_memory_time``), where declared."""
+        base = self._compute_host_time()
+        memory, unpriced = host_memory_time(self)
+        if base.unpriceable or (memory is None and not unpriced):
+            return base
+        band = base.band if memory is None else memory if base.band is None else add_bands(
+            [base.band, memory], f"{base.band.basis} + {memory.basis}")
+        return replace(base, band=band, unpriced=base.unpriced + tuple(unpriced))
+
+    def _wall_is_this_host(self) -> bool:
+        """[U-J] A measured host wall prices the host unless the physics describes a host of its own (a host
+        description's whole model, ``describes_host``) without relating the machine that measured the wall to it
+        (``host_compute_rate``): that host prices its own time, never another machine's wall. [targeted M1] A partial
+        host block (a server's measured calibration) keeps the wall's rule, which needs ``host_compute_rate``."""
+        return self.physics.has("host_compute_rate") or not describes_host(self.physics)
+
+    def _compute_host_time(self) -> HostTime:
         if not self.quantities.has("host_macs"):
             return HostTime(blocked=(
                 "the host share is unknown (no partition census), so a "
                 "host-inclusive number cannot be certified"))
         if self.quantities.get("host_macs").value == 0:
             return self._dispatch_only_host_time()
-        if self.quantities.has("host_ops_s"):
+        if self.quantities.has("host_ops_s") and self._wall_is_this_host():
             if not self.physics.has("host_compute_rate"):
                 return HostTime(missing=("host_compute_rate",))
             wall = self.quantities.get("host_ops_s").value
@@ -245,7 +266,8 @@ class PricingContext:
         A measured wall keeps today's empty host time (that path is the measured host repair's);
         otherwise dispatch is priced through the declared per-op overhead, or named unpriced.
         """
-        if self.quantities.has("host_ops_s") or not self.quantities.has("compute_op_count"):
+        if (self.quantities.has("host_ops_s") and self._wall_is_this_host()) or not self.quantities.has(
+                "compute_op_count"):
             return HostTime()
         ops = self.quantities.get("compute_op_count").value
         if ops == 0:

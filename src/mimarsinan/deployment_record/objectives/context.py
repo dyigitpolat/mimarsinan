@@ -8,6 +8,7 @@ from typing import Any, Mapping, Optional
 import mimarsinan.mapping.platform.target_bundles as target_bundles
 from mimarsinan.deployment_record.cost.absolute.validity import declared_geometry
 from mimarsinan.deployment_record.cost.compute_time import busiest_core_events, prices_per_event
+from mimarsinan.deployment_record.objectives.host_link import host_link_context
 from mimarsinan.deployment_record.quantities.lanes import lane_block_quantities
 from mimarsinan.mapping.lanes.declaration import lane_declaration, lanes_executed
 from mimarsinan.deployment_record.quantities.from_candidate import (
@@ -45,6 +46,7 @@ def candidate_context_from_platform(
     passes: Optional[Any] = None,
     lane_ops: Optional[Mapping[str, int]] = None,
     lane_walked: bool = False,
+    host_boundary: Optional[Any] = None,
 ) -> CandidateQuantityContext:
     """The declarations a candidate's platform carries, as quantity context.
 
@@ -60,6 +62,7 @@ def candidate_context_from_platform(
     record does: ``lane_ops`` is the lane plan's estimate by kind
     (``mapping.lanes.output_stage.planned_lane_ops``; absent without a model). ``lane_walked``: the layout walk
     applied the lane plan (``lanes.shape_walk``), so the lane work is the walk's fusion count and the stage says so.
+    [U-J] ``host_boundary``: the walk's host-chip boundary census, sized where the physics prices the link.
     """
     carry, carry_refusal = onchip_carry(carry, pcfg)  # [U-F4] each carried value held as the chip declares it
     context = _spiking_rule_context(
@@ -75,6 +78,7 @@ def candidate_context_from_platform(
     context = _lane_context(context, pcfg, lane_ops, lane_walked)
     context = replace(context, carry_onchip_bytes=None if carry is None else carry.get(ONCHIP_CENSUS),
                       carry_onchip_refusal=carry_refusal, carry_buffer_capacity_bytes=declared_buffer_bytes(pcfg))
+    context = host_link_context(context, pcfg, host_boundary, passes)
     if not names_value_domain(pcfg):
         return _event_census(context, pcfg, passes)
     refuse_spiking_activity(pcfg)

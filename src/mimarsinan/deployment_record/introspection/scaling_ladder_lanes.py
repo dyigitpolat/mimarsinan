@@ -14,6 +14,7 @@ segment (the IR runs), and per depth segment of the fused program for a declared
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -22,6 +23,7 @@ from mimarsinan.mapping.lanes.shape_walk import LaneWalk
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.platform.core_residency import BASIS_PROVENANCE, provenance_group_id, ungrouped_fallback_id
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
+from mimarsinan.mapping.support.host_boundary import host_boundary_census
 
 
 def layout_walk(network: Any, platform: Mapping[str, Any], *, wire_census: bool,
@@ -90,3 +92,9 @@ def host_census(network: Any, census: Any) -> Dict[str, Any]:
     if absorbed and host.get("compute_op_count") is not None:
         host["compute_op_count"] = int(host["compute_op_count"]) - absorbed
     return host
+
+
+def walk_host_boundary(layout: LayoutIRMapping, network: Any) -> Any:
+    """[U-J] The walk's host-chip boundary census (``host_boundary_census``), the network input sized from its
+    declared resolution; None without the walk's wire census."""
+    return host_boundary_census(layout, input_elements=math.prod(int(d) for d in network.resolution))

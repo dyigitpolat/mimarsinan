@@ -431,3 +431,30 @@ another beside it), [targeted M1] `prime_mat_256x256` 2 cells on 1 row (chi2016p
 negative weights in two crossbars sharing one input port, the reading of `docs/research/physics/prime_constants_research.md`
 section 3.3(b), at the bound 4-bit weights), every other bundle 1. Both doors refuse a count above 1 without its rows,
 and rows that do not divide it.
+
+## Edge host and the host-chip link (U-J)
+
+Owner rule of 2026-10-28: the host is priced from a low-power Jetson-class device with published constants, never
+measured on the experiment machines. `platform_physics/hosts/`: a host described as data (`<name>.json` beside its
+`.md`): its published power modes, a mode chosen by a declared rule (`default`: the documented default mode), and
+per row its class and band (`hosts/description.py`: `host_description_block` is the run's `host` override block,
+every row naming its host; `host_attach_block` composes the link into the programming channel, `combine: slower`).
+`hosts/rows.py` holds the vocabulary's HOST group, now with `p_host_idle`, `e_host_mem_per_byte`,
+`t_host_mem_per_byte`, `e_link_per_byte`, `t_link_per_byte` and `t_link_transfer`. The loader keeps one host per
+deployment (`require_one_host`): an identified host replaces the profile's host rows whole, and a host row naming no
+host beside it (a measured server row) refuses by name (`HostBlockMixError`). `cost/host_terms.py` prices what the
+block declares and nothing else: every byte crossing the boundary, both directions (the pass carry, the segment I/O
+`segment_in_bytes` / `segment_out_bytes`, the write law's payload from the host) at the link and host memory, a
+latency per transfer (`host_link_transfers`), a MAC-free host operator's bytes at the host memory time
+(`host_memory_bound_bytes`, in the host's time), and `p_host_idle` over the inference's latency less the host's
+time (`energy_host_idle_mj`; `energy_host_mj` carries the host's whole energy, `energy_host_link_mj` the link and
+host memory, `latency_host_link_s` the link time). A measured host wall prices the host unless the physics describes
+a host of its own (`describes_host`: a host description's whole model) without relating the wall's machine to it
+(`host_compute_rate`): an edge host prices its own time, and a partial host block (a server's measured calibration)
+keeps the wall's rule, which needs `host_compute_rate`. The candidate plane forms the boundary quantities from the
+walk's census (`mapping/support/host_boundary.py`, sized at the carried value grid in `objectives/host_link.py`)
+only where the physics declares the link, so no other quantity moves; a carried pass boundary is a transfer for its
+crossing part only (`crossing_widths`: under a declared `carry_buffer_bytes`, net of the widths a wavefront group
+holds, `ProgramPasses.onchip_boundary_widths`, by the carry census's own rule, `pass_carry.group_held`). A row whose
+source departs from the source rule (a preprint, another module's measurement) is named in the description's
+`departures`, and the block carries the departure into the row's note.

@@ -26,7 +26,10 @@ from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.compute_time import busiest_stage, compute_law
 import mimarsinan.deployment_record.introspection.scaling_ladder_law as law
 import mimarsinan.deployment_record.introspection.scaling_ladder_reading as point_reading
-from mimarsinan.deployment_record.introspection.scaling_ladder_lanes import host_census, lane_census, layout_walk
+from mimarsinan.deployment_record.cost.host_terms import HOST_SIDE_QUANTITIES
+from mimarsinan.deployment_record.introspection.scaling_ladder_lanes import (
+    host_census, lane_census, layout_walk, walk_host_boundary,
+)
 from mimarsinan.deployment_record.introspection.scaling_ladder_types import (  # [U-E3] the keys: re-exported
     PRICE_KEYS as PRICE_KEYS, ROW_KEYS as ROW_KEYS, LadderDeclarationError, LadderGeometryError, LadderNetwork,
     LadderScheduleRefusal, PricedProgram, ScheduledProgram, ShapeCensus, certificate_record,
@@ -85,6 +88,7 @@ def shape_census(network: LadderNetwork, platform: Mapping[str, Any], *, wire_ce
         logical_cells=logical,
         as_mapped_cells=sum(int(s.input_count) * int(s.output_count) for s in softcores),
         wall_s=time.time() - start, program=ProgramGraph.of_walk(layout) if wire_census else None, runs=runs,
+        host_boundary=walk_host_boundary(layout, network),
     )
     if lanes is None:
         return census
@@ -184,7 +188,7 @@ def price_scheduled(
         platform, latency_steps=facts.latency_steps, programming=facts.programming, carry=facts.carry,
         passes=facts.passes, **{k: host.get(k) for k in ("host_macs", "onchip_macs", "host_params",
                                                           "onchip_params", "compute_op_count")},
-        lane_ops=census.lane_ops, lane_walked=census.lane_ops is not None,
+        lane_ops=census.lane_ops, lane_walked=census.lane_ops is not None, host_boundary=census.host_boundary,
     )
     payload = platform.get("platform_physics_resolved")
     physics = PlatformPhysics.from_dict(payload) if payload else None
@@ -201,9 +205,10 @@ def price_scheduled(
     refusals: Dict[str, Dict[str, str]] = {}
     write_law: Dict[str, Any] = {}
     if physics is not None:
-        compute = _variant(q, _CARRY + _PROGRAMMING + ("sync_count", "compute_op_count"), {"host_macs": 0})
+        compute = _variant(q, _CARRY + _PROGRAMMING + ("sync_count", "compute_op_count") + HOST_SIDE_QUANTITIES,
+                           {"host_macs": 0})
         for name, variant in (("program", q), ("compute_only", compute),
-                              ("no_host", _variant(q, ("compute_op_count",), {"host_macs": 0}))):
+                              ("no_host", _variant(q, ("compute_op_count",) + HOST_SIDE_QUANTITIES, {"host_macs": 0}))):
             pricing = price_absolute(variant, physics, compute=context.compute, readout_bits=context.readout_bits)
             terms[name] = {t.name: t.band for t in pricing.terms if t.band is not None}
             refusals[name] = {r.name: r.reason for r in pricing.refusals}

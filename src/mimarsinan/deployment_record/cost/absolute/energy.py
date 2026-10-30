@@ -18,6 +18,7 @@ from mimarsinan.deployment_record.cost.absolute.formulas import (
     programming_payload_bytes,
     scale_band,
 )
+from mimarsinan.deployment_record.cost.host_terms import host_side_energy
 from mimarsinan.deployment_record.cost.absolute.validity import (
     CensusCells,
     aggregate_scales,
@@ -127,22 +128,23 @@ def _aggregate_outside(ctx: PricingContext, compute: str) -> Optional[str]:
     return None
 
 
-def _host_band(ctx: PricingContext) -> Tuple[Optional[Band], Optional[str]]:
-    """(host energy, refusal reason) — p_host over the host wall."""
+def _host_band(ctx: PricingContext, e2e: Optional[Band]) -> Tuple[Optional[Band], Optional[str], List[str]]:
+    """(host energy, refusal reason, unpriced) — p_host over the host wall; [U-J] on an edge host also its idle power
+    over the wait and the link per crossing byte (``host_terms.host_side_energy``)."""
     host = ctx.host_time()
     missing = list(host.missing)
     if not ctx.physics.has("p_host") and (host.band is not None or missing):
         missing = ["p_host"] + missing
     if host.blocked is not None or missing:
-        return None, ctx.host_refusal(HostTime(blocked=host.blocked,
-                                               missing=tuple(missing)))
-    if host.band is None:
-        return None, None
-    p_host = ctx.physics.band("p_host")
-    basis = f"p_host [{p_host.basis}] x host time ({host.band.basis})"
-    return Band(p_host.low * host.band.low * _J_TO_MJ,
-                p_host.nominal * host.band.nominal * _J_TO_MJ,
-                p_host.high * host.band.high * _J_TO_MJ, basis), None
+        return None, ctx.host_refusal(HostTime(blocked=host.blocked, missing=tuple(missing))), []
+    active = None
+    if host.band is not None:
+        p_host = ctx.physics.band("p_host")
+        active = Band(p_host.low * host.band.low * _J_TO_MJ, p_host.nominal * host.band.nominal * _J_TO_MJ,
+                      p_host.high * host.band.high * _J_TO_MJ,
+                      f"p_host [{p_host.basis}] x host time ({host.band.basis})")
+    band, unpriced = host_side_energy(ctx, active, host.band, e2e)
+    return band, None, unpriced
 
 
 def _programming_energy(ctx: PricingContext) -> None:
@@ -267,7 +269,7 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
         evidence.append("static: " + static.basis)
 
     chip, chip_evidence, chip_unpriced = list(components), list(evidence), list(unpriced)
-    host, host_reason = _host_band(ctx)
+    host, host_reason, host_unpriced = _host_band(ctx, e2e)
     if host_reason is not None:
         _chip_only(ctx, chip, chip_evidence, writes, chip_unpriced)
         ctx.refuse(ENERGY_HEADLINE, host_reason)
@@ -277,7 +279,7 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
         ctx.term("energy_host_mj", "mJ", host, host.basis)
         components.append(host)
         evidence.append("host: " + host.basis)
-    unpriced.extend(f"p_host x {item}" for item in ctx.host_time().unpriced)
+    unpriced.extend([f"p_host x {item}" for item in ctx.host_time().unpriced] + host_unpriced)
     if writes is not None:
         if writes.energy is None:
             reason = next(r.reason for r in writes.refusals if r.name == "energy_write_mj")

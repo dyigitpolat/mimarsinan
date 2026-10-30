@@ -122,6 +122,10 @@ class CandidateQuantityContext:
     #: work estimated from the lane plan and lanes per tile, and the quantities withheld by name; empty otherwise.
     lane_quantities: Tuple[Tuple[str, QuantityValue], ...] = ()
     lane_withheld: Tuple[Tuple[str, str], ...] = ()
+    #: [U-J] The host-chip boundary's quantities and withheld reasons (``objectives.host_link``): empty unless the
+    #: resolved physics prices the host-chip link (an edge host block).
+    host_link_quantities: Tuple[Tuple[str, QuantityValue], ...] = ()
+    host_link_withheld: Tuple[Tuple[str, str], ...] = ()
     #: [W08] The candidate's output stage, printed beside its priced point (``output_stage_note``).
     output_stage: Optional[Mapping[str, Any]] = None
     #: [CL2] The ``(name, reason)`` pair of a target that declares no physics
@@ -262,7 +266,9 @@ def from_candidate(
         values["synaptic_events_busiest_core"] = QuantityValue(
             value=float(sum(context.pass_core_events)), provenance=values["synaptic_events"].provenance)
     values.update(dict(context.lane_quantities))
+    values.update(dict(context.host_link_quantities))
     held = {**dict(getattr(context.value_rule, "withheld", ()) or ()), **dict(context.lane_withheld),
+            **dict(context.host_link_withheld),
             **dict(withheld or {}), **writes_held,
             **({ONCHIP_CARRY: context.carry_onchip_refusal} if context.carry_onchip_refusal else {})}
     return Quantities(values, withheld={key: reason for key, reason in held.items() if key not in values})

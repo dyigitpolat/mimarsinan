@@ -27,6 +27,7 @@ from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.writes import ENERGY_WRITE, LATENCY_WRITE, WriteInputs, price_write_inputs
+from mimarsinan.deployment_record.cost.host_terms import HOST_DECOMPOSITION
 from mimarsinan.deployment_record.introspection.scaling_ladder_law import layer_pipelined
 from mimarsinan.deployment_record.quantities import write_technology as wt
 from mimarsinan.deployment_record.quantities.write_law import (
@@ -173,7 +174,7 @@ _CENSUS_SOURCE = "the period census quantity (write_census, the executed rotatio
 ENERGY_HEADLINE_PARTS = ("energy_dynamic_mj", "energy_static_mj", "energy_host_mj", "energy_write_mj")
 WRITE_LAW_TERMS = ("energy_write_mj", "latency_write_exposed_s", "lifetime_hours", "lifetime_inferences",
                    "e2e_latency_s", "energy_per_inference_mj", "throughput_inferences_s",
-                   *ENERGY_HEADLINE_PARTS[:3])
+                   *ENERGY_HEADLINE_PARTS[:3], *HOST_DECOMPOSITION)  # [U-J] the host's breakdown at K
 
 
 def period_writes(passes: Any, platform: Mapping[str, Any], bits: Any) -> Tuple[int, Optional[int],

@@ -88,6 +88,8 @@ class ShapeCensus:
     lane_absorbed: int = 0
     lane_ops: Optional[Mapping[str, int]] = None
     residency_softcores: Optional[Tuple[Any, ...]] = None
+    #: [U-J] The walk's host-chip boundary (``mapping/support/host_boundary``): None without the wire census.
+    host_boundary: Optional[Any] = None
 
 
 @dataclass(frozen=True)

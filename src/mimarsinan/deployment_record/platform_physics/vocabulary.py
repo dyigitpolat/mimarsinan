@@ -12,15 +12,8 @@ from __future__ import annotations
 
 from typing import Mapping, Tuple
 
-from mimarsinan.deployment_record.units import (
-    AREA,
-    DATA,
-    DIMENSIONLESS,
-    ENERGY,
-    POWER,
-    RATE,
-    TIME,
-)
+from mimarsinan.deployment_record.platform_physics.hosts.rows import HOST, HOST_ROWS
+from mimarsinan.deployment_record.units import AREA, DATA, DIMENSIONLESS, ENERGY, POWER, TIME
 
 ARRAY = "array"
 PERIPHERY = "periphery"
@@ -30,7 +23,6 @@ INTERCONNECT = "interconnect"
 PROGRAMMING = "programming"
 SYNC = "sync"
 GLOBAL = "global"
-HOST = "host"
 AGGREGATE = "aggregate"
 
 #: Declaration order is the wizard's panel order.
@@ -220,23 +212,7 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Static (leakage) power of one core while powered."),
     ("p_static_global", GLOBAL, POWER, "mW", "e2e_latency_s",
      "Static (leakage) power of the whole chip outside its cores."),
-    # --- host: the other side of the NeuralOps/ComputeOps boundary ----------------------
-    ("p_host", HOST, POWER, "W", "host_ops_s",
-     "Power drawn by the host while it executes ComputeOps. Without it, moving work "
-     "host-side is free and `subsume` wins every comparison by disappearing."),
-    ("host_compute_rate", HOST, DIMENSIONLESS, "fraction", "host_ops_s",
-     "Speed of the deployment host relative to the machine that measured host_ops_s; "
-     "1.0 means the measuring machine is the deployment host."),
-    ("t_host_op_overhead", HOST, TIME, "us", "compute_op_count",
-     "Per-invocation wall of one host ComputeOp through the deployment's own "
-     "dispatch path (segment I/O, tensor conversion) — the dominant host cost "
-     "at small op sizes; measured by scripts/calibrate_host.py through the "
-     "same StageTimer that produces the record's host_ops_s."),
-    ("host_macs_per_s", HOST, RATE, "G/s", "host_macs",
-     "Sustained forward-MAC throughput of the deployment host, for pricing host time "
-     "STATICALLY (host_macs / host_macs_per_s) when no measured wall exists — the "
-     "candidate-time host model of owner decision 3. A DIVIDING constant: corners "
-     "flip so the band stays monotone."),
+) + HOST_ROWS + (
     # --- aggregate: what a chip publishes when it publishes no decomposition ----------
     ("e_synaptic_event_total", AGGREGATE, ENERGY, "pJ", "synaptic_events",
      "Whole-system energy per synaptic event: measured chip power divided by the "

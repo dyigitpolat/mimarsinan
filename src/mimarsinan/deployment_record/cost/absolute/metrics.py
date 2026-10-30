@@ -40,6 +40,7 @@ from mimarsinan.deployment_record.cost.absolute.writes import (
     price_write_inputs,
 )
 from mimarsinan.deployment_record.cost.compute_time import CORE_PROGRAM, compute_time
+from mimarsinan.deployment_record.cost.host_terms import LATENCY_LINK, host_link_time, write_link_bytes
 from mimarsinan.deployment_record.platform_physics.area_components import fixed_area_refusal
 from mimarsinan.deployment_record.platform_physics.converter import resolve as resolve_converter
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
@@ -209,6 +210,12 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
         components.append(host.band)
         evidence.append("host: " + host.band.basis)
     unpriced.extend(_host_unpriced(host))
+    link, link_unpriced = host_link_time(ctx)  # [U-J] the host-chip link: every crossing byte, every transfer
+    if link is not None:
+        ctx.term(LATENCY_LINK, "s", link, link.basis)
+        components.append(link)
+        evidence.append("host link: " + link.basis)
+    unpriced.extend(link_unpriced)
     if writes is not None:
         if writes.exposed is None:
             reason = next(r.reason for r in writes.refusals if r.name == "latency_write_exposed_s")
@@ -274,6 +281,7 @@ def price_absolute(
     ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities), refused_constants={
         **converter_refused, **carry_buffer_refusals(quantities, physics, unstated=buffer_unstated)})
     priced_writes = None if writes is None else price_write_inputs(writes, physics)
+    ctx.write_link_bytes = None if writes is None else write_link_bytes(writes)  # [U-J] priced by an edge host only
     price_area(ctx)
     e2e = price_latency(ctx, priced_writes)
     price_energy(ctx, e2e, priced_writes, compute)

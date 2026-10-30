@@ -168,6 +168,16 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
      "SPLIT census (distinct from the as-mapped energy multiplicand macs)."),
     ("onchip_macs", _COUNT, "Logical forward MACs realized on chip."),
     ("host_macs", _COUNT, "Logical forward MACs executed host-side."),
+    # [U-J] The host-chip boundary beside the pass carry, and the host's memory-bound work (formed where the
+    # resolved physics prices the host-chip link: an edge host block).
+    ("segment_in_bytes", (DATA, "B"), "Bytes the host sends the chip per inference at segment boundaries: the network "
+     "input read on chip and every host operator's output read on chip, whole slices, at the carried-value grid."),
+    ("segment_out_bytes", (DATA, "B"), "Bytes the chip sends the host per inference at segment boundaries: every "
+     "on-chip slice a host operator reads and the readout, at the carried-value grid."),
+    ("host_link_transfers", _COUNT, "Host-chip transfers per inference: one per direction at each segment boundary "
+     "and each pass boundary that carries values."),
+    ("host_memory_bound_bytes", (DATA, "B"), "Bytes the MAC-free host operators (element-wise, pooling) read and write "
+     "per inference, at the host executor's float32: the work memory binds."),
 )
 
 

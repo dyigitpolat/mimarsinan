@@ -59,6 +59,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         self._node_id_to_softcore_idx: Dict[int, int] = {}
         self._node_is_neural: Dict[int, bool] = {}
         self._node_host_labels: Dict[int, Dict[str, str]] = {}
+        self._host_io: Dict[int, Tuple[int, int, Any, Any, Any]] = {}  # [U-J] support/host_boundary.py reads it
         self._sc_idx_to_perceptron_index: Dict[int, Optional[int]] = {}
 
         self._layout_weight_banks: Dict[int, Tuple[int, int]] = {}
@@ -170,6 +171,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             "name": str(name) if name else str(op_type or "host"),
             "op_type": str(op_type or ""),
         }
+        self._host_io[node_id] = (total_size(input_sources), int(output_size), params or {}, input_shape, output_shape)
 
         return LayoutSourceView.from_producer(
             producer_node_id=node_id,

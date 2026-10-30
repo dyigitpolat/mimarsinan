@@ -151,15 +151,22 @@ def carry_census_from_spans(
     return census
 
 
+def group_held(spans, extra_in, groups) -> Tuple[list, list]:
+    """[U-F4] The spans and delayed slices one wavefront group produces and reads itself (``groups``: per pass
+    position, its group or None): the share a declared on-chip carry buffer keeps off the boundary. [U-J targeted M2]
+    One rule for the census's bytes (``_onchip_share``) and the per-boundary split (``ProgramPasses``)."""
+    inside = [(n, w, a, b) for n, w, a, b in spans if groups[a] is not None and groups[a] == groups[b]]
+    held = {n: groups[a] for n, _w, a, _b in inside}
+    return inside, [(n, w, reader) for n, w, reader in extra_in if n in held and groups[reader] == held[n]]
+
+
 def _onchip_share(spans, extra_in, groups, *, timesteps: int, transfer: str) -> Dict[str, int]:
     """[U-F4] The census of the wires one wavefront group produces and reads: its crossings (out, and in with the
     group's own replays) and the peak live carry over its pass boundaries, in the transfer's buffered bytes and in
     carried values (every wire's bytes are its width times one per-value size, so one boundary holds both peaks)."""
-    inside = [(n, w, a, b) for n, w, a, b in spans if groups[a] is not None and groups[a] == groups[b]]
-    held = {n: groups[a] for n, _w, a, _b in inside}
+    inside, replays = group_held(spans, extra_in, groups)
     out = sum(boundary_transfer_bytes(width=w, timesteps=timesteps) for _, w, _, _ in inside)
-    again = sum(boundary_transfer_bytes(width=w, timesteps=timesteps) for n, w, reader in extra_in
-                if n in held and groups[reader] == held[n])
+    again = sum(boundary_transfer_bytes(width=w, timesteps=timesteps) for _n, w, _reader in replays)
     live = [[w for _, w, a, b in inside if a <= boundary < b] for boundary in range(len(groups))]
     peak = max((sum(carried_wire_bytes(w, timesteps, transfer) for w in wires) for wires in live), default=0)
     return {"onchip_out_bytes": out, "onchip_in_bytes": out + again, "onchip_peak_live_bytes": peak,

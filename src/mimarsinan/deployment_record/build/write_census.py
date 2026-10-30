@@ -92,6 +92,9 @@ class ProgramPasses:
 
     rows: Tuple[PassRow, ...]
     boundary_widths: Tuple[BoundaryWidths, ...] = ()
+    #: [U-J targeted M2] Per boundary, the widths of ``boundary_widths`` a wavefront group produces and reads itself
+    #: (``pass_carry.group_held``), which a declared on-chip carry buffer holds; None: the plane states no split.
+    onchip_boundary_widths: Optional[Tuple[BoundaryWidths, ...]] = None
     #: N2: why the plane states no operand regions per pass (None: it states them, or the program has none).
     operands_unstated: Optional[str] = None
 

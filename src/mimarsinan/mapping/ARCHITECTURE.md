@@ -423,3 +423,13 @@ only); an anonymous failure stays a `RuntimeError`, a crash, never a refusal.
 - Latency: `ChipLatency`, `IRLatency`.
 - Scales: `compute_per_source_scales`.
 - Pruning: `prune_ir_graph`, `compute_propagated_pruned_rows_cols`, `GlobalPruningResult`, `compute_global_pruned_sets`, `compute_model_io_boundary_policy`.
+
+## Host-chip boundary census (U-J)
+
+`support/host_boundary.py`: what crosses between the host and the chip per inference beside the pass carry, counted
+on a finished shape-only walk by the carry census's rule (a producer's whole published slice, once per direction):
+the network input read on chip, each host operator's output read on chip, each on-chip slice a host operator or the
+network output reads; one transfer per direction at each such boundary; and the elements the MAC-free host operators
+read and write (`module_macs` counts none), at the host executor's float32. The walk records each host operator's
+sizes as it walks (`layout/layout_ir_mapping.LayoutIRMapping._host_io`); a walk without its wire census states none.
+The deployment record's edge host prices it (`deployment_record/cost/host_terms.py`).
