@@ -28,7 +28,7 @@ files and checksums in the research record's fetch (`paper_pdfs/fetch_20261028_h
 | `t_host_op_overhead` | 0.273106 / 0.273106 / 112.84 us | derived | nachin2026executorch Table 1: cycles per operator of a two-operator model, ExecuTorch (75 + 360 + 390) / 2 and the PyTorch Mobile interpreter (324,399 + 7,976 + 8,493) / 2, over 1510.4 MHz |
 | `t_host_mem_per_byte` | 0.0146507 / 0.0189515 / 0.0189515 ns | derived (departure 2) | 16 B x 2 x 2133 MHz = 68.256 GB/s peak; sustained at Orin AGX's measured fraction at 2.1 GHz, 103.9 / (204.8 x 2.1 / 3.2) (prashanthis2025pagoda p. 22) |
 | `e_host_mem_per_byte` | 141.4 / 174.7 / 174.7 pJ | derived, a cross-module proxy (departure 2) | prashanthis2025pagoda p. 25: energy per memory operation on Orin AGX's LPDDR5, 174.7 pJ/byte at 2.1 GHz (this module's memory clock), 141.4 at 3.2 GHz, read as this module's |
-| `e_link_per_byte` | 17.8571 / 18.6567 / 40.5117 pJ | derived | bae2021a: 1.93 pJ per line bit of a PCIe Gen4 PHY transmitter; line bits per payload byte 8 x 130/128 over the TLP share 57.88/62.96 and MPS / (MPS + 24 B) (neugebauer2018understanding); the host's end at MPS 512 and 256, both ends at MPS 128 |
+| `e_link_per_byte` | 17.8571 / 18.6567 / 40.5117 pJ | derived | bae2021a: 1.93 pJ per line bit of a PCIe Gen4 PHY transmitter; line bits per payload byte 8 x 130/128 over the TLP share 57.88/62.96 and MPS / (MPS + 24 B) (neugebauer2018understanding); the host's end at MPS 512 and 256, both ends at MPS 128 (the chip's own end is priced by no row at the low and nominal ends: see Composition and Limits) |
 | `t_link_per_byte` | 0.289137 / 0.302084 / 0.327977 ns | derived | PCIe Gen3 x4: 8 GT/s x 128/130 x 4 lanes, x the TLP share, x MPS / (MPS + 24 B) for MPS 512, 256, 128 (neugebauer2018understanding pp. 3-4) |
 | `t_link_transfer` | 0.529 / 0.9 / 1.8 us | derived | neugebauer2018understanding: median 128 B DMA read 529 ns; PCIe share of a 128 B round trip about 900 ns; two round trips (descriptor, then payload) |
 
@@ -93,6 +93,11 @@ and never in it; the system line is the chip plus the whole host at its own corn
   (`energy_host_work_mj`, `energy_host_link_mj`, `energy_host_mem_mj`); the idle floor under the work and over the
   wait (`energy_host_floor_mj`, `energy_host_idle_mj`) are the system-level terms, and `energy_host_system_mj` is
   the whole host at its corners (at the nominal, the attributable host plus those two).
+- One rule for every crossing byte (U-J4): it pays `e_link_per_byte` + `e_host_mem_per_byte` and never the chip's
+  backing-store rows (`e_dma_per_byte` in, `e_readout_per_byte` out), on either store, so the chip's description
+  does not price its own end of the link. No row of the vocabulary prices that end: at the low and nominal ends the
+  link's energy is the host's end alone and names the chip's end unpriced in its basis (a boundary); the high end
+  counts both ends.
 - Upper-side or unmodelled, stated: the active power was measured with the GPU active (a CPU-only operator draws
   less); the MAC rate is the core's peak issue rate; a polling host draws more than idle; the transfer latency was
   measured on Xeon root complexes; the PHY energy is a Gen4 transmitter's, read at Gen3, with the receiver end at the

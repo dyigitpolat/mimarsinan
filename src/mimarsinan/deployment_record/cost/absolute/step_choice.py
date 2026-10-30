@@ -9,7 +9,8 @@ enters the choice. A profile whose external component is undeclared (an SRAM-CIM
 prices no step and refuses by name, as ``price_absolute`` and the write law do (``context.external_refusals``).
 [U-J3] The write and carry energy are the declared store's (``platform_physics.hosts.store``): on a host-owned store
 the carry and the write transfer are the link's and host memory's bytes; beside the host link a chip that states no
-store refuses a carrying step by name, as the pricer does.
+store refuses a carrying step by name, as the pricer does. [U-J4] Beside the link a host-sourced payload's transfer is
+the link's and host memory's too, on either store (the write law prices its cells only there).
 """
 
 from __future__ import annotations
@@ -21,9 +22,9 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.cost.absolute.context import PricingContext
 from mimarsinan.deployment_record.cost.absolute.formulas import ENERGY_COMPONENTS, add_bands
 from mimarsinan.deployment_record.cost.absolute.context import external_refusals
-from mimarsinan.deployment_record.cost.absolute.writes import price_write_terms
-from mimarsinan.deployment_record.cost.host_terms import store_refusal
-from mimarsinan.deployment_record.platform_physics.hosts.store import host_owned, store_byte_energy
+from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_terms
+from mimarsinan.deployment_record.cost.host_terms import store_refusal, write_link_bytes
+from mimarsinan.deployment_record.platform_physics.hosts.store import host_owned, prices_host_link, store_byte_energy
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -56,11 +57,12 @@ class StepPrice:
         return self.at("nominal")
 
 
-def _store_bytes(physics: PlatformPhysics, size: float, what: str) -> Band:
-    """[U-J3] ``size`` bytes per inference of a host-owned store's traffic at its link and host memory energy."""
-    per_byte = store_byte_energy(physics)
+def _store_bytes(physics: PlatformPhysics, size: float, what: str, whose: str = "the host-owned store's bytes") -> Band:
+    """[U-J3] ``size`` bytes per inference over the host-chip link (a host-owned store's traffic; [U-J4] a host-sourced
+    payload) at the link and host memory energy."""
+    per_byte = store_byte_energy(physics, whose)
     if per_byte is None:
-        raise StepChoiceError(f"the step moves {what} over a host-owned store, and the target declares neither "
+        raise StepChoiceError(f"the step moves {what} over the host-chip link, and the target declares neither "
                               "e_link_per_byte nor e_host_mem_per_byte")
     return Band(per_byte.low * size * _J_TO_MJ, per_byte.nominal * size * _J_TO_MJ, per_byte.high * size * _J_TO_MJ,
                 f"{per_byte.basis} x {what}")
@@ -94,6 +96,11 @@ def price_step(census: Any, physics: PlatformPhysics, policy: Any) -> StepPrice:
     if host_owned(physics):  # [U-J3] the write transfer from a host-owned store: the period's payload over K
         payload = sum(p.payload_bytes for p in census.passes) / int(policy.batch_k)
         transfer = _store_bytes(physics, payload, "the period's payload bytes / K")
+        write = add_bands([write, transfer], f"{write.basis} + {transfer.basis}")
+    crossing = write_link_bytes(WriteInputs(census, policy))
+    if prices_host_link(physics) and crossing is not None and crossing.program:  # [U-J4] a host-sourced payload
+        transfer = _store_bytes(physics, crossing.program, "the host-sourced payload bytes per inference",
+                                "a byte over the host-chip link")
         write = add_bands([write, transfer], f"{write.basis} + {transfer.basis}")
     return StepPrice(write=write, carry=carry_energy(census, physics))
 

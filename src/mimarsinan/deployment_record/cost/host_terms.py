@@ -32,6 +32,10 @@ every end. At the nominal (one setup) the whole host is the attributable host pl
 [U-J3] The store traffic (the pass carry, the write law's backing-store payload) crosses the link only to a host-owned
 store (``platform_physics.hosts.store``); on a chip-owned one the chip's rows price it; beside the link a chip that
 states no store refuses its store traffic by name (``store_refusal``), as a host-owned store without the link does.
+[U-J4] A crossing byte pays the link and host memory here and none of the chip's store rows (``hosts.store``'s rule);
+a row of the two the physics does not declare beside the link is named unpriced on the headline; the link's energy
+names the chip's own end of the link unpriced (``link_end``, a boundary), and the latency names a host-sourced
+payload's link time unpriced (no term times its transfer).
 
 A part whose quantity the view cannot size is named unpriced with the reason, never dropped."""
 
@@ -41,8 +45,9 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from mimarsinan.deployment_record.platform_physics.hosts.description import power_above
 from mimarsinan.deployment_record.platform_physics.hosts.store import (  # [U-J3] the link's rows and the store's rule
-    CHIP, HOST, LINK_ROWS as LINK_ROWS, chip_store_table as chip_store_table, owner,
-    prices_host_link as prices_host_link, slower_port as slower_port, store_refusal as store_refusal,
+    CHIP, HOST, LINK_ROWS as LINK_ROWS, PAYLOAD_TIME_UNPRICED, chip_store_table as chip_store_table,
+    link_end as link_end, owner, prices_host_link as prices_host_link, slower_port as slower_port,
+    store_refusal as store_refusal, unpriced_link_row,
 )
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -130,6 +135,8 @@ def host_link_time(ctx: Any) -> Tuple[Optional[Band], List[str]]:
         if total:
             parts.append(scale_band(per, total, f"{per.basis} x host_link_bytes"))
         unpriced += [f"{stages[0]}({item})" for item in unknown]
+    if (crossing := getattr(ctx, "write_link_bytes", None)) is not None and crossing.program:  # [U-J4] named, not timed
+        unpriced.append(PAYLOAD_TIME_UNPRICED)
     if physics.has("t_link_transfer"):
         if q.has(TRANSFERS):
             if q.get(TRANSFERS).value:
@@ -232,8 +239,10 @@ def host_side_energy(ctx: Any, active: Optional[Band], busy: Optional[Band],
         if physics.has(key):
             if total:
                 planes.add(ctx, key, name, scale_band(physics.band(key), total * _J_TO_MJ,
-                                                      f"{key} x host_link_bytes{route}"))
+                                                      f"{key} x host_link_bytes{route}{link_end(key)}"))
             planes.unpriced[planes.plane(key)].extend(f"{key}({item})" for item in unknown)
+        elif (total or unknown) and prices_host_link(physics):  # [U-J4] a crossing byte's row undeclared: named
+            planes.unpriced["main"].append(unpriced_link_row(physics, key, "the host-chip crossing bytes"))
     if planes.system:
         _system_host(ctx, planes.whole, planes.unpriced["system"], planes.unpriced["main"])
     main = planes.parts["main"]

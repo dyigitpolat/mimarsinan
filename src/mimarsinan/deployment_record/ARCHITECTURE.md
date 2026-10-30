@@ -493,3 +493,40 @@ its carry and write transfer on the declared store (`step_choice`). Beside the h
 refuses its store traffic by name (`hosts.store.store_refusal`: the latency and energy headlines), as a host-owned
 store without the link does; a physics without the link and without a declaration prices as before. The study chips
 declare chip-owned stores (their two DDR4 channels, `cd41_chip.CTX`, wang2020shuhai Table V).
+
+**The store rule's scope, a declared rule** (U-J4 K-2: U-J3's departure D2, accepted by the conductor on 2026-10-30,
+vetoable). The no-store refusal applies only where the physics prices the host-chip link (`hosts.store.LINK_ROWS`).
+The reason: beside the link the same bytes have two places (the chip's own store rows and the link with host
+memory), so a chip that states no store would price them on both or on neither; a chip with no link rows has one
+store place, its own channel rows (`e_dma_per_byte` in, `e_readout_per_byte` out, its write port), so without a
+declaration it prices as on RC1 (`tests/unit/deployment_record/test_store_rule_without_link_uj4.py`, which also runs
+on RC1's tree). A chip that declares a memory PHY still has to declare its store (`judged_store`).
+
+## Bytes that cross the host-chip link (U-J4)
+
+One rule (conductor decision of 2026-10-30, from U-J3's review minor m2): where the physics prices the host-chip
+link, every byte that reaches the chip over the link or leaves it that way pays the link and host-memory rows
+(`e_link_per_byte`, `e_host_mem_per_byte`, `cost/host_terms.py`) and never the chip's backing-store rows
+(`e_dma_per_byte` in, `e_readout_per_byte` out). The crossing bytes are the program's
+own on either store (the segment I/O, a host-sourced operand payload) and, on a host-owned store, the store traffic
+(U-J3). Sites: the write law prices a host-sourced payload's cells only and notes the transfer on the link
+(`writes._write_energy`, `PlatformPhysics.payload_link_note`); the residency step choice adds it at the link and host
+memory (`step_choice.price_step`); N2's lowering price adds it there too and injects its streamed vectors at the
+carry's per-byte energy on the declared store (`mapping/support/operand_price.py`, `hosts.store.injection_byte_energy`);
+the record pricer's static/operand split (`design_point.pricing`) reads the write law. N2's cost-only lowering
+choice can move (targeted pass, review M1): both lowerings place the same cells and move the same payload, so the
+streamed vectors order them, and on equal prices the tie rule picks fewer bank cells, the lowering streaming more. On
+a host-owned store the injection moved from `e_dma_per_byte` to the link and host memory, so a chip without
+`e_dma_per_byte` beside the edge host now takes the lowering streaming less (it tied before), and a block declaring
+neither link energy row ties (it took that lowering before); a row the lowering's price reads and the physics does
+not declare is named in its printed reason (`operand_form.LoweringPrice`, `hosts.store.unpriced_link_row`). The
+residency step choice does not move to another step: every step of one plan writes the same operand-bank cells per
+inference (the units' producer cells over the step's phases, `residency_units.plan_period_facts`), so the payload adds
+one constant to every step; beside a hand block declaring neither link energy row it refuses by name
+(`StepChoiceError`), where it priced the payload on `e_dma_per_byte` before. The chip's own end of the link is
+priced by no row of the vocabulary: the link's energy names it unpriced in its basis (`hosts.store.link_end`, a
+boundary), as does a program load's link part. A crossing byte whose link or host-memory row the physics does not declare (a hand block stating part of the
+link; a host description declares every row, `REQUIRED_HOST_ROWS`) is named unpriced on the headline. Boundary,
+named: a host-sourced payload's link time is timed by no term (the write law times its cell writes), so the latency
+names it unpriced beside the link (`host_terms.host_link_time`). Without link rows nothing changes: `e_dma_per_byte`
+is the chip's one channel and prices the payload, as on RC1.

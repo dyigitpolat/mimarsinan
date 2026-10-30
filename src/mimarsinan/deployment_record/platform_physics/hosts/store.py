@@ -19,10 +19,22 @@ read-back ``e_dma_per_byte`` and ``e_readout_per_byte``, the write transfer ``e_
 the memory PHY's area); on a host-owned store the host's rows do (``LINK_ROWS``: the link and host memory per
 byte, the slower of their per-byte times, one transfer latency per carried pass boundary and per written pass), and
 none of the chip's store rows. What the program itself sends across the boundary (the segment I/O at the network's
-input and output and at host operators, host-sourced operand payloads) crosses the link on either store. Where the
-physics prices the host-chip link and states no store, store traffic refuses by name (it would be priced on both
-stores or on neither, ``cost.host_terms.store_refusal``); a physics without the link and without a declaration prices
-it on the chip's rows as it always has."""
+input and output and at host operators, host-sourced operand payloads) crosses the link on either store.
+
+[U-J4] One rule for every byte that crosses the host-chip link, in either direction: where the physics prices the
+link, it pays the link and host-memory rows and never the chip's backing-store rows (``e_dma_per_byte`` in,
+``e_readout_per_byte`` out). So a host-sourced payload's transfer is the link's on either store (``PAYLOAD_NOTE``), as a
+host-owned store's carry, write transfer and program load are; a crossing byte whose link or host-memory row the
+physics does not declare is named unpriced (``cost.host_terms``; [U-J4 targeted] N2's lowering price too,
+``unpriced_link_row``). The chip's own end of the link is priced by no row of the vocabulary: the link's energy names it
+unpriced (``CHIP_END_UNPRICED``, ``link_end``, a boundary).
+
+[U-J4] The declared rule of the store's scope (U-J3's departure D2, accepted by the conductor on 2026-10-30,
+vetoable): the no-store refusal applies only where the physics prices the host-chip link. There a chip that states no
+store refuses its store traffic by name, because the same bytes would be priced on both stores or on neither
+(``store_refusal``); a host-owned store without the link refuses its store traffic by name too. A chip with no link
+rows has one store place, its own channel rows (``e_dma_per_byte`` in, ``e_readout_per_byte`` out, its write port), so
+no byte can be priced twice or on neither, and without a declaration it prices as it always has (as on RC1)."""
 
 from __future__ import annotations
 
@@ -41,6 +53,8 @@ _SOURCE_FIELDS = frozenset({"citation", "derivation", "note"})
 _TOP_FIELDS = frozenset(STORES) | {"note", "overridden"}
 #: The edge host's link and host-memory rows (the vocabulary's HOST group): a host-owned store's rows too.
 LINK_ROWS = ("e_link_per_byte", "t_link_per_byte", "t_link_transfer", "e_host_mem_per_byte", "t_host_mem_per_byte")
+#: [U-J4] The per-byte energy rows a link-crossing byte pays (the link, then host memory).
+LINK_ENERGY_ROWS = ("e_link_per_byte", "e_host_mem_per_byte")
 #: The store traffic a view states as quantities: the pass carry, both directions.
 CARRY_QUANTITIES = ("carry_in_bytes", "carry_out_bytes")
 #: The chip's store rows of the energy table: the carry's re-injection and read-back (``formulas.ENERGY_COMPONENTS``
@@ -50,6 +64,15 @@ _MEMORY_PHY, _LINK_PHY = "memory_phy", "link_phy"
 #: The write law's note for a host-owned store's write transfer (``PlatformPhysics.store_transfer_note``).
 TRANSFER_NOTE = ("the write transfer streams from the host-owned store over the host-chip link: priced there "
                  "(energy_host_link_mj, energy_host_mem_mj), refused by name without the link")
+#: [U-J4] The write law's note for a host-sourced payload beside the link (``PlatformPhysics.payload_link_note``).
+PAYLOAD_NOTE = ("the host-sourced payload crosses the host-chip link: priced there (energy_host_link_mj, "
+                "energy_host_mem_mj), never on the chip's backing-store rows")
+#: [U-J4] The boundary the link's energy names (``link_end``): no row prices the chip's end of the link.
+CHIP_END_UNPRICED = ("boundary: the chip's own end of the host-chip link is unpriced (no row of the vocabulary prices "
+                     "it: a crossing byte pays the link and host memory, never the chip's backing-store rows)")
+#: [U-J4] The link time a host-sourced payload pays no row of (named unpriced beside the link, ``host_link_time``).
+PAYLOAD_TIME_UNPRICED = ("t_link_per_byte, t_link_transfer(host-sourced payload: its transfer over the link is timed "
+                         "by no term, the write law timing its cell writes only)")
 
 
 class BackingStoreError(ToolchainRefusal, ValueError):
@@ -160,6 +183,12 @@ def prices_host_link(physics: Any) -> bool:
     return physics is not None and any(physics.has(key) for key in LINK_ROWS)
 
 
+def link_end(row: str) -> str:
+    """[U-J4] What a link row's priced term states beside its basis: for the link's energy, the chip's own end of the
+    link, which no row prices (``CHIP_END_UNPRICED``); nothing for any other row."""
+    return f"; {CHIP_END_UNPRICED}" if row == "e_link_per_byte" else ""
+
+
 def owner(physics: Any) -> Optional[str]:
     """The store the physics declares (``CHIP``, ``HOST``) or None."""
     store = getattr(physics, STORE_FIELD, None)
@@ -210,13 +239,33 @@ def link_stage(physics: Any) -> Optional[Band]:
                 f"the slower of {' and '.join(stages)} per byte (the host-owned store's stage)")
 
 
-def store_byte_energy(physics: Any) -> Optional[Band]:
-    """A host-owned store's energy per byte: the link plus host memory where declared, None where neither is."""
-    rows = [key for key in ("e_link_per_byte", "e_host_mem_per_byte") if physics.has(key)]
+def unpriced_link_row(physics: Any, row: str, what: str) -> str:
+    """[U-J4] A link energy row the physics does not declare, named unpriced for ``what`` (the bytes it would price):
+    the headline's text (``cost.host_terms``) and [U-J4 targeted] the lowering price's (``operand_price``)."""
+    why = "the physics prices the link and declares no" if prices_host_link(physics) else "the physics declares no"
+    return f"{row}({what}: {why} {row})"
+
+
+def undeclared_link_energy(physics: Any, what: str) -> Tuple[str, ...]:
+    """[U-J4 targeted] Every link energy row (``LINK_ENERGY_ROWS``) the physics does not declare, named for ``what``."""
+    return tuple(unpriced_link_row(physics, row, what) for row in LINK_ENERGY_ROWS if not physics.has(row))
+
+
+def store_byte_energy(physics: Any, what: str = "the host-owned store's bytes") -> Optional[Band]:
+    """A byte's energy over the host-chip link: the link plus host memory where declared, None where neither is (a
+    host-owned store's bytes, and [U-J4] every other crossing byte, ``what``)."""
+    rows = [key for key in LINK_ENERGY_ROWS if physics.has(key)]
     if not rows:
         return None
-    return Band(*_ends(lambda *v: sum(v), *(physics.band(key) for key in rows)),
-                " + ".join(rows) + " (the host-owned store's bytes)")
+    return Band(*_ends(lambda *v: sum(v), *(physics.band(key) for key in rows)), " + ".join(rows) + f" ({what})")
+
+
+def injection_byte_energy(physics: Any) -> Optional[Band]:
+    """[U-J4] The energy of one byte re-injected into the chip as the carry is, on the declared store: the link and
+    host memory on a host-owned store (``store_byte_energy``), else the chip's ``e_dma_per_byte`` (None undeclared)."""
+    if host_owned(physics):
+        return store_byte_energy(physics, "a byte injected from the host-owned store")
+    return physics.band("e_dma_per_byte") if physics.has("e_dma_per_byte") else None
 
 
 def slower_port(physics: Any, port: Band) -> Band:

@@ -63,6 +63,22 @@ class Lowering:
         return self.form.banks * self.form.m * self.form.n
 
 
+def _no_unpriced(_lowering: Lowering) -> Tuple[str, ...]:
+    return ()
+
+
+@dataclass(frozen=True)
+class LoweringPrice:
+    """[U-J4 targeted] A lowering's energy per inference (J), called as the price, and the rows its price reads that
+    the physics does not declare (``unpriced``), which ``stationary_operand`` names in its printed reason."""
+
+    energy: Callable[[Lowering], float]
+    unpriced: Callable[[Lowering], Tuple[str, ...]] = _no_unpriced
+
+    def __call__(self, lowering: Lowering) -> float:
+        return self.energy(lowering)
+
+
 def _labels(term: str, rank: int) -> Optional[List[str]]:
     if "..." not in term:
         return list(term) if len(term) == rank else None
@@ -119,10 +135,13 @@ def stationary_operand(form: OperandForm, price: Callable[[Lowering], float],
                        ) -> Tuple[Lowering, str]:
     """(the lowering, the reason printed): the cheaper of the two where the choice is cost-only (ties to fewer
     bank cells, then to B stationary); B stationary, the declared default, where the choice bears on the function
-    (``why`` says how)."""
+    (``why`` says how). [U-J4 targeted] A ``LoweringPrice`` that reads an undeclared row has it named in the reason
+    (``; unpriced: ``), so a price that ties or orders the two on a missing row says so."""
     b, at = Lowering(form, B_STATIONARY), Lowering(form, AT_STATIONARY)
     pb, pat = float(price(b)), float(price(at))
     priced = f"B stationary {pb:.6g} J ({b.cells} bank cells), A^T stationary {pat:.6g} J ({at.cells} bank cells)"
+    if isinstance(price, LoweringPrice) and (named := tuple(dict.fromkeys((*price.unpriced(b), *price.unpriced(at))))):
+        priced += f"; unpriced: {', '.join(named)}"
     if not cost_only:
         return b, (f"B stationary, the declared default: the choice is function-bearing ({why}), so price does not "
                    f"switch it; priced {priced}")

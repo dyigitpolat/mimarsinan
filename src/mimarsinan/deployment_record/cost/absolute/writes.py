@@ -95,11 +95,11 @@ def _write_energy(census: Any, physics: PlatformPhysics, policy: WritePolicy) ->
         notes.append(routed or "unpriced: e_dma_per_byte(write transfer)")
     if producer and policy.producer_write_source == "host" and policy.payload_bits is not None:
         moved = producer * int(policy.payload_bits) / 8.0  # host-sourced payloads cross into the chip per inference
-        if physics.has("e_dma_per_byte"):
+        if (crossed := physics.payload_link_note()) is not None or not physics.has("e_dma_per_byte"):  # [U-J4] link
+            notes.append(crossed or "unpriced: e_dma_per_byte(host-sourced payload transfer)")
+        else:  # no link rows: the chip's one channel row prices the transfer, as on RC1
             parts.append(scale_band(physics.band("e_dma_per_byte"), moved * _J_TO_MJ,
                                     "e_dma_per_byte x host-sourced payload bytes per inference (transfer)"))
-        else:
-            notes.append("unpriced: e_dma_per_byte(host-sourced payload transfer)")
     if physics.has("e_write_per_cell"):
         iterations = _iterations(physics)
         if iterations is None:

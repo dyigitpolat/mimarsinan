@@ -18,7 +18,7 @@ from mimarsinan.deployment_record.cost.absolute.formulas import (
     programming_payload_bytes,
     scale_band,
 )
-from mimarsinan.deployment_record.cost.host_terms import chip_store_table, host_side_energy
+from mimarsinan.deployment_record.cost.host_terms import chip_store_table, host_side_energy, link_end
 from mimarsinan.deployment_record.cost.absolute.validity import (
     CensusCells,
     aggregate_scales,
@@ -164,9 +164,8 @@ def _programming_energy(ctx: PricingContext) -> None:
                     unpriced.append(f"{constant}({label})")
                 continue
             value = ctx.physics.band(constant)
-            components.append(scale_band(
-                value, payload_bytes * _J_TO_MJ, f"{constant} x {note}"))
-            evidence.append(f"{label}: {constant} [{value.basis}]")
+            components.append(scale_band(value, payload_bytes * _J_TO_MJ, f"{constant} x {note}"))
+            evidence.append(f"{label}: {constant} [{value.basis}]{link_end(constant)}")  # [U-J4] the chip's end
     # [E4] Only the PROGRAMMING overhead is amortized here. Core INIT is not:
     # every pass resets its cores' neuron state, so it is paid per inference —
     # which is where the latency plane has always charged t_core_init.

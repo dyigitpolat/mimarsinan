@@ -8,19 +8,16 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 from mimarsinan.common.refusal import ToolchainRefusal
 # [U-E3] The value type and its evidence kinds live below the converter (``constants``), re-exported here.
 from mimarsinan.deployment_record.platform_physics.constants import (
-    EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, constant_from_declaration, spec_for,
-)
+    EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, constant_from_declaration, spec_for)
 from mimarsinan.deployment_record.platform_physics.area_components import ChipComponent
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
 from mimarsinan.deployment_record.platform_physics.hosts.store import (
-    HOST, TRANSFER_NOTE, BackingStore, judged_store, store_from_declaration)
+    HOST, PAYLOAD_NOTE, TRANSFER_NOTE, BackingStore, judged_store, prices_host_link, store_from_declaration)
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwargs
 
 PHYSICS_FORMAT_VERSION = 1
-
 MEASUREMENT_KINDS = frozenset({"silicon", "simulation", "projection", "mixed"})
-
 #: How an aggregate constant may be read outside its measured core: ``cells`` scales it by the
 #: core's cell count relative to the validity core's.
 SCALING_RULES = frozenset({"cells"})
@@ -62,7 +59,6 @@ class ValidityGeometry:
 @dataclass(frozen=True)
 class PlatformPhysicsValidity:
     """The operating point the declared numbers hold at."""
-
     measurement_kind: str
     technology_node_nm: Optional[float] = None
     supply_v: Optional[float] = None
@@ -238,6 +234,12 @@ class PlatformPhysics:
         """[U-J3] Where a host-owned store's write transfer is priced (``hosts.store``), None on any other store."""
         return TRANSFER_NOTE if self.backing_store is not None and self.backing_store.store == HOST else None
 
+    def payload_link_note(self) -> Optional[str]:
+        """[U-J4] Where a host-sourced payload's transfer is priced beside the host-chip link (``hosts.store``: the link
+        and host memory, never the chip's ``e_dma_per_byte``); None where the physics prices no link (that row is then
+        the chip's one channel and prices it, as on RC1)."""
+        return PAYLOAD_NOTE if prices_host_link(self) else None
+
     def undeclared_external(self) -> Tuple[ExternalComponent, ...]:
         """The external components with a constant this physics does not declare yet."""
         return tuple(component for component in self.external_components if self.missing(component.constants))
@@ -267,19 +269,17 @@ class PlatformPhysics:
         return replace(self, constants=constants), unstated
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "format_version": self.format_version, "name": self.name, "display_name": self.display_name,
-            "description_file": self.description_file, "validity": self.validity.to_dict(),
-            "conversion_model": dict(self.conversion_model),
-            "constants": {k: v.to_dict() for k, v in sorted(self.constants.items())},
-            **({"external_components": [c.to_dict() for c in self.external_components]}
-               if self.external_components else {}),
-            **({"converter": self.converter.to_dict()} if self.converter is not None else {}),
-            **({"carry_buffer": self.carry_buffer.to_dict()} if self.carry_buffer is not None else {}),
-            **({"chip_components": [c.to_dict() for c in self.chip_components]} if self.chip_components else {}),
-            **({"system_energy_rows": list(self.system_energy_rows)} if self.system_energy_rows else {}),
-            **({"backing_store": self.backing_store.to_dict()} if self.backing_store is not None else {}),
-        }
+        return {"format_version": self.format_version, "name": self.name, "display_name": self.display_name,
+                "description_file": self.description_file, "validity": self.validity.to_dict(),
+                "conversion_model": dict(self.conversion_model),
+                "constants": {k: v.to_dict() for k, v in sorted(self.constants.items())},
+                **({"external_components": [c.to_dict() for c in self.external_components]}
+                   if self.external_components else {}),
+                **({"converter": self.converter.to_dict()} if self.converter is not None else {}),
+                **({"carry_buffer": self.carry_buffer.to_dict()} if self.carry_buffer is not None else {}),
+                **({"chip_components": [c.to_dict() for c in self.chip_components]} if self.chip_components else {}),
+                **({"system_energy_rows": list(self.system_energy_rows)} if self.system_energy_rows else {}),
+                **({"backing_store": self.backing_store.to_dict()} if self.backing_store is not None else {})}
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "PlatformPhysics":

@@ -123,12 +123,17 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "reprogrammed_bytes | carry_in_bytes",
      "Energy to move one byte ONTO the chip over the target's DMA channel — "
      "programming payloads (per program load) and the host's re-injected "
-     "pass-boundary trains (per inference) alike."),
+     "pass-boundary trains (per inference) alike. [U-J4] The chip's backing-store "
+     "row: beside the host-chip link (an edge host's rows) it prices only bytes from "
+     "the chip's own store, never a byte that crosses the link (hosts.store); "
+     "without link rows it is the chip's one channel, as before."),
     ("e_readout_per_byte", PROGRAMMING, ENERGY, "pJ", "carry_out_bytes",
      "Energy to move one byte OFF the chip: the pass-boundary emissions the "
      "host reads back. Its own constant because the readout path need not "
      "cost what the inbound DMA path costs; a target that does not declare it "
-     "prices no readout term rather than borrowing the inbound number."),
+     "prices no readout term rather than borrowing the inbound number. [U-J4] "
+     "Beside the host-chip link it prices only bytes written back to the chip's own "
+     "store, never a byte that leaves over the link (hosts.store)."),
     ("e_carry_buffer_per_byte", PROGRAMMING, ENERGY, "pJ", "carry_onchip_bytes",
      "[U-F4] Energy of one byte access of a declared on-chip carry buffer (a carried byte is written once and read "
      "once; carry_onchip_bytes counts both accesses): the buffer's own figure, priced only where the chip declares "

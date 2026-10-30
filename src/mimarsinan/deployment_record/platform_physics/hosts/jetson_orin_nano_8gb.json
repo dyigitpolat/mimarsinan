@@ -147,7 +147,7 @@
    "evidence_kind": "derived",
    "citation": "bae2021a abstract (Semantic Scholar record of doi 10.3390/electronics10010068); neugebauer2018understanding p. 3, eq. (1) p. 4, p. 8",
    "derivation": "1.93 pJ per line bit of one PCIe PHY end (a Gen4 transmitter at 16 Gb/s, every interface, bias and test circuit included) x the line bits one payload byte costs: 8 x 130/128 / (57.88/62.96 x MPS / (MPS + 24)) = 9.2524 (MPS 512), 9.66669 (256), 10.4953 (128): the host's end at MPS 512 17.8571 pJ (low) and 256 18.6567 pJ (nominal); both ends at MPS 128 40.5117 pJ (high)",
-   "note": "The chip description prices its own end of the boundary (e_dma_per_byte, e_readout_per_byte); the nominal is the host's end, the high end counts both ends for a chip whose figure excludes its PHY. A Gen4 PHY's 16 Gb/s figure read at Gen3 (8 Gb/s), and the receiver end taken at the transmitter's figure: no PCIe receiver figure was fetched. Idle link power (L0, L1) is not priced beyond the module's idle power."
+   "note": "No row prices the chip's own end of the link: a crossing byte pays this row and e_host_mem_per_byte, never the chip's backing-store rows (e_dma_per_byte, e_readout_per_byte; U-J4). So the low and nominal ends, the host's end alone, leave the chip's end unpriced, a boundary the link's energy names in its basis; the high end counts both ends. A Gen4 PHY's 16 Gb/s figure read at Gen3 (8 Gb/s), and the receiver end taken at the transmitter's figure: no PCIe receiver figure was fetched. Idle link power (L0, L1) is not priced beyond the module's idle power."
   },
   "t_link_per_byte": {
    "low": 0.289137,
