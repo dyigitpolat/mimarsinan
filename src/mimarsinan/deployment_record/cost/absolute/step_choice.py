@@ -10,7 +10,9 @@ prices no step and refuses by name, as ``price_absolute`` and the write law do (
 [U-J3] The write and carry energy are the declared store's (``platform_physics.hosts.store``): on a host-owned store
 the carry and the write transfer are the link's and host memory's bytes; beside the host link a chip that states no
 store refuses a carrying step by name, as the pricer does. [U-J4] Beside the link a host-sourced payload's transfer is
-the link's and host memory's too, on either store (the write law prices its cells only there).
+the link's and host memory's too, on either store (the write law prices its cells only there). [U-J5 L-4] A link
+energy row of the two the physics does not declare is named in the step's basis (``hosts.store.unpriced_link_row``,
+the headline's and the lowering price's text); [U-J5 L-1] a chip-buffer carry row stays on a host-owned store.
 """
 
 from __future__ import annotations
@@ -23,8 +25,9 @@ from mimarsinan.deployment_record.cost.absolute.context import PricingContext
 from mimarsinan.deployment_record.cost.absolute.formulas import ENERGY_COMPONENTS, add_bands
 from mimarsinan.deployment_record.cost.absolute.context import external_refusals
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_terms
-from mimarsinan.deployment_record.cost.host_terms import store_refusal, write_link_bytes
-from mimarsinan.deployment_record.platform_physics.hosts.store import host_owned, prices_host_link, store_byte_energy
+from mimarsinan.deployment_record.cost.host_terms import chip_store_table, store_refusal, write_link_bytes
+from mimarsinan.deployment_record.platform_physics.hosts.store import (
+    host_owned, prices_host_link, store_byte_energy, undeclared_link_energy)
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -64,8 +67,9 @@ def _store_bytes(physics: PlatformPhysics, size: float, what: str, whose: str = 
     if per_byte is None:
         raise StepChoiceError(f"the step moves {what} over the host-chip link, and the target declares neither "
                               "e_link_per_byte nor e_host_mem_per_byte")
+    missing = undeclared_link_energy(physics, what)  # [U-J5 L-4] the row of the two left out, named
     return Band(per_byte.low * size * _J_TO_MJ, per_byte.nominal * size * _J_TO_MJ, per_byte.high * size * _J_TO_MJ,
-                f"{per_byte.basis} x {what}")
+                f"{per_byte.basis} x {what}" + (f"; unpriced: {', '.join(missing)}" if missing else ""))
 
 
 def carry_energy(census: Any, physics: PlatformPhysics) -> Band:
@@ -76,11 +80,14 @@ def carry_energy(census: Any, physics: PlatformPhysics) -> Band:
     context = PricingContext.create(quantities, physics)
     if refused := store_refusal(context):
         raise StepChoiceError(f"the step's carry is not priced: {refused}")
-    if host_owned(physics):
-        return _store_bytes(physics, float(census.carry_in_bytes + census.carry_out_bytes), "the carried bytes")
-    bands, _evidence, unpriced = context.component_bands(CARRY_COMPONENTS, _J_TO_MJ)
+    bands, _evidence, unpriced = context.component_bands(chip_store_table(physics, CARRY_COMPONENTS), _J_TO_MJ)
     if unpriced:
         raise StepChoiceError(f"the step carries bytes the target does not price: {', '.join(unpriced)}")
+    if host_owned(physics):  # the link and host memory, beside a chip-buffer row ([U-J5 L-1]) where one stays
+        carried = float(census.carry_in_bytes + census.carry_out_bytes)
+        bands = [_store_bytes(physics, carried, "the carried bytes")] + bands
+        if len(bands) == 1:
+            return bands[0]
     return add_bands(bands, " + ".join(b.basis for b in bands)) if bands else Band(0.0, 0.0, 0.0, "no carry")
 
 

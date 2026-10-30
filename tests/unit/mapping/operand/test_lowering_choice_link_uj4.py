@@ -94,8 +94,11 @@ class TestAChipWithoutADmaRow:
         assert chosen == AT_STATIONARY and price(B) == price(AT), reason
 
     def test_without_the_link_the_tie_rule_still_decides(self, chip, source):
+        """[U-J5 L-6] The tie still decides; the reason now names the streamed vectors' undeclared e_dma_per_byte
+        (``tests/unit/mapping/operand/test_lowering_unpriced_rows_uj5.py``), and nothing else."""
         chosen, reason, price = _choice(_physics(chip, host=False), source)
-        assert chosen == AT_STATIONARY and price(B) == price(AT) and UNPRICED not in reason
+        assert chosen == AT_STATIONARY and price(B) == price(AT)
+        assert _named(reason).startswith("e_dma_per_byte(the lowering's streamed vectors") and "e_link" not in reason
         # [chain 5b test-pin amendment] The transfer part is zero: the head declares NeuRRAM's e_write_per_cell
         # (480828a8, after the unit's base), which prices both lowerings' cells alike; without it both are 0.0.
         bare = _platform(_physics(chip, host=False), source)

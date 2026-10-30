@@ -97,7 +97,8 @@ and never in it; the system line is the chip plus the whole host at its own corn
   backing-store rows (`e_dma_per_byte` in, `e_readout_per_byte` out), on either store, so the chip's description
   does not price its own end of the link. No row of the vocabulary prices that end: at the low and nominal ends the
   link's energy is the host's end alone and names the chip's end unpriced in its basis (a boundary); the high end
-  counts both ends.
+  counts both ends. The description declares this per corner (`link_ends`, U-J5: `host` at low and nominal, `host`
+  and `chip` at high), so the link's energy names the chip's end unpriced at the low and nominal corners only.
 - Upper-side or unmodelled, stated: the active power was measured with the GPU active (a CPU-only operator draws
   less); the MAC rate is the core's peak issue rate; a polling host draws more than idle; the transfer latency was
   measured on Xeon root complexes; the PHY energy is a Gen4 transmitter's, read at Gen3, with the receiver end at the

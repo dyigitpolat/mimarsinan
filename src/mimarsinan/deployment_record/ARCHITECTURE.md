@@ -524,9 +524,37 @@ residency step choice does not move to another step: every step of one plan writ
 inference (the units' producer cells over the step's phases, `residency_units.plan_period_facts`), so the payload adds
 one constant to every step; beside a hand block declaring neither link energy row it refuses by name
 (`StepChoiceError`), where it priced the payload on `e_dma_per_byte` before. The chip's own end of the link is
-priced by no row of the vocabulary: the link's energy names it unpriced in its basis (`hosts.store.link_end`, a
+priced by no row of the vocabulary: the link's energy names it unpriced in its basis (`hosts.link_ends.link_end`, a
 boundary), as does a program load's link part. A crossing byte whose link or host-memory row the physics does not declare (a hand block stating part of the
-link; a host description declares every row, `REQUIRED_HOST_ROWS`) is named unpriced on the headline. Boundary,
-named: a host-sourced payload's link time is timed by no term (the write law times its cell writes), so the latency
-names it unpriced beside the link (`host_terms.host_link_time`). Without link rows nothing changes: `e_dma_per_byte`
-is the chip's one channel and prices the payload, as on RC1.
+link; a host description declares every row, `REQUIRED_HOST_ROWS`) is named unpriced on the headline. Without link
+rows nothing changes: `e_dma_per_byte` is the chip's one channel and prices the payload, as on RC1.
+
+## U-J4's minors closed and the host-sourced payload's link time priced (U-J5)
+
+- **Where a transfer row prices** (L-1, U-J4 review m1). A chip description may place a per-byte transfer row
+  (`e_dma_per_byte`, `e_readout_per_byte`) in a chip-internal buffer every arriving byte passes (`transfer_rows`,
+  `platform_physics/hosts/transfer.py`); undeclared, the row is the backing store's (the vocabulary's meaning). The
+  link-crossing rule and the host-owned store's rule drop only a backing-store row: a chip-buffer row is paid by every
+  byte that enters the buffer, crossing or not (the write law's transfers, the carry rows `hosts.store.chip_store_table`,
+  a program load `formulas.programming_byte_energies`, the lowering's injection `hosts.store.injection_byte_energy`,
+  the step choice's carry). isaac_like declares its `e_dma_per_byte` a chip buffer (a byte read through the tile's
+  eDRAM buffer, its own text); no other shipped profile declares one. Without the link the two places price alike.
+- **The link's ends per corner** (L-2, m2). A host description declares which ends of the link its `e_link_per_byte`
+  counts at each corner (`link_ends`, `platform_physics/hosts/link_ends.py`; the Jetson: the host's end at low and
+  nominal, both ends at high); its block row carries it into the resolved physics, and the link's energy names the
+  chip's end unpriced only at the corners where it is not counted. A description that declares none keeps U-J4's
+  text at every corner.
+- **One link energy row declared** (L-4, m4): the step choice's basis names the missing row
+  (`hosts.store.unpriced_link_row`), as the headline and the lowering's reason do; no price changes.
+- **The host-sourced payload's link time** (L-5, U-J4 finding F1): where the physics prices the link and the operand
+  payloads come from the host, a pass's payload bytes stream at the link's per-byte stage, so its producer wall is the
+  slower of its producer write steps and that link wall, plus one `t_link_transfer` per pass carrying a payload
+  (`cost/compute_time.producer_walls`, U-J3's `store_walls` its precedent). The producer writes stay the write law's
+  per-inference term (serial in both overlap modes), so on a host-owned store the period's backing-store payload and
+  the host-sourced payload take the one link in turn, each in its own write phase (the exposed write's basis says so,
+  `payload_link_note`). Where the physics prices the link and declares no per-byte stage, or no transfer latency, the
+  missing part is named unpriced on the latency (`hosts.store.payload_time_unpriced`). Without link rows nothing
+  changes.
+- **The streamed vectors' row on the chip's own channel** (L-6): where the lowering price injects them at an
+  undeclared `e_dma_per_byte` (the chip's own store, or no link), its printed reason names the row; no choice or price
+  moves.

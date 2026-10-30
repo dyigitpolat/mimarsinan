@@ -16,6 +16,8 @@ without ``e_dma_per_byte`` beside the edge host now injects at the link and host
 streams less (it tied before); beside a block declaring neither link energy row it ties (it took the lowering
 streaming less before). A row the price reads and the physics does not declare is named in the lowering's printed
 reason (``LoweringPrice.unpriced``, the headline's text ``hosts.store.unpriced_link_row``), never a silent 0.
+[U-J5 L-6] So is the chip's ``e_dma_per_byte`` where it injects the streamed vectors (the chip's own store, or no link)
+and the chip declares none: those vectors price at 0 and the tie rule decides, now named; no choice or price moves.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from mimarsinan.deployment_record.build.producer_census import placed_operand_ce
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_terms
 from mimarsinan.deployment_record.cost.host_terms import write_link_bytes
 from mimarsinan.deployment_record.platform_physics.hosts.store import (
-    host_owned, injection_byte_energy, prices_host_link, store_byte_energy, undeclared_link_energy,
+    host_owned, injection_byte_energy, prices_host_link, store_byte_energy, undeclared_link_energy, unpriced_link_row,
 )
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics, technology_physics
@@ -81,7 +83,12 @@ def lowering_price(platform: Mapping[str, Any]) -> LoweringPrice:
     crossed = store_byte_energy(physics, "a byte over the host-chip link") if beside else None
     link = 0.0 if crossed is None else float(crossed.nominal)
     payload_rows = undeclared_link_energy(physics, "the lowering's host-sourced payload over the host-chip link")
-    stream_rows = undeclared_link_energy(physics, "the lowering's streamed vectors injected from the host-owned store")
+    if host_owned(physics):  # the streamed vectors' rows on the declared store, undeclared
+        stream_rows = undeclared_link_energy(physics,
+                                             "the lowering's streamed vectors injected from the host-owned store")
+    else:  # [U-J5 L-6] the chip's own channel
+        stream_rows = () if physics.has("e_dma_per_byte") else (unpriced_link_row(
+            physics, "e_dma_per_byte", "the lowering's streamed vectors injected on the chip's own channel"),)
 
     def moved(lowering: Lowering) -> float:
         crossing = write_link_bytes(WriteInputs(operand_region_census(lowering), policy))  # [U-J4] over the link
@@ -94,6 +101,6 @@ def lowering_price(platform: Mapping[str, Any]) -> LoweringPrice:
 
     def unpriced(lowering: Lowering) -> Tuple[str, ...]:  # [U-J4 targeted] the rows its bytes read, undeclared
         return ((payload_rows if beside and moved(lowering) else ())
-                + (stream_rows if host_owned(physics) and lowering.streamed_elements else ()))
+                + (stream_rows if lowering.streamed_elements else ()))
 
     return LoweringPrice(price, unpriced)

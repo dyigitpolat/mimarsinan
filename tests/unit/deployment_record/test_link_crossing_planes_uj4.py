@@ -99,7 +99,9 @@ class TestEachPlane:
                 physics.band("e_host_mem_per_byte"), corner)
             delta = (getattr(priced["host"]["energy_per_inference_mj"], corner)
                      - getattr(priced["on_chip"]["energy_per_inference_mj"], corner))
-            assert delta == pytest.approx(moved * per_byte * 1e3, rel=1e-9), corner
+            static = (getattr(priced["host"]["energy_static_mj"], corner)  # [U-J5 L-5] over the priced link time
+                      - getattr(priced["on_chip"]["energy_static_mj"], corner))
+            assert delta - static == pytest.approx(moved * per_byte * 1e3, rel=1e-9), corner
 
 
 def test_both_planes_move_the_same_payload_bytes(planes):

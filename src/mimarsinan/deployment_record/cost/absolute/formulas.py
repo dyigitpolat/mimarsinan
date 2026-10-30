@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from mimarsinan.deployment_record.platform_physics.hosts.store import host_owned
+from mimarsinan.deployment_record.platform_physics.hosts.transfer import chip_buffer
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.compute_technology import share_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities
@@ -177,10 +178,12 @@ PROGRAMMING_BYTE_ENERGIES: Tuple[Tuple[str, str], ...] = (
 
 def programming_byte_energies(physics: Any) -> Tuple[Tuple[str, str], ...]:
     """[U-J3] ``PROGRAMMING_BYTE_ENERGIES`` on the chip's own store; on a host-owned one (``hosts.store``) the load's
-    bytes stream from host memory over the link, so the link and host memory take the transfer's place."""
+    bytes stream from host memory over the link, so the link and host memory take the transfer's place; [U-J5 L-1] a
+    chip-buffer transfer row (``hosts.transfer``) stays, since every arriving byte passes the buffer."""
     if not host_owned(physics):
         return PROGRAMMING_BYTE_ENERGIES
-    return (("e_link_per_byte", "link"), ("e_host_mem_per_byte", "host_memory")) + PROGRAMMING_BYTE_ENERGIES[1:]
+    kept = tuple(row for row in PROGRAMMING_BYTE_ENERGIES if row[1] != "dma" or chip_buffer(physics, row[0]))
+    return (("e_link_per_byte", "link"), ("e_host_mem_per_byte", "host_memory")) + kept
 
 #: Decomposed area components, priced only when no area aggregate supersedes them.
 AREA_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (

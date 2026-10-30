@@ -20,10 +20,12 @@ from mimarsinan.deployment_record.platform_physics.converter import ConverterTab
 from mimarsinan.deployment_record.platform_physics.hosts.description import (
     ENERGY_PLANE_FIELD, HOST_IDENTITY_FIELD, SYSTEM, energy_plane_refusal, require_one_host,
 )
+from mimarsinan.deployment_record.platform_physics.hosts.link_ends import LINK_ENDS_FIELD, judged_link_ends
 from mimarsinan.deployment_record.platform_physics.hosts.rows import HOST
 from mimarsinan.deployment_record.platform_physics.hosts.store import (
     STORE_FIELD, BackingStoreError, attach_refusal, restated_store, store_from_declaration,
 )
+from mimarsinan.deployment_record.platform_physics.hosts.transfer import TRANSFER_FIELD, transfer_rows_from_declaration
 from mimarsinan.deployment_record.platform_physics.profile import (
     PHYSICS_FORMAT_VERSION,
     CarryBufferDeclarationError,
@@ -44,9 +46,10 @@ from mimarsinan.deployment_record.units import TIME, to_canonical
 COMBINE_RULES = ("replace", "slower")
 #: [consts fix round] The closed field set of an override declaration; a field outside it refuses by name. [U-J]
 #: ``host``: the host a host row describes (``hosts.description``), one host per deployment. [U-J2]
-#: ``energy_plane``: whose energy a host energy row is (``hosts.description.ENERGY_PLANES``).
+#: ``energy_plane``: whose energy a host energy row is (``hosts.description.ENERGY_PLANES``). [U-J5 L-2] ``link_ends``:
+#: the ends of the host-chip link a link row counts at each corner (``hosts.link_ends``).
 OVERRIDE_FIELDS = frozenset({"nominal", "low", "high", "unit", "evidence_kind", "citation", "derivation", "note",
-                             "combine", HOST_IDENTITY_FIELD, ENERGY_PLANE_FIELD})
+                             "combine", HOST_IDENTITY_FIELD, ENERGY_PLANE_FIELD, LINK_ENDS_FIELD})
 #: Evidence classes weaker than a shown derivation: a composition (arithmetic) cannot strengthen such a stage.
 _BELOW_DERIVED = frozenset({"estimated"})
 
@@ -84,6 +87,7 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         chip_components=chip,
         backing_store=(None if data.get(STORE_FIELD) is None
                        else store_from_declaration(data[STORE_FIELD], str(data["name"]))),
+        transfer_rows=transfer_rows_from_declaration(data.get(TRANSFER_FIELD), str(data["name"])),  # [U-J5 L-1]
     ), data.get("carry_buffer"))
 
 
@@ -141,6 +145,7 @@ def apply_overrides(
     constants = {key: value for key, value in physics.constants.items() if key not in replaced}
     # [U-J2] an override replaces its row whole, its stated energy plane with it
     system = {key for key in physics.system_energy_rows if key not in replaced and key not in overrides}
+    ends = {key: value for key, value in physics.link_ends.items() if key not in replaced and key not in overrides}
     for key, raw in overrides.items():
         spec = spec_for(key)
         existing = physics.constants.get(key)
@@ -155,6 +160,8 @@ def apply_overrides(
             if why := energy_plane_refusal(key, plane):
                 raise ValueError(why)
             system |= {key} if plane == SYSTEM else set()
+        if (counted := data.pop(LINK_ENDS_FIELD, None)) is not None:  # [U-J5 L-2] the link row's ends, per corner
+            ends[key] = judged_link_ends(key, counted, f"{physics.name} (override {key})")
         if combine not in COMBINE_RULES:
             raise ValueError(f"{key}: combine {combine!r} is not one of {list(COMBINE_RULES)}")
         if combine == "slower" and spec.dimension != TIME:
@@ -189,6 +196,8 @@ def apply_overrides(
         chip_components=components,
         system_energy_rows=tuple(sorted(system)),
         backing_store=store,
+        transfer_rows=physics.transfer_rows,
+        link_ends=ends,
     )
 
 

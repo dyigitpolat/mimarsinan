@@ -14,10 +14,12 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.context import external_refusals
 from mimarsinan.deployment_record.cost.absolute.formulas import add_bands, mul_bands, scale_band
-from mimarsinan.deployment_record.cost.compute_time import exposed_beyond, pass_compute_walls, plus_core_walls
+from mimarsinan.deployment_record.cost.compute_time import (
+    exposed_beyond, pass_compute_walls, payload_link_note, plus_core_walls, producer_walls)
 from mimarsinan.deployment_record.cost.write_lifetime import (
     LIFETIME_HOURS, LIFETIME_INFERENCES, LIFETIME_VERDICT, SECONDARY_MARKERS, WritePricing, join_lifetimes,
     price_lifetime)
+from mimarsinan.deployment_record.platform_physics.hosts.transfer import BUFFER_BASIS, chip_buffer
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.platform_physics.resolve import technology_physics
 from mimarsinan.deployment_record.quantities.write_law import (
@@ -88,21 +90,21 @@ def _write_energy(census: Any, physics: PlatformPhysics, policy: WritePolicy) ->
     parts: List[Band] = []
     notes: List[str] = []
     routed = physics.store_transfer_note()  # [U-J3] a host-owned store's transfer: the host link's, not the chip's
-    if physics.has("e_dma_per_byte") and routed is None:
+    dma, buffer = physics.has("e_dma_per_byte"), chip_buffer(physics, "e_dma_per_byte")  # [U-J5 L-1] its place
+    if dma and (routed is None or (buffer and payload)):  # a chip-buffer row: every arriving byte pays it
         parts.append(scale_band(physics.band("e_dma_per_byte"), payload / k * _J_TO_MJ,
-                                "e_dma_per_byte x period_rewrite_bytes / K"))
-    elif payload:
+                                "e_dma_per_byte x period_rewrite_bytes / K" + (BUFFER_BASIS if routed else "")))
+    if payload and (routed is not None or not dma):
         notes.append(routed or "unpriced: e_dma_per_byte(write transfer)")
     if producer and policy.producer_write_source == "host" and policy.payload_bits is not None:
-        moved = producer * int(policy.payload_bits) / 8.0  # host-sourced payloads cross into the chip per inference
-        if (crossed := physics.payload_link_note()) is not None or not physics.has("e_dma_per_byte"):  # [U-J4] link
+        crossed, moved = physics.payload_link_note(), producer * int(policy.payload_bits) / 8.0  # per inference
+        if dma and (crossed is None or buffer):  # no link rows: the chip's one channel row prices it, as on RC1
+            parts.append(scale_band(physics.band("e_dma_per_byte"), moved * _J_TO_MJ, "e_dma_per_byte x host-sourced "
+                                    "payload bytes per inference (transfer)" + (BUFFER_BASIS if crossed else "")))
+        if crossed is not None or not dma:
             notes.append(crossed or "unpriced: e_dma_per_byte(host-sourced payload transfer)")
-        else:  # no link rows: the chip's one channel row prices the transfer, as on RC1
-            parts.append(scale_band(physics.band("e_dma_per_byte"), moved * _J_TO_MJ,
-                                    "e_dma_per_byte x host-sourced payload bytes per inference (transfer)"))
     if physics.has("e_write_per_cell"):
-        iterations = _iterations(physics)
-        if iterations is None:
+        if (iterations := _iterations(physics)) is None:
             return None, ("e_write_per_cell is declared but write_verify_iterations is not, so the "
                           "pulses per written cell are unknown")
         per_cell = physics.band("e_write_per_cell")
@@ -138,8 +140,7 @@ def _pass_write_times(census: Any, physics: PlatformPhysics, policy: WritePolicy
                                 f"t_write_per_unit needs the write granularity's units: granularity "
                                 f"{policy.write_granularity!r} is undeclared or this plane states no "
                                 "row/column extents of its written cores")
-        iterations = _iterations(physics)
-        if iterations is None:
+        if (iterations := _iterations(physics)) is None:
             return None, None, "t_write_per_unit is declared but write_verify_iterations is not"
         step = mul_bands(physics.band("t_write_per_unit"), iterations, "t_write_per_unit x iterations")
         if physics.has("t_write_setup_per_event"):
@@ -148,8 +149,8 @@ def _pass_write_times(census: Any, physics: PlatformPhysics, policy: WritePolicy
                                  for events in pass_events(units, policy)], census, physics)
         if producer and policy.write_granularity != "cell":
             return None, None, "producer writes are counted in cells; their units at another granularity are unstated"
-        steps = sum(pass_events([p.written_cells_producer * policy.cells_per_weight for p in passes], policy))
-        return walls, scale_band(step, steps, "producer write steps, per pass"), ""
+        steps = pass_events([p.written_cells_producer * policy.cells_per_weight for p in passes], policy)
+        return walls, producer_walls(step, steps, census, physics, policy), ""  # [U-J5 L-5] beside the link too
     if ((byte := physics.has("t_program_per_byte")) or physics.has("t_core_program")) and not producer:
         walls = [scale_band(physics.band("t_program_per_byte"), p.payload_bytes, "t_program_per_byte x payload_bytes")
                  for p in passes] if byte else None
@@ -171,12 +172,12 @@ def _exposed_write(census: Any, physics: PlatformPhysics, policy: WritePolicy, e
 def _expose(walls: Sequence[Band], producer: Band, census: Any, physics: PlatformPhysics, policy: WritePolicy,
             compute_sealed: bool, pass_types: Any, pass_sops: Any = None) -> Tuple[Optional[Band], str]:
     """The exposure rule over per-pass write walls and the per-inference producer wall (serial or overlapped)."""
-    k = policy.batch_k
+    k, tail = policy.batch_k, payload_link_note(census, physics, policy)  # [U-J5 L-5] the payload over the link
     if all(w.high == 0.0 for w in walls) and producer.high == 0.0:
         return _zero("nothing is written: no write time is exposed"), ""
     if policy.overlap_mode == "serial" or not walls:
         terms = [scale_band(w, 1.0 / k, "t_w / K") for w in walls] + [producer]
-        return add_bands(terms, "serial: sum_q t_w(q) / K + producer writes per inference"), ""
+        return add_bands(terms, "serial: sum_q t_w(q) / K + producer writes per inference" + tail), ""
     room = shadow_room_refusal(policy.core_capacity, policy.shadow_capacity_fraction, pass_types,
                                [p.cores for p in census.passes])
     if room is not None:
@@ -188,7 +189,7 @@ def _expose(walls: Sequence[Band], producer: Band, census: Any, physics: Platfor
         return None, no_compute
     q = len(walls)
     terms = [exposed_beyond(walls[(i + 1) % q], k, computes[i]) for i in range(q)] + [producer]
-    return add_bands(terms, "overlapped: sum_q max(0, t_w(q+1) / K - t_c(q)) + producer writes"), ""
+    return add_bands(terms, "overlapped: sum_q max(0, t_w(q+1) / K - t_c(q)) + producer writes" + tail), ""
 
 
 def _refuse_all(policy: WritePolicy, reason: str) -> WritePricing:
@@ -233,8 +234,7 @@ def _price_technologies(writes: WriteInputs, split: TechnologySplit, chip: Platf
                                  pass_sops=writes.pass_sops)
     out = WritePricing()
     energies = [(part.label, _write_energy(part.census, physics, part.policy)) for part, physics in shares]
-    refused = [f"{label}: {reason}" for label, (band, reason) in energies if band is None]
-    if refused:
+    if refused := [f"{label}: {reason}" for label, (band, reason) in energies if band is None]:
         out.refuse(ENERGY_WRITE, "; ".join(refused))
     else:
         out.energy = out.term(ENERGY_WRITE, "mJ", add_bands(

@@ -119,11 +119,14 @@ class TestAHostSourcedPayload:
                     PAYLOAD_BYTES * _k(PHYSICS[store], key, corner) * 1e3, rel=1e-9), (name, corner)
 
     def test_the_headline_pays_the_payload_on_the_link_and_host_memory_only(self, store):
+        """[U-J5 L-5] Beside the payload's energy the headline carries the static energy over its now-priced link
+        time (``test_payload_link_time_uj5.py``): that term's difference is left out here, and nothing else moves."""
         host, _ = _priced(PHYSICS[store], "host")
         own, _ = _priced(PHYSICS[store], "on_chip")
         for corner in CORNERS:
-            assert _c(host["energy_per_inference_mj"], corner) - _c(own["energy_per_inference_mj"], corner) == \
-                pytest.approx(PAYLOAD_BYTES * _link_and_memory(PHYSICS[store], corner) * 1e3, rel=1e-9), corner
+            static = _c(host["energy_static_mj"], corner) - _c(own["energy_static_mj"], corner)
+            assert _c(host["energy_per_inference_mj"], corner) - _c(own["energy_per_inference_mj"], corner) - static \
+                == pytest.approx(PAYLOAD_BYTES * _link_and_memory(PHYSICS[store], corner) * 1e3, rel=1e-9), corner
 
     def test_the_write_law_alone_charges_the_payload_no_transfer(self, store):
         """The write law's own pricer (the step choice and the record plane read it), not only the headline."""
@@ -234,18 +237,19 @@ def test_the_write_crossing_states_the_payload_on_either_store():
 
 
 class TestTheLinkTimeOfAHostSourcedPayload:
-    """The payload's transfer time is no row's yet (the write law times its cell writes; the link time reads the
-    segment I/O and the store traffic): named unpriced in the latency beside the link, never dropped silently."""
+    """[U-J5 L-5] The payload's transfer time is priced now, in the write law's producer walls (the slower of its cell
+    writes and its bytes at the link's stage, plus one transfer per pass; ``test_payload_link_time_uj5.py`` prices it
+    by hand). U-J4 named it unpriced here, values equal; that name is retired where the physics declares the rows."""
 
     NAME = "host-sourced payload"
 
     @pytest.mark.parametrize("store", [ST.CHIP, ST.HOST])
-    def test_the_latency_names_it_unpriced(self, store):
+    def test_the_latency_prices_it(self, store):
         host, _ = _priced(PHYSICS[store], "host")
         own, _ = _priced(PHYSICS[store], "on_chip")
-        assert self.NAME in host["e2e_latency_s"].source and self.NAME not in own["e2e_latency_s"].source
+        assert "timed by no term" not in host["e2e_latency_s"].source and self.NAME in host["e2e_latency_s"].source
         for corner in CORNERS:
-            assert _c(host["e2e_latency_s"], corner) == pytest.approx(_c(own["e2e_latency_s"], corner), rel=1e-12)
+            assert _c(host["e2e_latency_s"], corner) > _c(own["e2e_latency_s"], corner), corner
 
     def test_without_the_link_nothing_is_named(self):
         terms, _ = _priced(_physics(host=False), "host", **dict(BASE, carry_in_bytes=0, carry_out_bytes=0))

@@ -51,7 +51,8 @@ HOST_ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "host-sourced payload) always; the pass carry, the weight writes and a program load only to a host-owned "
      "backing store (hosts.store). [U-J4] A crossing byte pays it and e_host_mem_per_byte, never the chip's "
      "backing-store rows (e_dma_per_byte in, e_readout_per_byte out); no row prices the chip's own end of the link, "
-     "so the link's energy names it unpriced (a boundary)."),
+     "so the link's energy names it unpriced (a boundary) at the corners where the host description's link_ends "
+     "leave it out (U-J5)."),
     ("t_link_per_byte", HOST, TIME, "ns", _CROSSING,
      "Host-chip link time per payload byte, either direction (the inverse payload bandwidth)."),
     ("t_link_transfer", HOST, TIME, "us", "host_link_transfers",

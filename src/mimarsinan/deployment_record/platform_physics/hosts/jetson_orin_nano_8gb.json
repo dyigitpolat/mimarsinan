@@ -24,6 +24,23 @@
   },
   "basis": "Owner answer of 2026-10-29, verbatim choice 'Host's work only (Recommended)': the main energy charges the energy the host spends because of the deployment, its active power above idle while it works ((p_host - p_host_idle) x host time) plus every byte over the chip link and through host memory ((e_link_per_byte + e_host_mem_per_byte) x crossing bytes, both directions); host time always adds to latency. The module's idle power is the host's own draw, whether or not the deployment runs: system-level, printed with the whole-system energy as a labelled system line beside the main energy, never in it. p_host is module power (VDD_IN) while the host works, its idle power included, so the work is charged above the idle floor."
  },
+ "link_ends": {
+  "rows": {
+   "e_link_per_byte": {
+    "low": [
+     "host"
+    ],
+    "nominal": [
+     "host"
+    ],
+    "high": [
+     "host",
+     "chip"
+    ]
+   }
+  },
+  "basis": "e_link_per_byte's own derivation and note: the low and nominal ends are one PCIe PHY end at MPS 512 and MPS 256 (17.8571 and 18.6567 pJ), the host's end alone, and the high end counts both PHY ends at MPS 128 (40.5117 pJ). So the chip's own end of the link is priced by no row at the low and nominal corners, a boundary the link's energy names there (U-J5); at the high corner it is counted."
+ },
  "modes": {
   "15W": {
    "power_budget_w": 15,

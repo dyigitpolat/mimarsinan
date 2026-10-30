@@ -27,7 +27,9 @@ link, it pays the link and host-memory rows and never the chip's backing-store r
 host-owned store's carry, write transfer and program load are; a crossing byte whose link or host-memory row the
 physics does not declare is named unpriced (``cost.host_terms``; [U-J4 targeted] N2's lowering price too,
 ``unpriced_link_row``). The chip's own end of the link is priced by no row of the vocabulary: the link's energy names it
-unpriced (``CHIP_END_UNPRICED``, ``link_end``, a boundary).
+unpriced where the host's row leaves it out ([U-J5 L-2] ``hosts.link_ends``, a boundary). [U-J5 L-1] The rule drops
+only the chip's backing-store rows: a transfer row its chip description places in a chip-internal buffer every
+arriving byte passes (``hosts.transfer``) is paid by the crossing byte too, as by the host-owned store's traffic.
 
 [U-J4] The declared rule of the store's scope (U-J3's departure D2, accepted by the conductor on 2026-10-30,
 vetoable): the no-store refusal applies only where the physics prices the host-chip link. There a chip that states no
@@ -43,6 +45,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.platform_physics.area_components import load_component
+from mimarsinan.deployment_record.platform_physics.hosts.transfer import chip_buffer
 from mimarsinan.deployment_record.schema.provenance import Band
 
 STORE_FIELD = "backing_store"
@@ -67,12 +70,13 @@ TRANSFER_NOTE = ("the write transfer streams from the host-owned store over the 
 #: [U-J4] The write law's note for a host-sourced payload beside the link (``PlatformPhysics.payload_link_note``).
 PAYLOAD_NOTE = ("the host-sourced payload crosses the host-chip link: priced there (energy_host_link_mj, "
                 "energy_host_mem_mj), never on the chip's backing-store rows")
-#: [U-J4] The boundary the link's energy names (``link_end``): no row prices the chip's end of the link.
-CHIP_END_UNPRICED = ("boundary: the chip's own end of the host-chip link is unpriced (no row of the vocabulary prices "
-                     "it: a crossing byte pays the link and host memory, never the chip's backing-store rows)")
-#: [U-J4] The link time a host-sourced payload pays no row of (named unpriced beside the link, ``host_link_time``).
-PAYLOAD_TIME_UNPRICED = ("t_link_per_byte, t_link_transfer(host-sourced payload: its transfer over the link is timed "
-                         "by no term, the write law timing its cell writes only)")
+#: [U-J4, U-J5 L-5] A host-sourced payload's link time is the write law's producer walls (``cost.compute_time``);
+#: where the physics prices the link and declares neither per-byte stage, it is named unpriced (``host_link_time``).
+PAYLOAD_TIME_UNPRICED = ("t_link_per_byte, t_host_mem_per_byte(host-sourced payload: the physics prices the link and "
+                         "declares neither per-byte stage, so its transfer over the link is timed by no term)")
+#: [U-J5 L-5] Where the physics declares no transfer latency, the payload's one transfer per pass is named unpriced.
+PAYLOAD_TRANSFER_UNPRICED = ("t_link_transfer(host-sourced payload: one transfer per pass carrying it; the physics "
+                             "prices the link and declares no t_link_transfer)")
 
 
 class BackingStoreError(ToolchainRefusal, ValueError):
@@ -183,12 +187,6 @@ def prices_host_link(physics: Any) -> bool:
     return physics is not None and any(physics.has(key) for key in LINK_ROWS)
 
 
-def link_end(row: str) -> str:
-    """[U-J4] What a link row's priced term states beside its basis: for the link's energy, the chip's own end of the
-    link, which no row prices (``CHIP_END_UNPRICED``); nothing for any other row."""
-    return f"; {CHIP_END_UNPRICED}" if row == "e_link_per_byte" else ""
-
-
 def owner(physics: Any) -> Optional[str]:
     """The store the physics declares (``CHIP``, ``HOST``) or None."""
     store = getattr(physics, STORE_FIELD, None)
@@ -221,22 +219,26 @@ def store_refusal(ctx: Any) -> Optional[str]:
 
 
 def chip_store_table(physics: Any, table: Any) -> Any:
-    """An energy table without the chip's own store rows of the carry where the store is host-owned."""
-    return table if owner(physics) != HOST else tuple(row for row in table if row[2] not in CHIP_CARRY_LABELS)
+    """An energy table without the chip's own store rows of the carry where the store is host-owned; [U-J5 L-1] a
+    chip-internal buffer row stays (``hosts.transfer``: every byte entering the buffer pays it)."""
+    if owner(physics) != HOST:
+        return table
+    return tuple(row for row in table if row[2] not in CHIP_CARRY_LABELS or chip_buffer(physics, row[0]))
 
 
 def _ends(fn, *bands: Band) -> Tuple[float, float, float]:
     return tuple(fn(*(getattr(b, end) for b in bands)) for end in ("low", "nominal", "high"))  # type: ignore
 
 
-def link_stage(physics: Any) -> Optional[Band]:
-    """A host-owned store's per-byte time: the slower of its declared per-byte stages (the pipelined bound, as the
-    link prices every crossing byte), None where it declares neither."""
+def link_stage(physics: Any, what: str = "the host-owned store's stage") -> Optional[Band]:
+    """A byte's time over the host-chip link (a host-owned store's, [U-J5] a host-sourced payload's: ``what``): the
+    slower of the declared per-byte stages (the pipelined bound, as the link prices every crossing byte), None where
+    the physics declares neither."""
     stages = [key for key in ("t_link_per_byte", "t_host_mem_per_byte") if physics.has(key)]
     if not stages:
         return None
     return Band(*_ends(max, *(physics.band(key) for key in stages)),
-                f"the slower of {' and '.join(stages)} per byte (the host-owned store's stage)")
+                f"the slower of {' and '.join(stages)} per byte ({what})")
 
 
 def unpriced_link_row(physics: Any, row: str, what: str) -> str:
@@ -260,12 +262,25 @@ def store_byte_energy(physics: Any, what: str = "the host-owned store's bytes") 
     return Band(*_ends(lambda *v: sum(v), *(physics.band(key) for key in rows)), " + ".join(rows) + f" ({what})")
 
 
+def payload_time_unpriced(physics: Any) -> Tuple[str, ...]:
+    """[U-J5 L-5] The rows a host-sourced payload's link time needs beside the link and the physics does not declare."""
+    if link_stage(physics) is None:
+        return (PAYLOAD_TIME_UNPRICED,)
+    return () if physics.has("t_link_transfer") else (PAYLOAD_TRANSFER_UNPRICED,)
+
+
 def injection_byte_energy(physics: Any) -> Optional[Band]:
     """[U-J4] The energy of one byte re-injected into the chip as the carry is, on the declared store: the link and
-    host memory on a host-owned store (``store_byte_energy``), else the chip's ``e_dma_per_byte`` (None undeclared)."""
-    if host_owned(physics):
-        return store_byte_energy(physics, "a byte injected from the host-owned store")
-    return physics.band("e_dma_per_byte") if physics.has("e_dma_per_byte") else None
+    host memory on a host-owned store (``store_byte_energy``), else the chip's ``e_dma_per_byte`` (None undeclared);
+    [U-J5 L-1] on a host-owned store a chip-buffer ``e_dma_per_byte`` beside the link and host memory."""
+    dma = physics.band("e_dma_per_byte") if physics.has("e_dma_per_byte") else None
+    if not host_owned(physics):
+        return dma
+    link = store_byte_energy(physics, "a byte injected from the host-owned store")
+    if dma is None or not chip_buffer(physics, "e_dma_per_byte"):
+        return link
+    return dma if link is None else Band(*_ends(lambda *v: sum(v), link, dma), f"{link.basis} + e_dma_per_byte "
+                                                                              "(the chip-internal buffer)")
 
 
 def slower_port(physics: Any, port: Band) -> Band:

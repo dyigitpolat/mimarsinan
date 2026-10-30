@@ -301,5 +301,12 @@
       },
       "note": "[U-A] The chip-level area is Table I's off-chip HyperTransport links (22.88 mm^2 of the 85.4 mm^2 chip, beside the 168 tiles' 62.5 mm^2), declared as their component: a server multi-chip interconnect, which an edge chip does not carry."
     }
-  ]
+  ],
+  "transfer_rows": {
+    "e_dma_per_byte": {
+      "place": "chip_buffer",
+      "citation": "shafiee2016isaac Table I eDRAM-buffer row, p.8",
+      "note": "[U-J5] The row's own derivation prices a byte read from the tile's eDRAM buffer (20.7 mW x 100 ns per tile-cycle over 1024 B), the on-chip cost every byte entering the tile pays, and its note keeps the off-chip HyperTransport figure out of it (isaac_like.md, Programming constants: 'it prices moving a byte through the tile's eDRAM buffer'). So it is a chip-internal buffer row, never a backing-store row: a byte that crosses the host-chip link pays it too."
+    }
+  }
 }

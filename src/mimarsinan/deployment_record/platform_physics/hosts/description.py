@@ -17,7 +17,10 @@ row that names no host (a measured server row) beside it refuses by name.
 energy row of its block carries that statement (``ENERGY_PLANE_FIELD``), so the pricer's main energy sums the
 attributable terms and the system line carries the whole host (``cost.host_terms``). A system-level power is a floor
 the host draws in every state: an attributable power lies at or above it at every corner, else the block refuses by
-name, and the power above it takes the cost ends of the difference (``power_above``)."""
+name, and the power above it takes the cost ends of the difference (``power_above``).
+[U-J5 L-2] The description declares, per corner, which ends of the host-chip link its link row counts
+(``link_ends``, ``hosts.link_ends``); the block's row carries it, so the link's energy names the chip's end unpriced
+only where the row leaves it out."""
 
 from __future__ import annotations
 
@@ -28,6 +31,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.platform_physics.constants import constant_from_declaration, spec_for
+from mimarsinan.deployment_record.platform_physics.hosts.link_ends import LINK_ENDS_FIELD, judged_link_ends
 from mimarsinan.deployment_record.platform_physics.hosts.rows import HOST
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.units import ENERGY, POWER
@@ -81,6 +85,8 @@ class HostDescription:
     #: [U-J2] Per energy row (power or energy per byte) it declares, ``attributable`` or ``system``, and the basis.
     energy_attribution: Mapping[str, str] = field(default_factory=dict)
     energy_attribution_basis: str = ""
+    #: [U-J5 L-2] Per link row it declares, the ends of the link the row counts at each corner.
+    link_ends: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
 
 def host_descriptions() -> Tuple[str, ...]:
@@ -125,10 +131,19 @@ def host_description(name: str) -> HostDescription:
     attribution = data.get("energy_attribution") or {}
     planes = {str(key): str(plane) for key, plane in (attribution.get("rows") or {}).items()}
     _judged_attribution(name, planes, rows)
+    ends = {str(key): value for key, value in ((data.get(LINK_ENDS_FIELD) or {}).get("rows") or {}).items()}
+    if stray := sorted(set(ends) - rows):
+        raise HostDescriptionError(f"host description {name!r} ({LINK_ENDS_FIELD}): {stray} name no row it declares")
+    for key, value in ends.items():
+        try:
+            judged_link_ends(key, value, f"host description {name!r}")
+        except ValueError as why:
+            raise HostDescriptionError(str(why)) from None
     return HostDescription(name=name, display_name=str(data["display_name"]),
                            description_file=str(data["description_file"]), default_mode=str(data["default_mode"]),
                            modes=modes, constants=dict(data.get("constants") or {}), departures=departures,
-                           energy_attribution=planes, energy_attribution_basis=str(attribution.get("basis", "")))
+                           energy_attribution=planes, energy_attribution_basis=str(attribution.get("basis", "")),
+                           link_ends=ends)
 
 
 def is_energy_row(key: str) -> bool:
@@ -220,7 +235,8 @@ def host_description_block(name: str, mode_rule: str = DEFAULT_RULE) -> Dict[str
     planes = description.energy_attribution
     _floor_refusal(name, mode, {key: rows[key] for key in REQUIRED_HOST_ROWS}, planes)
     return {key: {**dict(rows[key]), HOST_IDENTITY_FIELD: identity, **_departure(rows[key], description, key),
-                  **({ENERGY_PLANE_FIELD: planes[key]} if key in planes else {})}
+                  **({ENERGY_PLANE_FIELD: planes[key]} if key in planes else {}),
+                  **({LINK_ENDS_FIELD: description.link_ends[key]} if key in description.link_ends else {})}
             for key in REQUIRED_HOST_ROWS}
 
 

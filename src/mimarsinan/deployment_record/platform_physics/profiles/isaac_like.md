@@ -106,7 +106,10 @@ its nominal at the band's log-space centre (`sqrt(low x high)`):
   **`e_dma_per_byte` (2.02 pJ/B) is a different thing entirely** — it prices moving a
   byte through the tile's eDRAM buffer, which is also what a carried activation pays
   per inference. Committing and moving are separate constants precisely so an NVM
-  target's write cost cannot leak into its per-inference carry.
+  target's write cost cannot leak into its per-inference carry. The profile declares
+  it a chip-internal buffer row (`transfer_rows`, U-J5): every byte entering the
+  tile's eDRAM buffer pays it, a host-sourced payload over the host-chip link
+  included, since the link-crossing rule (U-J4) drops only a backing-store row.
 - **ENDURANCE IS UNMODELED.** This profile prices the *energy* of a write and says
   nothing about the *wear*: a per-inference-reprogrammed array has a finite write
   budget (10⁶–10⁹ cycles in the device literature) and no quantity in this framework

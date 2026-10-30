@@ -8,11 +8,16 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 from mimarsinan.common.refusal import ToolchainRefusal
 # [U-E3] The value type and its evidence kinds live below the converter (``constants``), re-exported here.
 from mimarsinan.deployment_record.platform_physics.constants import (
-    EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, constant_from_declaration, spec_for)
+    EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, constant_from_declaration)
 from mimarsinan.deployment_record.platform_physics.area_components import ChipComponent
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
+from mimarsinan.deployment_record.platform_physics.hosts.link_ends import link_ends_from_declaration, link_ends_to_dict
 from mimarsinan.deployment_record.platform_physics.hosts.store import (
     HOST, PAYLOAD_NOTE, TRANSFER_NOTE, BackingStore, judged_store, prices_host_link, store_from_declaration)
+# [chain 5b budget layout B-3] CL2's external component lives beside the transfer rows, re-exported here.
+from mimarsinan.deployment_record.platform_physics.hosts.transfer import (
+    ExternalComponent as ExternalComponent, TransferPlace, judged_transfer_rows, transfer_rows_from_declaration,
+    transfer_rows_to_dict)
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwargs
 
@@ -85,33 +90,6 @@ class PlatformPhysicsValidity:
         kwargs = strict_kwargs(cls, data)
         if kwargs.get("geometry") is not None:
             kwargs["geometry"] = ValidityGeometry.from_dict(kwargs["geometry"])
-        return cls(**kwargs)
-
-
-@dataclass(frozen=True)
-class ExternalComponent:
-    """[CL2] A component the priced system needs and the profile does not describe (an SRAM-CIM macro's backing
-    store): a run declares its ``constants`` beside the profile, or nothing absolute is read."""
-
-    name: str
-    constants: Tuple[str, ...]
-    note: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.name or self.name.isspace():
-            raise ValueError("ExternalComponent needs a name")
-        if not self.constants:
-            raise ValueError(f"external component {self.name!r} names no constant")
-        for key in self.constants:
-            spec_for(key)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"name": self.name, "constants": list(self.constants), "note": self.note}
-
-    @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "ExternalComponent":
-        kwargs = strict_kwargs(cls, data)
-        kwargs["constants"] = tuple(kwargs.get("constants") or ())
         return cls(**kwargs)
 
 
@@ -199,6 +177,12 @@ class PlatformPhysics:
     #: [U-J3] Where the chip's backing store lives (``hosts.store``: its own DRAM, or the host's memory over the link);
     #: the area components agree with it; serialized only when present.
     backing_store: Optional[BackingStore] = None
+    #: [U-J5 L-1] Where a transfer row prices, where the chip description places one (``hosts.transfer``: a
+    #: chip-internal buffer; undeclared, the backing store); serialized only when present.
+    transfer_rows: Mapping[str, TransferPlace] = field(default_factory=dict)
+    #: [U-J5 L-2] Per link row, the ends of the host-chip link it counts at each corner, as the host's description
+    #: declares them (``hosts.link_ends``); serialized only when present.
+    link_ends: Mapping[str, Mapping[str, Tuple[str, ...]]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.format_version != PHYSICS_FORMAT_VERSION:
@@ -210,6 +194,7 @@ class PlatformPhysics:
         if stray := sorted(set(self.system_energy_rows) - set(self.constants)):
             raise ValueError(f"{self.name}: system_energy_rows {stray} name no declared constant")
         judged_store(self.backing_store, self.chip_components, self.name)
+        judged_transfer_rows(self.transfer_rows, self.constants, self.name)
 
     def has(self, key: str) -> bool:
         """Whether this target declares ``key`` at all."""
@@ -279,7 +264,8 @@ class PlatformPhysics:
                 **({"carry_buffer": self.carry_buffer.to_dict()} if self.carry_buffer is not None else {}),
                 **({"chip_components": [c.to_dict() for c in self.chip_components]} if self.chip_components else {}),
                 **({"system_energy_rows": list(self.system_energy_rows)} if self.system_energy_rows else {}),
-                **({"backing_store": self.backing_store.to_dict()} if self.backing_store is not None else {})}
+                **({"backing_store": self.backing_store.to_dict()} if self.backing_store is not None else {}),
+                **transfer_rows_to_dict(self.transfer_rows), **link_ends_to_dict(self.link_ends)}
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "PlatformPhysics":
@@ -297,4 +283,6 @@ class PlatformPhysics:
         kwargs["system_energy_rows"] = tuple(str(key) for key in kwargs.get("system_energy_rows") or ())
         store = kwargs.get("backing_store")
         kwargs["backing_store"] = None if store is None else store_from_declaration(store, str(kwargs.get("name")))
+        kwargs["transfer_rows"] = transfer_rows_from_declaration(kwargs.get("transfer_rows"), str(kwargs.get("name")))
+        kwargs["link_ends"] = link_ends_from_declaration(kwargs.get("link_ends"), str(kwargs.get("name")))
         return cls(**kwargs)
