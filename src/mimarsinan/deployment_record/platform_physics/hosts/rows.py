@@ -32,8 +32,9 @@ HOST_ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
     # [U-J] The host idles while it waits; its memory and its link to the chip move every crossing byte.
     ("p_host_idle", HOST, POWER, "W", "e2e_latency_s",
      "Power the host draws while it waits during an inference (on the chip and on the link): priced over the "
-     "inference's latency less the host's own time (which p_host prices), so a host-attached chip pays the host "
-     "module's whole power for as long as an inference holds it."),
+     "inference's latency less the host's own time (which p_host prices). [U-J2] Whose energy it is the host's "
+     "description states (energy_plane): system-level, it is a floor under every host state, priced with the "
+     "whole-system line (energy_system_mj) and never in the headline, and p_host is charged above it."),
     ("e_host_mem_per_byte", HOST, ENERGY, "pJ", _CROSSING,
      "Energy of one byte the host-chip link moves into or out of host memory (each crossing byte is written to or "
      "read from it once), above the host's idle power; a host operator's own memory traffic is inside p_host."),

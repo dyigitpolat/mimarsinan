@@ -35,6 +35,7 @@ FMLA_PER_CYCLE, FP32_LANES = 2, 4                    # Arm Cortex-A78AE SWOG Iss
 ET_CYCLES = (75, 360, 390)                           # nachin2026executorch Table 1: ExecuTorch framework, mul, add
 MI_CYCLES = (324_399, 7_976, 8_493)                  # PyTorch Mobile Interpreter, same columns
 ACTIVE_W, IDLE_W = (11.01, 11.12), (5.69, 5.68)      # cao2026vlaulap Table 4 (15 W mode, VDD_IN)
+PEER_IDLE_W = 4.0                                    # [U-J2 K-3] tsuyuki2026efficient Table 5 (15 W mode, supply input)
 EMOP_PJ = {0.7: 444.9, 2.1: 174.7, 3.2: 141.4}       # prashanthis2025pagoda p. 25
 BW_AGX = (103.9, 204.8)                              # p. 22: 103.9 GB/s at 2.1 GHz; rating 204.8 GB/s at 3.2 GHz
 GEN3_GTS, LANES, TLP_SHARE, MWR_HDR = 8.0, 4, 57.88 / 62.96, 24   # neugebauer2018understanding pp. 3-4
@@ -55,8 +56,10 @@ def _expected():
                                        "us", "derived"),
                 "t_host_mem_per_byte": (1 / peak, 1 / sustained, 1 / sustained, "ns", "derived")}
         if mode == "15W":
-            rows["p_host"] = (min(IDLE_W), ACTIVE_W[0], budget, "W", "published")
-            rows["p_host_idle"] = (min(IDLE_W), sum(IDLE_W) / 2, max(IDLE_W), "W", "published")
+            # [U-J2 K-3, amended] the low ends rest on the peer-reviewed idle, the high end of p_host on the vendor's
+            # VDD_IN average-power budget of the mode, the nominals on the preprint's one-setup pair
+            rows["p_host"] = (PEER_IDLE_W, ACTIVE_W[0], budget, "W", "published")
+            rows["p_host_idle"] = (PEER_IDLE_W, sum(IDLE_W) / 2, max(IDLE_W), "W", "published")
         out[mode] = rows
     phys = GEN3_GTS * 128 / 130 * LANES / 8
     rate = {m: phys * TLP_SHARE * m / (m + MWR_HDR) for m in (512, 256, 128)}
@@ -74,8 +77,9 @@ def _expected():
 
 #: Each row's sources, by the id its citation must name.
 SOURCES = {"host_macs_per_s": ("Cortex-A78AE", "r36.5"), "t_host_op_overhead": ("nachin2026executorch", "r36.5"),
-           "t_host_mem_per_byte": ("prashanthis2025pagoda", "r36.5"), "p_host": ("cao2026vlaulap", "r36.5"),
-           "p_host_idle": ("cao2026vlaulap",), "e_host_mem_per_byte": ("prashanthis2025pagoda",),
+           "t_host_mem_per_byte": ("prashanthis2025pagoda", "r36.5"),
+           "p_host": ("cao2026vlaulap", "r36.5", "VDD_IN Average Power: 15W", "tsuyuki2026efficient"),
+           "p_host_idle": ("cao2026vlaulap", "tsuyuki2026efficient"), "e_host_mem_per_byte": ("prashanthis2025pagoda",),
            "e_link_per_byte": ("bae2021a", "neugebauer2018understanding"),
            "t_link_per_byte": ("neugebauer2018understanding",), "t_link_transfer": ("neugebauer2018understanding",)}
 

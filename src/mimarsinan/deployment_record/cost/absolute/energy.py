@@ -129,8 +129,9 @@ def _aggregate_outside(ctx: PricingContext, compute: str) -> Optional[str]:
 
 
 def _host_band(ctx: PricingContext, e2e: Optional[Band]) -> Tuple[Optional[Band], Optional[str], List[str]]:
-    """(host energy, refusal reason, unpriced) — p_host over the host wall; [U-J] on an edge host also its idle power
-    over the wait and the link per crossing byte (``host_terms.host_side_energy``)."""
+    """(host energy, refusal reason, unpriced) — p_host over the host wall; [U-J, U-J2] on an edge host the terms its
+    block states attributable: its work above a system-level idle floor, the link and host memory per crossing byte
+    (``host_terms.host_side_energy``; the system-level ones go to the whole-system line)."""
     host = ctx.host_time()
     missing = list(host.missing)
     if not ctx.physics.has("p_host") and (host.band is not None or missing):
@@ -143,8 +144,8 @@ def _host_band(ctx: PricingContext, e2e: Optional[Band]) -> Tuple[Optional[Band]
         active = Band(p_host.low * host.band.low * _J_TO_MJ, p_host.nominal * host.band.nominal * _J_TO_MJ,
                       p_host.high * host.band.high * _J_TO_MJ,
                       f"p_host [{p_host.basis}] x host time ({host.band.basis})")
-    band, unpriced = host_side_energy(ctx, active, host.band, e2e)
-    return band, None, unpriced
+    band, unpriced, refused = host_side_energy(ctx, active, host.band, e2e)
+    return band, refused, unpriced
 
 
 def _programming_energy(ctx: PricingContext) -> None:
@@ -293,5 +294,7 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     source = "; ".join(evidence)
     if unpriced:
         source += f"; unpriced: {', '.join(unpriced)}"
+    side = [] if writes is None else [writes.energy]  # [U-J2 targeted M1] the system line's chip side: no host
+    ctx.energy_chip_side = add_bands(chip + side, "; ".join(chip_evidence + [f"writes: {b.basis}" for b in side]))
     ctx.term(ENERGY_HEADLINE, "mJ", add_bands(components, source), source)
     _programming_energy(ctx)

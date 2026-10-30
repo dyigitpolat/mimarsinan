@@ -201,6 +201,9 @@ class PlatformPhysics:
     carry_buffer: Optional[CarryBufferTable] = None
     #: [U-A] The chip-level area components whose sum is ``area_global_fixed`` (``area_components``); only when present.
     chip_components: Tuple[ChipComponent, ...] = ()
+    #: [U-J2] The host energy rows a host description states system-level (the host's own draw, printed with the
+    #: whole-system line, never the headline: ``cost.host_terms``); serialized only when present.
+    system_energy_rows: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.format_version != PHYSICS_FORMAT_VERSION:
@@ -208,9 +211,9 @@ class PlatformPhysics:
                              f"{PHYSICS_FORMAT_VERSION}; migrate explicitly, never tolerate silently")
         for key, value in self.constants.items():
             if key != value.key:
-                raise ValueError(
-                    f"{self.name}: constant keyed {key!r} carries key {value.key!r}"
-                )
+                raise ValueError(f"{self.name}: constant keyed {key!r} carries key {value.key!r}")
+        if stray := sorted(set(self.system_energy_rows) - set(self.constants)):
+            raise ValueError(f"{self.name}: system_energy_rows {stray} name no declared constant")
 
     def has(self, key: str) -> bool:
         """Whether this target declares ``key`` at all."""
@@ -275,6 +278,7 @@ class PlatformPhysics:
             **({"converter": self.converter.to_dict()} if self.converter is not None else {}),
             **({"carry_buffer": self.carry_buffer.to_dict()} if self.carry_buffer is not None else {}),
             **({"chip_components": [c.to_dict() for c in self.chip_components]} if self.chip_components else {}),
+            **({"system_energy_rows": list(self.system_energy_rows)} if self.system_energy_rows else {}),
         }
 
     @classmethod
@@ -292,4 +296,5 @@ class PlatformPhysics:
         kwargs["carry_buffer"] = (None if kwargs.get("carry_buffer") is None
                                   else CarryBufferTable.from_dict(kwargs["carry_buffer"]))
         kwargs["chip_components"] = tuple(ChipComponent.from_dict(c) for c in kwargs.get("chip_components") or ())
+        kwargs["system_energy_rows"] = tuple(str(key) for key in kwargs.get("system_energy_rows") or ())
         return cls(**kwargs)

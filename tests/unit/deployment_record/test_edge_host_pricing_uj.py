@@ -71,14 +71,25 @@ class TestOneHostOperator:
             assert _c(edge["energy_static_mj"].band, corner) == pytest.approx(static_power * e2e, rel=1e-12)
 
     def test_its_energy_is_active_power_over_its_time_and_idle_power_over_the_wait(self):
+        """[U-J2 K-1, amended] The host's work above idle is the headline's host energy; the idle power over the
+        wait (and under the work) is the host's own draw, in the whole-system line (owner answer of 2026-10-29).
+        [U-J2 targeted M1, amended] The work's band ends are the cost ends of p_host - p_host_idle (low: p_host's low
+        less p_host_idle's high, never below zero; high: p_host's high less p_host_idle's low); the system line is the
+        chip plus the whole host at its corners (p_host over the host's time, p_host_idle over the wait)."""
         terms, _ = _terms(EDGE, **self.VALUES)
+        work_power = {"low": max(0.0, _k("p_host", "low") - _k("p_host_idle", "high")),
+                      "nominal": _k("p_host", "nominal") - _k("p_host_idle", "nominal"),
+                      "high": _k("p_host", "high") - _k("p_host_idle", "low")}
         for corner in CORNERS:
             busy = _c(terms["latency_host_s"].band, corner)
             e2e = _c(terms["e2e_latency_s"].band, corner)
             idle = _k("p_host_idle", corner) * (e2e - busy) * 1e3
-            assert _c(terms["energy_host_idle_mj"].band, corner) == pytest.approx(idle, rel=1e-12)
+            assert _c(terms["energy_host_idle_mj"].band, corner) == pytest.approx(idle, rel=1e-9)
             assert _c(terms["energy_host_mj"].band, corner) == pytest.approx(
-                _k("p_host", corner) * busy * 1e3 + idle, rel=1e-12)
+                work_power[corner] * busy * 1e3, rel=1e-12, abs=1e-18)
+            chip = _c(terms["energy_dynamic_mj"].band, corner) + _c(terms["energy_static_mj"].band, corner)
+            assert _c(terms["energy_system_mj"].band, corner) == pytest.approx(
+                chip + _k("p_host", corner) * busy * 1e3 + idle, rel=1e-9)
         assert "energy_host_link_mj" not in terms  # no byte crossed
 
     def test_the_headline_is_the_chip_plus_the_host(self):
@@ -110,10 +121,13 @@ class TestOneBoundaryTransfer:
             assert _c(link, corner) == pytest.approx(1000 * per_byte + _k("t_link_transfer", corner), rel=1e-12)
 
     def test_its_energy_is_the_link_and_host_memory_per_byte(self):
+        """[U-J2 K-1, amended] The link and host memory are each their own term."""
         terms, _ = _terms(EDGE, **self.VALUES)
         for corner in CORNERS:
-            expected = 1000 * (_k("e_link_per_byte", corner) + _k("e_host_mem_per_byte", corner)) * 1e3
-            assert _c(terms["energy_host_link_mj"].band, corner) == pytest.approx(expected, rel=1e-12)
+            assert _c(terms["energy_host_link_mj"].band, corner) == pytest.approx(
+                1000 * _k("e_link_per_byte", corner) * 1e3, rel=1e-12)
+            assert _c(terms["energy_host_mem_mj"].band, corner) == pytest.approx(
+                1000 * _k("e_host_mem_per_byte", corner) * 1e3, rel=1e-12)
 
     def test_the_link_time_adds_to_the_latency_and_the_host_idles_over_it(self):
         edge, _ = _terms(EDGE, **self.VALUES)
@@ -122,8 +136,12 @@ class TestOneBoundaryTransfer:
             e2e = _c(edge["e2e_latency_s"].band, corner)
             assert e2e == pytest.approx(_c(chip["e2e_latency_s"].band, corner)
                                         + _c(edge["latency_host_link_s"].band, corner), rel=1e-12)
-            expected = (_k("p_host_idle", corner) * e2e * 1e3 + _c(edge["energy_host_link_mj"].band, corner))
-            assert _c(edge["energy_host_mj"].band, corner) == pytest.approx(expected, rel=1e-12)
+            # [U-J2 K-1, amended] the host idles over the whole inference in the system line; the headline's host
+            # energy is the bytes' link and host memory
+            idle = _k("p_host_idle", corner) * e2e * 1e3
+            assert _c(edge["energy_host_idle_mj"].band, corner) == pytest.approx(idle, rel=1e-12)
+            assert _c(edge["energy_host_mj"].band, corner) == pytest.approx(
+                _c(edge["energy_host_link_mj"].band, corner) + _c(edge["energy_host_mem_mj"].band, corner), rel=1e-12)
 
     def test_the_chips_own_end_of_the_boundary_stays_the_chips(self):
         edge, _ = _terms(EDGE, **self.VALUES)
@@ -137,9 +155,11 @@ def test_every_byte_crosses_in_both_directions_at_the_link_and_host_memory():
     values = dict(BASE, host_macs=0, compute_op_count=0, host_memory_bound_bytes=0, carry_in_bytes=300,
                   carry_out_bytes=200, segment_in_bytes=50, segment_out_bytes=10, host_link_transfers=4)
     terms, _ = _terms(EDGE, **values)
-    for corner in CORNERS:
-        energy = 560 * (_k("e_link_per_byte", corner) + _k("e_host_mem_per_byte", corner)) * 1e3
-        assert _c(terms["energy_host_link_mj"].band, corner) == pytest.approx(energy, rel=1e-12)
+    for corner in CORNERS:  # [U-J2 K-1, amended] the link and host memory each their own term
+        assert _c(terms["energy_host_link_mj"].band, corner) == pytest.approx(
+            560 * _k("e_link_per_byte", corner) * 1e3, rel=1e-12)
+        assert _c(terms["energy_host_mem_mj"].band, corner) == pytest.approx(
+            560 * _k("e_host_mem_per_byte", corner) * 1e3, rel=1e-12)
         per_byte = max(_k("t_link_per_byte", corner), _k("t_host_mem_per_byte", corner))
         time = 560 * per_byte + 4 * _k("t_link_transfer", corner)
         assert _c(terms["latency_host_link_s"].band, corner) == pytest.approx(time, rel=1e-12)
@@ -233,10 +253,12 @@ class TestTheWritePayloadCrossesTheLink:
 
         values = dict(BASE, host_macs=0, compute_op_count=0, host_memory_bound_bytes=0, **NO_LINK)
         pricing = price_absolute(_q(**values), EDGE, writes=WriteInputs(self._census(400), WritePolicy(batch_k=4)))
-        link = {t.name: t for t in pricing.terms}["energy_host_link_mj"].band
+        terms = {t.name: t for t in pricing.terms}  # [U-J2 K-1, amended] the link and host memory each their own term
         for corner in CORNERS:
-            expected = 400 / 4 * (_k("e_link_per_byte", corner) + _k("e_host_mem_per_byte", corner)) * 1e3
-            assert _c(link, corner) == pytest.approx(expected, rel=1e-12)
+            assert _c(terms["energy_host_link_mj"].band, corner) == pytest.approx(
+                400 / 4 * _k("e_link_per_byte", corner) * 1e3, rel=1e-12)
+            assert _c(terms["energy_host_mem_mj"].band, corner) == pytest.approx(
+                400 / 4 * _k("e_host_mem_per_byte", corner) * 1e3, rel=1e-12)
 
     def test_the_attach_block_feeds_the_programming_port_over_the_link(self):
         from mimarsinan.deployment_record.platform_physics.hosts.description import host_attach_block

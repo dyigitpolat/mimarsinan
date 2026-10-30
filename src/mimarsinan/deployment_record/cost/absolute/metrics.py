@@ -40,7 +40,7 @@ from mimarsinan.deployment_record.cost.absolute.writes import (
     price_write_inputs,
 )
 from mimarsinan.deployment_record.cost.compute_time import CORE_PROGRAM, compute_time
-from mimarsinan.deployment_record.cost.host_terms import LATENCY_LINK, host_link_time, write_link_bytes
+from mimarsinan.deployment_record.cost.host_terms import LATENCY_LINK, host_link_time, price_system_energy, write_link_bytes
 from mimarsinan.deployment_record.platform_physics.area_components import fixed_area_refusal
 from mimarsinan.deployment_record.platform_physics.converter import resolve as resolve_converter
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
@@ -205,6 +205,7 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
         ctx.refuse(LATENCY_HEADLINE, ctx.host_refusal(host))
         _programming_latency(ctx)
         return None
+    chip_side = list(components)  # [U-J2] every part but the host's own time: the wait it idles over
     if host.band is not None:
         ctx.term("latency_host_s", "s", host.band, host.band.basis)
         components.append(host.band)
@@ -214,6 +215,7 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
     if link is not None:
         ctx.term(LATENCY_LINK, "s", link, link.basis)
         components.append(link)
+        chip_side.append(link)
         evidence.append("host link: " + link.basis)
     unpriced.extend(link_unpriced)
     if writes is not None:
@@ -223,6 +225,7 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
             _programming_latency(ctx)
             return None
         components.append(writes.exposed)
+        chip_side.append(writes.exposed)
         evidence.append("writes: " + writes.exposed.basis)
 
     source = "; ".join(evidence) + (
@@ -233,6 +236,7 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
         source += f"; unpriced: {', '.join(unpriced)}"
     band = add_bands(components, source)
     ctx.term(LATENCY_HEADLINE, "s", band, source)
+    ctx.host_wait = add_bands(chip_side, "e2e_latency_s less the host's own time: the chip, the link, exposed writes")
     _programming_latency(ctx)
     return band
 
@@ -285,6 +289,7 @@ def price_absolute(
     price_area(ctx)
     e2e = price_latency(ctx, priced_writes)
     price_energy(ctx, e2e, priced_writes, compute)
+    price_system_energy(ctx)  # [U-J2] the whole-system line beside the headline, where the host states one
     price_throughput(ctx, e2e)
     terms, refusals = list(ctx.terms), list(ctx.refusals)
     if priced_writes is not None:

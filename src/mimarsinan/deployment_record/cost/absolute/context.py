@@ -117,6 +117,12 @@ class PricingContext:
     blocked: Dict[str, str] = field(default_factory=dict)
     #: [U-J] The write law's payload bytes per inference over the host-chip link (``host_terms.write_link_bytes``).
     write_link_bytes: Optional[float] = None
+    #: [U-J2] The latency's parts the host does not execute (the chip, the link, exposed writes), summed directly:
+    #: the wait a host's idle power is drawn over (``metrics.price_latency``; never e2e less host time, corner by corner).
+    host_wait: Optional[Band] = None
+    #: [U-J2 targeted M1] The headline energy's parts but the host's (the chip and its writes), summed where the
+    #: headline prices: the whole-system line adds the whole host to it (``host_terms.price_system_energy``).
+    energy_chip_side: Optional[Band] = None
 
     @classmethod
     def create(

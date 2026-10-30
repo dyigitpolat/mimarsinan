@@ -15,7 +15,9 @@ from mimarsinan.deployment_record.platform_physics.conversion import (
     conversion_model_for,
 )
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
-from mimarsinan.deployment_record.platform_physics.hosts.description import HOST_IDENTITY_FIELD, require_one_host
+from mimarsinan.deployment_record.platform_physics.hosts.description import (
+    ENERGY_PLANE_FIELD, HOST_IDENTITY_FIELD, SYSTEM, energy_plane_refusal, require_one_host,
+)
 from mimarsinan.deployment_record.platform_physics.profile import (
     PHYSICS_FORMAT_VERSION,
     CarryBufferDeclarationError,
@@ -35,9 +37,10 @@ from mimarsinan.deployment_record.units import TIME, to_canonical
 #: adds its stages, is slower); a profile without its own stage takes the declared one).
 COMBINE_RULES = ("replace", "slower")
 #: [consts fix round] The closed field set of an override declaration; a field outside it refuses by name. [U-J]
-#: ``host``: the host a host row describes (``hosts.description``), one host per deployment.
+#: ``host``: the host a host row describes (``hosts.description``), one host per deployment. [U-J2]
+#: ``energy_plane``: whose energy a host energy row is (``hosts.description.ENERGY_PLANES``).
 OVERRIDE_FIELDS = frozenset({"nominal", "low", "high", "unit", "evidence_kind", "citation", "derivation", "note",
-                             "combine", HOST_IDENTITY_FIELD})
+                             "combine", HOST_IDENTITY_FIELD, ENERGY_PLANE_FIELD})
 #: Evidence classes weaker than a shown derivation: a composition (arithmetic) cannot strengthen such a stage.
 _BELOW_DERIVED = frozenset({"estimated"})
 
@@ -124,6 +127,8 @@ def apply_overrides(
         return physics
     replaced = require_one_host(overrides, physics.constants)
     constants = {key: value for key, value in physics.constants.items() if key not in replaced}
+    # [U-J2] an override replaces its row whole, its stated energy plane with it
+    system = {key for key in physics.system_energy_rows if key not in replaced and key not in overrides}
     for key, raw in overrides.items():
         spec = spec_for(key)
         existing = physics.constants.get(key)
@@ -134,6 +139,10 @@ def apply_overrides(
                              f"{sorted(OVERRIDE_FIELDS)})")
         combine = str(data.pop("combine", "replace"))
         host = data.pop(HOST_IDENTITY_FIELD, None)
+        if (plane := data.pop(ENERGY_PLANE_FIELD, None)) is not None:
+            if why := energy_plane_refusal(key, plane):
+                raise ValueError(why)
+            system |= {key} if plane == SYSTEM else set()
         if combine not in COMBINE_RULES:
             raise ValueError(f"{key}: combine {combine!r} is not one of {list(COMBINE_RULES)}")
         if combine == "slower" and spec.dimension != TIME:
@@ -165,6 +174,7 @@ def apply_overrides(
         converter=physics.converter,
         carry_buffer=physics.carry_buffer,
         chip_components=physics.chip_components,
+        system_energy_rows=tuple(sorted(system)),
     )
 
 

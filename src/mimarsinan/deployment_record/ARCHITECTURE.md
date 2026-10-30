@@ -447,8 +447,20 @@ block declares and nothing else: every byte crossing the boundary, both directio
 `segment_in_bytes` / `segment_out_bytes`, the write law's payload from the host) at the link and host memory, a
 latency per transfer (`host_link_transfers`), a MAC-free host operator's bytes at the host memory time
 (`host_memory_bound_bytes`, in the host's time), and `p_host_idle` over the inference's latency less the host's
-time (`energy_host_idle_mj`; `energy_host_mj` carries the host's whole energy, `energy_host_link_mj` the link and
-host memory, `latency_host_link_s` the link time). A measured host wall prices the host unless the physics describes
+time (`energy_host_idle_mj`; `latency_host_link_s` the link time). [U-J2] Whose energy each term is, the host's
+description states per energy row (`energy_attribution`; every block row carries its `energy_plane`, the physics
+keeps the system-level rows as `system_energy_rows`). Owner answer of 2026-10-29, "Host's work only": the headline's
+host energy `energy_host_mj` is the attributable terms, the host's work above its idle floor (`energy_host_work_mj`,
+(p_host - p_host_idle) x host time), the link (`energy_host_link_mj`) and host memory (`energy_host_mem_mj`) per
+crossing byte; the idle floor under the work (`energy_host_floor_mj`) and over the wait (`energy_host_idle_mj`) are
+system-level, and `energy_system_mj` (labelled the whole-system line, never the headline) prints beside. [targeted M1]
+The work's power is a difference of two bands and takes its cost ends (`power_above`: the high end the power's high
+less the floor's low, the low end never below zero, the nominal one setup's); the system line keeps the whole host at
+its corners: `energy_host_system_mj` is the whole host (p_host over its time, p_host_idle over the wait, the link and
+host memory) and `energy_system_mj` the headline's chip side (`PricingContext.energy_chip_side`) plus it, composed
+from parts at every end (at the nominal, the headline plus the floor and the idle). The wait is the latency's parts the host does not execute, summed directly
+(`PricingContext.host_wait`), never e2e less host time corner by corner (on a point-band chip that unordered the
+band). Host time always adds to latency. A measured host wall prices the host unless the physics describes
 a host of its own (`describes_host`: a host description's whole model) without relating the wall's machine to it
 (`host_compute_rate`): an edge host prices its own time, and a partial host block (a server's measured calibration)
 keeps the wall's rule, which needs `host_compute_rate`. The candidate plane forms the boundary quantities from the
