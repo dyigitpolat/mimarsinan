@@ -11,14 +11,14 @@ from mimarsinan.deployment_record.cost.absolute.context import (
 from mimarsinan.deployment_record.cost.absolute.formulas import (
     BUFFER_STATIC,
     ENERGY_COMPONENTS,
-    PROGRAMMING_BYTE_ENERGIES,
+    programming_byte_energies,
     add_bands,
     carry_buffer_static_watts,
     per_core_type_compute,
     programming_payload_bytes,
     scale_band,
 )
-from mimarsinan.deployment_record.cost.host_terms import host_side_energy
+from mimarsinan.deployment_record.cost.host_terms import chip_store_table, host_side_energy
 from mimarsinan.deployment_record.cost.absolute.validity import (
     CensusCells,
     aggregate_scales,
@@ -158,7 +158,7 @@ def _programming_energy(ctx: PricingContext) -> None:
     payload = programming_payload_bytes(ctx.quantities, ctx.physics)
     if payload is not None:
         payload_bytes, note = payload
-        for constant, label in PROGRAMMING_BYTE_ENERGIES:
+        for constant, label in programming_byte_energies(ctx.physics):  # [U-J3] the load's bytes, on its store
             if not ctx.priced(constant):
                 if payload_bytes and not ctx.physics.has(constant):
                     unpriced.append(f"{constant}({label})")
@@ -232,7 +232,7 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
             mean_core_note(ctx.physics, ctx.geometry, point_model=True) if compute == "e_synaptic_event_total"
             else "")]
 
-    bands, notes, unpriced = ctx.component_bands(ENERGY_COMPONENTS, _J_TO_MJ)
+    bands, notes, unpriced = ctx.component_bands(chip_store_table(ctx.physics, ENERGY_COMPONENTS), _J_TO_MJ)  # [U-J3]
     blocked = [ctx.blocked[c] for c, _f, _l in ENERGY_COMPONENTS if c in ctx.blocked]
     if blocked:  # [E-5] a converter the run's resolution leaves unstated: no headline reads around it
         ctx.refuse(ENERGY_DYNAMIC, blocked[0])

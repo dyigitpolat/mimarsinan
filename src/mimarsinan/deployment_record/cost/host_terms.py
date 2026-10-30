@@ -29,21 +29,27 @@ zero); the system line keeps the whole host at its own corners: ``energy_host_sy
 over the host's time, the floor inside it, p_host_idle over the wait, the link and host memory), and
 ``energy_system_mj`` the headline's chip side (``PricingContext.energy_chip_side``) plus it, composed from parts at
 every end. At the nominal (one setup) the whole host is the attributable host plus the floor and the idle.
+[U-J3] The store traffic (the pass carry, the write law's backing-store payload) crosses the link only to a host-owned
+store (``platform_physics.hosts.store``); on a chip-owned one the chip's rows price it; beside the link a chip that
+states no store refuses its store traffic by name (``store_refusal``), as a host-owned store without the link does.
 
 A part whose quantity the view cannot size is named unpriced with the reason, never dropped."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from mimarsinan.deployment_record.platform_physics.hosts.description import power_above
+from mimarsinan.deployment_record.platform_physics.hosts.store import (  # [U-J3] the link's rows and the store's rule
+    CHIP, HOST, LINK_ROWS as LINK_ROWS, chip_store_table as chip_store_table, owner,
+    prices_host_link as prices_host_link, slower_port as slower_port, store_refusal as store_refusal,
+)
 from mimarsinan.deployment_record.schema.provenance import Band
 
-#: The edge host's link and host-memory rows (the vocabulary's HOST group).
-LINK_ROWS = ("e_link_per_byte", "t_link_per_byte", "t_link_transfer", "e_host_mem_per_byte", "t_host_mem_per_byte")
-#: Every byte that crosses the host-chip boundary per inference, both directions: the pass carry, the segment I/O.
-BOUNDARY_BYTES = (("carry_in_bytes", "pass carry"), ("carry_out_bytes", "pass carry"),
-                  ("segment_in_bytes", "segment I/O"), ("segment_out_bytes", "segment I/O"))
+#: Every byte that crosses the host-chip boundary per inference, both directions: the program's own (the segment I/O)
+#: and [U-J3] the store traffic (the pass carry), which crosses to a store the chip does not own (``link_bytes``).
+PROGRAM_BYTES = (("segment_in_bytes", "segment I/O"), ("segment_out_bytes", "segment I/O"))
+STORE_BYTES = (("carry_in_bytes", "pass carry"), ("carry_out_bytes", "pass carry"))
 MEMORY_BOUND, TRANSFERS = "host_memory_bound_bytes", "host_link_transfers"
 #: The quantities the host-side census adds: a host-free or compute-only variant drops them with the host.
 HOST_SIDE_QUANTITIES = ("segment_in_bytes", "segment_out_bytes", TRANSFERS, MEMORY_BOUND)
@@ -58,11 +64,6 @@ HOST_DECOMPOSITION = ("latency_host_s", LATENCY_LINK, ENERGY_WORK, ENERGY_LINK, 
                       ENERGY_HOST_SYSTEM, ENERGY_SYSTEM)
 _J_TO_MJ = 1e3
 _NO_CENSUS = "the view states no host-chip segment census"
-
-
-def prices_host_link(physics: Any) -> bool:
-    """Whether ``physics`` declares the host-chip link or host memory (an edge host block)."""
-    return physics is not None and any(physics.has(key) for key in LINK_ROWS)
 
 
 def _ends(fn, *bands: Band) -> Tuple[float, float, float]:
@@ -81,14 +82,18 @@ def add_bands(bands: List[Band], basis: str) -> Band:
     return Band(*_ends(lambda *v: sum(v), *bands), basis)
 
 
-def _crossing(quantities: Any) -> Tuple[float, List[str]]:
-    """The bytes that cross the boundary (both directions) and, per kind the view cannot size, its reason."""
-    total, unknown = 0.0, {}
-    for key, kind in BOUNDARY_BYTES:
-        if quantities.has(key):
-            total += quantities.get(key).value
+def link_bytes(ctx: Any, writes: bool = True) -> Tuple[float, List[str]]:
+    """The bytes that cross the boundary (both directions) and, per kind the view cannot size, its reason. [U-J3] The
+    pass carry and the write law's store payload only to a store the chip does not own; the program's own always; the
+    write law's bytes (``writes``) for the energy only, their time being the write law's."""
+    total, unknown, routed = 0.0, {}, owner(ctx.physics) != CHIP
+    for key, kind in PROGRAM_BYTES + (STORE_BYTES if routed else ()):
+        if ctx.quantities.has(key):
+            total += ctx.quantities.get(key).value
         else:
-            unknown.setdefault(kind, quantities.withheld_reason(key) or _NO_CENSUS)
+            unknown.setdefault(kind, ctx.quantities.withheld_reason(key) or _NO_CENSUS)
+    if writes and (crossing := getattr(ctx, "write_link_bytes", None)) is not None:
+        total += crossing.program + (crossing.store if routed else 0.0)
     return total, [f"{kind}; {reason}" for kind, reason in unknown.items()]
 
 
@@ -119,7 +124,7 @@ def host_link_time(ctx: Any) -> Tuple[Optional[Band], List[str]]:
     unpriced: List[str] = []
     stages = _declared(physics, ("t_link_per_byte", "t_host_mem_per_byte"))
     if stages:
-        total, unknown = _crossing(q)
+        total, unknown = link_bytes(ctx, writes=False)
         bands = [physics.band(key) for key in stages]
         per = Band(*_ends(max, *bands), f"the slower of {' and '.join(stages)} per byte")
         if total:
@@ -137,18 +142,25 @@ def host_link_time(ctx: Any) -> Tuple[Optional[Band], List[str]]:
     return (parts[0] if len(parts) == 1 else add_bands(parts, " + ".join(p.basis for p in parts))), unpriced
 
 
-def write_link_bytes(writes: Any) -> Optional[float]:
-    """The write law's bytes per inference over the host-chip link: the period's backing-store payload over K and
-    the host-sourced producer payloads (``cost.absolute.writes``' transfer terms); None without a period census."""
+class WriteCrossing(NamedTuple):
+    """[U-J3] The write law's bytes per inference toward the chip: the store's (the period's backing-store payload over
+    K) and the program's own (host-sourced producer payloads, which cross the link on either store)."""
+
+    store: float
+    program: float
+
+
+def write_link_bytes(writes: Any) -> Optional[WriteCrossing]:
+    """The write law's bytes per inference that may cross the host-chip link (``cost.absolute.writes``' transfer
+    terms); None without a period census."""
     census = getattr(writes, "census", None)
     if census is None:
         return None
-    policy = writes.policy
-    payload = sum(p.payload_bytes for p in census.passes) / int(policy.batch_k)
+    policy, bits = writes.policy, writes.policy.payload_bits
     producer = sum(p.written_cells_producer for p in census.passes)
-    if producer and policy.producer_write_source == "host" and policy.payload_bits is not None:
-        payload += producer * int(policy.payload_bits) / 8.0
-    return float(payload)
+    host = producer and policy.producer_write_source == "host" and bits is not None
+    return WriteCrossing(float(sum(p.payload_bytes for p in census.passes) / int(policy.batch_k)),
+                         float(producer * int(bits) / 8.0) if host and bits is not None else 0.0)
 
 
 def _times(power: Band, time: Band, basis: str) -> Band:
@@ -187,6 +199,8 @@ def host_side_energy(ctx: Any, active: Optional[Band], busy: Optional[Band],
     time) as before off an edge host; on one, each term on the plane its row states (module docstring), the
     system-level ones summed as ``energy_host_system_mj`` (or refused by name where the wait is not priced)."""
     physics = ctx.physics
+    if refused := store_refusal(ctx):  # [U-J3] store traffic with no store to price it on, refused by name
+        return None, [], refused
     if not (physics.has("p_host_idle") or prices_host_link(physics)):
         return active, [], None
     planes = _Planes(system_rows(physics))
@@ -212,12 +226,13 @@ def host_side_energy(ctx: Any, active: Optional[Band], busy: Optional[Band],
             planes.add(ctx, "p_host_idle", ENERGY_IDLE, _times(
                 physics.band("p_host_idle"), wait,
                 f"p_host_idle [{physics.band('p_host_idle').basis}] x (e2e_latency_s - host time)"))
-    total, unknown = _crossing(ctx.quantities)
-    total += getattr(ctx, "write_link_bytes", None) or 0.0  # the write law's payload, over the link too
+    total, unknown = link_bytes(ctx)  # [U-J3] the store traffic to a host-owned store only
+    route = "; the store traffic too, to the host-owned store" if owner(physics) == HOST else ""
     for key, name in (("e_link_per_byte", ENERGY_LINK), ("e_host_mem_per_byte", ENERGY_MEM)):
         if physics.has(key):
             if total:
-                planes.add(ctx, key, name, scale_band(physics.band(key), total * _J_TO_MJ, f"{key} x host_link_bytes"))
+                planes.add(ctx, key, name, scale_band(physics.band(key), total * _J_TO_MJ,
+                                                      f"{key} x host_link_bytes{route}"))
             planes.unpriced[planes.plane(key)].extend(f"{key}({item})" for item in unknown)
     if planes.system:
         _system_host(ctx, planes.whole, planes.unpriced["system"], planes.unpriced["main"])

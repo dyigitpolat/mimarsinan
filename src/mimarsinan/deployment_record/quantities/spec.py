@@ -175,7 +175,7 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
     ("segment_out_bytes", (DATA, "B"), "Bytes the chip sends the host per inference at segment boundaries: every "
      "on-chip slice a host operator reads and the readout, at the carried-value grid."),
     ("host_link_transfers", _COUNT, "Host-chip transfers per inference: one per direction at each segment boundary "
-     "and each pass boundary that carries values."),
+     "and each pass boundary that carries values to a store the chip does not own [U-J3]."),
     ("host_memory_bound_bytes", (DATA, "B"), "Bytes the MAC-free host operators (element-wise, pooling) read and write "
      "per inference, at the host executor's float32: the work memory binds."),
 )

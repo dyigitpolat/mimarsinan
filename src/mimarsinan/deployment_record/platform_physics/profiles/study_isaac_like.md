@@ -181,6 +181,19 @@ Beside them the toolchain prices, once each and named:
 band's 2 / 10 / 40 mm2 the profile carried before. The two DDR x64 interfaces are 77% of it at nominal: whether the
 chip owns its DRAM is the reading's largest area choice, and the study's sources make the store the chip's.
 
+## Backing store (U-J3)
+
+`backing_store` declares the store chip-owned, the study's own design: two DDR4 channels at 36 GB/s feed the chip's
+write port and hold its carried values (`cd41_chip.CTX`, the counted contexts of the SRAM-DDR row; wang2020shuhai
+Table V p.7, the Alveo U280's own DDR4, measured), reached through the chip's memory PHY (the two DDR x64 ports among
+its `chip_components`, which must be present exactly when the store is the chip's). The pass carry and the weight
+writes therefore cross the chip's own store, priced by its rows only (`e_dma_per_byte`, `e_readout_per_byte`, the
+write port `t_program_per_byte`) and never by the host-chip link or host memory, which price what the program itself
+sends across the boundary (the segment I/O at the network's input and output and at host operators). A run may restate
+the store host-owned as a declared departure (a `backing_store` block): the memory PHY then leaves the chip area and
+the carry and writes move over the link at its energy, bandwidth and per-transfer latency
+(`platform_physics/hosts/store.py`).
+
 ## Terms that differ from the study's estimator
 
 As `study_compass.md`: the compute term is the study's times the tile occupancy; the lane block's energy and the

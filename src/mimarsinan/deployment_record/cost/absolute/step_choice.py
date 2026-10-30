@@ -7,6 +7,9 @@ within a few units of the last place in floating point (each term is rounded onc
 each other, relatively, count as equal. The compute term is the same for every step of one program, so it never
 enters the choice. A profile whose external component is undeclared (an SRAM-CIM macro without its backing store)
 prices no step and refuses by name, as ``price_absolute`` and the write law do (``context.external_refusals``).
+[U-J3] The write and carry energy are the declared store's (``platform_physics.hosts.store``): on a host-owned store
+the carry and the write transfer are the link's and host memory's bytes; beside the host link a chip that states no
+store refuses a carrying step by name, as the pricer does.
 """
 
 from __future__ import annotations
@@ -19,6 +22,8 @@ from mimarsinan.deployment_record.cost.absolute.context import PricingContext
 from mimarsinan.deployment_record.cost.absolute.formulas import ENERGY_COMPONENTS, add_bands
 from mimarsinan.deployment_record.cost.absolute.context import external_refusals
 from mimarsinan.deployment_record.cost.absolute.writes import price_write_terms
+from mimarsinan.deployment_record.cost.host_terms import store_refusal
+from mimarsinan.deployment_record.platform_physics.hosts.store import host_owned, store_byte_energy
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -51,11 +56,27 @@ class StepPrice:
         return self.at("nominal")
 
 
+def _store_bytes(physics: PlatformPhysics, size: float, what: str) -> Band:
+    """[U-J3] ``size`` bytes per inference of a host-owned store's traffic at its link and host memory energy."""
+    per_byte = store_byte_energy(physics)
+    if per_byte is None:
+        raise StepChoiceError(f"the step moves {what} over a host-owned store, and the target declares neither "
+                              "e_link_per_byte nor e_host_mem_per_byte")
+    return Band(per_byte.low * size * _J_TO_MJ, per_byte.nominal * size * _J_TO_MJ, per_byte.high * size * _J_TO_MJ,
+                f"{per_byte.basis} x {what}")
+
+
 def carry_energy(census: Any, physics: PlatformPhysics) -> Band:
-    """The carry components priced on the census's carried bytes per direction; unpriced bytes refuse by name."""
+    """The carry components priced on the census's carried bytes per direction; unpriced bytes refuse by name. [U-J3]
+    On the declared store: a host-owned store's are the link's and host memory's."""
     quantities = Quantities({"carry_in_bytes": QuantityValue(float(census.carry_in_bytes), "static"),
                              "carry_out_bytes": QuantityValue(float(census.carry_out_bytes), "static")})
-    bands, _evidence, unpriced = PricingContext.create(quantities, physics).component_bands(CARRY_COMPONENTS, _J_TO_MJ)
+    context = PricingContext.create(quantities, physics)
+    if refused := store_refusal(context):
+        raise StepChoiceError(f"the step's carry is not priced: {refused}")
+    if host_owned(physics):
+        return _store_bytes(physics, float(census.carry_in_bytes + census.carry_out_bytes), "the carried bytes")
+    bands, _evidence, unpriced = context.component_bands(CARRY_COMPONENTS, _J_TO_MJ)
     if unpriced:
         raise StepChoiceError(f"the step carries bytes the target does not price: {', '.join(unpriced)}")
     return add_bands(bands, " + ".join(b.basis for b in bands)) if bands else Band(0.0, 0.0, 0.0, "no carry")
@@ -69,7 +90,12 @@ def price_step(census: Any, physics: PlatformPhysics, policy: Any) -> StepPrice:
     if writes.energy is None:
         reason = next((r.reason for r in writes.refusals if r.name == "energy_write_mj"), "write energy refused")
         raise StepChoiceError(f"the step's write energy is not priced: {reason}")
-    return StepPrice(write=writes.energy, carry=carry_energy(census, physics))
+    write = writes.energy
+    if host_owned(physics):  # [U-J3] the write transfer from a host-owned store: the period's payload over K
+        payload = sum(p.payload_bytes for p in census.passes) / int(policy.batch_k)
+        transfer = _store_bytes(physics, payload, "the period's payload bytes / K")
+        write = add_bands([write, transfer], f"{write.basis} + {transfer.basis}")
+    return StepPrice(write=write, carry=carry_energy(census, physics))
 
 
 def cheapest_step(censuses: Sequence[Any], physics: PlatformPhysics, policy: Any, *, corner: str = "nominal") -> int:

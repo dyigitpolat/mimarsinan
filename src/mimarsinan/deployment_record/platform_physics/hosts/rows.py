@@ -37,14 +37,16 @@ HOST_ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "whole-system line (energy_system_mj) and never in the headline, and p_host is charged above it."),
     ("e_host_mem_per_byte", HOST, ENERGY, "pJ", _CROSSING,
      "Energy of one byte the host-chip link moves into or out of host memory (each crossing byte is written to or "
-     "read from it once), above the host's idle power; a host operator's own memory traffic is inside p_host."),
+     "read from it once), above the host's idle power; a host operator's own memory traffic is inside p_host. "
+     "[U-J3] The pass carry and the weight writes cross only to a host-owned backing store (hosts.store)."),
     ("t_host_mem_per_byte", HOST, TIME, "ns", "host_memory_bound_bytes",
      "Host memory time per byte (the inverse sustained bandwidth): a MAC-free host operator's bytes are priced at "
      "it (memory binds an element-wise or pooling operator), and it is the memory stage of a link transfer, whose "
      "bytes move no faster than the slower of it and t_link_per_byte."),
     ("e_link_per_byte", HOST, ENERGY, "pJ", _CROSSING,
-     "Energy of the host-chip link per payload byte it moves, either direction (its PHYs and channel), beside the "
-     "chip's own end of the boundary (e_dma_per_byte, e_readout_per_byte)."),
+     "Energy of the host-chip link per payload byte it moves, either direction (its PHYs and channel). [U-J3] The "
+     "program's own crossing (segment I/O) always; the pass carry and the weight writes only to a host-owned backing "
+     "store, which they reach in place of the chip's store rows (e_dma_per_byte, e_readout_per_byte; hosts.store)."),
     ("t_link_per_byte", HOST, TIME, "ns", _CROSSING,
      "Host-chip link time per payload byte, either direction (the inverse payload bandwidth)."),
     ("t_link_transfer", HOST, TIME, "us", "host_link_transfers",

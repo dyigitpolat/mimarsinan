@@ -12,6 +12,8 @@ from mimarsinan.deployment_record.platform_physics.constants import (
 )
 from mimarsinan.deployment_record.platform_physics.area_components import ChipComponent
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
+from mimarsinan.deployment_record.platform_physics.hosts.store import (
+    HOST, TRANSFER_NOTE, BackingStore, judged_store, store_from_declaration)
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwargs
 
@@ -47,8 +49,7 @@ class ValidityGeometry:
 
     def to_dict(self) -> Dict[str, Any]:
         return {"axons": self.axons, "neurons": self.neurons, "cell_bits": self.cell_bits,
-                "core_count": None if self.core_count is None else list(self.core_count),
-                "scaling": self.scaling}
+                "core_count": None if self.core_count is None else list(self.core_count), "scaling": self.scaling}
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ValidityGeometry":
@@ -72,18 +73,13 @@ class PlatformPhysicsValidity:
     geometry: Optional[ValidityGeometry] = None
 
     def __post_init__(self) -> None:
-        require_choice("PlatformPhysicsValidity", "measurement_kind",
-                       self.measurement_kind, MEASUREMENT_KINDS)
+        require_choice("PlatformPhysicsValidity", "measurement_kind", self.measurement_kind, MEASUREMENT_KINDS)
 
     def to_dict(self) -> Dict[str, Any]:
-        data: Dict[str, Any] = {
-            "measurement_kind": self.measurement_kind,
-            "technology_node_nm": self.technology_node_nm,
-            "supply_v": self.supply_v,
-            "temperature_c": self.temperature_c,
-            "array_size_assumed": self.array_size_assumed,
-            "notes": self.notes,
-        }
+        data: Dict[str, Any] = {"measurement_kind": self.measurement_kind,
+                                "technology_node_nm": self.technology_node_nm, "supply_v": self.supply_v,
+                                "temperature_c": self.temperature_c, "array_size_assumed": self.array_size_assumed,
+                                "notes": self.notes}
         if self.geometry is not None:
             data["geometry"] = self.geometry.to_dict()
         return data
@@ -204,6 +200,9 @@ class PlatformPhysics:
     #: [U-J2] The host energy rows a host description states system-level (the host's own draw, printed with the
     #: whole-system line, never the headline: ``cost.host_terms``); serialized only when present.
     system_energy_rows: Tuple[str, ...] = ()
+    #: [U-J3] Where the chip's backing store lives (``hosts.store``: its own DRAM, or the host's memory over the link);
+    #: the area components agree with it; serialized only when present.
+    backing_store: Optional[BackingStore] = None
 
     def __post_init__(self) -> None:
         if self.format_version != PHYSICS_FORMAT_VERSION:
@@ -214,6 +213,7 @@ class PlatformPhysics:
                 raise ValueError(f"{self.name}: constant keyed {key!r} carries key {value.key!r}")
         if stray := sorted(set(self.system_energy_rows) - set(self.constants)):
             raise ValueError(f"{self.name}: system_energy_rows {stray} name no declared constant")
+        judged_store(self.backing_store, self.chip_components, self.name)
 
     def has(self, key: str) -> bool:
         """Whether this target declares ``key`` at all."""
@@ -222,10 +222,8 @@ class PlatformPhysics:
     def band(self, key: str) -> Band:
         """The SI band for ``key``; absence raises — there is no default to fall back on."""
         if key not in self.constants:
-            raise KeyError(
-                f"{self.name} declares no value for {key!r}; the objectives that need it "
-                f"are unavailable, and no default may stand in for vendor data"
-            )
+            raise KeyError(f"{self.name} declares no value for {key!r}; the objectives that need it "
+                           f"are unavailable, and no default may stand in for vendor data")
         return self.constants[key].band
 
     def missing(self, keys: Iterable[str]) -> Tuple[str, ...]:
@@ -235,6 +233,10 @@ class PlatformPhysics:
     def declares_all(self, keys: Iterable[str]) -> bool:
         """The availability predicate every absolute objective gates on."""
         return not self.missing(keys)
+
+    def store_transfer_note(self) -> Optional[str]:
+        """[U-J3] Where a host-owned store's write transfer is priced (``hosts.store``), None on any other store."""
+        return TRANSFER_NOTE if self.backing_store is not None and self.backing_store.store == HOST else None
 
     def undeclared_external(self) -> Tuple[ExternalComponent, ...]:
         """The external components with a constant this physics does not declare yet."""
@@ -266,11 +268,8 @@ class PlatformPhysics:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "format_version": self.format_version,
-            "name": self.name,
-            "display_name": self.display_name,
-            "description_file": self.description_file,
-            "validity": self.validity.to_dict(),
+            "format_version": self.format_version, "name": self.name, "display_name": self.display_name,
+            "description_file": self.description_file, "validity": self.validity.to_dict(),
             "conversion_model": dict(self.conversion_model),
             "constants": {k: v.to_dict() for k, v in sorted(self.constants.items())},
             **({"external_components": [c.to_dict() for c in self.external_components]}
@@ -279,6 +278,7 @@ class PlatformPhysics:
             **({"carry_buffer": self.carry_buffer.to_dict()} if self.carry_buffer is not None else {}),
             **({"chip_components": [c.to_dict() for c in self.chip_components]} if self.chip_components else {}),
             **({"system_energy_rows": list(self.system_energy_rows)} if self.system_energy_rows else {}),
+            **({"backing_store": self.backing_store.to_dict()} if self.backing_store is not None else {}),
         }
 
     @classmethod
@@ -287,14 +287,14 @@ class PlatformPhysics:
         kwargs["external_components"] = tuple(
             ExternalComponent.from_dict(c) for c in kwargs.get("external_components") or ())
         kwargs["validity"] = PlatformPhysicsValidity.from_dict(kwargs["validity"])
-        kwargs["constants"] = {
-            key: PhysicsConstantValue.from_dict(value)
-            for key, value in (kwargs.get("constants") or {}).items()
-        }
+        kwargs["constants"] = {key: PhysicsConstantValue.from_dict(value)
+                               for key, value in (kwargs.get("constants") or {}).items()}
         kwargs["conversion_model"] = dict(kwargs.get("conversion_model") or {})
         kwargs["converter"] = None if kwargs.get("converter") is None else ConverterTable.from_dict(kwargs["converter"])
         kwargs["carry_buffer"] = (None if kwargs.get("carry_buffer") is None
                                   else CarryBufferTable.from_dict(kwargs["carry_buffer"]))
         kwargs["chip_components"] = tuple(ChipComponent.from_dict(c) for c in kwargs.get("chip_components") or ())
         kwargs["system_energy_rows"] = tuple(str(key) for key in kwargs.get("system_energy_rows") or ())
+        store = kwargs.get("backing_store")
+        kwargs["backing_store"] = None if store is None else store_from_declaration(store, str(kwargs.get("name")))
         return cls(**kwargs)

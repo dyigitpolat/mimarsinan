@@ -8,7 +8,9 @@ per direction each (``ProgramPasses.boundary_widths``; [targeted M2] under a dec
 widths a wavefront group holds, ``crossing_widths``, the split ``value_domain.onchip_carry`` makes of the bytes).
 Formed only where the physics declares the link or host memory (an edge host block,
 ``cost.host_terms.prices_host_link``), so every other candidate's quantities stay as they were; a part the candidate
-cannot size is withheld by name, so the term that reads it names it unpriced."""
+cannot size is withheld by name, so the term that reads it names it unpriced. [U-J3] A carried pass boundary crosses
+the link only to a store the chip does not own (``platform_physics.hosts.store``): on a chip-owned store the carry
+stays with the chip's own DRAM, so only the segment boundaries transfer."""
 
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ from dataclasses import replace
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.deployment_record.cost.host_terms import MEMORY_BOUND, TRANSFERS, prices_host_link
+from mimarsinan.deployment_record.platform_physics.hosts.store import CHIP, owner
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import (
@@ -55,7 +58,8 @@ def host_link_context(context: Any, pcfg: Mapping[str, Any], census: Any, passes
     """``context`` with the host-chip boundary's quantities (``host_link_quantities``, ``host_link_withheld``)
     where the resolved physics prices the host-chip link; the context itself elsewhere."""
     payload = pcfg.get("platform_physics_resolved")
-    if not payload or not prices_host_link(PlatformPhysics.from_dict(payload)):
+    physics = PlatformPhysics.from_dict(payload) if payload else None
+    if not prices_host_link(physics):
         return context
     values: Dict[str, float] = {}
     withheld: Dict[str, str] = {}
@@ -72,7 +76,7 @@ def host_link_context(context: Any, pcfg: Mapping[str, Any], census: Any, passes
                 withheld[key] = NO_GRID
             else:
                 values[key] = 0.0
-        crossing = None if passes is None else crossing_widths(passes, pcfg)
+        crossing = () if owner(physics) == CHIP else None if passes is None else crossing_widths(passes, pcfg)
         if crossing is None:
             withheld[TRANSFERS] = NO_PASSES if passes is None else NO_SPLIT
         else:

@@ -37,6 +37,7 @@ from mimarsinan.deployment_record.platform_physics.hosts import description as d
 from mimarsinan.deployment_record.platform_physics.hosts.description import (
     HostDescriptionError, host_description, host_description_block,
 )
+from mimarsinan.deployment_record.platform_physics.hosts.store import HOST as HOST_STORE, store_block
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks, resolve_platform_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
@@ -46,6 +47,9 @@ NAME = "jetson_orin_nano_8gb"
 HOSTS = Path(vocabulary.__file__).resolve().parent / "hosts"
 CORNERS = ("low", "nominal", "high")
 EDGE = resolve_platform_physics("generic_estimated_22nm", merge_override_blocks({"host": host_description_block(NAME)}))
+#: [U-J3, amended] The edge host beside a host-owned store: the pass carry crosses the link only to one (U-J's model).
+EDGE_HOST_STORE = resolve_platform_physics("generic_estimated_22nm", merge_override_blocks(
+    {"host": host_description_block(NAME), "store": store_block(HOST_STORE, "U-J's model (test)")}))
 BASE = dict(synaptic_events=1e6, cores_physical=8, latency_steps=32, timesteps=4, neurons_used=100, segment_cores=1)
 NO_LINK = dict(carry_in_bytes=0, carry_out_bytes=0, segment_in_bytes=0, segment_out_bytes=0, host_link_transfers=0)
 #: The rows whose energy the statement sorts: the host's powers and its energies per crossing byte.
@@ -224,26 +228,28 @@ class TestTheHeadlineChargesTheHostsWorkOnly:
 
 
 class TestTheCrossingBytesBrokenOut:
+    """[U-J3, amended] The pass carry crosses the link to a host-owned store (``EDGE_HOST_STORE``)."""
+
     VALUES = dict(BASE, host_macs=0, compute_op_count=0, host_memory_bound_bytes=0,
                   **dict(NO_LINK, carry_in_bytes=300, carry_out_bytes=200, segment_in_bytes=50, segment_out_bytes=10,
                          host_link_transfers=4))
 
     def test_the_link_and_host_memory_are_each_their_own_attributable_term(self):
-        terms, _ = _priced(EDGE, **self.VALUES)
+        terms, _ = _priced(EDGE_HOST_STORE, **self.VALUES)
         for corner in CORNERS:
-            link = 560 * _k(EDGE, "e_link_per_byte", corner) * 1e3
-            memory = 560 * _k(EDGE, "e_host_mem_per_byte", corner) * 1e3
+            link = 560 * _k(EDGE_HOST_STORE, "e_link_per_byte", corner) * 1e3
+            memory = 560 * _k(EDGE_HOST_STORE, "e_host_mem_per_byte", corner) * 1e3
             assert _c(terms["energy_host_link_mj"], corner) == pytest.approx(link, rel=1e-12)
             assert _c(terms["energy_host_mem_mj"], corner) == pytest.approx(memory, rel=1e-12)
             assert _c(terms["energy_host_mj"], corner) == pytest.approx(link + memory, rel=1e-12)
         assert "energy_host_work_mj" not in terms and "energy_host_floor_mj" not in terms  # no host time
 
     def test_the_host_idles_over_the_whole_link_bound_inference_in_the_system_line_only(self):
-        terms, _ = _priced(EDGE, **self.VALUES)
+        terms, _ = _priced(EDGE_HOST_STORE, **self.VALUES)
         for corner in CORNERS:
             e2e = _c(terms["e2e_latency_s"], corner)
             assert _c(terms["energy_host_idle_mj"], corner) == pytest.approx(
-                _k(EDGE, "p_host_idle", corner) * e2e * 1e3, rel=1e-12)
+                _k(EDGE_HOST_STORE, "p_host_idle", corner) * e2e * 1e3, rel=1e-12)
             assert _c(terms["energy_system_mj"], corner) == pytest.approx(
                 _c(terms["energy_per_inference_mj"], corner) + _c(terms["energy_host_idle_mj"], corner), rel=1e-12)
 
@@ -373,7 +379,8 @@ class TestTheWorksBandEndsAreTheCostEndsOfTheDifference:
 
     @pytest.mark.parametrize("profile", sorted(VIEWS))
     def test_with_host_macs_the_work_and_the_system_line_keep_their_ends(self, profile):
-        physics = _edge(profile)
+        # [U-J3, amended] the generic view's pass carry crosses the link to a host-owned store
+        physics = EDGE_HOST_STORE if profile == "generic_estimated_22nm" else _edge(profile)
         terms, _ = _priced(physics, **self.VIEWS[profile])
         power = _work_power(physics)
         for corner in CORNERS:

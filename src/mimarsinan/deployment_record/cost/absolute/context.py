@@ -115,8 +115,9 @@ class PricingContext:
     #: at the run's adc_bits): a component whose work exists blocks its headline by that reason (``blocked``).
     refused_constants: Mapping[str, str] = field(default_factory=dict)
     blocked: Dict[str, str] = field(default_factory=dict)
-    #: [U-J] The write law's payload bytes per inference over the host-chip link (``host_terms.write_link_bytes``).
-    write_link_bytes: Optional[float] = None
+    #: [U-J, U-J3] The write law's bytes per inference toward the chip (``host_terms.WriteCrossing``: the store's and
+    #: the program's own), from ``host_terms.write_link_bytes``.
+    write_link_bytes: Optional[Any] = None
     #: [U-J2] The latency's parts the host does not execute (the chip, the link, exposed writes), summed directly:
     #: the wait a host's idle power is drawn over (``metrics.price_latency``; never e2e less host time, corner by corner).
     host_wait: Optional[Band] = None

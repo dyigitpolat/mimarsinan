@@ -6,7 +6,11 @@ either direction (the pass-boundary carry and the segment I/O at host operators,
 is priced at the link and at host memory: energy per byte at both, time at the slower stage per byte plus a fixed
 latency per transfer. Host time (operator dispatch, MACs at the host rate, and a MAC-free operator's bytes at the
 host memory time) adds to the latency and, through it, to the static energy, as the model already composes it.
-Without the edge rows nothing moves: no term, no source, no quantity."""
+Without the edge rows nothing moves: no term, no source, no quantity.
+[U-J3, amended] The pass carry and the write law's store payload cross the link only to a host-owned store (U-J's
+model), priced once there; on a chip-owned store the chip's rows price them (``test_store_routing_uj3``). The pins that
+price store traffic over the link declare the host-owned store (``EDGE_HOST_STORE``); beside the link a chip that
+states no store refuses its store traffic by name."""
 
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ import pytest
 
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block
+from mimarsinan.deployment_record.platform_physics.hosts.store import HOST as HOST_STORE, store_block
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks, resolve_platform_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 
@@ -21,6 +26,9 @@ CORNERS = ("low", "nominal", "high")
 EDGE = resolve_platform_physics("generic_estimated_22nm", merge_override_blocks(
     {"host": host_description_block("jetson_orin_nano_8gb")}))
 CHIP = resolve_platform_physics("generic_estimated_22nm", None)
+#: [U-J3, amended] The edge host beside a host-owned store: every crossing byte, store traffic included, on the link.
+EDGE_HOST_STORE = resolve_platform_physics("generic_estimated_22nm", merge_override_blocks(
+    {"host": host_description_block("jetson_orin_nano_8gb"), "store": store_block(HOST_STORE, "U-J's model (test)")}))
 BASE = dict(synaptic_events=1e6, cores_physical=8, latency_steps=32, timesteps=4, neurons_used=100, segment_cores=1)
 NO_LINK = dict(carry_in_bytes=0, carry_out_bytes=0, segment_in_bytes=0, segment_out_bytes=0, host_link_transfers=0)
 
@@ -108,13 +116,14 @@ class TestOneHostOperator:
 
 
 class TestOneBoundaryTransfer:
-    """One readout of 1,000 carried bytes off the chip: the link and host memory, one fixed latency."""
+    """One readout of 1,000 carried bytes off the chip: the link and host memory, one fixed latency. [U-J3, amended]
+    The carry crosses the link to a host-owned store (``EDGE_HOST_STORE``)."""
 
     VALUES = dict(BASE, host_macs=0, compute_op_count=0, host_memory_bound_bytes=0,
                   **dict(NO_LINK, carry_out_bytes=1000, host_link_transfers=1))
 
     def test_its_time_is_the_slower_stage_per_byte_plus_one_transfer_latency(self):
-        terms, _ = _terms(EDGE, **self.VALUES)
+        terms, _ = _terms(EDGE_HOST_STORE, **self.VALUES)
         link = terms["latency_host_link_s"].band
         for corner in CORNERS:
             per_byte = max(_k("t_link_per_byte", corner), _k("t_host_mem_per_byte", corner))
@@ -122,7 +131,7 @@ class TestOneBoundaryTransfer:
 
     def test_its_energy_is_the_link_and_host_memory_per_byte(self):
         """[U-J2 K-1, amended] The link and host memory are each their own term."""
-        terms, _ = _terms(EDGE, **self.VALUES)
+        terms, _ = _terms(EDGE_HOST_STORE, **self.VALUES)
         for corner in CORNERS:
             assert _c(terms["energy_host_link_mj"].band, corner) == pytest.approx(
                 1000 * _k("e_link_per_byte", corner) * 1e3, rel=1e-12)
@@ -130,7 +139,7 @@ class TestOneBoundaryTransfer:
                 1000 * _k("e_host_mem_per_byte", corner) * 1e3, rel=1e-12)
 
     def test_the_link_time_adds_to_the_latency_and_the_host_idles_over_it(self):
-        edge, _ = _terms(EDGE, **self.VALUES)
+        edge, _ = _terms(EDGE_HOST_STORE, **self.VALUES)
         chip, _ = _terms(CHIP, **self.VALUES)
         for corner in CORNERS:
             e2e = _c(edge["e2e_latency_s"].band, corner)
@@ -143,18 +152,22 @@ class TestOneBoundaryTransfer:
             assert _c(edge["energy_host_mj"].band, corner) == pytest.approx(
                 _c(edge["energy_host_link_mj"].band, corner) + _c(edge["energy_host_mem_mj"].band, corner), rel=1e-12)
 
-    def test_the_chips_own_end_of_the_boundary_stays_the_chips(self):
-        edge, _ = _terms(EDGE, **self.VALUES)
+    def test_the_carry_is_priced_once_on_the_host_owned_store(self):
+        """[U-J3, amended] Formerly ``test_the_chips_own_end_of_the_boundary_stays_the_chips``: it pinned the readout
+        on the chip's e_readout_per_byte beside the link and host memory, the double count U-J3 removes. On the
+        host-owned store the chip's dynamic energy carries no readout; the link and host memory price it."""
+        edge, _ = _terms(EDGE_HOST_STORE, **self.VALUES)
         chip, _ = _terms(CHIP, **self.VALUES)
-        for corner in CORNERS:  # e_readout_per_byte x carry_out_bytes, in the chip's dynamic energy on both
+        for corner in CORNERS:
+            readout = 1000 * _k("e_readout_per_byte", corner) * 1e3
             assert _c(edge["energy_dynamic_mj"].band, corner) == pytest.approx(
-                _c(chip["energy_dynamic_mj"].band, corner), rel=1e-12)
+                _c(chip["energy_dynamic_mj"].band, corner) - readout, rel=1e-9)
 
 
 def test_every_byte_crosses_in_both_directions_at_the_link_and_host_memory():
     values = dict(BASE, host_macs=0, compute_op_count=0, host_memory_bound_bytes=0, carry_in_bytes=300,
                   carry_out_bytes=200, segment_in_bytes=50, segment_out_bytes=10, host_link_transfers=4)
-    terms, _ = _terms(EDGE, **values)
+    terms, _ = _terms(EDGE_HOST_STORE, **values)  # [U-J3, amended] the carry over the link: a host-owned store
     for corner in CORNERS:  # [U-J2 K-1, amended] the link and host memory each their own term
         assert _c(terms["energy_host_link_mj"].band, corner) == pytest.approx(
             560 * _k("e_link_per_byte", corner) * 1e3, rel=1e-12)
@@ -166,7 +179,8 @@ def test_every_byte_crosses_in_both_directions_at_the_link_and_host_memory():
 
 
 def test_a_view_without_the_boundary_census_names_the_link_unpriced():
-    terms, _ = _terms(EDGE, **dict(BASE, host_macs=0, compute_op_count=1, carry_in_bytes=100, carry_out_bytes=100))
+    terms, _ = _terms(EDGE_HOST_STORE,  # [U-J3, amended] the carry over the link: a host-owned store
+                      **dict(BASE, host_macs=0, compute_op_count=1, carry_in_bytes=100, carry_out_bytes=100))
     assert "e_link_per_byte(segment I/O" in terms["energy_per_inference_mj"].source
     assert "t_link_transfer(" in terms["e2e_latency_s"].source
     assert "t_host_mem_per_byte(" in terms["e2e_latency_s"].source
@@ -237,7 +251,9 @@ def test_without_the_edge_rows_nothing_moves():
 class TestTheWritePayloadCrossesTheLink:
     """A backing-store payload streams from host memory over the link into the chip's programming port: its bytes per
     inference (the period's payload over K) pay the link and host memory, and its time is the write law's at the
-    slower of the chip's port and the link (the attach block, ``combine: slower``)."""
+    slower of the chip's port and the link (the attach block, ``combine: slower``). [U-J3, amended] On a host-owned
+    store (``EDGE_HOST_STORE``); a chip-owned store's write port reads the chip's own DRAM, and the attach block
+    refuses by name there."""
 
     @staticmethod
     def _census(payload):
@@ -252,7 +268,8 @@ class TestTheWritePayloadCrossesTheLink:
         from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 
         values = dict(BASE, host_macs=0, compute_op_count=0, host_memory_bound_bytes=0, **NO_LINK)
-        pricing = price_absolute(_q(**values), EDGE, writes=WriteInputs(self._census(400), WritePolicy(batch_k=4)))
+        pricing = price_absolute(_q(**values), EDGE_HOST_STORE,
+                                 writes=WriteInputs(self._census(400), WritePolicy(batch_k=4)))
         terms = {t.name: t for t in pricing.terms}  # [U-J2 K-1, amended] the link and host memory each their own term
         for corner in CORNERS:
             assert _c(terms["energy_host_link_mj"].band, corner) == pytest.approx(
@@ -266,8 +283,9 @@ class TestTheWritePayloadCrossesTheLink:
         block = host_attach_block("jetson_orin_nano_8gb")
         assert set(block) == {"t_program_per_byte"} and block["t_program_per_byte"]["combine"] == "slower"
         chip = resolve_platform_physics("study_compass", None)
-        edge = resolve_platform_physics("study_compass", merge_override_blocks(
-            {"host": host_description_block("jetson_orin_nano_8gb"), "host_attach": block}))
+        edge = resolve_platform_physics("study_compass", merge_override_blocks(  # [U-J3, amended] a host-owned store
+            {"host": host_description_block("jetson_orin_nano_8gb"), "host_attach": block,
+             "store": store_block(HOST_STORE, "the host-owned variant (test)")}))
         for corner in CORNERS:
             assert _c(edge.band("t_program_per_byte"), corner) == pytest.approx(max(
                 _c(chip.band("t_program_per_byte"), corner), _c(edge.band("t_link_per_byte"), corner)), rel=1e-12)

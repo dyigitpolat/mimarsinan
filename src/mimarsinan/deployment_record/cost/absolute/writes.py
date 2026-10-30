@@ -17,8 +17,7 @@ from mimarsinan.deployment_record.cost.absolute.formulas import add_bands, mul_b
 from mimarsinan.deployment_record.cost.compute_time import exposed_beyond, pass_compute_walls, plus_core_walls
 from mimarsinan.deployment_record.cost.write_lifetime import (
     LIFETIME_HOURS, LIFETIME_INFERENCES, LIFETIME_VERDICT, SECONDARY_MARKERS, WritePricing, join_lifetimes,
-    price_lifetime,
-)
+    price_lifetime)
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.platform_physics.resolve import technology_physics
 from mimarsinan.deployment_record.quantities.write_law import (
@@ -88,11 +87,12 @@ def _write_energy(census: Any, physics: PlatformPhysics, policy: WritePolicy) ->
         return _zero("nothing is rewritten per period: the write term is 0"), ""
     parts: List[Band] = []
     notes: List[str] = []
-    if physics.has("e_dma_per_byte"):
+    routed = physics.store_transfer_note()  # [U-J3] a host-owned store's transfer: the host link's, not the chip's
+    if physics.has("e_dma_per_byte") and routed is None:
         parts.append(scale_band(physics.band("e_dma_per_byte"), payload / k * _J_TO_MJ,
                                 "e_dma_per_byte x period_rewrite_bytes / K"))
     elif payload:
-        notes.append("unpriced: e_dma_per_byte(write transfer)")
+        notes.append(routed or "unpriced: e_dma_per_byte(write transfer)")
     if producer and policy.producer_write_source == "host" and policy.payload_bits is not None:
         moved = producer * int(policy.payload_bits) / 8.0  # host-sourced payloads cross into the chip per inference
         if physics.has("e_dma_per_byte"):

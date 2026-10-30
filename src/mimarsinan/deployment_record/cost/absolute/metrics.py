@@ -34,13 +34,10 @@ from mimarsinan.deployment_record.cost.absolute.validity import (
     judged_geometry,
     mean_core_note,
 )
-from mimarsinan.deployment_record.cost.absolute.writes import (
-    WriteInputs,
-    WritePricing,
-    price_write_inputs,
-)
+from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, WritePricing, price_write_inputs
 from mimarsinan.deployment_record.cost.compute_time import CORE_PROGRAM, compute_time
-from mimarsinan.deployment_record.cost.host_terms import LATENCY_LINK, host_link_time, price_system_energy, write_link_bytes
+from mimarsinan.deployment_record.cost.host_terms import (
+    LATENCY_LINK, host_link_time, price_system_energy, slower_port, store_refusal, write_link_bytes)
 from mimarsinan.deployment_record.platform_physics.area_components import fixed_area_refusal
 from mimarsinan.deployment_record.platform_physics.converter import resolve as resolve_converter
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
@@ -158,7 +155,7 @@ def _programming_latency(ctx: PricingContext) -> None:
     parts: List[Band] = []
     payload = programming_payload_bytes(ctx.quantities, ctx.physics) if ctx.priced("t_program_per_byte") else None
     if payload is not None:
-        value = ctx.physics.band("t_program_per_byte")
+        value = slower_port(ctx.physics, ctx.physics.band("t_program_per_byte"))  # [U-J3] on the declared store
         parts.append(scale_band(value, payload[0], f"t_program_per_byte [{value.basis}] x {payload[1]}"))
     held = ctx.quantities.withheld_reason("reprogrammed_cores")
     if ctx.priced(CORE_PROGRAM) and ctx.quantities.has("reprogrammed_cores"):
@@ -212,6 +209,10 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
         evidence.append("host: " + host.band.basis)
     unpriced.extend(_host_unpriced(host))
     link, link_unpriced = host_link_time(ctx)  # [U-J] the host-chip link: every crossing byte, every transfer
+    if refused := store_refusal(ctx):  # [U-J3] store traffic with no store to price it on, refused by name
+        ctx.refuse(LATENCY_HEADLINE, refused)
+        _programming_latency(ctx)
+        return None
     if link is not None:
         ctx.term(LATENCY_LINK, "s", link, link.basis)
         components.append(link)

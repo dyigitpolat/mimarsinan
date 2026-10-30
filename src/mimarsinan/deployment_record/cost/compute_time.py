@@ -29,6 +29,7 @@ from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.write_census import pass_programmed_cores
 from mimarsinan.deployment_record.cost.absolute.formulas import add_bands, scale_band
+from mimarsinan.deployment_record.platform_physics.hosts.store import host_owned, link_stage
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -162,9 +163,32 @@ def core_program_walls(census: Any, physics: Any) -> Optional[List[Band]]:
     return [scale_band(wall, pass_programmed_cores(p), CORE_PROGRAM_BASIS) for p in census.passes]
 
 
+def store_walls(walls: Optional[List[Band]], census: Any, physics: Any) -> Optional[List[Band]]:
+    """[U-J3] Per pass, the write wall on the declared store: on a host-owned store (``hosts.store``) a written pass's
+    payload streams from host memory over the link, so its wall is the slower of the chip's port wall and the payload
+    at the store's per-byte stage, plus one transfer latency (``t_link_transfer``); ``walls`` elsewhere."""
+    stage = link_stage(physics) if host_owned(physics) else None
+    if stage is None:
+        return walls
+    transfer = physics.band("t_link_transfer") if physics.has("t_link_transfer") else None
+    out: List[Band] = []
+    for index, census_pass in enumerate(census.passes):
+        own = None if walls is None else walls[index]
+        if not census_pass.payload_bytes:
+            out.append(own if own is not None else Band(0.0, 0.0, 0.0, "nothing streams"))
+            continue
+        link = scale_band(stage, census_pass.payload_bytes, f"payload_bytes x {stage.basis}")
+        slower = f"the slower of [{own.basis}] and [{link.basis}]" if own is not None else ""
+        wall = link if own is None else Band(max(own.low, link.low), max(own.nominal, link.nominal),
+                                             max(own.high, link.high), slower)
+        out.append(wall if transfer is None else add_bands([wall, transfer], f"{wall.basis} + t_link_transfer"))
+    return out
+
+
 def plus_core_walls(walls: Optional[List[Band]], census: Any, physics: Any) -> List[Band]:
     """Per pass, a write wall (``walls``, None where the physics prices none) plus the per-core wall where declared
-    (``core_program_walls``); ``walls`` as they are where it is not."""
+    (``core_program_walls``); ``walls`` as they are where it is not. [U-J3] The wall on the declared store first."""
+    walls = store_walls(walls, census, physics)
     cores = core_program_walls(census, physics)
     if cores is None:
         return list(walls or ())

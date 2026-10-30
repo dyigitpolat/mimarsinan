@@ -7,7 +7,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from mimarsinan.deployment_record.platform_physics.area_components import resolve_area_declarations
+from mimarsinan.deployment_record.platform_physics.area_components import (
+    FIXED, fixed_area_declaration, resolve_area_declarations,
+)
 from mimarsinan.deployment_record.platform_physics.constants import (  # [U-E3] the one constant judge
     constant_from_declaration, spec_for,
 )
@@ -17,6 +19,10 @@ from mimarsinan.deployment_record.platform_physics.conversion import (
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
 from mimarsinan.deployment_record.platform_physics.hosts.description import (
     ENERGY_PLANE_FIELD, HOST_IDENTITY_FIELD, SYSTEM, energy_plane_refusal, require_one_host,
+)
+from mimarsinan.deployment_record.platform_physics.hosts.rows import HOST
+from mimarsinan.deployment_record.platform_physics.hosts.store import (
+    STORE_FIELD, BackingStoreError, attach_refusal, restated_store, store_from_declaration,
 )
 from mimarsinan.deployment_record.platform_physics.profile import (
     PHYSICS_FORMAT_VERSION,
@@ -76,6 +82,8 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         external_components=external,
         converter=None if data.get("converter") is None else _converter(data["converter"]),
         chip_components=chip,
+        backing_store=(None if data.get(STORE_FIELD) is None
+                       else store_from_declaration(data[STORE_FIELD], str(data["name"]))),
     ), data.get("carry_buffer"))
 
 
@@ -121,10 +129,14 @@ def apply_overrides(
     wizard can show it as a departure from the declared profile. A declaration stating
     ``combine: slower`` composes with the profile's own value instead (``COMBINE_RULES``). [U-J] Host rows naming
     their host (``HOST_IDENTITY_FIELD``) replace the profile's host rows whole, and host rows of two hosts refuse by
-    name (``hosts.description.require_one_host``).
+    name (``hosts.description.require_one_host``). [U-J3] A ``backing_store`` entry restates where the chip's store
+    lives (``hosts.store``), a declared departure: a host-owned store drops the chip's memory PHYs and re-derives its
+    ``area_global_fixed``, and a host attach row on a chip-owned store refuses by name.
     """
     if not overrides:
         return physics
+    overrides = dict(overrides)
+    store, components, constants_of_store = _store(physics, overrides.pop(STORE_FIELD, None), overrides)
     replaced = require_one_host(overrides, physics.constants)
     constants = {key: value for key, value in physics.constants.items() if key not in replaced}
     # [U-J2] an override replaces its row whole, its stated energy plane with it
@@ -163,6 +175,7 @@ def apply_overrides(
             overridden=True,
         )
         constants[key] = _slower(value, existing) if combine == "slower" and existing is not None else value
+    constants.update(constants_of_store)
     return PlatformPhysics(
         name=physics.name,
         display_name=physics.display_name,
@@ -173,9 +186,28 @@ def apply_overrides(
         external_components=physics.external_components,
         converter=physics.converter,
         carry_buffer=physics.carry_buffer,
-        chip_components=physics.chip_components,
+        chip_components=components,
         system_energy_rows=tuple(sorted(system)),
+        backing_store=store,
     )
+
+
+def _store(physics: PlatformPhysics, declaration: Any, overrides: Mapping[str, Mapping[str, Any]]):
+    """[U-J3] (the store, the chip components it keeps, the constants it re-derives): the profile's, or a run's
+    restatement; a host attach row (a non-host row naming a host) on a chip-owned store refuses by name."""
+    store, components, derived = physics.backing_store, physics.chip_components, {}
+    if declaration is not None:
+        store, components = restated_store(components, declaration, f"{physics.name} (a run's restatement)")
+        if components != physics.chip_components:
+            if FIXED in overrides:
+                raise BackingStoreError(f"{physics.name}: {FIXED} is declared beside a {STORE_FIELD} restatement "
+                                        "that changes the chip components, whose sum it is: the area is stated twice")
+            row = fixed_area_declaration(components, physics.validity.technology_node_nm)
+            derived = {FIXED: replace(constant_from_declaration(FIXED, row), overridden=True)}
+    fed = [key for key, row in overrides.items() if row.get(HOST_IDENTITY_FIELD) and spec_for(key).group != HOST]
+    if why := attach_refusal(store, fed):
+        raise BackingStoreError(f"{physics.name}: {why}")
+    return store, components, derived
 
 
 def _stage(value: PhysicsConstantValue) -> str:

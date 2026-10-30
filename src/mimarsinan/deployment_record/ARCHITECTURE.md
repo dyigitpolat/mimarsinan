@@ -470,3 +470,26 @@ crossing part only (`crossing_widths`: under a declared `carry_buffer_bytes`, ne
 holds, `ProgramPasses.onchip_boundary_widths`, by the carry census's own rule, `pass_carry.group_held`). A row whose
 source departs from the source rule (a preprint, another module's measurement) is named in the description's
 `departures`, and the block carries the departure into the row's note.
+
+## Where the backing store lives (U-J3)
+
+A chip description declares its backing store (`platform_physics/hosts/store.py`; the profile's `backing_store`:
+`{"chip": {<source>}}`, the chip's own DRAM through its memory PHY, or `{"host": {<source>}}`, the host's memory over
+the host-chip link). A run may restate it as a declared departure, a `backing_store` entry of a named override block
+(`store_block`), marked overridden in the resolved physics. A declaration stating both stores or none, an unknown
+field or no source refuses by name (`BackingStoreError`); the chip's area components agree with it where it declares
+them (`judged_store`: a memory PHY exactly when the store is the chip's, a host-owned store over a link PHY to the
+host), a host-owned restatement drops the memory PHYs and re-derives `area_global_fixed`, and a host attach row (a
+chip channel fed over the link) on a chip-owned store refuses by name. The store routes the store traffic, the pass
+carry and the write law's backing-store payload (a period's payload over K), and a program load's payload: on a
+chip-owned store the chip's rows price it alone (`e_dma_per_byte`, `e_readout_per_byte`, the write port), on a
+host-owned store the link and host memory do (`host_terms.link_bytes`; the write walls at the slower of the port and
+the store's per-byte stage plus one `t_link_transfer` per written pass, `compute_time.store_walls`; the load at the
+link and host memory, `formulas.programming_byte_energies`, `hosts.store.slower_port`) and the chip's store rows
+(`chip_store_table`, the write transfer's `store_transfer_note`) price none of it. The program's own crossing (the
+segment I/O, host-sourced operand payloads) is on the link on either store. The candidate plane counts a carried
+pass boundary as a transfer only to a host-owned store (`objectives/host_link.py`); the residency step choice prices
+its carry and write transfer on the declared store (`step_choice`). Beside the host link a chip that states no store
+refuses its store traffic by name (`hosts.store.store_refusal`: the latency and energy headlines), as a host-owned
+store without the link does; a physics without the link and without a declaration prices as before. The study chips
+declare chip-owned stores (their two DDR4 channels, `cd41_chip.CTX`, wang2020shuhai Table V).

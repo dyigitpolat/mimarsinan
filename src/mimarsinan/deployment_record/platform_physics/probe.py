@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.deployment_record.platform_physics.constants import PHYSICS_CONSTANTS
+from mimarsinan.deployment_record.platform_physics.hosts.store import CHIP, BackingStore
 from mimarsinan.deployment_record.platform_physics.profile import (
     PhysicsConstantValue,
     PlatformPhysics,
@@ -45,4 +46,7 @@ def probe_physics() -> PlatformPhysics:
             )
             for key, spec in PHYSICS_CONSTANTS.items()
         },
+        # [U-J3] Every store row is declared too (the chip's and the host link's), so the store traffic needs a store
+        # to price on: the chip's own (a placeholder declaration, as every constant here is).
+        backing_store=BackingStore(store=CHIP, note=_PROBE_NOTE),
     )

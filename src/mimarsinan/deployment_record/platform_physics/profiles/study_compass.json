@@ -345,5 +345,12 @@
       "role": "pads and miscellaneous I/O beside the interface PHYs",
       "note": ""
     }
-  ]
+  ],
+  "backing_store": {
+    "chip": {
+      "citation": "cd41_chip.CTX (RA/06_build/codesign/v41/cd41_chip.py: 'DDR4, 91 MHz' and 'DDR4, 1.5 GHz', B = 36e9 B/s); wang2020shuhai Table V p.7 (the Alveo U280's own DDR4 channels, measured)",
+      "derivation": "",
+      "note": "[U-J3] The study's backing store is the chip's own: 2 DDR4 channels at 36 GB/s feed the chip's write port and hold its carried values (cd41_chip.CTX, the counted contexts of the SRAM-DDR row; wang2020shuhai Table V p.7, the accelerator's own DDR4), reached through the chip's memory PHY (chip_components: two DDR x64 ports). The pass carry and the weight writes cross that store at the chip's DDR3/4 I/O energy (e_dma_per_byte, e_readout_per_byte) and the write port's time (t_program_per_byte), never the host-chip link: the edge host's LPDDR5 is not this store."
+    }
+  }
 }
