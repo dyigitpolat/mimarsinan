@@ -77,7 +77,10 @@ def _footprint_profile(scaling):
         "validity": {"measurement_kind": "silicon", "geometry": {
             "axons": 256, "neurons": 256, "cell_bits": None, "core_count": None, "scaling": scaling}},
         "constants": {"area_per_core_total": {"nominal": 100000.0, "unit": "um^2",
-                                              "evidence_kind": "estimated", "note": "test"}},
+                                              "evidence_kind": "estimated", "note": "test"},
+                      # [U-A] a chip-level area is declared (here none): absent, the chip area refuses by name
+                      "area_global_fixed": {"nominal": 0.0, "unit": "mm^2", "evidence_kind": "derived",
+                                            "derivation": "test: the footprint is the whole chip"}},
     })
 
 

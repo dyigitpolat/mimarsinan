@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "name": "lc_dpll_goel2010_45nm",
+  "display_name": "Clock generation: a digital PLL with an LC-tank DCO (45 nm SOI)",
+  "kind": "clock",
+  "per": "instance",
+  "technology_node_nm": 45.0,
+  "scaling": "io_phy",
+  "area": {
+    "nominal": 0.111,
+    "unit": "mm^2",
+    "evidence_kind": "published",
+    "citation": "goel2010a abstract (VLSI Circuits 2010, doi 10.1109/VLSIC.2010.5560320; the Semantic Scholar record, paper_pdfs/fetch_20261028_area/goel2010a_abstract.txt): 'A digital PLL, realized in 45nm SOI CMOS ... area of 0.111 mm2'"
+  }
+}

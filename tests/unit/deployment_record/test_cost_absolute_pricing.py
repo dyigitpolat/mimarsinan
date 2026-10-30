@@ -344,6 +344,9 @@ class TestTheConversionModel:
                       "evidence_kind": "estimated", "note": "n"},
             "t_cycle": {"nominal": 1.0, "unit": "us",
                         "evidence_kind": "estimated", "note": "n"},
+            # [U-A] a declared chip-level area (none): absent, the chip area refuses by name
+            "area_global_fixed": {"nominal": 0.0, "unit": "mm^2",
+                                  "evidence_kind": "estimated", "note": "n"},
         }
         constants.update(over)
         return profile_from_dict({

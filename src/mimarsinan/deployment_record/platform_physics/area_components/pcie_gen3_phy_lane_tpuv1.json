@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "name": "pcie_gen3_phy_lane_tpuv1",
+  "display_name": "PCIe Gen3 interface, one lane (TPUv1, 28 nm)",
+  "kind": "link_phy",
+  "per": "lane",
+  "technology_node_nm": 28.0,
+  "scaling": "io_phy",
+  "link_family": "PCIe Gen3",
+  "area": {
+    "low": 0.515625,
+    "nominal": 0.61875,
+    "high": 0.721875,
+    "unit": "mm^2",
+    "evidence_kind": "derived",
+    "citation": "jouppi2017indatacenter Fig. 2 p.3 ('PCIe Interface 3%') and p.3 ('PCIe Gen3 x16 bus'); jouppi2021ten Table 1 p.2 (TPUv1 die < 330 mm2, 28 nm)",
+    "derivation": "The TPUv1 floor plan's PCIe interface block (PHY and controller of its PCIe Gen3 x16 host link; the separate 2% 'Host Interf.' block is not included) is 3% of a die below 330 mm2: 0.03 x 330 / 16 lanes = 0.61875 mm2 per lane; band 2.5% to 3.5% (the figure prints whole percents): 0.515625 to 0.721875 mm2. The die size is an upper bound, so every end is an upper bound at 28 nm; per lane is the declared rule for other lane counts (a x4 link takes 4 lanes)."
+  }
+}

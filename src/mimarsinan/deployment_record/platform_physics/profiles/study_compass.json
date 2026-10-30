@@ -9,7 +9,7 @@
     "supply_v": 1.1,
     "temperature_c": null,
     "array_size_assumed": "one tile of the study's COMPASS geometry (park2025compass Table I p.4: 256 x 256 one-bit arrays; chips S, M, L of 144, 256 and 576 arrays) declared with exact digital accumulation: 256 rows by 64 four-bit weights (four one-bit columns per weight), 65,536 bits (8 KiB), 16,384 MACs per activation (constants.md sec. 2); area the probe's G3 tile (256 x 64 x 4, nangate45)",
-    "notes": "The co-design study's own chip (RA/06_build/codesign, RA/06_parts/codesign.md and constants.md), its constants mapped one to one onto this vocabulary: the MAC energy of its SRAM-DDR row (jiang2023a, 16 nm silicon), the tile area of its nangate45 physical-design probe (technology_node_nm and supply_v name that probe's node and typical corner, so the lane block's 45 nm area enters unscaled, as the study's s_AU lane cost reads it), the DDR3/4 backing store, the study's write port and clock. Quantities the study does not price carry sourced values, never zero, each note starting '[not priced by the study]': area_carry_buffer_per_byte, area_global_fixed, area_per_router, area_per_tile_fixed, bytes_per_connectivity_entry, e_core_program, e_inter_tile_hop, e_intra_tile_packet, e_noc_value_per_byte_hop, e_sync_barrier, endurance_cycles, p_carry_buffer_static_per_byte, p_static_global, p_static_per_core, t_hop, t_sync_barrier, and the carry_buffer table's e_carry_buffer_per_byte rows (U-G: the on-chip carry buffer over capacity, 8,192, 32,768 and 1,048,576 B at jouppi2021ten Table 2's 45 nm SRAM figures, its static power and area per byte from the chip's own leakage and cells per bit, an upper bound and bitcells only). An ESTIMATE of a modelled chip, never hardware evidence.",
+    "notes": "The co-design study's own chip (RA/06_build/codesign, RA/06_parts/codesign.md and constants.md), its constants mapped one to one onto this vocabulary: the MAC energy of its SRAM-DDR row (jiang2023a, 16 nm silicon), the tile area of its nangate45 physical-design probe (technology_node_nm and supply_v name that probe's node and typical corner, so the lane block's 45 nm area enters unscaled, as the study's s_AU lane cost reads it), the DDR3/4 backing store, the study's write port and clock. Quantities the study does not price carry sourced values, never zero, each note starting '[not priced by the study]': area_carry_buffer_per_byte, area_global_fixed (the sum of the chip_components, [U-A]), area_per_router (a measured block, [U-A]), bytes_per_connectivity_entry, e_core_program, e_inter_tile_hop, e_intra_tile_packet, e_noc_value_per_byte_hop, e_sync_barrier, endurance_cycles, p_carry_buffer_static_per_byte, p_static_global, p_static_per_core, t_hop, t_sync_barrier, and the carry_buffer table's e_carry_buffer_per_byte rows (U-G: the on-chip carry buffer over capacity, 8,192, 32,768 and 1,048,576 B at jouppi2021ten Table 2's 45 nm SRAM figures, its static power and area per byte from the chip's own leakage and cells per bit, an upper bound and bitcells only). An ESTIMATE of a modelled chip, never hardware evidence. [U-A] area_per_tile_fixed is inside the tile (zero, its holders named); the chip-level area is no longer the generic band but its declared components: the edge host's PCIe Gen3 x4 link PHY, the store's two DDR x64 ports, the controller, the PLL and the pads.",
     "geometry": {
       "axons": 256,
       "neurons": 64,
@@ -239,28 +239,14 @@
       "note": "[not priced by the study] The study declares an on-chip pass sequencer at t_sync = 0 (cd41_chip.CTX, declared, no source); the generic 22 nm bundle's band anchored on Loihi's published 113-465 ns mesh-wide barrier."
     },
     "area_per_router": {
-      "low": 1000.0,
-      "nominal": 4000.0,
-      "high": 15000.0,
-      "unit": "um^2",
-      "evidence_kind": "estimated",
-      "note": "[not priced by the study] The study's area counts tiles (and port area beyond the default port) only. The generic 22 nm bundle's band for one mesh router (typical published NoC routers, low thousands of um2; expected error a factor of about 4)."
+      "component": "dynamic_node_router_ng45",
+      "note": "[not priced by the study] The study's area counts tiles only. [U-A] One router per NoC tile of the resolved floorplan (cores_per_tile_resolved: the derived floorplan groups four study tiles per NoC tile, which share its local port through their activation write and accumulator read ports): OpenPiton's five-port dynamic_node measured at nangate45 on the probe's image, the tile's own node and area basis; high end Simba's per-PE router at the logic rule (area component dynamic_node_router_ng45)."
     },
     "area_per_tile_fixed": {
-      "low": 2000.0,
-      "nominal": 8000.0,
-      "high": 30000.0,
+      "nominal": 0.0,
       "unit": "um^2",
-      "evidence_kind": "estimated",
-      "note": "[not priced by the study] Per NoC-tile overhead beside the crossbars (scheduler, controller, local buffers): the generic 22 nm bundle's band (about 2x the router, TrueNorth's floorplan ratio; expected error a factor of about 4). The crossbar tile's own control is in area_per_neuron_logic."
-    },
-    "area_global_fixed": {
-      "low": 2.0,
-      "nominal": 10.0,
-      "high": 40.0,
-      "unit": "mm^2",
-      "evidence_kind": "estimated",
-      "note": "[not priced by the study] The study's budget A_L counts tiles only (576 COMPASS tiles, cd41_chip.A_L). Whole-chip area beside the tiles (pads, PLLs, host interface): the generic 22 nm bundle's band, anchored on TrueNorth's derived 46.6 mm2 periphery at 28 nm for a 4.3 cm2 die, scaled down (expected error a factor of about 4)."
+      "evidence_kind": "derived",
+      "derivation": "[U-A] Nothing beside the tile, its router and the chip-level blocks: the tile's own control (its S0 to S2 pass pipeline and its counters), its input register and its weight write, activation write and accumulator read ports are standard cells of the routed probe tile, inside area_per_neuron_logic (pd.md sec. 3); the router's input buffers are inside area_per_router (the dynamic_node's network input blocks); the chip's pass sequencer is the global controller among chip_components. Not priced: the glue between a NoC tile's study tiles and its router's local port (a boundary)."
     },
     "p_carry_buffer_static_per_byte": {
       "low": 0.1220703125,
@@ -323,5 +309,41 @@
       }
     ],
     "note": "[U-G G-1] The on-chip carry buffer (U-F4's carry_buffer_bytes component) over its declared capacity: an SRAM's access energy depends on its size, so each row states the 45 nm figure of an SRAM of that size (jouppi2021ten Table 2 p.3); the static power and area per byte (bitcells, the chip's own) hold at every size and are flat constants. A run declares the capacity; one the table does not state refuses the buffer energy by name."
-  }
+  },
+  "chip_components": [
+    {
+      "component": "pcie_gen3_phy_lane_tpuv1",
+      "count": 4,
+      "role": "host link PHY: the edge host's PCIe Gen3 x4 accelerator attach",
+      "link": {
+        "host": "jetson_orin_nano_8gb",
+        "attach": "PCIe Gen3 x4"
+      },
+      "note": "[not priced by the study] The study's budget A_L counts tiles only; [U-A] the chip-level blocks are declared as components, each a sourced area at its node with a node-scaling rule (platform_physics/area_components), and their sum is area_global_fixed. The host link: U-J's edge host description jetson_orin_nano_8gb attaches the accelerator on a PCIe Gen3 x4 root port (its accelerator_attach); the PHY and controller per lane is the TPUv1's PCIe interface share at 28 nm (io_phy rule: unscaled nominal, the logic rule at the high end)."
+    },
+    {
+      "component": "ddr_x64_port_tpuv1",
+      "count": 2,
+      "role": "memory PHY: the chip's own DDR4 backing store, two 64-bit channels",
+      "note": "The study's backing store feeds the chip's write port over 2 DDR4 channels at 36 GB/s (cd41_chip.CTX, from wang2020shuhai Table V p.7: the Alveo U280's DDR4 channels, the accelerator's own), and its tile writes and carries cross that store at the DDR3/4 I/O energy (e_dma_per_byte, e_readout_per_byte): the store is the chip's, so the chip owns two DDR x64 interfaces (the host's LPDDR5 is not this store)."
+    },
+    {
+      "component": "ibex_core_ng45",
+      "count": 1,
+      "role": "global controller: the chip's on-chip pass sequencer (cd41_chip.CTX, t_sync 0)",
+      "note": "Its instruction and data memories are not priced."
+    },
+    {
+      "component": "lc_dpll_goel2010_45nm",
+      "count": 1,
+      "role": "clock generation",
+      "note": ""
+    },
+    {
+      "component": "misc_io_tpuv1",
+      "count": 1,
+      "role": "pads and miscellaneous I/O beside the interface PHYs",
+      "note": ""
+    }
+  ]
 }

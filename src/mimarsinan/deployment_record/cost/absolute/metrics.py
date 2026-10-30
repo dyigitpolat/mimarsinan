@@ -40,6 +40,7 @@ from mimarsinan.deployment_record.cost.absolute.writes import (
     price_write_inputs,
 )
 from mimarsinan.deployment_record.cost.compute_time import CORE_PROGRAM, compute_time
+from mimarsinan.deployment_record.platform_physics.area_components import fixed_area_refusal
 from mimarsinan.deployment_record.platform_physics.converter import resolve as resolve_converter
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
@@ -135,10 +136,12 @@ def price_area(ctx: PricingContext) -> None:
     components.extend(bands)
     evidence.extend(notes)
     unpriced.extend(missing)
-    if ctx.physics.has("area_global_fixed"):
-        value = ctx.physics.band("area_global_fixed")
-        components.append(scale_band(value, _M2_TO_MM2, "area_global_fixed"))
-        evidence.append(f"global: area_global_fixed [{value.basis}]")
+    if refused := fixed_area_refusal(ctx.physics):  # [U-A] the chip components' sum, else a sourced scalar
+        ctx.refuse(AREA_HEADLINE, refused)
+        return
+    value = ctx.physics.band("area_global_fixed")
+    components.append(scale_band(value, _M2_TO_MM2, "area_global_fixed"))
+    evidence.append(f"global: area_global_fixed [{value.basis}]")
     source = "; ".join(evidence)
     if unpriced:
         source += f"; unpriced: {', '.join(unpriced)}"

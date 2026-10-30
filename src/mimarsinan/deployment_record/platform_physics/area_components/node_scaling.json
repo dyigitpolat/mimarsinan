@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "rules": {
+    "logic": {
+      "exponent": 2.0,
+      "bracket": [2.0, 2.0],
+      "basis": "Standard-cell logic and its registers: area as the square of the node ratio, the ideal (constant-field) shrink the toolchain's lane blocks already declare for their area (platform_physics/lane_blocks, scaling area 'node^2'), the rule ISAAC applies to bring DaDianNao from 28 to 32 nm (shafiee2016isaac Section VII, 'scaled from 28 nm to 32 nm for an apples-to-apples comparison'), and the fastest-scaling class of jouppi2021ten Lesson 1 ('Logic improves much faster than wires and SRAM', p.3)."
+    },
+    "io_phy": {
+      "exponent": 0.0,
+      "bracket": [0.0, 2.0],
+      "basis": "Off-chip interface PHYs, pads and analog blocks (link and memory PHYs, I/O, PLLs) scale weaker than logic: their area is set by bump and pad pitch, drivers, ESD and analog devices. Nominal: no scaling (exponent 0), the published area held at the target node; band: from no scaling to the logic rule's node ratio squared. Sources: jouppi2021ten Lesson 1 p.3 (logic, wires, SRAM and DRAM improve unequally; SRAM about 5x less dense than ideal scaling from 65 to 7 nm); Google's PCIe block takes 3% of the TPUv1 die at 28 nm (jouppi2017indatacenter Fig. 2, die < 330 mm2 per jouppi2021ten Table 1, so at most 9.9 mm2) and 3.7% of the TPUv4i die at 7 nm (jouppi2021ten Fig. 6, die < 400 mm2, so at most 14.9 mm2; measured on the figure, CMEM reading 26.6% against the 28% printed, final_units/ua/probes/floorplans): the block did not shrink with the 16x logic node ratio."
+    }
+  }
+}

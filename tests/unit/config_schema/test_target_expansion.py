@@ -65,7 +65,8 @@ HAND = {
         "platform_physics_profile": "isaac_like", "allow_coalescing": True, "allow_neuron_splitting": True,
         "activation_bits": 16,  # [U-C C-5] the chip's input width (16 voltage levels in sequence)
         # Wave 2 W08: the value-domain bundles declare the lane subset with its lane block (one lane per 64 columns).
-        "onchip_arithmetic": {"classes": ["L", "E", "P"], "lanes_per_core": 2, "lane_block": "ng45_os_lane"}}},
+        "onchip_arithmetic": {"classes": ["L", "E", "P"], "lanes_per_core": 2, "lane_block": "ng45_os_lane"},
+        "cores_per_tile": 96}},  # [U-A] ISAAC's tile: 12 IMAs x 8 arrays (shafiee2016isaac Section VIII)
     "generic_estimated_22nm": {DP: {"core_semantics": "mvm"}, PC: {
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 1000}], "weight_bits": 8,
         "platform_physics_profile": "generic_estimated_22nm", "allow_coalescing": True,

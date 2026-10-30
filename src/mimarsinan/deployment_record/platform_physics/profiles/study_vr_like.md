@@ -62,8 +62,8 @@ its class and band, never zero, and its note starts `[not priced by the study]`:
 | `e_noc_value_per_byte_hop` | 0.5 / 1 / 4 pJ | estimated | the generic bundle's band (Horowitz-scale wire plus router) |
 | `e_inter_tile_hop`, `e_intra_tile_packet`, `t_hop` | the generic bundle's bands | estimated | TrueNorth and Loihi published points (spike traffic only) |
 | `e_sync_barrier`, `t_sync_barrier` | 0.1 / 1 / 10 nJ; 100 / 465 / 2,000 ns | estimated | the generic bundle's bands; the study declares an on-chip pass sequencer at t_sync 0, without a source |
-| `area_per_router`, `area_per_tile_fixed` | 1,000 / 4,000 / 15,000 um2; 2,000 / 8,000 / 30,000 um2 | estimated | the generic bundle's bands, per NoC tile |
-| `area_global_fixed` | 2 / 10 / 40 mm2 | estimated | the generic bundle's band (TrueNorth's periphery, scaled); the study's A_L counts tiles only |
+| `area_per_router` | 22,308.6 / 22,308.6 / 150,293 um2 | derived | [U-A] the measured router component, per NoC tile (section Chip area from components) |
+| `area_global_fixed` | 20.35 / 25.72 / 80.88 mm2 | derived | [U-A] the sum of the chip_components (section Chip area from components); the study's A_L counts tiles only |
 | `e_core_program` | 64 / 512 / 4,096 pJ | estimated | the generic bundle's band (a core-state sweep); the study's tile write is its bytes only |
 | `bytes_per_connectivity_entry` | 4 / 8 / 16 B | estimated | the generic bundle's band; the study's payload is the tile bytes only |
 | `endurance_cycles` | 1e16 | published | ielmini2018inmemory p.7 (embedded SRAM); the study's SRAM rows carry no endurance limit |
@@ -106,12 +106,36 @@ priced members.
 The pins are `tests/unit/deployment_record/platform_physics/test_study_chip_carry_buffer_ug.py` and
 `test_carry_buffer_table_ug.py`.
 
+## Chip area from components (U-A)
+
+[U-A, owner instruction of 2026-10-28] The chip area is modeled from declared components, each a sourced area at its
+own node with a declared node-scaling rule (`platform_physics/area_components`; rules `logic`, the node ratio
+squared, and `io_phy`, unscaled nominal up to the logic rule, for PHYs, pads and analog blocks). The study's tile
+(the probe's instance area, 0.115456 mm2 here, rounded 0.1155) already holds its SRAM macros (`area_per_cell`),
+its MAC, adder tree, accumulators, input register and its weight write, activation write and accumulator read
+ports, and its own pass control (`area_per_neuron_logic`, pd.md sec. 3); the lane is the `ng45_os_lane` block.
+Beside them the toolchain prices, once each and named:
+
+| block | per | value (45 nm) | source |
+|---|---|---|---|
+| router (`area_per_router`) | NoC tile of the resolved floorplan | 22,308.6 um2, high 150,293 um2 | OpenPiton's dynamic_node, five ports of 64-bit flits, ORFS nangate45 instance area on the probe's image (MEASURED); high end Simba's per-PE router (shao2019simba Table 3) at the logic rule |
+| NoC-tile block (`area_per_tile_fixed`) | NoC tile | 0 | inside `area_per_neuron_logic` (the tile's control, registers and ports) and `area_per_router` (its input buffers); the glue between a NoC tile's tiles and the router's local port is not priced |
+| host link PHY | 4 lanes | 2.475 mm2 (2.06 to 7.46) | the TPUv1's PCIe Gen3 interface per lane (jouppi2017indatacenter Fig. 2, 3% of a die below 330 mm2), for the PCIe Gen3 x4 accelerator attach of U-J's edge host `jetson_orin_nano_8gb` |
+| memory PHY | 2 channels | 19.8 mm2 (16.5 to 59.7) | the TPUv1's DRAM port per 64-bit channel (3% of the die each): the study's store is the chip's own two DDR4 channels at 36 GB/s (`cd41_chip.CTX`, wang2020shuhai Table V p.7, the accelerator's own DDR4) |
+| global controller | 1 | 0.0294 mm2 (high 0.862) | an ibex RV32 core, ORFS nangate45 instance area (MEASURED); high end Simba's RISC-V partition at the logic rule; its memories not priced |
+| clock generation | 1 | 0.111 mm2 | a 45 nm digital PLL (goel2010a, abstract) |
+| pads and misc I/O | 1 | 3.3 mm2 (1.65 to 12.8) | the TPUv1's misc I/O block (1% of the die) |
+
+`area_global_fixed` is the sum of the last five: 25.72 mm2 nominal (20.35 to 80.88 mm2), against the generic
+band's 2 / 10 / 40 mm2 the profile carried before. The two DDR x64 interfaces are 77% of it at nominal: whether the
+chip owns its DRAM is the reading's largest area choice, and the study's sources make the store the chip's.
+
 ## Terms that differ from the study's estimator
 
 On one resident design the toolchain's compute term equals the study's n_act x A_tile where every layer fills its
 tiles; otherwise it is the study's times the tile occupancy, because the study charges every tile activation in
 full (its census counts whole tiles). The toolchain adds the lane block's energy (the study prices none) and the
-value NoC; its area adds the routers, NoC-tile overhead and the fixed global area, and prices one lane per core slot
+value NoC; its area adds one router per NoC tile and the chip-level area of its declared components (section Chip area from components), and prices one lane per core slot
 of its floorplan, where the study multiplies every tile by s_AU = 1.130 (the block's high end is 13.0% of a G3 tile:
 15,000.1 um2 against the study's 15,015 um2). The tile part is the probe's instance area (0.115456 mm2), which the
 study rounds to 0.1155 mm2. Carry: both count two crossings per carried value, written out (`e_readout_per_byte`) and read back in (`e_dma_per_byte`);

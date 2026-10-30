@@ -59,9 +59,9 @@ The regression is now pinned by `TestTheIsaacReferenceCase`.
   eight arrays; the five-figure result of dividing it is arithmetic, not precision.
   The number does pass a physical sanity check: the implied 39.1 nm cell pitch is
   4F² at F = 19.5 nm.
-- **`area_per_router` is per ROUTER, and one router serves four tiles.** A floorplan
-  charging one router per tile over-counts by 4× — ISAAC's c-mesh is *concentrated*,
-  which is what the "(shared by 4 tiles)" in Table I means.
+- **`area_per_router` is a quarter router per tile.** One router serves four tiles
+  ("(shared by 4 tiles)" in Table I: ISAAC's c-mesh is *concentrated*), so [U-A] a tile
+  carries 0.151 / 4 mm², as Table I's tile total counts it.
 - **HyperTransport is static power, not transport energy.** Dividing its 10.4 W by
   its bandwidth gives a tempting 406 pJ/B, but the paper says the cost is constant:
   *"The HT is a constant overhead of 10 W … but only 16 % of ISAAC chip power."*
@@ -70,6 +70,26 @@ The regression is now pinned by `TestTheIsaacReferenceCase`.
 - **`t_cycle` and `t_array_read` are the same quantity** in ISAAC — the pipeline
   stage *is* the crossbar read — and both carry the paper's own 100–200 ns
   sensitivity band.
+
+## Chip area from components (U-A)
+
+[U-A, owner instruction of 2026-10-28] Table I's area is reproduced from this profile's components, one ISAAC tile
+of 12 IMAs x 8 arrays (the bundle's `cores_per_tile` 96, so a NoC tile is an ISAAC tile):
+
+| part | per | Table I | this profile |
+|---|---|---|---|
+| memristor arrays | cell | 0.0002 mm2 per IMA | `area_per_cell` 0.0015259 um2 x 16,384 cells x 96 arrays = 0.0024 mm2 |
+| DAC and IR | row | 0.00017 + 0.0021 mm2 per IMA | `area_per_row_driver` 2.2168 um2 x 128 rows x 96 = 0.0272 mm2 |
+| ADC | array | 0.0096 mm2 per IMA | `area_per_adc` 1,200 um2 x 96 = 0.1152 mm2 |
+| S+H, S+A, OR | column | 0.00004 + 0.00024 + 0.00077 mm2 per IMA | `area_per_neuron_logic` 1.0254 um2 x 128 columns x 96 = 0.0126 mm2 |
+| router | tile | 0.151 mm2 shared by 4 tiles | `area_per_router` 37,750 um2 |
+| eDRAM, bus, sigmoid, S+A, maxpool, OR | tile | 0.17725 mm2 | `area_per_tile_fixed` 177,250 um2 |
+| tile | | 0.372 mm2 | 0.37244 mm2 |
+| 168 tiles | | 62.5 mm2 | 62.57 mm2 |
+| 4 HyperTransport links | chip | 22.88 mm2 | `chip_components`: 4 x `hypertransport_link_isaac` (5.72 mm2 each) |
+| chip | | 85.4 mm2 | 85.45 mm2 |
+
+The links are a server multi-chip interconnect; an edge chip carries none of them.
 
 ## The programming group — writing an analog array, and what is NOT modelled (TS6)
 

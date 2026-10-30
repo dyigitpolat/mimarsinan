@@ -44,19 +44,27 @@
       "derivation": "0.0096 mm^2 for 8 ADCs / 8 = 0.0012 mm^2 = 1200 um^2 per 8-bit 1.2 GSps ADC at 32 nm."
     },
     "area_per_row_driver": {
-      "nominal": 0.166,
+      "nominal": 2.216796875,
       "unit": "um^2",
       "evidence_kind": "derived",
-      "citation": "shafiee2016isaac Table I, DAC row, p.8",
-      "derivation": "0.00017 mm^2 = 170 um^2 for 8 x 128 = 1024 DACs; 170 / 1024 = 0.166 um^2 per 1-bit DAC.",
-      "note": "The paper calls a 1-bit DAC 'a trivial circuit (an inverter)', and 0.17 um^2 is about a minimum-size inverter at 32 nm \u2014 the plausibility check this number passes."
+      "citation": "shafiee2016isaac Table I, IMA block (DAC and IR rows), p.8",
+      "derivation": "[U-A] The row periphery of an IMA's 8 x 128 = 1024 rows: its 1-bit DACs, 0.00017 mm^2 = 170 um^2 for 1024 (0.166 um^2 each), and its input register, IR 2 KB = 0.0021 mm^2 = 2,100 um^2, which holds each row's 16-bit input (2 KB = 1024 rows x 16 bits), 2.0508 um^2 per row: (170 + 2,100) / 1024 = 2.216797 um^2 per row.",
+      "note": "The paper calls a 1-bit DAC 'a trivial circuit (an inverter)', and 0.17 um^2 is about a minimum-size inverter at 32 nm \u2014 the plausibility check the DAC passes. [U-A] Table I's IMA rows with no vocabulary row of their own are priced on the multiplicand they grow with: the IR per row here, the S+H, S+A and OR per column in area_per_neuron_logic."
+    },
+    "area_per_neuron_logic": {
+      "nominal": 1.025390625,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I, IMA block (S+H, S+A and OR rows), p.8",
+      "derivation": "[U-A] The column periphery of an IMA's 8 x 128 = 1024 columns: its 8 x 128 sample-and-hold circuits, 0.00004 mm^2; its 4 shift-and-add units, 0.00024 mm^2; its output register, OR 256 B, 0.00077 mm^2: (40 + 240 + 770) um^2 / 1024 = 1.025391 um^2 per column. With the cells, the row periphery and the 8 ADCs, an IMA is 0.01312 mm^2 and 12 IMAs 0.1574 mm^2 (Table I: 'IMA Total ... 0.157 mm2')."
     },
     "area_per_router": {
-      "nominal": 151000.0,
+      "nominal": 37750.0,
       "unit": "um^2",
-      "evidence_kind": "published",
+      "evidence_kind": "derived",
       "citation": "shafiee2016isaac Table I, Router row, p.8",
-      "note": "'Router ... 0.151 (shared by 4 tiles)'. Declared PER ROUTER, so a floorplan with one router per tile over-charges by 4x \u2014 ISAAC's c-mesh is concentrated."
+      "derivation": "[U-A] 'Router ... 0.151 (shared by 4 tiles)': one router of ISAAC's concentrated mesh serves four tiles, so a tile carries a quarter of it, 0.151 / 4 = 0.03775 mm^2 = 37,750 um^2 (as Table I's tile total 0.215 mm^2 counts it).",
+      "note": "Priced per NoC tile (the vocabulary's multiplicand): the bundle declares ISAAC's tile of 12 IMAs x 8 arrays (cores_per_tile 96), so a NoC tile is an ISAAC tile."
     },
     "area_per_tile_fixed": {
       "nominal": 177250.0,
@@ -64,13 +72,6 @@
       "evidence_kind": "derived",
       "citation": "shafiee2016isaac Table I, tile block, p.8",
       "derivation": "Tile total 0.215 mm^2 minus the tile's router share 0.151/4 mm^2 = 0.17725 mm^2 = 177250 um^2. Components: eDRAM buffer 0.083 + bus 0.090 + sigmoid 0.0006 + S+A 0.00006 + maxpool 0.00024 + OR 0.0032 mm^2."
-    },
-    "area_global_fixed": {
-      "nominal": 22.88,
-      "unit": "mm^2",
-      "evidence_kind": "published",
-      "citation": "shafiee2016isaac Table I, HyperTransport row, p.8",
-      "note": "The off-chip HyperTransport I/O: 4 links at 1.6 GHz, 6.4 GB/s each. Chip total is 85.4 mm^2, of which 62.5 mm^2 is the 168-tile array."
     },
     "e_mac": {
       "nominal": 0.0018311,
@@ -288,5 +289,17 @@
       "derivation": "houshmand2023benchmarking p.5: 'EADC is estimated using the ADC energy model from [5]: EADC = (k1 x ADCres + k2 4^ADCres) V^2 x Bw x (total MACs/D2) (8) with k1 = 100 fJ and k2 = 1 aJ. The model assumes one ADC conversion per bitline.' Per conversion E(b) = (k1 b + k2 4^b) V^2; anchored at the profile's own 8-bit row at one operating point the supply term cancels: E(b) = E(8) x (k1 b + k2 4^b) / (k1 8 + k2 4^8), e.g. 0.4624 x E(8) at 4 bits, 0.5789 at 5, 0.6979 at 6, 0.8277 at 7. The range is W34's sweep at and below the anchor (4 to 8 bits): the law scales ISAAC's measured 8-bit ADC down and is never read above it; the paper states no resolution range of its own. ISAAC's own text states the same shape: 'some ADC overheads grow exponentially with resolution' (shafiee2016isaac p.5)."
     },
     "note": "[E-5] The profile's converter at its own resolution: ISAAC's 8-bit ADC (shafiee2016isaac Table I, p.8; Section V, p.5), its three flat constants as the row at 8 bits. A run that declares readout_law.adc_bits prices the converter at that resolution: at 8 bits exactly the flat constants; from 4 to 7 bits the energy per conversion by the cited law (energy_law), anchored at the 8-bit row; the area per converter and the conversion time are stated at 8 bits only, so off that row the area headline is refused by name (W34; ISAAC scales its ADC area with resolution from its ADC's component split, shafiee2016isaac p.5 and its refs. [36], [59], which this profile does not state). The conversion time enters no priced term: the profile's t_cycle is the crossbar read, 'the slowest stage' (shafiee2016isaac Section VI, p.6)."
-  }
+  },
+  "chip_components": [
+    {
+      "component": "hypertransport_link_isaac",
+      "count": 4,
+      "role": "node-to-node links of the multi-chip system: 4 HyperTransport links at 1.6 GHz, 6.4 GB/s each",
+      "link": {
+        "peer": "ISAAC node",
+        "attach": "HyperTransport 1.6 GHz x4"
+      },
+      "note": "[U-A] The chip-level area is Table I's off-chip HyperTransport links (22.88 mm^2 of the 85.4 mm^2 chip, beside the 168 tiles' 62.5 mm^2), declared as their component: a server multi-chip interconnect, which an edge chip does not carry."
+    }
+  ]
 }

@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "name": "ddr_x64_port_tpuv1",
+  "display_name": "DRAM port, one 64-bit DDR channel (TPUv1 DDR3, 28 nm)",
+  "kind": "memory_phy",
+  "per": "channel",
+  "technology_node_nm": 28.0,
+  "scaling": "io_phy",
+  "area": {
+    "low": 8.25,
+    "nominal": 9.9,
+    "high": 11.55,
+    "unit": "mm^2",
+    "evidence_kind": "derived",
+    "citation": "jouppi2017indatacenter Fig. 2 p.3 (two 'DRAM port ddr3 3%' blocks), Fig. 1 p.3 (DDR3-2133 interfaces), Table 2 p.5 (34 GB/s); jouppi2021ten Table 1 p.2 (TPUv1 die < 330 mm2, 28 nm; 34 GB/s)",
+    "derivation": "Each of the TPUv1's two DRAM ports is 3% of a die below 330 mm2: 0.03 x 330 = 9.9 mm2 per port; band 2.5% to 3.5% (whole percents printed): 8.25 to 11.55 mm2, upper bounds at 28 nm. One port is one 64-bit channel: 34 GB/s over two DDR3-2133 ports is 17 GB/s each, 2133 MT/s x 8 B. A DDR4 x64 channel's interface is declared at this port's area (the same 64 data lanes; DDR4's few added pins are not priced)."
+  }
+}

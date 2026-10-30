@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from mimarsinan.deployment_record.platform_physics.area_components import resolve_area_declarations
 from mimarsinan.deployment_record.platform_physics.constants import (  # [U-E3] the one constant judge
     constant_from_declaration, spec_for,
 )
@@ -46,10 +47,11 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
             f"physics profile format_version {version} != {PHYSICS_FORMAT_VERSION}; "
             f"migrate explicitly, never tolerate silently"
         )
-    constants = {
-        key: constant_from_declaration(key, value)
-        for key, value in (data.get("constants") or {}).items()
-    }
+    validity = PlatformPhysicsValidity.from_dict(data["validity"])
+    # [U-A] Component-named area rows and the chip components' sum (area_global_fixed) at the chip's own node.
+    declared, chip = resolve_area_declarations(data.get("constants") or {}, data.get("chip_components") or (),
+                                               validity.technology_node_nm)
+    constants = {key: constant_from_declaration(key, value) for key, value in declared.items()}
     conversion_model = dict(data.get("conversion_model") or {})
     # Validate the dataflow HERE: an undescribable one must fail at declaration,
     # not as a conversion count nobody can defend at pricing time.
@@ -63,11 +65,12 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         name=str(data["name"]),
         display_name=str(data["display_name"]),
         description_file=str(data["description_file"]),
-        validity=PlatformPhysicsValidity.from_dict(data["validity"]),
+        validity=validity,
         constants=constants,
         conversion_model=conversion_model,
         external_components=external,
         converter=None if data.get("converter") is None else _converter(data["converter"]),
+        chip_components=chip,
     ), data.get("carry_buffer"))
 
 
@@ -155,6 +158,7 @@ def apply_overrides(
         external_components=physics.external_components,
         converter=physics.converter,
         carry_buffer=physics.carry_buffer,
+        chip_components=physics.chip_components,
     )
 
 

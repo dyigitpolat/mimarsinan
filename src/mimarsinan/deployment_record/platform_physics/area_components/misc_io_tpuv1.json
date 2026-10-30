@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "name": "misc_io_tpuv1",
+  "display_name": "Miscellaneous I/O and pads beside the interface PHYs (TPUv1, 28 nm)",
+  "kind": "pads",
+  "per": "instance",
+  "technology_node_nm": 28.0,
+  "scaling": "io_phy",
+  "area": {
+    "low": 1.65,
+    "nominal": 3.3,
+    "high": 4.95,
+    "unit": "mm^2",
+    "evidence_kind": "derived",
+    "citation": "jouppi2017indatacenter Fig. 2 p.3 ('Misc. I/O 1%'); jouppi2021ten Table 1 p.2 (TPUv1 die < 330 mm2, 28 nm)",
+    "derivation": "The TPUv1 floor plan's miscellaneous I/O block is 1% of a die below 330 mm2: 3.3 mm2; band 0.5% to 1.5% (whole percents printed): 1.65 to 4.95 mm2, upper bounds at 28 nm. It is the I/O beside the PCIe and DRAM interfaces, whose own pads are inside their blocks."
+  }
+}

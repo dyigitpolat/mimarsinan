@@ -10,6 +10,7 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.platform_physics.constants import (
     EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, constant_from_declaration, spec_for,
 )
+from mimarsinan.deployment_record.platform_physics.area_components import ChipComponent
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwargs
@@ -198,6 +199,8 @@ class PlatformPhysics:
     converter: Optional[ConverterTable] = None
     #: [U-G] The on-chip carry buffer over capacity (``carry_buffer_bytes``); serialized only when present.
     carry_buffer: Optional[CarryBufferTable] = None
+    #: [U-A] The chip-level area components whose sum is ``area_global_fixed`` (``area_components``); only when present.
+    chip_components: Tuple[ChipComponent, ...] = ()
 
     def __post_init__(self) -> None:
         if self.format_version != PHYSICS_FORMAT_VERSION:
@@ -271,6 +274,7 @@ class PlatformPhysics:
                if self.external_components else {}),
             **({"converter": self.converter.to_dict()} if self.converter is not None else {}),
             **({"carry_buffer": self.carry_buffer.to_dict()} if self.carry_buffer is not None else {}),
+            **({"chip_components": [c.to_dict() for c in self.chip_components]} if self.chip_components else {}),
         }
 
     @classmethod
@@ -287,4 +291,5 @@ class PlatformPhysics:
         kwargs["converter"] = None if kwargs.get("converter") is None else ConverterTable.from_dict(kwargs["converter"])
         kwargs["carry_buffer"] = (None if kwargs.get("carry_buffer") is None
                                   else CarryBufferTable.from_dict(kwargs["carry_buffer"]))
+        kwargs["chip_components"] = tuple(ChipComponent.from_dict(c) for c in kwargs.get("chip_components") or ())
         return cls(**kwargs)

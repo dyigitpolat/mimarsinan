@@ -1,0 +1,17 @@
+{
+  "format_version": 1,
+  "name": "dynamic_node_router_ng45",
+  "display_name": "NoC router: OpenPiton's dynamic_node, five ports of 64-bit flits (ORFS nangate45, 45 nm)",
+  "kind": "router",
+  "per": "router",
+  "technology_node_nm": 45.0,
+  "scaling": "logic",
+  "area": {
+    "low": 22308.6,
+    "nominal": 22308.6,
+    "high": 150292.96875,
+    "unit": "um^2",
+    "evidence_kind": "measured",
+    "note": "Low and nominal MEASURED: ORFS instance area (finish__design__instance__area, standard cells, no macros) of the stock nangate45 dynamic_node design (OpenPiton's dynamic network router node, dynamic_node_top_wrap: north, east, south, west and processor ports, 64-bit flits, with its input buffers), run on the probe's image openroad/orfs sha256:ebc8142d (the image of the study's tile, RA/06_build/audit_v4/pd.md sec. 2) on sura CPUs 32-39 under an 8 GB cap, 2026-10-28 (RA/11_wave2/final_units/ua/probes/orfs/dynamic_node/6_report.json; redo: final_units/ua/scripts/run_orfs_ref.sh dynamic_node <dir>): 22,308.6 um2, the same instance-area basis as the study's tile. High: Simba's per-PE NoC router, 19K um2 synthesis area at 16 nm (shao2019simba Table 3 p.5; 68 GB/s per PE, Table 2 p.5), scaled to 45 nm by the logic rule ((45/16)^2 = 7.910): 150,293 um2, a wider router (several local ports or flits)."
+  }
+}

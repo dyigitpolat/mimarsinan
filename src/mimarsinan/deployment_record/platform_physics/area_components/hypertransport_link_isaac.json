@@ -1,0 +1,17 @@
+{
+  "format_version": 1,
+  "name": "hypertransport_link_isaac",
+  "display_name": "HyperTransport serial link at 1.6 GHz, 6.4 GB/s (ISAAC, 32 nm)",
+  "kind": "link_phy",
+  "per": "link",
+  "technology_node_nm": 32.0,
+  "scaling": "io_phy",
+  "link_family": "HyperTransport 1.6 GHz",
+  "area": {
+    "nominal": 5.72,
+    "unit": "mm^2",
+    "evidence_kind": "derived",
+    "citation": "shafiee2016isaac Table I p.8 ('Hyper Tr links/freq 4/1.6GHz ... 22.88', 'link bw 6.4 GB/s'; 'Chip Total ... 85.4 mm2')",
+    "derivation": "ISAAC's four off-chip HyperTransport links take 22.88 mm2 at 32 nm (Table I, the DaDianNao link model of Section VII): 22.88 / 4 = 5.72 mm2 per link; a node-to-node link of the multi-chip system, beside the 168 tiles' 62.5 mm2 of an 85.4 mm2 chip."
+  }
+}

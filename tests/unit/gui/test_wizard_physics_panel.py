@@ -118,10 +118,16 @@ class TestTheCompletenessReadout:
         flips its objective in the same render."""
         before = {r["key"]: r for r in physics_completeness("", {})}
         assert before["chip_area_mm2"]["available"] is False
+        core_only = {"area_per_core_total": {"nominal": 1.0, "note": "operator estimate"},
+                     "t_cycle": {"nominal": 1.0, "note": "operator estimate"}}
+        # [U-A] the chip area also needs its chip-level area (the chip components' sum, or a declared scalar):
+        # with the per-core footprint alone the readout names that constant, never "a quantity".
+        partial = {r["key"]: r for r in physics_completeness("", core_only)}
+        assert partial["chip_area_mm2"]["available"] is False
+        assert partial["chip_area_mm2"]["missing"] == "area_global_fixed"
         after = {
             r["key"]: r for r in physics_completeness("", {
-                "area_per_core_total": {"nominal": 1.0, "note": "operator estimate"},
-                "t_cycle": {"nominal": 1.0, "note": "operator estimate"},
+                **core_only, "area_global_fixed": {"nominal": 0.0, "note": "operator estimate: no periphery"},
             })
         }
         assert after["chip_area_mm2"]["available"] is True

@@ -83,6 +83,9 @@ _AXIS_HEAD_CONSTANT = {
     "e2e_latency_s": ("t_cycle", "t_synaptic_op"),
     "throughput_inferences_s": ("t_cycle", "t_synaptic_op"),
 }
+#: [U-A] What an axis needs beside its head constant, in the pricer's refusal order: the chip area's chip-level area
+#: (the chip components' sum, or a declared area_global_fixed), refused by name where it is absent.
+_AXIS_ALSO_CONSTANT = {"chip_area_mm2": "area_global_fixed"}
 
 
 def _first_missing(physics: Optional[PlatformPhysics], axis: str) -> str:
@@ -93,6 +96,9 @@ def _first_missing(physics: Optional[PlatformPhysics], axis: str) -> str:
         return candidates[0] if candidates else "a declared physics profile"
     if candidates and not any(physics.has(key) for key in candidates):
         return candidates[0]
+    also = _AXIS_ALSO_CONSTANT.get(axis)
+    if also is not None and not physics.has(also):
+        return also
     return "a quantity this run does not produce"
 
 

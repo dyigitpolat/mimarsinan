@@ -28,8 +28,10 @@ def probe_physics() -> PlatformPhysics:
         name="__probe__",
         display_name="Capability probe",
         description_file="",
+        # [U-A] Every constant is a placeholder estimate by construction: a projection (whose estimated fixed area
+        # prices, as a projection's does), so availability still reflects the axis only.
         validity=PlatformPhysicsValidity(
-            measurement_kind="mixed", notes=_PROBE_NOTE,
+            measurement_kind="projection", notes=_PROBE_NOTE,
         ),
         constants={
             key: PhysicsConstantValue(

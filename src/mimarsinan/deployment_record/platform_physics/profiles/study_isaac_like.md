@@ -56,8 +56,8 @@ As `study_compass.md`, with the G6 tile's leakage at the static band's high end:
 | `e_noc_value_per_byte_hop` | 0.5 / 1 / 4 pJ | estimated | the generic bundle's band |
 | `e_inter_tile_hop`, `e_intra_tile_packet`, `t_hop` | the generic bundle's bands | estimated | TrueNorth and Loihi published points |
 | `e_sync_barrier`, `t_sync_barrier` | the generic bundle's bands | estimated | the study's on-chip pass sequencer at t_sync 0 has no source |
-| `area_per_router`, `area_per_tile_fixed` | the generic bundle's bands | estimated | per NoC tile |
-| `area_global_fixed` | 2 / 10 / 40 mm2 | estimated | the generic bundle's band; the study's A_L counts tiles only |
+| `area_per_router` | 22,308.6 / 22,308.6 / 150,293 um2 | derived | [U-A] the measured router component, per NoC tile (section Chip area from components) |
+| `area_global_fixed` | 20.35 / 25.72 / 80.88 mm2 | derived | [U-A] the sum of the chip_components (section Chip area from components); the study's A_L counts tiles only |
 | `e_core_program` | 64 / 512 / 4,096 pJ | estimated | the generic bundle's band |
 | `bytes_per_connectivity_entry` | 4 / 8 / 16 B | estimated | the generic bundle's band |
 | `endurance_cycles` | 1e16 | published | ielmini2018inmemory p.7 |
@@ -70,7 +70,7 @@ The shipped `isaac_like` profile is ISAAC itself (shafiee2016isaac): a 32 nm ana
 bit-sliced crossbars read by 8-bit ADCs (`conversion_model` bit_sliced_crossbar, a converter table at 8 bits), its
 constants derived from Table I powers at the 100 ns cycle. The study's ISAAC-like tile is a digital SRAM tile with
 ISAAC's geometry (conversion model digital: no converter, a fact of exact accumulation, not an absence). The two
-profiles describe different chips; `isaac_like` stays as it ships. Every constant that differs, and why:
+profiles describe different chips; `isaac_like` stays as it ships, its area reconciled to Table I by U-A (its IMA periphery per row and column, a quarter router per tile, its links as chip components). Every constant that differs, and why:
 
 | constant | isaac_like | study_isaac_like | why |
 |---|---|---|---|
@@ -79,16 +79,16 @@ profiles describe different chips; `isaac_like` stays as it ships. Every constan
 | `t_array_read` | 100 - 200 ns | not declared | ISAAC's crossbar read; the study's activation time is `t_cycle` |
 | `area_per_cell` | 0.0015259 um2 per 2-bit cell | 4.149207 um2 per 4-bit slot | a ReRAM cell (Table I) against the probe's SRAM macro per weight slot |
 | `area_per_cell_per_weight_bit` | not declared | 0 | the study's slot area is per slot |
-| `area_per_neuron_logic` | not declared | 371.245 - 668.370 um2 | the study's tile logic (MAC, adder tree, accumulators); ISAAC prices periphery per ADC and per tile |
-| `area_per_row_driver` | 0.166 um2 per 1-bit DAC | 0 | ISAAC's DAC; the study's row drive is inside its tile logic |
+| `area_per_neuron_logic` | 1.025 um2 per column | 371.245 - 668.370 um2 | [U-A] ISAAC's IMA column periphery (S+H, S+A, OR; Table I) against the study's tile logic (MAC, adder tree, accumulators) |
+| `area_per_row_driver` | 2.217 um2 per row | 0 | [U-A] ISAAC's 1-bit DAC and input-register share (Table I); the study's row drive is inside its tile logic |
 | `area_per_adc` | 1,200 um2 | not declared | ISAAC's 8-bit ADC; the study's tile has no converter |
 | `adc_sharing_factor` | 128 columns | not declared | ISAAC's converter sharing; no converter |
 | `e_adc_conversion` | 1.5625 - 1.667 pJ | not declared | no converter |
 | `t_adc_conversion` | 0.781 - 0.833 ns | not declared | no converter |
 | `e_row_drive` | 0.3906 pJ | not declared | ISAAC's DAC energy; inside the study's MAC energy |
-| `area_per_router` | 151,000 um2 | 1,000 - 15,000 um2 | ISAAC's c-mesh router (Table I) against the generic band (not priced by the study) |
-| `area_per_tile_fixed` | 177,250 um2 | 2,000 - 30,000 um2 | ISAAC's tile (eDRAM, bus, sigmoid, pooling) against the generic band (not priced by the study) |
-| `area_global_fixed` | 22.88 mm2 | 2 - 40 mm2 | ISAAC's HyperTransport links against the generic band (not priced by the study) |
+| `area_per_router` | 37,750 um2 per tile | 22,308.6 - 150,293 um2 | [U-A] a quarter of ISAAC's c-mesh router per tile (Table I) against the measured router component (not priced by the study) |
+| `area_per_tile_fixed` | 177,250 um2 | 0 | ISAAC's tile (eDRAM, bus, sigmoid, pooling) against [U-A] the study tile's own control and ports, inside its logic |
+| `area_global_fixed` | 22.88 mm2 | 20.35 - 80.88 mm2 | [U-A] ISAAC's four HyperTransport links against the study chip's components (edge host link, its own DDR4 store's interfaces, controller, PLL, pads; not priced by the study) |
 | `p_static_global` | 10,400 mW | 0.5 - 50 mW | ISAAC's constant HyperTransport power against the generic band (not priced by the study) |
 | `p_static_per_core` | not declared | 1 - 1,846.22 uW | the G6 tile's leakage at the high end (not priced by the study) |
 | `e_dma_per_byte` | 2.0215 pJ | 162.5 - 325 pJ | ISAAC's on-tile eDRAM buffer byte against the study's DDR3/4 backing-store I/O |
@@ -157,10 +157,34 @@ priced members.
 The pins are `tests/unit/deployment_record/platform_physics/test_study_chip_carry_buffer_ug.py` and
 `test_carry_buffer_table_ug.py`.
 
+## Chip area from components (U-A)
+
+[U-A, owner instruction of 2026-10-28] The chip area is modeled from declared components, each a sourced area at its
+own node with a declared node-scaling rule (`platform_physics/area_components`; rules `logic`, the node ratio
+squared, and `io_phy`, unscaled nominal up to the logic rule, for PHYs, pads and analog blocks). The study's tile
+(the probe's instance area, 0.076766 mm2 here, rounded 0.07677) already holds its SRAM macros (`area_per_cell`),
+its MAC, adder tree, accumulators, input register and its weight write, activation write and accumulator read
+ports, and its own pass control (`area_per_neuron_logic`, pd.md sec. 3); the lane is the `ng45_os_lane` block.
+Beside them the toolchain prices, once each and named:
+
+| block | per | value (45 nm) | source |
+|---|---|---|---|
+| router (`area_per_router`) | NoC tile of the resolved floorplan | 22,308.6 um2, high 150,293 um2 | OpenPiton's dynamic_node, five ports of 64-bit flits, ORFS nangate45 instance area on the probe's image (MEASURED); high end Simba's per-PE router (shao2019simba Table 3) at the logic rule |
+| NoC-tile block (`area_per_tile_fixed`) | NoC tile | 0 | inside `area_per_neuron_logic` (the tile's control, registers and ports) and `area_per_router` (its input buffers); the glue between a NoC tile's tiles and the router's local port is not priced |
+| host link PHY | 4 lanes | 2.475 mm2 (2.06 to 7.46) | the TPUv1's PCIe Gen3 interface per lane (jouppi2017indatacenter Fig. 2, 3% of a die below 330 mm2), for the PCIe Gen3 x4 accelerator attach of U-J's edge host `jetson_orin_nano_8gb` |
+| memory PHY | 2 channels | 19.8 mm2 (16.5 to 59.7) | the TPUv1's DRAM port per 64-bit channel (3% of the die each): the study's store is the chip's own two DDR4 channels at 36 GB/s (`cd41_chip.CTX`, wang2020shuhai Table V p.7, the accelerator's own DDR4) |
+| global controller | 1 | 0.0294 mm2 (high 0.862) | an ibex RV32 core, ORFS nangate45 instance area (MEASURED); high end Simba's RISC-V partition at the logic rule; its memories not priced |
+| clock generation | 1 | 0.111 mm2 | a 45 nm digital PLL (goel2010a, abstract) |
+| pads and misc I/O | 1 | 3.3 mm2 (1.65 to 12.8) | the TPUv1's misc I/O block (1% of the die) |
+
+`area_global_fixed` is the sum of the last five: 25.72 mm2 nominal (20.35 to 80.88 mm2), against the generic
+band's 2 / 10 / 40 mm2 the profile carried before. The two DDR x64 interfaces are 77% of it at nominal: whether the
+chip owns its DRAM is the reading's largest area choice, and the study's sources make the store the chip's.
+
 ## Terms that differ from the study's estimator
 
 As `study_compass.md`: the compute term is the study's times the tile occupancy; the lane block's energy and the
-value NoC are added; the area adds routers, NoC-tile overhead and the fixed global area, and the lane is one block
+value NoC are added; the area adds one router per NoC tile and the chip-level area of its declared components (as `study_compass.md`, section Chip area from components), and the lane is one block
 per core slot (13,047.9 um2 nominal, 15,000.1 um2 high) where the study scales this tile by s_AU = 1.130 (13.0% of
 0.07677 mm2, 9,980 um2): the toolchain's lane is about 1.5x the study's on this tile. The tile part is the probe's
 instance area 0.076766 mm2, which the study rounds to 0.07677 mm2.

@@ -213,8 +213,9 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "without a fixed timestep (an event-driven core that runs its synaptic operations one "
      "at a time) declares t_synaptic_op instead and leaves t_cycle undeclared."),
     ("area_global_fixed", GLOBAL, AREA, "mm^2", "declared, not multiplied",
-     "Whole-chip area that scales with neither cores nor tiles (pads, PLLs, host "
-     "interface)."),
+     "Whole-chip area that scales with neither cores nor tiles (host link and memory PHYs, controller, PLLs, "
+     "pads): [U-A] the sum of the chip's declared chip_components at its node (area_components), else a sourced "
+     "scalar; refused by name where neither exists (an estimate prices only on a projection)."),
     ("p_static_per_core", GLOBAL, POWER, "mW", "cores_physical x e2e_latency_s",
      "Static (leakage) power of one core while powered."),
     ("p_static_global", GLOBAL, POWER, "mW", "e2e_latency_s",

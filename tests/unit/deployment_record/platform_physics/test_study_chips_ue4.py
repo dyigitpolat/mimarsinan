@@ -52,15 +52,17 @@ ISAAC_EQUAL_AREA_MM2 = 0.5 * 0.1155   # cd42_common.ISAAC_BAND[1]
 UNPRICED = {"endurance_cycles", "e_core_program", "bytes_per_connectivity_entry",
             "p_static_per_core", "p_static_global", "e_noc_value_per_byte_hop", "e_inter_tile_hop",
             "e_intra_tile_packet", "t_hop", "e_sync_barrier", "t_sync_barrier", "area_per_router",
-            "area_per_tile_fixed", "area_global_fixed",
+            "area_global_fixed",
             "p_carry_buffer_static_per_byte", "area_carry_buffer_per_byte"}
 #: Terms the study prices inside another constant: declared at zero, the constant that holds them named.
+#: [U-A] The NoC-tile block is the tile's own control, registers and ports, inside area_per_neuron_logic.
 INSIDE = {"area_per_cell_per_weight_bit": "area_per_cell", "area_per_row_driver": "area_per_neuron_logic",
-          "e_core_init": "e_mac"}
+          "e_core_init": "e_mac", "area_per_tile_fixed": "area_per_neuron_logic"}
 #: The generic 22 nm bundle's band each of those reads (generic_estimated_22nm.json), with the named departures.
 GENERIC_BAND = {"e_core_program", "bytes_per_connectivity_entry", "e_noc_value_per_byte_hop", "e_inter_tile_hop",
-                "e_intra_tile_packet", "t_hop", "e_sync_barrier", "t_sync_barrier", "area_per_router",
-                "area_per_tile_fixed", "area_global_fixed", "endurance_cycles"}
+                "e_intra_tile_packet", "t_hop", "e_sync_barrier", "t_sync_barrier", "endurance_cycles"}
+#: [U-A] The area the study does not price is no generic band: the router a measured block, the chip-level area the
+#: sum of the chip's declared components (test_area_components_ua.py).
 
 
 def _c(name: str, key: str):
