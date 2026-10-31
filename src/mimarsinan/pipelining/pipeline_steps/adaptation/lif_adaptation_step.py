@@ -2,9 +2,7 @@
 
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
-from mimarsinan.spiking.scale_aware_boundaries import (
-    establish_gauge_for_mixed_domain_seams,
-)
+from mimarsinan.spiking.wire_gauge_seam import establish_deployed_wire_gauge
 from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 
 
@@ -31,14 +29,17 @@ class LIFAdaptationStep(TunerPipelineStep):
 
     def _establish_gauge(self, model) -> None:
         """The chip-aligned LIF forward this step finalizes on is a wire-currency
-        twin, so a graph with a heterogeneous fan-in (a host residual re-joining
-        a branch that crossed a core) must have its gauge established first —
-        otherwise the twin has no domain there at all."""
+        twin, so EVERY graph has its gauge established first (U-SC S-1): a host
+        op that computes on values decodes each source at its producer's gauge
+        only once the wrap slots are armed (a classifiable graph read unarmed is
+        the C5 retention-gate defect, SD-10a), and a heterogeneous fan-in (a host
+        residual re-joining a branch that crossed a core) has no domain at all
+        until its join is repaired."""
         if getattr(model, "get_mapper_repr", lambda: None)() is None:
             # No mapper graph, no seams — the twin falls back to the plain
             # cycle-accurate forward (``chip_aligned_segment_forward``).
             return
-        repaired = establish_gauge_for_mixed_domain_seams(
+        repaired = establish_deployed_wire_gauge(
             model,
             input_data_scale=ResolvedWorkloadProfile.from_config(
                 self.pipeline.config

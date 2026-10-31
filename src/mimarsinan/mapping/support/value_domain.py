@@ -12,6 +12,7 @@ from mimarsinan.models.nn.activations.ttfs_cycle import TTFSCycleActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 
 __all__ = [
+    "MIXED",
     "clear_wire_value_ops",
     "heterogeneous_domain_joins",
     "mark_wire_value_ops",
@@ -22,14 +23,22 @@ __all__ = [
 ]
 
 
+#: The domain of a LAYOUT gather whose elements carry different currencies: each element keeps its producer's (U-SC).
+MIXED = "mixed"
+
+
 def value_domain_map(exec_order, deps) -> tuple[dict, list]:
-    """``(node -> stored value is ABSOLUTE, plain host ops with a MIXED fan-in)``.
+    """``(node -> stored value is ABSOLUTE (True), WIRE (False) or MIXED, plain host ops with a mixed fan-in)``.
 
     Neural producers and ARMED ComputeOps emit the wire domain; a structural
     chain rooted at the input stays absolute; a plain host op inherits its
-    sources'. An op whose sources disagree carries two currencies at once and
-    has NO domain until its gauge is established (calculus §11.2) — it is
-    reported, and the walk continues as absolute so every such join is listed.
+    sources'. A node that only moves elements (``moves_elements_only``: a
+    concatenation, a stack, a reshape) computes nothing, so a mixed fan-in there
+    is MIXED: every element stays in its producer's currency, as the deployed
+    buffers hold it, and every reader reads it by that producer's rule. Any other
+    op whose sources disagree (or read a MIXED gather) carries two currencies at
+    once and has NO domain until its gauge is established (calculus §11.2) — it
+    is reported, and the walk continues as absolute so every such join is listed.
     """
     flags: dict = {}
     joins: list = []
@@ -43,11 +52,14 @@ def value_domain_map(exec_order, deps) -> tuple[dict, list]:
             flags[node] = True
         else:
             dep_flags = {flags[dep] for dep in node_deps}
-            if len(dep_flags) > 1:
+            layout = bool(getattr(node, "moves_elements_only", False))
+            if len(dep_flags) == 1 and (layout or MIXED not in dep_flags):
+                flags[node] = dep_flags.pop()
+            elif layout:
+                flags[node] = MIXED
+            else:
                 joins.append(node)
                 flags[node] = True
-            else:
-                flags[node] = dep_flags.pop()
     return flags, joins
 
 

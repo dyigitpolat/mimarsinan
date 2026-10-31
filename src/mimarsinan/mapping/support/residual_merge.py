@@ -19,6 +19,7 @@ MERGE_NAME_SUFFIX = "_merge"
 
 class _ResidualConcatMapper(Mapper):
     """Concatenate two equal-width branches into one ``2*width`` axon space (flattened to 1-D)."""
+    moves_elements_only = True
 
     def __init__(self, source_mappers, name: str = "ResidualConcat"):
         super().__init__()

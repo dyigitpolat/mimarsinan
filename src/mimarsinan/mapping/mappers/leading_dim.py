@@ -7,6 +7,7 @@ from mimarsinan.mapping.mappers.base import Mapper
 
 class MergeLeadingDimsMapper(Mapper):
     """Flatten all leading dims except the last feature dim ((B,N,F)->(B*N,F)); IR mapping is identity."""
+    moves_elements_only = True
 
     def __init__(self, source_mapper):
         super(MergeLeadingDimsMapper, self).__init__(source_mapper)
@@ -22,6 +23,7 @@ class MergeLeadingDimsMapper(Mapper):
 
 class SplitLeadingDimMapper(Mapper):
     """Inverse of MergeLeadingDimsMapper for (B*N,F)->(B,N,F) where N=second_dim_size; IR mapping is identity."""
+    moves_elements_only = True
 
     def __init__(self, source_mapper, second_dim_size: int):
         super(SplitLeadingDimMapper, self).__init__(source_mapper)
@@ -43,6 +45,7 @@ class SplitLeadingDimMapper(Mapper):
 
 class Ensure2DMapper(Mapper):
     """Ensure a 2D (Instances, Features) mapping layout and a (Batch, Features) forward layout."""
+    moves_elements_only = True
 
     def __init__(self, source_mapper):
         super(Ensure2DMapper, self).__init__(source_mapper)

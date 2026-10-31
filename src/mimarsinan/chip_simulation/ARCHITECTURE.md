@@ -90,7 +90,7 @@ offsets to host values and later stages. A `CoreLaw` runs as before.
 - **`common`** — file utilities, C++20 compiler discovery, `loihi_quiet`/`loihi_wave_workers` env helpers.
 - **`pipelining`** — `DeploymentPlan` (firing-strategy enforcement) and `nf_scm_parity` record comparison (lazy imports avoid the cycle).
 - **`data_handling`** — `DataLoaderFactory` for simulation input providers.
-- **`spiking`** — the inter-stage segment-boundary SSOT: `decode_segment_output` plus the rate/LIF wire-domain transcode (`boundary_normalization_scales`, `normalize_boundary_slices_numpy`) applied at every runner's segment-input assembly and, through `host_op_input_state`, at every runner's host-op gather; `SpikingDeploymentContract` surfaces it (`boundary_config()`, `entry_quantizer()`, `seam_transcode()`).
+- **`spiking`** — the inter-stage segment-boundary SSOT: `decode_segment_output` plus the rate/LIF wire-domain transcode (`boundary_normalization_scales`, `normalize_boundary_slices_numpy`) applied at every runner's segment-input assembly and, through `host_op_input_state`, at every runner's host-op gather, where `count_grid.host_op_for_evaluation` evaluates a plain non-commuting op over raw-gauge buffers on the exact window-count grid (U-SC S-2); `SpikingDeploymentContract` surfaces it (`boundary_config()`, `entry_quantizer()`, `seam_transcode()`).
 
 ## Dependents
 - **`models`** — hybrid core-flow stage loop/semantics, spike recording, spiking-mode predicates and policies, TTFS encoding, firing strategies.

@@ -151,6 +151,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         compute_outputs: Dict[int, np.ndarray] = {}
 
         from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import resolve_stage_compute_scales
+        from mimarsinan.spiking.count_grid import host_op_for_evaluation
         from mimarsinan.spiking.segment_boundary import boundary_normalization_scales, host_op_input_state
         from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
         from mimarsinan.chip_simulation.hybrid_run.stage_timing import StageTimer
@@ -196,7 +197,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
                     op=op,
                 )
                 result = _runner.execute_compute_op_numpy(
-                    op, sample_input,
+                    host_op_for_evaluation(op, wire_divisors, simulation_length=self.T, spiking_mode=self.spiking_mode), sample_input,
                     host_op_input_state(op, state_buffer, wire_divisors,
                                         getattr(self.mapping, "node_output_shifts", None)),
                     in_scale=in_scale, out_scale=out_scale,

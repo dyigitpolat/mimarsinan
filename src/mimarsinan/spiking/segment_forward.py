@@ -154,7 +154,12 @@ class SegmentForwardDriver:
         """Wire-currency policies must run host value nodes through the emitted
         ScaleNormalizingWrapper composition (armed per-source scales decode
         ``wire * theta_c`` per channel on the deployed side); ``None`` keeps the
-        plain forward — bit-identical whenever no scales are armed."""
+        plain forward — bit-identical whenever no scales are armed. A policy may
+        name its own forward for a node first (the LIF count-grid rule, U-SC)."""
+        custom = getattr(self.policy, "host_value_forward", None)
+        forward = custom(self, node) if custom is not None else None
+        if forward is not None:
+            return forward
         if getattr(self.policy, "wire_domain_host_values", False) and isinstance(
             node, ComputeOpMapper
         ):
@@ -204,6 +209,9 @@ class SegmentForwardDriver:
             if join_recorder is not None and len(self._deps.get(node, [])) >= 2:
                 # Post-shift: this is the value the boundary re-encode normalizes.
                 join_recorder[node] = value.detach()
+        note = getattr(self.policy, "note_value_node", None)
+        if note is not None:
+            note(self, node, values)
         values[node] = value
 
     def _run(self, x, compute_min_recorder, compute_max_recorder=None,

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.common.refusal.toolchain_refusal import ToolchainRefusal
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.scale_propagation import arm_wrap_slots, walk_out_scales
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.support.value_domain import heterogeneous_domain_joins
@@ -42,6 +44,10 @@ def establish_wire_gauge(
     )
 
 
+class MixedDomainJoinError(ToolchainRefusal, NotImplementedError):
+    """A mixed wire/absolute fan-in at a node that has no wrap slots to arm (only a host ComputeOp owns a domain)."""
+
+
 def _arm_domain_join(node) -> None:
     """Arm a mixed fan-in the SCALE POLICY declined, at UNIT gauge.
 
@@ -60,7 +66,15 @@ def _arm_domain_join(node) -> None:
     ``tests/unit/pipelining/test_streamed_mixed_seam_exactness.py::
     test_gate_catches_a_seam_decoded_at_unity`` (deployed window counts move on
     56% of neurons when the seam decodes at unity instead of producer gauge).
+
+    A layout gather never reaches here (``value_domain_map`` gives it the MIXED
+    domain); any other node without wrap slots is refused by name.
     """
+    if not isinstance(node, ComputeOpMapper):
+        raise MixedDomainJoinError(
+            f"a mixed wire/absolute fan-in at a {type(node).__name__} ({getattr(node, 'name', None)!r}) cannot be "
+            "armed: only a host ComputeOp owns a wire domain (the ScaleNormalizingWrapper its emission installs)"
+        )
     arm_wrap_slots(node, [1.0] * len(node._sources_list), 1.0)
 
 

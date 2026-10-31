@@ -26,6 +26,7 @@ from mimarsinan.models.spiking.hybrid.carry import (
 from mimarsinan.data_handling import batch_integrity
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
+from mimarsinan.spiking.count_grid import host_op_for_evaluation
 from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales, host_op_input_state, normalize_boundary_slices_numpy,)
 
@@ -195,7 +196,8 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
                 self.mapping, op_id, apply_ttfs=False, op=stage.compute_op,
             )
             result = execute_compute_op_numpy(
-                stage.compute_op, x_flat,
+                host_op_for_evaluation(stage.compute_op, wire_divisors, simulation_length=self.T,
+                                       spiking_mode=self._behavior.spiking_mode), x_flat,
                 host_op_input_state(
                     stage.compute_op, state_buffer, wire_divisors, node_output_shifts,
                 ),

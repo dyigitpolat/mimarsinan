@@ -918,9 +918,13 @@ class TestDeployedLifGauge:
             deployed_lif_gauge_forward,
         )
 
+        from mimarsinan.spiking.wire_gauge_seam import establish_deployed_wire_gauge
+
         model = make_tiny_supermodel()
         for p in model.get_perceptrons():
             p.set_activation_scale(1.3)
+        # [U-SC S-1] the gauge walks only an established graph: the AQ install seam runs before every D-hat.
+        establish_deployed_wire_gauge(model, input_data_scale=1.0)
         forward = deployed_lif_gauge_forward(model, self._exact_config())
         for p in model.get_perceptrons():
             assert isinstance(p.activation, LIFActivation)

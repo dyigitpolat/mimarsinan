@@ -124,6 +124,14 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
     from mimarsinan.models.nn.activations import LIFActivation
     from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
+    from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+    from mimarsinan.spiking.wire_gauge_seam import require_established_wire_gauge
+
+    # [U-SC S-1] the walk is a wire-currency twin: refuse a clone no stage established, re-derive a stamped one.
+    require_established_wire_gauge(
+        clone, input_data_scale=ResolvedWorkloadProfile.from_config(pipeline_config).input_data_scale,
+        reader="the exact-QAT D-hat gauge (deployed_lif_gauge_forward)",
+    )
     T = int(pipeline_config["simulation_steps"])
     thresholding = str(pipeline_config.get("thresholding_mode", "<="))
     firing = str(pipeline_config.get("firing_mode", "Default"))
@@ -176,10 +184,23 @@ def install_lif_entry_input_quantizers(model, pipeline_config) -> int:
     if not lif_exact_qat_active(pipeline_config):
         return 0
     # Lazy: torch_mapping/spiking pull chip_simulation (import cycle at init).
+    from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+    from mimarsinan.spiking.wire_gauge_seam import establish_deployed_wire_gauge
     from mimarsinan.torch_mapping.encoding_layers import (
         encoder_deploys_as_staircase_hop,
     )
 
+    # [U-SC S-1] the first stage that walks the deployed composition (the D-hat
+    # gauge reads it from the first rung): establish the gauge on EVERY
+    # wire-currency graph, whatever the placement, so the exact-QAT trains and
+    # measures the SAME armed composition every later seam (WQ / SCM) re-derives.
+    if getattr(model, "get_mapper_repr", lambda: None)() is not None:
+        establish_deployed_wire_gauge(
+            model,
+            input_data_scale=ResolvedWorkloadProfile.from_config(
+                pipeline_config
+            ).input_data_scale,
+        )
     placement = str(pipeline_config.get("encoding_layer_placement", "subsume"))
     if encoder_deploys_as_staircase_hop(placement):
         targets = [
@@ -187,26 +208,10 @@ def install_lif_entry_input_quantizers(model, pipeline_config) -> int:
             if getattr(p, "is_encoding_layer", False)
         ]
     else:
-        from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
-        from mimarsinan.mapping.support.per_source_scales import (
-            compute_per_source_scales,
-        )
-        from mimarsinan.spiking.scale_aware_boundaries import (
-            propagate_boundary_input_scales,
-        )
         from mimarsinan.torch_mapping.encoding_layers import (
             segment_entry_perceptrons,
         )
 
-        # Arm the wire-value ops here so the exact-QAT trains the SAME armed
-        # composition every later seam (WQ / SCM) re-derives.
-        compute_per_source_scales(model.get_mapper_repr())
-        propagate_boundary_input_scales(
-            model,
-            input_data_scale=ResolvedWorkloadProfile.from_config(
-                pipeline_config
-            ).input_data_scale,
-        )
         targets = segment_entry_perceptrons(model.get_mapper_repr())
     installed = 0
     for perceptron in targets:

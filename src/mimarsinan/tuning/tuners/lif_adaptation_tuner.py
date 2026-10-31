@@ -177,6 +177,14 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
 
     def _finalize_forward_for(self, model):
         if self._cycle_accurate:
+            from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+            from mimarsinan.spiking.wire_gauge_seam import require_established_wire_gauge
+
+            # [U-SC S-1] the finalize twin walks the wire currency: established graphs only (re-derived at their thetas).
+            require_established_wire_gauge(
+                model, input_data_scale=ResolvedWorkloadProfile.from_config(self.pipeline.config).input_data_scale,
+                reader="the LIF finalize twin (ChipAlignedNFForward)",
+            )
             return _ChipAlignedNFForward(
                 model, self._T, retime=self._per_hop_retiming,
                 phase_dither=self._phase_dither,

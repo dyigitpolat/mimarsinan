@@ -75,6 +75,9 @@ class Mapper(nn.Module):
     # Ordering edges (review round 16, targeted pass): mappers this one runs after in the forward without reading them
     # (a write in place runs after every earlier reader of its storage); a class default for pickled mappers.
     run_after: tuple = ()
+    # The node only moves elements of its inputs (a layout gather or reshape: no arithmetic), so each output element
+    # keeps its producer's currency (``value_domain_map``'s MIXED domain); a class default for pickled mappers.
+    moves_elements_only: bool = False
 
     def __init__(self, source_mapper: "Mapper | None" = None):
         super(Mapper, self).__init__()

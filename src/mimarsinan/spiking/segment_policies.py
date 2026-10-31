@@ -5,17 +5,25 @@ from __future__ import annotations
 import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
-from mimarsinan.mapping.support.value_domain import value_domain_map
 from mimarsinan.models.nn.activations.autograd import RoundedStaircaseFunction
 from mimarsinan.models.spiking.serial import refuse_cycle_atomic_walk
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
+from mimarsinan.spiking.segment_currency import (
+    MIXED,
+    HostCurrencyHooks,
+    MixedGatherDitherError,
+    absolute_value_nodes,
+    consumer_fold,
+    mixed_wire_rate,
+)
 from mimarsinan.spiking.segment_partition import perceptron_of
+from mimarsinan.spiking.segment_policy_analytical import AnalyticalSegmentPolicy
 from mimarsinan.spiking.segment_policy_lif_serial import run_streamed_lif_cycles
 from mimarsinan.spiking.segment_policy_ttfs import TtfsSegmentPolicy
 from mimarsinan.spiking.spike_trains import uniform_spike_train
 
-__all__ = ["AnalyticalSegmentPolicy", "LifSegmentPolicy", "TtfsSegmentPolicy"]
+__all__ = ["AnalyticalSegmentPolicy", "LifSegmentPolicy", "MixedGatherDitherError", "TtfsSegmentPolicy"]
 
 
 def _safe_scale(scale, ref: torch.Tensor):
@@ -24,23 +32,7 @@ def _safe_scale(scale, ref: torch.Tensor):
     return max(float(scale), 1e-12)
 
 
-def _absolute_value_nodes(driver) -> dict:
-    """node -> True when its stored value is ABSOLUTE (raw): unarmed host /
-    structural chains rooted at the input. Wire nodes (neural producers,
-    armed ComputeOps, and their passthroughs) re-encode by clamp alone;
-    mixed wire/absolute fan-in at a plain host op fails loud (calculus §11.2)
-    — the gauge-establishment seam repairs it before the walk, or it is a
-    genuinely unsupported graph."""
-    flags, joins = value_domain_map(driver._exec, driver._deps)
-    if joins:
-        raise NotImplementedError(
-            "mixed wire/absolute fan-in at a plain host op is not "
-            f"supported ({type(joins[0]).__name__})"
-        )
-    return flags
-
-
-class LifSegmentPolicy:
+class LifSegmentPolicy(HostCurrencyHooks):
     """Signed-IF cascade: perceptrons run per-cycle off upstream trains; entry
     (encoding) perceptrons run once on the decoded value and emit the uniform
     wire train of ``clamp(value / theta)`` (the deployed boundary contract).
@@ -91,12 +83,14 @@ class LifSegmentPolicy:
         self._boundary_scales = boundary_scales_for_walk(
             driver.repr, establish=self.soma_law.is_per_event,
         )
-        self._absolute_nodes = _absolute_value_nodes(driver)
+        self._absolute_nodes = absolute_value_nodes(driver)
+        self._prepare_currencies(driver)
 
     def finalize(self, driver):
         self._set_all_cycle_accurate(driver, False)
         self._boundary_scales = None
         self._absolute_nodes = None
+        self._clear_currencies()
 
     @staticmethod
     def _lif_of(perceptron):
@@ -141,19 +135,24 @@ class LifSegmentPolicy:
             return node_rate[dep] if dep in seg_set else values[dep]
 
         absolute_nodes = self._absolute_nodes
-        assert absolute_nodes is not None, "prepare() must run before run_segment()"
+        mixed = self._mixed_currency
+        assert absolute_nodes is not None and mixed is not None, "prepare() must run before run_segment()"
 
-        def value_of(dep):
+        def value_of(dep, consumer=None):
             """[§16 sync] the count-decoded value on the wire grid: same
             grid, dispatch, and producer out-scale; STE rounds so the
-            exact-QAT walk trains through the boundary (n7 D3)."""
+            exact-QAT walk trains through the boundary (n7 D3). A MIXED
+            gather is read at its ``consumer``'s fold, as the core reads it."""
             t = node_train.get(dep)
             if t is not None and dep not in node_rate:
                 return t.mean(dim=0)
             value = rate_of(dep)
             scale = boundary_scales.get(dep, 1.0)
             abl = self._seam_ablation or ()
-            if absolute_nodes.get(dep, False):
+            if absolute_nodes.get(dep) == MIXED:
+                rate, own = mixed_wire_rate(value, mixed[dep], clamp="clamp" not in abl)
+                scale = own if consumer is None else consumer_fold(consumer, rate)
+            elif absolute_nodes.get(dep, False):
                 rate = (value / scale) if "clamp" in abl else (
                     normalize_boundary_value(value, scale)
                 )
@@ -180,13 +179,15 @@ class LifSegmentPolicy:
                 return t
             value = rate_of(dep)
             scale = boundary_scales.get(dep, 1.0)
-            if absolute_nodes.get(dep, False):
+            if absolute_nodes.get(dep) == MIXED:
+                rate, scale = mixed_wire_rate(value, mixed[dep])
+            elif absolute_nodes.get(dep, False):
                 rate = normalize_boundary_value(value, scale)
             else:
                 rate = value.clamp(0.0, 1.0)
             t = uniform_spike_train(rate, T, phase_dither=self.phase_dither)
             node_events[dep] = t
-            if scale != 1.0:
+            if isinstance(scale, torch.Tensor) or scale != 1.0:
                 t = t * scale
             node_train[dep] = t
             return t
@@ -223,7 +224,7 @@ class LifSegmentPolicy:
                     if lif is not None:
                         lif.set_cycle_accurate(False)
                         functional.reset_net(lif.if_node)
-                    out_val = forward_node(node, [value_of(dep) for dep in d])
+                    out_val = forward_node(node, [value_of(dep, p) for dep in d])
                     rate_norm = (out_val / scale).clamp(0.0, 1.0)
                     node_rate[node] = rate_norm
                     if node is driver._output:
@@ -235,12 +236,12 @@ class LifSegmentPolicy:
                     assert lif is not None, (
                         "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"
                     )
-                    dep_trains = [train_of(dep) for dep in d]
+                    dep_trains, dep_events = self._hop_inputs(
+                        p, d, rate_of, train_of, node_train, node_events, T)
                     train, events = run_streamed_lif_cycles(
                         self, node=node, perceptron=p, lif=lif,
                         forward_node=forward_node, dep_trains=dep_trains,
-                        dep_events=[node_events.get(dep) for dep in d],
-                        T=T, scale=scale,
+                        dep_events=dep_events, T=T, scale=scale,
                     )
                     if events is not None:
                         node_events[node] = events
@@ -249,7 +250,17 @@ class LifSegmentPolicy:
                 if node in node_train:
                     self._record_decoded(driver, p, node_train[node])
             else:
-                if d and all(node_train.get(dep) is not None for dep in d):
+                if absolute_nodes.get(node) == MIXED:
+                    # [U-SC S-3] each source encodes by its own rule; the gather moves the trains, per cycle.
+                    self._record_mixed(node, d, [rate_of(dep) for dep in d])
+                if absolute_nodes.get(node) == MIXED and not self.synchronized:
+                    trains = [train_of(dep) for dep in d]
+                    node_train[node] = torch.stack([forward_node(node, [dt[t] for dt in trains]) for t in range(T)])
+                    if all(node_events.get(dep) is not None for dep in d):
+                        events = [node_events[dep] for dep in d]
+                        node_events[node] = torch.stack(
+                            [forward_node(node, [ev[t] for ev in events]) for t in range(T)])
+                elif d and all(node_train.get(dep) is not None for dep in d):
                     dep_trains = [node_train[dep] for dep in d]
                     node_train[node] = torch.stack(
                         [forward_node(node, [dt[t] for dt in dep_trains]) for t in range(T)],
@@ -262,37 +273,4 @@ class LifSegmentPolicy:
         if driver._output in seg_set:
             train = node_train.get(driver._output)
             return train.mean(dim=0) if train is not None else node_rate[driver._output]
-        return None
-
-
-class AnalyticalSegmentPolicy:
-    """Value-domain analytical execution: every node runs once on ideal values
-    (the pointwise-analytical NF of ``ttfs`` / ``ttfs_quantized``)."""
-
-    def prepare(self, driver):
-        pass
-
-    def finalize(self, driver):
-        pass
-
-    def run_segment(self, driver, seg_nodes, values, x):
-        seg_set = set(seg_nodes)
-        local: dict = {}
-
-        def val_of(dep):
-            return local[dep] if dep in seg_set else values[dep]
-
-        for node in seg_nodes:
-            d = driver._deps.get(node, [])
-            if len(d) == 0:
-                local[node] = node.forward(x)
-            elif len(d) == 1:
-                local[node] = node.forward(val_of(d[0]))
-            else:
-                local[node] = node.forward(tuple(val_of(dep) for dep in d))
-
-        for n in driver.external_consumed(seg_nodes):
-            values[n] = local[n]
-        if driver._output in seg_set:
-            return local[driver._output]
         return None

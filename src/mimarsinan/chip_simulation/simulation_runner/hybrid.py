@@ -39,6 +39,7 @@ from mimarsinan.chip_simulation.simulation_runner.membrane_probe import (
 from mimarsinan.models.spiking.hybrid.membrane_readout import (
     apply_membrane_corrections_numpy,
 )
+from mimarsinan.spiking.count_grid import host_op_for_evaluation
 from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales,
     host_op_input_state,
@@ -185,7 +186,8 @@ class SimulationHybridMixin(SimulationHostContract):
                 )
             )
             buf[op_id] = execute_compute_op_numpy(
-                stage.compute_op,
+                host_op_for_evaluation(stage.compute_op, wire_divisors, simulation_length=int(self.simulation_length),
+                                       spiking_mode=self.spiking_mode),
                 original_input,
                 gather_buf,
                 in_scale=ttfs_in_scale,

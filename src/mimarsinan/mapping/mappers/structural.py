@@ -55,6 +55,7 @@ class InputMapper(Mapper):
 
 
 class ReshapeMapper(Mapper):
+    moves_elements_only = True
     def __init__(self, source_mapper, output_shape):
         super(ReshapeMapper, self).__init__(source_mapper)
         self.output_shape = output_shape
@@ -72,6 +73,7 @@ class ReshapeMapper(Mapper):
 
 
 class EinopsRearrangeMapper(Mapper):
+    moves_elements_only = True
     def __init__(self, source_mapper, einops_str, *einops_args, **einops_kwargs):
         super(EinopsRearrangeMapper, self).__init__(source_mapper)
         self.einops_str = einops_str
@@ -91,6 +93,7 @@ class EinopsRearrangeMapper(Mapper):
 
 
 class StackMapper(Mapper):
+    moves_elements_only = True
     def __init__(self, source_mappers):
         super(StackMapper, self).__init__()
         self._source_mappers_list = list(source_mappers)
@@ -121,6 +124,7 @@ class ConcatMapper(Mapper):
     or (F,)), so the IR concatenates along ``dim`` counted from the end, after giving every operand the same rank
     with leading unit axes (which keeps each operand's source order).
     """
+    moves_elements_only = True
 
     # Pickles from before ``rank`` concatenate along IR axis 0 (the leading per-sample axis) for every ``dim``.
     rank: int | None = None
@@ -165,6 +169,7 @@ class ConcatMapper(Mapper):
 
 
 class SubscriptMapper(Mapper):
+    moves_elements_only = True
     def __init__(self, source_mapper, index):
         super(SubscriptMapper, self).__init__(source_mapper)
         self.index = index
@@ -178,6 +183,7 @@ class SubscriptMapper(Mapper):
 
 class PermuteMapper(Mapper):
     """tensor.permute/transpose; dims includes batch axis 0. IR mapping uses batch-stripped np.transpose to reorder IRSource arrays for hardware layout."""
+    moves_elements_only = True
 
     def __init__(self, source_mapper, dims):
         super(PermuteMapper, self).__init__(source_mapper)

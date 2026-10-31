@@ -37,6 +37,16 @@ def to_ttfs_latched_spikes(tensor: torch.Tensor, cycle: int, simulation_length: 
 _PHASE_GOLDEN = 0.6180339887498949
 
 
+def comb_round(counts: torch.Tensor) -> torch.Tensor:
+    """[nevresim parity] the comb's tie rule on a COUNT-domain value (fp64): ``floor(x) + (frac(x) >= 0.5)``.
+
+    The kernel of :func:`comb_spike_count`, for seams that hold exact window counts rather than rates (U-SC: the
+    count-grid host op re-encodes its fp64 result through it, so a half count resolves as the chip's comb resolves it)."""
+    x = counts.to(torch.float64)
+    f = torch.floor(x)
+    return f + ((x - f) >= 0.5).to(torch.float64)
+
+
 def comb_spike_count(rates: torch.Tensor, simulation_length: int) -> torch.Tensor:
     """[nevresim parity] the uniform comb's spike COUNT — the chip's tie rule.
 
@@ -45,9 +55,7 @@ def comb_spike_count(rates: torch.Tensor, simulation_length: int) -> torch.Tenso
     half-to-even and resolved those ties (rates on the odd 1/(2T) lattice —
     edges LSQ exact-QAT trains values ONTO) OPPOSITE to the chip. One rule,
     used by every count seam that mirrors the chip's comb."""
-    x = rates.to(torch.float64) * float(simulation_length)
-    f = torch.floor(x)
-    return (f + ((x - f) >= 0.5).to(torch.float64)).to(torch.long)
+    return comb_round(rates.to(torch.float64) * float(simulation_length)).to(torch.long)
 
 
 def comb_spike_count_np(rates, simulation_length: int):

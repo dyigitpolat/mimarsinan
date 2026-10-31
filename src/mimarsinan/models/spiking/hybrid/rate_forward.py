@@ -29,6 +29,7 @@ from mimarsinan.models.spiking.hybrid.membrane_readout import (
     apply_membrane_corrections_to_logits,
 )
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
+from mimarsinan.spiking.count_grid import host_op_for_evaluation
 from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales,
     decode_segment_output_torch,
@@ -199,7 +200,7 @@ class HybridRateForwardMixin(HybridFlowHost):
                 )
             )
             result = execute_compute_op_torch(
-                op,
+                host_op_for_evaluation(op, wire_divisors, simulation_length=T, spiking_mode=self.spiking_mode),
                 x,
                 gather_buffer,
                 in_scale=in_scale,
