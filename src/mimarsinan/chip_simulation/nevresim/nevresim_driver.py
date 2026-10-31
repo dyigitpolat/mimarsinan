@@ -1,5 +1,6 @@
 from mimarsinan.mapping.export.chip_export import hard_cores_to_chip
 from mimarsinan.common.file_utils import *
+from mimarsinan.common.env import nevresim_root
 from mimarsinan.code_generation.generate_main import *
 from mimarsinan.chip_simulation.nevresim.compile_nevresim import *
 from mimarsinan.chip_simulation.nevresim.execute_nevresim import *
@@ -30,6 +31,13 @@ def _python_to_cpp_type_name(py_type) -> str:
     if py_type is float:
         return "double"
     return py_type.__name__
+
+
+def resolve_nevresim_path() -> str:
+    """[U-TT T-3] This process's nevresim tree: a path a caller set stays, an unset one takes ``nevresim_root()``; the
+    CLI entry (``init``) and the library entry (``PipelineSession``) both resolve it here."""
+    path = NevresimDriver.nevresim_path = NevresimDriver.nevresim_path or nevresim_root()
+    return path
 
 
 class NevresimDriver:

@@ -14,6 +14,7 @@ from mimarsinan.advisories import (
     evaluate_post_pretrain_advisories,
     surface_advisories,
 )
+from mimarsinan.chip_simulation.nevresim.nevresim_driver import resolve_nevresim_path
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.reporter import DefaultReporter
 from mimarsinan.config_schema.runtime import (
@@ -125,6 +126,7 @@ class PipelineSession:
     """Owns one configured DeploymentPipeline and its run lifecycle."""
 
     def __init__(self, parsed: ParsedDeploymentConfig, *, reporter: Any = None):
+        resolve_nevresim_path()  # [U-TT T-3] the library entry resolves the nevresim tree as the CLI's init() does
         self.parsed = parsed
         self.reporter = reporter if reporter is not None else DefaultReporter()
 

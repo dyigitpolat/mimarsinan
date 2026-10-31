@@ -21,7 +21,7 @@ from mimarsinan.certification.randomized.instance import (
 )
 from mimarsinan.certification.randomized.program import VALUE_LAW
 from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
-from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
+from mimarsinan.chip_simulation.nevresim.nevresim_driver import resolve_nevresim_path
 from mimarsinan.chip_simulation.recording.spike_modes import comb_spike_count
 from mimarsinan.chip_simulation.simulation_runner.core import SimulationRunner
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
@@ -29,7 +29,6 @@ from mimarsinan.chip_simulation.spiking_semantics import lif_per_hop_retiming_en
 from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contract
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.common.env import nevresim_root
 from mimarsinan.mapping.ir import IRGraph
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
@@ -211,8 +210,7 @@ def run_nevresim_nodes(mapping, instance: Instance, workdir: str, *,
     """``({node_id: (B, width)} window counts of every neural stage, compile seconds)``, run on nevresim."""
     if instance.semantics not in NEVRESIM_SEMANTICS:
         raise ValueError(f"nevresim runs {NEVRESIM_SEMANTICS} here, not {instance.semantics!r}")
-    if NevresimDriver.nevresim_path is None:
-        NevresimDriver.nevresim_path = nevresim_root()
+    resolve_nevresim_path()
     probe = _ChipProbe(mapping, instance, workdir, transfer or RUNS[instance.semantics].transfer)
     captured: Dict[int, torch.Tensor] = {}
 

@@ -7,6 +7,7 @@ import tempfile
 from typing import Any, Optional
 
 import mimarsinan.chip_simulation.sanafe.arch_synth as _arch_synth
+from mimarsinan.chip_simulation.sanafe.arch_synth.placed_region import placed_region
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import (
     ArchSpec,
     _thresholding_mode_to_soma_attr,
@@ -174,7 +175,8 @@ def build_architecture(
     thresholding_mode: str = "<=",
     simulation_length: int = 1,
 ) -> Any:
-    """Load or synthesise a SANA-FE ``Architecture`` matching ``spec``."""
+    """Load or synthesise a SANA-FE ``Architecture`` matching ``spec``: a synthesized chip defines the declared
+    floorplan's region holding the placed cores (``placed_region``) [U-TT T-1]."""
     sanafe = _arch_synth._sanafe()
 
     if custom_arch_path is not None:
@@ -195,7 +197,7 @@ def build_architecture(
         return arch
 
     yaml_str = _render_arch_yaml(
-        spec,
+        placed_region(spec),
         thresholding_mode=thresholding_mode,
         simulation_length=simulation_length,
     )

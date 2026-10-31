@@ -12,8 +12,7 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
-from mimarsinan.common.env import nevresim_root
+from mimarsinan.chip_simulation.nevresim.nevresim_driver import resolve_nevresim_path
 
 #: One read site: its path under ``include/``, the text the site holds, and the global-cycle reads it replaced.
 ReadSite = Tuple[str, str, Tuple[str, ...]]
@@ -38,5 +37,6 @@ SELF_TEST: Tuple[str, str] = ("_tests/stage_input_clock.hpp",
 
 
 def nevresim_tree() -> str:
-    """The nevresim tree a run compiles against: ``NevresimDriver.nevresim_path``, else ``nevresim_root()``."""
-    return str(NevresimDriver.nevresim_path or nevresim_root())
+    """The nevresim tree a run compiles against: ``NevresimDriver.nevresim_path``, else ``nevresim_root()``
+    (``resolve_nevresim_path``)."""
+    return str(resolve_nevresim_path())

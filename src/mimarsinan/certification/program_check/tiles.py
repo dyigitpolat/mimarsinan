@@ -217,14 +217,15 @@ def _values_equal(a, b) -> bool:
 
 def _same_value(a, b) -> bool:
     """A host op's parameter in the deployment and the identity program: the same object, or a module of the same
-    type, configuration and state (a deep copy of the program copies its host modules)."""
+    type, configuration and state (a deep copy of the program copies its host modules), the states compared on the
+    CPU: a GPU session's program holds its host modules on the accelerator, the identity its copies on the CPU."""
     if a is b:
         return True
     if isinstance(a, torch.nn.Module) or isinstance(b, torch.nn.Module):
         if type(a) is not type(b) or a.extra_repr() != b.extra_repr():
             return False
         sa, sb = a.state_dict(), b.state_dict()
-        return sa.keys() == sb.keys() and all(torch.equal(sa[k], sb[k]) for k in sa)
+        return sa.keys() == sb.keys() and all(torch.equal(sa[k].detach().cpu(), sb[k].detach().cpu()) for k in sa)
     if isinstance(a, (np.ndarray, torch.Tensor)) or isinstance(b, (np.ndarray, torch.Tensor)):
         return _values_equal(a, b)
     try:

@@ -101,6 +101,8 @@ class ArchSpec:
     # every logical (per-pass) core materializes; passes reuse cores serially
     # on the real chip.
     floorplan_replicas: int = 1
+    # The widest executed unit's cores: the chip defines the floorplan region holding them (placed_region) [U-TT T-1].
+    placed_cores: int = 0
 
     @property
     def total_cores(self) -> int:
@@ -251,6 +253,7 @@ def derive_arch_spec(
         cores_per_tile_resolved=cores_per_tile,
         packed_cores=packed_cores,
         floorplan_replicas=replicas,
+        placed_cores=_executed_unit_cores(mapping, packed_cores),
     )
 
 
@@ -269,6 +272,16 @@ def _max_cores_per_pass(mapping: Any, packed_cores: int) -> int:
         and getattr(stage, "hard_core_mapping", None) is not None
     ]
     return max(widths) if widths else packed_cores
+
+
+def _executed_unit_cores(mapping: Any, fallback: int) -> int:
+    """[U-TT T-1] The most cores one executed unit loads (a neural stage, or each of its retimed level stages, each
+    from core 0 of a fresh chip): the region the chip defines (``placed_region``); ``fallback`` without stages."""
+    widths = [len(unit.hard_core_mapping.cores) for stage in getattr(mapping, "stages", None) or []
+              if getattr(stage, "kind", None) == "neural"
+              for unit in [stage, *(getattr(stage, "retimed_level_stages", None) or [])]
+              if getattr(unit, "hard_core_mapping", None) is not None]
+    return max(widths) if widths else int(fallback)
 
 
 def _thresholding_mode_to_soma_attr(thresholding_mode: str) -> str:

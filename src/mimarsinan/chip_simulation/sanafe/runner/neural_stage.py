@@ -229,6 +229,7 @@ class SanafeNeuralStageMixin:
         need_potential_trace = (
             is_ttfs or self.log_potential_trace or self.read_final_potentials
         )
+        self._last_chip = None  # [U-TT T-1] the previous unit's chip goes before this one is built: one chip at a time
         chip, results = simulate_chip_bounded(
             sanafe, self._arch, net, T_eff,
             spike_trace=True,
