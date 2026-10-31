@@ -182,7 +182,12 @@ echo "[hacc-build] sources  : ${#SOURCES[@]} RTL file(s)"
 # on fabric routing, its same-edge hold races go unseen. This writes the
 # constraint set for every core of the kernel (NC is data), scoped to the kernel
 # top so it names no compute unit and applies to each one the link instantiates:
-#   * a generated clock per SCK register, divide by 4 of the register's own clock;
+#   * a generated clock per SCK register, divide by 4 of the register's own clock,
+#     defined at the core-clock gate's clock input: only the clock arc reaches that
+#     pin, so the SCK latency follows the clock. Defined at the register's clock pin,
+#     Vivado also traced it through the gate's side inputs (the enable register and
+#     the platform reset register), which no SCK edge takes, and timed the
+#     register's own feedback against that latency (survey lock r2, defect D-1);
 #   * hold into the domain relaxed by 3 core cycles: MOSI is set one core cycle
 #     before SCK rises and held three after it (odin_spi_master.v, phases 0-3),
 #     and the slave's reset is released with SCK stopped;
@@ -199,7 +204,7 @@ echo "[hacc-build] sources  : ${#SOURCES[@]} RTL file(s)"
 # The domain's own paths keep their default (true) relations.
 # A fabric without the vendored slave (a generated core) has no SCK: no file.
 odin_spi_domain_xdc() {   # odin_spi_domain_xdc NC
-    local nc="$1" c core sck_c sck_q master sck syncs reg
+    local nc="$1" c core sck_c sck_q master sck syncs reg gate clk_in
     printf '# ODIN SPI clock domain: written by scripts/hacc/build_xclbn.sh for NC = %s,\n' "${nc}"
     printf '# scoped to the kernel top (odin_fpga_kernel_top); one block per core.\n'
     # The gated core clock (odin_fpga_kernel.v, core_clk) clocks every core's SPI
@@ -215,6 +220,13 @@ odin_spi_domain_xdc() {   # odin_spi_domain_xdc NC
         sck_q="[get_pins {${core}.spi_i/sck_reg/Q}]"
         master="[get_clocks -of_objects ${sck_c}]"
         sck="[get_clocks -of_objects ${sck_q}]"
+        # The core-clock gate (odin_fpga_kernel.v, core_clk) is the LUT in the timing
+        # fan-in of the SCK register's clock pin, found the same before and after
+        # opt_design puts the requested buffer on the gated net; its clock input is its
+        # input on a clock net (global once linked, local in the kernel's own netlist;
+        # the enable and reset nets are signals), the one leaf, non-clock input there.
+        gate="[get_cells -filter {PRIMITIVE_SUBGROUP == LUT} [all_fanin -flat -only_cells ${sck_c}]]"
+        clk_in="[get_pins -filter {IS_LEAF && DIRECTION == IN && !IS_CLOCK} -of_objects [get_nets -filter {TYPE =~ *_CLOCK} -of_objects [get_pins -filter {DIRECTION == IN} -of_objects ${gate}]]]"
         syncs=""
         for reg in controller_0/SPI_GATE_ACTIVITY_sync_int_reg controller_0/SPI_GATE_ACTIVITY_sync_reg \
                    controller_0/CTRL_READBACK_EVENT_sync_int_reg controller_0/CTRL_READBACK_EVENT_sync_reg \
@@ -223,7 +235,7 @@ odin_spi_domain_xdc() {   # odin_spi_domain_xdc NC
             syncs+="${syncs:+ }${core}.dut/${reg}"
         done
         printf '# core %s\n' "${c}"
-        printf 'create_generated_clock -source %s -divide_by 4 %s\n' "${sck_c}" "${sck_q}"
+        printf 'create_generated_clock -source %s -divide_by 4 %s\n' "${clk_in}" "${sck_q}"
         printf 'set_multicycle_path -hold -start 3 -from %s -to %s\n' "${master}" "${sck}"
         printf 'set_max_delay -datapath_only -from %s -to %s [expr {2.0 * [get_property PERIOD %s]}]\n' \
             "[get_cells -filter {IS_SEQUENTIAL} {${core}.dut/spi_slave_0/*}]" "${master}" "${master}"

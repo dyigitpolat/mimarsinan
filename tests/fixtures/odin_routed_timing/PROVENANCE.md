@@ -30,3 +30,13 @@ SPI clock-domain XDC that `scripts/hacc/build_xclbn.sh` writes at NC 1 (sha256
 `153f89884d0ccb453d9107b9c852106eb1ae658f79c4d86b0978d2969fa9cf8f`, 155,210 lines. `check_timing` is clear, and
 every SCK domain is timed and met: 7 SCK clocks, each with its Intra Clock Table row and both crossings with the
 core clock, every crossing with a number for WNS and WHS.
+
+The three `*.rpt.gz` files are the fixtures of the SCK clock-path check (`scripts/hacc/check_sck_clock_paths.py`, U-SP4
+L1), gzip -9 -n of the survey diagnosis records (survey build lock revision 2, `clock_path_read`; the diagnosis
+`hardware/multicore/survey/builds/S1-NC1/diagnose/`, called D, `D/SHA256SUMS`):
+
+| fixture | uncompressed sha256 | source |
+|---|---|---|
+| `s1nc1_71211_sck_sections.rpt.gz` | `c8523936b03b7d77bedb118116294f8716edf46139462ef9a34023add79159fe` | every section of the Timing Details of S1-NC1's (Slurm 71211, NC 1, `spi_fix` revision 3) routed summary whose launch or capture clock is an SCK clock (8 sections, 71 printed paths), cut unchanged from `D/vivado/timing_summary.rpt.gz` (uncompressed `ea105a33220a9af090036439745332d808c5a75eab9a626639fd5e2f18ab9128`, written by the read-only diagnosis job 71219 in the build's form) |
+| `s1nc4_71213_sck_to_core_sections.rpt.gz` | `811269ddb4219c918d429a0eca9a0ce0d816c9707813120bc847185452d2d0cc` | `D/comparison/S1-NC4/sck_to_core_sections.rpt`: the SCK-to-core sections of S1-NC4's (71213, NC 4) routed summary |
+| `b71070_sck_to_core_sections.rpt.gz` | `fc2f559493b0f8c235d8ca99f82f57cf649223714cd4beeb10756572d73e07c3` | `D/comparison/b71070/sck_to_core_sections.rpt`: the SCK-to-core sections of build 71070's (7 units, NC 1) `impl_1` routed summary |

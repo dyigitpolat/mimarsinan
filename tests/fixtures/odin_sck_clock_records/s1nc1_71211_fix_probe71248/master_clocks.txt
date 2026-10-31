@@ -1,0 +1,1 @@
+sck_pin level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/Q clock level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/Q master_at_C io_clk_freerun_00_clk_p master_source_pins io_clk_freerun_00_clk_p

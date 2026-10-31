@@ -1,0 +1,2 @@
+resolved level0_i/ulp/odin_0/inst line 0 target level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/Q source_count 1
+  source pin level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/C cell level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg ref FDRE group REGISTER ref_pin C net level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/core_clk type GLOBAL_CLOCK driver level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].dut/scheduler_0/fifo_spike_0/ap_clk_0_BUFGCE_inst/O driver_ref BUFGCE driver_group CLOCK

@@ -1,0 +1,8 @@
+== level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/Q SOURCE level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].dut/scheduler_0/fifo_spike_0/FSM_onehot_phase[2]_i_3/I0
+source pin level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].dut/scheduler_0/fifo_spike_0/FSM_onehot_phase[2]_i_3/I0 cell level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].dut/scheduler_0/fifo_spike_0/FSM_onehot_phase[2]_i_3 ref LUT3 group CLB ref_pin I0 net level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].dut/scheduler_0/fifo_spike_0/ap_clk type GLOBAL_CLOCK driver level0_i/blp/blp_i/freerun_clk/bufg_div/U0/USE_BUFGCE_DIV2.GEN_BUFGCE_DIV2[0].BUFGCE_DIV2_I/O driver_ref BUFGCE_DIV driver_group CLOCK
+cell level0_i/blp/blp_i/freerun_clk/bufg_div/U0/USE_BUFGCE_DIV2.GEN_BUFGCE_DIV2[0].BUFGCE_DIV2_I ref BUFGCE_DIV group CLOCK seq 1
+cell level0_i/blp/blp_i/freerun_clk/freerun_clk_ibufds/U0/USE_IBUFDS.GEN_IBUFDS[0].IBUFDS_I/DIFFINBUF_INST ref DIFFINBUF group I/O seq 1
+cell level0_i/blp/blp_i/freerun_clk/freerun_clk_ibufds/U0/USE_IBUFDS.GEN_IBUFDS[0].IBUFDS_I/IBUFCTRL_INST ref IBUFCTRL group I/O seq 0
+cell level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].dut/scheduler_0/fifo_spike_0/FSM_onehot_phase[2]_i_3 ref LUT3 group CLB seq 0
+startpoint io_clk_freerun_00_clk_n
+startpoint io_clk_freerun_00_clk_p

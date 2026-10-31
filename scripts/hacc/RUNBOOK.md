@@ -412,7 +412,15 @@ Each vendored core's SPI slave is clocked by SCK, the `sck` register of the
 kernel's SPI master (CLK/4 on the gated core clock). `build_xclbn.sh` writes
 `odin_spi_domain.xdc` into the build directory for every core (NC is data),
 scoped to the kernel top so it applies to every compute unit: a generated clock
-per SCK register, the hold relaxation of 3 core cycles the master's MOSI timing
+per SCK register, defined at the core-clock gate's clock input (the gate LUT's
+input on a clock net, found from the SCK register's own clock pin: the same pin in
+the kernel's synthesized netlist, where that net is a local clock, and in the
+routed design, where it is a global one and opt_design has buffered the gated
+net), so that only the
+clock arc reaches its source and the SCK latency follows the clock (defined at
+the register's clock pin, Vivado also traced it through the gate's enable and
+reset inputs, which no SCK edge takes, and S1-NC1's feedback failed at
+-1.573 ns: survey build lock revision 2, defect D-1), the hold relaxation of 3 core cycles the master's MOSI timing
 guarantees, a two-core-period data-path bound out of the slave, `ASYNC_REG` on
 its synchronizers and a global buffer asked for on every kernel clock (each SCK
 net and the gated core clock: asking for SCK alone left six of seven units' core
@@ -450,11 +458,49 @@ Every vendored-core build before this constraint lists 381 unclocked pins and
 slave) lists no SPI domain and passes without `--expect-sck` when its timing is
 met (the September widened NC 1 build does).
 
+Two more checks read where each SCK clock's latency comes from (U-SP4). They are
+checks of their own, not reasons of the gate above, so its verdicts do not move:
+
+```bash
+# every SCK path's two clock paths, in the FULL routed summary (Timing Details included)
+python3 scripts/hacc/check_sck_clock_paths.py <summary.rpt[.gz]> --expect-sck <units x cores>
+# the SCK clocks' definitions, from a read-only probe of the routed checkpoint
+python3 scripts/hacc/check_sck_clock_definition.py <probe folder> --expect-sck <units x cores>
+```
+
+The first fails when a clock path of any SCK path holds a register's
+clock-to-output arc other than the SCK register's own, and when no SCK path is
+printed. The second needs the folder a read-only Vivado job writes after opening
+the routed checkpoint (the file names are in its docstring: the sources the
+text's `-source` resolves to, `report_property` of each SCK clock, the fan-in
+of its SOURCE pin, the feedback paths with both clock paths, the summary's
+`check_timing`), and fails unless each SCK clock is generated, propagated,
+divided by 4 from the kernel clock at the pin the text declares (no clock
+buffer, no register in its fan-in), `generated_clocks` reads 0, and the
+feedback's launch clock path runs from the clock input through that pin's own
+arc and a clock buffer to the SCK register, with no register on it and no
+latency or ideal-clock line. It prints each SCK clock's defining file and line.
+To check what a build resolved at link, read the build's OWN clocks: open its
+routed checkpoint and read no constraint text (the checkpoint restores the
+build's constraints from its binary archive; a job that reads a text, even the
+build's own `odin_spi_domain.xdc`, replaces every SCK clock, Vivado's
+`[Constraints 18-619] ... overwriting the previous clock`, so its records show
+how the text resolves in the routed netlist, not what the link resolved), and
+add `--own-build`: it fails unless the folder's `probe_mode.txt` reads
+`mode own` and names the build's packaged `odin_spi_domain.xdc` as the text
+whose resolution SOURCE is compared with, the job's `vivado.log` shows the
+restore and no clock replaced after it, and no SCK clock carries a FILE_NAME
+(Vivado 2022.2.2 restores a routed checkpoint's clocks without FILE_NAME or
+LINE_NUMBER; a clock defined by a text read in the job carries that text's
+name: U-SP4's targeted pass, probe 71259 against control 71238).
+
 Two notes on the comment block 2a of `build_xclbn.sh`, kept here and not in the
 script: the chip-cache key and the overlay identity of bitstream `a58f67f7`
-(build 71070) hash that script (`9df0e01e`), and its constraint text must stay
-byte-equal to the one 71070 used, so the script is not edited, not even a
-comment. (1) Its sentence that opt_design's BUFG optimization "inserts at most
+(build 71070) hash the script it was built with (`9df0e01e`). U-SP4 changes the
+script by its one declared change (the generated clock's source, and the comment
+lines that describe it), so every build on a head that carries it has a new
+chip-cache key, and its constraint text differs from 71070's only in the
+`create_generated_clock` line of each core. (1) Its sentence that opt_design's BUFG optimization "inserts at most
 eight buffers per build and counts the requested ones against them" is an
 INFERENCE (build 71055: seven requested buffers inserted, then one by the
 optimizer; the triage's multi-unit builds: exactly eight each), not a measured

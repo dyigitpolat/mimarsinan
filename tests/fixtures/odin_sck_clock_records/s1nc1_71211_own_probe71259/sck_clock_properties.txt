@@ -1,0 +1,19 @@
+== level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/Q
+Property           Type     Read-only  Value
+CLASS              string   true       clock
+DIVIDE_BY          int      true       4
+INPUT_JITTER       double   true       0.000
+IS_GENERATED       bool     true       1
+IS_INVERTED        bool     true       0
+IS_PROPAGATED      bool     true       1
+IS_RENAMED         bool     true       0
+IS_USER_GENERATED  bool     true       1
+IS_VIRTUAL         bool     true       0
+MASTER_CLOCK       clock    true       io_clk_freerun_00_clk_p
+MODULE             string   true       ulp 
+NAME               string   true       level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/Q
+PERIOD             double   true       40.000
+SOURCE             pin      true       level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/C
+SOURCE_PINS        string*  true       level0_i/ulp/odin_0/inst/kernel_i/core_gen[0].spi_i/sck_reg/Q
+SYSTEM_JITTER      double   true       0.050
+WAVEFORM           double*  true       0.000 20.000
