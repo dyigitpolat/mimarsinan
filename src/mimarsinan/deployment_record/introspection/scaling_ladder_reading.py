@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.writes import ENERGY_WRITE, LATENCY_WRITE, WriteInputs, price_write_inputs
 from mimarsinan.deployment_record.cost.host_terms import HOST_DECOMPOSITION
-from mimarsinan.deployment_record.introspection.scaling_ladder_law import layer_pipelined
+from mimarsinan.deployment_record.introspection.scaling_ladder_law import layer_pipelined, write_law_absence
 from mimarsinan.deployment_record.quantities import write_technology as wt
 from mimarsinan.deployment_record.quantities.write_law import (
     PlaneWrites, WritePolicy, plane_write_census, write_policy_of, write_quantities,
@@ -285,7 +285,7 @@ def row_readings(priced: Any, *, x_fluid: float, x_packed: float, k: Optional[in
     tpi, tpi_source = _time_per_inference(priced, axes, k)
     compute = (axes.get("time") or {}).get("terms", {}).get("compute_only")
     return {
-        "write_law": dict(priced.write_law) or {"absent": "no inference_batch_K or no physics declared"},
+        "write_law": dict(priced.write_law) or {"absent": write_law_absence(priced.terms)},
         "reuse": reuse_columns(onchip_macs=onchip_macs, logical_cells=logical_cells, k=k,
                                pi_by_axis={a: (axes.get(a) or {}).get("pi") for a in axes}),
         "min_batch": min_batch(x_fluid=x_fluid, x_packed=x_packed, max_writes=priced.max_writes[0], rate_hz=rate_hz,

@@ -7,11 +7,13 @@
       "cores": {
         "value": [
           {
-            "max_axons": 256,
+            "max_axons": 128,
             "max_neurons": 256,
             "count": 48,
             "has_bias": false,
             "write_granularity": "cell",
+            "cells_per_weight": 2,
+            "weight_cell_rows": 2,
             "write_physics": "neurram",
             "compute_physics": "neurram"
           },
@@ -29,7 +31,7 @@
             }
           }
         ],
-        "note": "design study (N2b, E-6): NeuRRAM's 48 static cores of 256 x 256 (wan2022a p.505; written per cell by its write-verify iteration, wan2021edge p.9) beside one SRAM-CIM macro of 128 x 1024 as the operand core type (jiang2023a Section II p.2; written per 8-bit cell, the sram_cim_macro profile's t_write_per_unit); each core type's writes and MACs priced under its own technology (write_physics, compute_physics), every other constant NeuRRAM's; a study declares both counts"
+        "note": "design study (N2b, E-6): NeuRRAM's 48 static cores of 256 x 256 RRAM cells (wan2022a p.505; written per cell by its write-verify iteration, wan2021edge p.9), each holding 128 x 256 signed weights of two cells on adjacent rows (cells_per_weight 2, weight_cell_rows 2, the neurram chip description's block: 'Each neural-network weight is encoded by the differential conductance between two RRAM cells on adjacent rows along the same column.', wan2022a Methods, PDF p.10; [U-CR C-3] a core type naming the neurram technology states it) beside one SRAM-CIM macro of 128 x 1024 as the operand core type (jiang2023a Section II p.2; written per 8-bit cell, the sram_cim_macro profile's t_write_per_unit); each core type's writes and MACs priced under its own technology (write_physics, compute_physics), every other constant NeuRRAM's; a study declares both counts"
       }
     }
   }

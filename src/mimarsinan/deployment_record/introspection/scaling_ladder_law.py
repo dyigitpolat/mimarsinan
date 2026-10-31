@@ -162,6 +162,30 @@ def overhead(
     }
 
 
+#: [U-CR C-2] The reason a row prices no write law where it ran no pricing: its target declares no physics profile.
+NO_PHYSICS = "no physics declared"
+
+
+def write_law_absence(terms: Mapping[str, Any]) -> str:
+    """Why a row prints no write law at its batch: 'no physics declared' only where no pricing ran (``terms`` empty,
+    no profile), else the batch the write law needs."""
+    return "no inference_batch_K declared" if terms else NO_PHYSICS
+
+
+def _compute_absence(terms: Mapping[str, Any], refusals: Mapping[str, Mapping[str, str]], compute_term: str,
+                     headline: str) -> str:
+    """[U-CR C-2] Why an axis's compute-only term is absent: the compute-only pricing's refusal of the headline (a
+    pricing gate names every headline it suppresses) or of the term; 'no physics declared' only where no pricing ran
+    (no profile: no pricing variant at all); a declared profile's gap no refusal names, by the term and the pricing's
+    refusals."""
+    if "compute_only" not in terms and "compute_only" not in refusals:
+        return NO_PHYSICS
+    named = dict(refusals.get("compute_only") or {})
+    return named.get(headline) or named.get(compute_term) or (
+        f"{compute_term} is not priced and no refusal names {headline}: the compute-only pricing refuses "
+        f"{sorted(named) or 'nothing'}")
+
+
 def axis_columns(
     terms: Mapping[str, Mapping[str, Band]], refusals: Mapping[str, Mapping[str, str]],
     names: Sequence[str], *, k: Optional[int], reading: RegimeReading, multiplexed: bool, x: float,
@@ -189,7 +213,7 @@ def axis_columns(
         "terms": {"compute_only": triple(compute), "boundary": None if boundary is None else list(boundary),
                   "once": triple(once), "period": triple(period), "host": triple(host)},
         "absent": (None if compute is not None and once is not None else
-                   (refusals.get("compute_only", {}).get(headline) or "no physics declared") if compute is None else
+                   _compute_absence(terms, refusals, compute_term, headline) if compute is None else
                    "the write law refuses writing every tile once: "
                    + (refusals.get("once", {}).get(programming) or "no write term is priced")),
         "host_share": share(host, t["program"].get(headline)),

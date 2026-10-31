@@ -167,7 +167,8 @@ class TestRotatedStaticTiles:
         assert "sram_cim_macro" not in reason
         # price per technology: NeuRRAM declares its commit energy (U-C3's derived band), so the rotated row prices
         # its write energy as each technology's share summed, with no energy refusal (at the shipped bands about
-        # 2.470e-4 / 2.745e-3 / 3.066e-2 mJ, NeuRRAM's share above 0.999)
+        # 4.938e-4 / 5.489e-3 / 6.132e-2 mJ, [U-CR C-3] two cells per signed NeuRRAM weight; NeuRRAM's share above
+        # 0.999)
         row, platform, _ = rotated
         assert row["writes"]["latency_write_exposed_s"] is not None  # both technologies declare t_write_per_unit
         refused = {r["name"]: r["reason"] for r in row["writes"]["refusals"]}
@@ -223,8 +224,9 @@ class TestResidentStaticTiles:
         shares = {s.core_type: s.events for s in compute_split(record.identity.platform,
                                                                record_program_passes(record)).shares}
         e_mac = {n: get_platform_physics(n).band("e_mac").nominal for n in ("neurram", "sram_cim_macro")}
-        assert shares[(256, 256)] > 0 and shares[(128, 1024)] > 0
-        dynamic = (shares[(256, 256)] * e_mac["neurram"] + shares[(128, 1024)] * e_mac["sram_cim_macro"]) * 1e3
+        # [U-CR C-3, declared pin amendment] the static type is keyed by its weights, 128 x 256 of 256 x 256 cells
+        assert shares[(128, 256)] > 0 and shares[(128, 1024)] > 0
+        dynamic = (shares[(128, 256)] * e_mac["neurram"] + shares[(128, 1024)] * e_mac["sram_cim_macro"]) * 1e3
         assert split["dynamic"][1] >= dynamic * (1 - 1e-9)  # MAC events at each type's e_mac (+ any periphery)
         sram = get_platform_physics("sram_cim_macro")
         cells = sum(sum(s.operand_core_cells or ()) for s in record.schedule.segments())

@@ -1,9 +1,8 @@
 """price_absolute: the target's physics × a view's quantities → absolute cost terms.
 
-One pure engine for both completenesses (a candidate's static quantities | a sealed
-record's measured ones). Every term = constant band × quantity with the evidence in
-its source; a headline that cannot be answered honestly is REFUSED with a written
-reason, never approximated silently.
+One pure engine for both completenesses (a candidate's static quantities | a sealed record's measured ones). Every
+term = constant band × quantity with the evidence in its source; a headline that cannot be answered honestly is
+REFUSED with a written reason, never approximated silently.
 """
 
 from __future__ import annotations
@@ -14,9 +13,10 @@ from mimarsinan.deployment_record.cost.absolute.context import (
     ABSOLUTE_PRICING as ABSOLUTE_PRICING,
     AbsolutePricing,
     PricingContext,
+    PricingRefusal,
     external_refusals as external_refusals,
 )
-from mimarsinan.deployment_record.cost.absolute.energy import price_energy
+from mimarsinan.deployment_record.cost.absolute.energy import ENERGY_HEADLINE, price_energy
 from mimarsinan.deployment_record.cost.absolute.formulas import (
     AREA_COMPONENTS,
     BUFFER_CAPACITY,
@@ -49,6 +49,7 @@ _M2_TO_MM2 = 1e6
 AREA_HEADLINE = "chip_area_mm2"
 LATENCY_HEADLINE = "e2e_latency_s"
 THROUGHPUT_HEADLINE = "throughput_inferences_s"
+GATED_HEADLINES = (AREA_HEADLINE, ENERGY_HEADLINE, LATENCY_HEADLINE, THROUGHPUT_HEADLINE)
 
 
 def _state_area_band(ctx: PricingContext) -> Optional[Band]:
@@ -58,12 +59,9 @@ def _state_area_band(ctx: PricingContext) -> Optional[Band]:
         return None
     per_bit = ctx.physics.band("area_per_state_bit")
     bits = ctx.physics.band("membrane_bits")
-    return scale_band(
-        Band(per_bit.low * bits.low, per_bit.nominal * bits.nominal,
-             per_bit.high * bits.high, "area_per_state_bit x membrane_bits"),
-        ctx.quantities.get("neurons_physical").value * _M2_TO_MM2,
-        "area_per_state_bit x membrane_bits x neurons_physical",
-    )
+    return scale_band(Band(per_bit.low * bits.low, per_bit.nominal * bits.nominal, per_bit.high * bits.high,
+                           "area_per_state_bit x membrane_bits"), ctx.quantities.get("neurons_physical").value
+                      * _M2_TO_MM2, "area_per_state_bit x membrane_bits x neurons_physical")
 
 
 def _aggregate_footprint(ctx: PricingContext) -> Optional[Tuple[Band, bool]]:
@@ -260,25 +258,26 @@ def price_absolute(
     """Every absolute term the declared physics can honestly back, plus refusals.
 
     ``writes`` (a period census with the declared write policy, present only when the run declares
-    ``inference_batch_K``) adds the write law's terms to the steady-state headlines; ``geometry``
-    (the declared core types) judges the aggregate constants against the profile's validity. A
-    caller that states none is judged by what the census proves (``validity.census_geometry``): a single
-    core's type, or its cell count, which a declared 'cells' scaling rule reads exactly; at a point
-    validity a mean core at the point is judged there with that basis stated in the term, and refused
-    by name under ``validity.CENSUS_PROVED``. ``validity.UNJUDGED`` reads the aggregates as declared. A profile
-    whose external component is undeclared prices nothing and refuses by name, the write law's terms each by its own
-    name too (the write law's own gate, [fix_c]), so every plane states the same refusal. [E-6] ``compute``
+    ``inference_batch_K``) adds the write law's terms to the steady-state headlines; ``geometry`` (the declared core
+    types) judges the aggregate constants against the profile's validity. A caller that states none is judged by what
+    the census proves (``validity.census_geometry``): a single core's type, or its cell count, which a declared 'cells'
+    scaling rule reads exactly; at a point validity a mean core at the point is judged there with that basis stated in
+    the term, and refused by name under ``validity.CENSUS_PROVED``. ``validity.UNJUDGED`` reads the aggregates as
+    declared. A profile whose external component is undeclared prices nothing and refuses by name, [U-CR C-2] each
+    headline it suppresses too (``GATED_HEADLINES``, by the gate's reason) and the write law's terms each by its own
+    name (the write law's own gate, [fix_c]), so every plane states the same refusal. [E-6] ``compute``
     (``quantities.compute_technology.compute_split``: the plane's MAC events per core type, present only when a core
     type names a compute physics) prices each core type's MAC events at its own technology's e_mac. [E-5]
     ``readout_bits`` (the run's ``readout_law.adc_bits``) prices a profile's converter at that resolution
-    (``platform_physics.converter.resolve``); a converter constant its table does not state there refuses, by name,
-    each headline whose converter work exists. A profile without a converter, or no declared bits, is unchanged.
-    [U-G] A declared carry buffer (``carry_buffer_capacity_bytes``) prices a profile's carry-buffer table at that
-    capacity (``PlatformPhysics.at_carry_buffer``); a buffer constant its table leaves unstated there refuses, by
-    name, each headline whose buffer work exists. A profile without the table, or no declared buffer, is unchanged.
-    """
+    (``platform_physics.converter.resolve``); a converter constant its table does not state there refuses, by name, each
+    headline whose converter work exists. A profile without a converter, or no declared bits, is unchanged. [U-G] A
+    declared carry buffer (``carry_buffer_capacity_bytes``) prices a profile's carry-buffer table at that capacity
+    (``PlatformPhysics.at_carry_buffer``); a buffer constant its table leaves unstated there refuses, by name, each
+    headline whose buffer work exists. A profile without the table, or no declared buffer, is unchanged."""
     if refusals := external_refusals(physics):
-        named = () if writes is None else tuple(price_write_inputs(writes, physics).refusals)
+        reason = f"{ABSOLUTE_PRICING}: " + "; ".join(r.reason for r in refusals)
+        named = tuple(PricingRefusal(h, reason) for h in GATED_HEADLINES) + (
+            () if writes is None else tuple(price_write_inputs(writes, physics).refusals))
         return AbsolutePricing(terms=(), refusals=refusals + named)
     physics, converter_refused = resolve_converter(physics, readout_bits)
     physics, buffer_unstated = physics.at_carry_buffer(

@@ -3,7 +3,7 @@ backing store); no absolute number is read until a run declares that component's
 
 import pytest
 
-from mimarsinan.deployment_record.cost.absolute import price_absolute
+from mimarsinan.deployment_record.cost.absolute import ABSOLUTE_TERM_NAMES, price_absolute
 from mimarsinan.deployment_record.cost.absolute.writes import (
     ENERGY_WRITE, LATENCY_WRITE, LIFETIME_HOURS, LIFETIME_INFERENCES, LIFETIME_VERDICT, WriteInputs, price_write_terms,
 )
@@ -84,11 +84,14 @@ class TestPricing:
     def test_an_undeclared_component_refuses_every_absolute_term_by_name(self):
         pricing = price_absolute(quantities(synaptic_events=10, host_macs=0), _profile([_STORE]))
         assert pricing.terms == () and pricing.verdicts == ()
-        refusal, = pricing.refusals
+        refusal, *suppressed = pricing.refusals
         assert refusal.name == "absolute_pricing"
         assert refusal.reason.startswith("part is read only with its backing store declared: e_dma_per_byte, "
                                          "t_program_per_byte undeclared")
         assert "merge_override_blocks" in refusal.reason
+        # [U-CR C-2, declared pin amendment] the gate also refuses each headline it suppresses, by the gate's reason
+        assert [(r.name, r.reason) for r in suppressed] == [
+            (headline, "absolute_pricing: " + refusal.reason) for headline in ABSOLUTE_TERM_NAMES]
 
     def test_a_declared_component_prices_as_a_profile_without_one(self):
         plain = price_absolute(quantities(synaptic_events=10, host_macs=0),

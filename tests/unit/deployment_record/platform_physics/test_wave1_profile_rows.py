@@ -4,7 +4,7 @@ page-sourced profiles, each refusing by name what it does not declare."""
 import pytest
 
 from mimarsinan.chip_simulation.weight_reuse_cost_model import DEFAULT_COEFFICIENT_BAND
-from mimarsinan.deployment_record.cost.absolute import price_absolute, price_write_terms
+from mimarsinan.deployment_record.cost.absolute import ABSOLUTE_TERM_NAMES, price_absolute, price_write_terms
 from mimarsinan.deployment_record.cost.absolute.validity import CoreGeometry
 from mimarsinan.deployment_record.platform_physics import apply_overrides, get_platform_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
@@ -117,7 +117,8 @@ class TestTheMacroCycleTime:
         """The cycle time does not lift the external-component gate: no absolute term without the backing store."""
         pricing = price_absolute(_quantities(cores_physical=1, synaptic_events=10, host_macs=0, latency_steps=7),
                                  get_platform_physics("sram_cim_macro"))
-        assert pricing.terms == () and [r.name for r in pricing.refusals] == ["absolute_pricing"]
+        # [U-CR C-2, declared pin amendment] the gate's refusal, then each headline it suppresses by name
+        assert pricing.terms == () and [r.name for r in pricing.refusals] == ["absolute_pricing", *ABSOLUTE_TERM_NAMES]
 
 
 class TestThePageSourcedProfiles:

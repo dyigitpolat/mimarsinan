@@ -199,10 +199,10 @@ def technology_wear(writes: ProgramWrites, physics: PlatformPhysics, k: int,
     """[E-6, targeted pass] The per-core-type blocks of a row of several write technologies at batch ``k``: per
     technology's share of the executed census (``ProgramWrites.by_technology``), its role (``roles``: write physics
     name to the row's role; else operand where the share's core types hold operand regions, static otherwise), its
-    static cells per period and operand cells per inference, its most-written cell's wear (``cell_wear``, the slot
-    rule), its endurance and the lifetime the write law prices under its own physics (``price_lifetime`` on the
-    share, the rule ``price_write_inputs`` joins), with the binding type named. None where the census is not split
-    (one technology), or the split refuses (the write terms then refuse by its reason)."""
+    static cells per period and operand cells per inference ([U-CR C-3] each written weight's cells), its most-written
+    cell's wear (``cell_wear``, the slot rule), its endurance and the lifetime the write law prices under its own
+    physics (``price_lifetime`` on the share, the rule ``price_write_inputs`` joins), with the binding type named. None
+    where the census is not split (one technology), or the split refuses (the write terms then refuse by its reason)."""
     split = split_at(writes.by_technology, k)
     if split is None or split.refused is not None or not split.parts:
         return None
@@ -217,11 +217,12 @@ def technology_wear(writes: ProgramWrites, physics: PlatformPhysics, k: int,
         own = WritePricing()
         price_lifetime(own, part.census, own_physics, part.policy, part.most_written, part.producer_slots)
         verdict = next((v.verdict for v in own.verdicts if v.name == LIFETIME_VERDICT), None)
+        cells = int(part.policy.cells_per_weight)  # each written weight's cells, as the row's summary counts them
+        static = int(sum(p.written_cells_backing_store for p in part.census.passes)) * cells
+        operand = int(sum(p.written_cells_producer for p in part.census.passes)) * cells
         entries_writes.append({
-            "role": role, "write_technology": name,
-            "static_written_cells_per_period": int(sum(p.written_cells_backing_store for p in part.census.passes)),
-            "operand_written_cells_per_inference": int(sum(p.written_cells_producer for p in part.census.passes)),
-            "max_writes_per_cell_per_inference": per_cell})
+            "role": role, "write_technology": name, "static_written_cells_per_period": static,
+            "operand_written_cells_per_inference": operand, "max_writes_per_cell_per_inference": per_cell})
         entries_life.append({"role": role, "write_technology": name, "max_writes_per_cell_per_inference": per_cell,
                              "endurance": endurance_of(own_physics), "hours": _triple(_band(own, LIFETIME_HOURS)),
                              "verdict": verdict})

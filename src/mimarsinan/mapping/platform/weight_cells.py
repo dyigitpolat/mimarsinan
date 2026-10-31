@@ -12,7 +12,12 @@ stating another count beside it refuses by name (``conversion_conflict``).
 
 A chip description (a target bundle) declares its geometry in cells, as the chip's paper prints its arrays, and its
 cores' weight capacity is that geometry over the block (``weight_capacity``): cells that hold no whole weights are
-refused by name.
+refused by name. [U-CR C-3] The technology a core type's weights are priced under is the one it names
+(``write_physics``, ``compute_physics``), else the run's ``platform_physics_profile`` (the target's). Where that
+technology's chip description states a block, the core type states its own block or is refused by name at the run door
+(``technology_block_errors``), so a declaration that replaces the chip description's cores, naming the technology or
+not, never runs with the block dropped silently. The document door and the wizard do not read the chip descriptions
+here (as for ``conversion_conflict``): the run door is where the refusal holds.
 """
 
 from __future__ import annotations
@@ -110,6 +115,65 @@ def conversion_conflict(cores: Sequence[Mapping[str, Any]], conversion_model: Op
     return (f"the core types declare {CELLS_PER_WEIGHT} {', '.join(map(str, stated))} and the physics' "
             f"{declared.get('model')!r} conversion model declares {CELLS_PER_WEIGHT} {model:g}: one stored "
             "weight's cells, stated twice, must agree")
+
+
+#: [U-CR C-3] The core-type fields that name a technology (a physics profile) a core type's weights are priced under.
+TECHNOLOGY_FIELDS = ("write_physics", "compute_physics")
+
+
+def technology_block_errors(cores: Any, blocks: Mapping[str, Sequence[Tuple[str, int, int]]],
+                            profile: Optional[str] = None) -> List[str]:
+    """[U-CR C-3] Why a core type whose weights are priced under a technology whose chip description stores a weight in
+    a block of several cells (``blocks``: ``target_bundles.technology_blocks``) refuses, else []: it states no block,
+    so its geometry would be read as one cell per weight while the technology's weights take several. Each of
+    ``TECHNOLOGY_FIELDS`` is priced under the technology the core type names there, else under the run's ``profile``
+    (its ``platform_physics_profile``; review M-1). A stated block is the core type's own (the chip description's, or
+    another, a bit-sliced pair for one), as ``conversion_conflict`` reads a stated count."""
+    if not isinstance(cores, (list, tuple)):
+        return []
+    errors: List[str] = []
+    for i, core in enumerate(cores):
+        if not isinstance(core, Mapping) or CELLS_PER_WEIGHT in core:
+            continue
+        for technology, (named, unnamed) in _technologies(core, profile).items():
+            for description, cells, rows in blocks.get(technology, ()):
+                errors.append(
+                    f"cores[{i}] {_reading(technology, named, unnamed)}, whose chip description (target "
+                    f"{description!r}) stores a weight in {cells} cells on {rows} adjacent rows ({CELLS_PER_WEIGHT} "
+                    f"{cells}, {WEIGHT_CELL_ROWS} {rows}); the core type states no block, so its "
+                    f"{core.get('max_axons')} x {core.get('max_neurons')} would be read as one cell per weight: state "
+                    f"its {CELLS_PER_WEIGHT} and {WEIGHT_CELL_ROWS} ({cells} and {rows} for the chip description's, "
+                    f"max_axons x max_neurons counting weights: a core of R x C cells holds R/{rows} x "
+                    f"C/{cells // rows} of them)")
+    return errors
+
+
+def _technologies(core: Mapping[str, Any], profile: Optional[str]) -> Dict[str, Tuple[List[str], List[str]]]:
+    """Per technology a core type is priced under: the fields naming it, and the fields the run's profile stands for."""
+    out: Dict[str, Tuple[List[str], List[str]]] = {}
+    for field in TECHNOLOGY_FIELDS:
+        if isinstance(name := core.get(field), str) and name:
+            out.setdefault(name, ([], []))[0].append(field)
+        elif profile:
+            out.setdefault(str(profile), ([], []))[1].append(field)
+    return out
+
+
+def _reading(technology: str, named: Sequence[str], unnamed: Sequence[str]) -> str:
+    said = ["names " + ", ".join(f"{field} {technology!r}" for field in named)] if named else []
+    if unnamed:
+        said.append(f"{'' if named else 'names '}no {' or '.join(unnamed)}, so the run's platform_physics_profile "
+                    f"{technology!r} stands for {'it' if len(unnamed) == 1 else 'them'}")
+    return " and ".join(said)
+
+
+def check_technology_blocks(cores: Sequence[Mapping[str, Any]], blocks: Mapping[str, Sequence[Tuple[str, int, int]]],
+                            profile: Optional[str] = None) -> None:
+    """[U-CR C-3] Raise ``ValueError`` with ``technology_block_errors``' reasons where a core type priced under a
+    technology whose chip description states a block states none (the run door names the declarations, beside the
+    conversion model's agreement, ``platform_constraints_resolver``)."""
+    if errors := technology_block_errors(list(cores), blocks, profile):
+        raise ValueError("; ".join(errors))
 
 
 def check_conversion_agreement(cores: Sequence[Mapping[str, Any]],

@@ -214,6 +214,29 @@ def get_target_bundle(name: Any, bundles: Optional[Mapping[str, TargetBundle]] =
     return known[name]
 
 
+_BLOCKS: Dict[int, Tuple[Mapping[str, TargetBundle], Dict[str, Tuple[Tuple[str, int, int], ...]]]] = {}
+
+
+def technology_blocks(bundles: Optional[Mapping[str, TargetBundle]] = None
+                      ) -> Dict[str, Tuple[Tuple[str, int, int], ...]]:
+    """[U-CR C-3] Per technology (the physics profile a chip description binds), the weight-cell block each chip
+    description binding it states on its cores: ``(description, cells_per_weight, weight_cell_rows)``. A technology
+    whose descriptions store one weight per cell is absent (``weight_cells.technology_block_errors`` reads it)."""
+    known = target_bundles() if bundles is None else bundles
+    if (cached := _BLOCKS.get(id(known))) is not None and cached[0] is known:
+        return dict(cached[1])
+    out: Dict[str, List[Tuple[str, int, int]]] = {}
+    for name, bundle in sorted(known.items()):
+        values = bundle.values
+        stated = {(int(c[CELLS_PER_WEIGHT]), int(c[WEIGHT_CELL_ROWS])) for c in values["cores"]
+                  if int(c.get(CELLS_PER_WEIGHT, 1)) > 1}  # a count above 1 states its rows (the loader's rule)
+        if (profile := values.get("platform_physics_profile")) is not None:
+            out.setdefault(str(profile), []).extend((name, cells, rows) for cells, rows in sorted(stated))
+    blocks = {profile: tuple(entries) for profile, entries in out.items() if entries}
+    _BLOCKS[id(known)] = (known, blocks)
+    return dict(blocks)
+
+
 def target_decision_class(name: str) -> str:
     """The decision class of ``target: <name>``: the join over every key path the bundle sets."""
     return effective_class(declared_paths(get_target_bundle(name).values))

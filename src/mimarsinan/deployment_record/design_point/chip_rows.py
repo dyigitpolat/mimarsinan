@@ -36,7 +36,8 @@ class RowDeclarationError(ToolchainRefusal, ValueError):
 
 
 def core_type_record(core_type: Mapping[str, Any]) -> Dict[str, Any]:
-    """One declared core type in the instance's form (role, geometry, count, write technology, operand)."""
+    """One declared core type in the instance's form (role, geometry, count, write technology, operand; [U-CR C-3] the
+    weight-cell block where it states one, so a geometry in weights reads with its cells)."""
     role = str(core_type.get("role", "any"))
     if role not in ROLES:
         raise RowDeclarationError(f"core type role {role!r} is not one of {ROLES}")
@@ -46,7 +47,7 @@ def core_type_record(core_type: Mapping[str, Any]) -> Dict[str, Any]:
     out = {"role": role, "max_axons": int(core_type["max_axons"]), "max_neurons": int(core_type["max_neurons"]),
            "count": None if core_type.get("count") is None else int(core_type["count"]),
            "write_technology": core_type.get("write_technology")}
-    for key in ("operand", "write_granularity", "source"):
+    for key in ("operand", "write_granularity", "source", "cells_per_weight", "weight_cell_rows"):
         if key in core_type:
             out[key] = core_type[key]
     return out

@@ -28,6 +28,7 @@ from mimarsinan.deployment_record.cost.absolute import (
 )
 from mimarsinan.deployment_record.cost.absolute.host_split import corner_order, lowest
 from mimarsinan.deployment_record.cost.absolute.metrics import ABSOLUTE_PRICING
+from mimarsinan.deployment_record.cost.absolute.report import ABSOLUTE_TERM_NAMES
 from mimarsinan.deployment_record.cost.absolute.step_choice import StepChoiceError, cheapest_step, price_step
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.platform_physics.host_calibration import calibration_overrides, host_block
@@ -154,8 +155,11 @@ class TestTheMacroWithTheHostBlockAndItsBackingStore:
         physics = resolve_platform_physics("sram_cim_macro", merge_override_blocks(blocks))
         pricing = price_absolute(self._quantities(), physics, geometry=UNJUDGED)
         assert pricing.terms == ()
-        (refusal,) = pricing.refusals
+        refusal, *suppressed = pricing.refusals
         assert refusal.name == ABSOLUTE_PRICING
+        # [U-CR C-2, declared pin amendment] each headline the gate suppresses is refused by name, by its reason
+        assert [(r.name, r.reason) for r in suppressed] == [
+            (headline, f"{ABSOLUTE_PRICING}: {refusal.reason}") for headline in ABSOLUTE_TERM_NAMES]
         return refusal.reason
 
     def test_the_host_block_does_not_declare_the_backing_store(self):

@@ -266,7 +266,9 @@ registry directly (W5.1).
 - **External components and target refusals** (CL2). A profile that describes part of a priced system names the
   component it leaves out (`PlatformPhysics.external_components`, serialized only when present: the SRAM-CIM
   macro's backing store, `e_dma_per_byte` and `t_program_per_byte`); until a run declares those constants beside
-  the profile (a named override block), `price_absolute` prices nothing and refuses `absolute_pricing` by name.
+  the profile (a named override block), `price_absolute` prices nothing and refuses `absolute_pricing` by name,
+  and [U-CR C-2] each headline it suppresses by name with the gate's reason (`GATED_HEADLINES`), so a reader that
+  looks a headline up finds the gate (the scaling ladder prints 'no physics declared' only where no profile exists).
   A target bundle that declares no physics (a geometry-only target) reports its
   `target_bundles.absolute_pricing_refusal` on both planes: `absolute_pricing_for_record` (so
   `emit_physics_report` writes that refusal) and the candidate view, through

@@ -8,7 +8,8 @@ macro's write time, so Figure 1's mixed row prices its stacked energy split and 
   the high end, one byte per 20 MHz cycle (50 ns), covers the write port width the paper does not state. With it the
   operand cores' producer writes price their exposed write time, where N2b refused it by name.
 - The hybrid declaration (``tests/fixtures/design_point/hybrid_neurram_sram_cim.json``) is the neurram bundle with
-  its cores overridden: NeuRRAM's 48 static cores of 256 x 256 (write and compute physics NeuRRAM's) beside one
+  its cores overridden: NeuRRAM's 48 static cores of 256 x 256 cells, 128 x 256 signed weights of two cells each
+  ([U-CR C-3] the block its chip description states; write and compute physics NeuRRAM's) beside one
   SRAM-CIM macro of 128 x 1024 as the operand core type (write and compute physics the macro's), every other constant
   NeuRRAM's. It is a declaration over a published target, not a target bundle: a bundle names a published target
   (``target_bundles``), and no published chip carries both core types.
@@ -23,7 +24,7 @@ import pytest
 
 from mimarsinan.deployment_record.platform_physics import get_platform_physics
 
-STATIC, OPERAND = (256, 256), (128, 1024)
+STATIC, OPERAND = (128, 256), (128, 1024)  # [U-CR C-3, declared pin amendment] the static type counts weights
 
 
 def test_the_macro_declares_a_derived_write_time_per_cell_from_its_paper():
@@ -55,6 +56,7 @@ def test_the_hybrid_declaration_states_each_core_types_technologies():
     assert resolved["platform_physics_resolved"]["name"] == "neurram"
     static, operand = resolved["cores"]
     assert (static["max_axons"], static["max_neurons"], static["count"]) == (*STATIC, 48)
+    assert (static["cells_per_weight"], static["weight_cell_rows"]) == (2, 2)  # 256 x 256 cells (U-CR C-3)
     assert static["write_physics"] == static["compute_physics"] == "neurram" and "operand" not in static
     assert (operand["max_axons"], operand["max_neurons"]) == OPERAND
     assert operand["write_physics"] == operand["compute_physics"] == "sram_cim_macro"

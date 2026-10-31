@@ -129,8 +129,11 @@ def test_the_resolved_surface_seals_each_named_write_physics_and_only_when_decla
     from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved
     plain = build_platform_constraints_resolved(merge_pipeline_config({}, {"cores": [_core(S, 2), _core(O, 1)]}))
     assert "write_physics_resolved" not in plain
+    # [U-CR C-3, declared pin amendment] a core type naming NeuRRAM states the block its chip description stores a
+    # weight in (2 cells on 2 rows), or the run door refuses it by name; the sealing read here is unchanged
+    neurram = {**_core(S, 2, write_physics="neurram"), "cells_per_weight": 2, "weight_cell_rows": 2}
     mixed = build_platform_constraints_resolved(merge_pipeline_config(
-        {}, {"cores": [_core(S, 2, write_physics="neurram"), _core(O, 1, write_physics="sram_cim_macro")]}))
+        {}, {"cores": [neurram, _core(O, 1, write_physics="sram_cim_macro")]}))
     assert mixed["write_physics_resolved"] == {
         name: get_platform_physics(name).to_dict() for name in ("neurram", "sram_cim_macro")}
     assert mixed["cores"][1]["write_physics"] == "sram_cim_macro"

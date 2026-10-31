@@ -38,9 +38,9 @@ CORE_TYPE = Obj(
     {"role": Enum(("any", STATIC, OPERAND)), "max_axons": INT, "max_neurons": INT, "count": Nullable(INT),
      "write_technology": Nullable(STR)},
     {"operand": Nullable(Obj({"payload_bits": INT, "write_source": Enum(("host", "on_chip"))})),
-     "write_granularity": Nullable(STR), "source": STR},
+     "write_granularity": Nullable(STR), "source": STR, "cells_per_weight": INT, "weight_cell_rows": INT},
     doc="one declared core type: its role, geometry, count at the row's budget and write technology (a physics "
-        "profile name)")
+        "profile name); [U-CR C-3] its weight-cell block where it states one (the geometry counts weights)")
 CHIP = Obj(
     {"target": Nullable(STR), "display_name": STR, "core_types": ListOf(CORE_TYPE), "weight_bits": Nullable(INT),
      "faithfulness": Obj({"class": STR, "named": ListOf(STR)}, {"note": STR}), "claim_class": Nullable(STR),

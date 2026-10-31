@@ -30,7 +30,10 @@ from mimarsinan.mapping.lanes.declaration import LANE_KEY, declared_lane_block
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY, resolve_residency_policy
 from mimarsinan.mapping.platform.platform_constraints import bias_mode_for_cores
-from mimarsinan.mapping.platform.weight_cells import check_conversion_agreement
+from mimarsinan.mapping.platform.weight_cells import check_conversion_agreement, check_technology_blocks
+# Bound as a module (resolved from sys.modules while it initializes): target_bundles imports the registry, whose
+# package imports this module first when target_bundles is the first import (target_expansion binds it the same way).
+import mimarsinan.mapping.platform.target_bundles as target_bundles
 from mimarsinan.mapping.support.bias_rows import (
     BIAS_ROW_SPLITTING_FIXED,
     BIAS_ROW_SPLITTING_MODES,
@@ -157,6 +160,11 @@ def build_platform_constraints_resolved(
     # [U-C4] The conversion model's cells_per_weight is the core types' own count, stated twice: they agree.
     _read_by_consumer(pipeline_config, ("cores", "platform_physics_profile"),
                       lambda: check_conversion_agreement(cores, physics.conversion_model if physics else None))
+    # [U-CR C-3] A core type priced under a technology (the one it names, else the run's profile) whose chip
+    # description stores a weight in a block states its block.
+    _read_by_consumer(pipeline_config, ("cores", "platform_physics_profile"),
+                      lambda: check_technology_blocks(cores, target_bundles.technology_blocks(),
+                                                      str(pipeline_config.get("platform_physics_profile", "") or "")))
     # N2b: each core type's named write physics, sealed the same way (only when a core type names one).
     sealed = _read_by_consumer(pipeline_config, ("cores",), lambda: _sealed_write_physics(cores))
     if sealed:
