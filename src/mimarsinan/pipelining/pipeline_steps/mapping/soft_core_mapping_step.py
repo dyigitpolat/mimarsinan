@@ -23,6 +23,7 @@ from mimarsinan.mapping.lanes.install import lanes_report
 from mimarsinan.mapping.lanes.output_stage import output_stage_of_program
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.support.core_types import bind_core_types, check_core_codes, refuse_unbuilt_domain
+from mimarsinan.mapping.support.host_kernel_evaluation import declare_host_kernel_evaluation
 from mimarsinan.mapping.support.bias_compensation import (
     apply_ttfs_quantization_bias_compensation,
     transfer_negative_shifts_to_ir,
@@ -428,6 +429,11 @@ class SoftCoreMappingStep(PipelineStep):
         validate_bindings(ir_graph, packaging=packaging_contract_for(plan))  # [N2] no-op without operand banks
         if bind_core_types(ir_graph, model, platform_constraints):  # [WI-5g] lane cores bind too; codes checked
             check_core_codes(ir_graph)
+        # [U-PS] the declared host-kernel evaluation rides on the program's host ops; absent, nothing is stamped.
+        stamped = declare_host_kernel_evaluation(ir_graph, _effective(self.pipeline.config, "host_kernel_evaluation"))
+        if stamped and report:
+            print(f"[SoftCoreMappingStep] host_kernel_evaluation=per_sample: {stamped} host op(s) evaluated one "
+                  f"sample at a time by every executor")
         return ir_graph, relay_cores_inserted, max_latency
 
     def _derive_unbounded_ir(self, reference_source, unbounded, plan, platform_constraints, bits) -> dict:

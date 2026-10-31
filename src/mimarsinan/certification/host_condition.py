@@ -25,6 +25,7 @@ import torch
 from mimarsinan.deployment_record.schema import CertificateRecord
 from mimarsinan.mapping.capability.op_kinds import UnknownOpKindError, op_kind
 from mimarsinan.mapping.ir.types import HOST_KERNEL_REPLAY
+from mimarsinan.mapping.support.host_kernel_evaluation import PER_SAMPLE, declared_evaluation
 
 HOST_CONDITION = "deterministic, batch-invariant host kernels on one device and dtype"
 RECORD_NAME, RECORD_BACKEND = "host_condition", "host"
@@ -135,6 +136,8 @@ class HostConditionCertificate:
     kernels: Tuple[HostKernelReading, ...]
     samples: int
     program_host_ops: Optional[int] = None
+    #: [U-PS] the kernels (op ids) the program declares one sample at a time: their condition holds by construction.
+    per_sample_ops: Tuple[int, ...] = ()
 
     @property
     def batch_dependent(self) -> Tuple[HostKernelReading, ...]:
@@ -184,9 +187,11 @@ class HostConditionCertificate:
         if not self.kernels:
             return f"{ESTABLISHED}: the program has no host kernel ({HOST_CONDITION} holds vacuously)"
         if status == ESTABLISHED:
+            by_construction = (f"; {len(self.per_sample_ops)} evaluated one sample at a time by the program's "
+                               f"declaration (host_kernel_evaluation={PER_SAMPLE})" if self.per_sample_ops else "")
             return (f"{ESTABLISHED}: {len(self.kernels)} host kernel(s) {HOST_CONDITION}: every one of "
                     f"{self.samples} sampled input(s) alone and the repeated batch equal at atol 0, on "
-                    f"{', '.join(self.placements())}")
+                    f"{', '.join(self.placements())}{by_construction}")
         parts = []
         for what, kernels, count in (("batch-dependent", self.batch_dependent, lambda k: k.batch_dependent),
                                      ("nondeterministic", self.nondeterministic, lambda k: k.nondeterministic)):
@@ -208,8 +213,11 @@ class HostConditionCertificate:
         """The deployment record's certificate row (backend ``host``): passed only where the condition is established."""
         elements = sum(k.elements for k in self.kernels)
         differing = sum(max(k.batch_dependent, k.nondeterministic) for k in self.kernels)
-        detail = {"verdict": self.verdict(), "condition": HOST_CONDITION, "samples": self.samples,
-                  "program_host_ops": self.program_host_ops, "kernels": [asdict(k) for k in self.kernels]}
+        detail: Dict[str, object] = {
+            "verdict": self.verdict(), "condition": HOST_CONDITION, "samples": self.samples,
+            "program_host_ops": self.program_host_ops, "kernels": [asdict(k) for k in self.kernels]}
+        if self.per_sample_ops:
+            detail["per_sample_ops"] = list(self.per_sample_ops)
         return CertificateRecord(
             name=RECORD_NAME, backend=RECORD_BACKEND, passed=self.passed, neuron_windows_compared=elements,
             exact_match_fraction=(1.0 - differing / elements) if elements else 0.0,
@@ -224,6 +232,7 @@ class HostKernelReplay:
     def __init__(self, parent: Optional["HostKernelReplay"] = None) -> None:
         self._tallies: Dict[int, _Tally] = {}
         self._samples = 0
+        self._per_sample: set = set()
         self._parent = parent
 
     def __call__(self, op, gathered: torch.Tensor, result: torch.Tensor,
@@ -231,6 +240,8 @@ class HostKernelReplay:
         batch = int(gathered.shape[0]) if gathered.dim() else 0
         want = result.detach()
         tally = self._tallies.setdefault(int(op.id), _Tally(str(getattr(op, "name", op.id)), _kind(op)))
+        if declared_evaluation(op) == PER_SAMPLE:
+            self._per_sample.add(int(op.id))
         again: Optional[torch.Tensor] = None
         replayed: Optional[torch.Tensor] = None
         run = kernel if kernel is not None else op._exec_module
@@ -264,7 +275,8 @@ class HostKernelReplay:
                                           replay_errors=tuple(sorted(t.replay_errors)),
                                           invariance_samples=t.invariance_samples)
                         for i, t in sorted(self._tallies.items()))
-        return HostConditionCertificate(kernels=kernels, samples=self._samples, program_host_ops=program_host_ops)
+        return HostConditionCertificate(kernels=kernels, samples=self._samples, program_host_ops=program_host_ops,
+                                        per_sample_ops=tuple(sorted(self._per_sample)))
 
 
 @contextlib.contextmanager

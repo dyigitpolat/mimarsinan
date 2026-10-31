@@ -825,6 +825,8 @@ AUDITED_LEGAL_SETS = {
     "finetune_epochs": "INT >= 0",
     "finetune_lr": "FLOAT in [0, 1]",
     "firing_mode": "ENUM Default | Novena | TTFS",
+    # [U-PS] the declared host-kernel evaluation: the consumer's vocabulary (mapping/support/host_kernel_evaluation).
+    "host_kernel_evaluation": "ENUM batched | per_sample",
     "hw_config_mode": "ENUM fixed | search",
     "inference_batch_K": "INT >= 1",
     "inference_rate_hz": "FLOAT > 0",

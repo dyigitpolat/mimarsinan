@@ -21,6 +21,7 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir.core_law import graph_carries_laws
 from mimarsinan.mapping.lanes.ir.fusion import LANE_REPORT
 from mimarsinan.mapping.support.boundary_grids import widest_boundary_step
+from mimarsinan.mapping.support.host_kernel_evaluation import forward_of, twin_as_program
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
@@ -109,7 +110,7 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     reference = copy.deepcopy(model).to("cpu").double().eval()
     identity_flow = fp64_identity_program(ir_graph)
     with torch.no_grad():
-        want = reference(samples)
+        want = twin_as_program(ir_graph, forward_of, reference, samples)  # [U-PS] the model as the program evaluates
         got = identity_flow(samples)
     max_abs_delta = float((got - want).abs().max().item()) if want.numel() else 0.0
 

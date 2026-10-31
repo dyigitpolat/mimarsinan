@@ -208,6 +208,14 @@ door refuses it until the two planes agree. Whether a chip packs per axon is `pl
 fold, the one the builder runs, and a value the fold refuses (one it does not know, or null) is refused there in the
 fold's words.
 
+## Host-kernel evaluation (Wave 2 final unit ups, U-PS)
+
+`registry/entries_host.py` registers `host_kernel_evaluation` (deployment_parameters, group mapping_strategy, ENUM
+`batched | per_sample`, the consumer's vocabulary in `mapping/support/host_kernel_evaluation.py`): no schema default and
+no derived default (`defaults.py` lists it with the keys whose absence leaves every program byte for byte), decision
+class function_bearing (`registry/decision_classes.py`: per_sample changes the host values to the ulp and so the
+deployed outputs). Its consumer is Soft Core Mapping's `_derive_ir`, which stamps it on the program.
+
 ## Key files
 | File | Purpose |
 |---|---|

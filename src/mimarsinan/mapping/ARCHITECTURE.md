@@ -378,6 +378,22 @@ hands each call's op, a copy of the kernel input taken before the kernel runs, a
 check Theorem 1's host condition (a module that writes its input in place leaves the deployment's output the unarmed
 one). Unarmed, the seam's outputs and cost are unchanged.
 
+## Per-sample host-kernel evaluation (Wave 2 final unit ups, U-PS)
+
+`support/host_kernel_evaluation.py` is the declared host-kernel evaluation of a deployed program
+(`host_kernel_evaluation`, `config_schema/registry/entries_host.py`). `declare_host_kernel_evaluation(ir_graph, mode)`
+stamps `per_sample` on every host op's `params` (Soft Core Mapping calls it at the end of `_derive_ir`); `batched` or the
+key absent stamps nothing, so every program is the base's byte for byte. Every evaluation of a `ComputeOp`
+(`execute`, `execute_on_gathered`, `probe_on_gathered`) goes through `ComputeOp._evaluate`, which reads the stamp
+through `evaluate_host_kernel`: under `per_sample` the kernel runs on every sample alone (its own copy), the results
+concatenated in order, so a sample's host values are a function of that sample alone and Theorem 1's host condition
+holds by construction for fp32 host convolutions and matmuls, which are batch-dependent on their batch. The stamp rides
+on the program (its pickle included), so every executor follows it alike; the armed replay receives the declared kernel.
+A kernel that cannot run on one sample alone, or that gives other than one row for one sample, is refused by name
+(`PerSampleHostKernelRefusal`). `twin_as_program(program, capture, model, samples)` evaluates an NF twin's capture as
+the program evaluates its host kernels (one sample at a time where the program declares `per_sample`), the form every
+parity gate reads the NF twin in.
+
 ## Infeasible declarations refused by name (Wave 2 final unit ux, W12)
 
 Lemma A (admission): every program the toolchain admits meets the program and executor conditions, or the toolchain

@@ -75,6 +75,18 @@ value twin, operand program) under `certification.host_condition.host_kernel_rep
 prints Theorem 1's host condition (`[HostCondition] Theorem 1 host condition: ...`) and appends its `host_condition`
 record after the static check's two in `deployment_record_hcm`. Neither refuses a run.
 
+## The NF twin as the program evaluates its host kernels (Wave 2 final unit ups, U-PS)
+
+`_derive_ir` ends by stamping the declared host-kernel evaluation (`host_kernel_evaluation`) on the program's host ops
+(`mapping/support/host_kernel_evaluation.declare_host_kernel_evaluation`; absent, nothing is stamped). Wherever a parity
+gate compares the NF twin with the deployed program, the twin is read as the program evaluates its host kernels
+(`twin_as_program`): the four NF gates of `core/nf_scm_parity.py` (the per-neuron gate, the streamed exactness gate's
+counts and rasters, the cascaded decision gate, the torch-versus-deployed gate, which reads the program off the flow),
+the value R-edge (`core/gates/value_gates.run_model_value_parity_gate`) and the operand certificate's NF edge. Under
+`per_sample` the twin then runs one sample at a time, its captures concatenated in order, so both sides of every gate
+evaluate every host kernel on one sample alone and the gates stay exact at atol 0 (fixed, never budgeted); absent the
+declaration every gate reads the twin on its batch as before.
+
 ## Dependencies
 - `chip_simulation` — spiking-mode semantics and `SpikingDeploymentContract` read by `DeploymentPlan`; `BACKEND_REGISTRY` splices the simulation-step tail; simulation runners, cost extraction, and record comparison for the verification steps and parity gates.
 - `deployment_record` — fragment converters (`build.from_mapping`, `build.from_certificates`) and schema types the mapping steps and the spike-count gate use to persist deployment-record fragments; the direction is one-way (`deployment_record` never imports `pipelining`).

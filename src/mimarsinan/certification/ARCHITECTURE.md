@@ -59,6 +59,13 @@ the replay names its cause (status `outside_scope`), in which case it is that co
 host kernel on an operand program is thus outside the per-sample certified scope by name, never an unnamed stop of
 Hard Core Mapping, while batch dependence outside every host kernel still fails the certificate.
 
+[U-PS] Where the program declares `host_kernel_evaluation = per_sample` (`mapping/support/host_kernel_evaluation.py`),
+the seam evaluates every host kernel one sample at a time and hands the replay that declared kernel, so the replay
+reads the condition established by construction (still measured, never assumed: alone and on the batch, at atol 0);
+the certificate keeps the declaring op ids (`per_sample_ops`), its established verdict names the declaration and the
+record's detail carries them. Absent the declaration, nothing of the certificate or its record changes. The operand
+certificate's NF edge reads the NF twin as the program evaluates its host kernels (`twin_as_program`).
+
 ## Dependencies
 
 `program_check/` reads the mapping stack (the identity builder, placements, `pass_timing`'s executed latencies, carried nodes and delays, `phase_channels`' channel tables, `executed_reads`' slice deliveries, bank reads and memo derivations, the residency tiles and pool), the stage loop's `enumerate_execution_stages`, `spiking/compute_boundary.publishes_boundary_train`, the spike-source spans and the integer law's bounds; the Hard Core Mapping step calls it through `pipelining/core/gates/static_program_gate.py`, never as a refusal.

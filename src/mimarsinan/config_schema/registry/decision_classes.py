@@ -70,6 +70,8 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "sanafe_sample_count": (_AB, "sample count of the SANA-FE parity refusal: fewer samples admit more"),
     "event_census_samples": (_CO, "sample count of the event census whose mean prices the record's spike-dependent "
                                   "energy; outputs and admission unchanged"),
+    "host_kernel_evaluation": (_FB, "per_sample evaluates every host kernel of the deployed program one sample at a "
+                                    "time: the host values (to the ulp) and so the deployed outputs (U-PS)"),
     "loihi_parity_sample_index": (_AB, "selects the sample the Loihi parity refusal reads"),
     "max_simulation_samples": (_AB, "subsamples the nevresim refusal's samples, and the deployed "
                                     "metric's when full eval is off"),

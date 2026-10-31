@@ -17,7 +17,7 @@ from mimarsinan.mapping.ir.source import (
     encode_ir_sources,
 )
 from mimarsinan.mapping.support.device_placement import preserved_module_placement
-
+from mimarsinan.mapping.support.host_kernel_evaluation import evaluate_host_kernel
 from mimarsinan.models.nn.activations.value_quantizer import BoundaryGrid
 
 if TYPE_CHECKING:
@@ -228,28 +228,29 @@ class ComputeOp(IRNode):
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
         x = self._gather_structured_input(input_tensor, buffers)
-        return self._exec_module(x)
+        return self._evaluate(x)
 
     def execute_on_gathered(self, flat_input: torch.Tensor) -> torch.Tensor:
         """DEPLOYMENT seam: places the host module on the buffer device. An armed host-kernel replay gets copies (the
-        input taken before the kernel runs, which may write it in place, and the result); the call is the unarmed one."""
+        input taken before the kernel runs, which may write it in place, and the result) and the declared kernel."""
         replay = HOST_KERNEL_REPLAY.get()
         if replay is None:
-            return self._exec_module(flat_input)
+            return self._evaluate(flat_input)
         as_given = flat_input.detach().clone()
-        result = self._exec_module(flat_input)
-        replay(self, as_given, result.detach().clone(), self._exec_module)
+        result = self._evaluate(flat_input)
+        replay(self, as_given, result.detach().clone(), self._evaluate)
         return result
 
     def probe_on_gathered(self, flat_input: torch.Tensor) -> torch.Tensor:
-        """ANALYSIS seam: same execution, borrowed placement restored exactly.
-
-        ``params["module"]`` is a live reference into the model's mapper graph,
-        not a copy. A probe on a fabricated tensor would otherwise half-migrate
-        the model — which stranded a host classifier on CPU mid-run on cuda:0.
-        """
+        """ANALYSIS seam: same execution, borrowed placement restored exactly. ``params["module"]`` is a live reference
+        into the model's mapper graph, not a copy: a probe on a fabricated tensor would otherwise half-migrate the
+        model, which stranded a host classifier on CPU mid-run on cuda:0."""
         with preserved_module_placement(self.params.get("module")):
-            return self._exec_module(flat_input)
+            return self._evaluate(flat_input)
+
+    def _evaluate(self, x: torch.Tensor) -> torch.Tensor:
+        """The kernel as the program declares it: on the batch, or one sample at a time (``host_kernel_evaluation``)."""
+        return evaluate_host_kernel(self, x, self._exec_module)
 
     def _gather_structured_input(
         self,

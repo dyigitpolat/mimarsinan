@@ -16,6 +16,7 @@ from mimarsinan.chip_simulation.value_run.int64_golden import GoldenTrace, run_g
 from mimarsinan.chip_simulation.value_run.operand_blocks import operand_blocks
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.capability.op_kinds import op_kind
+from mimarsinan.mapping.support.host_kernel_evaluation import forward_of, twin_as_program
 from mimarsinan.models.nn.activations.integer_law import grid_levels
 
 #: Samples the whole golden replays alone against their place in the batch (the batch-of-one edge: a structural spot
@@ -190,7 +191,7 @@ def certify_operand_program(nf_model, identity_mapping, packed_mapping, samples:
                                       "certify a program without them by certify_twin_flow_values")
     samples = samples.detach().cpu().double()
     with torch.no_grad():
-        nf = nf_model(samples)
+        nf = twin_as_program(identity_mapping, forward_of, nf_model, samples)  # [U-PS] as the program evaluates
     scm_flow, scm, scm_state = _flow_outputs(identity_mapping, samples)
     hcm_flow, hcm, _state = _flow_outputs(packed_mapping, samples)
     trace = GoldenTrace()

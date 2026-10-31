@@ -20,6 +20,7 @@ from mimarsinan.config_schema.registry.entries_core_types import ENTRIES as _COR
 from mimarsinan.config_schema.registry.entries_endpoint import ENTRIES as _ENDPOINT
 from mimarsinan.config_schema.registry.entries_execution import ENTRIES as _EXECUTION
 from mimarsinan.config_schema.registry.entries_grids import ENTRIES as _GRIDS
+from mimarsinan.config_schema.registry.entries_host import ENTRIES as _HOST
 from mimarsinan.config_schema.registry.entries_lanes import ENTRIES as _LANES
 from mimarsinan.config_schema.registry.entries_lowering import ENTRIES as _LOWERING
 from mimarsinan.config_schema.registry.entries_model import ENTRIES as _MODEL
@@ -200,7 +201,7 @@ _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
         with_decision_class(_inject_domain_relevance(_inject_default(_inject_declarations(e))))
         for e in (_RUN + _MODEL + _SEMANTICS + _SOMA + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION
-                  + _PLATFORM + _ODIN_FPGA + _ODIN_HACC + _PHYSICS
+                  + _PLATFORM + _ODIN_FPGA + _ODIN_HACC + _PHYSICS + _HOST
                   + _LOWERING + _TARGET + _WRITE + _READOUT + _RESIDENCY + _GRIDS + _LANES + _CORE_TYPES + _CENSUS)
     )
 )

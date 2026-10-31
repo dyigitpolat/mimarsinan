@@ -175,7 +175,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "target_faithfulness_class", "readout_law", "inference_batch_K", "write_overlap",
     "write_ports", "inference_rate_hz", "min_lifetime_hours", "residency_plan",
     # Wave 2 N2 declaration (registry/entries_readout.py): no default, absent is G2's per-perceptron law.
-    "readout_ranges",
+    "readout_ranges", "host_kernel_evaluation",  # U-PS (entries_host.py): absent, host kernels run on their batch
     # Wave 2 (registry/entries_residency.py): no default, an absent key leaves every program byte for byte.
     "position_multiplexing", "pipelined_multiplexing", "carry_buffer_bytes", "reduction_core_banks",
     # Wave 2 WI-5a to WI-5c declarations (registry/entries_grids.py): no default, absent is the calibrated,

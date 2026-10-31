@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from mimarsinan.common.env import nf_scm_parity_debug_enabled
+from mimarsinan.mapping.support.host_kernel_evaluation import forward_of, twin_as_program
 from mimarsinan.models.nn.lif_kernels import measurement_plane
 
 
@@ -107,7 +108,8 @@ def assert_nf_scm_parity_or_raise(
 
     from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
 
-    nf = _capture_nf_normalized(model, samples)
+    # [U-PS] every NF capture below is the twin as the program evaluates its host kernels (twin_as_program).
+    nf = twin_as_program(ir_graph, _capture_nf_normalized, model, samples)
     # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority; no-op when nothing was pruned).
     nf = derive_deployed_neuron_survival(ir_graph).project(nf)
     scm = _collect_scm_normalized(identity_mapping, model, samples, contract)
@@ -245,13 +247,14 @@ def assert_streamed_nf_scm_exact_or_raise(
     per_sample: List[Dict[int, np.ndarray]] = []
     per_sample_raster: List[Dict[int, np.ndarray]] = []
     with measurement_plane():
-        nf_counts_by_pi = _capture_nf_streamed_counts(model, samples)
+        nf_counts_by_pi = twin_as_program(ir_graph, _capture_nf_streamed_counts, model, samples)
         # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority; no-op when nothing was pruned).
         nf_counts_by_pi = derive_deployed_neuron_survival(ir_graph).project(
             nf_counts_by_pi,
         )
         nf_rasters_by_pi = (
-            _capture_nf_streamed_rasters(model, samples) if per_event else {}
+            twin_as_program(ir_graph, _capture_nf_streamed_rasters, model, samples)
+            if per_event else {}
         )
         with torch.no_grad():
             for i in range(samples.shape[0]):
@@ -314,7 +317,7 @@ def assert_cascaded_nf_scm_agreement_or_raise(
         samples = samples.to(device)
         executor = executor.to(device)
     with torch.no_grad():
-        nf_pred = model(samples).argmax(dim=1)
+        nf_pred = twin_as_program(ir_graph, forward_of, model, samples).argmax(dim=1)
         scm_pred = executor(samples).argmax(dim=1)
     agreement = float((nf_pred == scm_pred).double().mean())
     if agreement < float(min_agreement):
@@ -385,8 +388,9 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
     if device is not None:
         samples = samples.to(device)
         flow = flow.to(device)
+    program = getattr(flow, "hybrid_mapping", None)
     with torch.no_grad(), measurement_plane():
-        torch_pred = model(samples).argmax(dim=1)
+        torch_pred = twin_as_program(program, forward_of, model, samples).argmax(dim=1)
         sim_pred = flow(samples).argmax(dim=1)
     agreement = float((torch_pred == sim_pred).double().mean())
     if labels is not None:
