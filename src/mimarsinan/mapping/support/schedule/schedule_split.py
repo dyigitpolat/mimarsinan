@@ -11,7 +11,7 @@ from mimarsinan.mapping.layout.layout_types import (
     LayoutSoftCoreSpec,
 )
 from mimarsinan.mapping.packing.greedy.split import _is_splittable
-from mimarsinan.mapping.support.schedule.schedule_budget import _coalescing_bundles
+from mimarsinan.mapping.support.schedule.schedule_budget import _coalescing_bundles, pass_atoms
 
 #: The bound of a softcore the greedy cannot place on the pool's core shape (above any core count).
 UNPLACEABLE = 1 << 62
@@ -170,7 +170,8 @@ def split_with_verdicts(
         and len(coalescing_group_ids) == len(softcores)
     ):
         use_coalescing_bundles = True
-        atomic = _coalescing_bundles(softcores, coalescing_group_ids)
+        # [U-CG] a group of whole-fan-in members that alone exceeds the pool is planned as its members
+        atomic = pass_atoms(_coalescing_bundles(softcores, coalescing_group_ids), lambda b: _packs(b, _cost(b)))
     else:
         atomic = [[sc] for sc in softcores]
 
@@ -209,7 +210,8 @@ def split_with_verdicts(
             if _packs(flat, flat_cost):
                 running, running_ok, running_cost = list(flat), True, flat_cost
             elif use_coalescing_bundles and len(flat) > 1:
-                # Cannot split a coalescing group across schedule passes.
+                # Cannot split a coalescing group with a partial-sum member across schedule passes ([U-CG]: a
+                # whole-fan-in group that alone does not pack reached this loop as its members).
                 sub_segments.append((flat, False))
                 running, running_cost = [], 0
             else:

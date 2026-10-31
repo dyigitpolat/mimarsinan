@@ -90,6 +90,10 @@ def vehicle(name: str):
     if name == "proj":
         return nn.Sequential(nn.Conv2d(3, 8, 3, padding=1), nn.ReLU(), _ProjRes(8, 16, 2), nn.Flatten(),
                              nn.Linear(16 * 4, 10)), (3, 4, 4)
+    if name == "wide_group":
+        # [U-CG] on 128 x 128: Linear(300, 300) is three output tiles of three fused crossbars, one coalescing
+        # group of nine crossbars whose members each hold their whole fan-in.
+        return nn.Sequential(nn.Flatten(), nn.Linear(300, 300), nn.ReLU(), nn.Linear(300, 10)), (3, 10, 10)
     raise KeyError(name)
 
 

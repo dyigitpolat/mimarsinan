@@ -58,6 +58,7 @@ def spec_from_neural_core(
         ),
         name=core.name, core_role=getattr(core, "core_role", None),
         coalescing_group_id=getattr(core, "coalescing_group_id", None),
+        coalescing_role=getattr(core, "coalescing_role", None),
     )
 
 
@@ -120,4 +121,5 @@ def spec_from_softcore(
         ),
         name=getattr(softcore, "name", None), core_role=getattr(softcore, "core_role", None),
         coalescing_group_id=getattr(softcore, "coalescing_group_id", None),
+        coalescing_role=getattr(softcore, "coalescing_role", None),
     )

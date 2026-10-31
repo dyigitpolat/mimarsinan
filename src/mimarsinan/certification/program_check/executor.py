@@ -23,13 +23,16 @@ from mimarsinan.mapping.latency.core_graph import topological_order
 from mimarsinan.mapping.packing.executed_reads import COUNT, REPLAYED, SliceDelivery
 from mimarsinan.mapping.packing.pass_timing import carried_nodes
 from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
+from mimarsinan.mapping.support.schedule.schedule_budget import splits_between_members
 from mimarsinan.models.nn.activations.integer_law import law_magnitude_bound
 
 
 def check_order(program: Any, delta: ProgramView, facts: SweepFacts, h9: ConditionResult,
                 r6: ConditionResult) -> None:
     """H9: every unit reads only nodes an earlier unit or host stage produced (its slices and, N2, its operand banks'
-    payload writes), every node is produced once, a coalescing group sits in one unit. R6: every unit's core graph is acyclic and every core read is walked."""
+    payload writes), every node is produced once, a coalescing group sits in one unit ([U-CG] a group whose members each
+    hold their whole fan-in: each member in one unit, the planner's rule). R6: every unit's core graph is acyclic and
+    every core read is walked."""
     produced: Set[int] = {-2}
     made_by: Dict[int, str] = {}
     by_unit = {u.index: u for u in delta.units}
@@ -69,14 +72,24 @@ def check_order(program: Any, delta: ProgramView, facts: SweepFacts, h9: Conditi
     if tail:
         h9.add(Violation("H9", "output_unproduced", "program", f"the network reads node(s) {tail[:6]} no stage "
                          "produces"))
-    groups: Dict[int, Set[int]] = {}
-    for placed in delta.placements.values():
+    groups: Dict[int, Dict[int, Set[int]]] = {}
+    roles: Dict[int, List[Any]] = {}
+    for node, placed in delta.placements.items():
         for p in placed:
             gid = p.record.get("coalescing_group_id")
             if gid is not None:
-                groups.setdefault(int(gid), set()).add(delta.units[p.unit].index)
-    for gid, units in sorted(groups.items()):
+                groups.setdefault(int(gid), {}).setdefault(int(node), set()).add(delta.units[p.unit].index)
+                roles.setdefault(int(gid), []).append(p.record.get("coalescing_role"))
+    for gid, members in sorted(groups.items()):
         h9.checked += 1
+        if splits_between_members(roles[gid]):
+            for node, units in sorted(members.items()):
+                if len(units) > 1:
+                    h9.add(Violation("H9", "coalescing_group_cut", f"coalescing group {gid}",
+                                     f"its member node {node} runs in units {sorted(units)}; a member holding its "
+                                     "whole fan-in is never cut across passes"))
+            continue
+        units = set().union(*members.values())
         if len(units) > 1:
             h9.add(Violation("H9", "coalescing_group_cut", f"coalescing group {gid}",
                              f"its parts run in units {sorted(units)}; a group is never cut across passes"))

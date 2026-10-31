@@ -634,7 +634,15 @@ def reference_split_softcores_by_capacity(
         and len(coalescing_group_ids) == len(softcores)
     ):
         use_coalescing_bundles = True
-        atomic = _coalescing_bundles(softcores, coalescing_group_ids)
+        atomic = []
+        for bundle in _coalescing_bundles(softcores, coalescing_group_ids):
+            # [U-CG] a group whose members each hold their whole fan-in ("master") and that alone does not pack is
+            # its members, each one bundle; any other group is one bundle
+            if len(bundle) > 1 and all(getattr(sc, "coalescing_role", None) == "master" for sc in bundle) \
+                    and not _packs(bundle):
+                atomic.extend([sc] for sc in bundle)
+            else:
+                atomic.append(bundle)
     else:
         atomic = [[sc] for sc in softcores]
 
@@ -664,7 +672,7 @@ def reference_split_softcores_by_capacity(
                 continue
 
             if use_coalescing_bundles and len(flat) > 1:
-                # Cannot split a coalescing group across schedule passes.
+                # Cannot split a coalescing group with a partial-sum member across schedule passes.
                 sub_segments.append(flat)
                 running = []
                 continue

@@ -44,6 +44,10 @@ class LayoutSoftCoreSpec:
     # [W04] The IR core's coalescing group (``None`` = none): the packer never neuron-splits a group's core and the
     # planner keeps the group in one pass, on this plane as on the builder's.
     coalescing_group_id: Optional[int] = None
+    # [U-CG] The IR core's role in its group (``master``: it holds its whole fan-in on fused cores). A group whose
+    # members are all ``master`` shares no partial sum, so the planner may split it between members
+    # (``schedule_budget.pass_atoms``).
+    coalescing_role: Optional[str] = None
     # [F2] Of ``input_count``, the axons that hold a fused add's operand rows (W08: placed, zero crossbar weights, the
     # lane's port): packed as axons, counted as no programmed cell (``CoreOccupancy``); 0 off the builder's lane cores.
     operand_axons: int = 0

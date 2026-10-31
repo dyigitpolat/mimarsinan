@@ -106,7 +106,9 @@ def test_an_axon_source_of_another_class_past_the_first_row_fails_by_name():
 # by a name table the check reads by, or by a shared accessor the check imports or calls. Both cover the program,
 # stage, core mapping, hard core and placement elements (``PROGRAM_ELEMENTS``) and match by attribute name (not by
 # element or condition); a name is a read when the scanned code accesses it (attribute, ``getattr``, ``.get`` or a
-# subscript), and a spelled name counts only inside a declared name table (``NAME_TABLES``).
+# subscript), and a spelled name counts only inside a declared name table (``NAME_TABLES``). [U-CG] The third holds the
+# markers to the check's reads: an attribute or record key the check reads is never registered ``unread`` or
+# ``backend``; a placement's keys are matched through the record they are read from (``_placement_record_reads``).
 import ast  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -264,6 +266,73 @@ def test_every_attribute_a_predicate_claims_is_read_by_the_check():
                for attribute, readers in registered_attributes()[element].items()
                if readers not in ((UNREAD,), (LABEL,), (BACKEND,)) and attribute not in checked]
     assert not missing, f"a predicate is said to read them, but the check never does: {missing}"
+
+
+def _placement_record_reads() -> dict:
+    """The keys the check's own sources read from a placement's record (``<placement>.record`` or a parameter named
+    ``record``: ``.get``, ``.setdefault`` or ``.pop`` with a literal or a module constant, or a literal subscript), each
+    with the places that read it. Matched through the record, not by name: an IR node carries attributes of the same
+    names (``coalescing_role``, ``psum_role``) that the check reads off nodes."""
+    constants = _constants()
+
+    def is_record(expr) -> bool:
+        return ((isinstance(expr, ast.Attribute) and expr.attr == "record")
+                or (isinstance(expr, ast.Name) and expr.id == "record"))
+
+    out: dict = {}
+    for spec in _check_sources():
+        for tree in _trees(spec):
+            for node in ast.walk(tree):
+                key = None
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.args
+                        and node.func.attr in ("get", "setdefault", "pop") and is_record(node.func.value)):
+                    arg = node.args[0]
+                    key = arg.value if isinstance(arg, ast.Constant) else constants.get(getattr(arg, "id", ""))
+                elif isinstance(node, ast.Subscript) and is_record(node.value) and isinstance(node.slice, ast.Constant):
+                    key = node.slice.value
+                if isinstance(key, str):
+                    out.setdefault(key, []).append(f"{spec}:{node.lineno}")
+    return out
+
+
+def _unread_yet_checked(known, placement_reads: dict, checked: set) -> list:
+    """The third ratchet's rule over ``known`` (``registered_attributes()``): each placement key read from a record, and
+    each other element's attribute the check reads, registered ``unread`` or ``backend``."""
+    from mimarsinan.certification.program_check.forms import BACKEND, UNREAD
+
+    wrong = [f"placement.{key} (read at {', '.join(places)})" for key, places in sorted(placement_reads.items())
+             if known["placement"].get(key) in ((UNREAD,), (BACKEND,))]
+    return wrong + [f"{element}.{attribute}" for element in PROGRAM_ELEMENTS if element != "placement"
+                    for attribute, readers in sorted(known[element].items())
+                    if readers in ((UNREAD,), (BACKEND,)) and attribute in checked]
+
+
+def test_every_attribute_the_check_reads_is_registered_with_a_reader():
+    """The third direction: an attribute or record key the check reads is never registered ``unread`` or ``backend``
+    (read by no predicate), so a predicate whose verdict depends on a key fails by name until the key names its
+    condition. Placement keys are those read from a placement's record; the other elements' attributes match by name
+    against the check's reads (its own sources, the name tables it reads by, the shared accessors it calls)."""
+    from mimarsinan.certification.program_check.forms import registered_attributes
+
+    placement_reads = _placement_record_reads()
+    assert placement_reads, "no read of a placement's record found in the check's sources: the scan is vacuous"
+    wrong = _unread_yet_checked(registered_attributes(), placement_reads, _check_reads())
+    assert not wrong, f"registered as read by no predicate, yet the check reads them: {wrong}"
+
+
+def test_the_third_ratchet_fails_a_check_read_registered_unread():
+    """Self-test of the third ratchet: a placement key the check reads from a record, or a stage attribute it reads,
+    registered ``unread``, fails by name."""
+    from mimarsinan.certification.program_check.forms import UNREAD, registered_attributes
+
+    placement_reads, checked = _placement_record_reads(), _check_reads()
+    stage = registered_attributes()["stage"]
+    for element, name in (("placement", sorted(placement_reads)[0]),
+                          ("stage", sorted(a for a, r in stage.items() if r != (UNREAD,) and a in checked)[0])):
+        known = registered_attributes()
+        known[element][name] = (UNREAD,)
+        wrong = _unread_yet_checked(known, placement_reads, checked)
+        assert any(w.split(" ")[0] == f"{element}.{name}" for w in wrong), (element, name, wrong)
 
 
 def _reads_by(table: str, reader: str) -> bool:

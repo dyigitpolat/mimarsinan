@@ -311,7 +311,14 @@ at the pack integration: an operand bank's payload is rewritten every pass, so n
 fusion wired only under declared coalescing (`run_placement(allow_coalescing=)`, as `HardCoreMapping.map` does) and
 keeps a wide spec whole, so a fused core is one used core of k x A axons on both planes. A spec carries what the engine
 reads on a soft core (`LayoutSoftCoreSpec.weight_bank_id`, `LayoutSoftCoreSpec.coalescing_group_id`); a layout core
-notes the banks it hosts (`note_resident_bank`) and its placed regions (`LayoutPackingResult.core_regions`).
+notes the banks it hosts (`note_resident_bank`) and its placed regions (`LayoutPackingResult.core_regions`). [U-CG] A
+spec also carries its core's coalescing role (`LayoutSoftCoreSpec.coalescing_role`, set by the shape walk, `finalize`
+and the adapter as the group is): a coalescing group stays in one pass wherever it packs alone, and a group whose
+members each hold their whole fan-in (`schedule_budget.WHOLE_FAN_IN_ROLE`, the only role this tree's builders emit)
+shares no partial sum, so where it alone exceeds one pass the capacity split plans it as its members, each one bundle
+accumulated as an ungrouped spec is, never cut inside one (`schedule_budget.pass_atoms`); a group with any other member
+keeps one pass and is refused by name where it does not pack. The static check's H9 reads the same rule
+(`schedule_budget.splits_between_members`: `coalescing_group_cut` names a member, or such a group, run in two units).
 `packing/infeasibility_proofs.CoreCapacityRefusal` (a `ToolchainRefusal` and `RuntimeError`, with `named_message` and
 `refusal_name_of_message`) is the one capacity refusal of both planes: the greedy engine raises it where it had no core
 left, `_validate_coalescing_budget` for a wide core no declared count can coalesce, the scheduled builder for a segment

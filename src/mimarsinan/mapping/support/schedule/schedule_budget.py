@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import Callable, Iterable, List, Optional, Sequence
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+
+#: [U-CG] The coalescing role of a core that holds its whole fan-in on fused cores (``layout/ir_mapping/fc.py``).
+WHOLE_FAN_IN_ROLE = "master"
 
 
 def effective_core_budget(cores_config: Sequence[dict]) -> int:
@@ -40,3 +43,26 @@ def _coalescing_bundles(
         bundles.append(bundle)
     return bundles
 
+
+def splits_between_members(roles: Iterable[Optional[str]]) -> bool:
+    """[U-CG] A coalescing group whose members each hold their whole fan-in (every role ``WHOLE_FAN_IN_ROLE``) shares
+    no partial sum between its members, so the group may run in several passes, each member in one. A group with any
+    other member (a partial sum, its accumulator, an unknown role) is one unit: never cut across passes."""
+    roles = list(roles)
+    return bool(roles) and all(role == WHOLE_FAN_IN_ROLE for role in roles)
+
+
+def pass_atoms(bundles: Sequence[List[LayoutSoftCoreSpec]],
+               packs: Callable[[List[LayoutSoftCoreSpec]], bool]) -> List[List[LayoutSoftCoreSpec]]:
+    """[U-CG] The capacity split's atomic bundles: a coalescing group stays one bundle wherever it packs alone; a group
+    of several whole-fan-in members that alone does not pack is its members, each one bundle, so they accumulate into
+    passes as ungrouped specs do and a member is never cut. Every other bundle is kept as it is (a partial-sum group
+    that does not pack stays one infeasible pass, refused by name)."""
+    atoms: List[List[LayoutSoftCoreSpec]] = []
+    for bundle in bundles:
+        if len(bundle) > 1 and splits_between_members(getattr(sc, "coalescing_role", None) for sc in bundle) \
+                and not packs(bundle):
+            atoms.extend([sc] for sc in bundle)
+        else:
+            atoms.append(bundle)
+    return atoms

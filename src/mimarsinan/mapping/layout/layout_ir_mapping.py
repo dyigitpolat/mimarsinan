@@ -89,8 +89,10 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
         perceptron_index: Optional[int],
         coalescing_group_id: Optional[int] = None,
         psum_group_id: Optional[int] = None,
+        coalescing_role: Optional[str] = None,
     ) -> LayoutSourceView:
-        """Record a softcore shape under ``node_id``; a 1-D view over its outputs ([W04] its coalescing group)."""
+        """Record a softcore shape under ``node_id``; a 1-D view over its outputs ([W04] its coalescing group, [U-CG]
+        and role)."""
         if self.lane_walk is not None:
             self.lane_walk.on_emit(self, node_id, input_sources, perceptron_index, psum_group_id)
         self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
@@ -107,7 +109,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
 
         self.layout_softcores.append(LayoutSoftCoreSpec(
             input_count=int(input_count) * self.rows_per_input, output_count=int(output_count), residency_class_id=0,
-            latency_tag=None, name=name, coalescing_group_id=coalescing_group_id))
+            latency_tag=None, name=name, coalescing_group_id=coalescing_group_id, coalescing_role=coalescing_role))
         return LayoutSourceView.from_producer(
             producer_node_id=node_id,
             shape=(int(output_count),),
@@ -223,4 +225,5 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
             perceptron_index=perceptron_index,
             coalescing_group_id=coalescing_group_id,
             psum_group_id=psum_group_id,
+            coalescing_role=coalescing_role,
         )

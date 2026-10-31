@@ -207,7 +207,7 @@ class _LayoutIRMappingFinalize:
                     None if perceptron_index is None else int(perceptron_index)
                 ),
                 name=old.name, core_role=old.core_role,
-                coalescing_group_id=old.coalescing_group_id,
+                coalescing_group_id=old.coalescing_group_id, coalescing_role=old.coalescing_role,
                 operand_axons=old.operand_axons,  # [U-E2 H-1] a fused add's operand rows (the lane walk's)
             )
 

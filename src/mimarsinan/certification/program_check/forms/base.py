@@ -71,9 +71,10 @@ HARD_CORE: Dict[str, Readers] = {
 PLACEMENT: Dict[str, Readers] = {
     **_same(_TILES, "ir_node_id", "neuron_offset", "neurons", "neuron_range_in_original", "axon_offset", "axons",
             "weight_bank_id", "bank_axon_range", "bank_neuron_range"),
-    "coalescing_group_id": ("H9",), "split_group_id": ("H7",),
-    **_same((UNREAD,), "bank_includes_bias_row", "coalescing_role", "psum_role", "perceptron_index",
-            "perceptron_output_slice", "split_fragment_index", "split_original_neurons"),
+    # [U-CG] H9 reads a group's roles: a group whose members each hold their whole fan-in is checked per member.
+    "coalescing_group_id": ("H9",), "coalescing_role": ("H9",), "split_group_id": ("H7",),
+    **_same((UNREAD,), "bank_includes_bias_row", "psum_role", "perceptron_index", "perceptron_output_slice",
+            "split_fragment_index", "split_original_neurons"),
 }
 MATRIX_PLACEMENT: Dict[str, Readers] = _same(_TILES, "axon_offset", "axons", "keep_cols", "keep_rows",
                                              "neuron_offset", "neurons", "source", "row_signs")

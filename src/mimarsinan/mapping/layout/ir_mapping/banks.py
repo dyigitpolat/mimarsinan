@@ -128,6 +128,7 @@ class _LayoutIRMappingBanks:
             perceptron_index=perceptron_index,
             coalescing_group_id=coalescing_group_id,
             psum_group_id=psum_group_id,
+            coalescing_role=coalescing_role,
         )
         if self.rows_per_input == 1:  # a per-axon split instance is not its bank's region: no bank residency
             self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
