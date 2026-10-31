@@ -58,6 +58,11 @@ class LayoutNocFragments:
     #: the specs' depth segments (no runs stated, or [fix_b] a declared plan's composition, which plans on them).
     #: Every consumer of the fragments reads this one segmentation (``spec_segments``).
     runs: Optional[Tuple[int, ...]] = None
+    #: [U-PP P-1] ``(pass_count, sync_count)`` of the program these passes are, by the sealed record's rule
+    #: (``from_mapping._pass_census``): the planner's passes per segment (passes, passes less segments) when the
+    #: program is the planner's; (0, 0) for the single pool (no scheduling, or [fix_b] the fit rule), whose stages
+    #: carry no pass index. None where no planner stated it (fragments built by hand).
+    schedule_census: Optional[Tuple[int, int]] = None
 
 
 def collect_noc_fragments(
@@ -96,7 +101,8 @@ def collect_noc_fragments(
     on its segment's cores, pinned by the builder's rule ``fit_pins``), so ``compute_mapping_stats``, these fragments
     and the builder judge one program, or refuse by one name (``CoreCapacityRefusal``).
     [CL-SG] ``declared_cores`` (the platform's ``cores``) signs each packed core of a per-axon type
-    (``carries_sign_register``): its used rows ride the pass program for the payload rule.
+    (``carries_sign_register``): its used rows ride the pass program for the payload rule. [U-PP P-1] The fragments
+    state their program's schedule census (``schedule_census``), the one every candidate quantity of the passes reads.
     """
     softcores = list(softcores)
     runs = runs if runs is not None else walk_runs(program, len(softcores))
@@ -106,6 +112,7 @@ def collect_noc_fragments(
     if residency_plan is not None and not allow_scheduling:
         raise ResidencyPlanError("residency_plan is declared but allow_scheduling is not")
     residency: Optional[ResidencyComposition] = None
+    schedule_census = (0, 0)  # [U-PP P-1] the single pool's, until the planner's program stands
 
     if allow_scheduling:
         plan = plan_program_passes(
@@ -128,6 +135,7 @@ def collect_noc_fragments(
                 f"pass can pack"
             )
         pass_lists = [list(chunk) for chunk in plan.pass_lists]
+        schedule_census = (int(plan.total_pass_count), int(plan.sync_count))
         # Residency is a per-SEGMENT question: only a segment whose passes
         # the residency composition produced keeps weights installed.
         pass_resident = list(plan.resident_flags)
@@ -152,6 +160,7 @@ def collect_noc_fragments(
     return LayoutNocFragments(
         pass_placements=tuple(per_pass), census=census, pass_programs=tuple(programs),
         runs=None if residency_plan is not None and not fit else runs,
+        schedule_census=(0, 0) if fit else schedule_census,
     )
 
 

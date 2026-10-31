@@ -473,6 +473,17 @@ holds, `ProgramPasses.onchip_boundary_widths`, by the carry census's own rule, `
 source departs from the source rule (a preprint, another module's measurement) is named in the description's
 `departures`, and the block carries the departure into the row's note.
 
+## The candidate's schedule census (U-PP)
+
+`quantities/from_candidate.py`: a candidate's `pass_count` and `sync_count` are the schedule census of the pass
+structure that supplies its `latency_steps` and programming census (`CandidateQuantityContext.pass_count`,
+`sync_count`, set by `objectives/context.py` from `build/payload_sizes.CandidateProgramming.schedule_census`, the
+fragments' `LayoutNocFragments.schedule_census`), so they equal the sealed record's `ScheduleRecord.pass_count` and
+`sync_count` for the same program; the layout statistics answer only for a candidate without a pass structure. Callers
+that pack the statistics on the builder's segments (the joint search, the scaling ladder) see no change; a caller that
+packed them on depth segments (the baseline rerun's candidate plane) now prints the record's counts, and its
+`e_sync_barrier`/`t_sync_barrier` terms price the record's syncs.
+
 ## Where the backing store lives (U-J3)
 
 A chip description declares its backing store (`platform_physics/hosts/store.py`; the profile's `backing_store`:

@@ -128,7 +128,8 @@ def _every_core_less_dark(noc, weight_bits):
     """The seven fields by the arithmetic of every core a pass loads (``PassProgram.tiles``, every core's cells), then
     each wavefront head's dark cores out: their physical tiles (``core_tile_cells``) out of the segment cores and their
     cells out of the committed cells. The written cores, bytes, passes and cells and the per-pass cores keep them (the
-    head loads its dark cores). Returns the fields and the number of dark cores."""
+    head loads its dark cores). [U-PP P-1] The eighth, the fragments' schedule census, rides through as they state it
+    (None where they state none). Returns the fields and the number of dark cores."""
     programs = () if noc is None else noc.pass_programs
     written = [p for p in programs if not p.resident]
     dark = [(p, i) for p in programs for i in sorted(p.dark_cores or ())]
@@ -142,6 +143,7 @@ def _every_core_less_dark(noc, weight_bits):
         "reprogram_passes": len(written),
         "pass_cores": tuple(p.tiles for p in programs),
         "reprogrammed_cells": tuple(cells for p in written for cells in p.core_cells),
+        "schedule_census": getattr(noc, "schedule_census", None),
     }, len(dark)
 
 
@@ -216,7 +218,8 @@ def test_the_candidate_census_is_the_sealed_record_field_by_field(fixture, geome
     """The candidate's census of a lane program against the record of the program the builder builds, sealed from its
     mapping as the deployment-record step seals it (``executed_record``) and read by a full ``from_record`` call: the
     five scalar fields, the pass count and the allocation (``pass_cores`` summed); the per-pass physical cores and the
-    written cells off the sealed segments by ``from_record``'s tile rule (``declared_tiles``)."""
+    written cells off the sealed segments by ``from_record``'s tile rule (``declared_tiles``); [U-PP P-1] the schedule
+    census, the record's pass and sync counts."""
     platform, program, scheduled = _lane_program(fixture, geometry, pipelined)
     census = candidate_programming_census(scheduled.noc, weight_bits=4)
     record = executed_record(build_hybrid_mapping_for_pipeline(program.ir, platform), platform, weight_bits=4,
@@ -234,7 +237,8 @@ def test_the_candidate_census_is_the_sealed_record_field_by_field(fixture, geome
               "macs": census.committed_cells}
     read = {key: sealed.get(key).value for key in ("segment_cores", "reprogrammed_cores", "reprogrammed_bytes",
                                                    "reprogram_passes", "pass_count", "cores_allocated", "macs")}
-    read.update(committed_cells=sealed.get("cells_used").value,
+    read.update(schedule_census=(int(sealed.get("pass_count").value), int(sealed.get("sync_count").value)),
+                committed_cells=sealed.get("cells_used").value,
                 pass_cores=tuple(sum(tiles(c) for c in s.cores) for s in segments),
                 reprogrammed_cells=tuple(c.cells_used for s in segments if s.programming == "reprogram"
                                          for c in s.cores))

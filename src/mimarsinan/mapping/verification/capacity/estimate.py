@@ -22,17 +22,39 @@ PACKER_DIVERGENCE_MARGIN = 0.45
 
 
 class CapacityExceededError(RuntimeError):
-    """Raised when an IR graph provably cannot fit the declared core budget."""
+    """Raised when an IR graph provably cannot fit the declared core budget.
+
+    ``cores_needed`` is the binding bound: the single-pool sum without scheduling; [U-PP P-2] under scheduling (every
+    phase gets the whole budget) the largest unit that must be co-resident (``largest_atomic_unit``), with the
+    single-pool sum only a labelled field (``single_pool_sum``), never printed as a bound (SD-14 SDB-B1)."""
 
     def __init__(
         self,
         cores_needed: int,
         cores_available: int,
         overflowing_segment: str | None,
+        *,
+        largest_atomic_unit: int | None = None,
+        atomic_unit_segment: str | None = None,
+        phase_count: int | None = None,
     ) -> None:
-        self.cores_needed = int(cores_needed)
+        self.single_pool_sum = int(cores_needed)
+        self.scheduled = largest_atomic_unit is not None
+        self.cores_needed = self.single_pool_sum if largest_atomic_unit is None else int(largest_atomic_unit)
         self.cores_available = int(cores_available)
         self.overflowing_segment = overflowing_segment
+        self.atomic_unit_segment = atomic_unit_segment
+        self.phase_count = phase_count
+        if self.scheduled:
+            super().__init__(
+                f"Placement capacity exceeded under scheduling: the largest unit that must be co-resident needs "
+                f"{self.cores_needed} cores (segment {atomic_unit_segment!r}); {self.cores_available} are declared. "
+                "Every phase gets the whole budget and no packing strategy splits one unit across phases, so no "
+                f"schedule places it. The first segment to overflow is {overflowing_segment!r}. (Fields: phase "
+                f"count: {phase_count}; single-pool sum: {self.single_pool_sum}, every segment's bound side by side, "
+                "not a bound on a scheduled build.)"
+            )
+            return
         super().__init__(
             f"Placement capacity exceeded: the IR graph statically needs "
             f">= {self.cores_needed} hard cores but only {self.cores_available} "
@@ -50,7 +72,10 @@ class CapacityEstimate:
 
     ``scheduled`` records the SCHEDULED (PEAK-phase) path vs single-pool SUM;
     ``peak_phase_cores`` is the largest phase's occupancy, ``phase_count`` the
-    reprogramming-pass count (1 when not scheduled).
+    reprogramming-pass count (1 when not scheduled). ``cores_needed`` is the
+    single-pool sum on both paths; [U-PP P-2] the scheduled path's binding
+    quantity is ``largest_atomic_unit`` (in ``atomic_unit_segment``), None
+    unscheduled.
     """
 
     cores_needed: int
@@ -61,6 +86,8 @@ class CapacityEstimate:
     scheduled: bool = False
     peak_phase_cores: int | None = None
     phase_count: int = 1
+    largest_atomic_unit: int | None = None
+    atomic_unit_segment: str | None = None
 
     def __post_init__(self) -> None:
         if self.peak_phase_cores is None:
@@ -70,7 +97,9 @@ class CapacityEstimate:
         """Raise :class:`CapacityExceededError` when not feasible; else return self."""
         if not self.feasible:
             raise CapacityExceededError(
-                self.cores_needed, self.cores_available, self.overflowing_segment
+                self.cores_needed, self.cores_available, self.overflowing_segment,
+                largest_atomic_unit=self.largest_atomic_unit if self.scheduled else None,
+                atomic_unit_segment=self.atomic_unit_segment, phase_count=self.phase_count if self.scheduled else None,
             )
         return self
 
@@ -221,6 +250,8 @@ def _scheduled_estimate(
     max_segment_bound = max((sb.bound for _, sb in bounds), default=0)
     max_atomic = max((sb.atomic_unit for _, sb in bounds), default=0)
     feasible = max_atomic <= cores_available
+    # [U-PP P-2] the segment holding the binding unit (the first where several tie)
+    atomic_segment = next((label for label, sb in bounds if sb.atomic_unit == max_atomic), None)
 
     peak_phase_cores = min(max_segment_bound, cores_available)
     phase_count = sum(
@@ -244,4 +275,6 @@ def _scheduled_estimate(
         scheduled=True,
         peak_phase_cores=int(peak_phase_cores),
         phase_count=int(phase_count),
+        largest_atomic_unit=int(max_atomic),
+        atomic_unit_segment=atomic_segment,
     )

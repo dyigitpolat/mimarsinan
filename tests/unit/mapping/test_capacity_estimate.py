@@ -408,3 +408,60 @@ class TestPackerDivergenceBand:
             self._estimate(500, 360, feasible=False).within_packer_divergence_band()
             is False
         )
+
+
+class TestScheduledRefusalNamesTheBindingUnit:
+    """[U-PP P-2, SD-14 SDB-B1] Under scheduling every phase gets the whole budget, so the binding quantity is the
+    largest unit that must be co-resident (one softcore's fused bundle), not the single-pool sum: SD-14's refusal at 48
+    cores printed ">= 115940 hard cores" while 192 cores placed the same IR (largest unit 148 cores). The scheduled
+    estimate carries that unit, its segment and the phase count; the refusal prints it and states the sum only as a
+    labelled field; the unscheduled path keeps the sum as its bound."""
+
+    def _graph(self):
+        """Segment one: 10 small cores (bound 4); a barrier; segment two: one (80, 80) core on 8 x 8 cores, an
+        atomic bundle of 10 x 10 = 100 cores. Single-pool sum 104."""
+        nodes = [_core(i, f"A{i}", 2, 3) for i in range(10)]
+        nodes.append(ComputeOp(id=10, name="pool", input_sources=_src([(9, 0)]), op_type="identity",
+                               input_shape=(3,), output_shape=(3,)))
+        huge = _core(11, "huge", in_count=80, out_count=80)
+        huge.input_sources = _src([(10, i % 3) for i in range(80)])
+        nodes.append(huge)
+        return IRGraph(nodes=nodes, output_sources=_src([(11, 0)]))
+
+    def _estimate(self, count, scheduled=True):
+        return estimate_cores_needed(self._graph(), {"cores": _cores(8, 8, count)}, allow_scheduling=scheduled)
+
+    def test_scheduled_feasibility_holds_where_the_sum_exceeds_the_budget(self):
+        for count in range(100, 104):  # every budget at or above the unit, below the sum (104)
+            est = self._estimate(count)
+            assert est.cores_needed == 104 > count
+            assert est.feasible is True
+            est.raise_if_infeasible()  # no budget at or above the unit is refused
+
+    def test_the_estimate_carries_the_binding_unit_its_segment_and_phases(self):
+        est = self._estimate(50)
+        assert est.feasible is False
+        assert est.largest_atomic_unit == 100
+        assert est.atomic_unit_segment == "neural_segment_final" == est.overflowing_segment
+        assert est.phase_count == 1 + 2  # ceil(4 / 50) + ceil(100 / 50)
+
+    @pytest.mark.parametrize("count", [1, 50, 99])
+    def test_below_the_unit_the_printed_number_is_the_unit(self, count):
+        with pytest.raises(CapacityExceededError) as exc:
+            self._estimate(count).raise_if_infeasible()
+        msg = str(exc.value)
+        assert exc.value.cores_needed == 100
+        assert exc.value.cores_available == count
+        assert (f"the largest unit that must be co-resident needs 100 cores (segment 'neural_segment_final'); "
+                f"{count} are declared") in msg
+        assert exc.value.single_pool_sum == 104
+        assert "single-pool sum: 104" in msg  # the sum only as a labelled field
+        assert "statically needs" not in msg and ">= 104" not in msg
+
+    def test_the_unscheduled_path_keeps_the_sum(self):
+        est = self._estimate(50, scheduled=False)
+        assert est.largest_atomic_unit is None
+        with pytest.raises(CapacityExceededError) as exc:
+            est.raise_if_infeasible()
+        assert exc.value.cores_needed == exc.value.single_pool_sum == 104
+        assert ">= 104 hard cores" in str(exc.value)

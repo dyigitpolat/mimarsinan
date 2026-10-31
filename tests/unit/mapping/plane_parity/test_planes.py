@@ -7,6 +7,11 @@ The vehicles and geometries are the small reproductions of the divergence classe
 (the layout packer pre-split wide cores into independent fragments where the hard-core packer fuses them), planned
 passes the hard-core packer could not place (bank affinity and coalescing groups unseen by the layout packer), bank
 residency compositions whose executed placements diverged across passes, and refusals of one point under two names.
+
+[U-PP P-1] Every built point also states one schedule census on both planes: the candidate view's ``(pass_count,
+sync_count)`` is the sealed schedule record's (SD-13's SDB-B2: the candidate read its stats' passes, planned on the
+depth segments, 18 against 21 passes and stages on ResNet-18 at the PIMCOMP geometry); ``proj`` is the projection
+shortcut's residual block on which the two segmentations differ.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ import pytest
 from . import planes as P
 
 PAIRS = [("conv_odd", 64, 16), ("conv_odd", 32, 32), ("pw", 32, 16), ("pw", 16, 8), ("pw", 64, 16),
-         ("res", 64, 16), ("res", 16, 16), ("wide_fc", 16, 16)]
+         ("res", 64, 16), ("res", 16, 16), ("wide_fc", 16, 16), ("proj", 16, 16), ("proj", 32, 16)]
 SMALL = (1, 2, 3, 4, 6, 8)
 
 
@@ -52,7 +57,7 @@ def test_every_point_agrees_on_both_planes(reps, name, a, n):
         shape = P.shape_answer(layout, specs, a, n, count, scheduled=scheduled)
         executed = P.executed_answer(rep, a, n, count, scheduled=scheduled)
         if shape.ok != executed.ok or (shape.ok and scheduled and shape.passes != executed.passes) or (
-                not shape.ok and shape.refusal != executed.refusal):
+                not shape.ok and shape.refusal != executed.refusal) or (shape.ok and shape.census != executed.census):
             disagreements.append((count, scheduled, shape, executed))
     assert not disagreements
 

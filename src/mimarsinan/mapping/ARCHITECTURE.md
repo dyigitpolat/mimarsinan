@@ -449,3 +449,22 @@ network output reads; one transfer per direction at each such boundary; and the 
 read and write (`module_macs` counts none), at the host executor's float32. The walk records each host operator's
 sizes as it walks (`layout/layout_ir_mapping.LayoutIRMapping._host_io`); a walk without its wire census states none.
 The deployment record's edge host prices it (`deployment_record/cost/host_terms.py`).
+
+## The fragments' schedule census and the capacity refusal's binding unit (U-PP)
+
+`noc/fragments.py`: `LayoutNocFragments.schedule_census` is the `(pass_count, sync_count)` of the program its passes
+are, by the sealed record's rule (`deployment_record/build/from_mapping._pass_census`): the planner's passes per
+segment and their syncs where the program is the planner's (`ProgramPassPlan.total_pass_count`, `sync_count`), and
+(0, 0) for the single pool (no scheduling, or the fit rule), whose stages carry no pass index. The candidate view
+reads its pass and sync counts from it (through the programming census), never from layout statistics a caller packed
+on other segments: on a projection shortcut's residual block the statistics packed without the walk's runs plan the
+depth segments (SD-13: 18 against 21 passes and stages on ResNet-18 at the PIMCOMP geometry). The plane-parity gate
+(`tests/unit/mapping/plane_parity`) compares the candidate's census with the sealed schedule record's at every point.
+
+`verification/capacity/estimate.py`: the scheduled estimate carries its binding quantity, the largest unit that must
+be co-resident (`largest_atomic_unit`, one softcore's fused bundle, which no phase splits) and its segment
+(`atomic_unit_segment`), beside the phase count; `cores_needed` stays the single-pool sum on both paths. A scheduled
+refusal (`CapacityExceededError`) prints the unit ("the largest unit that must be co-resident needs N cores (segment
+S); D are declared"), carries it as `cores_needed`, and states the sum only as the labelled field `single_pool_sum`
+(SD-14: the 48-core refusal printed 115,940 cores where 192 cores placed the IR; the binding unit is 148). The
+unscheduled refusal keeps the sum as its bound, its text unchanged.

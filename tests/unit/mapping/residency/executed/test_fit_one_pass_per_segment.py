@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import contextlib
 import io
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import pytest
 
+from mimarsinan.deployment_record.build.from_mapping import _pass_census
 from mimarsinan.deployment_record.build.program_census import candidate_program_passes, mapping_program_passes
 from mimarsinan.deployment_record.build.write_census import core_capacity_of, period_census
 from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
@@ -82,12 +84,14 @@ def _builder_fit(name: str, counts: List[int], *, single_pool: bool = True, plan
 
 
 def _plane_fit(vehicle, scheduled_platform, neural, bits) -> None:
-    """The shape-only plane states the same program: every core pinned, one census row per executed pass, 0 B."""
+    """The shape-only plane states the same program: every core pinned, one census row per executed pass, 0 B; [U-PP
+    P-1] and the schedule census of the record (the single pool's (0, 0): its stages carry no pass index)."""
     specs, census, program, _walk = TV.layout_walk(vehicle)
     frag = collect_noc_fragments(softcores=specs, core_types=core_types_from_declaration(scheduled_platform["cores"]),
                                  census=census, program=program,
                                  **ChipCapabilities.from_platform_constraints(scheduled_platform).layout_kwargs())
     assert all(p.schedule_resident_cores == frozenset(range(p.cores)) for p in frag.pass_programs)
+    assert frag.schedule_census == _pass_census(SimpleNamespace(stages=neural))
     passes = candidate_program_passes(specs, frag, semantics=StageSemantics(), timesteps=None)
     assert len(passes.rows) == len(neural)
     assert _period_bytes(passes, scheduled_platform, bits) == 0

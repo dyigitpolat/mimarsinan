@@ -161,3 +161,36 @@ def test_the_probe_covers_every_catalog_key_with_positive_values():
     for key in QUANTITY_SPECS:
         assert probe.has(key), key
         assert probe.get(key).value > 0.0, key
+
+
+def test_the_pass_structures_schedule_census_is_the_candidates():
+    """[U-PP P-1, SD-13 SDB-B2] The pass structure that supplies the latency steps (the fragments' programming census)
+    states the schedule census, so layout statistics planned on other segments (here 2 passes, 1 sync) never answer
+    for it; a single pool's census is (0, 0), as its record's; without a pass structure the statistics answer."""
+    def census(**over):
+        q = from_candidate(layout=make_layout(), chip_param_capacity=1.0, total_params=None,
+                           host_side_segment_count=None, context=_context(**over))
+        return q.get("pass_count").value, q.get("sync_count").value
+
+    assert census(pass_count=5, sync_count=3) == (5.0, 3.0)
+    assert census(pass_count=0, sync_count=0) == (0.0, 0.0)
+    assert census() == (2.0, 1.0)
+
+
+def test_the_candidate_context_reads_the_programming_census_schedule():
+    """[U-PP P-1] The programming census carries its fragments' schedule census into the context; a census that
+    states none (a duck-typed one) leaves the context's absent."""
+    from types import SimpleNamespace
+
+    from mimarsinan.deployment_record.build.payload_sizes import candidate_programming_census
+    from mimarsinan.deployment_record.objectives.context import candidate_context_from_platform
+
+    base = dict(segment_cores=7, committed_cells=70, reprogrammed_cores=4, reprogrammed_bytes=None,
+                reprogram_passes=1, pass_cores=(4, 3, 2), reprogrammed_cells=(10, 10, 10, 10))
+    stated = candidate_context_from_platform({}, programming=SimpleNamespace(**base, schedule_census=(5, 3)))
+    assert (stated.pass_count, stated.sync_count) == (5, 3)
+    silent = candidate_context_from_platform({}, programming=SimpleNamespace(**base))
+    assert (silent.pass_count, silent.sync_count) == (None, None)
+    noc = SimpleNamespace(pass_programs=(), schedule_census=(4, 2))
+    assert candidate_programming_census(noc, weight_bits=8).schedule_census == (4, 2)
+    assert candidate_programming_census(SimpleNamespace(pass_programs=()), weight_bits=8).schedule_census is None

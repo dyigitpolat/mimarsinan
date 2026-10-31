@@ -140,6 +140,10 @@ class CandidateQuantityContext:
     compute: Optional[Any] = None
     #: [E-5] The run's converter resolution (``readout_law.adc_bits``), None when undeclared.
     readout_bits: Optional[int] = None
+    #: [U-PP P-1] The schedule census of the pass structure that supplies ``latency_steps`` (the fragments'
+    #: ``schedule_census``, through the programming census); None without one, and the layout statistics answer.
+    pass_count: Optional[int] = None
+    sync_count: Optional[int] = None
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
@@ -174,7 +178,12 @@ def from_candidate(
     _put(values, "cells_physical", chip_param_capacity)
     _put(values, "total_params", total_params)
 
-    if layout is not None:
+    # [U-PP P-1] The schedule census of the pass structure every other program quantity reads, never statistics a
+    # caller packed on other segments (SD-13: 18 against 21 passes and stages); the statistics answer without one.
+    if context.pass_count is not None:
+        _put(values, "pass_count", context.pass_count)
+        _put(values, "sync_count", context.sync_count)
+    elif layout is not None:
         _put(values, "pass_count", layout.schedule_pass_count)
         _put(values, "sync_count", layout.schedule_sync_count)
 

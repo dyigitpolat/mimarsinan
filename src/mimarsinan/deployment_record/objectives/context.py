@@ -175,6 +175,7 @@ def _spiking_rule_context(
     weight_bits = pcfg.get("weight_bits")
 
     cores_per_tile = int(pcfg.get("cores_per_tile_resolved", 0) or 0)
+    schedule = None if programming is None else getattr(programming, "schedule_census", None)
     return CandidateQuantityContext(
         timesteps=steps if steps > 0 else None,
         activity_factor=activity if activity > 0.0 else None,
@@ -223,4 +224,7 @@ def _spiking_rule_context(
         ),
         carry_out_bytes=None if carry is None else int(carry["boundary_out_bytes"]),
         carry_in_bytes=None if carry is None else int(carry["boundary_in_bytes"]),
+        # [U-PP P-1] The schedule census of the passes the census counts (the fragments'), when they state one.
+        pass_count=None if schedule is None else int(schedule[0]),
+        sync_count=None if schedule is None else int(schedule[1]),
     )

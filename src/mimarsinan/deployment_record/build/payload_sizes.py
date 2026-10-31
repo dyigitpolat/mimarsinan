@@ -100,6 +100,9 @@ class CandidateProgramming:
     #: Per pass, the physical tiles of every core it allocates (dark ones included); summed: ``cores_allocated``.
     pass_cores: Tuple[int, ...]
     reprogrammed_cells: Tuple[int, ...]
+    #: [U-PP P-1] The fragments' ``(pass_count, sync_count)`` (``LayoutNocFragments.schedule_census``): the candidate's
+    #: schedule census, of the passes this census counts; None where the fragments state none.
+    schedule_census: Optional[Tuple[int, int]] = None
 
 
 def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProgramming:
@@ -125,6 +128,7 @@ def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProg
         reprogram_passes=len(written),
         pass_cores=tuple(_tiles(program) for program in programs),
         reprogrammed_cells=tuple(cells for program in written for cells in program.core_cells),
+        schedule_census=getattr(noc, "schedule_census", None),
     )
 
 
