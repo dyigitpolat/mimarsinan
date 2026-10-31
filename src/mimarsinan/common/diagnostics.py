@@ -5,11 +5,85 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+import threading
 import time
 import traceback
+from dataclasses import dataclass
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import set_cuda_debug
+
+#: The lifetime reading's name where no CUDA device is visible.
+CUDA_UNAVAILABLE = "CUDA_UNAVAILABLE"
+LIFETIME_SCOPE = "process lifetime"
+
+# device index -> {"allocated": bytes, "reserved": bytes}: the largest peaks folded in before each reset.
+_LIFETIME_PEAKS: dict[int, dict[str, int]] = {}
+_LIFETIME_LOCK = threading.Lock()
+
+
+@dataclass(frozen=True)
+class LifetimeCudaPeaks:
+    """The process-lifetime CUDA peaks of one device: torch's peak statistics as if no phase had reset them.
+    ``absent`` names why there is no reading (``CUDA_UNAVAILABLE``); the byte fields are then ``None``."""
+
+    device: int | None
+    max_memory_allocated_bytes: int | None
+    max_memory_reserved_bytes: int | None
+    absent: str | None = None
+
+    def as_dict(self) -> dict:
+        scope = LIFETIME_SCOPE if self.absent is None else f"none ({self.absent})"
+        return {"scope": scope, "device": self.device, "absent": self.absent,
+                "max_memory_allocated_bytes": self.max_memory_allocated_bytes,
+                "max_memory_reserved_bytes": self.max_memory_reserved_bytes}
+
+
+def _cuda_index(torch, device) -> int:
+    """The device index torch's memory statistics use for ``device`` (None: the current device)."""
+    if device is None:
+        return int(torch.cuda.current_device())
+    if isinstance(device, int):
+        return device
+    d = torch.device(device)
+    return int(torch.cuda.current_device()) if d.index is None else int(d.index)
+
+
+def _fold(torch, index: int) -> dict[str, int]:
+    """Fold the running peaks of device ``index`` into its lifetime maxima (under the lock) and return them."""
+    running = {"allocated": int(torch.cuda.max_memory_allocated(index)),
+               "reserved": int(torch.cuda.max_memory_reserved(index))}
+    life = _LIFETIME_PEAKS.setdefault(index, {"allocated": 0, "reserved": 0})
+    for key, value in running.items():
+        life[key] = max(life[key], value)
+    return dict(life)
+
+
+def reset_cuda_peak_stats(device=None) -> None:
+    """Reset torch's peak memory statistics of ``device`` (None: the current device), after folding the running
+    peaks into the process-lifetime maxima, so a per-phase reset no longer hides the session's peak. Every reset in
+    the toolchain goes through here; a no-op without CUDA."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return
+    index = _cuda_index(torch, device)
+    with _LIFETIME_LOCK:
+        _fold(torch, index)
+        torch.cuda.reset_peak_memory_stats(device)
+
+
+def lifetime_cuda_peaks(device=None) -> LifetimeCudaPeaks:
+    """The process-lifetime peak allocated and reserved bytes of ``device`` (None: the current device): the maxima
+    folded in at every reset and the running peak since the last one. Without CUDA, the named empty result."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return LifetimeCudaPeaks(None, None, None, absent=CUDA_UNAVAILABLE)
+    index = _cuda_index(torch, device)
+    with _LIFETIME_LOCK:
+        life = _fold(torch, index)
+    return LifetimeCudaPeaks(index, life["allocated"], life["reserved"])
 
 
 def enable_cuda_debug() -> None:
@@ -59,14 +133,15 @@ def phase_profiler(tag: str, name: str, *, sink=None):
     """Time a block and print peak CPU RSS delta + CUDA peak allocation.
 
     ``sink`` is an optional callable that receives the formatted line; when
-    ``None`` the line is printed.
+    ``None`` the line is printed. The CUDA peak is the block's own (the reset
+    goes through ``reset_cuda_peak_stats``, which keeps the lifetime peak).
     """
     import torch
 
     cuda_ok = torch.cuda.is_available()
     if cuda_ok:
         torch.cuda.synchronize()
-        torch.cuda.reset_peak_memory_stats()
+        reset_cuda_peak_stats()
     t0 = time.perf_counter()
     rss0 = _rss_mib()
     try:

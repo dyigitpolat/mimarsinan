@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from mimarsinan.advisories import evaluate_graph_advisories, surface_advisories
 from mimarsinan.common.best_effort import best_effort
-from mimarsinan.common.diagnostics import phase_profiler
+from mimarsinan.common.diagnostics import phase_profiler, reset_cuda_peak_stats
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
@@ -50,7 +50,7 @@ class TorchMappingStep(TrainerPipelineStep):
     def process(self):
         tag = "TorchMappingStep"
         if torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats()
+            reset_cuda_peak_stats()
 
         native_model = self.get_entry("model")
 
