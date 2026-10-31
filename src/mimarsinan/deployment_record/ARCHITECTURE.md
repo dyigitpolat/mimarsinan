@@ -558,3 +558,13 @@ rows nothing changes: `e_dma_per_byte` is the chip's one channel and prices the 
 - **The streamed vectors' row on the chip's own channel** (L-6): where the lowering price injects them at an
   undeclared `e_dma_per_byte` (the chip's own store, or no link), its printed reason names the row; no choice or price
   moves.
+
+## Device samples (U-HV)
+
+A run whose plan runs an ODIN step (`enable_odin_fpga_simulation`, `enable_odin_hacc_export`) seals the optional
+`DeploymentRecord.device_samples`: one row per step (`backend`, `declared_by` = `odin_sample_split`, `split`,
+`indices`), joined by the Deployment Record step from each step's `sample_read` entry
+(`pipelining/pipeline_steps/verification/odin/sample_split.py`). The seal requires the fragment where the plan view
+says an ODIN step ran (`SealPlanView.device_samples`); `schema/record.py` emits it only when set, so every record of a
+run without an ODIN step keeps its bytes. A cached ODIN entry with no `sample_read` (written before the declared split)
+is refused by name (`UnrecordedSampleRead`).

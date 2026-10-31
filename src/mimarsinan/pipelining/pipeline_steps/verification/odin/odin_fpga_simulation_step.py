@@ -14,7 +14,6 @@ from mimarsinan.chip_simulation.odin_fpga.records import (
     stream_metrics,
 )
 from mimarsinan.chip_simulation.odin_fpga.runner import OdinFpgaRunner
-from mimarsinan.data_handling.sample_loader import load_test_samples_by_index
 from mimarsinan.deployment_record.schema.accuracy import AccuracyReadRecord
 from mimarsinan.mapping.platform.platform_constraints import (
     resolve_platform_mapping_params,
@@ -32,6 +31,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_CARRIED,
     PipelineStep,
 )
+from mimarsinan.pipelining.pipeline_steps.verification.odin.sample_split import read_campaign
 
 #: The ODIN membrane starts every sample at zero — the CLEAR stage the exporter
 #: emits rewrites exactly those bytes, and the software twins zero theirs.
@@ -74,9 +74,10 @@ class OdinFpgaDeploymentStep(PipelineStep):
         sample_count = int(config.get("odin_fpga_sample_count", 1))
         if sample_count <= 0:
             raise ValueError("odin_fpga_sample_count must be >= 1")
-        samples = load_test_samples_by_index(
-            self.pipeline.data_provider_factory, range(sample_count),
-            num_workers=int(config.get("num_workers", 4)))
+        # [U-HV] The first N samples of the declared split (odin_sample_split; the development split unless the
+        # run declares the test split); the read's record joins the report.
+        pairs, sample_read = read_campaign(self.pipeline, range(sample_count), backend=BACKEND_NAME)
+        samples = [sample for sample, _label in pairs]
 
         runner = OdinFpgaRunner(
             hard_core_mapping, contract.simulation_steps,
@@ -119,6 +120,7 @@ class OdinFpgaDeploymentStep(PipelineStep):
             "accuracy_read": self._accuracy_fragment(len(deployed)),
             "timing_fragment": _timing_fragment(deployed, walls),
             "certificates": [c.summary() for c in certificates],
+            "sample_read": dict(sample_read),
         }
         self.add_entry("odin_fpga_deployment_results", report, "pickle")
 
@@ -133,6 +135,7 @@ class OdinFpgaDeploymentStep(PipelineStep):
             "rule": "HCM vs ODIN device spike parity (exact counts)",
             "detail": {
                 "samples": len(deployed),
+                "sample_split": sample_read["split"],
                 "transport": report["transport"],
                 "programming_s": walls["programming_s"],
                 "execution_s": walls["execution_s"],

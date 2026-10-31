@@ -33,6 +33,7 @@ from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_walls i
     host_ops_wall_s as host_ops_wall_s, host_ops_wall_s_per_pass as host_ops_wall_s_per_pass,
 )
 from mimarsinan.pipelining.core.spike_count_gate import certificate_gate_armed
+from mimarsinan.pipelining.pipeline_steps.verification.odin.sample_split import device_sample_entries
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 
 # The explicit no-double-count statement (schema §2.5): stated once, verbatim.
@@ -58,6 +59,7 @@ class PlanSealView:
     nevresim_applies: bool
     tuner_hosting_step_names: AbstractSet[str]
     event_census: bool = False
+    device_samples: bool = False  # [U-HV] an ODIN step reads samples of the declared split
 
 
 def nevresim_applies(plan: Any) -> bool:
@@ -79,6 +81,7 @@ def seal_view_for(pipeline: Any, plan: Any) -> PlanSealView:
             if isinstance(step, TunerPipelineStep)
         ),
         event_census=int(plan.event_census_samples) > 0,
+        device_samples=bool(device_sample_entries(plan)),
     )
 
 

@@ -7,19 +7,49 @@ corrupted read here does not print a wrong accuracy -- it passes or fails a pari
 check on data that was never the dataset. The read is therefore guarded exactly
 like every other measured read (``batch_integrity``), and the samples are owned
 snapshots rather than views the producer may still refill.
+
+[U-HV] The split is a declaration: ``load_pairs_by_index(split=...)`` reads the development split
+(``DEVELOPMENT_SPLIT``, the provider's validation carve) or the test split, which only a run whose declaration names
+it asks for; any other name is refused by name (``UnknownSampleSplit``) before a provider is built.
+``sample_read`` is the record of such a read that bundles, step entries and the deployment record print.
 """
 
 from __future__ import annotations
 
-from typing import Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import torch
 
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.data_handling import batch_integrity
 from mimarsinan.data_handling.data_loader_factory import (
     DataLoaderFactory,
     shutdown_data_loader,
 )
+
+#: [U-HV] The development split: the provider's validation carve, the split every measurement reads by default.
+DEVELOPMENT_SPLIT = "validation"
+#: [U-HV] The splits a verified read can serve: the development split, then the test split (read only by name).
+SAMPLE_SPLITS = (DEVELOPMENT_SPLIT, "test")
+
+
+class UnknownSampleSplit(ToolchainRefusal, ValueError):
+    """[U-HV] A sample split that names neither the development nor the test split."""
+
+
+def require_sample_split(split: Any, *, declared_by: str = "split") -> str:
+    """``split`` when it names a split of ``SAMPLE_SPLITS``; otherwise a refusal naming ``declared_by`` and the value."""
+    if isinstance(split, str) and split in SAMPLE_SPLITS:
+        return split
+    raise UnknownSampleSplit(
+        f"{declared_by}={split!r} names no sample split: the splits are {SAMPLE_SPLITS!r} (the development split "
+        f"{DEVELOPMENT_SPLIT!r}, or the test split by name); no sample was read")
+
+
+def sample_read(split: str, indices: Iterable[int], *, declared_by: str) -> Dict[str, Any]:
+    """[U-HV] The record of one read: the declaring key, the split and the per-split sample indices, in read order."""
+    return {"declared_by": str(declared_by), "split": require_sample_split(split, declared_by=declared_by),
+            "indices": [int(index) for index in indices]}
 
 
 def _collect_wanted(
@@ -75,6 +105,20 @@ def load_test_pairs_by_index(
     return _pairs_by_index(data_provider_factory, indices, num_workers=num_workers, split="test")
 
 
+def load_pairs_by_index(
+    data_provider_factory,
+    indices: Sequence[int],
+    *,
+    split: str,
+    num_workers: int = 4,
+) -> List[Tuple[torch.Tensor, torch.Tensor]]:
+    """[U-HV] One ``(sample, label)`` batch pair per index of the DECLARED split, order preserved.
+
+    ``split`` is ``DEVELOPMENT_SPLIT`` or ``"test"``; any other value is refused by name before a provider is built.
+    """
+    return _pairs_by_index(data_provider_factory, indices, num_workers=num_workers, split=split)
+
+
 def load_validation_samples_by_index(
     data_provider_factory,
     indices: Sequence[int],
@@ -89,6 +133,8 @@ def load_validation_samples_by_index(
 
 def _pairs_by_index(data_provider_factory, indices: Sequence[int], *, num_workers: int,
                     split: str) -> List[Tuple[torch.Tensor, torch.Tensor]]:
+    # [U-HV] Refused by name first: an unrecognised split used to fall through to the test loader.
+    split = require_sample_split(split)
     wanted = set(int(i) for i in indices)
     if not wanted:
         return []
@@ -97,7 +143,7 @@ def _pairs_by_index(data_provider_factory, indices: Sequence[int], *, num_worker
 
     factory = DataLoaderFactory(data_provider_factory, num_workers=num_workers)
     provider = factory.create_data_provider()
-    if split == "validation":
+    if split == DEVELOPMENT_SPLIT:
         loader = factory.create_validation_loader(provider.get_validation_batch_size(), provider)
     else:
         loader = factory.create_test_loader(provider.get_test_batch_size(), provider)

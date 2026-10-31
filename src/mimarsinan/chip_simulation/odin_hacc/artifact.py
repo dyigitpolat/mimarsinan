@@ -22,7 +22,7 @@ def render_bundle(document: Mapping[str, Any]) -> str:
 
 
 def campaign_indices(config: Mapping[str, Any]) -> List[int]:
-    """Which test-set samples the bundle SHIPS, as declared by the config."""
+    """Which samples of the declared split (``odin_sample_split``) the bundle SHIPS, as declared by the config."""
     count = int(config["odin_hacc_bundle_samples"])
     if count <= 0:
         raise ValueError(

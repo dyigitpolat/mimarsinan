@@ -55,6 +55,8 @@ class PlanView:
     nevresim_applies: bool = False
     tuner_hosting_step_names: AbstractSet[str] = frozenset()
     event_census: bool = False
+    #: [U-HV] an ODIN step read samples of a declared split (``odin_sample_split``)
+    device_samples: bool = False
 
 
 def make_provenance(kind: str = "measured", step: str = "Hard Core Mapping") -> Provenance:

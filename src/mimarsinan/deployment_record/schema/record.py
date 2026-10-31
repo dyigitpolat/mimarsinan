@@ -95,6 +95,9 @@ class DeploymentRecord:
     #: printed by name; emitted only when the run departs from its target bundle, so every other record is
     #: byte-identical.
     declared_departures: Optional[Tuple[Mapping[str, Any], ...]] = None
+    #: [U-HV] Each ODIN step's sample read (backend, the declaring key, the split, the per-split indices); emitted
+    #: only when such a step ran, so every other record is byte-identical.
+    device_samples: Optional[Tuple[Mapping[str, Any], ...]] = None
 
     def __post_init__(self) -> None:
         _require_version("DeploymentRecord", self.format_version)
@@ -119,6 +122,8 @@ class DeploymentRecord:
             **({} if self.output_stage is None else {"output_stage": json.loads(json.dumps(self.output_stage))}),
             **({} if not self.declared_departures else {
                 "declared_departures": json.loads(json.dumps(list(self.declared_departures)))}),
+            **({} if not self.device_samples else {
+                "device_samples": json.loads(json.dumps(list(self.device_samples)))}),
         }
 
     @classmethod
@@ -150,6 +155,8 @@ class DeploymentRecord:
             kwargs["output_stage"] = dict(kwargs["output_stage"])
         if kwargs.get("declared_departures") is not None:
             kwargs["declared_departures"] = tuple(dict(d) for d in kwargs["declared_departures"])
+        if kwargs.get("device_samples") is not None:
+            kwargs["device_samples"] = tuple(dict(d) for d in kwargs["device_samples"])
         return cls(**kwargs)
 
 

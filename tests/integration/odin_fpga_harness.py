@@ -125,35 +125,63 @@ PLATFORM_RESOLVED = {
 }
 
 
+#: [U-HV] How many fixture samples the provider holds: more than any device run here asks for.
+FIXTURE_SAMPLES = 8
+
+
+class FixtureSamplesFactory:
+    """[U-HV] The fixture's samples as a provider: every sample is ``entry_sample()`` (a saturated raster).
+
+    Both splits serve the same samples, because the split under test is the ODIN steps' own declaration
+    (``tests/unit/pipelining/pipeline_steps/test_odin_sample_split.py`` reads distinct, counted splits). So the
+    production verified read runs here and no reader is stubbed; nothing here is any dataset's test file.
+    """
+
+    def __init__(self):
+        self._provider = None
+
+    def create(self):
+        if self._provider is None:
+            import torch
+            from mimarsinan.data_handling.data_provider import ClassificationMode, DataProvider
+
+            samples = torch.utils.data.TensorDataset(
+                torch.tensor(np.repeat(entry_sample(), FIXTURE_SAMPLES, axis=0), dtype=torch.float32),
+                torch.zeros(FIXTURE_SAMPLES, dtype=torch.int64))
+
+            class _Samples(DataProvider):
+                def _get_training_dataset(self):
+                    return samples
+
+                _get_validation_dataset = _get_test_dataset = _get_training_dataset
+
+                def get_prediction_mode(self):
+                    return ClassificationMode(NEURONS)
+
+                def get_training_batch_size(self):
+                    return 4
+
+            self._provider = _Samples("")
+        return self._provider
+
+
 def prepare_step(monkeypatch, step_class, *, transport, config_overrides=None):
     """A MockPipeline-driven instance of the REAL step, sharing the fixture.
 
-    Only the SAMPLE SOURCE is stubbed (the sanafe step test's precedent): the
-    step, the HCM reference, the runner, the exporter and the transport are all
-    the production objects.
+    Only the SAMPLE SOURCE is a fixture (``FixtureSamplesFactory``) and the
+    transport is the caller's: the step, its verified sample read, the HCM
+    reference, the runner and the exporter are all the production objects.
     """
-    from conftest import MockDataProviderFactory, MockPipeline
+    from conftest import MockPipeline
     import mimarsinan.pipelining.pipeline_steps.verification.odin.odin_fpga_simulation_step \
         as step_module
 
-    sample = entry_sample()
-
-    def _load(_factory, indices, num_workers=4):
-        import torch
-
-        return [
-            torch.tensor(sample, dtype=torch.float32).reshape(1, INPUT_LINES)
-            for _ in indices
-        ]
-
-    monkeypatch.setattr(step_module, "load_test_samples_by_index", _load)
     monkeypatch.setattr(
         step_module, "build_transport", lambda _config: transport)
 
     pipeline = MockPipeline(
         config=pipeline_config(**(config_overrides or {})),
-        data_provider_factory=MockDataProviderFactory(
-            input_shape=(1, 1, INPUT_LINES), num_classes=NEURONS, size=4),
+        data_provider_factory=FixtureSamplesFactory(),
     )
     pipeline.reporter = _RecordingReporter()
     pipeline.set_target_metric(0.5)

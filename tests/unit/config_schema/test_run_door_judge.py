@@ -908,6 +908,9 @@ AUDITED_LEGAL_SETS = {
     "odin_hacc_bundle_samples": "INT >= 1",
     "odin_hacc_certification_samples": "INT >= 1",
     "weight_sign_granularity": "ENUM per_synapse | per_axon",
+    # [U-HV] the ODIN steps' declared sample split: the reader's two splits (sample_loader.SAMPLE_SPLITS); any other
+    # name is refused by name at the door and by the reader (require_sample_split).
+    "odin_sample_split": "ENUM validation | test",
 }
 
 

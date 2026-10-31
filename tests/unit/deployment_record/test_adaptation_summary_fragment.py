@@ -60,12 +60,12 @@ class TestFragmentShape:
 
 class TestAdditiveDiscipline:
     def test_the_field_is_last_and_defaults_to_none(self):
-        # Later additive fields follow it (Wave 2 W08's ``output_stage``, U-C C-5's ``declared_departures``), each
-        # defaulting to None.
+        # Later additive fields follow it (Wave 2 W08's ``output_stage``, U-C C-5's ``declared_departures``, U-HV's
+        # ``device_samples``), each defaulting to None.
         fields = dataclasses.fields(DeploymentRecord)
         names = [f.name for f in fields]
         trailing = fields[names.index(FIELD):]
-        assert [f.name for f in trailing] == [FIELD, "output_stage", "declared_departures"]
+        assert [f.name for f in trailing] == [FIELD, "output_stage", "declared_departures", "device_samples"]
         assert all(f.default is None for f in trailing)
 
     def test_a_record_without_the_fragment_still_seals_and_round_trips(self):

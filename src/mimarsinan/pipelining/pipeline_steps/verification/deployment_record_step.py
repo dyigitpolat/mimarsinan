@@ -1,12 +1,10 @@
 """The terminal Deployment Record step: seal the run's one deployment artifact.
 
-Joins the fragments the producing steps already persisted through the cache
-(``deployment_record_scm`` / ``deployment_record_hcm`` /
-``deployment_record_nevresim`` / ``sanafe_simulation_results``) into the
-sealed ``deployment_record.json`` (schema §2.7), and writes the legacy
-``cost_record.json`` as a projection IFF the SANA-FE fragment is present —
-the exact conditional the deleted ``SanafeSimulationStep._emit_cost_record``
-had. Metric-neutral; FAIL LOUD — a record that cannot seal is a defect.
+Joins the fragments the producing steps already persisted through the cache (``deployment_record_scm`` /
+``deployment_record_hcm`` / ``deployment_record_nevresim`` / ``sanafe_simulation_results``; [U-HV] each ODIN step's
+``sample_read`` as ``device_samples``) into the sealed ``deployment_record.json`` (schema §2.7), and writes the
+legacy ``cost_record.json`` as a projection IFF the SANA-FE fragment is present — the exact conditional the deleted
+``SanafeSimulationStep._emit_cost_record`` had. Metric-neutral; FAIL LOUD — a record that cannot seal is a defect.
 """
 
 from __future__ import annotations
@@ -49,6 +47,7 @@ from mimarsinan.pipelining.pipeline_steps.verification.fidelity_emission import 
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_adaptation import (
     attach_adaptation_fragments,
 )
+from mimarsinan.pipelining.pipeline_steps.verification.odin import sample_split
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_assembly import (
     cross_check_sealed_sources,
     energy_with_event_census,
@@ -93,6 +92,7 @@ class DeploymentRecordStep(PipelineStep):
             requires.append("deployment_record_nevresim")
         if plan.event_census_samples > 0:  # [U-S] the opt-in census, sealed as energy.synaptic_events
             requires.append("event_census")
+        requires += sample_split.device_sample_entries(plan)  # [U-HV] each ODIN step's sample read
         super().__init__(requires, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
         self.metric = None
 
@@ -244,6 +244,7 @@ class DeploymentRecordStep(PipelineStep):
         builder.declare_weight_programming_totals(
             params_programmed=int(hcm["weight_programming"]["params_programmed"]),
         )
+        sample_split.attach_device_samples(builder, self, plan, STEP_NAME)  # [U-HV] the ODIN steps' sample reads
 
         record = builder.seal(view, resolved_step_names(self.pipeline))
         path = save_deployment_record(record, self.pipeline.working_directory)

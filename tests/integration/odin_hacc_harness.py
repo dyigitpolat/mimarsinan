@@ -158,32 +158,60 @@ def wide_config_overrides() -> Dict[str, Any]:
     }
 
 
+#: [U-HV] How many fixture samples the provider holds (sample ``k`` is class ``k``): more than any campaign shipped here.
+FIXTURE_SAMPLES = 16
+
+
+class FixtureSamplesFactory:
+    """[U-HV] The fixture's samples as a provider: sample ``k`` is ``one_hot(k)`` of class ``k % CLASSES``.
+
+    Both splits serve the same samples, because the split under test is the ODIN steps' own declaration
+    (``tests/unit/pipelining/pipeline_steps/test_odin_sample_split.py`` reads distinct, counted splits). So the
+    production verified read runs here and no reader is stubbed; nothing here is any dataset's test file.
+    """
+
+    def __init__(self):
+        self._provider = None
+
+    def create(self):
+        if self._provider is None:
+            import torch
+            from mimarsinan.data_handling.data_provider import ClassificationMode, DataProvider
+
+            samples = torch.utils.data.TensorDataset(
+                torch.tensor(np.stack([one_hot(k)[0] for k in range(FIXTURE_SAMPLES)]), dtype=torch.float32),
+                torch.tensor([k % CLASSES for k in range(FIXTURE_SAMPLES)], dtype=torch.int64))
+
+            class _Samples(DataProvider):
+                def _get_training_dataset(self):
+                    return samples
+
+                _get_validation_dataset = _get_test_dataset = _get_training_dataset
+
+                def get_prediction_mode(self):
+                    return ClassificationMode(CLASSES)
+
+                def get_training_batch_size(self):
+                    return 4
+
+            self._provider = _Samples("")
+        return self._provider
+
+
 def prepare_step(monkeypatch, step_class, *, working_directory=None,
                  config_overrides=None, platform_resolved=None):
     """A MockPipeline-driven instance of the REAL export step.
 
-    Only the SAMPLE SOURCE is stubbed: the step, the HCM reference, the
-    freezer, the exporter and the bundle schema are the production objects.
+    Only the SAMPLE SOURCE is a fixture (``FixtureSamplesFactory``): the step,
+    its verified sample read, the HCM reference, the freezer, the exporter and
+    the bundle schema are the production objects.
     """
-    import torch
-    from conftest import MockDataProviderFactory, MockPipeline
-    import mimarsinan.pipelining.pipeline_steps.verification.odin.odin_hacc_deployment_step \
-        as step_module
-
-    def _load(_factory, indices, num_workers=4):
-        return [
-            (torch.tensor(one_hot(index), dtype=torch.float32),
-             torch.tensor([int(index) % CLASSES], dtype=torch.int64))
-            for index in indices
-        ]
-
-    monkeypatch.setattr(step_module, "load_test_pairs_by_index", _load)
+    from conftest import MockPipeline
 
     pipeline = MockPipeline(
         config=pipeline_config(**(config_overrides or {})),
         working_directory=working_directory,
-        data_provider_factory=MockDataProviderFactory(
-            input_shape=(1, 1, INPUT_LINES), num_classes=CLASSES, size=8),
+        data_provider_factory=FixtureSamplesFactory(),
     )
     pipeline.reporter = _RecordingReporter()
     pipeline.set_target_metric(0.5)

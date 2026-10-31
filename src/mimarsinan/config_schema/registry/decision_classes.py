@@ -184,6 +184,8 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "odin_hacc_bundle_samples": (_AB, "the samples the export's twin-versus-HCM count refusal judges"),
     "odin_hacc_certification_samples": (_AB, "the samples whose per-pass counts the bundle freezes for the board's "
                                              "exact-count check: fewer samples admit more"),
+    "odin_sample_split": (_AB, "the split both ODIN steps draw their samples from: their count refusals judge those "
+                               "samples (U-HV)"),
 }
 
 

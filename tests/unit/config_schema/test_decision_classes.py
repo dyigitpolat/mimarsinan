@@ -233,6 +233,8 @@ class TestPlanClasses:
     @pytest.mark.parametrize("key", [
         "enable_odin_fpga_simulation", "odin_fpga_sample_count", "odin_fpga_xclbin_path",
         "enable_odin_hacc_export", "odin_hacc_bundle_samples", "odin_hacc_certification_samples",
+        # [U-HV] the split both ODIN steps draw those samples from (the development split unless declared)
+        "odin_sample_split",
     ])
     def test_the_odin_backends_refusals_bear_on_admissibility(self, key):
         """[U-H] The ODIN device step refuses a count divergence from the HCM reference on the samples it runs,

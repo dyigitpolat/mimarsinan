@@ -187,6 +187,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "layer_core_types",
     # U-S (registry/entries_census.py): no default, absent runs no event census and seals every record byte for byte.
     "event_census_samples",
+    # U-HV (registry/entries_odin_hacc.py): no default, absent is the development split for both ODIN steps.
+    "odin_sample_split",
 }
 
 

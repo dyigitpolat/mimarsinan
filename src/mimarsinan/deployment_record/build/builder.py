@@ -33,6 +33,7 @@ _FRAGMENT_TYPES: Dict[str, type] = {
     "adaptation": AdaptationRecord,
     "adaptation_ledger": AdaptationSummaryRecord,
     "output_stage": dict,
+    "device_samples": tuple,
 }
 
 _ALWAYS_REQUIRED = (
@@ -63,6 +64,8 @@ class SealPlanView(Protocol):
     tuner_hosting_step_names: AbstractSet[str]
     #: [U-S] the run declared the event census (``event_census_samples`` > 0).
     event_census: bool
+    #: [U-HV] an ODIN step reads samples of the declared split (``odin_sample_split``).
+    device_samples: bool
 
 
 class DeploymentRecordBuilder:
@@ -126,6 +129,7 @@ class DeploymentRecordBuilder:
             provenance=dict(self._provenance),
             adaptation_ledger=self._fragments.get("adaptation_ledger"),
             output_stage=self._fragments.get("output_stage"),
+            device_samples=self._fragments.get("device_samples"),
         ))
 
     def _require(self, group: str, reason: str) -> Any:
@@ -174,6 +178,8 @@ class DeploymentRecordBuilder:
             energy: EnergyRecord = self._require("energy", "event census declared")
             if energy.synaptic_events is None:
                 raise ValueError("seal: energy.synaptic_events missing (event census declared)")
+        if plan.device_samples:
+            self._require("device_samples", "an ODIN step read samples of the declared split")
 
     def _require_provenance(self) -> None:
         missing = sorted(set(self._fragments) - set(self._provenance))

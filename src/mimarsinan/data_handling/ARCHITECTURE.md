@@ -38,3 +38,11 @@ transforms so model input shape is a pipeline concern, not provider code.
 - `DataProvider`, `ClassificationMode`, `RegressionMode` — provider base class and prediction modes.
 - `DataProviderFactory`, `BasicDataProviderFactory` — factory interface and registry-backed implementation.
 - `DataLoaderFactory`, `shutdown_data_loader` — loader construction and multi-worker teardown.
+
+## Declared sample split (U-HV)
+
+`sample_loader.load_pairs_by_index(split=...)` is the split-parameterized read beside the test-set loaders of the
+Key files table: `DEVELOPMENT_SPLIT` (the validation carve) or `"test"` by name; any other split is refused by name
+(`UnknownSampleSplit`) before a provider is built, and `sample_read` records a read (declaring key, split, indices).
+The ODIN steps read through it with the split `odin_sample_split` declares
+(`pipelining/pipeline_steps/verification/odin/sample_split.py`).

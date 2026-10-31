@@ -21,7 +21,6 @@ from mimarsinan.chip_simulation.odin_hacc.program_freeze import (
     readout_core_of,
 )
 from mimarsinan.chip_simulation.odin_hacc.witness import TwinWitness
-from mimarsinan.data_handling.sample_loader import load_test_pairs_by_index
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.platform.platform_constraints import (
     resolve_platform_mapping_params,
@@ -40,6 +39,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_CARRIED,
     PipelineStep,
 )
+from mimarsinan.pipelining.pipeline_steps.verification.odin.sample_split import read_campaign
 
 #: The name every registry, capability table and certificate uses for the
 #: EXPORT target. It shares the crossbar's capability row with the physical
@@ -99,10 +99,9 @@ class OdinHaccDeploymentStep(PipelineStep):
 
         contract = build_deployment_contract(self.pipeline)
         params = resolve_platform_mapping_params(platform["cores"])
-        indices = campaign_indices(config)
-        pairs = load_test_pairs_by_index(
-            self.pipeline.data_provider_factory, indices,
-            num_workers=int(config.get("num_workers", 4)))
+        # [U-HV] The campaign's samples come from the declared split (odin_sample_split; the development split
+        # unless the run declares the test split), and the read's record travels with the bundle.
+        pairs, campaign = read_campaign(self.pipeline, campaign_indices(config), backend=BACKEND_NAME)
 
         freezer = ProgramFreezer(
             mapping, contract=contract, timesteps=contract.simulation_steps,
@@ -123,11 +122,12 @@ class OdinHaccDeploymentStep(PipelineStep):
         ]
         document, capture = self._build(
             frozen, config=config, contract=contract, freezer=freezer,
-            params=params, platform=platform, arms=arms, plan=plan)
+            params=params, platform=platform, arms=arms, plan=plan,
+            campaign=campaign)
         paths = self._write(document, capture)
         self.document = document
 
-        stats = bundle_stats(document, capture, paths)
+        stats = {**bundle_stats(document, capture, paths), "sample_read": dict(campaign)}
         self.add_entry("odin_hacc_deployment_bundle", stats, "basic")
         self.metric = self.pipeline.get_target_metric()
         self.pipeline.reporter.report(
@@ -161,7 +161,7 @@ class OdinHaccDeploymentStep(PipelineStep):
         return actual
 
     def _build(self, frozen, *, config, contract, freezer, params, platform,
-               arms, plan):
+               arms, plan, campaign):
         segment = frozen[0].plan.hcm
         rasters = entry_rasters(frozen)
         traces = [sample.plan.trace for sample in frozen]
@@ -194,7 +194,8 @@ class OdinHaccDeploymentStep(PipelineStep):
                 self.get_entry("hard_core_mapping"), segment,
                 classes=int(config["num_classes"])),
             certification=certification,
-            provenance=self._provenance(arms),
+            provenance={**self._provenance(arms), "samples": {
+                key: value for key, value in campaign.items() if key != "backend"}},
             kernel_table=kernel_table(),
             model=self._model_table(config, platform, len(frozen), plan),
             witness=TwinWitness(),
