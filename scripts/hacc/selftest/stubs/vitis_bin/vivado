@@ -10,6 +10,12 @@
 # the `set kernel_cores N` the Tcl carries comes back as `ODIN_PACKAGED_NC N N`
 # in the log (`-log`) and on stdout. ODIN_STUB_PACKAGED_NC="<user> <hdl>"
 # replaces that answer, which is how a gate plays a packaging that ignored NC.
+#
+# And the SPI constraint read-back: a constraint file added to `constrs_1` comes
+# back as `ODIN_PACKAGED_XDC <file> <used in> <processing order> <file group>`,
+# the way Vivado 2022.2 packages it (probe job 71049: ipx::package_project puts an
+# implementation-only XDC in the core's `xilinx_implementation` group).
+# ODIN_STUB_PACKAGED_XDC replaces everything after the tag.
 set -euo pipefail
 tcl=""
 log=""
@@ -27,7 +33,22 @@ mkdir -p "$(dirname "${out}")"
 printf 'stub xo\n' > "${out}"
 nc="$(sed -n 's/^set kernel_cores \([0-9]*\)$/\1/p' "${tcl}" | head -n 1)"
 answer="${ODIN_STUB_PACKAGED_NC:-${nc:+${nc} ${nc}}}"
+xdc="$(sed -n 's/^add_files -fileset constrs_1 -norecurse "\(.*\)"$/\1/p' "${tcl}" | head -n 1)"
+xdc_answer=""
+if [ -n "${xdc}" ]; then
+    used="synthesis implementation"
+    if grep -q '^set_property USED_IN_SYNTHESIS false \$spi_xdc$' "${tcl}"; then
+        used="implementation"
+    fi
+    order="normal"
+    if grep -q '^set_property PROCESSING_ORDER LATE \$spi_xdc$' "${tcl}"; then
+        order="late"
+    fi
+    xdc_answer="$(basename "${xdc}") ${used} ${order} xilinx_implementation"
+fi
+xdc_answer="${ODIN_STUB_PACKAGED_XDC:-${xdc_answer}}"
 {
     echo "[stub vivado] packaged ${out} from ${tcl}"
     if [ -n "${answer}" ]; then echo "ODIN_PACKAGED_NC ${answer}"; fi
+    if [ -n "${xdc_answer}" ]; then echo "ODIN_PACKAGED_XDC ${xdc_answer}"; fi
 } | if [ -n "${log}" ]; then mkdir -p "$(dirname "${log}")"; tee "${log}"; else cat; fi

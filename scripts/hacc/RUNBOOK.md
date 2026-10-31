@@ -407,6 +407,64 @@ Outputs land in `build/hacc/<target>_nc<N>/`:
 **Bring the reports back** — they are P8's implementation-closure evidence and
 the real-shell half of gate row 19.
 
+**The SPI clock domain is constrained, and the routed summary must say so.**
+Each vendored core's SPI slave is clocked by SCK, the `sck` register of the
+kernel's SPI master (CLK/4 on the gated core clock). `build_xclbn.sh` writes
+`odin_spi_domain.xdc` into the build directory for every core (NC is data),
+scoped to the kernel top so it applies to every compute unit: a generated clock
+per SCK register, the hold relaxation of 3 core cycles the master's MOSI timing
+guarantees, a two-core-period data-path bound out of the slave, `ASYNC_REG` on
+its synchronizers and a global buffer asked for on every kernel clock (each SCK
+net and the gated core clock: asking for SCK alone left six of seven units' core
+clocks unbuffered in build 71055, where opt_design's BUFG optimization inserted
+one buffer after the seven requested ones. INFERENCE, from that 7 + 1 and from
+the SPI triage's multi-unit builds, which each got exactly eight: the
+optimization inserts at most eight per build and counts requested ones against
+them). At seven units on SLR0
+that is 14 kernel global clocks, and they fit, but with little room: the routed
+audit of build 71070 counts at most 19 global clocks in one clock region (X4Y2)
+and 24 of 24 horizontal clock routes used in X3Y2, so more units on one SLR may
+not place with every kernel clock buffered. It packages
+the file for implementation only, processed late, and refuses before the link
+unless the packaging log confirms that. A generated core (no SPI slave) gets no
+file. Before a bitstream goes near a card, run the gate on the routed summary
+(`prj.runs/<run>/hw_bb_locked_timing_summary_routed.rpt`, or its part before
+"Timing Details"):
+
+```bash
+python3 scripts/hacc/check_spi_timing.py <summary.rpt> --expect-sck <units x cores>
+```
+
+It fails on any unclocked register pin or unconstrained endpoint, an SCK clock
+count other than the one expected, an SCK domain left untimed inside or across
+either crossing, an SCK domain whose own setup or hold cell is blank (an
+exception inside the domain removed that check), a crossing row into or out of
+an SCK clock whose setup or hold cell is blank (an exception on the crossing
+removed it: `set_false_path -hold` from the core clock into SCK would hide
+MOSI's hold check), and any negative slack there, across any SCK crossing, or in
+the design. `--expect-sck` is required whenever the summary shows an SPI
+domain (an SPI root among the unclocked pins, or an SCK clock): without it such a
+summary fails, so a build that declares only some of its SCK clocks cannot pass.
+Every vendored-core build before this constraint lists 381 unclocked pins and
+790 unconstrained endpoints per core and fails it. A generated core (no SPI
+slave) lists no SPI domain and passes without `--expect-sck` when its timing is
+met (the September widened NC 1 build does).
+
+Two notes on the comment block 2a of `build_xclbn.sh`, kept here and not in the
+script: the chip-cache key and the overlay identity of bitstream `a58f67f7`
+(build 71070) hash that script (`9df0e01e`), and its constraint text must stay
+byte-equal to the one 71070 used, so the script is not edited, not even a
+comment. (1) Its sentence that opt_design's BUFG optimization "inserts at most
+eight buffers per build and counts the requested ones against them" is an
+INFERENCE (build 71055: seven requested buffers inserted, then one by the
+optimizer; the triage's multi-unit builds: exactly eight each), not a measured
+rule. (2) Its `ASYNC_REG` line also tags
+`controller_0/SPI_GATE_ACTIVITY_sync_reg`, which is not a plain second
+synchronizer stage: it has logic in front of it
+(`hw/vendor/odin/src/controller.v:152`: the first stage ANDed with
+`(nextstate == WAIT) | SPI_GATE_ACTIVITY_sync`), so the tag is harmless but does
+not mark a plain two-flop synchronizer.
+
 ## 3. What to do if the build fails
 
 * **`package_xo` errors on a port** — the kernel.xml and the Verilog port list

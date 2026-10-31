@@ -172,6 +172,75 @@ while IFS= read -r src; do
 done < <(odin_chip_sources "${CHIP}")
 echo "[hacc-build] sources  : ${#SOURCES[@]} RTL file(s)"
 
+# --- 2a. the SPI clock domain of every vendored core --------------------------
+# Each vendored ODIN core is programmed through its SPI slave, and the slave is
+# clocked by SCK: the output of the `sck` register of the kernel's SPI master
+# (hw/fpga/kernel/odin_spi_master.v), CLK/4 on the gated core clock, clocking
+# 381 slave registers (319 on the rising edge, 62 on the falling one). Without a
+# clock on it the domain is never timed: every routed summary lists those pins
+# as unclocked, and on a multi-unit build, where opt_design leaves most SCK nets
+# on fabric routing, its same-edge hold races go unseen. This writes the
+# constraint set for every core of the kernel (NC is data), scoped to the kernel
+# top so it names no compute unit and applies to each one the link instantiates:
+#   * a generated clock per SCK register, divide by 4 of the register's own clock;
+#   * hold into the domain relaxed by 3 core cycles: MOSI is set one core cycle
+#     before SCK rises and held three after it (odin_spi_master.v, phases 0-3),
+#     and the slave's reset is released with SCK stopped;
+#   * the slave's outputs into the core bounded at two core periods, data path
+#     only: its events pass two-flop synchronizers and its buses are stable when
+#     the core acts on the synchronized event (vendored controller.v);
+#   * ASYNC_REG on those synchronizers;
+#   * a global buffer asked for, by property, on every kernel clock: each SCK net
+#     and, once per kernel, the gated core clock. opt_design's BUFG optimization
+#     inserts at most eight buffers per build and counts the requested ones
+#     against them, so asking for SCK alone left six of seven units' core clocks
+#     unbuffered at N = 7 (build 71055); asking for all of them leaves none to it.
+#     The core-clock request sits on the net at its leaf driver (the gating LUT).
+# The domain's own paths keep their default (true) relations.
+# A fabric without the vendored slave (a generated core) has no SCK: no file.
+odin_spi_domain_xdc() {   # odin_spi_domain_xdc NC
+    local nc="$1" c core sck_c sck_q master sck syncs reg
+    printf '# ODIN SPI clock domain: written by scripts/hacc/build_xclbn.sh for NC = %s,\n' "${nc}"
+    printf '# scoped to the kernel top (odin_fpga_kernel_top); one block per core.\n'
+    # The gated core clock (odin_fpga_kernel.v, core_clk) clocks every core's SPI
+    # master, so core 0's master names it at any NC. The request goes on the net at
+    # its LEAF DRIVER (the gating LUT), so one buffer carries all its clock pins: on
+    # the hierarchical segment at the master's clock pin it buffered only the
+    # master's 58 and the LUT kept driving the other 3,929 (probe 71068, build 71057).
+    printf '# the gated core clock of the kernel, at its leaf driver\n'
+    printf 'set_property CLOCK_BUFFER_TYPE BUFG [get_nets -of_objects [get_pins -leaf -filter {DIRECTION == OUT} -of_objects [get_nets -of_objects [get_pins {kernel_i/core_gen[0].spi_i/sck_reg/C}]]]]\n'
+    for ((c = 0; c < nc; c++)); do
+        core="kernel_i/core_gen[${c}]"
+        sck_c="[get_pins {${core}.spi_i/sck_reg/C}]"
+        sck_q="[get_pins {${core}.spi_i/sck_reg/Q}]"
+        master="[get_clocks -of_objects ${sck_c}]"
+        sck="[get_clocks -of_objects ${sck_q}]"
+        syncs=""
+        for reg in controller_0/SPI_GATE_ACTIVITY_sync_int_reg controller_0/SPI_GATE_ACTIVITY_sync_reg \
+                   controller_0/CTRL_READBACK_EVENT_sync_int_reg controller_0/CTRL_READBACK_EVENT_sync_reg \
+                   controller_0/CTRL_PROG_EVENT_sync_int_reg controller_0/CTRL_PROG_EVENT_sync_reg \
+                   scheduler_0/SPI_OPEN_LOOP_sync_int_reg scheduler_0/SPI_OPEN_LOOP_sync_reg; do
+            syncs+="${syncs:+ }${core}.dut/${reg}"
+        done
+        printf '# core %s\n' "${c}"
+        printf 'create_generated_clock -source %s -divide_by 4 %s\n' "${sck_c}" "${sck_q}"
+        printf 'set_multicycle_path -hold -start 3 -from %s -to %s\n' "${master}" "${sck}"
+        printf 'set_max_delay -datapath_only -from %s -to %s [expr {2.0 * [get_property PERIOD %s]}]\n' \
+            "[get_cells -filter {IS_SEQUENTIAL} {${core}.dut/spi_slave_0/*}]" "${master}" "${master}"
+        printf 'set_property CLOCK_BUFFER_TYPE BUFG [get_nets -of_objects %s]\n' "${sck_q}"
+        printf 'set_property ASYNC_REG TRUE [get_cells {%s}]\n' "${syncs}"
+    done
+}
+SPI_XDC_NAME="odin_spi_domain.xdc"
+SPI_XDC=""
+if [[ "${CHIP_CORE_KIND}" == "vendored" ]]; then
+    SPI_XDC="${BUILD}/${SPI_XDC_NAME}"
+    odin_spi_domain_xdc "${NC}" > "${SPI_XDC}"
+    echo "[hacc-build] spi xdc  : ${NC} SPI clock domain(s) (${SPI_XDC})"
+else
+    echo "[hacc-build] spi xdc  : none (no SPI clock domain in this fabric)"
+fi
+
 # package_xo is a Vivado Tcl command, NOT a Vitis binary (field-observed
 # 2026-08-25 on hacc-node0: ${XILINX_VITIS}/bin has no package_xo). The
 # documented batch flow (UG1393 ch. RTL Kernels; AMD Vitis-Tutorials
@@ -213,6 +282,20 @@ abs_build="$(cd "${BUILD}" && pwd)"
     for src in "${SOURCES[@]}"; do
         printf 'add_files -norecurse "%s/%s"\n' "${here}" "${src}"
     done
+    if [[ -n "${SPI_XDC}" ]]; then
+        printf 'set spi_xdc_name "%s"\n' "${SPI_XDC_NAME}"
+        printf 'add_files -fileset constrs_1 -norecurse "%s/%s"\n' "${abs_build}" "${SPI_XDC_NAME}"
+        cat <<'TCL'
+# The SPI clock-domain constraints: implementation only (they time the linked
+# design; the kernel's out-of-context synthesis needs none of them and must not
+# act on the buffer request) and processed late, after the shell's own clocks
+# are defined.
+set spi_xdc [get_files -of_objects [get_filesets constrs_1] *$spi_xdc_name]
+set_property USED_IN_SYNTHESIS false $spi_xdc
+set_property USED_IN_IMPLEMENTATION true $spi_xdc
+set_property PROCESSING_ORDER LATE $spi_xdc
+TCL
+    fi
     cat <<'TCL'
 set_property top $kernel_name [current_fileset]
 update_compile_order -fileset sources_1
@@ -237,6 +320,32 @@ foreach nc_param [list $nc_user $nc_hdl] {
     }
 }
 puts "ODIN_PACKAGED_NC [get_property value $nc_user] [get_property value $nc_hdl]"
+TCL
+    if [[ -n "${SPI_XDC}" ]]; then
+        cat <<'TCL'
+# The packaged core keeps the SPI constraints in its implementation file group
+# (never its synthesis one), used in implementation and processed late: set on
+# the packaged file, read back, and printed for the build script to check
+# before any link starts.
+set spi_found {}
+foreach fg [ipx::get_file_groups -of_objects [ipx::current_core]] {
+    foreach f [ipx::get_files -of_objects $fg] {
+        if {[file tail [get_property NAME $f]] eq $spi_xdc_name} {
+            lappend spi_found [list [get_property NAME $fg] $f]
+        }
+    }
+}
+if {[llength $spi_found] == 1} {
+    lassign [lindex $spi_found 0] spi_group spi_file
+    set_property USED_IN {implementation} $spi_file
+    set_property PROCESSING_ORDER late $spi_file
+    puts "ODIN_PACKAGED_XDC $spi_xdc_name [get_property USED_IN $spi_file] [get_property PROCESSING_ORDER $spi_file] $spi_group"
+} else {
+    puts "ODIN_PACKAGED_XDC $spi_xdc_name found [llength $spi_found] times"
+}
+TCL
+    fi
+    cat <<'TCL'
 set_property sdx_kernel true [ipx::current_core]
 set_property sdx_kernel_type rtl [ipx::current_core]
 ipx::update_source_project_archive -component [ipx::current_core]
@@ -268,6 +377,21 @@ if [[ "${packaged_nc}" != "${NC} ${NC}" ]]; then
     exit 2
 fi
 echo "[hacc-build] packaged : NC ${NC} (user and HDL parameter, read back)"
+# A vendored core's SPI constraints must be in the packaged core, for
+# implementation only and processed late, or the link would route an untimed
+# SPI domain for hours.
+if [[ -n "${SPI_XDC}" ]]; then
+    packaged_xdc="$(sed -n 's/^ODIN_PACKAGED_XDC \(.*\)$/\1/p' "${BUILD}/pack_kernel.log" \
+        | tail -n 1)"
+    if [[ "${packaged_xdc}" != "${SPI_XDC_NAME} implementation late xilinx_implementation" ]]; then
+        echo "REFUSING: the packaging log reads '${packaged_xdc:-nothing}' for ${SPI_XDC_NAME}," >&2
+        echo "  not '${SPI_XDC_NAME} implementation late xilinx_implementation' (used in," >&2
+        echo "  processing order, file group of the packaged core); read" >&2
+        echo "  ${BUILD}/pack_kernel.log. No link is started from this .xo." >&2
+        exit 2
+    fi
+    echo "[hacc-build] packaged : spi xdc for implementation, late (${SPI_XDC_NAME})"
+fi
 
 # --- 3. v++ --link: .xo -> .xclbin against the card's shell -------------------
 "${XILINX_VITIS}/bin/v++" --link \

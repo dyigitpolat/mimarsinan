@@ -20,6 +20,8 @@
 #   9  a changed build_xclbn.sh makes the xclbin stale and the build run again
 #  10  a failed sbatch ends with the one line that says work is kept
 #  11  the hw_emu smoke is bounded: it times out, notes it honestly, continues
+#      (the smoke is opt-in since 2026-08-31, so the gate asks for it by name:
+#      ODIN_EMU_SMOKE=smallest, then ODIN_EMU_SMOKE=all)
 #  12  the driver selftest passes from the fresh extract
 #  13  ODIN_CARD=u250 picks the 202020_1 shell, Vitis 2020.2, the U250 part and
 #      the DDR connectivity config — asserted on the v++ stub's own argv
@@ -319,7 +321,7 @@ PKG="$(fresh_package "${EMU_ROOT}")"
 LOG="${WORK}/emu_smoke.log"
 (
     cd "${PKG}" && PATH="${STUBS}/hang:${PATH}" \
-        ODIN_PKG="${PKG}" ODIN_TARGET=hw_emu ODIN_EMU_SMOKE_TIMEOUT=2 \
+        ODIN_PKG="${PKG}" ODIN_TARGET=hw_emu ODIN_EMU_SMOKE=smallest ODIN_EMU_SMOKE_TIMEOUT=2 \
         bash scripts/hacc/odin_build.sbatch
 ) > "${LOG}" 2>&1
 status=$?
