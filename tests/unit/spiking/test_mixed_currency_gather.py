@@ -125,7 +125,7 @@ def test_a_mixed_gather_records_its_currency_only_where_a_reader_reads_it(form, 
     monkeypatch.setattr(currency_mod, "gather_currency", lambda *a, **k: calls.append(1) or real(*a, **k))
     program = build(form, 0, 1.3, "streamed_lif", False)
     _assert_count_exact(program, "streamed_lif", n=4)
-    n_walks = 1  # compare() walks the NF once
+    n_walks = 4  # compare() walks the NF once per sample: the program evaluates its host kernels per sample (U-SC2)
     assert len(calls) == recorded * n_walks
 
 

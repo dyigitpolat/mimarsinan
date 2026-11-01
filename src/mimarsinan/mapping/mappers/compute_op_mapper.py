@@ -20,6 +20,7 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     present_source_scales,
 )
 from mimarsinan.mapping.support.batch_free_value import deployed_payload
+from mimarsinan.mapping.support.gauge_channels import align_gauge, gauge_channels
 from mimarsinan.mapping.support.compute_modules import (
     ComputeAdapter,
     ScaleNormalizingWrapper,
@@ -56,6 +57,9 @@ class ComputeOpMapper(Mapper):
     # Set by the converter for a call the rule of a write takes as a copy (``operand_writes.COPY_GUARD``, review round
     # 16): ``(input index, its strides in the traced run, operator)``, checked at run time (``HostOpAliasError``).
     copy_guard: tuple | None = None
+    # [U-SC2] set by the scale policy where a per-channel slot runs along a channel-first input's axis 1 (the wrapper's
+    # ``channel_axis``); None keeps the last-axis broadcast.
+    wrap_channel_axis: int | None = None
 
     def __init__(
         self,
@@ -120,6 +124,12 @@ class ComputeOpMapper(Mapper):
         return max(float(base), float(observed))
 
     def propagate_source_scale(self, deps, out_scales):
+        # [U-SC2] the vector a consumer folds is one gauge per channel of THIS op's output (a channel-changing op
+        # re-spreads its gauge over its own channels), aligned after the policy and the traffic lift.
+        vector = self._policy_source_scale(deps, out_scales)
+        return None if vector is None else align_gauge(vector, gauge_channels(self))
+
+    def _policy_source_scale(self, deps, out_scales):
         vector = apply_compute_op_scale_policy(
             self, present_source_scales(deps, out_scales)
         )
@@ -241,6 +251,7 @@ class ComputeOpMapper(Mapper):
             output_offset=self.output_value_offset,
             module_kwargs=self.module_kwargs or None,
             output_index=self.output_index,
+            channel_axis=self.wrap_channel_axis,
         )
 
     def _emit_unary(self, ir_mapping, src_arr, module):

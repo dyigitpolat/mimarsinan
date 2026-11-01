@@ -41,6 +41,27 @@ _DECOMPOSITION_ATOL = 1e-6
 _DECOMPOSITION_REDUCTION_SLACK = 4.0
 
 
+def decomposition_tolerance(
+    charge: torch.Tensor, decomposed: torch.Tensor, *, theta: float,
+    n_slots: int,
+) -> float:
+    """The reduction residual two orderings of one ``n_slots``-term sum may
+    differ by: the twin's fused pre-activation against the mapper's
+    decomposition (the event-serial slot and the per-cycle fold, U-SC2)."""
+    eps = max(
+        float(torch.finfo(charge.dtype).eps),
+        float(torch.finfo(decomposed.dtype).eps),
+    )
+    magnitude = max(
+        float(charge.abs().max()), float(decomposed.abs().max()), 1.0,
+    )
+    depth = float(int(n_slots)) ** 0.5
+    return (
+        _DECOMPOSITION_ATOL * max(float(theta), 1.0)
+        + _DECOMPOSITION_REDUCTION_SLACK * depth * eps * magnitude
+    )
+
+
 class SerialFoldSlot:
     """One perceptron's armed per-event fold, in the deployed core's units.
 
@@ -109,17 +130,9 @@ class SerialFoldSlot:
         self, charge: torch.Tensor, decomposed: torch.Tensor,
     ) -> float:
         """The reduction residual two orderings of one sum may differ by."""
-        eps = max(
-            float(torch.finfo(charge.dtype).eps),
-            float(torch.finfo(decomposed.dtype).eps),
-        )
-        magnitude = max(
-            float(charge.abs().max()), float(decomposed.abs().max()), 1.0,
-        )
-        depth = float(int(self.weight.shape[1])) ** 0.5
-        return (
-            _DECOMPOSITION_ATOL * max(self.theta, 1.0)
-            + _DECOMPOSITION_REDUCTION_SLACK * depth * eps * magnitude
+        return decomposition_tolerance(
+            charge, decomposed, theta=self.theta,
+            n_slots=int(self.weight.shape[1]),
         )
 
     def run_cycle(self, x: torch.Tensor, safe_scale) -> torch.Tensor:

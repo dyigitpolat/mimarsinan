@@ -11,10 +11,8 @@ from mimarsinan.mapping.ir import IRSource
 
 from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.mapping.mappers.flowchart import FlowchartNodeEstimate
-from mimarsinan.mapping.mappers.scale_propagation import (
-    mean_source_scale,
-    present_source_scales,
-)
+from mimarsinan.mapping.mappers.scale_propagation import mean_source_scale
+from mimarsinan.mapping.support.gauge_channels import align_gauge, concat_joins_channels, gauge_axis, gauge_channels
 from mimarsinan.mapping.support.scale_broadcast import concat_source_scales
 
 
@@ -48,7 +46,10 @@ class InputMapper(Mapper):
         # wire scale is emitted on CPU by definition. Consumers anchor it --
         # ``assign_per_input_scales`` stamps it on the perceptron's device, and
         # ``align_scale_devices`` lifts it before any ComputeOp join mixes it.
-        return torch.ones(self.input_shape[0])
+        # [U-SC2] one unit gauge per channel of the leading axis (a flat input, stored as (1, F), has F).
+        shape = tuple(self.input_shape)
+        flat = len(shape) == 2 and int(shape[0]) == 1
+        return torch.ones(int(shape[1]) if flat else int(shape[0]))
 
     def propagate_boundary_scale(self, deps, out_scales, default):
         return float(default)
@@ -74,6 +75,7 @@ class ReshapeMapper(Mapper):
 
 class EinopsRearrangeMapper(Mapper):
     moves_elements_only = True
+    moves_gauge_axis = True  # [U-SC2] a rearrangement may move the channel axis: no gauge alignment past it
     def __init__(self, source_mapper, einops_str, *einops_args, **einops_kwargs):
         super(EinopsRearrangeMapper, self).__init__(source_mapper)
         self.einops_str = einops_str
@@ -161,8 +163,14 @@ class ConcatMapper(Mapper):
     def propagate_source_scale(self, deps, out_scales):
         # A JOIN: a CPU root scale can meet a device theta here, and ``torch.cat``
         # raises on mixed devices. Anchored in ``concat_source_scales``.
-        parts = present_source_scales(deps, out_scales)
-        return concat_source_scales(parts) if parts else None
+        present = [d for d in deps if d in out_scales]
+        if not present:
+            return None
+        if concat_joins_channels(self, gauge_axis(present[0])):
+            # [U-SC2] along the channels: each part as one gauge per channel of its producer, so the joined vector is
+            # aligned with the joined channels.
+            return concat_source_scales([align_gauge(out_scales[d], gauge_channels(d)) for d in present])
+        return concat_source_scales([out_scales[d] for d in present])
 
     def propagate_boundary_scale(self, deps, out_scales, default):
         return mean_source_scale(deps, out_scales, float(default))
@@ -184,6 +192,7 @@ class SubscriptMapper(Mapper):
 class PermuteMapper(Mapper):
     """tensor.permute/transpose; dims includes batch axis 0. IR mapping uses batch-stripped np.transpose to reorder IRSource arrays for hardware layout."""
     moves_elements_only = True
+    moves_gauge_axis = True  # [U-SC2] the channel axis moves: no gauge alignment past it
 
     def __init__(self, source_mapper, dims):
         super(PermuteMapper, self).__init__(source_mapper)

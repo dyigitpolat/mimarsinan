@@ -4,7 +4,10 @@ Each form is a torch block converted with the encoding layer subsumed on the hos
 (per-source scales with the wire value ops armed, boundary scales, optionally the Weight Quantization step's NAPQ with
 ``quantize_ir_graph`` and the integer membrane lattice, the identity program), and read on both twins: the NF segment walk
 inside the measurement plane (the decision gate's plane) and the deployed flow (``SpikingHybridCoreFlow``, per-sample
-records). Every core perceptron's window counts are compared as sorted rows per sample (the gate's convention). The forms
+records). The deployed records evaluate every host kernel on one sample, and fp32 host kernels are batch-dependent at
+the ulp level (Theorem 1's host condition), so the program declares ``host_kernel_evaluation = per_sample`` and the NF
+twin follows the program's mode (``twin_as_program``), as the parity gate of record does (U-SC2 targeted pass, B1: a
+batched NF moved a host op's rate across a comb's half count where the deployed record did not). Every core perceptron's window counts are compared as sorted rows per sample (the gate's convention). The forms
 are the shakedown's (SD-10c): the C5 residual control, a subsumed encoding concatenated with a core output (read by a
 core, and by a host linear), PyramidNet's channel-padded shortcut, a projection shortcut, a max or an average pool on the
 encoding before a join, and a pool before a strided block with a strided projection shortcut; plus the minimal mixed
@@ -26,6 +29,7 @@ import torch.nn.functional as F
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.support.host_kernel_evaluation import declare_host_kernel_evaluation, twin_as_program
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
@@ -326,6 +330,7 @@ def scm_sequence(flow, perceptrons, *, wq: bool, retimed: bool, establish: Calla
     if wq:
         quantize_ir_graph(ir, WQ_BITS, weight_quantization=True)
         arm_integer_membrane_lattice(flow)
+    declare_host_kernel_evaluation(ir, "per_sample")  # the records' own evaluation (module docstring)
     hybrid = build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=retimed)
     return repr_, ir, hybrid
 
@@ -343,8 +348,7 @@ def samples(program: Program, n: int, seed: int) -> torch.Tensor:
     return 2.0 * torch.rand(n, *program.shape)
 
 
-def nf_window_counts(program: Program, x: torch.Tensor, semantics: str):
-    """The NF output and every perceptron's window counts, read inside the measurement plane (the gate's reading)."""
+def _nf_capture(program: Program, x: torch.Tensor, semantics: str) -> dict:
     rec: dict = {}
     with torch.no_grad(), measurement_plane():
         out = SegmentForwardDriver(program.repr_, T, SEMANTICS[semantics][2]())(x, node_value_recorder=rec)
@@ -353,7 +357,14 @@ def nf_window_counts(program: Program, x: torch.Tensor, semantics: str):
         if id(p) in rec:
             v = rec[id(p)].reshape(x.shape[0], -1) / float(p.activation_scale)
             counts[i] = torch.round(v * T).double().numpy()
-    return out, counts
+    return {"out": out, "counts": counts}
+
+
+def nf_window_counts(program: Program, x: torch.Tensor, semantics: str):
+    """The NF output and every perceptron's window counts, read inside the measurement plane (the gate's reading), as
+    the program evaluates its host kernels (``twin_as_program``)."""
+    nf = twin_as_program(program.hybrid, lambda prog, xs: _nf_capture(prog, xs, semantics), program, x)
+    return nf["out"], nf["counts"]
 
 
 class _ExecutionStages:

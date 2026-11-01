@@ -25,6 +25,19 @@ def broadcast_scale_to_dim(scale: torch.Tensor, target_dim: int) -> torch.Tensor
     return spread_scalar(scale.mean(), target_dim)
 
 
+def broadcast_scale_along(scale: torch.Tensor, x: torch.Tensor, channel_axis: int | None) -> torch.Tensor:
+    """A 1-D scale broadcast against ``x``: a per-channel vector as long as ``x``'s ``channel_axis`` is viewed along that
+    axis (U-SC2: a channel-first input's gauges run along axis 1); a uniform vector, a length the axis does not hold, or
+    no declared axis broadcasts along the last axis by ``broadcast_scale_to_dim``, as before."""
+    flat = scale.reshape(-1)
+    if (channel_axis is not None and x.dim() > 1 and flat.numel() > 1
+            and int(x.shape[channel_axis]) == flat.numel() and not bool(torch.all(flat == flat[0]))):
+        shape = [1] * x.dim()
+        shape[channel_axis] = flat.numel()
+        return flat.view(*shape)
+    return broadcast_scale_to_dim(scale, x.shape[-1])
+
+
 def align_scale_devices(scales: list[torch.Tensor]) -> list[torch.Tensor]:
     """Put a set of source scales on ONE device: the anchored one, if any exists.
 

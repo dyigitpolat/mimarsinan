@@ -15,7 +15,7 @@ from mimarsinan.mapping.support.call_template import (
     SourceArg,
     partition_call,
 )
-from mimarsinan.mapping.support.scale_broadcast import broadcast_scale_to_dim
+from mimarsinan.mapping.support.scale_broadcast import broadcast_scale_along
 
 
 def _cat_along(x: torch.Tensor, prefix: torch.Tensor, *, dim: int) -> torch.Tensor:
@@ -226,6 +226,9 @@ class ScaleNormalizingWrapper(nn.Module):
     output_scale: torch.Tensor
 
     output_offset: torch.Tensor | None
+    # [U-SC2] the batched axis a per-channel slot runs along (1: a channel-first input); None, and every pickle from
+    # before it, broadcasts along the last axis.
+    channel_axis: int | None = None
 
     def __init__(
         self,
@@ -235,9 +238,12 @@ class ScaleNormalizingWrapper(nn.Module):
         output_offset: torch.Tensor | None = None,
         module_kwargs: dict | None = None,
         output_index: int | None = None,
+        channel_axis: int | None = None,
     ) -> None:
         super().__init__()
         self.module = module
+        if channel_axis is not None:
+            self.channel_axis = int(channel_axis)
         # Transparent to the wrapped module's calling convention: keyword args
         # (MultiheadAttention's need_weights) and a tuple return selected by
         # output_index — the value twin applies both, so the wire twin must too.
@@ -271,9 +277,7 @@ class ScaleNormalizingWrapper(nn.Module):
         absolute_inputs = []
         for i, x in enumerate(inputs):
             scale = self._input_scale(i)
-            broadcast = broadcast_scale_to_dim(
-                scale.to(dtype=x.dtype, device=x.device), x.shape[-1]
-            )
+            broadcast = broadcast_scale_along(scale.to(dtype=x.dtype, device=x.device), x, self.channel_axis)
             absolute_inputs.append(x * broadcast)
         # Call-site kwargs (the IR executor's) WIN on collision: the wrapper
         # must behave exactly as the bare module did for that caller; the walk
@@ -286,8 +290,7 @@ class ScaleNormalizingWrapper(nn.Module):
             absolute_out = absolute_out + self.output_offset.to(
                 dtype=absolute_out.dtype, device=absolute_out.device,
             )
-        out_scale = broadcast_scale_to_dim(
-            self.output_scale.to(dtype=absolute_out.dtype, device=absolute_out.device),
-            absolute_out.shape[-1],
+        out_scale = broadcast_scale_along(
+            self.output_scale.to(dtype=absolute_out.dtype, device=absolute_out.device), absolute_out, self.channel_axis,
         )
         return absolute_out / out_scale

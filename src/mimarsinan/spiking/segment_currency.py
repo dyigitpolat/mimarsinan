@@ -18,6 +18,7 @@ import torch
 
 from mimarsinan.common.refusal.toolchain_refusal import ToolchainRefusal
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.support.gauge_channels import gauge_axis, gauge_view
 from mimarsinan.mapping.support.value_domain import MIXED, value_domain_map
 from mimarsinan.spiking.count_grid import CountGridModule, CountGridOperandError, count_grid_applies
 from mimarsinan.spiking.segment_partition import is_encoding_perceptron, perceptron_of
@@ -57,9 +58,11 @@ def absolute_value_nodes(driver) -> dict:
     return flags
 
 
-def gather_currency(node, deps, dep_values, flags: dict, boundary_scales: dict, recorded: dict, *, phase_dither: bool):
+def gather_currency(node, deps, dep_values, flags: dict, boundary_scales: dict, recorded: dict, *, phase_dither: bool,
+                    source_gauges: dict | None = None):
     """``(absolute mask, re-encode scale)`` per element of a MIXED layout node: its layout applied to each source's own
-    currency (a recorded MIXED source passes its own through)."""
+    currency (a recorded MIXED source passes its own through; a wire source at its per-channel gauge per element where
+    the source walk carries one, ``source_gauges``)."""
     if phase_dither:
         raise MixedGatherDitherError(
             f"{type(node).__name__} {getattr(node, 'name', None)!r} gathers absolute and wire sources under a "
@@ -70,7 +73,9 @@ def gather_currency(node, deps, dep_values, flags: dict, boundary_scales: dict, 
             mask, scale = recorded[dep]
         else:
             mask = torch.full_like(value, 1.0 if flags.get(dep) else 0.0)
-            scale = torch.full_like(value, float(boundary_scales.get(dep, 1.0)))
+            gauge = None if flags.get(dep) else gauge_view((source_gauges or {}).get(dep), value, gauge_axis(dep))
+            scale = (torch.full_like(value, float(boundary_scales.get(dep, 1.0))) if gauge is None
+                     else gauge.to(device=value.device, dtype=value.dtype).expand_as(value).clone())
         masks.append(mask)
         scales.append(scale)
     if len(deps) == 1:
@@ -208,7 +213,7 @@ class HostCurrencyHooks:
             return  # no reader needs it (host ops decode the buffers as stored), so no per-element currency is held
         self._mixed_currency[node] = gather_currency(
             node, deps, dep_values, self._absolute_nodes, self._boundary_scales, self._mixed_currency,
-            phase_dither=self.phase_dither,
+            phase_dither=self.phase_dither, source_gauges=getattr(self, "_source_gauges", None),
         )
 
     def _hop_inputs(self, perceptron, deps, rate_of, train_of, node_train, node_events, T):

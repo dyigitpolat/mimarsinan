@@ -123,7 +123,7 @@ class ActivationQuantizationTuner(CascadeForwardInstall, AdaptationRateTuner):
         folded = apply_lif_half_step_bias_compensation(
             self.model, int(self.pipeline.config["simulation_steps"]),
         )
-        snaps = install_lif_entry_input_quantizers(self.model, self.pipeline.config)
+        snaps = install_lif_entry_input_quantizers(self.model, self.pipeline.config, trainer=self.trainer)
         ensure_offload_negative_boundary(
             self.model, self.trainer, self.pipeline.config,
         )

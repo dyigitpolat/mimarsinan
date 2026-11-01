@@ -14,13 +14,19 @@ after the seam), a graph on which the seam would change nothing passes as it is,
 
 from __future__ import annotations
 
+from typing import Any, Callable
+
 import torch
 
 from mimarsinan.common.refusal.toolchain_refusal import ToolchainRefusal
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.mappers.scale_propagation import arm_wrap_slots
+from mimarsinan.mapping.support.negative_boundary import _is_host_node, boundary_consumers
+from mimarsinan.mapping.support.value_domain import value_domain_map
 from mimarsinan.spiking.scale_aware_boundaries import (
     establish_gauge_for_mixed_domain_seams,
     establish_wire_gauge,
+    read_boundary_out_scales,
     stamped_input_boundary_scale,
     verify_boundary_currency_coherence,
 )
@@ -28,6 +34,7 @@ from mimarsinan.spiking.segment_partition import perceptron_of
 
 __all__ = [
     "WireGaugeNotEstablishedError",
+    "arm_absolute_core_entries",
     "establish_deployed_wire_gauge",
     "require_established_wire_gauge",
     "wire_gauge_established",
@@ -54,15 +61,47 @@ def wire_gauge_established(model_or_repr) -> bool:
     return bool(getattr(repr_, _STAMP, False)) if repr_ is not None else False
 
 
-def establish_deployed_wire_gauge(model_or_repr, *, input_data_scale: float) -> int:
+def establish_deployed_wire_gauge(model_or_repr, *, input_data_scale: float,
+                                  negative_boundary: Callable[[Any], Any] | None = None) -> int:
     """Arm the wrap slots and propagate the boundary currencies (``establish_wire_gauge``), repair every mixed-domain
-    join, certify one-writer coherence, and stamp the graph. Returns the number of joins repaired."""
+    join, apply the negative-value boundary policy when the caller binds one (``negative_boundary``, U-SC2: the
+    calibration batch and the run's switches, ``tuning.orchestration.negative_boundary_seam``), certify one-writer
+    coherence, and stamp the graph. Returns the number of joins repaired."""
     establish_wire_gauge(model_or_repr, input_data_scale=input_data_scale)
     repaired = establish_gauge_for_mixed_domain_seams(model_or_repr, input_data_scale=input_data_scale)
-    if not repaired:  # the repair certifies when it ran
-        verify_boundary_currency_coherence(model_or_repr, input_data_scale=input_data_scale)
+    if arm_absolute_core_entries(model_or_repr, input_data_scale=input_data_scale):
+        establish_wire_gauge(model_or_repr, input_data_scale=input_data_scale)
+    if negative_boundary is not None:
+        negative_boundary(model_or_repr)
+    verify_boundary_currency_coherence(model_or_repr, input_data_scale=input_data_scale)
     setattr(_mapper_repr(model_or_repr), _STAMP, True)
     return repaired
+
+
+def arm_absolute_core_entries(model_or_repr, *, input_data_scale: float) -> int:
+    """[U-SC2] Arm every input-rooted ABSOLUTE host op a core reads at its boundary-table gauge: wrap slots at the
+    pass-through currency (raw sources decoded at one, the output at the gauge the boundary walk propagates). The
+    boundary table, the core's entry currency and the walks encode such a value at that gauge (the input scale), the
+    deployed program at the unit gauge of the raw buffer it folds, so at any input scale but 1 the twins disagreed (the
+    first core of DenseNet-BC and PyramidNet: S1 and S4 run at 2.02); armed, the fold and the divisor follow the one
+    gauge. An op at the unit gauge already agrees and is left as it is. Returns the number armed."""
+    repr_ = _mapper_repr(model_or_repr)
+    if repr_ is None:
+        return 0
+    repr_._ensure_exec_graph()
+    flags, _ = value_domain_map(repr_._exec_order, repr_._deps)
+    table = read_boundary_out_scales(repr_, input_data_scale=input_data_scale)
+    consumers = repr_.consumer_map()
+    armed = 0
+    for node in repr_._exec_order:
+        if not isinstance(node, ComputeOpMapper) or node.output_scale is not None or flags.get(node) is not True:
+            continue
+        gauge = float(table.get(node, 1.0))
+        if abs(gauge - 1.0) <= _RTOL or not any(not _is_host_node(c) for c in boundary_consumers(node, consumers)):
+            continue
+        arm_wrap_slots(node, [1.0] * len(node._sources_list), gauge)
+        armed += 1
+    return armed
 
 
 def _clone(t):

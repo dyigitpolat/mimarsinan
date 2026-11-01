@@ -20,6 +20,7 @@ __all__ = [
     "apply_negative_boundary_policy",
     "boundary_consumers",
     "calibrated_compute_op_minima",
+    "encoded_untrained_boundary",
     "ensure_negative_boundary_policy",
     "lossy_negative_boundaries",
     "subsume_forward_negative_boundaries",
@@ -28,6 +29,8 @@ __all__ = [
 
 # The [0,1] spike-encode clamp only loses information below this floor.
 NEGATIVE_TOLERANCE = 1e-6
+# Calibration images one policy walk holds at once (U-SC2; the recorders merge across chunks).
+CALIBRATION_CHUNK = 128
 
 
 @dataclass(frozen=True)
@@ -114,6 +117,18 @@ def trained_entry_boundary(op, consumers) -> bool:
     return False
 
 
+def encoded_untrained_boundary(op, consumers) -> bool:
+    """[sigma-scope law] The policy's ONE scope: a boundary some on-chip consumer
+    ENCODES, that is neither the QAT's own trained clamp (every entry carries
+    the trained quantizer) nor decided before training (U-SC2: lifted in the op
+    or shifted at the gauge seam; the walks and the trained function read it)."""
+    if getattr(op, "output_value_offset", None) is not None or getattr(op, "negative_shift_at_seam", False):
+        return False
+    if not any(not _is_host_node(c) for c in boundary_consumers(op, consumers)):
+        return False
+    return not trained_entry_boundary(op, consumers)
+
+
 def calibrated_compute_op_minima(
     model, calibration_x: torch.Tensor, T: int, *, forward_fn,
 ) -> Dict[Any, torch.Tensor]:
@@ -129,7 +144,10 @@ def calibrated_compute_op_minima(
         return {}
     recorder: Dict[Any, torch.Tensor] = {}
     with torch.no_grad():
-        forward_fn(model, calibration_x, T, compute_min_recorder=recorder)
+        # [U-SC2] in bounded chunks (the recorder keeps the minimum across them): one pass over a whole calibration
+        # batch holds every host value at once (2,048 images of PyramidNet-110: past a 28G class).
+        for chunk in calibration_x.split(CALIBRATION_CHUNK):
+            forward_fn(model, chunk, T, compute_min_recorder=recorder)
     return recorder
 
 
@@ -225,15 +243,11 @@ def apply_negative_boundary_policy(
     )
     # [sigma-scope law] ONE filter feeds the stamp path, the subsume path,
     # AND the recheck the same universe (universe drift between them is how
-    # silent-skip bugs slip in). A boundary is in scope only if it is ever
-    # ENCODED (some non-host consumer) and NOT the QAT's own trained clamp.
+    # silent-skip bugs slip in), and the gauge seam's lift (U-SC2).
     consumers = model.get_mapper_repr().consumer_map()
     minima = {
         op: mins for op, mins in minima.items()
-        if any(
-            not _is_host_node(c) for c in boundary_consumers(op, consumers)
-        )
-        and not trained_entry_boundary(op, consumers)
+        if encoded_untrained_boundary(op, consumers)
     }
     shifts: Dict[Any, Any] = {}
     subsumed: List[Any] = []

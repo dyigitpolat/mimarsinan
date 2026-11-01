@@ -5,7 +5,10 @@ from __future__ import annotations
 import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.mapping.mappers.source_gauges import read_source_gauges
+from mimarsinan.mapping.support.gauge_channels import gauge_axis, gauge_view
 from mimarsinan.models.nn.activations.autograd import RoundedStaircaseFunction
+from mimarsinan.models.nn.lif_kernels import in_measurement_plane
 from mimarsinan.models.spiking.serial import refuse_cycle_atomic_walk
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
@@ -50,6 +53,7 @@ class LifSegmentPolicy(HostCurrencyHooks):
 
     _boundary_scales: dict | None = None
     _absolute_nodes: dict | None = None
+    _source_gauges: dict | None = None
     # Diagnostic: seam terms the sync path skips ({"clamp","grid"}); None = deployed.
     _seam_ablation: tuple | None = None
 
@@ -84,11 +88,19 @@ class LifSegmentPolicy(HostCurrencyHooks):
             driver.repr, establish=self.soma_law.is_per_event,
         )
         self._absolute_nodes = absolute_value_nodes(driver)
+        self._source_gauges = read_source_gauges(driver.repr)
         self._prepare_currencies(driver)
+
+    def _wire_scale(self, dep, scalar, value):
+        """[U-SC2] A wire value's re-encode scale: its per-channel gauge per element where the source walk carries one
+        (the aligned vector the deployed core folds), else the boundary table's scalar."""
+        view = gauge_view((self._source_gauges or {}).get(dep), value, gauge_axis(dep))
+        return scalar if view is None else view
 
     def finalize(self, driver):
         self._set_all_cycle_accurate(driver, False)
         self._boundary_scales = None
+        self._source_gauges = None
         self._absolute_nodes = None
         self._clear_currencies()
 
@@ -157,7 +169,7 @@ class LifSegmentPolicy(HostCurrencyHooks):
                     normalize_boundary_value(value, scale)
                 )
             else:
-                rate = value
+                rate, scale = value, self._wire_scale(dep, scale, value)
             if "clamp" not in abl:
                 rate = rate.clamp(0.0, 1.0)
             if "grid" in abl:
@@ -184,7 +196,7 @@ class LifSegmentPolicy(HostCurrencyHooks):
             elif absolute_nodes.get(dep, False):
                 rate = normalize_boundary_value(value, scale)
             else:
-                rate = value.clamp(0.0, 1.0)
+                rate, scale = value.clamp(0.0, 1.0), self._wire_scale(dep, scale, value)
             t = uniform_spike_train(rate, T, phase_dither=self.phase_dither)
             node_events[dep] = t
             if isinstance(scale, torch.Tensor) or scale != 1.0:
@@ -266,6 +278,10 @@ class LifSegmentPolicy(HostCurrencyHooks):
                         [forward_node(node, [dt[t] for dt in dep_trains]) for t in range(T)],
                         dim=0,
                     )
+                    if in_measurement_plane() and not self.soma_law.is_per_event and all(
+                            node_events.get(dep) is not None for dep in d):  # [U-SC2] the events a cycle fold reads
+                        node_events[node] = torch.stack(
+                            [forward_node(node, [node_events[dep][t] for dep in d]) for t in range(T)])
                 node_rate[node] = forward_node(node, [rate_of(dep) for dep in d])
 
         for n in driver.external_consumed(seg_nodes):

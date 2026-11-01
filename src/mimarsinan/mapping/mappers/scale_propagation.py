@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 import torch
 
+from mimarsinan.mapping.support.gauge_channels import gauge_channels, wrap_channel_axis
 from mimarsinan.mapping.support.scale_broadcast import (
     align_scale_devices as _align_scale_devices,
     broadcast_scale_pair as _broadcast_scale_pair,
@@ -225,6 +226,7 @@ def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | N
         # refresh per_source from the walk and report output_scale so
         # consumers inherit the emitted wire gauge (κ_S ≡ κ_T).
         node.per_source_scales = [s.reshape(-1).clone() for s in normalized]
+        _stamp_wrap_channel_axis(node, normalized)
         return node.output_scale
 
     legacy_wrap = (
@@ -245,12 +247,25 @@ def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | N
 
     if legacy_wrap:
         output_scale = node.combine_source_scales(normalized)
+        n_out = gauge_channels(node)
+        if n_out is not None and output_scale.numel() != n_out and _is_per_channel_heterogeneous(output_scale):
+            # [U-SC2] a channel-changing op has no channel correspondence: it decodes per input channel and emits ONE
+            # gauge over its own output channels.
+            output_scale = output_scale.mean().reshape(1)
         node.per_source_scales = list(normalized)
+        _stamp_wrap_channel_axis(node, normalized)
     else:
         output_scale = node.combine_source_scales(normalized).mean().reshape(1)
         node.per_source_scales = [s.mean().reshape(1) for s in normalized]
     node.output_scale = output_scale
     return output_scale
+
+
+def _stamp_wrap_channel_axis(node, slots) -> None:
+    """[U-SC2] The wrapper decodes a per-channel slot along the input's channel axis (stamped only where one is)."""
+    axis = wrap_channel_axis(node, slots)
+    if axis is not None:
+        node.wrap_channel_axis = axis
 
 
 def _is_per_channel_heterogeneous(scale: torch.Tensor) -> bool:

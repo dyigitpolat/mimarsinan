@@ -13,7 +13,9 @@ from mimarsinan.models.nn.activations.lif_serial import (
     disarm_serial_fold,
     serial_fold_theta,
 )
+from mimarsinan.models.nn.lif_kernels import in_measurement_plane
 from mimarsinan.models.spiking.serial import SerialFoldUnsupportedError
+from mimarsinan.spiking.segment_policy_lif_fold import CycleFoldSlot, cycle_fold_applies
 from mimarsinan.spiking.spike_trains import uniform_spike_train
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
     PerceptronTransformer,
@@ -27,36 +29,51 @@ def run_streamed_lif_cycles(
     """One streamed hop: T per-cycle forwards. Returns ``(train, events)``.
 
     ``events`` is the hop's per-cycle emission MULTIPLICITY train under the
-    per-event law (the currency the next hop folds), and ``None`` under the
-    per-cycle law, where the train's own 0/1 values already are it.
+    per-event law (the currency the next hop folds); under the per-cycle law
+    the 0/1 train a measurement-plane fold or the re-encode emitted (the
+    currency the next hop's fold reads, U-SC2), else ``None``.
     """
     slot = _arm_serial_slot(policy.soma_law, node, perceptron, lif, dep_events)
-    events_in = dep_events[0] if slot is not None else None
-    # set_cycle_accurate resets the node: one window, one membrane.
-    lif.set_cycle_accurate(True)
-    try:
-        outs = []
-        for t in range(T):
-            if slot is not None and events_in is not None:
-                slot.feed(events_in[t])
-            outs.append(forward_node(node, [dt[t] for dt in dep_trains]))
-        train = torch.stack(outs, dim=0)
-        events = (
-            torch.stack(slot.counts, dim=0) if slot is not None else None
-        )
-    finally:
-        lif.set_cycle_accurate(False)
-        if slot is not None:
-            disarm_serial_fold(lif)
+    fold = None if slot is not None else _arm_cycle_fold(policy.soma_law, node, perceptron, lif, dep_events)
+    train, events = _run_window(node, lif, forward_node, dep_trains, dep_events, T,
+                                slot if slot is not None else fold)
+    if fold is not None and not fold.agrees:
+        # The twin's own pre-activation departs from the deployed decomposition: a gauge defect, not a tie, so the
+        # window runs in the twin's own arithmetic and the departure shows as counts.
+        train, events = _run_window(node, lif, forward_node, dep_trains, dep_events, T, None)
     if policy.retime:
         # STE re-encode: forward = the deployed uniform train of the window
         # count; backward = the raw cascade's per-cycle surrogate path (a hard
         # re-encode severs every hop's gradient).
-        retimed = uniform_spike_train(
+        reencoded = uniform_spike_train(
             (train / scale).mean(dim=0).clamp(0.0, 1.0).detach(), T,
             phase_dither=policy.phase_dither,
-        ) * scale
-        train = retimed.detach() + (train - train.detach())
+        )
+        train = (reencoded * scale).detach() + (train - train.detach())
+        if not policy.soma_law.is_per_event and in_measurement_plane():
+            events = reencoded  # the 0/1 train the next hop's measurement-plane fold reads
+    return train, events
+
+
+def _run_window(node, lif, forward_node, dep_trains, dep_events, T: int, armed):
+    """The hop's T cycles, through the armed fold when one is (``(train, the fold's emitted events or None)``)."""
+    events_in = dep_events[0] if armed is not None else None
+    # set_cycle_accurate resets the node: one window, one membrane.
+    lif.set_cycle_accurate(True)
+    if armed is not None:
+        arm_serial_fold(lif, armed)
+    try:
+        outs = []
+        for t in range(T):
+            if armed is not None and events_in is not None:
+                armed.feed(events_in[t])
+            outs.append(forward_node(node, [dt[t] for dt in dep_trains]))
+        train = torch.stack(outs, dim=0)
+        events = torch.stack(armed.counts, dim=0) if armed is not None and armed.counts else None
+    finally:
+        lif.set_cycle_accurate(False)
+        if armed is not None:
+            disarm_serial_fold(lif)
     return train, events
 
 
@@ -82,7 +99,7 @@ def _slot_unfold(node, upstream_events: torch.Tensor, n_slots: int):
 def _arm_serial_slot(
     soma_law: SomaLaw, node, perceptron, lif, dep_events,
 ) -> Optional[SerialFoldSlot]:
-    """Arm the per-event fold on this hop, or refuse by name."""
+    """The per-event fold for this hop (``_run_window`` arms it), or refuse by name."""
     if not soma_law.is_per_event:
         return None
     if len(dep_events) != 1 or dep_events[0] is None:
@@ -111,5 +128,22 @@ def _arm_serial_slot(
         membrane_init=float(getattr(lif, "membrane_init", 0.0)),
         unfold=_slot_unfold(node, dep_events[0], int(weight.shape[1])),
     )
-    arm_serial_fold(lif, slot)
     return slot
+
+
+def _arm_cycle_fold(soma_law: SomaLaw, node, perceptron, lif, dep_events) -> Optional[CycleFoldSlot]:
+    """[U-SC2 B1] The per-cycle deployed fold on this hop (``segment_policy_lif_fold``), or None where it does not apply
+    or the mapper's unfold does not tile the hop's input (the twin keeps its own arithmetic)."""
+    if not cycle_fold_applies(soma_law, lif, dep_events):
+        return None
+    n_slots = int(PerceptronTransformer().get_effective_weight(perceptron).shape[1])
+    try:
+        unfold = _slot_unfold(node, dep_events[0], n_slots)
+    except (SerialFoldUnsupportedError, ValueError):
+        return None
+    cells = 1
+    for d in dep_events[0].shape[2:]:
+        cells *= int(d)
+    if int(unfold.n_slots) != n_slots or int(unfold.source_size) != cells:
+        return None
+    return CycleFoldSlot(perceptron=perceptron, lif=lif, unfold=unfold)
