@@ -7,6 +7,11 @@ import tempfile
 from typing import Any, Optional
 
 import mimarsinan.chip_simulation.sanafe.arch_synth as _arch_synth
+from mimarsinan.chip_simulation.sanafe.arch_synth.core_sizes import (
+    declared_core_size,
+    input_slots,
+    neuron_capacity,
+)
 from mimarsinan.chip_simulation.sanafe.arch_synth.placed_region import placed_region
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import (
     ArchSpec,
@@ -32,21 +37,20 @@ def _render_arch_yaml(
     thresholding_mode: str = "<=",
     simulation_length: int = 1,
 ) -> str:
-    """Render SANA-FE architecture YAML from ``ArchSpec``."""
+    """Render SANA-FE architecture YAML from ``ArchSpec``: each core at its declared size (``core_sizes``) [U-SF]."""
     p = spec.preset
     soma_thresholding = _thresholding_mode_to_soma_attr(thresholding_mode)
-    n_input_somas = max(1, int(spec.axons_per_core))
-
-    def _range_name(stem: str, count: int) -> str:
-        return stem if count == 1 else f"{stem}[0..{count - 1}]"
 
     def _render_core_block(tile_idx: int, core_local_idx: int) -> str:
-        """One core block (explicit per core — SANA-FE 2.1.1 range shorthand is broken)."""
+        """One core block (explicit per core — SANA-FE 2.1.1 range shorthand is broken); every input slot ``inputs[k]``
+        is named by its range, one slot included (the net builder binds input axon ``a`` to ``inputs[a]``)."""
+        axons, neurons = declared_core_size(spec, tile_idx, core_local_idx)
+        n_input_somas = input_slots(axons)
         return f"""        - name: t{tile_idx}_c{core_local_idx}
           attributes:
             buffer_position: soma
             buffer_inside_unit: false
-            max_neurons_supported: {max(8192, 2 * (spec.neurons_per_core + n_input_somas))}
+            max_neurons_supported: {neuron_capacity(axons, neurons)}
           axon_in:
             - name: {AXON_IN_NAME}
               attributes:
@@ -121,7 +125,7 @@ def _render_arch_yaml(
                 latency_update_neuron: {p["soma_update_latency_s"]}
                 energy_spike_out: {p["soma_spike_out_energy_j"]}
                 latency_spike_out: {p["soma_spike_out_latency_s"]}
-            - name: {_range_name(SOMA_INPUT_RANGE_NAME, n_input_somas)}
+            - name: {SOMA_INPUT_RANGE_NAME}[0..{n_input_somas - 1}]
               attributes:
                 model: input
                 energy_access_neuron: 0.0
@@ -176,7 +180,8 @@ def build_architecture(
     simulation_length: int = 1,
 ) -> Any:
     """Load or synthesise a SANA-FE ``Architecture`` matching ``spec``: a synthesized chip defines the declared
-    floorplan's region holding the placed cores (``placed_region``) [U-TT T-1]."""
+    floorplan's region holding the placed cores (``placed_region``) [U-TT T-1], each core at the size the program places
+    on it (``core_sizes``) [U-SF]."""
     sanafe = _arch_synth._sanafe()
 
     if custom_arch_path is not None:

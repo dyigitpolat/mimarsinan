@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
+from mimarsinan.chip_simulation.sanafe.arch_synth.core_sizes import executed_units, placed_core_sizes
 from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
     resolve_floorplan,
 )
@@ -103,6 +104,8 @@ class ArchSpec:
     floorplan_replicas: int = 1
     # The widest executed unit's cores: the chip defines the floorplan region holding them (placed_region) [U-TT T-1].
     placed_cores: int = 0
+    # [U-SF] Per core position, the (axons, neurons) of the largest core an executed unit places there (core_sizes).
+    core_sizes: Tuple[Tuple[int, int], ...] = ()
 
     @property
     def total_cores(self) -> int:
@@ -254,6 +257,7 @@ def derive_arch_spec(
         packed_cores=packed_cores,
         floorplan_replicas=replicas,
         placed_cores=_executed_unit_cores(mapping, packed_cores),
+        core_sizes=placed_core_sizes(mapping),
     )
 
 
@@ -277,10 +281,7 @@ def _max_cores_per_pass(mapping: Any, packed_cores: int) -> int:
 def _executed_unit_cores(mapping: Any, fallback: int) -> int:
     """[U-TT T-1] The most cores one executed unit loads (a neural stage, or each of its retimed level stages, each
     from core 0 of a fresh chip): the region the chip defines (``placed_region``); ``fallback`` without stages."""
-    widths = [len(unit.hard_core_mapping.cores) for stage in getattr(mapping, "stages", None) or []
-              if getattr(stage, "kind", None) == "neural"
-              for unit in [stage, *(getattr(stage, "retimed_level_stages", None) or [])]
-              if getattr(unit, "hard_core_mapping", None) is not None]
+    widths = [len(hcm.cores) for hcm in executed_units(mapping)]
     return max(widths) if widths else int(fallback)
 
 
