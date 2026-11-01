@@ -13,7 +13,9 @@ core, and by a host linear), PyramidNet's channel-padded shortcut, a projection 
 encoding before a join, and a pool before a strided block with a strided projection shortcut; plus the minimal mixed
 concatenation of an ABSOLUTE host chain with a WIRE core output (DenseNet-BC's published order), a DenseNet-BC
 program at the smallest depth, and that concatenation nested inside a concatenation that also takes core outputs (read by
-a host op, and by a core).
+a host op, and by a core). U-SC3's memory forms (``MEMORY_FORMS``) add a wide encoding read by a narrow core, DenseNet-BC's
+dense-unit read (a wide host value read by a narrow core), a wide core whose output only a host op reads, and chains of
+two and six cores in one segment.
 """
 
 from __future__ import annotations
@@ -230,6 +232,83 @@ class NestedMixedGatherCore(NestedMixedGather):
         return self.r3(self.fc3(self.gathers(x)))
 
 
+class WideEncodingRead(nn.Module):
+    """A wide subsumed encoding (48 channels) read by a narrow core (2 channels): the encoding layer's boundary train
+    is the walk's largest tensor (U-SC3)."""
+
+    shape = (3, 8, 8)
+
+    def __init__(self):
+        super().__init__()
+        self.stem, self.c1 = nn.Conv2d(3, 48, 3, padding=1), nn.Conv2d(48, 2, 1)
+        self.fc = nn.Linear(2 * 8 * 8, 6)
+        self.r0, self.r1, self.r3 = nn.ReLU(), nn.ReLU(), nn.ReLU()
+
+    def forward(self, x):
+        return self.r3(self.fc(self.r1(self.c1(self.r0(self.stem(x)))).flatten(1)))
+
+
+class WideConcatHostRead(nn.Module):
+    """DenseNet-BC's dense-unit read at minimum size, wide: an absolute stem concatenated with a core output, through a
+    host BatchNorm and ReLU, read by a narrow core (S1's ``conv1`` reading ``relu1(bn1(cat))``): the boundary re-encode
+    of a host value is the walk's largest tensor (U-SC3)."""
+
+    shape = (3, 8, 8)
+
+    def __init__(self):
+        super().__init__()
+        self.stem, self.c1, self.c3 = nn.Conv2d(3, 32, 1), nn.Conv2d(32, 4, 1), nn.Conv2d(36, 2, 1)
+        self.bn = nn.BatchNorm2d(36)
+        self.fc = nn.Linear(2 * 8 * 8, 6)
+        self.r1, self.r2, self.r3, self.r4 = nn.ReLU(), nn.ReLU(), nn.ReLU(), nn.ReLU()
+
+    def forward(self, x):
+        s = self.stem(x)
+        y = self.r1(self.c1(s))
+        z = self.r3(self.c3(self.r2(self.bn(torch.cat([s, y], dim=1)))))
+        return self.r4(self.fc(z.flatten(1)))
+
+
+class WideCoreOutput(nn.Module):
+    """A narrow subsumed encoding read by a wide core (48 channels) whose output only a host op reads: no later node of
+    its segment reads that core's events (U-SC3)."""
+
+    shape = (3, 8, 8)
+
+    def __init__(self):
+        super().__init__()
+        self.stem, self.c1, self.c2 = nn.Conv2d(3, 2, 3, padding=1), nn.Conv2d(2, 48, 1), nn.Conv2d(48, 2, 1)
+        self.bn = nn.BatchNorm2d(48)
+        self.fc = nn.Linear(2 * 8 * 8, 6)
+        self.r0, self.r1, self.r2, self.r3, self.r4 = nn.ReLU(), nn.ReLU(), nn.ReLU(), nn.ReLU(), nn.ReLU()
+
+    def forward(self, x):
+        h = self.r1(self.c1(self.r0(self.stem(x))))
+        z = self.r3(self.c2(self.r2(self.bn(h))))
+        return self.r4(self.fc(z.flatten(1)))
+
+
+class DeepChain(nn.Module):
+    """One neural segment of ``depth`` cores after the subsumed encoding, then a narrow head: every hop's train is read
+    by the next hop only (U-SC3)."""
+
+    shape = (3, 8, 8)
+
+    def __init__(self, depth: int = 6):
+        super().__init__()
+        self.stem = nn.Conv2d(3, 16, 3, padding=1)
+        self.convs = nn.ModuleList(nn.Conv2d(16, 16, 3, padding=1) for _ in range(depth))
+        self.relus = nn.ModuleList(nn.ReLU() for _ in range(depth + 1))
+        self.head, self.rh = nn.Conv2d(16, 2, 1), nn.ReLU()
+        self.fc, self.rf = nn.Linear(2 * 8 * 8, 6), nn.ReLU()
+
+    def forward(self, x):
+        h = self.relus[0](self.stem(x))
+        for conv, relu in zip(self.convs, self.relus[1:]):
+            h = relu(conv(h))
+        return self.rf(self.fc(self.rh(self.head(h)).flatten(1)))
+
+
 def small_densenet_bc():
     from mimarsinan.models.families.densenet_bc import CifarDenseNetBC
 
@@ -255,13 +334,21 @@ MIXED_FORMS: Dict[str, Callable[[], nn.Module]] = {
     "nested_gather_host_read": NestedMixedGather,
     "nested_gather_core_read": NestedMixedGatherCore,
 }
+#: The forms whose largest train is a boundary re-encode or a chain of hop trains (U-SC3's memory bounds).
+MEMORY_FORMS: Dict[str, Callable[[], nn.Module]] = {
+    "wide_encoding_read": WideEncodingRead,
+    "wide_concat_host_read": WideConcatHostRead,
+    "wide_core_output": WideCoreOutput,
+    "chain_2": lambda: DeepChain(2),
+    "chain_6": lambda: DeepChain(6),
+}
 SHAPES = {"densenet_bc": (3, 8, 8)}
 
 
 def make_form(form: str) -> nn.Module:
     if form == "densenet_bc":
         return small_densenet_bc()
-    return {**FORMS, **MIXED_FORMS}[form]()
+    return {**FORMS, **MIXED_FORMS, **MEMORY_FORMS}[form]()
 
 
 def form_shape(form: str) -> tuple:

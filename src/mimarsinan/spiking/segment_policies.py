@@ -8,9 +8,9 @@ from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.mappers.source_gauges import read_source_gauges
 from mimarsinan.mapping.support.gauge_channels import gauge_axis, gauge_view
 from mimarsinan.models.nn.activations.autograd import RoundedStaircaseFunction
-from mimarsinan.models.nn.lif_kernels import in_measurement_plane
 from mimarsinan.models.spiking.serial import refuse_cycle_atomic_walk
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
+from mimarsinan.spiking.cycle_trains import SegmentReaders, encode_train, scale_train, train_mean
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.segment_currency import (
     MIXED,
@@ -24,7 +24,6 @@ from mimarsinan.spiking.segment_partition import perceptron_of
 from mimarsinan.spiking.segment_policy_analytical import AnalyticalSegmentPolicy
 from mimarsinan.spiking.segment_policy_lif_serial import run_streamed_lif_cycles
 from mimarsinan.spiking.segment_policy_ttfs import TtfsSegmentPolicy
-from mimarsinan.spiking.spike_trains import uniform_spike_train
 
 __all__ = ["AnalyticalSegmentPolicy", "LifSegmentPolicy", "MixedGatherDitherError", "TtfsSegmentPolicy"]
 
@@ -121,7 +120,7 @@ class LifSegmentPolicy(HostCurrencyHooks):
         Never affects the forward output."""
         recorder = getattr(driver, "_node_value_recorder", None)
         if recorder is not None and perceptron is not None:
-            recorder[id(perceptron)] = train.detach().mean(dim=0)
+            recorder[id(perceptron)] = train_mean(train).detach()
 
     @staticmethod
     def _record_decoded_value(driver, perceptron, value):
@@ -142,6 +141,8 @@ class LifSegmentPolicy(HostCurrencyHooks):
         # Per-cycle emission MULTIPLICITIES, the currency the per-event fold
         # consumes: a train is ``events * producer scale`` by construction.
         node_events: dict = {}
+        # [U-SC3] trains are read per cycle where the walk streams (cycle_trains); one no later reader reads is dropped.
+        readers = SegmentReaders(seg_nodes, deps_map, keep=(driver._output,))
 
         def rate_of(dep):
             return node_rate[dep] if dep in seg_set else values[dep]
@@ -157,7 +158,7 @@ class LifSegmentPolicy(HostCurrencyHooks):
             gather is read at its ``consumer``'s fold, as the core reads it."""
             t = node_train.get(dep)
             if t is not None and dep not in node_rate:
-                return t.mean(dim=0)
+                return train_mean(t)
             value = rate_of(dep)
             scale = boundary_scales.get(dep, 1.0)
             abl = self._seam_ablation or ()
@@ -197,10 +198,10 @@ class LifSegmentPolicy(HostCurrencyHooks):
                 rate = normalize_boundary_value(value, scale)
             else:
                 rate, scale = value.clamp(0.0, 1.0), self._wire_scale(dep, scale, value)
-            t = uniform_spike_train(rate, T, phase_dither=self.phase_dither)
+            t = encode_train(rate, T, phase_dither=self.phase_dither)
             node_events[dep] = t
             if isinstance(scale, torch.Tensor) or scale != 1.0:
-                t = t * scale
+                t = scale_train(t, scale)
             node_train[dep] = t
             return t
 
@@ -226,9 +227,8 @@ class LifSegmentPolicy(HostCurrencyHooks):
                     node_rate[node] = rate_norm
                     # Mirror of encode_compute_boundary: the deployed boundary is
                     # a uniform wire train; *scale keeps NF value-domain magnitudes.
-                    node_events[node] = uniform_spike_train(
-                        rate_norm, T, phase_dither=self.phase_dither)
-                    node_train[node] = node_events[node] * scale
+                    node_events[node] = encode_train(rate_norm, T, phase_dither=self.phase_dither)
+                    node_train[node] = scale_train(node_events[node], scale)
                 elif self.synchronized:
                     # [§16] two-window discipline: ONE value eval per hop —
                     # LIF hops and their theorem-equal staircase QAT stand-ins
@@ -253,8 +253,10 @@ class LifSegmentPolicy(HostCurrencyHooks):
                     train, events = run_streamed_lif_cycles(
                         self, node=node, perceptron=p, lif=lif,
                         forward_node=forward_node, dep_trains=dep_trains,
-                        dep_events=dep_events, T=T, scale=scale,
+                        dep_events=dep_events, T=T, scale=scale, keep_events=readers.read_later(node),
                     )
+                    del dep_trains, dep_events
+                    readers.read(node, node_train, node_events)  # the hop's inputs, before its own reduction
                     if events is not None:
                         node_events[node] = events
                     node_train[node] = train
@@ -262,31 +264,13 @@ class LifSegmentPolicy(HostCurrencyHooks):
                 if node in node_train:
                     self._record_decoded(driver, p, node_train[node])
             else:
-                if absolute_nodes.get(node) == MIXED:
-                    # [U-SC S-3] each source encodes by its own rule; the gather moves the trains, per cycle.
-                    self._record_mixed(node, d, [rate_of(dep) for dep in d])
-                if absolute_nodes.get(node) == MIXED and not self.synchronized:
-                    trains = [train_of(dep) for dep in d]
-                    node_train[node] = torch.stack([forward_node(node, [dt[t] for dt in trains]) for t in range(T)])
-                    if all(node_events.get(dep) is not None for dep in d):
-                        events = [node_events[dep] for dep in d]
-                        node_events[node] = torch.stack(
-                            [forward_node(node, [ev[t] for ev in events]) for t in range(T)])
-                elif d and all(node_train.get(dep) is not None for dep in d):
-                    dep_trains = [node_train[dep] for dep in d]
-                    node_train[node] = torch.stack(
-                        [forward_node(node, [dt[t] for dt in dep_trains]) for t in range(T)],
-                        dim=0,
-                    )
-                    if in_measurement_plane() and not self.soma_law.is_per_event and all(
-                            node_events.get(dep) is not None for dep in d):  # [U-SC2] the events a cycle fold reads
-                        node_events[node] = torch.stack(
-                            [forward_node(node, [node_events[dep][t] for dep in d]) for t in range(T)])
-                node_rate[node] = forward_node(node, [rate_of(dep) for dep in d])
+                self._gather_node(node, d, forward_node, rate_of, train_of, node_train, node_events, node_rate)
+            readers.read(node, node_train, node_events)
+            readers.unread(node, node_train, node_events)
 
         for n in driver.external_consumed(seg_nodes):
             values[n] = node_rate[n]
         if driver._output in seg_set:
             train = node_train.get(driver._output)
-            return train.mean(dim=0) if train is not None else node_rate[driver._output]
+            return train_mean(train) if train is not None else node_rate[driver._output]
         return None

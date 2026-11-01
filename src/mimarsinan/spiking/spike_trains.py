@@ -12,6 +12,28 @@ from mimarsinan.models.nn.activations import LIFActivation
 logger = logging.getLogger("mimarsinan.spiking.spike_trains")
 
 
+def uniform_comb_operands(
+    rate: torch.Tensor, T: int, *, phase_dither: bool = False,
+    channels: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """``(clamped rate, comb rotation or None)``: the operands every cycle of a uniform encode reads (U-SC3: the one
+    construction ``uniform_spike_train`` and the per-cycle ``cycle_trains.EncodedTrain`` share)."""
+    rate_c = rate.clamp(0.0, 1.0)
+    offsets = None
+    if phase_dither:
+        offsets = (
+            spike_modes.uniform_phase_offsets(rate_c.shape[-1], int(T), device=rate_c.device)
+            if channels is None else
+            spike_modes.channel_phase_offsets(channels, int(T), device=rate_c.device)
+        )
+    return rate_c, offsets
+
+
+def uniform_comb_cycle(rate_c: torch.Tensor, cycle: int, T: int, offsets: torch.Tensor | None) -> torch.Tensor:
+    """Cycle ``cycle`` of the uniform encode of ``uniform_comb_operands``' clamped rate: a 0/1 mask, elementwise."""
+    return spike_modes.to_uniform_spikes(rate_c, cycle, int(T), phase_offsets=offsets)
+
+
 def uniform_spike_train(
     rate: torch.Tensor, T: int, *, phase_dither: bool = False,
     channels: torch.Tensor | None = None,
@@ -23,18 +45,8 @@ def uniform_spike_train(
     keyed on ``channels`` (one channel id per last-dim position: a chip stage's
     channels at unbounded geometry, E1), else on the last-dim index."""
     T = int(T)
-    rate_c = rate.clamp(0.0, 1.0)
-    offsets = None
-    if phase_dither:
-        offsets = (
-            spike_modes.uniform_phase_offsets(rate_c.shape[-1], T, device=rate_c.device)
-            if channels is None else
-            spike_modes.channel_phase_offsets(channels, T, device=rate_c.device)
-        )
-    trains = [
-        spike_modes.to_uniform_spikes(rate_c, cycle, T, phase_offsets=offsets)
-        for cycle in range(T)
-    ]
+    rate_c, offsets = uniform_comb_operands(rate, T, phase_dither=phase_dither, channels=channels)
+    trains = [uniform_comb_cycle(rate_c, cycle, T, offsets) for cycle in range(T)]
     return torch.stack(trains, dim=0)
 
 

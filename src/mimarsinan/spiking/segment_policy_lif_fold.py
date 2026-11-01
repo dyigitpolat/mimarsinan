@@ -25,6 +25,7 @@ import torch
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.models.nn.activations.lif_serial import decomposition_tolerance
 from mimarsinan.models.nn.lif_kernels import in_measurement_plane, lif_fire_and_reset
+from mimarsinan.spiking.cycle_trains import is_event_train
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 __all__ = ["CycleFoldSlot", "cycle_fold_applies"]
@@ -33,17 +34,12 @@ __all__ = ["CycleFoldSlot", "cycle_fold_applies"]
 _TABLE_ELEMENTS = 1 << 24
 
 
-def _events_of(train: Optional[torch.Tensor]) -> bool:
-    """A per-cycle 0/1 event train (the per-cycle law's axon currency)."""
-    return train is not None and bool(torch.all((train == 0) | (train == 1)))
-
-
 def cycle_fold_applies(soma_law: SomaLaw, lif, dep_events: list) -> bool:
     """Whether this hop decides its threshold through the deployed fold (module docstring)."""
     return (in_measurement_plane() and not soma_law.is_per_event and soma_law.membrane_bounds is None
             and getattr(lif.if_node, "lattice_scale", None) is None
             and lif.thresholding_mode == soma_law.thresholding_mode
-            and len(dep_events) == 1 and _events_of(dep_events[0]))
+            and len(dep_events) == 1 and is_event_train(dep_events[0]))
 
 
 class CycleFoldSlot:

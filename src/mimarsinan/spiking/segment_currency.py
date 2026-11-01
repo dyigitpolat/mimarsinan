@@ -16,13 +16,15 @@ import functools
 
 import torch
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.common.refusal.toolchain_refusal import ToolchainRefusal
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.support.gauge_channels import gauge_axis, gauge_view
 from mimarsinan.mapping.support.value_domain import MIXED, value_domain_map
+from mimarsinan.models.nn.lif_kernels import in_measurement_plane
 from mimarsinan.spiking.count_grid import CountGridModule, CountGridOperandError, count_grid_applies
+from mimarsinan.spiking.cycle_trains import CycleTrain, encode_train, map_cycles, map_train, scale_train
 from mimarsinan.spiking.segment_partition import is_encoding_perceptron, perceptron_of
-from mimarsinan.spiking.spike_trains import uniform_spike_train
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 __all__ = [
@@ -93,15 +95,17 @@ def mixed_wire_rate(value: torch.Tensor, currency, *, clamp: bool = True):
     return (rate.clamp(0.0, 1.0) if clamp else rate), scale
 
 
-def mixed_events(value: torch.Tensor, currency, simulation_length: int, *, train=None) -> torch.Tensor:
+def mixed_events(value: torch.Tensor, currency, simulation_length: int, *, train=None):
     """The per-cycle spike multiplicities a MIXED input delivers: its gathered train divided back by each element's
-    producer scale (exact integers), or, for a host-side gather, the uniform encode of each element's wire rate."""
+    producer scale (exact integers), or, for a host-side gather, the uniform encode of each element's wire rate (per
+    cycle where the walk streams, ``cycle_trains``)."""
     if train is not None:
-        return torch.round(train / currency[1].clamp(min=1e-12))
-    return uniform_spike_train(mixed_wire_rate(value, currency)[0], simulation_length)
+        divisor = currency[1].clamp(min=1e-12)
+        return map_train(lambda cycles: torch.round(cycles / divisor), train)
+    return encode_train(mixed_wire_rate(value, currency)[0], simulation_length)
 
 
-def consumer_fold(perceptron, like: torch.Tensor):
+def consumer_fold(perceptron, like: torch.Tensor | CycleTrain):
     """The fold a deployed core applies to its input spikes (``per_input_scales``, viewed as the weight's input axis):
     a neural consumer of a MIXED gather reads its spikes at this currency, as the deployed core does."""
     fold = PerceptronTransformer().input_scale(perceptron)
@@ -177,11 +181,14 @@ def currency_readers(driver, flags: dict) -> set:
 class HostCurrencyHooks:
     """The LIF policy's host-value hooks (U-SC): the count-grid forwards (S-2) and the MIXED gathers' currencies (S-3).
 
-    The host requires ``_absolute_nodes``, ``_boundary_scales`` and ``phase_dither``, set by its ``prepare``."""
+    The host requires ``_absolute_nodes``, ``_boundary_scales``, ``phase_dither``, ``synchronized`` and ``soma_law``,
+    set by its ``__init__`` and ``prepare``."""
 
     _absolute_nodes: dict | None
     _boundary_scales: dict | None
     phase_dither: bool
+    synchronized: bool
+    soma_law: SomaLaw
     _mixed_currency: dict | None = None
     _count_grid: dict | None = None
 
@@ -224,9 +231,46 @@ class HostCurrencyHooks:
         for dep in deps:
             if self._absolute_nodes.get(dep) == MIXED:
                 ev = mixed_events(rate_of(dep), self._mixed_currency[dep], T, train=node_train.get(dep))
-                trains.append(ev * consumer_fold(perceptron, ev))
+                trains.append(scale_train(ev, consumer_fold(perceptron, ev)))
                 events.append(ev)
             else:
                 trains.append(train_of(dep))
                 events.append(node_events.get(dep))
         return trains, events
+
+    def _gather_node(self, node, deps, forward_node, rate_of, train_of, node_train, node_events, node_rate) -> None:
+        """A structural node of a neural segment: its rate from its sources' rates and, where a reader can read it per
+        cycle, its train (``cycle_trains``: per cycle where the walk streams).
+
+        [U-SC3 A-2] A LAYOUT gather (a node that only moves elements, MIXED or not) of a per-cycle walk moves every
+        source's train cycle by cycle, each source delivered by its own rule (``train_of``: a core's train as it was
+        emitted, a host value through its boundary re-encode at its own currency): the deployed program feeds each
+        source to the reading core so. The rule used to need every source to carry a train already, so a gather made
+        all-wire by an armed absolute entry (U-SC2) beside core outputs was re-encoded whole from its rate, and the
+        streamed core reading it lost its sources' spike timing (``nested_gather_core_read``: 684 counts). Any other
+        structural node runs per cycle only where every source carries a train.
+
+        [U-SC3 targeted pass] A layout gather carries its event train by the same per-source rule wherever a fold reads
+        events, MIXED or wire alike: always under the per-event soma law (the event-serial fold), and inside the
+        measurement plane under the per-cycle law (the cycle fold, U-SC2); its cycle t moves each source's own events
+        (a core's as emitted, a host value's boundary re-encode as ``train_of`` set them). Any other structural node
+        carries events only for the per-cycle law's fold (U-SC2)."""
+        currency = (self._absolute_nodes or {}).get(node)
+        if currency == MIXED:
+            # [U-SC S-3] each source encodes by its own rule; the gather moves the trains, per cycle.
+            self._record_mixed(node, deps, [rate_of(dep) for dep in deps])
+        layout = not self.synchronized and (currency == MIXED or bool(getattr(node, "moves_elements_only", False)))
+        if layout:
+            trains = [train_of(dep) for dep in deps]
+        elif deps and all(node_train.get(dep) is not None for dep in deps):
+            trains = [node_train[dep] for dep in deps]
+        else:
+            trains = None
+        if trains is not None:
+            node_train[node] = map_cycles(lambda cycles: forward_node(node, cycles), trains)
+            events_read = (self.soma_law.is_per_event or in_measurement_plane()) if layout else (
+                in_measurement_plane() and not self.soma_law.is_per_event)  # the events a fold reads (docstring)
+            if events_read and all(node_events.get(dep) is not None for dep in deps):
+                node_events[node] = map_cycles(lambda cycles: forward_node(node, cycles),
+                                               [node_events[dep] for dep in deps])
+        node_rate[node] = forward_node(node, [rate_of(dep) for dep in deps])
