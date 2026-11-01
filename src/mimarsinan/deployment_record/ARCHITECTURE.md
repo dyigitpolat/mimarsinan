@@ -325,6 +325,15 @@ registry directly (W5.1).
   and a verdict that differs is `HOST_BOUND` ("host-bound"). Stock verdicts: `corner_order` (end by end, the
   corner-aligned reading of bands, under which a host energy two points share cancels), `band_order` (the interval
   rule), `lowest` and `cap_verdict`.
+- **Share rule** (`cost/absolute/host_split.py`, U-SH). One rule prices the dynamic energy's MAC and carry shares on
+  every plane: `price_shares` prices a program's quantities in the two `SHARE_VARIANTS` (compute-only: no carry,
+  programming, sync, op count or host-side quantity; no-host: no op count or host-side quantity; both with
+  `host_macs` 0) with the plane's compute split, readout bits and geometry; `shares` reads a term's compute-only share
+  and its boundary share (no-host less compute-only, `sub_corners`), naming each absent one by `share_absence` (U-CR
+  C-2's compute-absence rule, on the pricing that lacks it); `share_column` and `absent_shares` write and read the
+  row column form. The scaling ladder (`introspection/scaling_ladder.py`, `scaling_ladder_law.axis_columns`) and the
+  design point's record plane (`design_point/pricing.record_variant`) both call it, and the instance schema refuses a
+  null share without a name (`dynamic_shares_refusals`).
 
 ## Lane block and output stage (Wave 2 W08)
 

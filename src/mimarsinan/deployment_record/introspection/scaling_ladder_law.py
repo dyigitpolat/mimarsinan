@@ -38,6 +38,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.formulas import add_bands, div_band, scale_band
+from mimarsinan.deployment_record.cost.absolute.host_split import (  # [U-SH] the share rule, one for every plane
+    NO_PHYSICS as NO_PHYSICS, share_column, shares as shares, sub_corners as sub_corners,
+)
 from mimarsinan.deployment_record.cost.compute_time import EVENT_LAW
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -85,19 +88,6 @@ def triple(band: Optional[Band]) -> Optional[list]:
 
 def corners(band: Band) -> Corners:
     return (band.low, band.nominal, band.high)
-
-
-def sub_corners(total: Band, part: Band, basis: str) -> Corners:
-    """Corner-wise total - part, for a total that is part plus non-negative components (no re-sorting)."""
-    out = []
-    for a, b in zip(corners(total), corners(part)):
-        d = a - b
-        if d < 0.0:
-            if -d > 1e-12 * max(abs(a), abs(b)):
-                raise ValueError(f"{basis}: the total {a!r} is below its part {b!r}")
-            d = 0.0
-        out.append(d)
-    return (out[0], out[1], out[2])
 
 
 def ratio(numerator: Optional[Band], denominator: Optional[Band], basis: str) -> Optional[Band]:
@@ -162,28 +152,10 @@ def overhead(
     }
 
 
-#: [U-CR C-2] The reason a row prices no write law where it ran no pricing: its target declares no physics profile.
-NO_PHYSICS = "no physics declared"
-
-
 def write_law_absence(terms: Mapping[str, Any]) -> str:
     """Why a row prints no write law at its batch: 'no physics declared' only where no pricing ran (``terms`` empty,
     no profile), else the batch the write law needs."""
     return "no inference_batch_K declared" if terms else NO_PHYSICS
-
-
-def _compute_absence(terms: Mapping[str, Any], refusals: Mapping[str, Mapping[str, str]], compute_term: str,
-                     headline: str) -> str:
-    """[U-CR C-2] Why an axis's compute-only term is absent: the compute-only pricing's refusal of the headline (a
-    pricing gate names every headline it suppresses) or of the term; 'no physics declared' only where no pricing ran
-    (no profile: no pricing variant at all); a declared profile's gap no refusal names, by the term and the pricing's
-    refusals."""
-    if "compute_only" not in terms and "compute_only" not in refusals:
-        return NO_PHYSICS
-    named = dict(refusals.get("compute_only") or {})
-    return named.get(headline) or named.get(compute_term) or (
-        f"{compute_term} is not priced and no refusal names {headline}: the compute-only pricing refuses "
-        f"{sorted(named) or 'nothing'}")
 
 
 def axis_columns(
@@ -199,23 +171,24 @@ def axis_columns(
     write law's on the program's period census when the schedule writes per inference
     (``multiplexed``) and none otherwise. An axis is absent when its compute is refused, or
     [consts] when the write law refuses writing every tile once (by the law's reason).
+    [U-SH] The compute-only and boundary terms are the one share rule's (``host_split.shares``); a boundary absent
+    while the compute-only term prices is named (``boundary_absent``).
     """
     compute_term, headline, programming, host_term = names
-    t = {name: terms.get(name, {}) for name in ("program", "compute_only", "once", "period", "no_host")}
-    compute, no_host = t["compute_only"].get(compute_term), t["no_host"].get(compute_term)
+    t = {name: terms.get(name, {}) for name in ("program", "once", "period")}
+    split = shares(terms, refusals, compute_term, headline)  # [U-SH] the one share rule of every plane
+    compute, boundary, column = split["compute_only"], split["boundary"], share_column(split)
     once, period, host = t["once"].get(programming), t["period"].get(programming), t["program"].get(host_term)
-    boundary = None if compute is None or no_host is None else sub_corners(no_host, compute, "boundary")
     pi = ratio(once, compute, f"Pi_{axis}")
     with_host = None if host is None or compute is None else ratio(
         once, add_bands([compute, host], "compute + host"), f"Pi_{axis} host included")
     pi_k = per_batch(pi, k)
     return {
-        "terms": {"compute_only": triple(compute), "boundary": None if boundary is None else list(boundary),
-                  "once": triple(once), "period": triple(period), "host": triple(host)},
-        "absent": (None if compute is not None and once is not None else
-                   _compute_absence(terms, refusals, compute_term, headline) if compute is None else
+        "terms": {**column["terms"], "once": triple(once), "period": triple(period), "host": triple(host)},
+        "absent": (None if compute is not None and once is not None else column["absent"] if compute is None else
                    "the write law refuses writing every tile once: "
                    + (refusals.get("once", {}).get(programming) or "no write term is priced")),
+        **({"boundary_absent": column["boundary_absent"]} if "boundary_absent" in column else {}),
         "host_share": share(host, t["program"].get(headline)),
         "pi": triple(pi), "pi_host_included": triple(with_host), "pi_over_k": triple(pi_k),
         "regime": regime(pi_k, reading, multiplexed),

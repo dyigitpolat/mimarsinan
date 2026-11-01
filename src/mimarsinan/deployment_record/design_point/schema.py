@@ -104,9 +104,11 @@ PRICED_VARIANT = Obj(
     {"host_share": Nullable(NUMBER), "time_per_inference_s": Nullable(BAND), "request_latency_s": Nullable(BAND),
      "throughput_inferences_per_s": Nullable(BAND), "lifetime_verdict": Nullable(STR),
      "split_closes": Nullable(BOOL), "dynamic_shares_mj": MapOf(Nullable(BAND)),
+     "dynamic_shares_refusals": MapOf(STR),
      "energy_without_writes_mj": Nullable(BAND), "latency_without_writes_s": Nullable(BAND)},
     doc="one override-block variant at one batch K: the headlines at K (writes of a period over K included), their "
-        "refusals by name, the energy split into the headline's parts and the steady headlines without writes")
+        "refusals by name, the energy split into the headline's parts, the dynamic part's MAC and carry shares (each "
+        "null one named by its refusal) and the steady headlines without writes")
 PRICING = Obj({"plane": STR, "variants": ListOf(PRICED_VARIANT)}, {"refusal": Nullable(REFUSAL)})
 PLANES = Obj({"agree": BOOL, "fields": ListOf(Obj({"field": STR, "executed": ANY, "candidate": ANY, "agree": BOOL}))},
              {"named": ListOf(Obj({"field": STR, "reason": STR}))})
@@ -144,7 +146,8 @@ INSTANCE = Obj(
 
 def validate_instance(document: Mapping[str, Any]) -> List[str]:
     """Every violation: the closed field rules, then the row rules (a judged row carries every judged field, a
-    refused row names a refusal, the energy split names each part, every executor named in a census is declared)."""
+    refused row names a refusal, the energy split names each part, [U-SH] a dynamic share is priced or names its
+    refusal, never both, every executor named in a census is declared)."""
     out = errors(document, INSTANCE)
     if out:
         return out
@@ -160,6 +163,14 @@ def validate_instance(document: Mapping[str, Any]) -> List[str]:
             missing = [p for p in ENERGY_PARTS if p not in priced["energy_split_mj"]]
             if missing:
                 out.append(f"{path}.pricing.variants[{v}]: energy split lacks {missing}")
+            named, shares = priced.get("dynamic_shares_refusals", {}), priced.get("dynamic_shares_mj", {})
+            for share, band in shares.items():
+                if (band is None) != (share in named):
+                    out.append(f"{path}.pricing.variants[{v}]: the dynamic share {share!r} is " + (
+                        "null and names no refusal" if band is None else "priced and names a refusal"))
+            if set(named) - set(shares):
+                out.append(f"{path}.pricing.variants[{v}]: refusals name no dynamic share: "
+                           f"{sorted(set(named) - set(shares))}")
         for a, census in enumerate(row.get("activity", [])):
             unknown = sorted(set(census["nonzero"]) - executors)
             if unknown:

@@ -117,6 +117,42 @@ class TestWearPerCoreType:
         assert any("is not the binding core type" in e for e in validate_instance(document))
 
 
+class TestDynamicShares:
+    """[U-SH, G3-D1] Every stacked cost-bar term of a variant is priced or refused by name: a null MAC or carry share
+    of the dynamic energy (``dynamic_shares_mj``) names its refusal in ``dynamic_shares_refusals``, and a priced one
+    names none."""
+
+    REASON = "no compute-energy source is declared: the target declares neither e_synaptic_event_total nor e_mac"
+
+    def test_a_null_share_without_a_name_is_refused(self):
+        document = _vit()
+        document["rows"][0]["pricing"]["variants"][0]["dynamic_shares_mj"]["carry"] = None
+        assert ("$.rows[0].pricing.variants[0]: the dynamic share 'carry' is null and names no refusal"
+                in validate_instance(document))
+
+    def test_a_null_share_named_by_its_refusal_validates(self):
+        document = _vit()
+        variant = document["rows"][0]["pricing"]["variants"][0]
+        variant["dynamic_shares_mj"] = {"mac": None, "carry": None}
+        variant["dynamic_shares_refusals"] = {"mac": self.REASON, "carry": self.REASON}
+        assert validate_instance(document) == []
+        del variant["dynamic_shares_refusals"]["mac"]
+        assert validate_instance(document) == [
+            "$.rows[0].pricing.variants[0]: the dynamic share 'mac' is null and names no refusal"]
+
+    def test_a_priced_share_names_no_refusal(self):
+        document = _vit()
+        document["rows"][0]["pricing"]["variants"][0]["dynamic_shares_refusals"] = {"mac": self.REASON}
+        assert validate_instance(document) == [
+            "$.rows[0].pricing.variants[0]: the dynamic share 'mac' is priced and names a refusal"]
+
+    def test_a_refusal_of_no_share_is_named(self):
+        document = _vit()
+        document["rows"][0]["pricing"]["variants"][0]["dynamic_shares_refusals"] = {"heat": self.REASON}
+        assert validate_instance(document) == [
+            "$.rows[0].pricing.variants[0]: refusals name no dynamic share: ['heat']"]
+
+
 def test_a_row_whose_planes_disagree_names_every_difference():
     document = _vit()
     row = document["rows"][0]

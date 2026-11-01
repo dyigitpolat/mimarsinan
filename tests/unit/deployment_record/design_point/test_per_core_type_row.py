@@ -238,3 +238,58 @@ class TestResidentStaticTiles:
         assert at_one["energy_mj"] is not None and at_one["split_closes"], at_one
         assert at_one["latency_s"] is not None and at_one["lifetime_verdict"] == "admitted"
         assert at_one["refusals"] == {"energy_per_inference_mj": None, "e2e_latency_s": None}
+
+    def test_the_record_plane_prices_the_mac_and_carry_shares_of_its_dynamic_part(self, resident_records):
+        """[U-SH, G3-D1] Each record-plane variant prints its dynamic energy's MAC share (the compute-only pricing)
+        and carry share (the no-host pricing less the compute-only) by the exploration plane's one share rule, on the
+        record's quantities at K with the variant's physics, compute split and readout bits; the shares sum to the
+        dynamic part at every corner and name no refusal."""
+        from mimarsinan.deployment_record.build.program_census import record_program_passes
+        from mimarsinan.deployment_record.design_point.pricing import record_pricing
+        from mimarsinan.deployment_record.quantities.compute_technology import compute_split
+        pricing = record_pricing(resident_records, GRID)
+        record = resident_records["host"]
+        events = {s.core_type: s.events for s in compute_split(record.identity.platform,
+                                                               record_program_passes(record)).shares}
+        e_mac = {n: get_platform_physics(n).band("e_mac").nominal for n in ("neurram", "sram_cim_macro")}
+        macs = (events[(128, 256)] * e_mac["neurram"] + events[(128, 1024)] * e_mac["sram_cim_macro"]) * 1e3
+        assert [v["K"] for v in pricing["variants"]] == list(GRID)
+        for variant in pricing["variants"]:
+            shares, dynamic = variant["dynamic_shares_mj"], variant["energy_split_mj"]["dynamic"]
+            assert shares["mac"] is not None and shares["carry"] is not None, variant
+            assert not variant.get("dynamic_shares_refusals"), variant
+            for mac, carry, total in zip(shares["mac"], shares["carry"], dynamic):
+                assert carry >= 0.0 and mac + carry == pytest.approx(total, rel=1e-9)
+            assert shares["mac"][1] >= macs * (1 - 1e-9)  # each core type's MAC events at its own e_mac
+
+    def test_a_physics_without_a_compute_energy_names_each_share_by_its_refusal(self, resident_records):
+        """[U-SH] A record whose physics declares neither e_mac nor e_synaptic_event_total prices no MAC share: both
+        shares are null, each named by the compute-only pricing's refusal (U-CR C-2's compute-absence rule)."""
+        import dataclasses
+        from mimarsinan.deployment_record.design_point.pricing import record_variant
+        record = resident_records["host"]
+        chip = PlatformPhysics.from_dict(record.identity.platform["platform_physics_resolved"])
+        assert chip.has("e_mac") or chip.has("e_synaptic_event_total")
+        bare = dataclasses.replace(chip, constants={k: v for k, v in chip.constants.items()
+                                                    if k not in ("e_mac", "e_synaptic_event_total")})
+        record = dataclasses.replace(record, identity=dataclasses.replace(
+            record.identity, platform={**record.identity.platform, "platform_physics_resolved": bare.to_dict()}))
+        variant = record_variant("host", record, 1)
+        assert variant["dynamic_shares_mj"] == {"mac": None, "carry": None}
+        names = variant["dynamic_shares_refusals"]
+        assert set(names) == {"mac", "carry"} and names["mac"] == names["carry"]
+        assert names["mac"].startswith("no compute-energy source is declared"), names
+
+
+@pytest.fixture(scope="module")
+def resident_records():
+    """[U-SH] The resident vehicle's executed record per variant (the host block), as the record plane prices it."""
+    import copy
+    from mimarsinan.deployment_record.build.partition import compute_partition_record
+    from mimarsinan.deployment_record.design_point.pricing import executed_record
+    program, hybrid, _ = P.attention_on_hybrid(8, 4, True)
+    variants = {"host": P.resolved_hybrid(8, 4, scheduling=True, overrides=P.HOST_BLOCK)}
+    model = copy.deepcopy(program.model).float()
+    partition = compute_partition_record(program.ir, model, (3, 8, 8), 5, encoding_placement="subsume")
+    return {name: executed_record(hybrid, {**platform, "weight_bits": 8}, weight_bits=8, label="test",
+                                  partition=partition) for name, platform in variants.items()}

@@ -23,10 +23,10 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.payload_sizes import pass_program_bytes
 from mimarsinan.deployment_record.cost.absolute import price_absolute
+from mimarsinan.deployment_record.cost.absolute.host_split import price_shares
 from mimarsinan.deployment_record.cost.compute_time import busiest_stage, compute_law
 import mimarsinan.deployment_record.introspection.scaling_ladder_law as law
 import mimarsinan.deployment_record.introspection.scaling_ladder_reading as point_reading
-from mimarsinan.deployment_record.cost.host_terms import HOST_SIDE_QUANTITIES
 from mimarsinan.deployment_record.introspection.scaling_ladder_lanes import (
     host_census, lane_census, layout_walk, walk_host_boundary,
 )
@@ -39,7 +39,6 @@ from mimarsinan.deployment_record.objectives import CandidateStaticView, declare
 from mimarsinan.deployment_record.objectives.context import candidate_context_from_platform
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
-from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.mapping.lanes.shape_walk import LaneWalk
 from mimarsinan.mapping.layout.layout_packer import pack_layout
@@ -52,8 +51,6 @@ from mimarsinan.mapping.verification.layout_verification_scheduling import compu
 #: (softcores, NoC fragments, resolved platform) -> (fragments, program facts with ``latency_steps``,
 #: ``programming`` and ``carry``): the candidate plane's census, injected by the caller.
 ProgramFacts = Callable[[Sequence[Any], Any, Mapping[str, Any]], Tuple[Any, Any]]
-_CARRY = ("carried_raster_bytes", "carry_peak_live_bytes", "carry_out_bytes", "carry_in_bytes")
-_PROGRAMMING = ("reprogrammed_bytes", "reprogrammed_cores", "reprogram_passes")
 #: axis -> (compute-only term, headline (whose refusal names an absence), programming term, host term); [consts] the
 #: programming term is the write law's tile writes (``scaling_ladder_reading.tile_writes``)
 _AXES = {
@@ -118,12 +115,6 @@ def packed_tiles(census: ShapeCensus, platform: Mapping[str, Any]) -> int:
     if not pack.feasible:
         raise LadderGeometryError(f"the program does not pack even on unbounded cores: {pack.error}")
     return sum(-(-int(s.axons_per_core) // width) for s in pack.used_core_snapshots or ())
-
-
-def _variant(q: Quantities, drop: Sequence[str] = (), put: Optional[Mapping[str, float]] = None) -> Quantities:
-    values = {k: q.get(k) for k in q.keys() if k not in drop}
-    values.update({k: QuantityValue(value=float(v), provenance="static") for k, v in (put or {}).items()})
-    return Quantities(values)
 
 
 def schedule_program(
@@ -205,13 +196,12 @@ def price_scheduled(
     refusals: Dict[str, Dict[str, str]] = {}
     write_law: Dict[str, Any] = {}
     if physics is not None:
-        compute = _variant(q, _CARRY + _PROGRAMMING + ("sync_count", "compute_op_count") + HOST_SIDE_QUANTITIES,
-                           {"host_macs": 0})
-        for name, variant in (("program", q), ("compute_only", compute),
-                              ("no_host", _variant(q, ("compute_op_count",) + HOST_SIDE_QUANTITIES, {"host_macs": 0}))):
-            pricing = price_absolute(variant, physics, compute=context.compute, readout_bits=context.readout_bits)
-            terms[name] = {t.name: t.band for t in pricing.terms if t.band is not None}
-            refusals[name] = {r.name: r.reason for r in pricing.refusals}
+        pricing = price_absolute(q, physics, compute=context.compute, readout_bits=context.readout_bits)
+        terms["program"] = {t.name: t.band for t in pricing.terms if t.band is not None}
+        refusals["program"] = {r.name: r.reason for r in pricing.refusals}
+        shares = price_shares(q, physics, compute=context.compute, readout_bits=context.readout_bits)  # [U-SH]
+        terms.update(shares[0])
+        refusals.update(shares[1])
         for name, load in (("once", True), ("period", False)):
             terms[name], refusals[name] = point_reading.tile_writes(facts.passes, platform, bits, physics, load=load)
         if context.writes is not None:

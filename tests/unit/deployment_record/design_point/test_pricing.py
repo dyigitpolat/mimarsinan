@@ -42,6 +42,55 @@ def test_the_split_names_five_parts_keeps_static_writes_apart_and_closes_on_the_
     assert priced["dynamic_shares_mj"] == {"mac": [0.1, 0.2, 0.3], "carry": [0.0, 0.0, 0.0]}
 
 
+#: [U-SH] The compute-only pricing's refusal of a physics without a compute energy (``price_energy``).
+NO_COMPUTE = "no compute-energy source is declared: the target declares neither e_synaptic_event_total nor e_mac"
+
+
+def test_priced_shares_name_no_refusal():
+    """[U-SH] A variant whose MAC and carry shares are priced carries no refusal map (the exploration plane's priced
+    variants read as before)."""
+    assert "dynamic_shares_refusals" not in priced_variant(ROW, operand_cells=0)
+
+
+def test_an_absent_compute_only_share_names_both_shares_by_its_refusal():
+    """[U-SH, G3-D1] The ladder's energy column names an absent compute-only share by the compute-absence rule
+    (``absent``); the carry share, no-host less compute-only, is absent with it, by the same name."""
+    row = copy.deepcopy(ROW)
+    row["energy"]["terms"].update(compute_only=None, boundary=None)
+    row["energy"]["absent"] = NO_COMPUTE
+    priced = priced_variant(row, operand_cells=0)
+    assert priced["dynamic_shares_mj"] == {"mac": None, "carry": None}
+    assert priced["dynamic_shares_refusals"] == {"mac": NO_COMPUTE, "carry": NO_COMPUTE}
+
+
+def test_an_absent_boundary_alone_names_the_carry_share():
+    """[U-SH] A boundary the no-host pricing refuses while the compute-only one prices (``boundary_absent``) names
+    the carry share alone."""
+    row = copy.deepcopy(ROW)
+    reason = "a carry-buffer constant is unstated at the declared capacity"
+    row["energy"]["terms"]["boundary"] = None
+    row["energy"]["boundary_absent"] = reason
+    priced = priced_variant(row, operand_cells=0)
+    assert priced["dynamic_shares_mj"] == {"mac": [0.1, 0.2, 0.3], "carry": None}
+    assert priced["dynamic_shares_refusals"] == {"carry": reason}
+
+
+def test_a_ladder_row_on_a_physics_without_a_compute_energy_names_both_shares():
+    """[U-SH] A real ladder row (the test network) on NeuRRAM's physics without e_mac: the priced variant's MAC and
+    carry shares are null, each named by the compute-only pricing's refusal."""
+    import dataclasses
+    from mimarsinan.deployment_record.platform_physics import get_platform_physics
+    from unit.deployment_record.introspection.test_gate_refusal_headlines_ucr import _row
+    chip = get_platform_physics("neurram")
+    bare = dataclasses.replace(chip, constants={k: v for k, v in chip.constants.items()
+                                                if k not in ("e_mac", "e_synaptic_event_total")})
+    row = _row(bare, k=1)
+    assert row["energy"]["terms"]["compute_only"] is None and row["energy"]["absent"] == NO_COMPUTE
+    priced = priced_variant(row, operand_cells=0)
+    assert priced["dynamic_shares_mj"] == {"mac": None, "carry": None}
+    assert priced["dynamic_shares_refusals"] == {"mac": NO_COMPUTE, "carry": NO_COMPUTE}
+
+
 def test_an_undeclared_part_reads_zero_and_a_split_that_misses_a_part_does_not_close():
     row = copy.deepcopy(ROW)
     row["write_law"]["terms"]["energy_static_mj"] = None

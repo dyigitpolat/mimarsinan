@@ -12,6 +12,8 @@ constant is undeclared contributes nothing to the priced headline and reads 0; `
 against the headline per corner. A ladder row that refused or ran above its budget becomes the pricing refusal by
 name. [E-6, targeted pass] A row the exploration plane cannot price (operand cores) prices on the record plane:
 ``executed_record`` seals its executed program's record, ``record_pricing`` prices each variant at each batch.
+[U-SH] Both planes price the ``mac`` and ``carry`` shares by one rule (``cost.absolute.host_split``); a null share
+names its refusal in ``dynamic_shares_refusals``.
 """
 
 from __future__ import annotations
@@ -26,13 +28,16 @@ from mimarsinan.deployment_record.cost.absolute.report import (
     absolute_pricing_for_record, declared_physics_of, record_compute_split, record_geometry, record_readout_bits,
     record_write_inputs,
 )
+from mimarsinan.deployment_record.cost.absolute.energy import ENERGY_DYNAMIC, ENERGY_HEADLINE
+from mimarsinan.deployment_record.cost.absolute.host_split import (
+    absent_shares, price_shares, share_column, shares, sub_corners,
+)
 from mimarsinan.deployment_record.cost.absolute.validity import UNJUDGED
 from mimarsinan.deployment_record.cost.absolute.writes import ENERGY_WRITE, price_write_inputs
 from mimarsinan.deployment_record.build.from_mapping import (
     placement_record_from_mapping, schedule_record_from_mapping, utilization_record_from_mapping,
 )
 from mimarsinan.deployment_record.design_point.schema import ENERGY_PARTS
-from mimarsinan.deployment_record.introspection.scaling_ladder_law import sub_corners
 from mimarsinan.deployment_record.introspection.scaling_ladder_reading import write_law_columns
 from mimarsinan.deployment_record.quantities.from_record import from_record
 from mimarsinan.deployment_record.quantities.value_domain import names_value_domain
@@ -82,7 +87,8 @@ def _headline(row: Mapping[str, Any], name: str) -> "tuple[Optional[List[float]]
 
 
 def priced_variant(row: Mapping[str, Any], *, operand_cells: int) -> Dict[str, Any]:
-    """One ladder row (one variant at one batch) in the instance's form."""
+    """One ladder row (one variant at one batch) in the instance's form; [U-SH] a null dynamic share names its refusal
+    (``dynamic_shares_refusals``, present only where a share is null)."""
     write_law = row.get("write_law") or {}
     law = write_law.get("terms") or {}
     energy, energy_refusal = _headline(row, "energy_per_inference_mj")
@@ -100,12 +106,16 @@ def priced_variant(row: Mapping[str, Any], *, operand_cells: int) -> Dict[str, A
     semantics = row.get("latency_semantics") or {}
     headlines = row.get("headlines") or {}
     verdicts = write_law.get("verdicts") or []
+    absent = absent_shares(row.get("energy") or {})  # [U-SH] each null share's name, by the one share rule
+    refused = {share: absent[term] for share, term in (("mac", "compute_only"), ("carry", "boundary"))
+               if term in absent}
     return {
         "variant": str(row.get("variant") or "shipped"), "K": int(row["inference_batch_K"]),
         "energy_mj": energy, "energy_split_mj": split, "latency_s": latency,
         "refusals": {"energy_per_inference_mj": energy_refusal, "e2e_latency_s": latency_refusal},
         "split_closes": _closes(split, energy),
         "dynamic_shares_mj": {"mac": _terms(row, "compute_only"), "carry": _terms(row, "boundary")},
+        **({"dynamic_shares_refusals": refused} if refused else {}),
         "energy_without_writes_mj": _band(headlines.get("energy_per_inference_mj")),
         "latency_without_writes_s": _band(headlines.get("e2e_latency_s")),
         "host_share": None if energy is None or split["host"] is None or not energy[1] else split["host"][1] / energy[1],
@@ -248,7 +258,9 @@ def _write_parts(record: Any) -> Tuple[Optional[List[float]], Optional[List[floa
 def record_variant(name: str, record: Any, k: int) -> Dict[str, Any]:
     """One variant at batch ``k`` on the record plane, in the instance's form (``priced_variant``'s fields): the
     headlines with the write law at K (``absolute_pricing_for_record``), the steady headlines without writes, and the
-    energy split into its parts, the writes split into static and operand writes."""
+    energy split into its parts, the writes split into static and operand writes. [U-SH] The dynamic part's MAC and
+    carry shares by the exploration plane's one share rule (``host_split.price_shares`` and ``shares``) on the
+    record's quantities at K, with the variant's physics, compute split, readout bits and geometry."""
     at_k = record_at_batch(record, k)
     priced = absolute_pricing_for_record(at_k)
     physics = declared_physics_of(at_k)
@@ -257,15 +269,17 @@ def record_variant(name: str, record: Any, k: int) -> Dict[str, Any]:
                 "latency_s": None, "refusals": {"energy_per_inference_mj": "the record declares no physics",
                                                 "e2e_latency_s": "the record declares no physics"}}
     geometry = record_geometry(at_k)
-    steady = price_absolute(from_record(at_k), physics, compute=record_compute_split(at_k),
-                            readout_bits=record_readout_bits(at_k), geometry=UNJUDGED if geometry is None else geometry)
+    quantities, judged = from_record(at_k), UNJUDGED if geometry is None else geometry
+    args = {"compute": record_compute_split(at_k), "readout_bits": record_readout_bits(at_k), "geometry": judged}
+    steady = price_absolute(quantities, physics, **args)
     steady_terms = {t.name: t.band for t in steady.terms if t.band is not None}
     law = write_law_columns(priced, int(k))
+    split = shares(*price_shares(quantities, physics, **args), ENERGY_DYNAMIC, ENERGY_HEADLINE)
     row = {"variant": name, "inference_batch_K": int(k), "write_law": law,
            "headlines": {n: None if steady_terms.get(n) is None else [steady_terms[n].low, steady_terms[n].nominal,
                                                                        steady_terms[n].high]
                          for n in ("energy_per_inference_mj", "e2e_latency_s")},
-           "headline_refusals": {r.name: r.reason for r in steady.refusals}}
+           "headline_refusals": {r.name: r.reason for r in steady.refusals}, "energy": share_column(split)}
     out = priced_variant(row, operand_cells=0)
     static_write, operand_write = _write_parts(at_k)
     energy = out["energy_mj"]
