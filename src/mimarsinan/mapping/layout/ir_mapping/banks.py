@@ -32,6 +32,7 @@ class _LayoutIRMappingBanks:
         max_neurons: Optional[int]
         allow_coalescing: bool
         rows_per_input: int
+        sign_rows: Any
         layout_softcores: list
         def _alloc_node_id(self) -> int: ...
         _emit_softcore_record: Callable[..., LayoutSourceView]
@@ -68,6 +69,9 @@ class _LayoutIRMappingBanks:
         )
         self._layout_weight_banks[bank_id] = (in_features_with_bias, out_features)
         self._layout_bank_bias_rows[bank_id] = bias_rows
+        if self.sign_rows is not None:  # [U-AX] the bank's matrix, once: its instances read their rows of it
+            self.sign_rows.bank(bank_id, weights, biases, hardware_bias=self.hardware_bias, bias_rows=bias_rows,
+                                 perceptron_index=perceptron_index)
         return bank_id
 
     def param_encoded_bias_rows(
@@ -118,6 +122,8 @@ class _LayoutIRMappingBanks:
             out_features = bank_out_features
 
         node_id = self._alloc_node_id()
+        if self.sign_rows is not None:
+            self.sign_rows.instance(node_id, weight_bank_id, rows=in_count, columns=weight_row_slice, name=name)
         sc_idx = len(self.layout_softcores)
         result = self._emit_softcore_record(
             node_id=node_id,

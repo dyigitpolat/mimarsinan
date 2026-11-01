@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from mimarsinan.deployment_record.introspection.scaling_ladder_types import ShapeCensus
 from mimarsinan.mapping.lanes.shape_walk import LaneWalk
+from mimarsinan.mapping.layout.ir_mapping.sign_rows import sign_row_census
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.platform.core_residency import BASIS_PROVENANCE, provenance_group_id, ungrouped_fallback_id
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
@@ -28,13 +29,16 @@ from mimarsinan.mapping.support.host_boundary import host_boundary_census
 
 def layout_walk(network: Any, platform: Mapping[str, Any], *, wire_census: bool,
                 lanes: Optional[LaneWalk] = None) -> LayoutIRMapping:
-    """One shape-only walk of the network on the platform's core geometry (with ``lanes``: the lane plan applied)."""
+    """One shape-only walk of the network on the platform's core geometry (with ``lanes``: the lane plan applied).
+    [U-AX] The walk holds the network's weights, so on a per-axon pool it reads each core's rows on the declared
+    weight grid (``sign_row_census``), as the build packs them."""
     geometry = resolve_platform_mapping_params(platform["cores"],
                                                allow_coalescing=bool(platform.get("allow_coalescing", False)))
     layout = LayoutIRMapping(
         max_axons=geometry.effective_max_axons, max_neurons=geometry.effective_max_neurons,
         allow_coalescing=geometry.allow_coalescing, hardware_bias=geometry.hardware_bias,
         collect_wire_census=wire_census, rows_per_input=geometry.rows_per_input, lane_walk=lanes,
+        sign_rows=sign_row_census(geometry.rows_per_input, platform.get("weight_bits")),
     )
     layout.collect_layout_softcores(network.mapper_repr)
     return layout

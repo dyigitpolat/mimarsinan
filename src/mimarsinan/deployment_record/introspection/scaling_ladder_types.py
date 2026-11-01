@@ -90,6 +90,9 @@ class ShapeCensus:
     residency_softcores: Optional[Tuple[Any, ...]] = None
     #: [U-J] The walk's host-chip boundary (``mapping/support/host_boundary``): None without the wire census.
     host_boundary: Optional[Any] = None
+    #: [U-AX] On a per-axon pool, the rows the walk planned (``LayoutIRMapping.physical_rows``): the deployed rows, or
+    #: two per input, an upper bound named with its cause; None on a per-synapse pool (one row per input).
+    physical_rows: Optional[Mapping[str, Any]] = None
 
 
 @dataclass(frozen=True)

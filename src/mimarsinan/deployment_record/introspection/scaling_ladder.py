@@ -86,6 +86,7 @@ def shape_census(network: LadderNetwork, platform: Mapping[str, Any], *, wire_ce
         as_mapped_cells=sum(int(s.input_count) * int(s.output_count) for s in softcores),
         wall_s=time.time() - start, program=ProgramGraph.of_walk(layout) if wire_census else None, runs=runs,
         host_boundary=walk_host_boundary(layout, network),
+        physical_rows=None if layout.rows_per_input == 1 else layout.physical_rows.as_dict(),
     )
     if lanes is None:
         return census
@@ -254,6 +255,7 @@ def ladder_row(
         "conversion": dict(network.conversion or certificate_record(None)),
         "layout_wall_s": census.wall_s, "point_wall_s": priced.wall_s,
         "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
+        **({} if census.physical_rows is None else {"physical_rows": dict(census.physical_rows)}),  # [U-AX]
     }
     if priced.refusal is not None:
         row["refusal"] = dict(priced.refusal)

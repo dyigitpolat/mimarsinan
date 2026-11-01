@@ -15,6 +15,25 @@ class CoreRoleGeometryError(ToolchainRefusal, ValueError):
     """An operand core type and a static core type of one geometry: the planner's pool cannot tell them apart."""
 
 
+#: [U-AX] What a layout walk's ``input_count`` states: one row per input (per-synapse sign), the deployed rows (per-axon
+#: sign, read from the weights on the build's grid: ``ir_mapping.sign_rows``), or two rows per input (per-axon sign, the
+#: weights unread): an upper bound of the deployed rows.
+ROWS_LOGICAL, ROWS_DEPLOYED, ROWS_UPPER_BOUND = "logical", "deployed", "upper_bound"
+NO_GRID = ("the walk was given no weight grid (weight_bits), so it reads no weights: each input takes two rows "
+           "under per-axon sign, an upper bound of the deployed rows")
+
+
+@dataclass(frozen=True)
+class PhysicalRows:
+    """[U-AX] What a walk's rows are (``basis``) and, for an upper bound, why (by name)."""
+
+    basis: str
+    reason: Optional[str] = None
+
+    def as_dict(self) -> dict:
+        return {"basis": self.basis, "reason": self.reason}
+
+
 @dataclass(frozen=True)
 class LayoutSoftCoreSpec:
     """Shape-only representation of a deployable soft core."""

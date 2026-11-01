@@ -81,7 +81,12 @@ integration pass 2 and restated on the integrated tree. `introspection/scaling_l
 caller hands in a built mapper representation, resolved platform dicts and the candidate plane's program census as a
 callable. `shape_census` lays one network out per core geometry and keeps the layout walk's program graph
 (`ShapeCensus.program`, `ProgramGraph.of_walk`) and the walk's runs (`ShapeCensus.runs`, the builder segment of each
-spec) beside its wire census. `schedule_program` packs and schedules one core budget with the builder's planner: U1 on
+spec) beside its wire census. [U-AX] On a per-axon pool the walk holds the network's weights, so it reads each core's
+rows on the declared weight grid (`mapping/layout/ir_mapping/sign_rows.py`: 1 + mixed per row, the build's rule) and
+the census and every row state them (`physical_rows`: deployed, or two per input, an upper bound named with its
+cause); `design_point.pricing.candidate_facts` carries the statement and `rows.plane_agreement` names every field an
+upper-bound candidate disagrees on by that cause, so plane parity compares only planes that read the same rows.
+`schedule_program` packs and schedules one core budget with the builder's planner: U1 on
 the walk's runs, or, when the platform declares `residency_plan`, the residency composition on the program graph,
 so a declared step is planned as the builder plans it (tile-granular units, the declared step, its pins and its
 period census); a program whose passes fit the declared cores side by side carries the planner's fit pins

@@ -18,6 +18,7 @@ from mimarsinan.deployment_record.design_point.timeline import pass_timeline, pr
 from mimarsinan.deployment_record.design_point.wear import single_type_wear
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics
 from mimarsinan.mapping.ir import NeuralCore
+from mimarsinan.mapping.layout.layout_types import ROWS_UPPER_BOUND
 
 CERTIFICATE_MISMATCH = "certificate_mismatch"
 
@@ -100,7 +101,14 @@ def _same(a: Any, b: Any, rtol: float) -> bool:
 def plane_agreement(executed: Mapping[str, Any], candidate: Mapping[str, Any], rtol: float = 1e-9) -> Dict[str, Any]:
     """Field-by-field agreement of the executed program's census with the exploration plane's priced program (a float
     within ``rtol``: one pricer over equal census integers); a disagreement the instance keeps is named in ``named``,
-    else ``validate_instance`` refuses the row."""
+    else ``validate_instance`` refuses the row. [U-AX] A candidate whose rows are an upper bound (its
+    ``physical_rows``: a per-axon walk that read no weights) reads other rows than the executed program, so the gate
+    compares only planes that read the same rows: each field such a candidate disagrees on is named with that cause."""
     fields = [{"field": name, "executed": executed.get(name), "candidate": candidate.get(name),
                "agree": _same(executed.get(name), candidate.get(name), rtol)} for name in executed]
-    return {"agree": all(f["agree"] for f in fields), "fields": fields}
+    out: Dict[str, Any] = {"agree": all(f["agree"] for f in fields), "fields": fields}
+    rows = candidate.get("physical_rows") or {}
+    named = [{"field": f["field"], "reason": f"the candidate plane's rows are an upper bound ({rows.get('reason')}), "
+              "the executed program's the deployed rows: the planes read different rows"}
+             for f in fields if not f["agree"]] if rows.get("basis") == ROWS_UPPER_BOUND else []
+    return {**out, "named": named} if named else out

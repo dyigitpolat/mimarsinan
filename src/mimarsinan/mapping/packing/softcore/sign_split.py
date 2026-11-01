@@ -25,6 +25,14 @@ def mixed_rows(matrix: Any) -> np.ndarray:
     return np.asarray((w > 0).any(axis=1) & (w < 0).any(axis=1))
 
 
+def physical_row_counts(matrix: Any) -> np.ndarray:
+    """[U-AX] Physical rows each logical row takes under per-axon sign, the split's rule (``sign_split_rows`` repeats a
+    row this often): 2 for a mixed-sign row, 1 for a single-sign or all-zero row. Every plane reads it: the build's
+    deployed extent (``compaction.deployed_row_counts``) and the layout walk that holds the weights
+    (``layout.ir_mapping.sign_rows``)."""
+    return 1 + mixed_rows(matrix).astype(np.intp)
+
+
 def sign_split_rows(matrix: Any) -> Tuple[np.ndarray, np.ndarray]:
     """``(origin, signs)`` of the physical rows: every logical row in order, a mixed row as ``(j, +1), (j, -1)``,
     a single-sign row with its sign, an all-zero row with 0."""

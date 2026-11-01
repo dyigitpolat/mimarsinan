@@ -10,7 +10,7 @@ from mimarsinan.mapping.packing.spike_source import (
     source_is_off,
     source_is_special,
 )
-from mimarsinan.mapping.packing.softcore.sign_split import mixed_rows
+from mimarsinan.mapping.packing.softcore.sign_split import physical_row_counts
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON
 from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns, dict_lookup
 
@@ -86,13 +86,14 @@ def _ir_keep_indices(core) -> "tuple[list[int], list[int]]":
 
 
 def deployed_row_counts(core, granularity: str, *, graph=None) -> np.ndarray:
-    """Physical rows each compacted row of an IR ``NeuralCore`` takes: 1, and 2 for a mixed-sign row under
-    per-axon sign (``graph`` resolves a bank-backed matrix). A BIAS_ONLY core keeps its one zero row."""
+    """Physical rows each compacted row of an IR ``NeuralCore`` takes: 1, and under per-axon sign the split's rule
+    (``sign_split.physical_row_counts``: 2 for a mixed-sign row) (``graph`` resolves a bank-backed matrix). A
+    BIAS_ONLY core keeps its one zero row."""
     keep_rows, keep_cols = _ir_keep_indices(core)
     if granularity != PER_AXON or not keep_rows:
         return np.ones(compacted_core_extent(core)[0], dtype=np.intp)
     matrix = np.asarray(core.get_core_matrix(graph))
-    return 1 + mixed_rows(matrix[np.ix_(keep_rows, keep_cols)]).astype(np.intp)
+    return physical_row_counts(matrix[np.ix_(keep_rows, keep_cols)])
 
 
 def deployed_core_extent(core, granularity: str, *, graph=None) -> "tuple[int, int]":

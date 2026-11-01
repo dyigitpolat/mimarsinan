@@ -82,9 +82,10 @@ def spec_at_compacted_extent(spec: LayoutSoftCoreSpec, core: Any) -> LayoutSoftC
 def spec_at_deployed_extent(spec: LayoutSoftCoreSpec, core: Any, granularity: str, *,
                             graph: Any = None) -> LayoutSoftCoreSpec:
     """``spec`` at the rows ``core`` deploys: unchanged under per-synapse sign; under per-axon sign the exact
-    physical rows (``deployed_core_extent``) its runtime soft core packs after the sign split, where the layout
-    walk, holding no weights, planned two rows per input, and no bank (a split instance is not its bank's
-    region, so no plane plans bank residency for it)."""
+    physical rows (``deployed_core_extent``) its runtime soft core packs after the sign split (the rows a layout walk
+    that read the weights on this grid already states, [U-AX] ``ir_mapping.sign_rows``; a walk that read none planned
+    two rows per input, an upper bound), and no bank (a split instance is not its bank's region, so no plane plans
+    bank residency for it)."""
     if granularity != PER_AXON:
         return spec
     rows, neurons = deployed_core_extent(core, granularity, graph=graph)

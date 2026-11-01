@@ -151,7 +151,8 @@ def executed_facts(judged: Mapping[str, Any], cores: int) -> Dict[str, Any]:
 
 def candidate_facts(row: Mapping[str, Any]) -> Dict[str, Any]:
     """The same facts from a ladder row at K = 1 (its passes, reprogrammed passes and bytes, and the census writes of
-    the most-written cell per inference, which at K = 1 with no operand cells is the most-written core's period writes)."""
+    the most-written cell per inference, which at K = 1 with no operand cells is the most-written core's period writes);
+    [U-AX] and the rows a per-axon row states it planned (``physical_rows``), which ``plane_agreement`` reads."""
     writes = (row.get("k_star") or {}).get("max_writes_per_cell_per_inference")
     law = (row.get("write_law") or {}).get("terms") or {}
     return {"cores": row.get("cores"), "neural_passes": row.get("census_passes", row.get("passes")),
@@ -159,7 +160,8 @@ def candidate_facts(row: Mapping[str, Any]) -> Dict[str, Any]:
             "most_written_core_writes_per_period": None if writes is None else int(round(float(writes))),
             "payload_bytes_per_period": row.get("reprogrammed_bytes_per_period"),
             "energy_write_mj": None if law.get("energy_write_mj") is None else [float(v)
-                                                                               for v in law["energy_write_mj"]]}
+                                                                               for v in law["energy_write_mj"]],
+            **({"physical_rows": dict(row["physical_rows"])} if row.get("physical_rows") else {})}  # [U-AX]
 
 
 # [E-6, targeted pass] The record plane of an executed instance program ---------------------------------------------

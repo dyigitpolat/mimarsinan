@@ -12,6 +12,7 @@ from mimarsinan.deployment_record.objectives import (
     candidate_probe_without,
     declared_core_capacity,
 )
+from mimarsinan.mapping.layout.ir_mapping.sign_rows import sign_row_census
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.noc import census_of_walk
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
@@ -114,7 +115,9 @@ class JointLayoutMixin(JointHostContract):
 
     def _walk_candidate(self, model, pcfg: Dict, *, collect_census: bool = False) -> CandidateWalk:
         """Walk the candidate's layout: softcores, host segments, (opt-in — collection
-        materialises the deferred views) the wire census, and the walk's runs."""
+        materialises the deferred views) the wire census, and the walk's runs. [U-AX] The walk
+        holds the candidate model's weights: on a per-axon pool each core's rows are read on the
+        declared weight grid (``sign_row_census``), as the build packs them."""
         cores = pcfg["cores"]
         pmap = resolve_platform_mapping_params(
             cores,
@@ -127,6 +130,7 @@ class JointLayoutMixin(JointHostContract):
             hardware_bias=pmap.hardware_bias,
             collect_wire_census=collect_census,
             rows_per_input=pmap.rows_per_input,
+            sign_rows=sign_row_census(pmap.rows_per_input, pcfg.get("weight_bits")),
         )
         mapper_repr = model.get_mapper_repr()
         if hasattr(mapper_repr, "assign_perceptron_indices"):

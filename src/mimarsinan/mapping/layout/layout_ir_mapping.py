@@ -10,7 +10,13 @@ from mimarsinan.mapping.layout.layout_source_view_ops import (
     node_ids_of,
     total_size,
 )
-from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+from mimarsinan.mapping.layout.layout_types import (
+    NO_GRID,
+    ROWS_LOGICAL,
+    ROWS_UPPER_BOUND,
+    LayoutSoftCoreSpec,
+    PhysicalRows,
+)
 from mimarsinan.mapping.layout.ir_mapping import (
     _LayoutIRMappingBanks,
     _LayoutIRMappingFC,
@@ -35,8 +41,12 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
     # cost LayoutSourceView defers), so it is opt-in: only a walk whose caller
     # needs NoC traffic pays it.
     collect_wire_census: bool = False
-    # Rows per logical input (2 under per-axon sign): no weights, so the worst case.
+    # Rows per logical input (2 under per-axon sign): the tiler's plan, and the rows of a walk that reads no weights.
     rows_per_input: int = 1
+    # [U-AX] The per-axon row census of a walk that holds the network's weights (``ir_mapping.sign_rows``, built by the
+    # caller from the declared weight grid): each core's rows read from its weights on the build's grid (1 + mixed per
+    # row, the build's rule); None: two per input, an upper bound. ``physical_rows`` states which, by name.
+    sign_rows: Any = None
     # [U-E2 H-1] The declared lane plan applied as the walk goes (``lanes.shape_walk.LaneWalk``); None: lane-free.
     lane_walk: Any = None
 
@@ -46,6 +56,12 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
         self.allow_coalescing = bool(self.allow_coalescing)
         self.hardware_bias = bool(self.hardware_bias)
         self.onchip_residual_merge = bool(self.onchip_residual_merge)
+        if int(self.rows_per_input) == 1:  # one row per input: a per-synapse walk reads no weights
+            self.sign_rows = None
+            self.physical_rows = PhysicalRows(ROWS_LOGICAL)
+        else:  # settled by the census after the walk (``map``)
+            self.physical_rows = PhysicalRows(ROWS_UPPER_BOUND,
+                                              NO_GRID if self.sign_rows is None else "the walk has not run")
 
         self._next_node_id = 0
         self._coalescing_group_counter = 0
@@ -131,6 +147,8 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
         self.output_sources = output_sources
         if self.lane_walk is not None:
             self.lane_walk.finalize(self)
+        if self.sign_rows is not None:
+            self.physical_rows = self.sign_rows.settle(self)
         self._finalize_softcores()
         return output_sources
 
@@ -210,12 +228,13 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC, _LayoutIRMap
         in_features = total_size(input_sources)
         out_features = int(getattr(weights, "shape", [0])[0])
         has_bias = biases is not None
-        in_count = compute_core_input_count(
-            in_features, has_bias, self.hardware_bias,
-            self.param_encoded_bias_rows(bias_scale, parameter_scale, name=name),
-        )
+        bias_rows = self.param_encoded_bias_rows(bias_scale, parameter_scale, name=name)
+        in_count = compute_core_input_count(in_features, has_bias, self.hardware_bias, bias_rows)
 
         node_id = self._alloc_node_id()
+        if self.sign_rows is not None:
+            self.sign_rows.owned(node_id, weights, biases, hardware_bias=self.hardware_bias, bias_rows=bias_rows,
+                                 perceptron_index=perceptron_index, rows=in_count, name=name)
         return self._emit_softcore_record(
             node_id=node_id,
             input_count=in_count,

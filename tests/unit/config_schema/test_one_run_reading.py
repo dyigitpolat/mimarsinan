@@ -420,6 +420,8 @@ WEIGHT_BITS_READERS = {
     "pipelining/pipeline_steps/verification/fidelity_emission.py": "every run",
     "deployment_record/objectives/context.py": "every run",
     "deployment_record/introspection/scaling_ladder.py": "every run",
+    # [U-AX] the per-axon row census: the ladder's walk reads each core's rows on the declared grid (per-axon runs).
+    "deployment_record/introspection/scaling_ladder_lanes.py": "every run",
     "deployment_record/cost/absolute/energy.py": "every run",
     "deployment_record/cost/absolute/metrics.py": "every run",
     "deployment_record/quantities/from_level.py": "every run",
@@ -427,6 +429,8 @@ WEIGHT_BITS_READERS = {
     "tuning/tuners/pruning/pruning_tuner_masks.py": "every run",
     "search/problems/joint/model_build.py": "every run",
     "search/problems/joint/validate.py": "every run",
+    # [U-AX] the per-axon row census: the joint search's walk reads the candidate's rows on the declared grid.
+    "search/problems/joint/layout_hook.py": "every run",
     "mapping/platform/target_bundles.py": "every run",
     # CL-SG: the per-axon register bound (a sign and a (bits - 1)-bit magnitude) on every per-axon run.
     "pipelining/core/simulation_factory.py": "every run",
