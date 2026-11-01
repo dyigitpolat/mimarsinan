@@ -206,10 +206,7 @@ class Pipeline:
             )
 
     def _assert_requirements_present(self, step):
-        assert all(
-            self._translate_key(step.name, requirement) in self.cache
-            for requirement in step.requires
-        ), "Pipeline error: Some requirements are not found in the cache."
+        pipeline_resume.assert_requirements_present(self, step)
 
     def _execute_step(self, name, step):
         cuda_debug = bool(getattr(self, "cuda_debug", False))

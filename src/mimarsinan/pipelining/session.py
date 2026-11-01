@@ -199,6 +199,10 @@ class PipelineSession:
             )
 
     def run(self) -> None:
+        """Run from the start ``resolved_start_step`` reports, or the full pipeline when no start is declared.
+
+        A resolved start resolves to itself (``pipeline_resume``), so ``run_from`` starts at exactly the reported step
+        and the backward walk happens once."""
         self.surface_config_advisories()
         start_step = self.resolved_start_step()
         if start_step is None:
