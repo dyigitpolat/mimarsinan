@@ -69,6 +69,16 @@ def bias_row_bound(b_max: float, weight_scale: float, q_max: float) -> int:
     return max(1, int(math.ceil(demand)))
 
 
+def bias_register_span(max_abs_code: float, q_max: float) -> int:
+    """The span ``r`` of an on-chip bias register holding integer codes (weight-grid units) up to ``max_abs_code``:
+    ``max(1, ceil(max|code| / q_max))``, the register ``[-(q_max+1) r, q_max r]``. The two-scale projection's register
+    route codes ``round(b s_w)`` with this ``r`` (``ceil(max|b| s_w / q_max)``), so the export and the verification
+    read the span the projection used from the codes alone."""
+    if q_max <= 0.0:
+        raise ValueError(f"q_max must be positive, got {q_max}")
+    return max(1, int(math.ceil(float(max_abs_code) / float(q_max) - _RATIO_TOL)))
+
+
 def _as_float(value: Any) -> float:
     return float(value.item() if hasattr(value, "item") else value)
 
@@ -78,9 +88,12 @@ def bias_rows_from_scales(
 ) -> int:
     """Recover k at the mapping SSOT from the grids the WQ install stamped.
 
-    The two-scale projection snaps ``bias_scale = parameter_scale / k`` with
-    integer k, so the installed scales carry the row count with no side channel;
-    a shared grid recovers k=1 and maps byte-identically to the legacy path.
+    The two-scale projection's rows route (a param-encoded bias) snaps
+    ``bias_scale = parameter_scale / k`` with integer k, so the installed scales
+    carry the row count with no side channel; a shared grid, and the on-chip
+    register route (the bias on the weight lattice, ``bias_scale ==
+    parameter_scale``; its register spans the codes, never rows), recover k=1
+    and map byte-identically to the legacy path.
     """
     if bias_scale is None:
         return 1

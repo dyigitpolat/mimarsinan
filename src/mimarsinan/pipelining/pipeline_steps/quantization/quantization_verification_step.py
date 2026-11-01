@@ -1,7 +1,9 @@
 import torch
 
 from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.mapping.support.bias_rows import bias_register_span
 from mimarsinan.mapping.support.grid_declarations import ParameterGrids
+from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_wq_two_scale_projection
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
@@ -28,13 +30,18 @@ def _assert_integer_lattice(scaled: torch.Tensor, what: str) -> torch.Tensor:
     return rounded
 
 
-def assert_effective_parameters_on_chip_grid(perceptron, q_max: int, *, law_bias: bool = False) -> None:
-    """The WQ install contract, both projection modes: effective weights are
+def assert_effective_parameters_on_chip_grid(perceptron, q_max: int, *, law_bias: bool = False,
+                                             register_bias: bool = False) -> None:
+    """The WQ install contract, every projection mode: effective weights are
     integer on the ``parameter_scale`` grid; the effective bias is integer on
-    its OWN ``bias_scale`` grid within the ±q_max register range AND on the
-    weight-grid lattice (``bias * parameter_scale = r * bias_int`` — what the
-    chip export emits, so both parity sides see the same semantics). A bias
-    declared at the law's resolution (``law_bias``) has no grid to be on."""
+    the weight-grid lattice (``bias * parameter_scale = r * bias_int`` — what the
+    chip export emits, so both parity sides see the same semantics) AND on its
+    OWN ``bias_scale`` grid, within that grid's ±q_max register range. On the
+    two-scale projection's on-chip register route (``register_bias``) the bias
+    grid IS the weight lattice and the register spans the bias's own codes,
+    ``[-(q_max+1) r, q_max r]`` with ``r = ceil(max|code| / q_max)`` (the span the
+    export allocates). A bias declared at the law's resolution (``law_bias``)
+    has no grid to be on."""
     transformer = PerceptronTransformer()
     fused_w = transformer.get_effective_weight(perceptron)
     fused_b = transformer.get_effective_bias(perceptron)
@@ -46,12 +53,18 @@ def assert_effective_parameters_on_chip_grid(perceptron, q_max: int, *, law_bias
     _assert_integer_lattice(fused_w * param_scale, "weights off the chip grid")
     if law_bias:
         return
-    _assert_integer_lattice(
+    codes = _assert_integer_lattice(
         fused_b * param_scale, "bias off the weight-grid lattice"
     )
     bias_ints = _assert_integer_lattice(
         fused_b * bias_scale, "bias off its own grid"
     )
+    if register_bias:
+        span = bias_register_span(float(codes.abs().max()) if codes.numel() else 0.0, q_max)
+        assert float(codes.min()) >= -(q_max + 1) * span - 0.5 and float(codes.max()) <= q_max * span + 0.5, (
+            f"bias outside its register span ±{q_max}x{span}: {codes}"
+        )
+        return
     assert float(bias_ints.abs().max()) <= q_max + 0.5, (
         f"bias outside its ±{q_max} register range: {bias_ints}"
     )
@@ -114,13 +127,16 @@ class QuantizationVerificationStep(TrainerPipelineStep):
         model = self.get_entry("model")
         q_max = self.q_max
         self.trainer = make_basic_trainer(self.pipeline, model)
+        # The run's grids: the declared rules and the two-scale projection's bias route (as the WQ step named it).
+        grids = ParameterGrids.from_config(
+            self.pipeline.config, register_bias=resolve_wq_two_scale_projection(self.pipeline.config))
         for perceptron in model.get_perceptrons():
             print(perceptron.parameter_scale)
             print(perceptron.scale_factor)
             perceptron.to(self.pipeline.config["device"])
             assert_effective_parameters_on_chip_grid(
                 perceptron, _declared_q_max(perceptron, q_max),
-                law_bias=ParameterGrids.from_config(self.pipeline.config).law_bias)
+                law_bias=grids.law_bias, register_bias=grids.register_bias)
             if getattr(perceptron, LAYER_WEIGHT_BITS, None) is not None:
                 assert_weights_within_layer_grid(perceptron, _declared_q_max(perceptron, q_max))
 

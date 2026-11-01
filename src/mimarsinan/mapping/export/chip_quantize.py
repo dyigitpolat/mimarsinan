@@ -7,6 +7,7 @@ import torch
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.ir.dynamic_bank import dynamic_bank_ids
+from mimarsinan.mapping.support.bias_rows import bias_register_span
 from mimarsinan.mapping.support.grid_declarations import GridDeclarationError, ParameterGrids
 from mimarsinan.transformations.quantization_bounds import core_weight_bits, quantization_bounds
 from mimarsinan.transformations.quantization_verify import assert_integer_scaled_matrix
@@ -65,7 +66,7 @@ def quantize_ir_graph(
                 scale_used = bank_scale_used[node.weight_bank_id]
                 node.threshold = scale_used
                 node.parameter_scale = torch.tensor(1.0)
-                _scale_hardware_bias(node, scale_used, n_min, n_max, n_dtype, eps, grids.law_bias)
+                _scale_hardware_bias(node, scale_used, n_min, n_max, n_dtype, eps, grids.law_bias, grids.register_bias)
             continue
         matrix = node.core_matrix
         if matrix is None:
@@ -78,7 +79,7 @@ def quantize_ir_graph(
         node.core_matrix = np.clip(np.round(matrix * scale), n_min, n_max).astype(n_dtype)
         node.threshold = scale
         node.parameter_scale = torch.tensor(1.0)
-        _scale_hardware_bias(node, scale, n_min, n_max, n_dtype, eps, grids.law_bias)
+        _scale_hardware_bias(node, scale, n_min, n_max, n_dtype, eps, grids.law_bias, grids.register_bias)
 
 
 def refuse_law_bias_rows(ir_graph: IRGraph) -> None:
@@ -171,12 +172,14 @@ def _fallback_magnitude(matrix, peak: float | None, eps: float) -> float:
 
 
 def _bias_grid_ratio(node: NeuralCore, weight_scale: float, eps: float) -> int:
-    """Integer ratio r = weight grid steps per bias grid step (1 == shared grid).
+    """Integer ratio r = weight grid steps per bias grid step (1 == shared grid, and the on-chip register route).
 
-    The two-scale NAPQ install snaps ``bias_scale = parameter_scale / r`` with
-    integer r, so the quantized bias is exactly ``r * bias_int`` in weight-grid
+    The two-scale NAPQ install's rows route snaps ``bias_scale = parameter_scale / r``
+    with integer r, so the quantized bias is exactly ``r * bias_int`` in weight-grid
     units — the torch<->chip parity lattice. A non-integer ratio would break
-    that lattice and must fail loud."""
+    that lattice and must fail loud. The register route codes the bias on the
+    weight lattice itself (ratio 1); its register span comes from the codes
+    (``_scale_hardware_bias``)."""
     bias_scale = getattr(node, "bias_scale", None)
     if bias_scale is None:
         return 1
@@ -197,14 +200,19 @@ def _bias_grid_ratio(node: NeuralCore, weight_scale: float, eps: float) -> int:
 
 
 def _scale_hardware_bias(
-    node: NeuralCore, scale: float, q_min: int, q_max: int, q_dtype, eps: float, law_bias: bool = False
+    node: NeuralCore, scale: float, q_min: int, q_max: int, q_dtype, eps: float, law_bias: bool = False,
+    register_bias: bool = False,
 ) -> None:
     """Quantize hardware_bias with the same saturation NAPQ applies — ±q_max on
     the bias's OWN grid, i.e. ±q_max*r in weight-grid units — clamping BEFORE
     the int cast so an out-of-range bias saturates instead of wrapping
-    (NF↔SCM parity), on a dtype wide enough for the ratio lattice. A bias
-    declared at the law's resolution stays real (fp64, weight-grid units):
-    the readout law rounds it, the float executor adds it as is."""
+    (NF↔SCM parity), on a dtype wide enough for the ratio lattice. On the
+    two-scale projection's on-chip register route (``register_bias``) NAPQ codes
+    ``round(b s_w)`` within ±q_max*r with r = ceil(max|code| / q_max): the
+    register spans the bias's own codes (never narrower than a stamped ratio, so
+    a ratio-grid bias exports as before). A bias declared at the law's
+    resolution stays real (fp64, weight-grid units): the readout law rounds it,
+    the float executor adds it as is."""
     if node.hardware_bias is None:
         return
     if law_bias:
@@ -212,12 +220,13 @@ def _scale_hardware_bias(
         node.bias_scale = None
         return
     ratio = _bias_grid_ratio(node, scale, eps)
+    codes = np.round(node.hardware_bias * scale)
+    if register_bias and np.size(codes):
+        ratio = max(ratio, bias_register_span(float(np.max(np.abs(codes))), float(q_max)))
     lo, hi = q_min * ratio, q_max * ratio
     dtype_info = np.iinfo(q_dtype)
     dtype = q_dtype if (lo >= dtype_info.min and hi <= dtype_info.max) else np.int32
-    node.hardware_bias = np.clip(
-        np.round(node.hardware_bias * scale), lo, hi
-    ).astype(dtype)
+    node.hardware_bias = np.clip(codes, lo, hi).astype(dtype)
     # Consumed: the bias now lives as integers in weight-grid units.
     node.bias_scale = None
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from mimarsinan.transformations.perceptron.input_shift import record_input_shift
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 def negative_shifts_from_min(min_by_node: dict[int, np.ndarray]) -> dict[int, np.ndarray]:
@@ -18,7 +19,8 @@ def negative_shifts_from_min(min_by_node: dict[int, np.ndarray]) -> dict[int, np
 
 
 def apply_negative_shift_bias(perceptron, shift) -> None:
-    """Idempotently bake ``B' = B − W·s`` (``s`` per-axon or scalar) into ``perceptron``."""
+    """Idempotently bake ``B' = B − W·s`` (``s`` per-axon or scalar) into ``perceptron``, and record ``s``
+    (``input_shift``) so every later weight projection re-derives the compensation on the weights it installs."""
     if getattr(perceptron, "_neg_shift_baked", False):
         return
     effective_weight = PerceptronTransformer().get_effective_weight(perceptron)
@@ -30,6 +32,7 @@ def apply_negative_shift_bias(perceptron, shift) -> None:
         perceptron, lambda b, c=correction: b - c,
     )
     perceptron._neg_shift_baked = True
+    record_input_shift(perceptron, s)
 
 
 

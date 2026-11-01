@@ -25,15 +25,21 @@ class GridDeclarationError(ToolchainRefusal, ValueError):
 
 @dataclass(frozen=True)
 class ParameterGrids:
-    """How the deployed weight and bias grids are chosen; the default is the integer lattice with a gridded bias."""
+    """How the deployed weight and bias grids are chosen; the default is the integer lattice with a gridded bias.
+
+    ``register_bias``: the two-scale projection's on-chip register route, a run fact rather than a declaration (the
+    ``wq_two_scale_projection`` key on a platform whose cores carry an on-chip bias,
+    ``resolve_wq_two_scale_projection``): the bias is coded on the weight lattice, so the export spans each bias
+    register over its own codes (``±q_max r``) instead of saturating it at the weight register."""
 
     fractional_scale: bool = False
     law_bias: bool = False
+    register_bias: bool = False
 
     @classmethod
-    def from_config(cls, config: Mapping[str, Any]) -> "ParameterGrids":
+    def from_config(cls, config: Mapping[str, Any], *, register_bias: bool = False) -> "ParameterGrids":
         return cls(fractional_scale=config.get("weight_scale_rule") == WEIGHT_SCALE_FRACTIONAL,
-                   law_bias=config.get("bias_resolution") == BIAS_AT_LAW)
+                   law_bias=config.get("bias_resolution") == BIAS_AT_LAW, register_bias=bool(register_bias))
 
     @property
     def declared(self) -> bool:

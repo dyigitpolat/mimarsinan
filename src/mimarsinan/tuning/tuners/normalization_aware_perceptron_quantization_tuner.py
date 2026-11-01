@@ -25,7 +25,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     def __init__(
         self, pipeline, model, quantization_bits, target_accuracy, lr,
         adaptation_manager, two_scale_projection=False, fractional_scale=False, float_bias=False,
-        bias_rows_floor=None,
+        bias_rows_floor=None, register_bias=False,
     ):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits
@@ -41,6 +41,8 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
         self.bias_rows_floor = (
             None if bias_rows_floor is None else int(bias_rows_floor)
         )
+        # The two-scale bias route the step names: an on-chip register (the weight lattice) or bias rows.
+        self.register_bias = bool(register_bias)
         self._axis = NAPQAxis(
             self._apply_rate, replica_apply_fn=self._apply_rate_to,
         )
@@ -64,8 +66,9 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
                 two_scale=self.two_scale_projection,
                 fractional_scale=self.fractional_scale,
                 float_bias=self.float_bias,
-                # A tuner built without __init__ (a test of the projection) declares no split.
+                # A tuner built without __init__ (a test of the projection) declares no split and no route.
                 bias_rows_floor=getattr(self, "bias_rows_floor", None),
+                register_bias=getattr(self, "register_bias", False),
             ).transform(perceptron)
         return transform
 

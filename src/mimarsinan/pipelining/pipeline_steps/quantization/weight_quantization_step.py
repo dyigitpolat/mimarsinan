@@ -33,6 +33,7 @@ from mimarsinan.models.nn.layers import FrozenStatsNormalization
 from mimarsinan.transformations.perceptron.bias_canonicalization import (
     canonicalize_starved_bias_outliers,
 )
+from mimarsinan.transformations.perceptron.input_shift import refuse_unrecorded_shift_bakes
 from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import (
     NormalizationAwarePerceptronQuantizationTuner,
 )
@@ -107,6 +108,8 @@ class WeightQuantizationStep(TunerPipelineStep):
     def process(self):
         model = self.get_entry("model")
         adaptation_manager = self.get_entry("adaptation_manager")
+        # A shift bake the projection cannot re-derive (no recorded shift) is refused before any budget is spent.
+        refuse_unrecorded_shift_bakes(model.get_perceptrons())
         grids = projection_grids(
             self.pipeline.config, two_scale=bool(self.pipeline.config.get("wq_two_scale_projection", False)),
             on_chip_bias=lambda: resolve_bias_mode(self.pipeline.config) == "on_chip",
@@ -136,6 +139,11 @@ class WeightQuantizationStep(TunerPipelineStep):
         print(f"Quantizing to {bits} bits")
         splitting = DeploymentPlan.of(self.pipeline).bias_row_splitting
         weight_only = resolve_wq_weight_only_grid(self.pipeline.config)
+        # The two routes of the weight-only grid, named: an on-chip bias register (the bias on the weight lattice
+        # over its own span) or bias rows (param-encoded bias-row splitting: the r-multiple grid). They exclude
+        # each other (one bias delivery per platform).
+        register_bias = resolve_wq_two_scale_projection(self.pipeline.config)
+        assert not (register_bias and splitting.active), "an on-chip bias register and bias rows on one platform"
         if bool(self.pipeline.config.get("wq_two_scale_projection", False)) and not weight_only:
             print(
                 "[WeightQuantizationStep] wq_two_scale_projection requested but "
@@ -152,9 +160,10 @@ class WeightQuantizationStep(TunerPipelineStep):
             floor = '' if splitting.rows_override is None else f' (floor {splitting.rows_override})'
             print(f"[WeightQuantizationStep] weight-only grid from max|w| alone; "
                   f"bias split across always-on rows{floor} (integer-ratio-snapped).")
-        elif weight_only:
+        elif register_bias:
             print("[WeightQuantizationStep] two-scale projection: weight grid "
-                  "from max|w| alone; bias on its own grid (integer-ratio-snapped).")
+                  "from max|w| alone; bias on the weight lattice in its on-chip "
+                  "register (span ±q_max r).")
         if splitting.active:
             refuse_split_under_event_serial_soma(
                 model.get_mapper_repr(), int(bits),
@@ -169,6 +178,7 @@ class WeightQuantizationStep(TunerPipelineStep):
             fractional_scale=grids.fractional_scale,
             float_bias=grids.law_bias,
             bias_rows_floor=splitting.rows_override,
+            register_bias=register_bias,
         )
 
     def _freeze_exact_qat_theta(self, model) -> None:

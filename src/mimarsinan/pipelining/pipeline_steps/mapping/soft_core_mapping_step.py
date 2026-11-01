@@ -6,6 +6,7 @@ import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.pipelining.core.steps.pipeline_step import METRIC_CARRIED, PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_wq_two_scale_projection
 
 from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 from mimarsinan.chip_simulation.soma_law import SomaLaw
@@ -404,8 +405,12 @@ class SoftCoreMappingStep(PipelineStep):
         )
 
         wt_q = plan.weight_quantization
+        # [U-WQB] the two-scale projection's on-chip register route codes the bias on the weight lattice: each bias
+        # register spans its own codes (the run's route, as Weight Quantization named it).
+        grids = ParameterGrids.from_config(
+            platform_constraints, register_bias=resolve_wq_two_scale_projection(self.pipeline.config))
         with phase("weight_quantization"):
-            quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q, grids=ParameterGrids.from_config(platform_constraints))
+            quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q, grids=grids)
         if relays_enabled:
             # [C5/V9] the strict-'<' exact-theta dead-relay lattice guard, on
             # the QUANTIZED graph (threshold = scale after integerization).

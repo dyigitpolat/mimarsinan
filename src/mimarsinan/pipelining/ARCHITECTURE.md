@@ -28,6 +28,9 @@ law's inert output quantizers; counts in `readout_law_report`). Weight Quantizat
 hands `fractional_scale` and `float_bias` to the NAPQ tuner (a float bias skips the starved-bias
 canonicalization); Quantization Verification and Core Quantization Verification accept the declared grids; Soft
 Core Mapping passes `quantizer_state` to `install_boundary_grids` and `ParameterGrids` to `quantize_ir_graph`.
+[U-WQB] Weight Quantization names the two-scale bias route (`register_bias = resolve_wq_two_scale_projection`, an
+on-chip bias register: the bias on the weight lattice; else bias rows) and refuses by name a shift bake without its
+recorded `input_shift`; Quantization Verification and Soft Core Mapping read the same route into `ParameterGrids`.
 
 ## On-chip lanes and the output stage (Wave 2 WI-5e, W08)
 

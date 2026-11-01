@@ -72,7 +72,10 @@ on unseen data still warns at runtime (`warn_once_lossy_negative_clamp`).
 Four declarations, each absent by default (the program is then byte for byte the base's, pinned by
 `tests/unit/mapping/test_value_grid_identity.py`). `support/grid_declarations.py` holds their vocabularies and
 readers: `ParameterGrids` (`weight_scale_rule: fractional`, the scale `q_max / max|w|` instead of its integer floor;
-`bias_resolution: law`, the bias kept real until the readout law rounds it), `projection_grids` (the Weight
+`bias_resolution: law`, the bias kept real until the readout law rounds it; and `register_bias`, a run fact rather
+than a declaration (U-WQB): the two-scale projection's on-chip register route codes the bias on the weight lattice,
+so `export/chip_quantize.py` spans each bias register over its own codes, `support/bias_rows.bias_register_span`,
+never narrower than a stamped ratio), `projection_grids` (the Weight
 Quantization refusals: law bias with two-scale, law bias without an on-chip bias, `GridDeclarationError`) and
 `identity_output_law`. `support/quantizer_state.py` reads `quantizer_state` (a JSON map keyed by FX node name,
 checked against its sha256): per perceptron a readout range and, at a segment entry, a `DeclaredBoundaryGrid`
