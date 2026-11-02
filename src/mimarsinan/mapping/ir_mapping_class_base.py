@@ -18,6 +18,7 @@ from mimarsinan.mapping.ir import (
 )
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.support.bias_rows import core_matrix_with_bias_rows
+from mimarsinan.mapping.support.input_root_gauge import stamp_ir_input_gauge
 
 
 class IRMappingCore(LayoutIRMapping):
@@ -59,13 +60,15 @@ class IRMappingCore(LayoutIRMapping):
                 sc_idx = self._node_id_to_softcore_idx.get(node.id)
                 if sc_idx is not None:
                     node.layout_softcore_index = sc_idx
-        return IRGraph(
+        graph = IRGraph(
             nodes=self.nodes.copy(),
             output_sources=output_sources,
             weight_banks=dict(self._weight_banks),
             layout_softcores=list(self.layout_softcores),
             dynamic_bank_bindings=dict(self.__dict__.get("dynamic_bank_bindings", {})),
         )
+        stamp_ir_input_gauge(graph, model_representation)  # [U-IN] the raw input's wire gauge, where a core reads it
+        return graph
 
     def _convert_sources(self, sources: np.ndarray) -> np.ndarray:
         """Convert a SpikeSource/IRSource array to an IRSource array; already-IRSource input is returned as a shallow copy (object refs)."""

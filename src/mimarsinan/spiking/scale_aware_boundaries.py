@@ -38,7 +38,9 @@ def establish_wire_gauge(
     ``activation_scales``, and inert when no gauge is non-unit.
     """
     model_repr = _as_model_repr(model_repr_or_model)
-    compute_per_source_scales(model_repr, arm_wire_value_ops=arm_wire_value_ops)
+    # [U-IN] the input scale is the raw input's wire gauge: every core reading the raw input folds it.
+    compute_per_source_scales(model_repr, arm_wire_value_ops=arm_wire_value_ops,
+                              input_gauge=float(input_data_scale) if arm_wire_value_ops else None)
     propagate_boundary_input_scales(
         model_repr_or_model, input_data_scale=input_data_scale
     )

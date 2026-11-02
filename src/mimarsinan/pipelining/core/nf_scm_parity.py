@@ -106,12 +106,13 @@ def assert_nf_scm_parity_or_raise(
         ir_graph, pipeline_config=pipeline.config,
     )
 
-    from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
+    from mimarsinan.mapping.pruning import derive_deployed_neuron_survival, record_layouts
 
     # [U-PS] every NF capture below is the twin as the program evaluates its host kernels (twin_as_program).
     nf = twin_as_program(ir_graph, _capture_nf_normalized, model, samples)
-    # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority; no-op when nothing was pruned).
-    nf = derive_deployed_neuron_survival(ir_graph).project(nf)
+    # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority, by the
+    # program's own kept-column rule per core [U-IN A-2]; no-op when nothing was pruned).
+    nf = derive_deployed_neuron_survival(ir_graph).project(nf, layouts=record_layouts(model.get_perceptrons()))
     scm = _collect_scm_normalized(identity_mapping, model, samples, contract)
 
     shared = sorted(set(nf) & set(scm))
@@ -206,7 +207,7 @@ def assert_streamed_nf_scm_exact_or_raise(
     no mismatch budget; parity holds by construction or the deployment is
     wrong."""
     from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
-    from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
+    from mimarsinan.mapping.pruning import derive_deployed_neuron_survival, record_layouts
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
     from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
 
@@ -248,12 +249,13 @@ def assert_streamed_nf_scm_exact_or_raise(
     per_sample_raster: List[Dict[int, np.ndarray]] = []
     with measurement_plane():
         nf_counts_by_pi = twin_as_program(ir_graph, _capture_nf_streamed_counts, model, samples)
-        # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority; no-op when nothing was pruned).
-        nf_counts_by_pi = derive_deployed_neuron_survival(ir_graph).project(
-            nf_counts_by_pi,
-        )
+        # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority, by
+        # the program's own kept-column rule per core [U-IN A-2]; no-op when nothing was pruned); rasters per neuron.
+        survival, layouts = derive_deployed_neuron_survival(ir_graph), record_layouts(model.get_perceptrons())
+        nf_counts_by_pi = survival.project(nf_counts_by_pi, layouts=layouts)
         nf_rasters_by_pi = (
-            twin_as_program(ir_graph, _capture_nf_streamed_rasters, model, samples)
+            survival.project(twin_as_program(ir_graph, _capture_nf_streamed_rasters, model, samples),
+                             layouts=layouts, cycles=int(T))
             if per_event else {}
         )
         with torch.no_grad():

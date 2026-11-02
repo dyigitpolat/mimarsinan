@@ -478,3 +478,17 @@ refusal (`CapacityExceededError`) prints the unit ("the largest unit that must b
 S); D are declared"), carries it as `cores_needed`, and states the sum only as the labelled field `single_pool_sum`
 (SD-14: the 48-core refusal printed 115,940 cores where 192 cores placed the IR; the binding unit is 148). The
 unscheduled refusal keeps the sum as its bound, its text unchanged.
+
+**[U-IN] The raw input at the boundary gauge; survival by the program's kept-column rule.**
+`support/input_root_gauge.py`: a core that reads the raw input (the encoding layer placed on chip) folds the input root's
+boundary-table gauge, the run's input data scale, in the source walk (`fold_input_root_gauge`, called by
+`compute_per_source_scales` under the wire currency, each layout node between the root and the core applying its own
+`propagate_source_scale`); the wire-gauge seam passes the gauge (`establish_wire_gauge`) and the graph keeps it only
+where a core folds it (`input_wire_gauge`), the IR carries it where a core reads the raw input (`stamp_ir_input_gauge`
+from `IRMappingCore.map`), and `support/activation_scales.py` gives the raw input (`RAW_INPUT`, -2) that fold gauge over
+its unit buffer gauge, so the divisor table every executor reads divides the raw slice by it. A host op reads the raw
+buffer at one; a value-domain or TTFS program never folds it. `pruning/deployed_neuron_survival.py`: each core's deployed
+outputs are derived by the program's own rule (`core_deployed_channels`: IR pruning's `pre_pruning_col_mask` composed
+with `packing/softcore/compaction.compaction_keep_indices` over the core's current masks, where a bank-backed core keeps
+its pruned channels until Soft Core Mapping), keyed by (column, channel), and a record projects through its perceptron's
+declared `output_channel_axis` (`record_layouts`); an underivable core or record refuses by name (`SurvivalRefusal`).

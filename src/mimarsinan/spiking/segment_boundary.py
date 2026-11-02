@@ -20,9 +20,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     SegmentIOSlice,
 )
 from mimarsinan.mapping.packing.phase_channels import stage_input_channels
-from mimarsinan.mapping.support.activation_scales import (
-    perceptron_wrapped_activation_scale,
-)
+from mimarsinan.mapping.support.activation_scales import RAW_INPUT, perceptron_wrapped_activation_scale
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 from mimarsinan.spiking.boundary_config import BoundaryConfig
 from mimarsinan.spiking.compute_boundary import (
@@ -30,10 +28,7 @@ from mimarsinan.spiking.compute_boundary import (
     encode_compute_boundary,
     normalize_boundary_value,
 )
-from mimarsinan.spiking.spike_trains import (
-    rates_to_spike_train,
-    uniform_spike_train,
-)
+from mimarsinan.spiking.spike_trains import rates_to_spike_train, uniform_spike_train
 
 __all__ = [
     "BoundaryConfig",
@@ -64,23 +59,27 @@ def boundary_normalization_scales(
     ``divisor = kappa_fold / kappa_buf`` (``node_activation_scales`` over
     ``node_buffer_scales``). Neural producers and ScaleNormalizingWrapper ops
     sit at the wire gauge (divisor 1, skipped); a wrapped host module leaves
-    its value-domain result in the buffer (divisor == its theta). Mappings
-    predating the ``kappa_buf`` stamp fall back to the legacy wrapper walk.
+    its value-domain result in the buffer (divisor == its theta); [U-IN] the raw
+    input, where a core reads it, at its wire gauge over its unit buffer (a
+    neural-stage read only: ``host_op_input_state``). Mappings predating the
+    ``kappa_buf`` stamp fall back to the legacy wrapper walk.
     """
     if not getattr(hybrid_mapping, "node_buffer_scales", None):
         return _legacy_boundary_divisors(hybrid_mapping)
     fold_scales = hybrid_mapping.node_activation_scales
     buffer_scales = hybrid_mapping.node_buffer_scales
     divisors: dict[int, float | np.ndarray] = {}
+    producers = [RAW_INPUT] if RAW_INPUT in fold_scales else []
     for stage in hybrid_mapping.stages:
         op = stage.compute_op
         if stage.kind != "compute" or op is None:
             continue
         module = (op.params or {}).get("module") if op.params else None
-        if isinstance(module, ScaleNormalizingWrapper):
-            continue
-        fold = fold_scales.get(int(op.id), 1.0)
-        buf = buffer_scales.get(int(op.id), 1.0)
+        if not isinstance(module, ScaleNormalizingWrapper):
+            producers.append(int(op.id))
+    for nid in producers:
+        fold = fold_scales.get(nid, 1.0)
+        buf = buffer_scales.get(nid, 1.0)
         divisor: float | np.ndarray
         if isinstance(fold, np.ndarray) or isinstance(buf, np.ndarray):
             divisor = np.asarray(fold, dtype=np.float64) / np.maximum(
@@ -90,7 +89,7 @@ def boundary_normalization_scales(
             divisor = float(fold) / max(float(buf), 1e-12)
             if abs(divisor - 1.0) < 1e-12:
                 continue
-        divisors[int(op.id)] = divisor
+        divisors[nid] = divisor
     return divisors
 
 
@@ -181,12 +180,13 @@ def host_op_input_state(op, state_buffer, wire_divisors, node_output_shifts):
     reads (``boundary_normalization_scales``, ``normalize_boundary_slices_*``); any other op reads the buffers as
     stored, its output inheriting their gauge (``kappa_buf``). The producer shifts follow, in the neural-stage order.
     A host-run perceptron (a subsumed encoding layer) stores its raw value, so its domain-owning readers (a ResNet's
-    first residual add) meet the wire currency here. Nothing to transcode => the buffer itself (no copy)."""
+    first residual add) meet the wire currency here. [U-IN] The raw input is read as stored: the root has no wrap slot,
+    so every host op decodes its raw buffer at one. Nothing to transcode => the buffer itself (no copy)."""
     view = state_buffer
     if wire_divisors and compute_op_owns_scale_domain(op):
         for nid in gather_plan_for(op).referenced_node_ids:
             buf = state_buffer.get(nid)
-            if nid in wire_divisors and buf is not None:
+            if nid in wire_divisors and nid != RAW_INPUT and buf is not None:
                 whole = [SegmentIOSlice(node_id=nid, offset=0, size=int(buf.shape[1]))]
                 view = dict(view) if view is state_buffer else view
                 view[nid] = (normalize_boundary_slices_torch(whole, buf, wire_divisors) if isinstance(buf, torch.Tensor)

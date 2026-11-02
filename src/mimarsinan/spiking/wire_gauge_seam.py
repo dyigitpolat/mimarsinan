@@ -21,6 +21,7 @@ import torch
 from mimarsinan.common.refusal.toolchain_refusal import ToolchainRefusal
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.scale_propagation import arm_wrap_slots
+from mimarsinan.mapping.support.activation_scales import INPUT_WIRE_GAUGE
 from mimarsinan.mapping.support.negative_boundary import _is_host_node, boundary_consumers
 from mimarsinan.mapping.support.value_domain import value_domain_map
 from mimarsinan.spiking.scale_aware_boundaries import (
@@ -41,6 +42,8 @@ __all__ = [
 ]
 
 _STAMP = "wire_gauge_established"
+#: The graph-level stamps the seam writes (the input scale, the raw input's wire gauge, the seam's own).
+_REPR_STAMPS = ("input_boundary_scale", INPUT_WIRE_GAUGE, _STAMP)
 _RTOL = 1e-6
 
 
@@ -110,8 +113,7 @@ def _clone(t):
 
 def _gauge_state(repr_) -> dict:
     """Every slot the seam writes: the wrap slots of each host ComputeOp, each perceptron's fold and entry currencies."""
-    state: dict = {"ops": [], "perceptrons": [], "input_boundary_scale": repr_.__dict__.get("input_boundary_scale"),
-                   _STAMP: repr_.__dict__.get(_STAMP)}
+    state: dict = {"ops": [], "perceptrons": [], **{key: repr_.__dict__.get(key) for key in _REPR_STAMPS}}
     for node in repr_.execution_order():
         if isinstance(node, ComputeOpMapper):
             sources = None if node.per_source_scales is None else [_clone(s) for s in node.per_source_scales]
@@ -130,7 +132,7 @@ def _restore(repr_, state: dict) -> None:
         if entry is not None:
             with torch.no_grad():
                 p.input_activation_scale.copy_(entry.to(p.input_activation_scale.dtype))
-    for key in ("input_boundary_scale", _STAMP):
+    for key in _REPR_STAMPS:
         repr_.__dict__.pop(key, None)
         if state[key] is not None:
             setattr(repr_, key, state[key])

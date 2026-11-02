@@ -9,6 +9,11 @@ from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 
 NodeScale = float | np.ndarray
 
+#: [U-IN] The raw input's node id (``IRSource.is_input``) and the attribute an IR carries its wire gauge under: the gauge
+#: a core reading the raw input folds (``input_root_gauge``), present only when one does at a gauge other than one.
+RAW_INPUT = -2
+INPUT_WIRE_GAUGE = "input_wire_gauge"
+
 
 def _coerce_node_scale(raw) -> NodeScale | None:
     """Normalize a raw activation_scale to a scalar float or a per-channel vector.
@@ -88,6 +93,9 @@ def compute_node_output_scales(ir_graph: IRGraph) -> dict[int, NodeScale]:
                 if isinstance(src, IRSource) and src.node_id >= 0:
                     src_scales.append(scales.get(src.node_id, 1.0))
             scales[node.id] = _aggregate_source_scales(src_scales)
+    gauge = getattr(ir_graph, "__dict__", {}).get(INPUT_WIRE_GAUGE)
+    if gauge is not None:  # [U-IN] the raw input's fold gauge, over its unit buffer gauge (the divisor table's entry)
+        scales[RAW_INPUT] = float(gauge)
     return scales
 
 
@@ -116,6 +124,8 @@ def compute_node_buffer_scales(ir_graph: IRGraph) -> dict[int, NodeScale]:
                     if isinstance(src, IRSource) and src.node_id >= 0:
                         src_scales.append(buffer_scales.get(src.node_id, 1.0))
                 buffer_scales[node.id] = _aggregate_source_scales(src_scales)
+    if RAW_INPUT in fold:
+        buffer_scales[RAW_INPUT] = 1.0  # the raw input's buffer holds raw values
     return buffer_scales
 
 

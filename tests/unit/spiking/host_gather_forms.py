@@ -19,6 +19,12 @@ two and six cores in one segment. U-DOOR's token forms (``TOKEN_FORMS``) map one
 a token-wise subsumed encoding (one host node per token) read by token-wise cores, the same encoding beside a host add
 over the whole token value (one host node), and t2_04's torchvision ViT at its smallest size (host LayerNorms,
 attention and adds over the whole token value, its MLP's first Linear on chip per token).
+
+U-IN adds the encoding layer's placement (``offload``: the first perceptron a core reading the raw input), the forms whose
+raw input a core and an armed host op read at once, or a core reads concatenated with a core's output (``INPUT_FORMS``),
+depth-balancing relays, and the pruned programs of the parity gate's
+survival projection: output channels killed (zeroed, and declared pruned on the layer for the model-mask path), IR
+pruning before the build, t0_51's network family (``lenet5``) and the mapping's core limits.
 """
 
 from __future__ import annotations
@@ -34,6 +40,7 @@ import torch.nn.functional as F
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.latency.depth_balancing import insert_depth_balancing_relays
 from mimarsinan.mapping.support.host_kernel_evaluation import declare_host_kernel_evaluation, twin_as_program
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
@@ -346,12 +353,54 @@ class TokenResidual(nn.Module):
         return self.r3(self.fc3(z.flatten(1)))
 
 
+class InputCoreAndHost(nn.Module):
+    """The raw input read by a core and by a host affine op (a stem without activation, U-SC2 F-2's absolute entry)
+    whose output a second core reads, joined by host adds read by a third core (U-IN): under ``offload`` the first core
+    folds the input at the boundary gauge while the host op, armed at that gauge, decodes the raw buffer at one."""
+
+    shape = (8,)
+
+    def __init__(self):
+        super().__init__()
+        self.fc1, self.host, self.fch, self.fc3 = nn.Linear(8, 6), nn.Linear(8, 6), nn.Linear(6, 6), nn.Linear(6, 6)
+        self.r1, self.r2, self.r3 = nn.ReLU(), nn.ReLU(), nn.ReLU()
+
+    def forward(self, x):
+        x = x.flatten(1)
+        h = self.host(x)  # read twice, so no conversion folds it into ``fch``
+        return self.r3(self.fc3(self.r2(self.fch(h)) + h + self.r1(self.fc1(x))))
+
+
+class InputConcat(nn.Module):
+    """The raw input concatenated with a core's output and read by a core (U-IN): a MIXED layout gather whose raw-input
+    elements the reading core folds at the boundary gauge, each element at its producer's currency."""
+
+    shape = (8,)
+
+    def __init__(self):
+        super().__init__()
+        self.fc1, self.fc3 = nn.Linear(8, 6), nn.Linear(14, 6)
+        self.r1, self.r3 = nn.ReLU(), nn.ReLU()
+
+    def forward(self, x):
+        x = x.flatten(1)
+        return self.r3(self.fc3(torch.cat([x, self.r1(self.fc1(x))], dim=1)))
+
+
 def tiny_vit():
     """t2_04's network family (``torch_vit``: torchvision's VisionTransformer) at its smallest size."""
     from torchvision.models.vision_transformer import VisionTransformer
 
     return VisionTransformer(image_size=8, patch_size=4, num_layers=1, num_heads=2, hidden_dim=8, mlp_dim=16,
                              num_classes=N_OUT)
+
+
+def lenet5():
+    """t0_51's network family (the registered ``lenet5`` builder) at the MNIST shape."""
+    import mimarsinan.models.builders  # noqa: F401 - registers the builders
+    from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+
+    return ModelRegistry.get_builder_cls("lenet5")("cpu", (1, 28, 28), N_OUT, {}).build({})
 
 
 def small_densenet_bc():
@@ -393,13 +442,17 @@ TOKEN_FORMS: Dict[str, Callable[[], nn.Module]] = {
     "token_residual": TokenResidual,
     "vit_tiny": tiny_vit,
 }
-SHAPES = {"densenet_bc": (3, 8, 8), "vit_tiny": (3, 8, 8)}
+#: U-IN's form beside the others: the raw input read by a core and by an armed host op at once.
+INPUT_FORMS: Dict[str, Callable[[], nn.Module]] = {"input_core_host": InputCoreAndHost, "input_concat": InputConcat}
+SHAPES = {"densenet_bc": (3, 8, 8), "vit_tiny": (3, 8, 8), "lenet5": (1, 28, 28)}
 
 
 def make_form(form: str) -> nn.Module:
     if form == "densenet_bc":
         return small_densenet_bc()
-    return {**FORMS, **MIXED_FORMS, **MEMORY_FORMS, **TOKEN_FORMS}[form]()
+    if form == "lenet5":
+        return lenet5()
+    return {**FORMS, **MIXED_FORMS, **MEMORY_FORMS, **TOKEN_FORMS, **INPUT_FORMS}[form]()
 
 
 def form_shape(form: str) -> tuple:
@@ -419,9 +472,10 @@ class Program:
     wq: bool
 
 
-def lif_net(form: str, seed: int, theta_enc: float, gain: float = 2.0):
+def lif_net(form: str, seed: int, theta_enc: float, gain: float = 2.0, *, placement: str = "subsume"):
     """The converted form at random weights (a live cascade) with a cycle-accurate LIF activation at each perceptron's
-    own theta: ``theta_enc`` on the first (the subsumed encoding, when the form has one), seeded draws on the others."""
+    own theta: ``theta_enc`` on the first (the subsumed encoding, when the form has one), seeded draws on the others.
+    ``placement``: the encoding layer's (``offload`` maps the first perceptron on chip, a core reading the raw input)."""
     torch.manual_seed(seed)
     net = make_form(form)
     shape = form_shape(form)
@@ -436,7 +490,7 @@ def lif_net(form: str, seed: int, theta_enc: float, gain: float = 2.0):
                 m.running_mean.uniform_(-0.2, 0.2, generator=gen)
                 m.running_var.uniform_(0.5, 1.5, generator=gen)
     net.eval()
-    flow = convert_torch_model(net, shape, N_OUT, device="cpu", encoding_layer_placement="subsume").eval()
+    flow = convert_torch_model(net, shape, N_OUT, device="cpu", encoding_layer_placement=placement).eval()
     perceptrons = list(flow.get_perceptrons())
     rng = np.random.default_rng(2000 + seed)
     thetas = [float(theta_enc)] + [float(rng.uniform(0.4, 1.6)) for _ in perceptrons[1:]]
@@ -450,15 +504,25 @@ def lif_net(form: str, seed: int, theta_enc: float, gain: float = 2.0):
 
 
 def scm_sequence(flow, perceptrons, *, wq: bool, retimed: bool, establish: Callable | None = None,
-                 wq_bits: int = WQ_BITS):
+                 wq_bits: int = WQ_BITS, kill: "Dict[int, List[int]] | Callable | None" = None, masks: bool = False,
+                 prune: bool = False, geometry: dict | None = None, relays: bool = False):
     """The Soft Core Mapping sequence on ``flow`` in place (``establish`` replaces its two gauge calls when given;
-    ``wq_bits``: the Weight Quantization step's bit width)."""
+    ``wq_bits``: the Weight Quantization step's bit width). [U-IN A-2] ``kill`` (``{perceptron index: channels}``, or a
+    function of the perceptrons giving one) zeroes output channels once the gauge is established (``masks``: declared
+    pruned on their layers too, the pipeline's model-mask path); ``prune`` runs IR
+    pruning before the build (``prune_ir_graph``: zero detection, seeded by the model's masks with ``masks``);
+    ``geometry``: the mapping's core limits (256 x 256 by default); ``relays``: depth-balancing relay cores on every
+    unequal-depth intra-segment fan-in (the declared ``lif_depth_balancing_relays``, before quantization as Soft Core
+    Mapping inserts them; a no-op on a gap-free program)."""
     repr_ = flow.get_mapper_repr()
     if establish is None:
         compute_per_source_scales(repr_, arm_wire_value_ops=True)
         propagate_boundary_input_scales(flow, input_data_scale=1.0)
     else:
         establish(flow)
+    kill = kill(perceptrons) if callable(kill) else kill
+    if kill:
+        kill_channels(perceptrons, kill, masks=masks)
     q_max = 127.0
     if wq:
         napq = NormalizationAwarePerceptronQuantization(wq_bits, "cpu", rate=1.0, two_scale=False)
@@ -466,20 +530,64 @@ def scm_sequence(flow, perceptrons, *, wq: bool, retimed: bool, establish: Calla
             napq.transform(p)
         q_max = float(2 ** (wq_bits - 1) - 1)
     repr_.assign_perceptron_indices()
-    ir = IRMapping(q_max=q_max, firing_mode="Default", max_axons=256, max_neurons=256).map(repr_)
+    ir = IRMapping(q_max=q_max, firing_mode="Default", **(geometry or dict(max_axons=256, max_neurons=256))).map(repr_)
+    if relays:
+        insert_depth_balancing_relays(ir, thresholding_mode="<=", q_max=int(q_max))
     if wq:
         quantize_ir_graph(ir, wq_bits, weight_quantization=True)
         arm_integer_membrane_lattice(flow)
+    if prune:
+        ir = _pruned(flow, ir, masks=masks)
     declare_host_kernel_evaluation(ir, "per_sample")  # the records' own evaluation (module docstring)
     hybrid = build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=retimed)
     return repr_, ir, hybrid
 
 
+def kill_channels(perceptrons, kill: Dict[int, List[int]], *, masks: bool) -> None:
+    """Zero the ``kill`` output channels of each perceptron (weights and bias); with ``masks``, also declare them pruned
+    on the layer (``prune_row_mask``, read by ``get_initial_pruning_masks_from_model``)."""
+    with torch.no_grad():
+        for index, rows in kill.items():
+            layer = perceptrons[index].layer
+            layer.weight[rows] = 0.0
+            if layer.bias is not None:
+                layer.bias[rows] = 0.0
+            if masks:
+                out_f = int(layer.weight.shape[0])
+                row = torch.zeros(out_f, dtype=torch.bool)
+                row[rows] = True
+                layer.prune_row_mask = row
+                layer.prune_col_mask = torch.zeros(int(layer.weight.reshape(out_f, -1).shape[1]), dtype=torch.bool)
+
+
+def first_core_kill(perceptrons) -> Dict[int, List[int]]:
+    """d_tok's kill: output channels 1 and ``out - 2`` of the first on-chip perceptron with four or more."""
+    for index, p in enumerate(perceptrons):
+        out = int(p.layer.weight.shape[0])
+        if not getattr(p, "is_encoding_layer", False) and out >= 4:
+            return {index: [1, out - 2]}
+    return {}
+
+
+def _pruned(flow, ir, *, masks: bool):
+    from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
+    from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
+
+    if not masks:
+        return prune_ir_graph(ir, simulation_steps=T, spiking_mode="lif")
+    per_node, per_bank = get_initial_pruning_masks_from_model(flow, ir)
+    return prune_ir_graph(ir, initial_pruned_per_node=per_node or None, initial_pruned_per_bank=per_bank or None,
+                          simulation_steps=T, spiking_mode="lif")
+
+
 def build(form: str, seed: int, theta_enc: float, semantics: str, wq: bool, *, gain: float = 2.0,
-          establish: Callable | None = None, wq_bits: int = WQ_BITS) -> Program:
+          establish: Callable | None = None, wq_bits: int = WQ_BITS, placement: str = "subsume",
+          **pruning) -> Program:
+    """``pruning``: ``scm_sequence``'s ``kill``, ``masks``, ``prune``, ``geometry`` and ``relays`` (U-IN)."""
     retimed = SEMANTICS[semantics][0]
-    shape, flow, perceptrons, thetas = lif_net(form, seed, theta_enc, gain)
-    repr_, ir, hybrid = scm_sequence(flow, perceptrons, wq=wq, retimed=retimed, establish=establish, wq_bits=wq_bits)
+    shape, flow, perceptrons, thetas = lif_net(form, seed, theta_enc, gain, placement=placement)
+    repr_, ir, hybrid = scm_sequence(flow, perceptrons, wq=wq, retimed=retimed, establish=establish, wq_bits=wq_bits,
+                                     **pruning)
     return Program(form, shape, flow, repr_, ir, hybrid, perceptrons, thetas, wq)
 
 
