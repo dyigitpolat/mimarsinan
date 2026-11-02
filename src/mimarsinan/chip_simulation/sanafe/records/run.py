@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 
 if TYPE_CHECKING:
+    from mimarsinan.chip_simulation.sanafe.records.persisted import SanafeSegmentFile
     from mimarsinan.chip_simulation.ttfs.ttfs_recorder import TtfsRunRecord
 
 from mimarsinan.chip_simulation.recording.spike_recorder import (
@@ -102,14 +103,16 @@ class SanafeRunRecord:
     """All SANA-FE output for one sample.
 
     ``segments`` is keyed by ``stage_index`` to match HCM's ``RunRecord``;
-    sparse / non-contiguous keys are preserved end-to-end.
+    sparse / non-contiguous keys are preserved end-to-end. [U-SFR] The SANA-FE step keeps each
+    as a ``SanafeSegmentFile`` (the record persisted at the segment's end); ``segment_records``
+    reads them back one at a time.
     """
 
     arch_preset: str
     arch_name: str
     sample_index: int
     T: int
-    segments: Dict[int, SanafeSegmentRecord] = field(default_factory=dict)
+    segments: Dict[int, "SanafeSegmentRecord | SanafeSegmentFile"] = field(default_factory=dict)
     compute_outputs: Dict[int, np.ndarray] = field(default_factory=dict)
 
     aggregate_energy: SanafeEnergyBreakdown = field(
@@ -133,6 +136,13 @@ class SanafeRunRecord:
     # (``StageTimer`` export rows); empty unless the runner opted in via
     # ``time_host_stages``.
     compute_stage_walls: List[Dict[str, Any]] = field(default_factory=list)
+
+    def segment_records(self) -> Iterator[Tuple[int, SanafeSegmentRecord]]:
+        """[U-SFR] Each segment's full record in stage order, a persisted one read from its file when reached."""
+        from mimarsinan.chip_simulation.sanafe.records.persisted import SanafeSegmentFile
+
+        for stage_index, seg in sorted(self.segments.items()):
+            yield stage_index, (seg.load() if isinstance(seg, SanafeSegmentFile) else seg)
 
     def to_hcm_subset(self) -> RunRecord:
         """Project to ``spike_recorder.RunRecord`` for parity diffing.

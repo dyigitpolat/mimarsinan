@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Sequence
+from dataclasses import dataclass, field, replace
+from typing import Any, Dict, List, Optional, Sequence
 
-from .records import SanafeEnergyBreakdown, SanafeRunRecord
+from .records import SanafeEnergyBreakdown, SanafeRunRecord, SanafeSegmentFile
 
 
 def _eb_to_dict(eb: SanafeEnergyBreakdown) -> Dict[str, float]:
@@ -18,7 +18,15 @@ def _eb_to_dict(eb: SanafeEnergyBreakdown) -> Dict[str, float]:
     }
 
 
-def _segment_to_dict(seg) -> Dict[str, Any]:
+def _segment_snapshot(seg) -> Dict[str, Any]:
+    """[U-SFR] A persisted segment is read from its file, its message trace left there (the snapshot reads only
+    whether it has one); an in-memory record as it stands."""
+    if isinstance(seg, SanafeSegmentFile):
+        return _segment_to_dict(seg.load(with_message_trace=False), has_message_trace=seg.message_count > 0)
+    return _segment_to_dict(seg)
+
+
+def _segment_to_dict(seg, has_message_trace: Optional[bool] = None) -> Dict[str, Any]:
     return {
         "stage_index": int(seg.stage_index),
         "stage_name": str(seg.stage_name),
@@ -136,7 +144,8 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
         ],
         "has_neuron_spike_trace": seg.per_neuron_spike_trace is not None,
         "has_neuron_potential_trace": seg.per_neuron_potential_trace is not None,
-        "has_message_trace": seg.message_trace is not None,
+        "has_message_trace": (seg.message_trace is not None if has_message_trace is None
+                              else has_message_trace),
         "inter_tile_packets": int(getattr(seg, "inter_tile_packets", 0)),
         "intra_tile_packets": int(getattr(seg, "intra_tile_packets", 0)),
         "input_path_packets": int(getattr(seg, "input_path_packets", 0)),
@@ -177,7 +186,7 @@ def _record_summary(rec: SanafeRunRecord) -> Dict[str, Any]:
         "max_sim_time_s": float(rec.aggregate_sim_time_s),
         "total_spikes": int(rec.total_spikes),
         "total_packets": int(rec.total_packets),
-        "segments": [_segment_to_dict(seg) for _, seg in sorted(rec.segments.items())],
+        "segments": [_segment_snapshot(seg) for _, seg in sorted(rec.segments.items())],
     }
 
 
@@ -185,8 +194,10 @@ def _record_summary(rec: SanafeRunRecord) -> Dict[str, Any]:
 class SanafeStepReport:
     """All SANA-FE output the step persists to the pipeline cache.
 
-    ``per_sample`` keeps the full :class:`SanafeRunRecord`s so downstream
-    code can re-extract rich data without rerunning the simulator.
+    ``per_sample`` keeps the :class:`SanafeRunRecord`s so downstream
+    code can re-extract rich data without rerunning the simulator; [U-SFR] the
+    step's records hold each segment as a ``SanafeSegmentFile`` (its full record
+    in its own file, read back by ``to_snapshot_dict`` and ``segment_records``).
     ``aggregate`` is a precomputed headline dict for fast UI rendering.
     """
 
@@ -236,6 +247,14 @@ class SanafeStepReport:
             aggregate=aggregate,
         )
 
+
+    def relocated(self, root: Any) -> "SanafeStepReport":
+        """[U-SFR] The report with every persisted segment read under ``root`` (a moved or copied run directory)."""
+        def move(seg):
+            return seg.relocated(root) if isinstance(seg, SanafeSegmentFile) else seg
+
+        per_sample = [replace(r, segments={k: move(s) for k, s in r.segments.items()}) for r in self.per_sample]
+        return replace(self, per_sample=per_sample)
 
     def to_snapshot_dict(self) -> Dict[str, Any]:
         """JSON-safe dict consumed by ``gui/snapshot/builders.py``."""

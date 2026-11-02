@@ -7,7 +7,8 @@ from typing import List
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.certification.record_certificates import certify_run_records
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
-from mimarsinan.chip_simulation.sanafe.records import SanafeCoreDiff, SanafeRunRecord
+from mimarsinan.chip_simulation.sanafe.records import (
+    SanafeCoreDiff, SanafeRunRecord, SanafeSegmentRecord, SanafeSegmentStore)
 from mimarsinan.chip_simulation.sanafe.stats import SanafeStepReport
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
@@ -17,30 +18,37 @@ from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
 )
 
 
-def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
-    """Stamp per-core HCM↔SF deltas on each segment so the GUI floorplan diff overlay can render spatial drift."""
-    ref_segs = getattr(ref, "segments", {}) or {}
-    for stage_idx, seg in sanafe_rec.segments.items():
-        ref_seg = ref_segs.get(stage_idx)
-        if ref_seg is None or not ref_seg.cores or not seg.per_core:
+def _attach_per_core_deltas(ref: object, seg: SanafeSegmentRecord) -> None:
+    """Stamp per-core HCM↔SF deltas on a segment so the GUI floorplan diff overlay can render spatial drift."""
+    ref_seg = (getattr(ref, "segments", {}) or {}).get(seg.stage_index)
+    if ref_seg is None or not ref_seg.cores or not seg.per_core:
+        return
+    ref_by_idx = {c.core_index: c for c in ref_seg.cores}
+    deltas: List[SanafeCoreDiff] = []
+    for sf in seg.per_core:
+        ref_core = ref_by_idx.get(sf.core_index)
+        if ref_core is None:
             continue
-        ref_by_idx = {c.core_index: c for c in ref_seg.cores}
-        deltas: List[SanafeCoreDiff] = []
-        for sf in seg.per_core:
-            ref_core = ref_by_idx.get(sf.core_index)
-            if ref_core is None:
-                continue
-            in_sum_ref = int(ref_core.input_spike_count.sum())
-            in_sum_sf = int(sf.input_spike_count.sum())
-            out_sum_ref = int(ref_core.output_spike_count.sum())
-            out_sum_sf = int(sf.output_spike_count.sum())
-            deltas.append(SanafeCoreDiff(
-                core_index=int(sf.core_index),
-                # SF − HCM: positive = SF over-reports, negative = under.
-                input_delta_sum=in_sum_sf - in_sum_ref,
-                output_delta_sum=out_sum_sf - out_sum_ref,
-            ))
-        seg.hcm_diff = deltas
+        in_sum_ref = int(ref_core.input_spike_count.sum())
+        in_sum_sf = int(sf.input_spike_count.sum())
+        out_sum_ref = int(ref_core.output_spike_count.sum())
+        out_sum_sf = int(sf.output_spike_count.sum())
+        deltas.append(SanafeCoreDiff(
+            core_index=int(sf.core_index),
+            # SF − HCM: positive = SF over-reports, negative = under.
+            input_delta_sum=in_sum_sf - in_sum_ref,
+            output_delta_sum=out_sum_sf - out_sum_ref,
+        ))
+    seg.hcm_diff = deltas
+
+
+def _segment_sink(store: SanafeSegmentStore, sample_index: int, ref: object):
+    """[U-SFR] At each segment's end: its deltas stamped (with an HCM reference), its record persisted and freed."""
+    def sink(record: SanafeSegmentRecord, message_trace: object):
+        if ref is not None:
+            _attach_per_core_deltas(ref, record)
+        return store.persist(sample_index, record, message_trace)
+    return sink
 from mimarsinan.data_handling.sample_loader import load_test_samples_by_index
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.engine.pipeline_helpers import (
@@ -115,6 +123,9 @@ class SanafeSimulationStep(PipelineStep):
             num_workers=int(self.pipeline.config.get("num_workers", 4)),
         )
         per_sample: list[SanafeRunRecord] = []
+        # [U-SFR] one file per sample and segment beside the step's cache entry; the report keeps each file's path
+        # and sha256 with the totals and spike counts its readers need, so the step's memory stays flat
+        store = SanafeSegmentStore(self.pipeline.working_directory, f"{self.name}.sanafe_segments")
 
         for sample_idx, sample in enumerate(samples):
             ref = None
@@ -150,6 +161,7 @@ class SanafeSimulationStep(PipelineStep):
                 tile_grid_rows=tile_grid_rows,
                 tile_grid_cols=tile_grid_cols,
                 declared_core_capacity=declared_core_capacity,
+                segment_sink=_segment_sink(store, sample_idx, ref),
             )
             if is_ttfs:
                 sample_np = preprocess_hybrid_sample(
@@ -159,9 +171,6 @@ class SanafeSimulationStep(PipelineStep):
                 sample_np = sample.detach().cpu().numpy().reshape(1, -1)
             sanafe_rec = runner.run(sample_np, sample_index=sample_idx)
             per_sample.append(sanafe_rec)
-
-            if ref is not None:
-                _attach_per_core_deltas(ref, sanafe_rec)
 
             if parity_check and is_ttfs and ttfs_ref is not None:
                 contract_diffs = compare_ttfs_contract_records(

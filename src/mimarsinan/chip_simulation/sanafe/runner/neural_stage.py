@@ -34,7 +34,7 @@ from mimarsinan.chip_simulation.sanafe.analysis import (
 )
 from mimarsinan.chip_simulation.sanafe.net_synth import apply_ttfs_preset_membranes
 from mimarsinan.chip_simulation.sanafe.records import SanafeSegmentRecord
-from mimarsinan.chip_simulation.sanafe.runner.bounded_sim import simulate_chip_bounded
+from mimarsinan.chip_simulation.sanafe.runner.bounded_sim import SPIKE_TRACE_COMPACT, simulate_chip_bounded
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.chip_simulation.sanafe.runner.carry import present_inputs_in_core_time
 from mimarsinan.models.spiking.hybrid.carry import carry_scope, replay_input_slices, shift_delayed_slices
@@ -68,6 +68,7 @@ class SanafeNeuralStageMixin:
         log_potential_trace: bool
         log_message_trace: bool
         read_final_potentials: bool
+        segment_sink: Any
 
         def _finalize_neural_stage_record(
             self, **kwargs: Any,
@@ -81,7 +82,7 @@ class SanafeNeuralStageMixin:
         stage_index: int,
         state_buffer: Dict[int, np.ndarray],
         state_buffer_spikes: Optional[Dict[int, Any]] = None,
-    ) -> SanafeSegmentRecord:
+    ) -> Any:
         hcm = stage.hard_core_mapping
         _output_sources = getattr(hcm, "output_sources", None)
         if _output_sources is not None and len(_output_sources) > 0:
@@ -232,7 +233,7 @@ class SanafeNeuralStageMixin:
         self._last_chip = None  # [U-TT T-1] the previous unit's chip goes before this one is built: one chip at a time
         chip, results = simulate_chip_bounded(
             sanafe, self._arch, net, T_eff,
-            spike_trace=True,
+            spike_trace=True if self.segment_sink is None else SPIKE_TRACE_COMPACT,  # [U-SFR] flat mode: as text
             potential_trace=need_potential_trace,
             message_trace=self.log_message_trace,
             timeout_s=self._sim_timeout_s,
@@ -262,7 +263,7 @@ class SanafeNeuralStageMixin:
             cores_per_tile=self.cores_per_tile,
         )
 
-        return self._finalize_neural_stage_record(
+        record = self._finalize_neural_stage_record(
             stage=stage,
             stage_index=stage_index,
             state_buffer=state_buffer,
@@ -292,3 +293,7 @@ class SanafeNeuralStageMixin:
             pkts_out=pkts_out,
             core_time_rows=() if is_ttfs else ((0, seg_in_size),),   # the rows the cores read in local time
         )
+        if self.segment_sink is None:
+            return record
+        self._last_chip = chip = None  # [U-SFR] the segment's chip goes with it; its record is persisted, then freed
+        return self.segment_sink(record, results.get("message_trace"))

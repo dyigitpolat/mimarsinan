@@ -39,6 +39,7 @@ class SanafeNeuralStageRecordMixin:
         spiking_mode: str
         ttfs_cycle_schedule: str
         read_final_potentials: bool
+        segment_sink: Any
 
         def _derive_per_core_input_counts(self, *args: Any, **kwargs: Any) -> Tuple[np.ndarray, int]: ...
         def _aggregate_per_tile(self, *args: Any, **kwargs: Any) -> List[SanafeTileRecord]: ...
@@ -228,7 +229,8 @@ class SanafeNeuralStageRecordMixin:
             per_neuron_potential_trace=_pack_potential_trace(
                 results.get("potential_trace"),
             ),
-            message_trace=_flatten_message_trace(results.get("message_trace")),
+            # [U-SFR] with a segment sink the trace is flattened into the segment's file, never built here
+            message_trace=None if self.segment_sink is not None else _flatten_message_trace(results.get("message_trace")),
             arch_geometry=self._arch_geometry,
             noc_links=_aggregate_noc_links(
                 results.get("message_trace"), self._arch_geometry,

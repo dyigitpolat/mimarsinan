@@ -34,7 +34,8 @@ def _rebuild_sanafe_snapshot(run_dir: Path) -> tuple[dict[str, Any], dict[str, s
     with best_effort(f"rebuild SANA-FE snapshot from {pickle_path}", logger=logger):
         with open(pickle_path, "rb") as f:
             report = pickle.load(f)
-        snap, _ = snapshot_sanafe_simulation(report)
+        # [U-SFR] each persisted segment record sits beside the pickle, wherever the run directory now is
+        snap, _ = snapshot_sanafe_simulation(report.relocated(run_dir))
         snapshot = {"step_name": "SANA-FE Simulation", "sanafe_simulation": snap}
         result = (snapshot, {"sanafe_simulation": "new"})
     return result

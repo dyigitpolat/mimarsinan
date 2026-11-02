@@ -16,11 +16,18 @@ from mimarsinan.chip_simulation.sanafe.records.run import (
     SanafeRunRecord,
     SanafeSegmentRecord,
 )
+from mimarsinan.chip_simulation.sanafe.records.persisted import (
+    SanafeCoreCounts,
+    SanafeSegmentFile,
+    SanafeSegmentFileRefusal,
+    SanafeSegmentStore,
+)
 
 __all__ = [
     "SanafeArchGeometry",
     "SanafeCascadePoint",
     "SanafeConnectivityEdge",
+    "SanafeCoreCounts",
     "SanafeCoreDiff",
     "SanafeCoreRecord",
     "SanafeCriticalCore",
@@ -29,6 +36,9 @@ __all__ = [
     "SanafeNocLink",
     "SanafeNocLinkLoad",
     "SanafeRunRecord",
+    "SanafeSegmentFile",
+    "SanafeSegmentFileRefusal",
     "SanafeSegmentRecord",
+    "SanafeSegmentStore",
     "SanafeTileRecord",
 ]

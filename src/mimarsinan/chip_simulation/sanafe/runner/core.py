@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
@@ -11,6 +11,7 @@ from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_
 from mimarsinan.chip_simulation.sanafe.runner.neural_stage import SanafeNeuralStageMixin
 from mimarsinan.chip_simulation.sanafe.runner.neural_stage_record import SanafeNeuralStageRecordMixin
 from mimarsinan.chip_simulation.sanafe.runner.segment_io import SanafeSegmentIOMixin
+from mimarsinan.chip_simulation.sanafe.runner.segment_release import release_freed_heap, segment_totals
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
@@ -20,8 +21,7 @@ from mimarsinan.chip_simulation.sanafe.runner.custom_floorplan import adopt_cust
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import CUSTOM_PRESET_NAME
 from mimarsinan.chip_simulation.sanafe.noc_geometry import xy_of_tile
 from mimarsinan.chip_simulation.sanafe.presets import CUSTOM_ZERO_PRESET, PRESETS
-from mimarsinan.chip_simulation.sanafe.records import (
-    SanafeArchGeometry, SanafeEnergyBreakdown, SanafeRunRecord, SanafeSegmentRecord,)
+from mimarsinan.chip_simulation.sanafe.records import SanafeArchGeometry, SanafeRunRecord
 
 
 class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeSegmentIOMixin):
@@ -48,6 +48,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         time_host_stages: bool = False,
         pass_transfer: str = VERBATIM,
         host_compute_device: Any = None,
+        segment_sink: Optional[Callable[[Any, Any], Any]] = None,
     ):
         if contract is not None:
             behavior = contract.behavior
@@ -130,6 +131,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self._arch_name, self._last_chip = "<unbuilt>", None
         self.pass_transfer = str(pass_transfer)
         self._arch_geometry: Optional[SanafeArchGeometry] = None  # built lazily
+        # [U-SFR] ``segment_sink(record, message_trace)`` takes each segment's record at its end and returns what the
+        # run keeps of it (the SANA-FE step persists it); None keeps every record in memory.
+        self.segment_sink = segment_sink
 
 
     def run(self, sample_input: np.ndarray, sample_index: int) -> SanafeRunRecord:
@@ -147,7 +151,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             sanafe = None
 
         state_buffer: Dict[int, np.ndarray] = {_RAW_INPUT_NODE_ID: sample_input}
-        segments: Dict[int, SanafeSegmentRecord] = {}
+        segments: Dict[int, Any] = {}
         compute_outputs: Dict[int, np.ndarray] = {}
 
         from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import resolve_stage_compute_scales
@@ -176,6 +180,8 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
                 state_buffer=state_buffer,
                 state_buffer_spikes=state_buffer_spikes,
             )
+            if self.segment_sink is not None:  # [U-SFR] the segment's chip, network and traces are gone by now
+                release_freed_heap()
 
         def _on_compute(_stage_index, stage, state_buffer):
             from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
@@ -216,16 +222,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             stage_timer=stage_timer,
         )
 
-        agg_e = SanafeEnergyBreakdown.zero()
-        max_sim_time = 0.0
-        total_spikes = 0
-        total_packets = 0
-        for seg in segments.values():
-            agg_e = agg_e.add(seg.energy)
-            if seg.sim_time_s > max_sim_time:
-                max_sim_time = seg.sim_time_s
-            total_spikes += seg.spikes
-            total_packets += seg.packets_sent
+        agg_e, max_sim_time, total_spikes, total_packets = segment_totals(segments)
 
         return SanafeRunRecord(
             arch_preset=self.arch_preset,

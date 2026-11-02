@@ -10,20 +10,14 @@ from mimarsinan.chip_simulation.sanafe.records import (
     SanafeNocLink,
     SanafeNocLinkLoad,
 )
+from mimarsinan.chip_simulation.sanafe.records.persisted import flat_messages
 
 
 def _flatten_message_trace(message_trace: Any) -> Optional[List[dict]]:
-    """Flatten per-cycle message lists; drop placeholder entries."""
+    """Flatten per-cycle message lists; drop placeholder entries ([U-SFR] one rule with the segment file's stream)."""
     if not message_trace:
         return None
-    flat: List[dict] = []
-    for events in message_trace:
-        for ev in events:
-            if isinstance(ev, dict):
-                if ev.get("placeholder"):
-                    continue
-                flat.append({k: (float(v) if isinstance(v, float) else v)
-                             for k, v in ev.items()})
+    flat: List[dict] = list(flat_messages(message_trace))
     return flat or None
 
 
