@@ -11,6 +11,7 @@ from mimarsinan.models.nn.activations.lif_serial import (
     SerialFoldSlot,
     arm_serial_fold,
     disarm_serial_fold,
+    serial_fold_integer_lattice,
     serial_fold_theta,
 )
 from mimarsinan.models.nn.lif_kernels import in_measurement_plane
@@ -47,9 +48,10 @@ def run_streamed_lif_cycles(
         # STE re-encode: forward = the deployed uniform train of the window
         # count; backward = the raw cascade's per-cycle surrogate path (a hard
         # re-encode severs every hop's gradient).
+        rate = (train / scale).mean(dim=0).clamp(0.0, 1.0).detach()
         reencoded = encode_train(
-            (train / scale).mean(dim=0).clamp(0.0, 1.0).detach(), T,
-            phase_dither=policy.phase_dither,
+            rate, T, phase_dither=policy.phase_dither,
+            channels=policy.dither_keys(node, rate) if policy.phase_dither else None,  # [U-DOOR] its IR's keys
         )
         if streams() and (not isinstance(scale, torch.Tensor) or scale.dim() < train.dim()):
             # [U-SC3] the same elementwise arithmetic, cycle by cycle into the window's own train (cycle_trains)
@@ -140,6 +142,7 @@ def _arm_serial_slot(
         theta=serial_fold_theta(lif),
         membrane_init=float(getattr(lif, "membrane_init", 0.0)),
         unfold=_slot_unfold(node, dep_events[0], int(weight.shape[1])),
+        integer_lattice=serial_fold_integer_lattice(lif),
     )
     return slot
 

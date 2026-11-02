@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from mimarsinan.chip_simulation.soma_axes import MEMBRANE_BITS_KEY
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.models.nn.lif_kernels import MembraneRailTouchedError
 
 __all__ = [
@@ -101,8 +102,9 @@ clamped: a silent saturation here is the exact failure the count currency
 exists to make impossible."""
 
 
-class SomaLawRefusalError(NotImplementedError):
-    """Base: the resolved soma point denies this mechanism's theorem."""
+class SomaLawRefusalError(ToolchainRefusal, NotImplementedError):
+    """Base: the resolved soma point denies this mechanism's theorem. [U-DOOR] A refusal by name
+    (``ToolchainRefusal``), as every refusal of this module is."""
 
 
 class CycleAtomicRefusalError(SomaLawRefusalError):
@@ -130,11 +132,11 @@ class SerialDecompositionMismatchError(SomaLawRefusalError):
     """The NF twin's event order is not the mapper's canonical slot order."""
 
 
-class EmissionBoundExceededError(ValueError):
+class EmissionBoundExceededError(ToolchainRefusal, ValueError):
     """A neuron emitted more spikes in one cycle than the count currency holds."""
 
 
-class SerialMembraneInitError(ValueError):
+class SerialMembraneInitError(ToolchainRefusal, ValueError):
     """``lif_membrane_init`` violates the per-event window-start contract."""
 
 

@@ -7,6 +7,8 @@ import contextvars
 
 import torch
 
+from mimarsinan.common.refusal import ToolchainRefusal
+
 _MEASUREMENT_PLANE = contextvars.ContextVar("lif_measurement_plane", default=False)
 
 
@@ -32,7 +34,7 @@ def in_measurement_plane() -> bool:
 _THRESHOLD_OPS = {"<": torch.lt, "<=": torch.le}
 
 
-class MembraneRailTouchedError(ValueError):
+class MembraneRailTouchedError(ToolchainRefusal, ValueError):
     """A membrane reached a rail of a register whose law says it cannot.
 
     ``membrane_arithmetic='saturating_signed'`` claims to hold exactly the
@@ -40,7 +42,8 @@ class MembraneRailTouchedError(ValueError):
     the register's interval. The deployment carries a static no-saturation
     bound proving the rails are unreachable, so touching one is a broken proof,
     not this law's physics — refused everywhere (torch, nevresim, RTL), never
-    clamped, because a clamp reports a number the contract denies.
+    clamped, because a clamp reports a number the contract denies. [U-DOOR] A
+    refusal by name (``ToolchainRefusal``): the program is refused, never read.
     """
 
 
@@ -68,6 +71,12 @@ def enforce_membrane_rails(
         f"deployment's own contract denies. Widen membrane_bits, lower the "
         f"fan-in, or raise theta."
     )
+
+
+#: [U-DOOR] The integer chip lattice's scale in chip units (a half-unit quantum covers the half-step init): the ONE
+#: lattice a weight-quantized program's membrane lives on, whichever executor snaps onto it (the per-cycle policy, the
+#: event-serial fold, and the NF's lattice node at ``2 * theta_int`` in its normalized units).
+CHIP_LATTICE_SCALE = 2.0
 
 
 def snap_membrane_to_lattice(memb: torch.Tensor, lattice_scale: float) -> None:

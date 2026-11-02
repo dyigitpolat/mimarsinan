@@ -15,7 +15,10 @@ concatenation of an ABSOLUTE host chain with a WIRE core output (DenseNet-BC's p
 program at the smallest depth, and that concatenation nested inside a concatenation that also takes core outputs (read by
 a host op, and by a core). U-SC3's memory forms (``MEMORY_FORMS``) add a wide encoding read by a narrow core, DenseNet-BC's
 dense-unit read (a wide host value read by a narrow core), a wide core whose output only a host op reads, and chains of
-two and six cores in one segment.
+two and six cores in one segment. U-DOOR's token forms (``TOKEN_FORMS``) map one mapper to several IR nodes per sample:
+a token-wise subsumed encoding (one host node per token) read by token-wise cores, the same encoding beside a host add
+over the whole token value (one host node), and t2_04's torchvision ViT at its smallest size (host LayerNorms,
+attention and adds over the whole token value, its MLP's first Linear on chip per token).
 """
 
 from __future__ import annotations
@@ -309,6 +312,48 @@ class DeepChain(nn.Module):
         return self.rf(self.fc(self.rh(self.head(h)).flatten(1)))
 
 
+class TokenSkip(nn.Module):
+    """A token-wise subsumed encoding (one host node per token, keyed 0..5 each) read by token-wise cores."""
+
+    shape = (4, 8)
+
+    def __init__(self):
+        super().__init__()
+        self.stem, self.fc1, self.fc3 = nn.Linear(8, 6), nn.Linear(6, 6), nn.Linear(24, 6)
+        self.r0, self.r1, self.r3 = nn.ReLU(), nn.ReLU(), nn.ReLU()
+
+    def forward(self, x):
+        s = self.r0(self.stem(x))
+        z = self.r1(self.fc1(s))
+        return self.r3(self.fc3(z.flatten(1)))
+
+
+class TokenResidual(nn.Module):
+    """The token-wise encoding beside a host add over the whole token value (one host node, keyed 0..23), both read by
+    token-wise cores."""
+
+    shape = (4, 8)
+
+    def __init__(self):
+        super().__init__()
+        self.stem, self.fc1, self.fc2, self.fc3 = nn.Linear(8, 6), nn.Linear(6, 6), nn.Linear(6, 6), nn.Linear(24, 6)
+        self.r0, self.r1, self.r2, self.r3 = nn.ReLU(), nn.ReLU(), nn.ReLU(), nn.ReLU()
+
+    def forward(self, x):
+        s = self.r0(self.stem(x))
+        y = self.r1(self.fc1(s))
+        z = self.r2(self.fc2(y + s))
+        return self.r3(self.fc3(z.flatten(1)))
+
+
+def tiny_vit():
+    """t2_04's network family (``torch_vit``: torchvision's VisionTransformer) at its smallest size."""
+    from torchvision.models.vision_transformer import VisionTransformer
+
+    return VisionTransformer(image_size=8, patch_size=4, num_layers=1, num_heads=2, hidden_dim=8, mlp_dim=16,
+                             num_classes=N_OUT)
+
+
 def small_densenet_bc():
     from mimarsinan.models.families.densenet_bc import CifarDenseNetBC
 
@@ -342,13 +387,19 @@ MEMORY_FORMS: Dict[str, Callable[[], nn.Module]] = {
     "chain_2": lambda: DeepChain(2),
     "chain_6": lambda: DeepChain(6),
 }
-SHAPES = {"densenet_bc": (3, 8, 8)}
+#: The forms that map one mapper to several IR nodes per sample (U-DOOR: the dithered encode's keys follow the IR).
+TOKEN_FORMS: Dict[str, Callable[[], nn.Module]] = {
+    "token_skip": TokenSkip,
+    "token_residual": TokenResidual,
+    "vit_tiny": tiny_vit,
+}
+SHAPES = {"densenet_bc": (3, 8, 8), "vit_tiny": (3, 8, 8)}
 
 
 def make_form(form: str) -> nn.Module:
     if form == "densenet_bc":
         return small_densenet_bc()
-    return {**FORMS, **MIXED_FORMS, **MEMORY_FORMS}[form]()
+    return {**FORMS, **MIXED_FORMS, **MEMORY_FORMS, **TOKEN_FORMS}[form]()
 
 
 def form_shape(form: str) -> tuple:
@@ -398,8 +449,10 @@ def lif_net(form: str, seed: int, theta_enc: float, gain: float = 2.0):
     return shape, flow, perceptrons, thetas
 
 
-def scm_sequence(flow, perceptrons, *, wq: bool, retimed: bool, establish: Callable | None = None):
-    """The Soft Core Mapping sequence on ``flow`` in place (``establish`` replaces its two gauge calls when given)."""
+def scm_sequence(flow, perceptrons, *, wq: bool, retimed: bool, establish: Callable | None = None,
+                 wq_bits: int = WQ_BITS):
+    """The Soft Core Mapping sequence on ``flow`` in place (``establish`` replaces its two gauge calls when given;
+    ``wq_bits``: the Weight Quantization step's bit width)."""
     repr_ = flow.get_mapper_repr()
     if establish is None:
         compute_per_source_scales(repr_, arm_wire_value_ops=True)
@@ -408,14 +461,14 @@ def scm_sequence(flow, perceptrons, *, wq: bool, retimed: bool, establish: Calla
         establish(flow)
     q_max = 127.0
     if wq:
-        napq = NormalizationAwarePerceptronQuantization(WQ_BITS, "cpu", rate=1.0, two_scale=False)
+        napq = NormalizationAwarePerceptronQuantization(wq_bits, "cpu", rate=1.0, two_scale=False)
         for p in perceptrons:
             napq.transform(p)
-        q_max = float(2 ** (WQ_BITS - 1) - 1)
+        q_max = float(2 ** (wq_bits - 1) - 1)
     repr_.assign_perceptron_indices()
     ir = IRMapping(q_max=q_max, firing_mode="Default", max_axons=256, max_neurons=256).map(repr_)
     if wq:
-        quantize_ir_graph(ir, WQ_BITS, weight_quantization=True)
+        quantize_ir_graph(ir, wq_bits, weight_quantization=True)
         arm_integer_membrane_lattice(flow)
     declare_host_kernel_evaluation(ir, "per_sample")  # the records' own evaluation (module docstring)
     hybrid = build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=retimed)
@@ -423,10 +476,10 @@ def scm_sequence(flow, perceptrons, *, wq: bool, retimed: bool, establish: Calla
 
 
 def build(form: str, seed: int, theta_enc: float, semantics: str, wq: bool, *, gain: float = 2.0,
-          establish: Callable | None = None) -> Program:
+          establish: Callable | None = None, wq_bits: int = WQ_BITS) -> Program:
     retimed = SEMANTICS[semantics][0]
     shape, flow, perceptrons, thetas = lif_net(form, seed, theta_enc, gain)
-    repr_, ir, hybrid = scm_sequence(flow, perceptrons, wq=wq, retimed=retimed, establish=establish)
+    repr_, ir, hybrid = scm_sequence(flow, perceptrons, wq=wq, retimed=retimed, establish=establish, wq_bits=wq_bits)
     return Program(form, shape, flow, repr_, ir, hybrid, perceptrons, thetas, wq)
 
 

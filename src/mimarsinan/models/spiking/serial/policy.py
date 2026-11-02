@@ -41,11 +41,15 @@ class SerialLIFCyclePolicy:
     # of the reduced charge; every other policy leaves it False.
     serial = True
 
-    def __init__(self, soma_law: SomaLaw) -> None:
+    def __init__(self, soma_law: SomaLaw, *, integer_lattice: bool = False) -> None:
         # The same gate the fold applies, one call earlier: a point this
         # kernel cannot execute must not become a policy object at all.
         require_serial_law(soma_law)
         self.soma_law = soma_law
+        # [U-DOOR] The program's weights sit on the integer chip lattice (the
+        # Weight Quantization step's ``membrane_integer_lattice``): the fold
+        # decides its ties on that lattice (``serial_lattice_scale``).
+        self.integer_lattice = bool(integer_lattice)
         # Mirrors LIFCyclePolicy's attribute for the shared read sites.
         self.firing_mode = soma_law.firing_mode
 
@@ -70,6 +74,7 @@ class SerialLIFCyclePolicy:
         return lif_serial_fold(
             state["memb"], weight, inp, threshold,
             soma_law=self.soma_law, hw_bias=hw_bias, output_dtype=output_dtype,
+            integer_lattice=self.integer_lattice,
         )
 
     def advance(self, state, contribution, threshold, *, thresholding_mode,
@@ -97,16 +102,20 @@ class SerialLIFCyclePolicy:
         counts = lif_serial_fold(
             view, weight, events, threshold,
             soma_law=self.soma_law, hw_bias=hw_bias, output_dtype=output_dtype,
+            integer_lattice=self.integer_lattice,
         )
         return counts.reshape(counts.shape[0], -1) if lead else counts
 
 
-def serial_policy_for(soma_law: Optional[SomaLaw]) -> Optional[SerialLIFCyclePolicy]:
+def serial_policy_for(
+    soma_law: Optional[SomaLaw], *, integer_lattice: bool = False,
+) -> Optional[SerialLIFCyclePolicy]:
     """The serial policy when the point demands it, else ``None``.
 
     ``None`` is the byte-identical answer: the caller keeps whatever policy it
     builds today, and no default-point configuration constructs this class.
+    ``integer_lattice``: the program's weights sit on the integer chip lattice.
     """
     if soma_law is None or not soma_law.is_per_event:
         return None
-    return SerialLIFCyclePolicy(soma_law)
+    return SerialLIFCyclePolicy(soma_law, integer_lattice=integer_lattice)

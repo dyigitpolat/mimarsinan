@@ -198,7 +198,7 @@ class LifSegmentPolicy(HostCurrencyHooks):
                 rate = normalize_boundary_value(value, scale)
             else:
                 rate, scale = value.clamp(0.0, 1.0), self._wire_scale(dep, scale, value)
-            t = encode_train(rate, T, phase_dither=self.phase_dither)
+            t = encode_train(rate, T, phase_dither=self.phase_dither, channels=self.dither_keys(dep, rate))
             node_events[dep] = t
             if isinstance(scale, torch.Tensor) or scale != 1.0:
                 t = scale_train(t, scale)
@@ -227,7 +227,8 @@ class LifSegmentPolicy(HostCurrencyHooks):
                     node_rate[node] = rate_norm
                     # Mirror of encode_compute_boundary: the deployed boundary is
                     # a uniform wire train; *scale keeps NF value-domain magnitudes.
-                    node_events[node] = encode_train(rate_norm, T, phase_dither=self.phase_dither)
+                    node_events[node] = encode_train(rate_norm, T, phase_dither=self.phase_dither,
+                                                     channels=self.dither_keys(node, rate_norm))
                     node_train[node] = scale_train(node_events[node], scale)
                 elif self.synchronized:
                     # [§16] two-window discipline: ONE value eval per hop —

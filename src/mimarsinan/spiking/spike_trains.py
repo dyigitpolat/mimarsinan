@@ -43,7 +43,9 @@ def uniform_spike_train(
     ``phase_dither`` rotates each channel's comb by a deterministic offset mod T
     (count-exact) to decorrelate cross-channel arrival [calculus sec.15.11],
     keyed on ``channels`` (one channel id per last-dim position: a chip stage's
-    channels at unbounded geometry, E1), else on the last-dim index."""
+    channels at unbounded geometry, E1; or one per element of a sample, broadcast
+    over the batch: the NF twin's keys, ``phase_channels.element_channels``), else
+    on the last-dim index."""
     T = int(T)
     rate_c, offsets = uniform_comb_operands(rate, T, phase_dither=phase_dither, channels=channels)
     trains = [uniform_comb_cycle(rate_c, cycle, T, offsets) for cycle in range(T)]

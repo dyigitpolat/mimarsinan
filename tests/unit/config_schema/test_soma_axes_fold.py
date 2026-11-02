@@ -136,8 +136,11 @@ class TestBitsDrivenContradictions:
         assert ("clear", "membrane_bits") in actions
 
     def test_a_consistent_declaration_is_silent(self):
+        # [U-DOOR] at the register's admitted pairing: the event-serial law (under the per-cycle law the NF twin has
+        # no register, so a consistent per-cycle declaration is refused by name: test_exactness_door.py)
         enforce_soma_axes_contract({
             "spiking_family": "lif", "spiking_variant": "streamed",
+            "firing_granularity": "per_event",
             "membrane_bits": 8, "membrane_arithmetic": "saturating_unsigned",
             "cores": _BIASLESS_CORES,
         })

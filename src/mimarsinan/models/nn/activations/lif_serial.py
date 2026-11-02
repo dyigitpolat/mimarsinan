@@ -73,7 +73,8 @@ class SerialFoldSlot:
     def __init__(self, *, soma_law: SomaLaw, weight: torch.Tensor,
                  bias: Optional[torch.Tensor], theta: float,
                  membrane_init: float,
-                 unfold: Optional[SerialSlotUnfold] = None) -> None:
+                 unfold: Optional[SerialSlotUnfold] = None,
+                 integer_lattice: bool = False) -> None:
         if weight.dim() != 2:
             raise SerialFoldUnsupportedError(
                 f"the NF event-serial twin decomposes a rank-2 effective "
@@ -94,9 +95,17 @@ class SerialFoldSlot:
                 f"receptive field."
             )
         self.soma_law = soma_law
+        # [U-DOOR] The program's weights sit on the integer chip lattice (the
+        # LIF's armed lattice): the fold decides its ties on it, as the
+        # deployed core's integer arithmetic does.
+        self.integer_lattice = bool(integer_lattice)
         self.theta = float(theta)
-        self.weight = weight * self.theta
-        self.bias = None if bias is None else bias * self.theta
+        # [U-DOOR] The deployed core folds in float64 (COMPUTE_DTYPE); folding
+        # the same float32 weights in float32 split a near tie of a float
+        # program the deployed sum decides exactly (U-SC2's per-cycle rule,
+        # ``segment_policy_lif_fold``, for the event-serial slot).
+        self.weight = weight.to(torch.float64) * self.theta
+        self.bias = None if bias is None else bias.to(torch.float64) * self.theta
         self.membrane_init = float(membrane_init)
         self.events: Optional[torch.Tensor] = None
         self.membrane: Optional[torch.Tensor] = None
@@ -171,6 +180,7 @@ class SerialFoldSlot:
             torch.as_tensor(self.theta, dtype=self.weight.dtype,
                             device=self.weight.device),
             soma_law=self.soma_law, hw_bias=self.bias,
+            integer_lattice=self.integer_lattice,
         )
         self.events = None
         typed = self.unfold.restore(counts.to(x.dtype), x)
@@ -191,6 +201,13 @@ def arm_serial_fold(lif, slot: SerialFoldSlot) -> None:
 
 def disarm_serial_fold(lif) -> None:
     lif._serial_fold = None
+
+
+def serial_fold_integer_lattice(lif) -> bool:
+    """[U-DOOR] Whether the LIF's integer-chip membrane lattice is armed (the Weight Quantization step's
+    ``arm_integer_membrane_lattice``): the program's weights then sit on the integer chip lattice, and the event-serial
+    fold decides its ties on it (``serial_lattice_scale``). The same read ``serial_fold_theta`` takes."""
+    return bool(getattr(lif.if_node, "lattice_scale", None))
 
 
 def serial_fold_theta(lif) -> float:

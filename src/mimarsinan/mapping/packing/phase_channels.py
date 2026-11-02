@@ -9,11 +9,17 @@ index (neither is tiled). That channel is the neuron's index in its IR node at u
 twin rotates by (it encodes each producer's own output), so no cost-only decision (core geometry, the IR's node ids and
 order, packing, pass cuts) moves a dithered train. Before E1 the rotation followed the channel's position in the
 executed unit's stage input, whose layout orders external nodes by IR node id. A node with no perceptron identity (a
-relay, an inserted core) has no channel at unbounded geometry: a dithered encode of it refuses by name."""
+relay, an inserted core) has no channel at unbounded geometry: a dithered encode of it refuses by name.
+
+[U-DOOR] The NF twin reads its comb keys from the same table (``map_model_to_ir.mapper_phase_keys`` through
+``source_channels``, read per sample by ``element_channels``): every element of a mapper node's
+value is an output of one IR node (``map_to_ir``'s sources: its node and output index), and which node is the
+mapping's decision alone (a token-wise encoding is one host node per token, a host add over the same token value one
+node), so no rule by the value's shape is the deployed one."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional, Union
+from typing import Any, Dict, Mapping, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -26,6 +32,11 @@ NodeChannels = Union[int, np.ndarray]
 #: The program attribute that holds every keyed node's channels (``HybridHardCoreMapping.node_phase_channels``).
 ATTRIBUTE = "node_phase_channels"
 RAW_INPUT = -2
+#: The key ``source_channels`` gives an output of a node the table holds no channel for (read through
+#: ``element_channels``, which refuses it by name).
+UNKEYED = -1
+#: An off and an always-on source (``IRSource.is_off``, ``is_always_on``): a constant axon, no stage input's position.
+_CONSTANT_SOURCES = (-1, -3)
 
 
 class PhaseChannelRefusal(ToolchainRefusal, ValueError):
@@ -88,9 +99,56 @@ def channels_of(mapping: Any, node_id: int, size: int, *, where: str = "") -> to
             f"{where or 'stage input'}: node {int(node_id)} has no channel at unbounded geometry (no perceptron "
             f"identity, or a program built without its channel table): a phase-dithered encode keyed on where a "
             f"cost-only decision puts it would move with that decision")
+    return torch.as_tensor(_channels_at(entry, np.arange(int(size), dtype=np.int64)))
+
+
+def _channels_at(entry: Union[NodeChannels, np.integer], outputs: np.ndarray) -> np.ndarray:
+    """The channels of a node's ``outputs`` (output indices) from its table entry: ``base + k`` or the ``k``-th
+    channel; the one rule a stage-input slice (``channels_of``) and the NF twin (``source_channels``) read."""
     if isinstance(entry, (int, np.integer)):
-        return torch.arange(int(entry), int(entry) + int(size), dtype=torch.long)
-    return torch.as_tensor(np.asarray(entry[:int(size)], dtype=np.int64))
+        return int(entry) + outputs
+    return np.asarray(entry, dtype=np.int64)[outputs]
+
+
+def source_channels(table: Mapping[int, NodeChannels], sources: Any) -> np.ndarray:
+    """[U-DOOR] The channel at unbounded geometry of every element of an IR source array (``IRSource``: its node and
+    output index), shaped as ``sources``: output ``k`` of node ``n`` reads ``table[n]`` at ``k``, as a stage-input
+    slice of ``n`` does. A constant source takes 0 (count 0 or T: no rotation moves it); an output of a node the table
+    holds no channel for takes ``UNKEYED``."""
+    arr = np.asarray(sources, dtype=object)
+    flat = arr.reshape(-1)
+    nodes = np.fromiter((int(s.node_id) for s in flat), dtype=np.int64, count=flat.size)
+    outputs = np.fromiter((int(s.index) for s in flat), dtype=np.int64, count=flat.size)
+    out = np.zeros(flat.size, dtype=np.int64)
+    for nid in np.unique(nodes).tolist():
+        if nid in _CONSTANT_SOURCES:
+            continue
+        at, entry = nodes == nid, table.get(int(nid))
+        if entry is None or (not isinstance(entry, (int, np.integer)) and len(entry) <= int(outputs[at].max())):
+            out[at] = UNKEYED
+        else:
+            out[at] = _channels_at(entry, outputs[at])
+    return out.reshape(arr.shape)
+
+
+def element_channels(keys: Mapping[int, np.ndarray], node: Any, sample_shape: Sequence[int]) -> torch.Tensor:
+    """[U-DOOR] The comb keys of one sample of ``node``'s value (``map_model_to_ir.mapper_phase_keys``), shaped
+    ``sample_shape`` (its IR sources in C order, the order a host buffer holds a sample in); refuses by name a value its
+    node's IR sources do not hold element for element, and an element no channel keys (as ``channels_of`` refuses its
+    stage-input slice)."""
+    entry, shape = keys.get(id(node)), tuple(int(d) for d in sample_shape)
+    name = getattr(node, "name", None) or type(node).__name__
+    if entry is None or entry.size != int(np.prod(shape, dtype=np.int64)):
+        raise PhaseChannelRefusal(
+            f"the NF twin's phase-dithered encode of {name!r}: its value's sample {shape} is not held element for "
+            f"element by its IR sources ({None if entry is None else entry.shape}), so no element has the channel the "
+            f"deployed program keys it by. Remedy: declare spike_phase_dither false")
+    if (entry < 0).any():
+        raise PhaseChannelRefusal(
+            f"the NF twin's phase-dithered encode of {name!r}: an element's IR node has no channel at unbounded "
+            f"geometry (no perceptron identity), so the deployed program refuses its stage input by name too. Remedy: "
+            f"declare spike_phase_dither false")
+    return torch.as_tensor(entry.reshape(shape))
 
 
 def stage_input_channels(mapping: Any, stage: Any, width: int, *, cached=()) -> torch.Tensor:

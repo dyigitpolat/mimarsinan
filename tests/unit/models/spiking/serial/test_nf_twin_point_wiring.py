@@ -162,7 +162,8 @@ def test_a_wide_hop_survives_the_float32_reduction_residual():
 def test_the_wide_hop_residual_really_exceeds_the_absolute_tolerance():
     """Teeth: without the relative term the call above raises."""
     slot, events, fused = _wide_slot(37.0, 256)
-    decomposed = torch.nn.functional.linear(events, slot.weight, slot.bias)
+    # [U-DOOR] the slot folds in the deployed core's float64; its decomposition reads the events in that dtype
+    decomposed = torch.nn.functional.linear(events.to(slot.weight.dtype), slot.weight, slot.bias)
     residual = float((fused * 37.0 - decomposed).abs().max())
     assert residual > _DECOMPOSITION_ATOL * 37.0
 

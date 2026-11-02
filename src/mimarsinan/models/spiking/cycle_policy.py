@@ -8,6 +8,7 @@ import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
+from mimarsinan.models.nn.lif_kernels import CHIP_LATTICE_SCALE
 
 from mimarsinan.models.spiking.serial.policy import serial_policy_for
 from mimarsinan.models.spiking.lif_core_step import (
@@ -39,7 +40,7 @@ class LIFCyclePolicy:
     always_on_every_cycle = False
     single_spike_io = False
 
-    _CHIP_LATTICE_SCALE = 2.0  # half-integer quantum covers half-step init
+    _CHIP_LATTICE_SCALE = CHIP_LATTICE_SCALE  # half-integer quantum covers half-step init
 
     # The packed executor asks the policy how to be driven; only the
     # event-serial policy wants the per-axon tensor instead of the charge.
@@ -125,10 +126,12 @@ def cycle_neuron_policy(
     defaulted firing granularity is another chip's physics). At the DEFAULT
     point this returns exactly the object today's code returned — the serial
     class is constructed only when the point declares ``per_event``.
+    [U-DOOR] ``integer_lattice`` (the Weight Quantization step's integer chip
+    lattice) reaches the serial fold too, which decides its ties on it.
     """
     if is_cascaded_ttfs(spiking_mode, schedule):
         return TTFSGreedyCyclePolicy()
-    serial = serial_policy_for(soma_law)
+    serial = serial_policy_for(soma_law, integer_lattice=integer_lattice)
     if serial is not None:
         return serial
     return LIFCyclePolicy(

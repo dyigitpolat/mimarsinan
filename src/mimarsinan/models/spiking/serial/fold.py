@@ -26,6 +26,7 @@ import torch
 from mimarsinan.chip_simulation.soma_law import BIAS_SLOT_TAIL, SomaLaw
 from mimarsinan.mapping.platform.events.event_order import canonical_slot_order
 from mimarsinan.models.nn.lif_kernels import (
+    CHIP_LATTICE_SCALE,
     enforce_membrane_rails,
     in_measurement_plane,
     lif_fire_and_reset,
@@ -69,6 +70,22 @@ def require_serial_law(soma_law: SomaLaw) -> None:
             f"multi-row bias placement changes the event order and is new "
             f"machinery, not a parameter."
         )
+
+
+def serial_lattice_scale(soma_law: SomaLaw, *, integer_lattice: bool) -> Optional[float]:
+    """[U-DOOR] The scale of the exact arithmetic lattice the fold snaps the membrane onto (inside the measurement
+    plane): a saturating register's own LSB (``SomaLaw.membrane_lattice_quantum``); else, when the program's weights sit
+    on the integer chip lattice (the Weight Quantization step, ``integer_lattice``), that lattice
+    (``CHIP_LATTICE_SCALE``, the one the per-cycle policy and the NF's lattice node snap onto); else none (a float
+    program's membrane is continuous).
+
+    Without the program lattice, the unbounded accumulator's twins decided a true threshold tie differently: the NF
+    slot folds ``W * theta_int`` with float dust, the deployed core the integer weights themselves.
+    """
+    quantum = soma_law.membrane_lattice_quantum
+    if quantum is not None:
+        return 1.0 / float(quantum)
+    return CHIP_LATTICE_SCALE if integer_lattice else None
 
 
 def require_event_counts(events: torch.Tensor) -> None:
@@ -129,6 +146,7 @@ def lif_serial_fold(
     soma_law: SomaLaw,
     hw_bias: Optional[torch.Tensor] = None,
     output_dtype: Optional[torch.dtype] = None,
+    integer_lattice: bool = False,
 ) -> torch.Tensor:
     """Fold one cycle's events for every neuron in the layout.
 
@@ -136,6 +154,10 @@ def lif_serial_fold(
     ``weight`` ``(*lead, N, A)`` — signed logical weight per (neuron, slot).
     ``events`` ``(B, *lead, A)`` — per-slot NON-NEGATIVE INTEGER multiplicities.
     Returns    ``(B, *lead, N)`` — the per-neuron COUNT emitted this cycle.
+
+    ``integer_lattice``: the program's weights sit on the integer chip lattice;
+    the membrane snaps onto it inside the measurement plane
+    (``serial_lattice_scale``).
 
     ``lead`` is empty for the per-core reference loop and ``(G,)`` for the
     packed executor's bucket group; the fold is otherwise shape-agnostic, so
@@ -162,8 +184,7 @@ def lif_serial_fold(
             f"the canonical slot order."
         )
     bounds = soma_law.membrane_bounds
-    quantum = soma_law.membrane_lattice_quantum
-    lattice_scale = None if quantum is None else 1.0 / float(quantum)
+    lattice_scale = serial_lattice_scale(soma_law, integer_lattice=integer_lattice)
     counts = torch.zeros_like(memb)
 
     # ONE host sync for the whole cycle: the per-slot occurrence depth.

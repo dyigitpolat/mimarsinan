@@ -18,7 +18,9 @@ import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.common.refusal.toolchain_refusal import ToolchainRefusal
+from mimarsinan.mapping.map_model_to_ir import mapper_phase_keys
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.packing.phase_channels import element_channels
 from mimarsinan.mapping.support.gauge_channels import gauge_axis, gauge_view
 from mimarsinan.mapping.support.value_domain import MIXED, value_domain_map
 from mimarsinan.models.nn.lif_kernels import in_measurement_plane
@@ -193,16 +195,28 @@ class HostCurrencyHooks:
     _count_grid: dict | None = None
 
     _currency_read: set | None = None
+    _phase_keys: dict | None = None  # [U-DOOR] under a phase-dithered encode, every node's comb keys (its IR's)
 
     def _prepare_currencies(self, driver) -> None:
         self._mixed_currency = {}
         self._count_grid = count_grid_forwards(driver, driver.T)
         self._currency_read = currency_readers(driver, self._absolute_nodes or {})
+        self._phase_keys = mapper_phase_keys(driver.repr) if self.phase_dither else None
 
     def _clear_currencies(self) -> None:
         self._mixed_currency = None
         self._count_grid = None
         self._currency_read = None
+        self._phase_keys = None
+
+    def dither_keys(self, node, value: torch.Tensor) -> torch.Tensor | None:
+        """[U-DOOR] The comb keys of a phase-dithered re-encode of ``node``'s ``value``: each element's channel at
+        unbounded geometry, read from the IR the program is built from (``map_model_to_ir.mapper_phase_keys``, through
+        the table the deployed program keys its stage inputs by; ``phase_channels.element_channels``); None when no
+        encode is dithered."""
+        if self._phase_keys is None:
+            return None
+        return element_channels(self._phase_keys, node, tuple(value.shape[1:])).to(value.device)
 
     def host_value_forward(self, driver, node):
         """The count-grid forward of a plain non-commuting op over raw-gauge values, else None."""

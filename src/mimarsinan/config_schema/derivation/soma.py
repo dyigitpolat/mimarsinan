@@ -75,6 +75,42 @@ def soma_contract_error_rows(
     ]
 
 
+def _declares_float_weights(cfg: Mapping[str, Any]) -> bool:
+    """The derivation's reading of a float-weight deployment (``pipeline_mode`` 'vanilla' or ``weight_quantization``
+    false), as the per-axon sign door reads it (``core_type_doors.platform_sign_errors``)."""
+    return cfg.get("pipeline_mode") == "vanilla" or cfg.get("weight_quantization") is False
+
+
+def _register_pairing_violations(cfg: Mapping[str, Any], law: SomaLaw) -> Iterator[Tuple[str, str]]:
+    """[U-DOOR] The pairings of a register whose saturation IS its physics (the unsigned one) that no twin holds
+    exactly, each refused by name with its reason and remedy (``final_units/udoor/report.md``).
+
+    The register is admitted only where both twins fold it in its own integer units: under the event-serial law, with
+    the weights on the integer chip lattice (ODIN's pairing). A two's-complement register asserts its rails unreachable
+    and holds the unbounded accumulator's number, so it pairs with every weight representation under the per-cycle law
+    (a rail it reaches refuses by name, ``MembraneRailTouchedError``)."""
+    point = f"membrane_arithmetic={law.membrane_arithmetic!r} (membrane_bits={law.membrane_bits})"
+    if _declares_float_weights(cfg):
+        yield MEMBRANE_ARITHMETIC_KEY, (
+            f"{point} with float weights (pipeline_mode 'vanilla' or weight_quantization false) is refused: the "
+            f"register counts whole LSBs of the chip's integer units and float weights have none, so the deployed "
+            f"arithmetic is not defined (under the event-serial law the fold rounds the membrane onto the LSB only "
+            f"inside the measurement plane: the deployed count depends on where it is read, and NF/SCM window counts "
+            f"differ). Declare weight quantization (weight_bits on the platform), or drop membrane_bits."
+        )
+    if not law.is_per_event:
+        low, high = law.membrane_bounds or (0.0, 0.0)
+        yield MEMBRANE_ARITHMETIC_KEY, (
+            f"{point} under firing_granularity={law.firing_granularity!r} is refused: the per-cycle NF twin "
+            f"integrates the unbounded accumulator, while the deployed register clamps to "
+            f"[{low:.0f}, {high:.0f}] on every update (the floor is crossed by any cycle whose net charge is "
+            f"negative), so the twins' window counts differ and the parity gate cannot hold. Declare "
+            f"firing_granularity='per_event' with weight quantization (the event-serial fold carries the register in "
+            f"both twins), declare membrane_signed=true (a register that asserts its rails unreachable), or drop "
+            f"membrane_bits."
+        )
+
+
 def _contract_violations(cfg: Mapping[str, Any]) -> Iterator[Tuple[str, str]]:
     """Every ``(offending key, message)`` this resolved point violates."""
     law = SomaLaw.resolve(cfg)
@@ -98,6 +134,9 @@ def _contract_violations(cfg: Mapping[str, Any]) -> Iterator[Tuple[str, str]]:
         )
     if bits > 0 and law.saturates:
         declared_signed = resolved_membrane_signed(cfg)
+        if declared_signed == law.is_signed_membrane and not law.asserts_no_saturation:
+            # [U-DOOR] a consistently declared register whose saturation is its physics
+            yield from _register_pairing_violations(cfg, law)
         if declared_signed != law.is_signed_membrane:
             yield MEMBRANE_ARITHMETIC_KEY, (
                 f"membrane_arithmetic={law.membrane_arithmetic!r} contradicts "
