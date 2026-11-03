@@ -18,9 +18,9 @@ from mimarsinan.mapping.pruning.pruning_apply import PRUNED_ROW_MAGNITUDE
 from mimarsinan.models.nn.activations.integer_law import (
     FP64_EXACT_BOUND,
     IntegerLawRangeError,
+    clamp_reach,
     law_magnitude_bound,
     round_half_away,
-    saturation_reach,
 )
 
 
@@ -172,8 +172,9 @@ _Law = TypeVar("_Law", bound=CoreLaw)
 @dataclass(frozen=True)
 class FoldRefit(Generic[_Law]):
     """One folded core's refit inputs: its law with the folded bias, its accumulator bounds, its law kind (an
-    identity law; a symmetric law's clamp ``reach_hi`` when its ADC is narrow), the fp64 bound's extra term (a lane's
-    operand term) and, per column, the channel it carries (the cores the model reads as one law per channel)."""
+    identity law; a law's clamp ``reach_hi`` when its ADC is narrow, ``reach_lo`` its low code where it is not
+    ``-reach_hi``), the fp64 bound's extra term (a lane's operand term), per column the channel it carries (the cores
+    the model reads as one law per channel) and [U-LNR] a fused operand term's interval (``terms``; empty: none)."""
 
     core: str
     law: _Law
@@ -182,19 +183,25 @@ class FoldRefit(Generic[_Law]):
     reach_hi: Optional[int]
     channels: Tuple[Hashable, ...]
     extra: int = 0
+    reach_lo: Optional[int] = None
+    terms: Tuple[Tuple[int, int], ...] = ()
 
 
 def _adc_steps(fold: FoldRefit) -> np.ndarray:
-    """Per column, the finest ADC step exponent spanning the accumulators the folded bias leaves unsaturated (the
-    solved exponent where the refit moves no ADC step)."""
+    """Per column, the finest ADC step exponent spanning the accumulators the folded bias leaves unsaturated, the
+    law's reach to its clamp on both sides (:func:`clamp_reach`; the solved exponent where the refit moves no ADC
+    step)."""
     law = fold.law
     if fold.reach_hi is None:
         return np.asarray(law.adc_shift, dtype=np.int64)
     levels = int(np.asarray(law.adc_levels).reshape(-1)[0])
+    lo = -int(fold.reach_hi) if fold.reach_lo is None else int(fold.reach_lo)
+    terms = fold.terms or ((0, 0),) * len(fold.acc_bounds)
     return np.asarray([
-        adc_step_exponent(min(int(bound), saturation_reach(int(m), int(b), int(s), int(fold.reach_hi))), levels,
+        adc_step_exponent(min(int(bound), clamp_reach(int(m), int(b), int(s), lo, int(fold.reach_hi), term)), levels,
                           core=fold.core)
-        for bound, m, b, s in zip(fold.acc_bounds, law.m0, np.asarray(law.bias, dtype=np.int64), law.shift)],
+        for bound, m, b, s, term in zip(fold.acc_bounds, law.m0, np.asarray(law.bias, dtype=np.int64), law.shift,
+                                        terms)],
         dtype=np.int64)
 
 
@@ -202,7 +209,7 @@ def refit_folded_laws(folds: Mapping[int, FoldRefit[_Law]]) -> Dict[int, _Law]:
     """``{core id: law}``: the integers that read a folded law's bias, re-solved from the folded bias (an offset fold
     moves B after the solve) per channel, not per core. A channel's position cores hold different folded biases (a
     padded border's host rows sum to less), so every carrier of a channel takes the largest of their values: a
-    symmetric law's narrow-ADC step exponent (``reach_hi``), so the ADC spans every position's unsaturated
+    narrow-ADC step exponent (the clamp's reach), so the ADC spans every position's unsaturated
     accumulators, and an identity law's no-clamp bound (widened, never narrowed), the largest folded ``|z|`` bound;
     the model then reads one law per channel. The fp64 exactness bound adds each core's ``extra``. A law whose
     refit moves nothing is returned unchanged; equal results share one object."""
@@ -240,10 +247,11 @@ def refit_folded_laws(folds: Mapping[int, FoldRefit[_Law]]) -> Dict[int, _Law]:
 
 
 def refit_folded_law(law: _Law, acc_bounds: Sequence[int], *, identity: bool, reach_hi: Optional[int], core: str,
-                     extra: int = 0) -> _Law:
+                     extra: int = 0, reach_lo: Optional[int] = None, terms: Tuple[Tuple[int, int], ...] = ()) -> _Law:
     """:func:`refit_folded_laws` of one core whose every column is a channel of its own."""
     channels = tuple(range(law.columns))
-    fold = FoldRefit(core, law, tuple(int(b) for b in acc_bounds), identity, reach_hi, channels, int(extra))
+    fold = FoldRefit(core, law, tuple(int(b) for b in acc_bounds), identity, reach_hi, channels, int(extra),
+                     reach_lo, tuple(terms))
     return refit_folded_laws({0: fold})[0]
 
 

@@ -141,15 +141,40 @@ def grid_levels(bits: int) -> int:
     return (1 << (int(bits) - 1)) - 1
 
 
+def shift_threshold(code: int, shift: int) -> int:
+    """The smallest integer ``z`` with ``rnd_s(z) >= code`` (the half-away shift is monotone): ``e = code 2^s - h``
+    where ``e >= 0``, else ``e + 1`` (a negative ``z`` takes its half away from zero), ``h = 2^(s-1)``; ``code`` at
+    ``s = 0``. The shift is odd, so ``rnd_s(z) <= code`` iff ``z <= -shift_threshold(-code, s)``."""
+    if shift == 0:
+        return int(code)
+    edge = (int(code) << shift) - (1 << (shift - 1))
+    return edge if edge >= 0 else edge + 1
+
+
+def clamp_reach(m0: int, bias: int, shift: int, lo: int, hi: int, term: Tuple[int, int] = (0, 0)) -> int:
+    """[U-LNR] The law's reach to its clamp: the largest |acc| at which ``clamp(rnd_s(M0 acc + B + u), lo, hi)``
+    (M0 > 0) is unsaturated for some fused operand term ``u`` in ``term = (u_min, u_max)`` (``(0, 0)``: none). Every
+    larger acc reads ``hi`` and every acc below its negation reads ``lo``, whatever ``u``: the output falls with
+    ``B + u``, so ``hi`` binds from the smallest acc reading it at ``u_min`` and ``lo`` up to the largest acc reading
+    it at ``u_max`` (exact integer thresholds, :func:`shift_threshold`). [U-LNR targeted pass] Total over the
+    multipliers the law solvers produce: M0 = 0 (a shift shared with a fused operand can round it to 0) reads no
+    accumulator, so its reach is 0 and every step is exact; a negative M0 is refused by name."""
+    if int(m0) < 0:
+        raise IntegerLawRangeError(f"clamp_reach: the data multiplier M0 = {int(m0)} is negative; the law's reach to "
+                                   "its clamp is read for M0 >= 0, the multipliers the law solvers produce")
+    if int(m0) == 0:
+        return 0
+    acc_hi = -((int(bias) + int(term[0]) - shift_threshold(hi, shift)) // m0)  # the smallest acc that reads hi
+    acc_lo = (-shift_threshold(-int(lo), shift) - int(bias) - int(term[1])) // m0  # the largest acc that reads lo
+    return max(abs(acc_hi), abs(acc_lo))
+
+
 def saturation_reach(m0: int, bias: int, shift: int, hi: int) -> int:
     """The largest |acc| whose law output ``clamp(rnd_s(M0 acc + B), -hi, hi)`` (M0 > 0) is not yet saturated:
-    every larger acc reads ``hi`` and every smaller ``-acc`` reads ``-hi``. Exact integer thresholds of
-    the half-away shift: ``rnd_s(z) >= hi`` iff ``z >= hi 2^s - h`` and ``rnd_s(z) <= -hi`` iff
-    ``z <= -hi 2^s + h``, with ``h = 2^(s-1)`` (0 at s = 0)."""
-    half = (1 << (shift - 1)) if shift > 0 else 0
-    acc_hi = -((bias - ((hi << shift) - half)) // m0)  # the smallest acc that reads hi
-    acc_lo = (-(hi << shift) + half - bias) // m0      # the largest acc that reads -hi
-    return max(abs(acc_hi), abs(acc_lo))
+    every larger acc reads ``hi`` and every smaller ``-acc`` reads ``-hi`` (:func:`clamp_reach` on the symmetric
+    grid: ``rnd_s(z) >= hi`` iff ``z >= hi 2^s - h`` and ``rnd_s(z) <= -hi`` iff ``z <= -hi 2^s + h`` for
+    ``hi >= 1``, with ``h = 2^(s-1)``, 0 at s = 0)."""
+    return clamp_reach(m0, bias, shift, -hi, hi)
 
 
 def accumulator_bounds(weights, input_levels: int) -> List[int]:

@@ -42,9 +42,9 @@ from mimarsinan.models.nn.activations.integer_law import (
     IntegerLawRangeError,
     accumulator_bounds,
     accumulator_width,
+    clamp_reach,
     grid_levels,
     law_magnitude_bound,
-    saturation_reach,
 )
 
 
@@ -61,9 +61,20 @@ def _shift(ratios, mult_bits: int, core: str) -> int:
     return min(multiplier_and_shift(float(r), mult_bits, core=core)[1] for r in ratios)
 
 
+def operand_terms(operand_m, grid: CoreLaneGrid) -> Tuple[Tuple[int, int], ...]:
+    """Per column, the interval of the fused operand's term ``M_1 q`` over the codes its grid declares (``(0, 0)``
+    without one): an operand reads a core's output, which that core's law clamps to those codes."""
+    ends = [(0, 0) if op is None else (int(m) * op.codes[0], int(m) * op.codes[1])
+            for m, op in zip(np.asarray(operand_m).tolist(), grid.operands)]
+    return tuple((min(e), max(e)) for e in ends)
+
+
 def solve_lane_law(*, core: NeuralCore, bias: np.ndarray, acc_bounds, grid: CoreLaneGrid,
                    spec: ReadoutLawSpec) -> LaneLaw:
-    """The lane law of one core (offset fold excluded: :func:`fold_input_offset`)."""
+    """The lane law of one core (offset fold excluded: :func:`fold_input_offset`). [U-LNR] Below the accumulator
+    width the ADC's step spans, per column, the law's reach to its clamp ``[lo, hi]`` on both sides over the fused
+    operand's declared codes (:func:`clamp_reach`), as ``solve_core_law`` does on a symmetric grid: every accumulator
+    beyond it reads ``lo`` or ``hi`` for every operand code, so the ADC's clamp never changes an output."""
     name, theta = core.name, float(core.threshold)
     columns = int(np.asarray(bias).size)
     ratio0 = grid.inputs.step / (theta * grid.output_step)
@@ -77,14 +88,13 @@ def solve_lane_law(*, core: NeuralCore, bias: np.ndarray, acc_bounds, grid: Core
     b = round_ints(np.ldexp(scaled, shift))
     bounds = [int(v) for v in acc_bounds]
     width = accumulator_width(max(bounds, default=0))
-    symmetric = grid.lo == -grid.hi and all(op is None for op in grid.operands)
     if spec.adc_bits >= width:
         adc_levels, adc_shift = grid_levels(width), [0] * columns
     else:
-        # solve_core_law's rule on a symmetric grid; with a clamp or an operand the ADC spans every accumulator.
         adc_levels = grid_levels(spec.adc_bits)
-        adc_shift = [adc_step_exponent(min(bound, saturation_reach(m0, int(bj), shift, grid.hi)) if symmetric
-                                       else bound, adc_levels, core=name) for bound, bj in zip(bounds, b.tolist())]
+        adc_shift = [adc_step_exponent(min(bound, clamp_reach(m0, int(bj), shift, grid.lo, grid.hi, term)),
+                                       adc_levels, core=name)
+                     for bound, bj, term in zip(bounds, b.tolist(), operand_terms(m1, grid))]
     op_levels = np.array([0 if op is None else op.levels for op in grid.operands], dtype=np.int64)
     bound = law_magnitude_bound(bounds, m0, b, adc_shift) + int((np.abs(m1) * op_levels).max(initial=0))
     if bound >= FP64_EXACT_BOUND:
@@ -168,12 +178,11 @@ def solve_lane_laws(ir_graph: IRGraph, owners: Mapping[int, LaneGrid], spec: Rea
             fold_key = (id(law), data_row_weight_sums(node, ir_graph).tobytes())
             if fold_key not in memo:
                 memo[fold_key] = fold_input_offset(law, node, ir_graph)
-            symmetric = grid.lo == -grid.hi and all(op is None for op in grid.operands)
             narrow = spec.adc_bits < accumulator_width(max(bounds, default=0))
             folds[int(node.id)] = FoldRefit(
                 node.name, memo[fold_key], bounds, identity, channels=channel_keys(node),
-                reach_hi=int(grid.hi) if symmetric and narrow and not identity else None,
-                extra=operand_term(law, grid))
+                reach_hi=int(grid.hi) if narrow and not identity else None,
+                extra=operand_term(law, grid), reach_lo=int(grid.lo), terms=operand_terms(law.operand_m, grid))
         laws[int(node.id)] = law
     laws.update(refit_folded_laws(folds))  # per channel: a conv's position cores keep one law per channel
     refuse_inexact_offset_readers(readers, laws, ir_graph)

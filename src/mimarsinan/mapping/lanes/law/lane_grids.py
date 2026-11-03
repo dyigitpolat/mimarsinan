@@ -44,11 +44,13 @@ class LaneGrid:
 
 @dataclass(frozen=True)
 class GridRead:
-    """A grid as a reader decodes it: step, offset and the largest code magnitude."""
+    """A grid as a reader decodes it: step, offset, the largest code magnitude and its declared codes ``(low, high)``
+    (a fused operand's term ``M_1 q`` spans ``M_1 low .. M_1 high``: its producer's law clamps to them)."""
 
     step: float
     offset: float
     levels: int
+    codes: Tuple[int, int]
 
 
 @dataclass(frozen=True)
@@ -106,7 +108,8 @@ def _host_read(core: NeuralCore) -> GridRead:
     if grid is None or not grid.armed:
         raise ReadoutLawGridError(f"core {core.name!r} reads host-sourced axons but carries no armed boundary grid")
     low, high = grid.code_range if hasattr(grid, "code_range") else (-grid.levels, grid.levels)
-    return GridRead(float(grid.step), float(grid.entry_offset()), max(abs(int(low)), abs(int(high))))
+    return GridRead(float(grid.step), float(grid.entry_offset()), max(abs(int(low)), abs(int(high))),
+                    (int(low), int(high)))
 
 
 class PrunedOffsetGridError(ReadoutLawGridError):
@@ -178,14 +181,15 @@ def assign_lane_grids(ir_graph: IRGraph, owners: Mapping[int, LaneGrid], bits: i
         if hit is None:
             grid = unified[owner]
             low, high = grid.codes(bits)
-            hit = reads_by_owner[owner] = GridRead(grid.step(bits), grid.offset, max(abs(low), abs(high)))
+            hit = reads_by_owner[owner] = GridRead(grid.step(bits), grid.offset, max(abs(low), abs(high)),
+                                                   (low, high))
         return hit
 
     out: Dict[int, CoreLaneGrid] = {}
     for core in cores:
         producers, host = reads[int(core.id)]
         inputs = (read(next(iter(producers))) if producers else _host_read(core) if host
-                  else GridRead(1.0, 0.0, grid_levels(bits)))
+                  else GridRead(1.0, 0.0, grid_levels(bits), (-grid_levels(bits), grid_levels(bits))))
         sources: list = list(core.input_sources.flatten())
         operands = tuple(None if row < 0 or sources[row].is_off()  # an off operand (a pruned column) adds 0
                          else read(owner_of(nodes[int(sources[row].node_id)]))  # type: ignore[arg-type]
