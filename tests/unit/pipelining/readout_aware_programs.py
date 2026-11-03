@@ -196,7 +196,7 @@ def soft_core_mapping(fixture: Fixture):
 
 def deployed(ir_graph, x: torch.Tensor) -> torch.Tensor:
     """The deployed program's outputs on ``x``: the identity value program of the IR, fp64."""
-    flow = ValueHybridCoreFlow(build_identity_hybrid_mapping(ir_graph=ir_graph), dtype=torch.float64)
+    flow = ValueHybridCoreFlow(build_identity_hybrid_mapping(ir_graph=ir_graph), dtype=torch.float64, device="cpu")
     with torch.no_grad():
         return flow(x.to(torch.float64))
 

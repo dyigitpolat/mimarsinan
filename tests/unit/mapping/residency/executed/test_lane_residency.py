@@ -136,15 +136,15 @@ def test_a_lane_program_with_fused_adds_plans_and_executes_a_residency_step(clas
     x = real_inputs(program, 64, seed=1000)
     with torch.no_grad():
         want = program.identity()(x)
-        got = ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x).reshape(want.shape)
-        resident = ValueHybridCoreFlow(flat, dtype=torch.float64)(x).reshape(want.shape)
+        got = ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x).reshape(want.shape)
+        resident = ValueHybridCoreFlow(flat, dtype=torch.float64, device="cpu")(x).reshape(want.shape)
     assert torch.equal(got, want) and torch.equal(got, resident)
     assert float(want.abs().sum()) > 0
     codes, steps = run_golden(hybrid, x.numpy())
     assert np.array_equal(codes * steps, got.reshape(codes.shape).numpy())
     with torch.no_grad():
         cert, detail = certify_twin_flow_values(fp64_identity_program(program.ir, exposed=exposed_nodes(hybrid)),
-                                                ValueHybridCoreFlow(hybrid, dtype=torch.float64), x[:16], atol=0.0)
+                                                ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu"), x[:16], atol=0.0)
     assert cert.passed and cert.neuron_windows_compared > 0, detail
 
 
@@ -197,4 +197,4 @@ def test_where_the_operand_rows_decide_the_packing_u1_keeps_the_heads_program(cl
     x = real_inputs(program, 64, seed=1000)
     with torch.no_grad():
         want = program.identity()(x)
-        assert torch.equal(ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x).reshape(want.shape), want)
+        assert torch.equal(ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x).reshape(want.shape), want)

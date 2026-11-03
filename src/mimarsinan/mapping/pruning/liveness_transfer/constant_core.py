@@ -42,7 +42,6 @@ from typing import AbstractSet, Dict, Sequence, Set
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
-from mimarsinan.mapping.ir.deployment_dtype import neuralcore_deployment_dtype
 
 __all__ = [
     "CARRIER_BIAS",
@@ -121,12 +120,16 @@ def derive_core_constants(
     exempt_rows: AbstractSet[int],
     carrier: ConstantCarrier | None,
     admits_nonzero: bool,
+    core_dtype: np.dtype,
 ) -> CoreConstantFacts:
     """Derive dead rows, foldable rows, and CONST columns for one core.
 
     ``matrix`` / ``bias`` must be the EFFECTIVE (post-fold) structures: the
     column rule reads the carrier only, so a fold that has already migrated
     onto it must be visible here or the constant would be wrong.
+    ``core_dtype`` (declared, never defaulted) is the dtype the deployed
+    program's cores accumulate in: the record's (``mapping/ir/deployment_dtype``,
+    ``DeployedArithmetic.core_np`` of the fold's domain).
     """
     n_axons, n_neurons = matrix.shape
     n_rows = min(n_axons, len(row_values))
@@ -184,15 +187,13 @@ def derive_core_constants(
     theta = float(threshold)
     if theta == 0.0:
         return CoreConstantFacts(dead_rows, fold_rows, {})
-    # Evaluated AT THE DEPLOYMENT DTYPE, so the derived constant IS the value
-    # the deployed executor puts on that line and there is nothing left to
-    # compare across precisions. The earlier fp32-vs-fp64 bit-equality gate is
-    # gone: it derived in fp64 and demanded the fp32 evaluation match exactly,
-    # which no value outside fp32 can satisfy, so the column rule refused every
-    # constant downstream of a real arithmetic op. Whether the value is
-    # grid-certifiable or execution-exact-only is `is_on_grid`'s call, made on
-    # the elimination ledger; constants are never snapped onto the grid.
-    dtype = neuralcore_deployment_dtype()
+    # [U-DAR] Evaluated in the deployed arithmetic (the record's core dtype,
+    # float64: the value executor's, every census's and K9's), so the derived
+    # constant IS the value the deployed program puts on that line and its zero
+    # test is the deployment's. Whether the value is grid-certifiable or
+    # execution-exact-only is `is_on_grid`'s call, made on the elimination
+    # ledger; constants are never snapped onto the grid.
+    dtype = np.dtype(core_dtype).type
     pre = _pre_activation(contributors, matrix, bias, theta, dtype)
 
     # CARRIABILITY: a contributor the deployment cannot represent exactly never

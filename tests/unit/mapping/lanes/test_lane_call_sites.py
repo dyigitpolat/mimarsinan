@@ -121,7 +121,7 @@ class TestSharedActivationModule:
         assert_exact(_run(shared.nf(), x), scm)
         for geometry in GEOMETRIES:
             mapping = shared.packed_mapping(**geometry)
-            hcm = _run(ValueHybridCoreFlow(mapping, dtype=torch.float64), x)
+            hcm = _run(ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu"), x)
             assert_exact(hcm, scm)
             codes, steps = run_golden(mapping, x.numpy())
             assert np.array_equal(codes * steps, hcm.reshape(codes.shape).numpy())

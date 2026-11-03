@@ -79,9 +79,10 @@ def assemble_segment_input_numpy(
     state_buffer: Dict[int, np.ndarray],
     num_samples: int,
     *,
-    dtype: npt.DTypeLike = np.float32,
+    dtype: npt.DTypeLike,
 ) -> np.ndarray:
-    """Numpy segment-input assembly; pass ``dtype=np.float64`` for HCM parity."""
+    """Numpy segment-input assembly at the declared ``dtype`` ([U-DAR] never defaulted: the record's boundary dtype,
+    ``SPIKING_ARITHMETIC.boundary_np``, the HCM's, or a backend's named departure from it)."""
     total_size = max((s.offset + s.size for s in input_map), default=0)
     inp = np.zeros((num_samples, total_size), dtype=dtype)
     for s in input_map:
@@ -105,10 +106,13 @@ def gather_final_output_numpy(
     state_buffer: Dict[int, np.ndarray],
     original_input: np.ndarray,
     num_samples: int,
+    *,
+    dtype: npt.DTypeLike,
 ) -> np.ndarray:
-    """Numpy analogue of :func:`gather_final_output_torch`."""
+    """Numpy analogue of :func:`gather_final_output_torch`, at the declared ``dtype`` ([U-DAR] the record's final-read
+    dtype, ``SPIKING_ARITHMETIC.final_read_np``)."""
     flat_sources = output_sources.flatten()
-    out = np.zeros((num_samples, len(flat_sources)), dtype=np.float32)
+    out = np.zeros((num_samples, len(flat_sources)), dtype=dtype)
     for idx, src in enumerate(flat_sources):
         if not isinstance(src, IRSource):
             continue

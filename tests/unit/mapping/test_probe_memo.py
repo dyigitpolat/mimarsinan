@@ -26,6 +26,7 @@ from mimarsinan.mapping.pruning.liveness_transfer.probe_memo import (
 )
 
 import unit.mapping.constant_vehicles as vehicles
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
 FOLD_VEHICLES = [
     "bias_only_collapse_graph", "sigmoid_chain_graph",
@@ -152,7 +153,7 @@ class TestUnsatisfiableProbesNeverExecute:
 
         calls = self._battery_counter(monkeypatch)
         op = self._opaque_op(nn.Sigmoid().eval())
-        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.5, None, 0.5, 0.5])
+        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.5, None, 0.5, 0.5], arithmetic=SPIKING_ARITHMETIC)
         assert out == {}
         assert calls == [], "an unsatisfiable opaque op must not execute"
 
@@ -168,7 +169,7 @@ class TestUnsatisfiableProbesNeverExecute:
 
         calls = self._battery_counter(monkeypatch)
         op = self._opaque_op(nn.Sigmoid().eval())
-        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.0, 0.0, 0.0, 0.0])
+        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.0, 0.0, 0.0, 0.0], arithmetic=SPIKING_ARITHMETIC)
         assert calls, "a fully-known opaque op must still run the battery"
         assert out == {j: 0.5 for j in range(4)}
 

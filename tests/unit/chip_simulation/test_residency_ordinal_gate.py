@@ -40,7 +40,7 @@ _HETEROGENEOUS_FP64_GOLDEN = (
 
 
 def _run(dtype=torch.float64):
-    flow = ValueHybridCoreFlow(build_heterogeneous_residency_mapping(), dtype=dtype)
+    flow = ValueHybridCoreFlow(build_heterogeneous_residency_mapping(), dtype=dtype, device="cpu")
     torch.manual_seed(11)
     x = torch.randn(2, 24, dtype=dtype)
     return flow(x)

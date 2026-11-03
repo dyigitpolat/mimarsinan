@@ -11,7 +11,7 @@ import torch
 
 from mimarsinan.certification.count_alignment import flow_node_counts
 from mimarsinan.certification.host_condition import OUTSIDE_SCOPE, HostConditionCertificate, host_kernel_replay
-from mimarsinan.chip_simulation.deployed_host import DEPLOYED_HOST_DEVICE, DEPLOYED_VALUE_DTYPE
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 from mimarsinan.chip_simulation.value_run.int64_golden import GoldenTrace, run_golden
 from mimarsinan.chip_simulation.value_run.operand_blocks import operand_blocks
@@ -137,7 +137,7 @@ def _golden_node_values(identity_mapping, trace: GoldenTrace) -> dict:
 
 
 def _flow_outputs(mapping, samples):
-    flow = ValueHybridCoreFlow(mapping, device=DEPLOYED_HOST_DEVICE, dtype=DEPLOYED_VALUE_DTYPE)  # [U-HDA]
+    flow = ValueHybridCoreFlow(mapping, device=VALUE_ARITHMETIC.device, dtype=VALUE_ARITHMETIC.core_dtype)  # [U-DAR]
     with torch.no_grad():
         out, state, _flat = flow.run_retaining_state(samples)
     return flow, out, state

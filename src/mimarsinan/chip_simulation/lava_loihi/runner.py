@@ -26,6 +26,7 @@ from mimarsinan.models.spiking.hybrid.carry import (
     carried_output_ids, run_pass_transfer)
 from mimarsinan.data_handling import batch_integrity
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.spiking.count_grid import host_op_for_evaluation
 from mimarsinan.spiking.segment_boundary import (
@@ -135,7 +136,7 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             shutdown_data_loader(loader)
 
     def _preprocess(self, x_np: np.ndarray) -> np.ndarray:
-        x = torch.tensor(x_np, dtype=torch.float32)
+        x = torch.tensor(x_np, dtype=SPIKING_ARITHMETIC.input_dtype)  # [U-DAR] the record's spiking input
         with torch.no_grad():
             x = self.preprocessor(x)
         return x.detach().cpu().numpy().reshape(x.shape[0], -1)
@@ -166,7 +167,8 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             t0 = time.time()
             seg = stage.hard_core_mapping
             assert seg is not None
-            seg_input = assemble_segment_input_numpy(stage.input_map, state_buffer, N)
+            # [U-DAR] Lava's float32 segment input: a named departure from the record (deployed_arithmetic_ratchet.py)
+            seg_input = assemble_segment_input_numpy(stage.input_map, state_buffer, N, dtype=np.float32)
             seg_input = normalize_boundary_slices_numpy(
                 stage.input_map, seg_input, wire_divisors,
             )
@@ -206,6 +208,7 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
                 # Host ops are re-derived here: evaluate them where the census
                 # flow did, or a staircase tie becomes a one-spike divergence.
                 device=self.device,
+                dtype=SPIKING_ARITHMETIC.boundary_np,  # [U-DAR] the record's boundary buffers
             )
             state_buffer[op_id] = result
             self._profile.stages.append(
@@ -221,7 +224,7 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             self.mapping, state_buffer, on_neural=_on_neural, on_compute=_on_compute,
         )
 
-        final = gather_final_output_numpy(self.mapping.output_sources, state_buffer, x_flat, N)
+        final = gather_final_output_numpy(self.mapping.output_sources, state_buffer, x_flat, N, dtype=SPIKING_ARITHMETIC.final_read_np)
         preds = np.argmax(final, axis=1)
         correct = int((preds == y_np).sum())
         self._accuracy = correct / max(1, N)

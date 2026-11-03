@@ -36,7 +36,7 @@ def instance(request):
 
 def _executor(hybrid, x_int):
     with torch.no_grad():
-        return ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x_int.double())
+        return ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x_int.double())
 
 
 def _golden_values(hybrid, x_int):

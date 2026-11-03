@@ -67,7 +67,7 @@ class TestLaneCertificates:
         mapping = program.packed_mapping(**packed)
         from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 
-        hcm = _run(ValueHybridCoreFlow(mapping, dtype=torch.float64), x)
+        hcm = _run(ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu"), x)
         assert_exact(hcm, scm)
         golden_codes, golden_steps = run_golden(mapping, x.numpy())
         assert np.array_equal(golden_codes * golden_steps, hcm.reshape(golden_codes.shape).numpy())
@@ -94,7 +94,7 @@ class TestScheduledCertificate:
 
         program = build_lane_program(residual_block_net(), (3, 16, 16), num_classes=10, platform=lane_platform())
         mapping = program.packed_mapping(axons=256, neurons=32, count=24, passes=128)
-        backend = ValueHybridCoreFlow(mapping, dtype=torch.float64)
+        backend = ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")
         x = real_inputs(program, 8)
         plain, detail = certify_twin_flow_values(fp64_identity_program(program.ir), backend, x, atol=0.0)
         assert not plain.passed and "backend-only=[]" not in detail, "the carries are invisible to the plain identity"
@@ -248,6 +248,6 @@ def test_resnet18_quarter_lane_program_certifies_single_and_multi_pass(tmp_path)
     for geometry in (dict(axons=256, neurons=256, coalescing=True, count=99999),
                      dict(axons=1280, neurons=256, count=8, passes=1024)):
         mapping = program.packed_mapping(**geometry)
-        assert_exact(_run(ValueHybridCoreFlow(mapping, dtype=torch.float64), x), scm)
+        assert_exact(_run(ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu"), x), scm)
         codes, steps = run_golden(mapping, x.numpy())
         assert_exact(torch.as_tensor(codes * steps), scm)

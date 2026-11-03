@@ -24,6 +24,7 @@ import torch.fx as fx
 import torch.nn as nn
 from torch.fx.passes.shape_prop import ShapeProp
 
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.torch_mapping.conversion_probe import guarded_forward
 
 _BATCHNORMS = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
@@ -98,7 +99,8 @@ class NativeFp64(nn.Module):
     replaced by ``state`` (by qualified name), every floating one cast to ``dtype``. ``model`` is held, not registered:
     nothing reaches it through this module."""
 
-    def __init__(self, model: nn.Module, state: Dict[str, torch.Tensor], dtype: torch.dtype = torch.float64):
+    def __init__(self, model: nn.Module, state: Dict[str, torch.Tensor],
+                 dtype: torch.dtype = VALUE_ARITHMETIC.core_dtype):
         super().__init__()
         own = {**dict(model.named_parameters()), **dict(model.named_buffers())}
         tensors = {name: (state[name] if name in state else value).detach().to(
@@ -233,7 +235,7 @@ PROBE_INPUT_KINDS = ("N(0, 1)", "U(0, 1)", "zero", "-U(0, 1)")
 
 def probe_inputs(
     input_shape: Tuple[int, ...], *, seed: int, batch: int = 6,
-    dtype: torch.dtype = torch.float64,
+    dtype: torch.dtype = VALUE_ARITHMETIC.core_dtype,
 ) -> torch.Tensor:
     """``batch`` seeded inputs: ``batch - 2`` random (half N(0, 1), half U(0, 1)), one zero, one -U(0, 1)."""
     if batch < 4:

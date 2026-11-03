@@ -31,6 +31,7 @@ from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contra
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import IRGraph
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC, VALUE_ARITHMETIC
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
@@ -89,9 +90,10 @@ RUNS: Dict[str, SemanticsRun] = {
 }
 
 
-def input_tensor(instance: Instance, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+def input_tensor(instance: Instance, dtype: torch.dtype = SPIKING_ARITHMETIC.input_dtype) -> torch.Tensor:
     """The executor input: under a spiking semantics the midpoint rate ``(k + 1/2) / T`` of each count ``k``,
-    the integer values under the value one.
+    the integer values under the value one; [U-DAR] at the record's spiking input dtype unless declared (the value
+    executors declare theirs).
 
     The identity encoder integrates its rate for ``T`` cycles (threshold 1, subtractive reset, float32), so it
     emits ``floor(T x)`` spikes up to rounding: the rate ``k / T`` itself sits on that floor's knife edge and
@@ -124,7 +126,7 @@ def encoder_counts(mapping, instance: Instance) -> torch.Tensor:
 
 
 def run_nodes(mapping, instance: Instance, *, transfer: Optional[str] = None,
-              value_dtype: torch.dtype = torch.float64, spike_mode: str = "Uniform",
+              value_dtype: torch.dtype = VALUE_ARITHMETIC.core_dtype, spike_mode: str = "Uniform",
               phase_dither: bool = False) -> Dict[int, torch.Tensor]:
     """``{node_id: (B, width)}`` for every neural node the program executes, and the final output (key -1).
 
@@ -134,7 +136,7 @@ def run_nodes(mapping, instance: Instance, *, transfer: Optional[str] = None,
     """
     run = RUNS[instance.semantics]
     if run.decode == "value":
-        flow = ValueHybridCoreFlow(mapping, dtype=value_dtype)
+        flow = ValueHybridCoreFlow(mapping, device=VALUE_ARITHMETIC.device, dtype=value_dtype)
         with torch.no_grad():
             out, state, _x = flow.run_retaining_state(input_tensor(instance, value_dtype))
         nodes = {int(k): v.detach().cpu().double() for k, v in state.items() if int(k) >= 0}

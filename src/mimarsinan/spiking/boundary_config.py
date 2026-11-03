@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 import torch
 
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
+
 
 @dataclass
 class BoundaryConfig:
@@ -17,7 +19,7 @@ class BoundaryConfig:
     spike_mode: str = "Uniform"
     thresholding_mode: str = "<="
     firing_mode: str = "Default"
-    compute_dtype: torch.dtype = torch.float64
+    compute_dtype: torch.dtype = SPIKING_ARITHMETIC.core_dtype  # [U-DAR] the record's spiking core dtype
     negative_shift: bool = False
     spike_generation_mode: str = "Uniform"
     phase_dither: bool = False

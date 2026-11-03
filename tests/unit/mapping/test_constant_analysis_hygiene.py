@@ -61,7 +61,7 @@ STEM_DEAD = {0: (set(), {0, 1, 2, 3})}
 SIGMOID_FOLD = {j: 0.5 for j in range(4)}
 
 
-def _arm(graph, *, folding="full", seeds=None, mode="cascade"):
+def _arm(graph, *, folding="full", seeds=None, mode="cascade", spiking_mode=INERT_SPIKING_MODE):
     exempt_rows, exempt_cols = _boundary_policy_exemptions(graph)
     return compute_global_pruned_sets(
         graph,
@@ -70,7 +70,7 @@ def _arm(graph, *, folding="full", seeds=None, mode="cascade"):
         exempt_cols_per_node=exempt_cols,
         mode=mode,
         elimination_constant_folding=folding,
-        spiking_mode=INERT_SPIKING_MODE,
+        spiking_mode=spiking_mode,
     )
 
 
@@ -233,19 +233,22 @@ class TestGlobalRngIsUnperturbed:
 
         assert all(torch.equal(a, b) for a, b in zip(reference, observed))
 
-    def test_isolation_covers_the_original_module_not_only_the_copies(self):
-        """[ratchet] the fp64 twin is gone, so EVERY probe execution now runs
-        on the LIVE module — the fork has to cover all of them, not the two it
-        used to. The invariant tightens rather than relaxes."""
+    @pytest.mark.parametrize("spiking_mode,live", [(INERT_SPIKING_MODE, 0), ("lif", PROBE_EXECUTIONS_PER_OP)],
+                             ids=["value", "lif"])
+    def test_isolation_covers_every_module_the_battery_runs(self, spiking_mode, live):
+        """[ratchet] [U-DAR] the probe runs the module the deployed arithmetic runs: the value domain's float64 twin
+        (the value executor's, a copy: the live module runs none of the battery) or a spiking domain's stored module
+        (the LIVE module carries the whole battery). The fork has to cover every execution either way."""
         host = _RngDrawingHost()
         graph = _host_graph(host)
+        _PROBE_EXECUTIONS.clear()
         torch.manual_seed(7)
         before = torch.get_rng_state().clone()
-        _arm(graph, seeds=STEM_DEAD)
+        _arm(graph, seeds=STEM_DEAD, spiking_mode=spiking_mode)
         assert torch.equal(before, torch.get_rng_state())
-        assert host.live_calls == PROBE_EXECUTIONS_PER_OP, (
-            "expected the live module to carry the whole battery, saw "
-            f"{host.live_calls}"
+        assert len(_PROBE_EXECUTIONS) == PROBE_EXECUTIONS_PER_OP
+        assert host.live_calls == live, (
+            f"expected the live module to carry {live} of the battery, saw {host.live_calls}"
         )
 
 

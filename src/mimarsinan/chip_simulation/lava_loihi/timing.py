@@ -8,10 +8,12 @@ from typing import Dict, List
 
 import numpy as np
 
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
 
-_LAVA_DTYPE = np.float64
+#: [U-DAR] Lava's core weights, biases and spike buffers: the record's spiking core dtype.
+_LAVA_DTYPE = SPIKING_ARITHMETIC.core_np
 
 
 @dataclass

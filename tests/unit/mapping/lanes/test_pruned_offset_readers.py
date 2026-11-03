@@ -90,7 +90,7 @@ def _certify(program, n: int = 2048) -> None:
     """NF = SCM = HCM = int64 golden at atol 0 over ``n`` inputs."""
     with torch.no_grad():
         mapping = program.packed_mapping(axons=512, neurons=64)
-        hcm_flow = ValueHybridCoreFlow(mapping, dtype=torch.float64)
+        hcm_flow = ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")
         for chunk in range(n // 512):
             x = real_inputs(program, 512, seed=100 + chunk)
             scm = program.identity()(x)

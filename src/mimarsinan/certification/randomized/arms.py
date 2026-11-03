@@ -16,6 +16,7 @@ from mimarsinan.certification.randomized.instance import (
 import mimarsinan.chip_simulation.ttfs.ttfs_segment as ttfs_segment
 from mimarsinan.chip_simulation.value_run import value_execution
 from mimarsinan.mapping.ir import legacy_convert
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC, dtype_name
 from mimarsinan.mapping.layout import segmentation
 from mimarsinan.mapping.packing import canonical, hybrid_build_scheduled, pass_timing, retimed_levels
 from mimarsinan.mapping.platform import core_residency
@@ -65,7 +66,7 @@ class Arm:
     transfer: Optional[str] = None
     scale: int = 1
     value_scale: int = 1
-    value_dtype: str = "float64"
+    value_dtype: str = dtype_name(VALUE_ARITHMETIC.core_dtype)  # [U-DAR] the record's; an arm may declare another
     encoder: str = "Uniform"
     phase_dither: bool = False
     setting: Optional[Callable[[], contextlib.AbstractContextManager]] = None
@@ -97,8 +98,8 @@ class Arm:
 
     def control(self) -> "Arm":
         """The paired control: the same targeting with the one field left at its hypothesis-on value."""
-        return replace(self, transfer=None, scale=1, value_scale=1, value_dtype="float64", switch=None,
-                       encoder="Uniform")
+        return replace(self, transfer=None, scale=1, value_scale=1, value_dtype=dtype_name(VALUE_ARITHMETIC.core_dtype),
+                       switch=None, encoder="Uniform")
 
 
 @contextlib.contextmanager
@@ -251,7 +252,7 @@ ARMS: Dict[str, Arm] = {arm.id: arm for arm in (
     Arm("H7", "H7", "fire checks at the neuron's own synaptic events in canonical rank order on per-event cores "
                     "(FPGA branch only)", exercisable=False),
     Arm("H8", "H8", "the accumulator bound: partial sums past the executor's exact integer range (2^53 for "
-                    "the float64 spiking executors, 2^24 for the float32 value executor)",
+                    "the deployed float64 executors; 2^24 for the arm's declared float32 value counterfactual)",
         motifs=("wide_fan_in",), declaration={"allow_coalescing": True}, scale=(1 << 49) + 1,
         value_scale=(1 << 20) + 1, value_dtype="float32"),
     Arm("H9", "H9", "a stage before its producer reads a missing node and crashes (no silent counterexample "

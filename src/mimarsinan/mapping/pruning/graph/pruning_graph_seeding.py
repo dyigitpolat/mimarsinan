@@ -7,6 +7,7 @@ from typing import AbstractSet, Dict, Mapping, Set, Tuple
 
 import numpy as np
 
+from mimarsinan.chip_simulation.deployed_host import deployed_arithmetic
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
 from mimarsinan.mapping.pruning.liveness_transfer import (
     DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
@@ -168,7 +169,8 @@ def _build_constant_state(
     spiking_mode: str,
     probe_memo: "Dict[tuple, Dict[int, float]] | None" = None,
 ) -> ConstantFoldState:
-    """The lattice, gated by the policy axis AND the chip-domain exactness gate."""
+    """The lattice, gated by the policy axis AND the chip-domain exactness gate, evaluated in the deployed arithmetic
+    of the plan's domain ([U-DAR] the record, keyed by the spiking mode: ``deployed_host.deployed_arithmetic``)."""
     policy = effective_constant_folding(
         policy=elimination_constant_folding,
         computeop_liveness_transfers=computeop_liveness_transfers,
@@ -179,6 +181,7 @@ def _build_constant_state(
             admits_nonzero=domain_admits_nonzero_constants(spiking_mode)
         ),
         probe_memo=probe_memo if probe_memo is not None else {},
+        arithmetic=deployed_arithmetic(spiking_mode),
     )
 
 

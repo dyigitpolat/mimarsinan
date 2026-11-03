@@ -52,10 +52,13 @@ class ValueHybridCoreFlow(nn.Module):
     captures via ``certification.count_alignment.flow_node_counts``); the
     ``lif_execution_synchronized`` attribute is accepted and ignored so the
     capture helpers work verbatim.
+
+    [U-DAR] ``device`` and ``dtype`` are declared, never defaulted: the deployed
+    program's are the record's (``VALUE_ARITHMETIC.device``, ``.core_dtype``:
+    the CPU, float64); any other dtype is a declared counterfactual executor.
     """
 
-    def __init__(self, hybrid_mapping, device="cpu",
-                 dtype: torch.dtype = torch.float32):
+    def __init__(self, hybrid_mapping, *, device, dtype: torch.dtype):
         super().__init__()
         self.hybrid_mapping = hybrid_mapping
         self.execution_device = torch.device(device)
@@ -70,8 +73,8 @@ class ValueHybridCoreFlow(nn.Module):
         self._plan_cache: Dict = {}
 
     def _run_compute_stage(self, op, x_flat, state_buffer):
-        # Host modules are stored fp32; certification runs need the whole
-        # program in fp64, so the op briefly executes a double twin.
+        # Host modules are stored fp32; the deployed value program runs whole in
+        # the record's float64, so the op briefly executes its float64 twin.
         return execute_host_op(
             op, x_flat, state_buffer, dtype=self.value_dtype, twins=self._fp64_ops,
         )

@@ -104,7 +104,7 @@ def program():
 
 def _run(hybrid, x):
     with torch.no_grad():
-        return ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x.double())
+        return ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x.double())
 
 
 class TestTheExecutedPlane:

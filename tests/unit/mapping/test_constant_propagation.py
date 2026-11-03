@@ -43,6 +43,7 @@ from unit.mapping.constant_vehicles import (
     residual_join_graph,
     sigmoid_chain_graph,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
 STEM_DEAD = {0: ([False] * 3, [True] * 4)}
 
@@ -319,9 +320,9 @@ class TestCertificateTripsOnFoldMutation:
 
         original = ct.derive_constant_outputs
 
-        def corrupted(op, transfer, in_values):
+        def corrupted(op, transfer, in_values, **kwargs):
             return {
-                o: v + 0.25 for o, v in original(op, transfer, in_values).items()
+                o: v + 0.25 for o, v in original(op, transfer, in_values, **kwargs).items()
             }
 
         monkeypatch.setattr(ct, "derive_constant_outputs", corrupted)
@@ -369,7 +370,7 @@ class TestCertificateRefusesGridBreakingConstants:
         from unit.mapping.test_constant_lattice import _op
 
         folded = derive_constant_outputs(
-            _op(nn.GELU().eval()), OPAQUE_TRANSFER, [0.5] * 4
+            _op(nn.GELU().eval()), OPAQUE_TRANSFER, [0.5] * 4, arithmetic=SPIKING_ARITHMETIC
         )
         assert set(folded) == {0, 1, 2, 3}
         assert not is_on_grid(list(folded.values()))

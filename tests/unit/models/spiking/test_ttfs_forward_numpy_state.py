@@ -84,7 +84,7 @@ class TestForwardMatchesContractRunner:
                 flow.hybrid_mapping.output_sources,
                 contract.state_buffer,
                 x_np,
-                1,
+                1, dtype=np.float32
             ) * float(T)
             np.testing.assert_allclose(
                 got.cpu().numpy(), want, rtol=0, atol=0,

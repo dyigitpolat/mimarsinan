@@ -49,6 +49,7 @@ from unit.spiking.encoding_skip_program import (
     samples,
     scm_window_counts,
 )
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 
 THETA_ENC = 2.185
 THETAS_ENC = (THETA_ENC, 1.0)
@@ -119,7 +120,8 @@ def test_the_deployed_join_reads_the_encoding_layer_at_the_wire_gauge(semantics,
         wire = {nid: torch.as_tensor(outs[nid], dtype=torch.float64) / (theta_enc if nid == int(stem.id) else 1.0)
                 for nid in sources}
         with torch.no_grad():
-            want = execute_compute_op_torch(join, x[i:i + 1].double(), wire, gather_dtype=torch.float64)
+            want = execute_compute_op_torch(join, x[i:i + 1].double(), wire,
+                                            arithmetic=VALUE_ARITHMETIC.counterfactual(torch.float64))
         np.testing.assert_allclose(outs[int(join.id)], want.numpy(), atol=1e-5, rtol=0.0,
                                    err_msg=f"{semantics}: sample {i}")
 

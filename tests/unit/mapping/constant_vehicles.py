@@ -154,8 +154,9 @@ def bias_only_collapse_graph(seed=41):
 def gelu_execution_exact_graph(seed=43):
     """bias core -> GELU -> Identity -> head: EXACT, but OFF the dyadic grid.
 
-    ``GELU(0.25)`` is exactly what the deployed program computes and is not a
-    dyadic value, so the fold is execution-exact while the bit-exact
+    ``GELU(0.25)`` is exactly what the deployed program computes (in its domain's
+    deployed arithmetic, [U-DAR] the record's: the float64 twin's value in the value
+    domain, the stored float32 module's in a spiking one) and is not a dyadic value, so the fold is execution-exact while the bit-exact
     certificate refuses to back it. The ``Identity`` hop carries that same
     non-dyadic constant one line further — the op class that used to refuse
     every constant fp32 could carry but fp64 could not. The ledger carries the

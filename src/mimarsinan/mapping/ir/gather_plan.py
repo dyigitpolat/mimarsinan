@@ -52,13 +52,13 @@ class GatherPlan:
         self,
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
-        dtype: "torch.dtype | None" = None,
+        *,
+        dtype: torch.dtype,
     ) -> torch.Tensor:
         batch_size = input_tensor.shape[0]
         device = input_tensor.device
-        # Default dtype on purpose: the reference walk builds a default-dtype
-        # zeros tensor, downcasting wider inputs on assignment. An explicit
-        # ``dtype`` (the value-domain fp64 path) widens the buffer instead.
+        # [U-DAR] The buffer's dtype is declared, never the process default: every input is cast to it on assignment
+        # (the record's host-gather dtype, ``mapping/ir/deployment_dtype.py``).
         result = torch.zeros(batch_size, self.n_sources, device=device, dtype=dtype)
         idx = self._indices(device)
         if self.input_dst.size:

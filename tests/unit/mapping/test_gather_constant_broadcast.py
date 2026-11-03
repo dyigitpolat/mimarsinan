@@ -23,7 +23,7 @@ def test_batch_mismatched_buffer_fails_loud():
     bad = torch.arange(6.0).reshape(2, 3)  # rows != batch
     x = torch.zeros(5, 4)
     with pytest.raises(ValueError, match="batch"):
-        plan.gather(x, {4: bad})
+        plan.gather(x, {4: bad}, dtype=torch.float32)
 
 
 def test_batched_buffers_stay_untouched():
@@ -31,5 +31,5 @@ def test_batched_buffers_stay_untouched():
     plan = build_gather_plan(_FakeNode(sources))
     buf = torch.rand(4, 3)
     x = torch.zeros(4, 2)
-    out = plan.gather(x, {7: buf})
+    out = plan.gather(x, {7: buf}, dtype=torch.float32)
     torch.testing.assert_close(out, buf)

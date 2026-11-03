@@ -13,6 +13,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     compute_op_owns_scale_domain,
 )
 from mimarsinan.mapping.ir import IRSource
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
@@ -96,8 +97,7 @@ def boundary_normalization_scales(
 def _legacy_boundary_divisors(
     hybrid_mapping: HybridHardCoreMapping,
 ) -> dict[int, float | np.ndarray]:
-    """Pre-stamp reconstruction: wrapped modules carry their theta; a plain op
-    inherits the mean of its compute sources' divisors."""
+    """Pre-stamp reconstruction: wrapped modules carry their theta; a plain op inherits the mean of its compute sources' divisors."""
     divisors: dict[int, float | np.ndarray] = {}
     for stage in hybrid_mapping.stages:
         op = stage.compute_op
@@ -130,8 +130,8 @@ def normalize_boundary_slices_numpy(
     seg_input: np.ndarray,
     boundary_scales: dict[int, float | np.ndarray],
 ) -> np.ndarray:
-    """Rescale each producer slice of an assembled segment input to the wire
-    domain (numpy twin; empty divisors => identity, no copy)."""
+    """Rescale each producer slice of an assembled segment input to the wire domain (numpy twin; empty divisors =>
+    identity, no copy)."""
     if not boundary_scales:
         return seg_input
     out = seg_input
@@ -219,7 +219,7 @@ def decode_segment_output(
     seg_out_spike_count: np.ndarray,
     simulation_length: int,
     *,
-    dtype: npt.DTypeLike = np.float64,
+    dtype: npt.DTypeLike = SPIKING_ARITHMETIC.boundary_np,
 ) -> np.ndarray:
     """LIF / rate decode (numpy inter-stage): spike counts ``/ T``, flattened to ``(1, N)``."""
     t = max(int(simulation_length), 1)

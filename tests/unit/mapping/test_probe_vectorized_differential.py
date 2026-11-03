@@ -21,6 +21,7 @@ from mimarsinan.mapping.pruning.liveness_transfer.transfer_types import (
 )
 
 from unit.mapping.constant_vehicles import srcs
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
 
 def _op(module, n_in, n_out=None):
@@ -44,9 +45,14 @@ def _oracle(op, transfer, in_values):
     known = {i: v for i, v in enumerate(in_values) if v is not None}
     if not known:
         return {}
-    dtype = ct._deployment_dtype(op)
-    if dtype is None or not all(
-        float(torch.tensor(v, dtype=dtype)) == float(v) for v in known.values()
+    # [U-DAR] the deployed kernel and its dtype in the probe's arithmetic (the spiking record's, the stored module's)
+    twins: dict = {}
+    deployed = ct._deployed_kernel(op, SPIKING_ARITHMETIC, twins)
+    if deployed is None:
+        return {}
+    module, dtype = deployed
+    if not all(
+        float(torch.tensor(v, dtype=SPIKING_ARITHMETIC.host_gather_dtype).to(dtype)) == float(v) for v in known.values()
     ):
         return {}
     if transfer.is_opaque or not transfer.out_to_ins:
@@ -57,7 +63,7 @@ def _oracle(op, transfer, in_values):
     probes = [
         [known.get(i, filler) for i in range(n_in)] for filler in ct._PROBE_FILLERS
     ]
-    probed = ct._probe(op, module, probes, dtype)
+    probed = ct._probe(op, module, probes, SPIKING_ARITHMETIC, twins)
     if probed is None:
         return {}
     y_a, y_b = probed
@@ -141,7 +147,7 @@ CASES.append(  # all-TOP guarded upstream, but the seam must agree anyway
                          ids=[c[0] + f"_{i}" for i, c in enumerate(CASES)])
 def test_vectorized_equals_frozen_scalar_oracle(label, module, transfer, vals, n):
     op = _op(module, n)
-    got = ct.derive_constant_outputs(op, transfer, list(vals))
+    got = ct.derive_constant_outputs(op, transfer, list(vals), arithmetic=SPIKING_ARITHMETIC)
     want = _oracle(_op(module, n), transfer, list(vals))
     assert _hex(got) == _hex(want), (
         f"{label}: vectorized path diverged from the frozen scalar oracle"
@@ -153,7 +159,7 @@ class TestTheDifferentialCanFail:
 
     def test_a_perturbed_value_is_caught(self):
         op = _op(nn.Sigmoid().eval(), 3)
-        got = ct.derive_constant_outputs(op, OPAQUE_TRANSFER, [0.0, 0.0, 0.0])
+        got = ct.derive_constant_outputs(op, OPAQUE_TRANSFER, [0.0, 0.0, 0.0], arithmetic=SPIKING_ARITHMETIC)
         want = _oracle(_op(nn.Sigmoid().eval(), 3), OPAQUE_TRANSFER, [0.0, 0.0, 0.0])
         assert got and want
         got = dict(got)

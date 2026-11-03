@@ -121,8 +121,8 @@ def test_an_operand_program_plans_and_executes_a_residency_step(plan):
     x = image_inputs(16)
     with torch.no_grad():
         want = program.identity()(x)
-        got = ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x).reshape(want.shape)
-        resident = ValueHybridCoreFlow(flat, dtype=torch.float64)(x).reshape(want.shape)
+        got = ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x).reshape(want.shape)
+        resident = ValueHybridCoreFlow(flat, dtype=torch.float64, device="cpu")(x).reshape(want.shape)
     assert torch.equal(got, want) and torch.equal(got, resident) and float(want.abs().sum()) > 0
     certificate = certify_operand_program(program.nf(), program.identity_mapping(), hybrid, x)
     assert certificate.passed, certificate.summary()

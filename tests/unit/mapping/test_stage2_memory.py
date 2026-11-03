@@ -90,7 +90,7 @@ def test_a_gather_plan_of_no_source_and_of_off_sources_only():
     for sources in ([], [IRSource(-1, 0)] * 3):
         plan = build_gather_plan(_Node(sources))
         assert plan.n_sources == len(sources) and plan.buffer_groups == ()
-        assert torch.equal(plan.gather(torch.ones(2, 1), {}), torch.zeros(2, len(sources)))
+        assert torch.equal(plan.gather(torch.ones(2, 1), {}, dtype=torch.float32), torch.zeros(2, len(sources)))
 
 
 # ----------------------------------------------------------------------------- reindexing keeps kept objects

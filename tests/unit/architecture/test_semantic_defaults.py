@@ -28,6 +28,24 @@ REQUIRED = [
      "thresholding_mode"),
     ("mimarsinan.chip_simulation.nevresim.nevresim_driver.NevresimDriver",
      "spike_generation_mode"),
+    # [U-DAR] T-8: the deployed arithmetic's dtypes and device (the record, mapping/ir/deployment_dtype.py) are
+    # declared at every executor seam, never defaulted.
+    ("mimarsinan.chip_simulation.value_run.value_flow.ValueHybridCoreFlow", "device"),
+    ("mimarsinan.chip_simulation.value_run.value_flow.ValueHybridCoreFlow", "dtype"),
+    ("mimarsinan.chip_simulation.hybrid_run.host_compute.execute_compute_op_numpy", "dtype"),
+    ("mimarsinan.chip_simulation.hybrid_run.host_compute.execute_compute_op_torch", "arithmetic"),
+    ("mimarsinan.chip_simulation.hybrid_run.host_compute.evaluate_gathered_host_op", "arithmetic"),
+    ("mimarsinan.chip_simulation.hybrid_run.hybrid_execution.assemble_segment_input_numpy", "dtype"),
+    ("mimarsinan.chip_simulation.hybrid_run.hybrid_execution.gather_final_output_numpy", "dtype"),
+    ("mimarsinan.mapping.pruning.liveness_transfer.constant_core.derive_core_constants", "core_dtype"),
+    ("mimarsinan.mapping.pruning.liveness_transfer.constant_transfer.derive_constant_outputs", "arithmetic"),
+    ("mimarsinan.mapping.pruning.liveness_transfer.probe_memo.derive_constant_outputs_memoized", "arithmetic"),
+]
+
+#: [U-DAR] T-8 on methods: (owner class, method, axis), each keyword-only and default-free.
+REQUIRED_METHODS = [
+    ("mimarsinan.mapping.ir.types.IRNode", "gather_inputs", "dtype"),
+    ("mimarsinan.mapping.ir.gather_plan.GatherPlan", "gather", "dtype"),
 ]
 
 
@@ -49,6 +67,13 @@ def test_the_axis_is_declared_never_defaulted(path, axis):
     assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, (
         f"{path}({axis}=...) must be keyword-only, so a positional bypass "
         f"cannot supply it by accident")
+
+
+@pytest.mark.parametrize("owner,method,axis", REQUIRED_METHODS)
+def test_the_gather_dtype_is_declared_never_defaulted(owner, method, axis):
+    parameter = _param(getattr(_resolve(owner), method), axis)
+    assert parameter.default is inspect.Parameter.empty, f"{owner}.{method}({axis}=...) has grown a default again"
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, f"{owner}.{method}({axis}=...) must be keyword-only"
 
 
 def test_sanafe_runner_refuses_undeclared_semantics():

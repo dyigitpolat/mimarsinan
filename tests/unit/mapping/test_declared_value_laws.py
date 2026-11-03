@@ -83,7 +83,7 @@ class TestCertifiedAtAtolZero:
             scm = program.identity()(x)
             packed_mapping = program.packed_mapping(**geometry)
             from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
-            hcm = ValueHybridCoreFlow(packed_mapping, dtype=torch.float64)(x)
+            hcm = ValueHybridCoreFlow(packed_mapping, dtype=torch.float64, device="cpu")(x)
         assert_exact(nf, scm)
         assert_exact(scm, hcm)
         codes, steps = run_golden(packed_mapping, x.numpy())
@@ -95,7 +95,7 @@ class TestCertifiedAtAtolZero:
         mapping = program.packed_mapping(axons=1024, neurons=256, count=3, passes=128)
         from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
         with torch.no_grad():
-            assert_exact(ValueHybridCoreFlow(mapping, dtype=torch.float64)(x), program.identity()(x))
+            assert_exact(ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")(x), program.identity()(x))
         codes, steps = run_golden(mapping, x.numpy())
         assert_exact(torch.as_tensor(codes * steps), program.identity()(x))
 
@@ -342,6 +342,6 @@ def test_resnet18_quarter_with_every_declaration_certifies(tmp_path):
         scm = program.identity()(x)
         assert_exact(program.nf()(x), scm)
         mapping = program.packed_mapping(axons=256, neurons=256, coalescing=True, count=99999)
-        assert_exact(ValueHybridCoreFlow(mapping, dtype=torch.float64)(x), scm)
+        assert_exact(ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")(x), scm)
     codes, steps = run_golden(mapping, x.numpy())
     assert_exact(torch.as_tensor(codes * steps), scm)

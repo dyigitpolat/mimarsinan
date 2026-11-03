@@ -181,7 +181,7 @@ def deployment(instance: Instance, constraints: Mapping[str, Any], seed: int, ar
 
 def _run(mapping, instance: Instance, arm: Arm, *, identity: bool = False) -> Dict[int, torch.Tensor]:
     torch.manual_seed(instance.seed)
-    dtype = torch.float32 if arm.value_dtype == "float32" else torch.float64
+    dtype = getattr(torch, arm.value_dtype)  # [U-DAR] the arm's declared dtype (its control's: the record's)
     transfer = None if identity else arm.transfer
     return ex.run_nodes(mapping, instance, transfer=transfer, value_dtype=dtype, spike_mode=arm.encoder,
                         phase_dither=arm.phase_dither)

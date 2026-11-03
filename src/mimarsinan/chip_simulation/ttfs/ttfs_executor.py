@@ -32,10 +32,12 @@ from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
     segment_ttfs_arrays_from_mapping,
     ttfs_core_membrane_voltages,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.support.core_geometry import used_neurons
 
 _RAW_INPUT_NODE_ID = -2
-_CONTRACT_DTYPE = np.float64
+#: [U-DAR] The TTFS contract's segment buffers and host-op values: the record's spiking boundary dtype (the HCM's).
+_CONTRACT_DTYPE = SPIKING_ARITHMETIC.boundary_np
 
 
 @dataclass

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from mimarsinan.chip_simulation.deployed_host import DEPLOYED_HOST_DEVICE, DEPLOYED_VALUE_DTYPE
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import gather_final_output_torch
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 from mimarsinan.mapping.ir_mapping_class import IRMapping
@@ -46,8 +46,8 @@ def fp64_identity_program(ir_graph, *, exposed: Iterable[int] = ()) -> ValueHybr
     """The fp64 identity value program of an IR graph (one hard core per neural core, float weights); ``exposed``
     nodes are written out by their stages too (a twin certificate's backend carries)."""
     return ValueHybridCoreFlow(
-        build_identity_hybrid_mapping(ir_graph=ir_graph, exposed=exposed), device=DEPLOYED_HOST_DEVICE,
-        dtype=DEPLOYED_VALUE_DTYPE,  # [U-HDA] the deployed host's arithmetic
+        build_identity_hybrid_mapping(ir_graph=ir_graph, exposed=exposed), device=VALUE_ARITHMETIC.device,
+        dtype=VALUE_ARITHMETIC.core_dtype,  # [U-DAR] the record of the deployed arithmetic
     )
 
 
@@ -113,7 +113,8 @@ def _locate_in_program(lowered: LoweredProgram) -> Locator:
         for label, sources in lowered.mapper_sources:
             try:
                 values = gather_final_output_torch(
-                    sources, state, x_flat, batch, torch.device("cpu"), torch.float64,
+                    sources, state, x_flat, batch, torch.device(VALUE_ARITHMETIC.device),
+                    VALUE_ARITHMETIC.final_read_dtype,
                 )
             except KeyError:
                 continue

@@ -79,7 +79,7 @@ def program_digest(name: str) -> dict:
     x = torch.randint(-3, 4, (8, *program.input_shape), generator=torch.Generator().manual_seed(3)).double()
     with torch.no_grad():
         identity = program.identity()(x).numpy()
-        packed_out = ValueHybridCoreFlow(packed, dtype=torch.float64)(x).numpy()
+        packed_out = ValueHybridCoreFlow(packed, dtype=torch.float64, device="cpu")(x).numpy()
         nf = program.nf()(x).detach().numpy()
     codes, steps = run_golden(packed, x.numpy())
     return {"ir": _ir_digest(program.ir), "packed": _packed_digest(packed), "identity_out": _array_digest(identity),

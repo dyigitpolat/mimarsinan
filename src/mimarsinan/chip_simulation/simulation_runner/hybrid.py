@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from mimarsinan.mapping.ir import ComputeOp
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping, SegmentIOSlice
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     apply_input_shifts_numpy,
@@ -195,6 +196,7 @@ class SimulationHybridMixin(SimulationHostContract):
                 # Bit-parity with the census flow: half-grid wire ties must
                 # be decided by the SAME f32 reduction (device) everywhere.
                 device=self.host_compute_device,
+                dtype=SPIKING_ARITHMETIC.boundary_np,  # [U-DAR] the record's boundary buffers
             )
 
         # [W4.3] the opt-in stage timer wraps host ComputeOps only; neural
@@ -205,7 +207,8 @@ class SimulationHybridMixin(SimulationHostContract):
         )
 
         final_output = gather_final_output_numpy(
-            hybrid.output_sources, state_buffer, original_input, num_samples
+            hybrid.output_sources, state_buffer, original_input, num_samples,
+            dtype=SPIKING_ARITHMETIC.final_read_np,  # [U-DAR] the record's final read
         )
         if membrane_corrections:
             print(
@@ -229,5 +232,7 @@ class SimulationHybridMixin(SimulationHostContract):
         state_buffer: Dict[int, np.ndarray],
         num_samples: int,
     ) -> np.ndarray:
-        return assemble_segment_input_numpy(input_map, state_buffer, num_samples)
+        # [U-DAR] A named departure from the record's float64 boundary buffers (SPIKING_ARITHMETIC.boundary_dtype):
+        # nevresim takes its segment inputs at float32; classified in tests/unit/mapping/deployed_arithmetic_ratchet.py.
+        return assemble_segment_input_numpy(input_map, state_buffer, num_samples, dtype=np.float32)
 

@@ -10,6 +10,7 @@ from mimarsinan.mapping.ir import ComputeOp, IRSource
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     execute_compute_op_torch,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
 
 def _op(module, size):
@@ -27,7 +28,7 @@ def test_double_module_executes_without_dtype_mismatch():
     module = nn.LayerNorm([3]).double()
     op = _op(module, 3)
     buf = {7: torch.tensor([[0.1, -0.4, 0.3]], dtype=torch.float64)}
-    out = execute_compute_op_torch(op, torch.zeros(1, 3, dtype=torch.float64), buf)
+    out = execute_compute_op_torch(op, torch.zeros(1, 3, dtype=torch.float64), buf, arithmetic=SPIKING_ARITHMETIC)
     assert out.shape == (1, 3)
     assert out.dtype == torch.float64
 
@@ -36,5 +37,5 @@ def test_float32_module_keeps_float32_execution():
     module = nn.LayerNorm([3])
     op = _op(module, 3)
     buf = {7: torch.tensor([[0.1, -0.4, 0.3]], dtype=torch.float64)}
-    out = execute_compute_op_torch(op, torch.zeros(1, 3, dtype=torch.float64), buf)
+    out = execute_compute_op_torch(op, torch.zeros(1, 3, dtype=torch.float64), buf, arithmetic=SPIKING_ARITHMETIC)
     assert out.dtype == torch.float32

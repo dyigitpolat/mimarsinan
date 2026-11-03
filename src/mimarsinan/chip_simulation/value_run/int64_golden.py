@@ -17,6 +17,7 @@ from mimarsinan.chip_simulation.value_run.operand_blocks import (
 )
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import IRSource
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.models.nn.activations.integer_law import apply_law_int64
 
 _RAW_INPUT = -2
@@ -81,7 +82,7 @@ def _operand_codes(law, q: np.ndarray) -> tuple:
 
 def output_offsets(law) -> np.ndarray:
     """The value of output code 0 is minus this, per column (0 off a lane law)."""
-    return np.asarray(getattr(law, "output_offset", np.zeros(law.columns)), dtype=np.float64)
+    return np.asarray(getattr(law, "output_offset", np.zeros(law.columns)), dtype=VALUE_ARITHMETIC.core_np)
 
 
 class _Segment:
@@ -124,7 +125,7 @@ class _Segment:
                     raise GoldenGridError(f"hard core {index} row {row}: host value without its boundary grid")
             else:
                 q[:, row] = self.core(int(source.core_))[:, int(source.neuron_)]
-        weight = np.asarray(hc.get_core_matrix(), dtype=np.float64)
+        weight = np.asarray(hc.get_core_matrix(), dtype=VALUE_ARITHMETIC.core_np)
         blocks = self.operand[index] if self.operand is not None else []
         if blocks:
             weight = _per_sample_weight(weight, blocks, self.payloads, batch)
@@ -225,7 +226,7 @@ def run_golden(program, x, *, trace: Optional[GoldenTrace] = None,
     ``keep`` (a dict) receives every node output the program materializes, by node id: ``codes``, ``steps`` and
     ``values`` (codes x steps) of segment outputs, and ``values`` of host ops, for per-operator censuses [CL7]."""
     bindings = getattr(program, "dynamic_bank_bindings", None) or None
-    x = np.asarray(x, dtype=np.float64)
+    x = np.asarray(x, dtype=VALUE_ARITHMETIC.core_np)
     flat = x.reshape(x.shape[0], -1)
     values: Dict[int, np.ndarray] = {_RAW_INPUT: flat}
     codes: Dict[int, np.ndarray] = {}
@@ -238,10 +239,10 @@ def run_golden(program, x, *, trace: Optional[GoldenTrace] = None,
             _neural_stage(stage, values, codes, steps, offsets, bindings, trace)
         elif stage.kind == "compute":
             op = stage.compute_op
-            state = {k: torch.as_tensor(v, dtype=torch.float64) for k, v in values.items()}
+            state = {k: torch.as_tensor(v, dtype=VALUE_ARITHMETIC.core_dtype) for k, v in values.items()}
             with torch.no_grad():
                 values[int(op.id)] = execute_host_op(
-                    op, x_torch, state, dtype=torch.float64, twins=twins,
+                    op, x_torch, state, dtype=VALUE_ARITHMETIC.core_dtype, twins=twins,
                 ).numpy()
             if trace is not None:
                 trace.host_values[int(op.id)] = values[int(op.id)]

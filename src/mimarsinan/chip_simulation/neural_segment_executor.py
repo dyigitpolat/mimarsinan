@@ -13,6 +13,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     is_ttfs_spiking_mode,
 )
 from mimarsinan.chip_simulation.ttfs.ttfs_executor import TtfsAnalyticalExecutor
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
 
 def execute_neural_segment_analytical(
@@ -23,7 +24,7 @@ def execute_neural_segment_analytical(
     num_samples: int,
     simulation_length: int,
     spiking_mode: str,
-    dtype: npt.DTypeLike = np.float64,
+    dtype: npt.DTypeLike = SPIKING_ARITHMETIC.boundary_np,
 ) -> NeuralSegmentResult:
     """Canonical TTFS/LIF analytical path for references and buffer propagation."""
     seg_in = assemble_segment_input_numpy(

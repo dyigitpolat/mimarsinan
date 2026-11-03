@@ -1,10 +1,12 @@
 """[U-HDA] The deployed host's arithmetic: where, and in which dtype, every evaluation of a deployed program runs.
 
 The deployed read (K9, the harvests' executor) evaluates the deployed program on the CPU: a value program as
-``ValueHybridCoreFlow(mapping, "cpu", float64)``; a spiking program as its spiking executor (``build_spiking_hybrid_flow``)
-on the CPU, its cores at ``COMPUTE_DTYPE`` (float64, on the integer membrane lattice under weight quantization) and
-each host kernel at its deployment dtype (``computeop_deployment_dtype``: the stored module's), one sample at a time
-where the program declares it (``host_kernel_evaluation``). This module is the one place that arithmetic is named.
+``ValueHybridCoreFlow(mapping, device="cpu", dtype=float64)``; a spiking program as its spiking executor
+(``build_spiking_hybrid_flow``) on the CPU, its cores at float64 (on the integer membrane lattice under weight
+quantization) and each host kernel at its deployment dtype (the stored module's), one sample at a time where the
+program declares it (``host_kernel_evaluation``). [U-DAR] That arithmetic is written once, per domain, in the record
+``mapping/ir/deployment_dtype.py`` (``VALUE_ARITHMETIC``, ``SPIKING_ARITHMETIC``); this module names it per evaluation
+(``deployed_arithmetic`` selects a plan's domain by its spiking mode) and places every evaluation on the deployed host.
 Every executor of a deployed program and both twins of every certificate read it:
 
 - the censuses (``pipelining/core/census``) and the event census;
@@ -36,27 +38,27 @@ from typing import Any, Iterable, Iterator
 import torch
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.common.reporter import emit_reporter_event
-from mimarsinan.mapping.ir.deployment_dtype import computeop_deployment_dtype
+from mimarsinan.mapping.ir.deployment_dtype import (  # [U-DAR] the record; the device rule is its own (re-exported)
+    DEPLOYED_HOST_DEVICE as DEPLOYED_HOST_DEVICE,
+    SPIKING_ARITHMETIC,
+    VALUE_ARITHMETIC,
+    DeployedArithmetic,
+    deployed_host_device as deployed_host_device,
+    dtype_name,
+)
 from mimarsinan.mapping.support.device_placement import preserved_module_placement
-from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
-
-#: The device of the deployed read: every evaluation of a deployed program runs here.
-DEPLOYED_HOST_DEVICE = "cpu"
-#: The dtype a value program is evaluated in: the deployed read's (exact below 2^53, the static check's H8 reach).
-DEPLOYED_VALUE_DTYPE = torch.float64
 
 
-def deployed_host_device(asked: Any = None) -> str:
-    """The device an evaluation of the deployed program runs on, whatever device ``asked`` names (the pipeline's): the
-    deployed read's. A CPU device asked for is kept as named (``cpu``); every other device, or none, is the CPU."""
-    if asked is not None and torch.device(asked).type == DEPLOYED_HOST_DEVICE:
-        return str(torch.device(asked))
-    return DEPLOYED_HOST_DEVICE
+def deployed_arithmetic(spiking_mode: Any) -> DeployedArithmetic:
+    """[U-DAR] The record of a plan's domain, keyed by its spiking mode: the value record exactly when the plan resolves
+    ``INERT_SPIKING_MODE`` (``core_semantics`` mvm, ``DeploymentPlan``), the spiking record otherwise."""
+    return VALUE_ARITHMETIC if spiking_mode == INERT_SPIKING_MODE else SPIKING_ARITHMETIC
 
 
 def _name(dtype: Any) -> str:
-    return str(dtype).removeprefix("torch.")
+    return dtype_name(dtype)
 
 
 @dataclass(frozen=True)
@@ -95,17 +97,19 @@ def _asked(asked: Any) -> str:
 
 
 def spiking_host_arithmetic(evaluation: str, asked: Any, *programs: Any) -> HostArithmetic:
-    """A spiking program's arithmetic on the deployed host: cores at ``COMPUTE_DTYPE``, each host kernel at its
-    deployment dtype (named from the programs' host ops)."""
-    host = sorted({_name(computeop_deployment_dtype(op)) for program in programs for op in program_host_ops(program)})
-    dtype = f"cores {_name(COMPUTE_DTYPE)}, host kernels {'/'.join(host) if host else 'none'}"
+    """A spiking program's arithmetic on the deployed host: the record's (``SPIKING_ARITHMETIC``): cores at its core
+    dtype, each host kernel at its deployment dtype (named from the programs' host ops)."""
+    host = sorted({_name(SPIKING_ARITHMETIC.host_kernel_dtype(op)) for program in programs
+                   for op in program_host_ops(program)})
+    dtype = f"cores {_name(SPIKING_ARITHMETIC.core_dtype)}, host kernels {'/'.join(host) if host else 'none'}"
     return HostArithmetic(evaluation=evaluation, device=deployed_host_device(asked), dtype=dtype,
                           pipeline_device=_asked(asked))
 
 
 def value_host_arithmetic(evaluation: str, asked: Any) -> HostArithmetic:
-    """A value program's arithmetic on the deployed host: ``DEPLOYED_VALUE_DTYPE`` throughout."""
-    return HostArithmetic(evaluation=evaluation, device=deployed_host_device(asked), dtype=_name(DEPLOYED_VALUE_DTYPE),
+    """A value program's arithmetic on the deployed host: the record's core dtype throughout (``VALUE_ARITHMETIC``)."""
+    return HostArithmetic(evaluation=evaluation, device=deployed_host_device(asked),
+                          dtype=_name(VALUE_ARITHMETIC.core_dtype),
                           pipeline_device=_asked(asked))
 
 

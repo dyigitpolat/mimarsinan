@@ -29,7 +29,7 @@ def _certify(program, x, **geometry):
         scm = program.identity()(x)
         assert_exact(program.nf()(x), scm)
         mapping = program.packed_mapping(**geometry)
-        hcm = ValueHybridCoreFlow(mapping, dtype=torch.float64)(x)
+        hcm = ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")(x)
     assert_exact(hcm, scm)
     codes, steps = run_golden(mapping, x.numpy())
     assert np.array_equal(codes * steps, hcm.reshape(codes.shape).numpy())
@@ -308,7 +308,7 @@ class TestPipelineCertificates:
         assert host_ops(program) == [] and not any(getattr(c, OPERAND_ROWS, None) is not None for c in cores(program))
         mapping = program.packed_mapping(axons=160, neurons=16, count=3, passes=64)
         assert sum(s.kind == "neural" for s in mapping.stages) > 1, "the segment runs in several passes"
-        backend = ValueHybridCoreFlow(mapping, dtype=torch.float64)
+        backend = ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")
         x = real_inputs(program, 8)
         plain, detail = certify_twin_flow_values(fp64_identity_program(program.ir), backend, x, atol=0.0)
         assert not plain.passed and "backend-only=[]" not in detail

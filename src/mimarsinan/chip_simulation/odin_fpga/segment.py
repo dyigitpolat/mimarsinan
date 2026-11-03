@@ -24,12 +24,13 @@ from mimarsinan.chip_simulation.recording.records import (
     CoreSpikeCounts,
     SegmentSpikeRecord,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.spiking.segment_boundary import normalize_boundary_slices_numpy
 
-#: float64 matches HCM; float32 drifts +-1 spike at rate-encoding boundaries.
-COMPUTE_DTYPE = np.dtype(np.float64)
+#: [U-DAR] The record's spiking boundary dtype (the HCM's float64; float32 drifts +-1 spike at rate-encoding boundaries).
+COMPUTE_DTYPE = SPIKING_ARITHMETIC.boundary_np
 
 
 @dataclass

@@ -120,7 +120,7 @@ def test_the_fixture_flips_one_class_in_float32_and_none_in_float64():
     exact = _exact_count(ir)
     assert exact == 3
     inputs = [[v] for v in _INPUTS]
-    assert _count(ValueHybridCoreFlow(packed, dtype=torch.float32), inputs, _LABELS) == exact - 1
+    assert _count(ValueHybridCoreFlow(packed, dtype=torch.float32, device="cpu"), inputs, _LABELS) == exact - 1
     assert _count(ValueHybridCoreFlow(packed, device="cpu", dtype=torch.float64), inputs, _LABELS) == exact
 
 
@@ -237,8 +237,8 @@ def test_the_census_device_rule():
 def test_the_static_check_declares_the_census_dtype():
     """Theorem 1's H8 reads the value census's upload dtype from the declaration: it is the census's own."""
     from mimarsinan.certification.program_check.declaration import VALUE_ACCUMULATION, VALUE_UPLOAD
-    from mimarsinan.pipelining.core.census.arithmetic import VALUE_CENSUS_DTYPE
+    from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC  # [U-DAR] the census's dtype is the record's
 
-    name = str(VALUE_CENSUS_DTYPE).removeprefix("torch.")
+    name = str(VALUE_ARITHMETIC.core_dtype).removeprefix("torch.")
     assert VALUE_UPLOAD == {"value_census": name}
     assert VALUE_ACCUMULATION["value_census"] == name

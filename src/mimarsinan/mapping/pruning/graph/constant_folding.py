@@ -1,30 +1,24 @@
 """Graph-level constant propagation: the lattice sweep and the physical fold plan.
 
-``ConstantFoldState`` is the graph-level half of the constant lattice. It owns
-(a) the lattice itself, (b) each core's constant CARRIER, and (c) the carrier
-DELTAS that the folds accumulate, and it serves the EFFECTIVE (post-fold)
-matrix / bias to every propagation kernel so that starvation, orphaning and
-the column-value rule all see the same structure the deployed program will
-see. Nothing is mutated on the IR until :func:`apply_constant_folds` runs, so
-the analysis stays replayable and the default (nothing folded) path hands back
-the original arrays unchanged — byte-identity by construction.
+``ConstantFoldState`` is the graph-level half of the constant lattice. It owns (a) the lattice itself, (b) each
+core's constant CARRIER, (c) the carrier DELTAS that the folds accumulate and (d) the deployed arithmetic the fold
+evaluates in, and it serves the EFFECTIVE (post-fold) matrix / bias to every propagation kernel so that starvation,
+orphaning and the column-value rule all see the same structure the deployed program will see. Nothing is mutated on
+the IR until :func:`apply_constant_folds` runs, so the analysis stays replayable and the default (nothing folded)
+path hands back the original arrays unchanged — byte-identity by construction.
 
-``refresh_constant_folds`` is ONE monotone sweep, and it obeys the same HOP
-discipline as the rest of the framework:
+``refresh_constant_folds`` is ONE monotone sweep, and it obeys the same HOP discipline as the rest of the framework:
 
-- ComputeOp descents are applied inside the sweep, because a transferable op
-  is transparent WIRING, not a hop (the W4b-1 ``forward_producers`` map
-  composes op chains the same way);
-- NeuralCore row folds, row kills and column descents are GATHERED from the
-  pre-sweep state and committed together, so a core-to-core constant costs
-  exactly one hop — which is what keeps the depth replay's wave semantics and
-  the ``masked <= closure <= cascade`` ordering honest.
+- ComputeOp descents are applied inside the sweep, because a transferable op is transparent WIRING, not a hop (the
+  W4b-1 ``forward_producers`` map composes op chains the same way);
+- NeuralCore row folds, row kills and column descents are GATHERED from the pre-sweep state and committed together,
+  so a core-to-core constant costs exactly one hop — which is what keeps the depth replay's wave semantics and the
+  ``masked <= closure <= cascade`` ordering honest.
 
-The masked arm never sweeps. Closure sweeps ONCE with ``cross_core=False``:
-a CONST line still kills the rows that read it (one-hop coupling), but a
-column is never *discovered* to be constant, because that is emergent
-deadness and closure must not find it. The cascade fixpoint and the ledger's
-depth replay sweep to quiescence with ``cross_core=True``.
+The masked arm never sweeps. Closure sweeps ONCE with ``cross_core=False``: a CONST line still kills the rows that
+read it (one-hop coupling), but a column is never *discovered* to be constant, because that is emergent deadness and
+closure must not find it. The cascade fixpoint and the ledger's depth replay sweep to quiescence with
+``cross_core=True``.
 """
 
 from __future__ import annotations
@@ -32,11 +26,12 @@ from __future__ import annotations
 import time
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
+from mimarsinan.mapping.ir.deployment_dtype import DeployedArithmetic
 from mimarsinan.mapping.pruning.liveness_transfer.constant_core import (
     CARRIER_BIAS,
     CARRIER_ROW,
@@ -103,9 +98,18 @@ class ConstantFoldState:
     deltas: Dict[int, np.ndarray] = field(default_factory=dict)
     folded_rows: Dict[int, Dict[int, float]] = field(default_factory=dict)
     _matrix_cache: Dict[int, tuple] = field(default_factory=dict, repr=False)
-    # (op_id, bitwise key) -> resolved outputs; injectable so one run's arms
-    # and replay share every battery (see liveness_transfer.probe_memo).
+    # (domain, op_id, bitwise key) -> resolved outputs; injectable so one run's
+    # arms and replay share every battery (see liveness_transfer.probe_memo).
     probe_memo: Dict[tuple, Dict[int, float]] = field(default_factory=dict, repr=False)
+    # [U-DAR] The deployed arithmetic the fold evaluates in (the record's, of the plan's domain); None only on the
+    # disabled default state, which never sweeps. ``twins``: the value domain's float64 host twins, per op.
+    arithmetic: "DeployedArithmetic | None" = None
+    twins: Dict[int, Any] = field(default_factory=dict, repr=False)
+
+    def deployed_arithmetic(self) -> DeployedArithmetic:
+        if self.arithmetic is None:
+            raise ConstantFoldApplicationError("a constant fold runs only in a declared deployed arithmetic")
+        return self.arithmetic
 
     def carrier(
         self, node: NeuralCore, *, pruned_rows, exempt_rows
@@ -195,7 +199,8 @@ def _sweep_compute_ops(ctx, state: ConstantFoldState) -> bool:
         if all(v is None for v in in_values):
             continue
         resolved = derive_constant_outputs_memoized(
-            node, transfer, in_values, state.probe_memo
+            node, transfer, in_values, state.probe_memo,
+            arithmetic=state.deployed_arithmetic(), twins=state.twins,
         )
         for out_idx, value in resolved.items():
             if state.lattice.descend((node.id, out_idx), value):
@@ -238,6 +243,7 @@ def _gather_neural_cores(
             exempt_rows=exempt,
             carrier=carrier,
             admits_nonzero=state.lattice.admits_nonzero,
+            core_dtype=state.deployed_arithmetic().core_np,
         )
         new_dead = facts.dead_rows - ctx.pruned_rows[nid]
         if new_dead:

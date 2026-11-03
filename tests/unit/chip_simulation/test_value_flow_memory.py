@@ -37,7 +37,7 @@ def _identity_flow_and_fused():
     ir = IRMapping(q_max=127.0, firing_mode="Default",
                    max_axons=256, max_neurons=64).map(repr_)
     flow = ValueHybridCoreFlow(
-        build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+        build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
     )
     return flow, fused
 
@@ -164,7 +164,7 @@ class TestStateBufferPruning:
         from unit.chip_simulation.value_upload_probe import probe_uploads
 
         hybrid = _token_bank_hybrid()
-        flow = ValueHybridCoreFlow(hybrid, dtype=torch.float64)
+        flow = ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")
         with probe_uploads(flow, keep=True) as probe:
             with torch.no_grad():
                 flow(torch.randn(2, 20))

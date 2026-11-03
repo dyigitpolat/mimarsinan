@@ -55,6 +55,7 @@ from unit.spiking.encoding_skip_program import (
     per_perceptron_counts,
     scm_window_counts,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
 
 def _input_op(module: nn.Module, width: int) -> ComputeOp:
@@ -85,9 +86,9 @@ def test_the_host_op_evaluator_runs_its_module_in_the_chip_lattice_plane(backend
     op = _input_op(recorder, 3)
     assert not in_measurement_plane()
     if backend == "torch":
-        execute_compute_op_torch(op, torch.rand(2, 3), {})
+        execute_compute_op_torch(op, torch.rand(2, 3), {}, arithmetic=SPIKING_ARITHMETIC)
     else:
-        execute_compute_op_numpy(op, np.random.rand(2, 3), {}, device="cpu")
+        execute_compute_op_numpy(op, np.random.rand(2, 3), {}, device="cpu", dtype=np.float32)
     assert recorder.planes == [True], "the deployed host op decides lattice ties whatever its caller's plane"
     assert not in_measurement_plane(), "the plane closes with the evaluation"
 
@@ -114,9 +115,9 @@ def test_an_armed_host_tie_is_decided_by_the_lattice_from_any_caller():
         bare_outside = lif(x)
         with measurement_plane():
             bare_inside = lif(x)
-        deployed_outside = execute_compute_op_torch(_input_op(lif, 3), x, {})
+        deployed_outside = execute_compute_op_torch(_input_op(lif, 3), x, {}, arithmetic=SPIKING_ARITHMETIC)
         with measurement_plane():
-            deployed_inside = execute_compute_op_torch(_input_op(lif, 3), x, {})
+            deployed_inside = execute_compute_op_torch(_input_op(lif, 3), x, {}, arithmetic=SPIKING_ARITHMETIC)
     assert not torch.equal(bare_outside, bare_inside), "teeth: outside the plane dust decides the tread tie"
     assert torch.equal(deployed_outside, bare_inside) and torch.equal(deployed_inside, bare_inside)
     assert torch.round(deployed_outside / THETA * STEPS).tolist() == [[0.0, 0.0, 0.0]], "the chip holds a '<' tie"

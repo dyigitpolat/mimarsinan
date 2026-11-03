@@ -55,7 +55,7 @@ def neural(hybrid) -> list:
 
 def value(hybrid, x) -> torch.Tensor:
     with torch.no_grad():
-        return ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x.double())
+        return ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x.double())
 
 
 def heads(hybrid) -> list:

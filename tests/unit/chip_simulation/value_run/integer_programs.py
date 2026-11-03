@@ -45,7 +45,7 @@ class IntegerProgram:
     input_shape: tuple
 
     def identity(self) -> ValueHybridCoreFlow:
-        return ValueHybridCoreFlow(build_identity_hybrid_mapping(ir_graph=self.ir), dtype=torch.float64)
+        return ValueHybridCoreFlow(build_identity_hybrid_mapping(ir_graph=self.ir), dtype=torch.float64, device="cpu")
 
     def packed_mapping(self, *, axons: int, neurons: int, count: int = 999, split: bool = True,
                        coalescing: bool = False, passes: Optional[int] = None,
@@ -62,7 +62,7 @@ class IntegerProgram:
         )
 
     def packed(self, **kwargs) -> ValueHybridCoreFlow:
-        return ValueHybridCoreFlow(self.packed_mapping(**kwargs), dtype=torch.float64)
+        return ValueHybridCoreFlow(self.packed_mapping(**kwargs), dtype=torch.float64, device="cpu")
 
     def nf(self) -> nn.Module:
         return self.model.double()

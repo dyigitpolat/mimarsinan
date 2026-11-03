@@ -212,7 +212,7 @@ class TestMixedWidthCertificates:
             assert_exact(program.nf()(x), scm)
             widths = sorted({int(getattr(c, CORE_WEIGHT_BITS)) for c in cores(program)}, reverse=True)
             mapping = program.packed_mapping(**packed, widths=widths)
-            hcm = ValueHybridCoreFlow(mapping, dtype=torch.float64)(x)
+            hcm = ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")(x)
         assert_exact(hcm, scm)
         codes, steps = run_golden(mapping, x.numpy())
         assert np.array_equal(codes * steps, hcm.reshape(codes.shape).numpy())

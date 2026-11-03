@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.mapping.ir.dynamic_bank import stage_bound_banks
 from mimarsinan.models.nn.activations.integer_law import grid_codes, grid_levels
 
@@ -61,14 +62,14 @@ def bank_payload(values: torch.Tensor, binding) -> torch.Tensor:
     block = flat[:, binding.payload_offset: binding.payload_offset + axons * neurons].reshape(-1, axons, neurons)
     if binding.payload_step is None:
         return block
-    step = torch.tensor(float(binding.payload_step), dtype=torch.float64, device=block.device)
+    step = torch.tensor(float(binding.payload_step), dtype=VALUE_ARITHMETIC.core_dtype, device=block.device)
     return grid_codes(block, step, where=f"operand bank {binding.bank_id}").to(block.dtype)
 
 
 def cells_beyond_width(codes, payload_bits: int) -> int:
     """The cells of a payload whose |code| exceeds the positive levels of its ``payload_bits`` grid: a code a
     payload cell cannot hold, which the law's accumulator bound and ADC do not cover."""
-    return int(np.count_nonzero(np.abs(np.asarray(codes, dtype=np.float64)) > grid_levels(payload_bits)))
+    return int(np.count_nonzero(np.abs(np.asarray(codes, dtype=VALUE_ARITHMETIC.core_np)) > grid_levels(payload_bits)))
 
 
 def fill_operand_blocks(static: torch.Tensor, blocks: Sequence[OperandBlock],

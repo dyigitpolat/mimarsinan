@@ -16,6 +16,7 @@ from mimarsinan.chip_simulation.lava_loihi.wave_schedule import core_dependency_
 from mimarsinan.chip_simulation.lava_loihi.carry import _output_raster, publish_carried_trains
 from mimarsinan.models.spiking.hybrid.carry import carry_scope, replay_input_slices, shift_rows_to_core_time
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
@@ -276,7 +277,7 @@ class LavaSegmentMixin:
                     )
                 )
 
-        return seg_out_rates.astype(np.float32)
+        return seg_out_rates.astype(SPIKING_ARITHMETIC.boundary_np)  # [U-DAR] the record's boundary buffers
 
     def _run_neural_segment(
         self,

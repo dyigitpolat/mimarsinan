@@ -54,7 +54,7 @@ def test_a_value_flow_run_leaves_the_refcount_memo_fresh():
     """The value flow's refcounts count each stage's payload writes (N2); the check derives the memo the same way."""
     program, ir, decl = UV.operand("softmax")
     with torch.no_grad():
-        ValueHybridCoreFlow(program, dtype=torch.float64)(image_inputs(2))
+        ValueHybridCoreFlow(program, dtype=torch.float64, device="cpu")(image_inputs(2))
     assert program._consumer_counts_cache is not None
     report = P.run(program, ir, decl)
     assert report.results["H9"].status == ESTABLISHED, [v.text() for v in report.results["H9"].violations]

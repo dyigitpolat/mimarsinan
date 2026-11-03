@@ -228,7 +228,7 @@ class TestScheduledBuild:
 
         identity = ValueHybridCoreFlow(
             build_identity_hybrid_mapping(ir_graph=_token_graph(7)),
-            dtype=torch.float64,
+            dtype=torch.float64, device="cpu"
         )
         x = torch.randn(3, 28)
         with torch.no_grad():
@@ -243,5 +243,5 @@ class TestScheduledBuild:
                     strategy=_sched_strategy(),
                 ),
             ):
-                got = ValueHybridCoreFlow(build, dtype=torch.float64)(x)
+                got = ValueHybridCoreFlow(build, dtype=torch.float64, device="cpu")(x)
                 torch.testing.assert_close(got, want, atol=1e-12, rtol=1e-12)

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import torch
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
-COMPUTE_DTYPE = torch.float64
+#: [U-DAR] The spiking cores' dtype: the record's (``mapping/ir/deployment_dtype.py``), float64 on the integer membrane
+#: lattice under weight quantization.
+COMPUTE_DTYPE = SPIKING_ARITHMETIC.core_dtype
 
 FIRING_MODES = frozenset({"Default", "Novena", "TTFS"})
 SPIKE_MODES = frozenset({

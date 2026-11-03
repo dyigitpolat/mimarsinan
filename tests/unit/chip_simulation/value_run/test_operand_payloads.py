@@ -121,7 +121,7 @@ def test_the_payload_edge_passes_and_counts_every_written_cell(program):
                   if p.get("weight_bank_id") in mapping.dynamic_bank_bindings)
     assert regions == T
     from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
-    certificate = certify_payload_cells(ValueHybridCoreFlow(mapping, dtype=torch.float64), program.identity_mapping(), x)
+    certificate = certify_payload_cells(ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu"), program.identity_mapping(), x)
     assert certificate.passed and certificate.mismatched == 0
     assert certificate.cells_compared == x.shape[0] * regions * K * T and certificate.nonzero_payload_codes > 0
 

@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
 from mimarsinan.mapping.ir.source import (
     decode_ir_sources,
@@ -58,14 +59,12 @@ class IRNode(ABC):
         self,
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
-        dtype: "torch.dtype | None" = None,
+        *,
+        dtype: torch.dtype,
     ) -> torch.Tensor:
-        """Gather inputs from sources into a 1D tensor (override for special cases).
-
-        Runs a weakly-cached :class:`GatherPlan` (sources are static); bit-equal
-        to the reference walk kept in ``mapping.ir.gather_plan``. ``dtype=None``
-        keeps the default-dtype buffer; the value-domain fp64 path widens it.
-        """
+        """Gather inputs from sources into a 1D tensor (override for special cases): a weakly-cached
+        :class:`GatherPlan` (sources are static), bit-equal to the reference walk kept in ``mapping.ir.gather_plan``.
+        [U-DAR] ``dtype`` is declared, never defaulted (a deployed evaluation's is the record's)."""
         return gather_plan_for(self).gather(input_tensor, buffers, dtype=dtype)
 
 
@@ -179,8 +178,9 @@ class NeuralCore(IRNode):
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """Execute crossbar computation: W @ x + activation."""
-        inputs = self.gather_inputs(input_tensor, buffers)
+        """Execute crossbar computation: W @ x + activation. The IR's own float32 interpreter, not a deployed
+        evaluation (tests only; no deployed core applies its ReLU and clamp; classified in the U-DAR ratchet)."""
+        inputs = self.gather_inputs(input_tensor, buffers, dtype=torch.float32)
 
         mat = self.core_matrix
         if mat is None:
@@ -189,17 +189,11 @@ class NeuralCore(IRNode):
                 f"core_matrix.  Call get_core_matrix(graph) first or use "
                 f"SpikingHybridCoreFlow which resolves weight banks."
             )
-        weight = torch.tensor(
-            mat.T,
-            dtype=torch.float32,
-            device=input_tensor.device,
-        )
+        weight = torch.tensor(mat.T, dtype=torch.float32, device=input_tensor.device)
         out = torch.matmul(inputs, weight.T)
 
         if self.hardware_bias is not None:
-            bias = torch.tensor(
-                self.hardware_bias, dtype=torch.float32, device=input_tensor.device
-            )
+            bias = torch.tensor(self.hardware_bias, dtype=torch.float32, device=input_tensor.device)
             out = out + bias
 
         out = F.relu(out)
@@ -257,7 +251,7 @@ class ComputeOp(IRNode):
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        return self.gather_inputs(input_tensor, buffers)
+        return self.gather_inputs(input_tensor, buffers, dtype=SPIKING_ARITHMETIC.host_gather_dtype)  # the host seam's
 
     def _exec_module(self, x: torch.Tensor) -> torch.Tensor:
         """Reshape flat ``(B, N)`` per ``input_shape(s)``, run module, flatten back."""

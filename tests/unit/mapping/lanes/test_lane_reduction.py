@@ -146,7 +146,7 @@ def test_nf_equals_scm_equals_hcm_equals_the_golden_at_atol_zero(geometry, hardw
     mapping = program.packed_mapping(**geometry)
     if geometry.get("passes"):
         assert sum(stage.kind == "neural" for stage in mapping.stages) > 1, "the declared cores run several passes"
-    assert_exact(_run(ValueHybridCoreFlow(mapping, dtype=torch.float64), x), scm)
+    assert_exact(_run(ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu"), x), scm)
     codes, steps = run_golden(mapping, x.numpy())
     assert np.array_equal(codes * steps, scm.reshape(codes.shape).numpy())
 

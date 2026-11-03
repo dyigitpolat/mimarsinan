@@ -74,7 +74,7 @@ class TestLanesOnAPerAxonPool:
         x = real_inputs(program, 32)
         with torch.no_grad():
             scm = program.identity()(x)
-            hcm = ValueHybridCoreFlow(mapping, dtype=torch.float64)(x)
+            hcm = ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")(x)
         assert_exact(program.nf()(x).detach(), scm)
         assert_exact(hcm, scm)
         codes, steps = run_golden(mapping, x.numpy())

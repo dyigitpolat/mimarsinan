@@ -34,7 +34,7 @@ def _fused_flow_and_ir(model, input_shape, *, max_axons=256, max_neurons=64):
 def _identity_flow(model, input_shape, dtype=torch.float64):
     flow, ir = _fused_flow_and_ir(model, input_shape)
     hybrid = build_identity_hybrid_mapping(ir_graph=ir)
-    return ValueHybridCoreFlow(hybrid, dtype=dtype), flow
+    return ValueHybridCoreFlow(hybrid, dtype=dtype, device="cpu"), flow
 
 
 def _packed_flow(ir, *, max_axons=64, max_neurons=64, split=False, dtype=torch.float64):
@@ -53,7 +53,7 @@ def _packed_flow(ir, *, max_axons=64, max_neurons=64, split=False, dtype=torch.f
         ],
         strategy=strategy,
     )
-    return ValueHybridCoreFlow(hybrid, dtype=dtype)
+    return ValueHybridCoreFlow(hybrid, dtype=dtype, device="cpu")
 
 
 def _mlp():
@@ -117,7 +117,7 @@ class TestPackedProgramMatchesIdentity:
         model = _mlp()
         _, ir = _fused_flow_and_ir(model, (8,))
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         packed = _packed_flow(ir, max_axons=256, max_neurons=8, split=True)
         x = torch.randn(5, 8)
@@ -130,7 +130,7 @@ class TestPackedProgramMatchesIdentity:
         model = _mlp()
         _, ir = _fused_flow_and_ir(model, (8,))
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         packed = _packed_flow(ir)
         x = torch.randn(5, 8)
@@ -183,7 +183,7 @@ class TestBoundaryQuantization:
         flow, ir, entries = _aq_armed_flow_and_ir(model, (8,))
         assert len(entries) >= 2  # input entry + at least one post-host entry
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         x = torch.randn(6, 8)
         with torch.no_grad():
@@ -202,7 +202,7 @@ class TestBoundaryQuantization:
             if isinstance(node, NeuralCore):
                 node.boundary_grid = None
         unarmed = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         x = torch.randn(6, 8)
         with torch.no_grad():
@@ -215,7 +215,7 @@ class TestBoundaryQuantization:
         model = _mlp()
         _, ir, _ = _aq_armed_flow_and_ir(model, (8,))
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         packed = _packed_flow(ir, max_axons=256, max_neurons=8, split=True)
         x = torch.randn(5, 8)
@@ -236,7 +236,7 @@ class TestBoundaryQuantization:
         flow, ir, entries = _aq_armed_flow_and_ir(model, (1, 8, 8))
         assert len(entries) == 2  # conv entry + post-host linear entry
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         x = torch.randn(2, 1, 8, 8)
         with torch.no_grad():
@@ -252,7 +252,7 @@ class TestBoundaryQuantization:
         flow, ir, entries = _aq_armed_flow_and_ir(model, (8,))
         assert len(entries) == 1
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         x = torch.randn(6, 8)
         with torch.no_grad():
@@ -281,7 +281,7 @@ class TestObservableSeam:
         model = _mlp()
         _, ir = _fused_flow_and_ir(model, (8,))
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         packed = _packed_flow(ir, max_axons=256, max_neurons=8, split=True)
         x = torch.randn(4, 8)

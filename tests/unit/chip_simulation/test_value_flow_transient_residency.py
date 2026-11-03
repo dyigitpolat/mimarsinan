@@ -81,7 +81,7 @@ class TestBitIdenticalOutputs:
         torch.manual_seed(4321)
         x = torch.randn(2, 20)
         with torch.no_grad():
-            out = ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x)
+            out = ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x)
         assert _hexes(out) == _TOKEN_BANK_FP64_GOLDEN
 
     def test_token_bank_residency_fp32_matches_pre_change_hex(self):
@@ -89,7 +89,7 @@ class TestBitIdenticalOutputs:
         torch.manual_seed(4321)
         x = torch.randn(2, 20)
         with torch.no_grad():
-            out = ValueHybridCoreFlow(hybrid, dtype=torch.float32)(x)
+            out = ValueHybridCoreFlow(hybrid, dtype=torch.float32, device="cpu")(x)
         assert _hexes(out) == _TOKEN_BANK_FP32_GOLDEN
 
     def test_repeated_forwards_are_bitwise_stable(self):
@@ -130,7 +130,7 @@ class TestTransientWeightResidency:
 
     def test_uploaded_tensors_die_with_the_forward(self):
         hybrid = _token_bank_hybrid()
-        flow = ValueHybridCoreFlow(hybrid, dtype=torch.float64)
+        flow = ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")
         with probe_uploads(flow) as probe:
             torch.manual_seed(4321)
             with torch.no_grad():

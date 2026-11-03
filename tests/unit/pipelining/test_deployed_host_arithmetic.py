@@ -132,16 +132,18 @@ def _lif_program(weight_bits=4, per_sample=True):
 def test_the_deployed_host_is_the_cpu_whatever_device_the_pipeline_names():
     from mimarsinan.chip_simulation.deployed_host import (
         DEPLOYED_HOST_DEVICE,
-        DEPLOYED_VALUE_DTYPE,
         deployed_host_device,
     )
+    from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC  # [U-DAR] the record
     from mimarsinan.pipelining.core.census import arithmetic as census
 
-    assert DEPLOYED_HOST_DEVICE == "cpu" and DEPLOYED_VALUE_DTYPE is torch.float64
+    assert DEPLOYED_HOST_DEVICE == "cpu" and VALUE_ARITHMETIC.core_dtype is torch.float64
     for asked in ("cpu", torch.device("cpu"), *CUDA_NAMES, torch.device("cuda", 2), None):
         assert deployed_host_device(asked) == "cpu", asked
-    # the census reads the one rule and the one dtype
-    assert census.VALUE_CENSUS_DTYPE is DEPLOYED_VALUE_DTYPE and census.DEPLOYED_READ_DEVICE == DEPLOYED_HOST_DEVICE
+    # the census reads the one rule and the one dtype (the record's: U-DAR)
+    pipe = SimpleNamespace(config={"device": "cuda"})
+    assert census.value_census_arithmetic(pipe, "c").dtype == str(VALUE_ARITHMETIC.core_dtype).removeprefix("torch.")
+    assert census.value_census_arithmetic(pipe, "c").device == DEPLOYED_HOST_DEVICE
     assert all(census.census_device(asked) == deployed_host_device(asked) for asked in ("cpu", *CUDA_NAMES, None))
 
 

@@ -18,6 +18,7 @@ import torch
 from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 from mimarsinan.mapping.ir import IRGraph, IRSource
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.pruning.boundary_policy import assert_unified_ir_for_pruning
 from mimarsinan.mapping.pruning.certificate.dyadic_grid import (
@@ -200,8 +201,9 @@ def certify_cascade_equivalence(
 
     reference_hybrid = build_identity_hybrid_mapping(ir_graph=reference)
     candidate_hybrid = build_identity_hybrid_mapping(ir_graph=candidate)
-    reference_flow = ValueHybridCoreFlow(reference_hybrid, dtype=torch.float64)
-    candidate_flow = ValueHybridCoreFlow(candidate_hybrid, dtype=torch.float64)
+    device, dtype = VALUE_ARITHMETIC.device, VALUE_ARITHMETIC.core_dtype  # [U-DAR] the record's
+    reference_flow = ValueHybridCoreFlow(reference_hybrid, device=device, dtype=dtype)
+    candidate_flow = ValueHybridCoreFlow(candidate_hybrid, device=device, dtype=dtype)
 
     generator = torch.Generator().manual_seed(rng_seed)
     outputs_compared = 0
@@ -209,7 +211,7 @@ def certify_cascade_equivalence(
         x = torch.randint(
             -input_magnitude, input_magnitude + 1,
             (batch_size, input_size), generator=generator,
-        ).to(torch.float64)
+        ).to(VALUE_ARITHMETIC.input_dtype)
         with torch.no_grad():
             want = reference_flow(x)
             got = candidate_flow(x)

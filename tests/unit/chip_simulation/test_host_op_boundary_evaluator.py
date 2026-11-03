@@ -175,7 +175,7 @@ def test_execute_compute_op_numpy_refuses_to_default_the_evaluator():
     op = _op(module, 2, src_node=7)
     buf = {7: np.zeros((1, 2), dtype=np.float64)}
     with pytest.raises(TypeError, match="device"):
-        execute_compute_op_numpy(op, np.zeros((1, 2)), buf)  # type: ignore[call-arg]
+        execute_compute_op_numpy(op, np.zeros((1, 2)), buf, dtype=np.float32)  # type: ignore[call-arg]
 
 
 class _HomeReportingLinear(nn.Linear):
@@ -201,7 +201,7 @@ def test_hosted_module_is_handed_back_to_its_home_device(monkeypatch):
         lambda _m: home,
     )
     buf = {7: np.zeros((1, 2), dtype=np.float64)}
-    execute_compute_op_numpy(op, np.zeros((1, 2)), buf, device=None)
+    execute_compute_op_numpy(op, np.zeros((1, 2)), buf, device=None, dtype=np.float32)
     assert module.to_targets[-1] == home
 
 

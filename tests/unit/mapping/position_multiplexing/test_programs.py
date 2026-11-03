@@ -30,7 +30,7 @@ LIF_CORES = [{"max_axons": 64, "max_neurons": 16, "count": 64, "has_bias": True}
 
 def _value(hybrid, x):
     with torch.no_grad():
-        return ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x.double())
+        return ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x.double())
 
 
 @pytest.fixture(scope="module")

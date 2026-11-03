@@ -55,7 +55,7 @@ def test_plan_matches_reference_walk(seed, dtype):
         for nid, w in buffer_shapes.items()
     }
     ref = gather_inputs_reference(node, x, buffers)
-    got = node.gather_inputs(x, buffers)
+    got = node.gather_inputs(x, buffers, dtype=torch.float32)
     assert got.dtype == ref.dtype
     assert torch.equal(got, ref)
 
@@ -64,7 +64,7 @@ def test_plan_all_off_sources():
     node = _node(np.array([IRSource(-1, 0)] * 5, dtype=object))
     x = torch.ones(2, 3)
     ref = gather_inputs_reference(node, x, {})
-    got = node.gather_inputs(x, {})
+    got = node.gather_inputs(x, {}, dtype=torch.float32)
     assert torch.equal(got, ref)
     assert got.abs().sum() == 0
 
@@ -76,7 +76,7 @@ def test_plan_input_only_and_always_on():
     node = _node(sources)
     x = torch.tensor([[10.0, 20.0, 30.0]])
     ref = gather_inputs_reference(node, x, {})
-    got = node.gather_inputs(x, {})
+    got = node.gather_inputs(x, {}, dtype=torch.float32)
     assert torch.equal(got, ref)
     assert got.tolist() == [[30.0, 1.0, 10.0]]
 
@@ -107,6 +107,6 @@ def test_float64_input_downcast_matches_reference():
     node = _node(sources)
     x = torch.tensor([[1.00000000001, 2.0]], dtype=torch.float64)
     ref = gather_inputs_reference(node, x, {})
-    got = node.gather_inputs(x, {})
+    got = node.gather_inputs(x, {}, dtype=torch.float32)
     assert got.dtype == ref.dtype == torch.float32
     assert torch.equal(got, ref)

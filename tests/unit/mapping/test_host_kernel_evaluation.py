@@ -34,6 +34,7 @@ from mimarsinan.mapping.support.host_kernel_evaluation import (
     program_evaluates_per_sample,
     twin_as_program,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
 BATCH = 8
 
@@ -74,7 +75,7 @@ def _batch(shape, n=BATCH, seed=1):
 
 def _run(op, x):
     with torch.no_grad():
-        return execute_compute_op_torch(op, x, {-2: x})
+        return execute_compute_op_torch(op, x, {-2: x}, arithmetic=SPIKING_ARITHMETIC)
 
 
 def _alone(module, shape, x):
@@ -178,7 +179,7 @@ class TestEveryExecutorAlike:
                 "ComputeOp.probe_on_gathered": op.probe_on_gathered(x),
                 "execute_compute_op_torch": _run(op, x),
                 "execute_compute_op_numpy": torch.from_numpy(
-                    execute_compute_op_numpy(op, x.numpy(), {-2: x.numpy()}, device="cpu")),
+                    execute_compute_op_numpy(op, x.numpy(), {-2: x.numpy()}, device="cpu", dtype=np.float32)),
                 "value_run.execute_host_op": execute_host_op(op, x, {-2: x}, dtype=torch.float32, twins={}),
             }
         assert {k: bool(torch.equal(v, want)) for k, v in seams.items()} == {k: True for k in seams}

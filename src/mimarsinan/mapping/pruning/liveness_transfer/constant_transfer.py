@@ -10,13 +10,13 @@ modules); that single definition subsumes every "per-op refinement".
 Zero-preservation is NOT required — this is FORWARD constant flow, so
 ``sigmoid(0) = 0.5`` propagates like any other value.
 
-Probing runs AT THE DEPLOYMENT DTYPE (``computeop_deployment_dtype``), so the
-derived constant is by construction the value the deployed program puts on
-that line — there is nothing left to compare across precisions. The value is
-then either ON the dyadic grid (grid-certifiable: the cascade certificate can
-back it bit-exactly) or not (execution-exact only: the certificate REFUSES the
-instance, the documented ``GELU(c != 0)`` pattern, counted on the elimination
-ledger rather than hidden). Constants are never snapped onto the grid.
+[U-DAR] Probing runs THROUGH THE DEPLOYED HOST EVALUATOR (``host_compute.evaluate_gathered_host_op``) in the fold's
+declared arithmetic (the record, ``mapping/ir/deployment_dtype.py``): the module the deployment runs (the value
+domain's float64 twin, a spiking domain's stored module) at its dtypes, on the deployed host, in the record's tie-rule
+plane. So the derived constant is by construction the value the deployed program puts on that line: ON the dyadic
+grid (grid-certifiable) or not (execution-exact only: the certificate REFUSES the instance, the ``GELU(c != 0)``
+pattern, counted on the elimination ledger). Constants are never snapped onto the grid. Not covered (verify O-1): a
+spiking executor's count-grid twin of an op on wire-transcoded inputs (``host_op_for_evaluation``).
 
 Execution is guarded by three bit-exact agreement probes plus a carriability
 gate, because a wrong constant is worse than no constant:
@@ -26,8 +26,8 @@ gate, because a wrong constant is worse than no constant:
   result; refuses ``Linear`` (GEMM vs GEMV reassociation) and batch coupling;
 - MODE INDEPENDENCE — probed with the whole hosted subtree in eval (restored
   afterwards) AND as deployed; differing behaviour (dropout) is refused;
-- DEPLOYMENT-DTYPE CARRIABILITY — every incoming constant must be exactly
-  representable at the deployment dtype; a line the deployment cannot carry
+- DEPLOYMENT-DTYPE CARRIABILITY — every incoming constant must be exact at the
+  deployed gather's and kernel's dtypes; a line the deployment cannot carry
   never held that value, so refuse rather than probe the rounded value.
 
 TOP inputs are filled with two DIFFERENT probe values; an output that depends
@@ -52,7 +52,9 @@ from typing import Callable, Dict, List, Sequence, Tuple
 import numpy as np
 import torch
 
-from mimarsinan.mapping.ir import ComputeOp, computeop_deployment_dtype
+from mimarsinan.chip_simulation.hybrid_run.host_compute import evaluate_gathered_host_op
+from mimarsinan.mapping.ir import ComputeOp
+from mimarsinan.mapping.ir.deployment_dtype import FOLD_PROBE, DeployedArithmetic
 from mimarsinan.mapping.pruning.boundary_policy import _computeop_relays_deadness
 from mimarsinan.mapping.pruning.liveness_transfer.transfer_types import (
     LivenessTransfer,
@@ -99,13 +101,13 @@ def _relay_constants(
     return {i: v for i, v in enumerate(in_values) if v is not None}
 
 
-def _run(op: ComputeOp, probe, repeats: int, dtype: torch.dtype):
-    # from_numpy->to(dtype) rounds double->dtype exactly like the former
-    # per-element torch.tensor(list) path; pinned by the frozen-oracle gate.
+def _run(op: ComputeOp, probe, repeats: int, arithmetic: DeployedArithmetic, twins: dict):
+    # The deployed gather's buffer (host-gather dtype, on the deployed host); the evaluator casts it to the kernel's.
     base = np.asarray(probe, dtype=np.float64)
-    x = torch.from_numpy(np.repeat(base[None, :], repeats, axis=0)).to(dtype)
-    with torch.no_grad():
-        return op.probe_on_gathered(x)
+    x = torch.from_numpy(np.repeat(base[None, :], repeats, axis=0)).to(
+        device=arithmetic.device, dtype=arithmetic.host_gather_dtype)
+    with torch.no_grad(), arithmetic.plane(FOLD_PROBE):
+        return evaluate_gathered_host_op(op, x, arithmetic=arithmetic, twins=twins, analysis=True)
 
 
 # Every guard on the probe path shares this tuple: a hosted module is arbitrary
@@ -115,16 +117,12 @@ _PROBE_FAILURES = (RuntimeError, TypeError, ValueError, IndexError, KeyError,
                    AttributeError)
 
 
-def _deployment_dtype(op: ComputeOp) -> "torch.dtype | None":
-    """The op's deployment dtype; None when the hosted module refuses to say.
-
-    Resolution is never DEFAULTED here: an arbitrary hosted module may raise
-    from ``parameters()``, and an unresolved dtype means the analysis cannot
-    say what the deployment computes, so it refuses. The deployed executor,
-    which must fail loud instead, calls the SSOT directly.
-    """
+def _deployed_kernel(op: ComputeOp, arithmetic: DeployedArithmetic, twins: dict):
+    """(the module the deployment runs, its dtype); None when the hosted module refuses to say: it may raise from
+    ``parameters()`` or refuse a copy (the twin), and an unresolved kernel means the analysis cannot say what the
+    deployment computes. The deployed executor, which must fail loud instead, reads the record directly."""
     try:
-        return computeop_deployment_dtype(op)
+        return arithmetic.host_kernel_module(op, twins), arithmetic.host_kernel_dtype(op)
     except _PROBE_FAILURES:
         return None
 
@@ -176,7 +174,7 @@ def _rng_devices(module) -> List[int]:
 
 
 def _probe(
-    op: ComputeOp, module, probes: Sequence, dtype: torch.dtype
+    op: ComputeOp, module, probes: Sequence, arithmetic: DeployedArithmetic, twins: dict
 ) -> "Tuple[torch.Tensor, torch.Tensor] | None":
     """Run the guarded probe battery; None means "refuse, stay TOP".
 
@@ -190,21 +188,21 @@ def _probe(
     except _PROBE_FAILURES:
         return None
     with torch.random.fork_rng(devices=devices, enabled=True):
-        return _probe_isolated(op, module, probes, dtype)
+        return _probe_isolated(op, module, probes, arithmetic, twins)
 
 
 def _probe_isolated(
-    op: ComputeOp, module, probes: Sequence, dtype: torch.dtype
+    op: ComputeOp, module, probes: Sequence, arithmetic: DeployedArithmetic, twins: dict
 ) -> "Tuple[torch.Tensor, torch.Tensor] | None":
     restore: Callable[[], None] = lambda: None
     try:
         restore = _eval_mode(module)
-        y_a = _run(op, probes[0], 1, dtype)
-        y_b = _run(op, probes[1], 1, dtype)
-        y_again = _run(op, probes[0], 1, dtype)
-        y_batch = _run(op, probes[0], 2, dtype)
+        y_a = _run(op, probes[0], 1, arithmetic, twins)
+        y_b = _run(op, probes[1], 1, arithmetic, twins)
+        y_again = _run(op, probes[0], 1, arithmetic, twins)
+        y_batch = _run(op, probes[0], 2, arithmetic, twins)
         restore()
-        y_as_deployed = _run(op, probes[0], 1, dtype)
+        y_as_deployed = _run(op, probes[0], 1, arithmetic, twins)
     except _PROBE_FAILURES:
         return None
     finally:
@@ -227,9 +225,12 @@ def _probe_isolated(
     return y_a, y_b
 
 
-def derive_constant_outputs(op, transfer, in_values) -> Dict[int, float]:
+def derive_constant_outputs(op, transfer, in_values, *, arithmetic: DeployedArithmetic,
+                            twins: "dict | None" = None) -> Dict[int, float]:
+    """CONST outputs of one host ComputeOp in the fold's declared ``arithmetic`` (``twins`` caches the value domain's
+    float64 twins across probes of one analysis)."""
     t0 = time.perf_counter()
-    result = _derive_constant_outputs(op, transfer, in_values)
+    result = _derive_constant_outputs(op, transfer, in_values, arithmetic, twins if twins is not None else {})
     dt = time.perf_counter() - t0
     if dt > 1.0:   # slow probes only: the real-scale evidence line
         print(f"[OpProbe] {getattr(op, 'name', op.id)} wall={dt:.1f}s "
@@ -242,13 +243,11 @@ def _derive_constant_outputs(
     op: ComputeOp,
     transfer: LivenessTransfer,
     in_values: Sequence[float | None],
+    arithmetic: DeployedArithmetic,
+    twins: dict,
 ) -> Dict[int, float]:
-    """CONST outputs of one host ComputeOp (empty dict = everything stays TOP).
-
-    Degrades rather than raising for every failure class a hosted module can
-    plausibly raise (``_PROBE_FAILURES``): such an op is simply not folded.
-    An exception outside that set still propagates, by fail-loud discipline.
-    """
+    """CONST outputs of one host ComputeOp (empty dict = everything stays TOP). Degrades rather than raising for
+    every failure class a hosted module can plausibly raise (``_PROBE_FAILURES``); anything else propagates."""
     n_in = int(len(op.input_sources.flatten()))
     if n_in == 0 or len(in_values) != n_in:
         return {}
@@ -256,20 +255,18 @@ def _derive_constant_outputs(
     if module is None:
         return _relay_constants(op, in_values)
 
-    known_mask = np.fromiter(
-        (v is not None for v in in_values), dtype=bool, count=n_in
-    )
+    known_mask = np.fromiter((v is not None for v in in_values), dtype=bool, count=n_in)
     n_known = int(known_mask.sum())
     if n_known == 0:
         return {}
-    vals = np.array(
-        [0.0 if v is None else float(v) for v in in_values], dtype=np.float64
-    )
-    dtype = _deployment_dtype(op)
-    if dtype is None:
+    vals = np.array([0.0 if v is None else float(v) for v in in_values], dtype=np.float64)
+    deployed = _deployed_kernel(op, arithmetic, twins)
+    if deployed is None:
         return {}
+    kernel, dtype = deployed
     kt = torch.from_numpy(vals[known_mask])
-    if not bool((kt.to(dtype).to(torch.float64) == kt).all()):
+    carried = kt.to(arithmetic.host_gather_dtype).to(dtype).to(torch.float64)
+    if not bool((carried == kt).all()):
         return {}                              # not exactly representable
     outs = sat = None
     mapped = not transfer.is_opaque and bool(transfer.out_to_ins)
@@ -285,7 +282,7 @@ def _derive_constant_outputs(
         return {}                              # opaque needs every input
 
     probes = [np.where(known_mask, vals, filler) for filler in _PROBE_FILLERS]
-    probed = _probe(op, module, probes, dtype)
+    probed = _probe(op, kernel, probes, arithmetic, twins)
     if probed is None:
         return {}
     y_a, y_b = probed

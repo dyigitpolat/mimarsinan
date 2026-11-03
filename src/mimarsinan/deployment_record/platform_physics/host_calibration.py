@@ -106,6 +106,7 @@ def measure_host_op_overhead_s(
         execute_compute_op_torch,
     )
     from mimarsinan.mapping.ir import ComputeOp, IRSource
+    from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
     torch.manual_seed(0)
     op = ComputeOp(
@@ -117,11 +118,11 @@ def measure_host_op_overhead_s(
     state = {0: torch.zeros(1, 8)}
     original = torch.zeros(1, 8)
     for _ in range(warmup):
-        execute_compute_op_torch(op, original, state)
+        execute_compute_op_torch(op, original, state, arithmetic=SPIKING_ARITHMETIC)
     walls = []
     for _ in range(repeats):
         start = time.perf_counter()
-        execute_compute_op_torch(op, original, state)
+        execute_compute_op_torch(op, original, state, arithmetic=SPIKING_ARITHMETIC)
         walls.append(time.perf_counter() - start)
     walls.sort()
     return (

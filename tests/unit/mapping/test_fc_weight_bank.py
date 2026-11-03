@@ -121,7 +121,7 @@ class TestValueEquivalenceWithBanks:
         ).map(repr_)
         assert len(ir.weight_banks) >= 2  # both linears bank-shared
         vflow = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64, device="cpu"
         )
         x = torch.randn(4, 3, 6)
         with torch.no_grad():

@@ -15,7 +15,7 @@ import torch.nn as nn
 
 from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.mapping.ir import ComputeOp, IRSource, NeuralCore
-from mimarsinan.mapping.ir.deployment_dtype import computeop_deployment_dtype
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC, VALUE_ARITHMETIC, computeop_deployment_dtype
 from mimarsinan.mapping.pruning.certificate.dyadic_grid import is_on_grid
 from mimarsinan.mapping.pruning.liveness_transfer import (
     COMPUTEOP_LIVENESS_TRANSFERS_IDENTITY_ONLY,
@@ -142,13 +142,13 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
     def test_sigmoid_of_zero_folds_to_one_half(self):
         """Zero-preservation is NOT required for forward constant flow."""
         out = derive_constant_outputs(
-            _op(nn.Sigmoid().eval()), OPAQUE_TRANSFER, [0.0] * 4
+            _op(nn.Sigmoid().eval()), OPAQUE_TRANSFER, [0.0] * 4, arithmetic=SPIKING_ARITHMETIC
         )
         assert out == {j: 0.5 for j in range(4)}
 
     def test_gelu_of_zero_folds_to_zero(self):
         out = derive_constant_outputs(
-            _op(nn.GELU().eval()), OPAQUE_TRANSFER, [0.0] * 4
+            _op(nn.GELU().eval()), OPAQUE_TRANSFER, [0.0] * 4, arithmetic=SPIKING_ARITHMETIC
         )
         assert out == {j: 0.0 for j in range(4)}
 
@@ -159,7 +159,7 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
             _graph_with(op)
         )
         out = derive_constant_outputs(
-            op, index.per_op[op.id], [0.0, None, 0.0, None]
+            op, index.per_op[op.id], [0.0, None, 0.0, None], arithmetic=SPIKING_ARITHMETIC
         )
         assert set(out) == {0, 2}
 
@@ -173,10 +173,10 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
             params={"input_shapes": [(2,), (2,)]},
         )
         assert derive_constant_outputs(
-            op, OPAQUE_TRANSFER, [0.5, 0.5, None, None]
+            op, OPAQUE_TRANSFER, [0.5, 0.5, None, None], arithmetic=SPIKING_ARITHMETIC
         ) == {}
         assert derive_constant_outputs(
-            op, OPAQUE_TRANSFER, [0.5, 0.5, 0.25, 0.25]
+            op, OPAQUE_TRANSFER, [0.5, 0.5, 0.25, 0.25], arithmetic=SPIKING_ARITHMETIC
         ) == {0: 0.75, 1: 0.75}
 
     def test_add_with_a_parameter_folds_because_the_parameter_is_known(self):
@@ -189,7 +189,7 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
                 return x + self.offset
 
         out = derive_constant_outputs(
-            _op(AddParam().eval()), OPAQUE_TRANSFER, [0.5] * 4
+            _op(AddParam().eval()), OPAQUE_TRANSFER, [0.5] * 4, arithmetic=SPIKING_ARITHMETIC
         )
         assert out == {j: 0.75 for j in range(4)}
 
@@ -199,7 +199,7 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
                 return x + torch.rand_like(x)
 
         assert derive_constant_outputs(
-            _op(Coin().eval()), OPAQUE_TRANSFER, [0.0] * 4
+            _op(Coin().eval()), OPAQUE_TRANSFER, [0.0] * 4, arithmetic=SPIKING_ARITHMETIC
         ) == {}
 
     def test_batch_coupled_module_is_refused(self):
@@ -208,12 +208,12 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
                 return x + x.shape[0]
 
         assert derive_constant_outputs(
-            _op(BatchMean().eval()), OPAQUE_TRANSFER, [0.0] * 4
+            _op(BatchMean().eval()), OPAQUE_TRANSFER, [0.0] * 4, arithmetic=SPIKING_ARITHMETIC
         ) == {}
 
     def test_training_mode_dropout_is_refused_by_mode_independence(self):
         assert derive_constant_outputs(
-            _op(nn.Dropout(p=0.9).train()), OPAQUE_TRANSFER, [0.5] * 4
+            _op(nn.Dropout(p=0.9).train()), OPAQUE_TRANSFER, [0.5] * 4, arithmetic=SPIKING_ARITHMETIC
         ) == {}
 
     def test_module_less_identity_relay_folds_index_wise(self):
@@ -222,7 +222,7 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
             op_type="identity", output_shape=(2,),
         )
         assert derive_constant_outputs(
-            op, OPAQUE_TRANSFER, [0.5, None]
+            op, OPAQUE_TRANSFER, [0.5, None], arithmetic=SPIKING_ARITHMETIC
         ) == {0: 0.5}
 
 
@@ -246,12 +246,12 @@ class TestConstantsAreDerivedAtTheDeploymentDtype:
         c = float(torch.tensor(0.3, dtype=torch.float32))
         assert not is_on_grid([c])
         assert derive_constant_outputs(
-            _op(nn.Identity().eval()), OPAQUE_TRANSFER, [c] * 4
+            _op(nn.Identity().eval()), OPAQUE_TRANSFER, [c] * 4, arithmetic=SPIKING_ARITHMETIC
         ) == {j: c for j in range(4)}
 
     def test_transcendental_of_a_non_dyadic_constant_is_execution_exact_only(self):
         op = _op(nn.GELU().eval())
-        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.25] * 4)
+        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.25] * 4, arithmetic=SPIKING_ARITHMETIC)
         want = float(_executed(op, [0.25] * 4, 1).flatten()[0])
         assert out == {j: want for j in range(4)}
         assert not is_on_grid(list(out.values())), (
@@ -261,7 +261,7 @@ class TestConstantsAreDerivedAtTheDeploymentDtype:
 
     def test_sigmoid_of_zero_folds_and_is_grid_certifiable(self):
         out = derive_constant_outputs(
-            _op(nn.Sigmoid().eval()), OPAQUE_TRANSFER, [0.0] * 4
+            _op(nn.Sigmoid().eval()), OPAQUE_TRANSFER, [0.0] * 4, arithmetic=SPIKING_ARITHMETIC
         )
         assert out == {j: 0.5 for j in range(4)}
         assert is_on_grid(list(out.values()))
@@ -276,7 +276,7 @@ class TestConstantsAreDerivedAtTheDeploymentDtype:
         assert not torch.equal(_executed(op, probe, 2)[0:1], _executed(op, probe, 1)), (
             "premise of this pin: batch 1 and batch 2 genuinely disagree"
         )
-        assert derive_constant_outputs(op, OPAQUE_TRANSFER, probe) == {}
+        assert derive_constant_outputs(op, OPAQUE_TRANSFER, probe, arithmetic=SPIKING_ARITHMETIC) == {}
 
     def test_the_deployment_dtype_follows_the_module_parameters(self):
         class AddParam(nn.Module):
@@ -291,28 +291,28 @@ class TestConstantsAreDerivedAtTheDeploymentDtype:
         op32 = _op(AddParam(torch.float32).eval())
         assert computeop_deployment_dtype(op64) == torch.float64
         assert computeop_deployment_dtype(op32) == torch.float32
-        assert derive_constant_outputs(op64, OPAQUE_TRANSFER, [0.25] * 4) == {
+        assert derive_constant_outputs(op64, OPAQUE_TRANSFER, [0.25] * 4, arithmetic=SPIKING_ARITHMETIC) == {
             j: 0.25 + 0.1 for j in range(4)
         }
         want32 = float(_executed(op32, [0.25] * 4, 1).flatten()[0])
         assert want32 != 0.25 + 0.1
-        assert derive_constant_outputs(op32, OPAQUE_TRANSFER, [0.25] * 4) == {
+        assert derive_constant_outputs(op32, OPAQUE_TRANSFER, [0.25] * 4, arithmetic=SPIKING_ARITHMETIC) == {
             j: want32 for j in range(4)
         }
 
-    def test_a_dtype_transparent_module_derives_at_the_process_dtype(self):
-        """A parameterless module carries no precision of its own: it computes
-        in whatever dtype its inputs are born in, which is the process dtype
-        the deployed executor's gather buffer uses."""
+    def test_a_dtype_transparent_module_derives_at_the_records_dtype_whatever_the_process_dtype(self):
+        """[U-DAR, verify M-3] A parameterless spiking host kernel carries no precision of its own: it computes at the
+        record's float32 (``SPIKING_ARITHMETIC.parameterless_host_dtype``, the deployed gather's), never at the
+        process default dtype, so a process that sets float64 does not move what the fold derives."""
         op = _op(nn.Identity().eval())
-        assert computeop_deployment_dtype(op) == torch.get_default_dtype()
+        assert computeop_deployment_dtype(op) is SPIKING_ARITHMETIC.parameterless_host_dtype is torch.float32
         previous = torch.get_default_dtype()
         torch.set_default_dtype(torch.float64)
         try:
-            assert computeop_deployment_dtype(op) == torch.float64
+            assert computeop_deployment_dtype(op) is torch.float32
             assert derive_constant_outputs(
-                op, OPAQUE_TRANSFER, [0.3] * 4
-            ) == {j: 0.3 for j in range(4)}
+                op, OPAQUE_TRANSFER, [0.3] * 4, arithmetic=SPIKING_ARITHMETIC
+            ) == {}, "0.3 is not a float32 value: the deployed float32 gather never carries it"
         finally:
             torch.set_default_dtype(previous)
 
@@ -322,7 +322,7 @@ class TestConstantsAreDerivedAtTheDeploymentDtype:
         a line that does not exist. Refuse, explicitly."""
         assert float(torch.tensor(0.3, dtype=torch.float32)) != 0.3
         assert derive_constant_outputs(
-            _op(nn.Identity().eval()), OPAQUE_TRANSFER, [0.3] * 4
+            _op(nn.Identity().eval()), OPAQUE_TRANSFER, [0.3] * 4, arithmetic=SPIKING_ARITHMETIC
         ) == {}
 
     def test_that_refusal_can_never_cost_a_certifiable_fold(self):
@@ -333,7 +333,7 @@ class TestConstantsAreDerivedAtTheDeploymentDtype:
         for k in range(-4096, 4097, 37):
             c = float(np.ldexp(float(k), -8))
             assert is_on_grid([c])
-            assert derive_constant_outputs(op, OPAQUE_TRANSFER, [c] * 4) == {
+            assert derive_constant_outputs(op, OPAQUE_TRANSFER, [c] * 4, arithmetic=SPIKING_ARITHMETIC) == {
                 j: c for j in range(4)
             }
 
@@ -399,6 +399,7 @@ class TestCoreConstantRules:
             pruned_rows=kw.pop("pruned_rows", frozenset()),
             pruned_cols=frozenset(), exempt_rows=frozenset(),
             carrier=carrier, admits_nonzero=kw.pop("admits_nonzero", True),
+            core_dtype=VALUE_ARITHMETIC.core_np,
         )
 
     def test_zero_constant_rows_die_without_a_carrier(self):
@@ -460,8 +461,8 @@ class TestCoreConstantRules:
 
 class TestCoreColumnsAreDerivedAtTheDeploymentDtype:
     """The column fold evaluates the core at the dtype the DEPLOYED value
-    executor runs it at (``ValueCoreFlow`` default float32; float64 is the
-    certificate twin, not the deployment).
+    executor runs it at: [U-DAR] the record's core dtype (float64: the value
+    executor's, every census's and K9's; ``mapping/ir/deployment_dtype.py``).
 
     The old gate derived in fp64 and demanded the fp32 evaluation match
     bit-for-bit -- unsatisfiable for any value fp32 cannot carry exactly, which
@@ -476,6 +477,7 @@ class TestCoreColumnsAreDerivedAtTheDeploymentDtype:
             pruned_rows=frozenset(), pruned_cols=frozenset(),
             exempt_rows=frozenset(), carrier=carrier,
             admits_nonzero=kw.pop("admits_nonzero", True),
+            core_dtype=VALUE_ARITHMETIC.core_np,
         )
 
     def _carrier_only(self, matrix):
@@ -495,14 +497,15 @@ class TestCoreColumnsAreDerivedAtTheDeploymentDtype:
             "cross-precision gate refused it"
         )
 
-    def test_the_folded_value_is_the_deployed_value_not_the_twins(self):
+    def test_the_folded_value_is_the_deployed_float64_value(self):
+        """[U-DAR] T-1's inversion: the deployed value executor runs float64, so the folded 1/3 is float64's
+        (0x1.5555555555555p-2), never float32(1/3) = 0.3333333432674408."""
         matrix = np.array([[1.0, 0.0]])
         facts = self._facts([None], matrix, self._carrier_only(matrix), threshold=3.0)
-        deployed = float(np.float32(1.0) / np.float32(3.0))
-        assert facts.column_values[0] == deployed, (
-            "the folded value must be what the DEPLOYED fp32 executor puts on "
-            "that line, not the fp64 certificate twin's value"
+        assert facts.column_values[0] == float.fromhex("0x1.5555555555555p-2") == 1.0 / 3.0, (
+            "the folded value must be what the DEPLOYED float64 executor puts on that line"
         )
+        assert facts.column_values[0] != float(np.float32(1.0) / np.float32(3.0))
 
     def test_an_exactly_representable_column_is_unaffected(self):
         matrix = np.array([[1.0, 0.0]])

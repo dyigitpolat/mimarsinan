@@ -31,6 +31,7 @@ from mimarsinan.mapping.pruning.liveness_transfer.constant_transfer import (
 from mimarsinan.mapping.pruning.liveness_transfer.transfer_registry import (
     derive_liveness_transfer,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 
 META = torch.device("meta")
 CPU = torch.device("cpu")
@@ -101,7 +102,7 @@ def test_deployed_execution_still_places_the_module_on_the_buffer_device():
         pytest.param(derive_liveness_transfer, id="liveness_transfer"),
         pytest.param(
             lambda op: derive_constant_outputs(
-                op, derive_liveness_transfer(op), [0.0, 0.0, 0.0]
+                op, derive_liveness_transfer(op), [0.0, 0.0, 0.0], arithmetic=SPIKING_ARITHMETIC
             ),
             id="constant_lattice",
         ),

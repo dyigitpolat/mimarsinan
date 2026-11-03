@@ -21,7 +21,7 @@ from unit.chip_simulation.value_upload_probe import probe_uploads
 
 
 def _flow(dtype=torch.float64):
-    return ValueHybridCoreFlow(_token_bank_hybrid(), dtype=dtype)
+    return ValueHybridCoreFlow(_token_bank_hybrid(), dtype=dtype, device="cpu")
 
 
 def _x(flow, batch=3):

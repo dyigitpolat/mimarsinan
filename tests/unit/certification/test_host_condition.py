@@ -25,6 +25,7 @@ from mimarsinan.certification.host_condition import (
 from mimarsinan.chip_simulation.hybrid_run.host_compute import execute_compute_op_torch
 from mimarsinan.deployment_record.schema import CertificateRecord
 from mimarsinan.mapping.ir import ComputeOp, IRSource
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 
 WIDTH = 6
 
@@ -62,7 +63,7 @@ def _op(module, op_id=7, name="host"):
 
 def _run(op, x, dtype=torch.float64):
     with torch.no_grad():
-        return execute_compute_op_torch(op, x, {-2: x}, gather_dtype=dtype)
+        return execute_compute_op_torch(op, x, {-2: x}, arithmetic=VALUE_ARITHMETIC.counterfactual(dtype))
 
 
 def _batch(n=5, dtype=torch.float64, seed=0):

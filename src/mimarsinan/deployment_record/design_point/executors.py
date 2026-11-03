@@ -23,6 +23,7 @@ from mimarsinan.chip_simulation.value_run.int64_golden import run_golden
 from mimarsinan.deployment_record.design_point.placement import operator_groups, operator_label
 from mimarsinan.deployment_record.design_point.schema import CORE, HOST
 from mimarsinan.mapping.ir import NeuralCore
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 
 FLOW, GOLDEN = "value_flow", "int64_golden"
@@ -142,8 +143,9 @@ def certify_program(nf: Any, ir_graph: Any, hybrid: Any, x_int: torch.Tensor, *,
     identity = build_identity_hybrid_mapping(ir_graph=ir_graph)
     with torch.no_grad():
         nf_out = nf.double()(x)
-        scm = ValueHybridCoreFlow(identity, dtype=torch.float64)(x)
-        executed, state, _flat = ValueHybridCoreFlow(hybrid, dtype=torch.float64).run_retaining_state(x)
+        scm = ValueHybridCoreFlow(identity, device=VALUE_ARITHMETIC.device, dtype=VALUE_ARITHMETIC.core_dtype)(x)
+        executed, state, _flat = ValueHybridCoreFlow(
+            hybrid, device=VALUE_ARITHMETIC.device, dtype=VALUE_ARITHMETIC.core_dtype).run_retaining_state(x)
     reference = golden_run(identity, x_int)
     golden = golden_run(hybrid, x_int)
     edges = [

@@ -8,6 +8,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import torch
 
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.models.nn.activations.integer_law import IntegerLawRangeError, apply_law, grid_codes
 
 
@@ -81,7 +82,7 @@ def prepare_core_law(hard_core, weight: torch.Tensor, index: int) -> Optional[Pr
     device = weight.device
 
     def t(values):
-        return torch.as_tensor(np.array(values, dtype=np.float64), device=device)
+        return torch.as_tensor(np.array(values, dtype=VALUE_ARITHMETIC.core_np), device=device)
 
     names = ("m0", "shift", "bias", "lo", "hi", "output_step", "adc_shift", "adc_levels")
     if hasattr(law, "operand_row"):
@@ -96,7 +97,7 @@ def prepare_core_law(hard_core, weight: torch.Tensor, index: int) -> Optional[Pr
     offsets = core_row_offsets(hard_core)
     return PreparedLaw(
         name=f"hard core {index}", row_steps=t(core_row_steps(hard_core)),
-        weight=weight.to(torch.float64), columns={n: t(getattr(law, n)).reshape(1, -1) for n in names},
+        weight=weight.to(VALUE_ARITHMETIC.core_dtype), columns={n: t(getattr(law, n)).reshape(1, -1) for n in names},
         row_offsets=None if offsets is None else t(offsets),
     )
 
@@ -109,7 +110,7 @@ def run_core_law(signal: torch.Tensor, law: PreparedLaw, weight: Optional[torch.
     if weight is None:
         acc = codes @ law.weight.to(codes.dtype)  # integer codes: exact in fp64 below 2^53
     else:
-        acc = torch.bmm(codes.unsqueeze(1), weight.to(torch.float64)).squeeze(1)
+        acc = torch.bmm(codes.unsqueeze(1), weight.to(VALUE_ARITHMETIC.core_dtype)).squeeze(1)
     if not bool(torch.equal(acc, torch.round(acc))):
         raise IntegerLawRangeError(f"{law.name}: the fp64 accumulator is not integral")
     c = law.columns

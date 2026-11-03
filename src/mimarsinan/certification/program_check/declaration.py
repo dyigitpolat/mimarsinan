@@ -19,6 +19,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     cycle_accurate_lif_trains, lif_execution_synchronized, lif_membrane_init, lif_per_hop_retiming_enabled,
     spike_phase_dither_enabled, ttfs_half_step_folded,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC, VALUE_ARITHMETIC, dtype_name
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 
 #: The semantics Theorem 1 speaks for (``W1/thm/proofs.md`` section 3), and the named ones it leaves outside.
@@ -47,13 +48,15 @@ LIF_SEMANTICS: Tuple[str, ...] = (STREAMED_LIF, WINDOWED_LIF, SYNCHRONIZED_LIF)
 #: Mantissa reach of an accumulation dtype: every integer below it is exact (H8); ``int32`` is nevresim's C++ ``int``.
 EXACT_INTEGER_REACH: Dict[str, int] = {"float64": 2 ** 53, "float32": 2 ** 24, "int64": 2 ** 63, "int32": 2 ** 31}
 #: The executors whose runs Theorem 1 relates, per family: the reference executor (HCM, the value census) and the
-#: int64 golden; ``COMPUTE_DTYPE`` (``models/spiking/spiking_config.py``) is float64.
-DEFAULT_ACCUMULATION: Dict[str, str] = {"hcm": "float64"}
-VALUE_ACCUMULATION: Dict[str, str] = {"value_census": "float64", "int64_golden": "int64"}
+#: int64 golden, at their dtypes as the record of the deployed arithmetic names them ([U-DAR]
+#: ``mapping/ir/deployment_dtype.py``: the spiking and value core dtypes, the value domain's integer form).
+DEFAULT_ACCUMULATION: Dict[str, str] = {"hcm": dtype_name(SPIKING_ARITHMETIC.core_dtype)}
+VALUE_ACCUMULATION: Dict[str, str] = {"value_census": dtype_name(VALUE_ARITHMETIC.core_dtype),
+                                      "int64_golden": VALUE_ARITHMETIC.integer_form}
 #: The dtype an executor uploads weights and input codes in, where the check must bound it: the value census runs
-#: ``ValueHybridCoreFlow`` at float64, the deployed read's arithmetic (``pipelining/core/census/arithmetic.py``,
-#: ``VALUE_CENSUS_DTYPE``), so every weight and code must be exact in float64 (H8).
-VALUE_UPLOAD: Dict[str, str] = {"value_census": "float64"}
+#: ``ValueHybridCoreFlow`` at the record's value core dtype, the deployed read's arithmetic, so every weight and code
+#: must be exact in it (H8).
+VALUE_UPLOAD: Dict[str, str] = {"value_census": dtype_name(VALUE_ARITHMETIC.core_dtype)}
 PER_EVENT = "per_event"
 
 

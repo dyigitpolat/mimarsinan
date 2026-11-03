@@ -18,13 +18,12 @@ from mimarsinan.certification.value_certificate import (
 from mimarsinan.certification.operand_certificate import certify_operand_program
 from mimarsinan.chip_simulation.deployed_host import (
     DEPLOYED_HOST_DEVICE,
-    DEPLOYED_VALUE_DTYPE,
     announce as announce_host,
     value_host_arithmetic,
 )
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 from mimarsinan.pipelining.core.census.arithmetic import (
-    VALUE_CENSUS_DTYPE,
     announce,
     value_census_arithmetic,
 )
@@ -125,8 +124,8 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     quantized = bool(DeploymentPlan.of(pipeline).weight_quantization)
     atol = VALUE_R_EDGE_WQ_ATOL if quantized else VALUE_TWIN_FP64_ATOL
     host = _value_host(pipeline, "Soft Core Mapping value R-edge (K4: the model copy and the identity program)")
-    samples = samples.detach().to(host.device, DEPLOYED_VALUE_DTYPE)
-    reference = copy.deepcopy(model).to(host.device).to(DEPLOYED_VALUE_DTYPE).eval()
+    samples = samples.detach().to(host.device, VALUE_ARITHMETIC.core_dtype)
+    reference = copy.deepcopy(model).to(host.device).to(VALUE_ARITHMETIC.core_dtype).eval()
     identity_flow = fp64_identity_program(ir_graph)
     with torch.no_grad():
         want = twin_as_program(ir_graph, forward_of, reference, samples)  # [U-PS] the model as the program evaluates
@@ -174,13 +173,13 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
         print("[ValueTwinCertificate] SKIP (no validation batch available)")
         return None
     host = _value_host(pipeline, "Hard Core Mapping value twin certificate (K5: the identity and packed programs)")
-    samples = samples.detach().to(host.device, DEPLOYED_VALUE_DTYPE)
+    samples = samples.detach().to(host.device, VALUE_ARITHMETIC.core_dtype)
     if getattr(ir_graph, "dynamic_bank_bindings", None):
         return _operand_program_gate(model, ir_graph, hybrid_mapping, samples)
     # The identity reference writes out every node the backend's stages write (its pass carries included).
     reference_flow = fp64_identity_program(ir_graph, exposed=exposed_nodes(hybrid_mapping))
     backend_flow = ValueHybridCoreFlow(
-        hybrid_mapping, device=host.device, dtype=DEPLOYED_VALUE_DTYPE
+        hybrid_mapping, device=host.device, dtype=VALUE_ARITHMETIC.core_dtype
     )
     certificate, detail = certify_twin_flow_values(
         reference_flow, backend_flow, samples,
@@ -197,7 +196,7 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
 
 def _operand_program_gate(model, ir_graph, hybrid_mapping, samples):
     """[N2] a program with dynamic operand banks: every edge of design §3.2 at atol 0, the payload edge included."""
-    reference = copy.deepcopy(model).to(DEPLOYED_HOST_DEVICE).to(DEPLOYED_VALUE_DTYPE).eval()
+    reference = copy.deepcopy(model).to(DEPLOYED_HOST_DEVICE).to(VALUE_ARITHMETIC.core_dtype).eval()
     certificate = certify_operand_program(reference, build_identity_hybrid_mapping(ir_graph=ir_graph),
                                           hybrid_mapping, samples)
     if not certificate.passed:
@@ -212,7 +211,7 @@ def _run_value_census(pipeline, hybrid_mapping, census: str, device) -> float:
     own when None)."""
     arithmetic = value_census_arithmetic(pipeline, census, device=device)
     announce(pipeline, arithmetic)
-    flow = ValueHybridCoreFlow(hybrid_mapping, device=arithmetic.device, dtype=VALUE_CENSUS_DTYPE)
+    flow = ValueHybridCoreFlow(hybrid_mapping, device=arithmetic.device, dtype=VALUE_ARITHMETIC.core_dtype)
     return float(run_hcm_spiking_test(pipeline, flow, device=arithmetic.device, retry_on_oom=True))
 
 

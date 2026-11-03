@@ -46,6 +46,7 @@ from mimarsinan.pipelining.pipeline_steps.mapping.hard_core_mapping_step import 
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import (
     SoftCoreMappingStep,
 )
+from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
 
 _PLATFORM = {
     "cores": [{"max_axons": 256, "max_neurons": 256, "count": 20}],
@@ -265,7 +266,7 @@ class TestHardCoreMappingEntry:
 
         def gate(*args, **kwargs):
             x = torch.rand(3, 4, dtype=torch.float64)
-            execute_compute_op_torch(op, x, {-2: x}, gather_dtype=torch.float64)
+            execute_compute_op_torch(op, x, {-2: x}, arithmetic=VALUE_ARITHMETIC.counterfactual(torch.float64))
             return None
 
         pipeline = _hcm_pipeline(tmp_path)

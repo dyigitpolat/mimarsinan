@@ -21,6 +21,7 @@ from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
     run_ttfs_contract_compute_stage,
     run_ttfs_contract_neural_stage,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.spiking_config import (
@@ -47,7 +48,7 @@ class HybridTtfsStepMixin(HybridFlowHost):
         mapping = stage.hard_core_mapping
         assert mapping is not None
         device = input_activations.device
-        inp = input_activations.detach().cpu().numpy().astype(np.float64)
+        inp = input_activations.detach().cpu().numpy().astype(SPIKING_ARITHMETIC.boundary_np)
         mode = "ttfs_quantized" if quantized else "ttfs"
         result = TtfsAnalyticalExecutor().run_segment(
             mapping, inp,
@@ -131,8 +132,9 @@ class HybridTtfsStepMixin(HybridFlowHost):
             context_factory=_ctx_factory,
         )
 
-        final_np = gather_final_output_numpy(
+        final_np = gather_final_output_numpy(  # [U-DAR] the record's final read
             self.hybrid_mapping.output_sources, state_buffer, x_np, batch_size,
+            dtype=SPIKING_ARITHMETIC.final_read_np,
         )
-        final = torch.from_numpy(final_np).to(device=device, dtype=torch.float32)
+        final = torch.from_numpy(final_np).to(device=device, dtype=SPIKING_ARITHMETIC.final_read_dtype)
         return final * float(T)

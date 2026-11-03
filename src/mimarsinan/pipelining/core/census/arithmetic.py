@@ -7,14 +7,14 @@ the deployment record, and compared with the deployed read by the harvests' cert
 K14 the census against it). A census therefore runs the deployed read's own arithmetic, so its count is the deployed
 program's count by construction, not by agreement:
 
-- **value programs** at float64 (``VALUE_CENSUS_DTYPE``): the arithmetic of every value certificate (the R-edge and
+- **value programs** at float64 ([U-DAR] the record's ``VALUE_ARITHMETIC``, ``mapping/ir/deployment_dtype.py``): the arithmetic of every value certificate (the R-edge and
   C-edge gates, ``value_gates``), of the deployed read (``ValueHybridCoreFlow(mapping, "cpu", float64)``) and the one
   in which the int64 golden reads an integer program exactly (K6). Integer laws, lattice codes and every weight then
   hold exactly (below 2^53, the static check's H8 reach for the census's declared upload dtype), and host kernels run
   their float64 twins;
 - **spiking programs** in the spiking executor's own arithmetic, unchanged: cores at ``COMPUTE_DTYPE`` (float64, on
   the integer membrane lattice under weight quantization) and host kernels at their deployment dtype
-  (``computeop_deployment_dtype``, the stored module's);
+  (the stored module's: the record's ``SPIKING_ARITHMETIC``);
 - **device**: the pipeline's device where it is the CPU, else the CPU (``census_device``). The deployed read runs on
   the CPU. A CUDA device holds neither its float32 host kernels (cuDNN and cuBLAS choose other algorithms and
   reduction orders) nor float64 reductions and transcendental kernels bit for bit, so a census there would agree with
@@ -34,21 +34,12 @@ from typing import Any, Iterator
 import torch
 
 from mimarsinan.chip_simulation.deployed_host import (
-    DEPLOYED_HOST_DEVICE,
-    DEPLOYED_VALUE_DTYPE,
     borrowed_host_placement,
     deployed_host_device,
     program_host_ops,
 )
 from mimarsinan.common.reporter import emit_reporter_event
-from mimarsinan.mapping.ir.deployment_dtype import computeop_deployment_dtype
-from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
-
-#: The dtype a value census evaluates the deployed value program in: the deployed read's ([U-HDA] its SSOT,
-#: ``chip_simulation/deployed_host.py``).
-VALUE_CENSUS_DTYPE = DEPLOYED_VALUE_DTYPE
-#: The device of the deployed read.
-DEPLOYED_READ_DEVICE = DEPLOYED_HOST_DEVICE
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC, VALUE_ARITHMETIC
 
 
 def census_device(pipeline_device: Any) -> str:
@@ -86,20 +77,20 @@ def _resolved(pipeline: Any, device: Any) -> str:
 
 
 def value_census_arithmetic(pipeline: Any, census: str, *, device: Any = None) -> CensusArithmetic:
-    """The arithmetic of a value census: ``VALUE_CENSUS_DTYPE`` on ``census_device`` (``device`` defaults to the
-    pipeline's)."""
+    """The arithmetic of a value census: the record's value core dtype on ``census_device`` (``device`` defaults to
+    the pipeline's)."""
     asked = _resolved(pipeline, device)
-    return CensusArithmetic(census=census, device=census_device(asked), dtype=_dtype_name(VALUE_CENSUS_DTYPE),
+    return CensusArithmetic(census=census, device=census_device(asked), dtype=_dtype_name(VALUE_ARITHMETIC.core_dtype),
                             pipeline_device=asked)
 
 
 def spiking_census_arithmetic(pipeline: Any, census: str, hybrid_mapping: Any, *,
                               device: Any = None) -> CensusArithmetic:
-    """The arithmetic of a spiking census: the executor's own (cores at ``COMPUTE_DTYPE``, each host kernel at its
-    deployment dtype, named from the program's host ops) on ``census_device``."""
+    """The arithmetic of a spiking census: the executor's own, the record's (``SPIKING_ARITHMETIC``: cores at its core
+    dtype, each host kernel at its deployment dtype, named from the program's host ops) on ``census_device``."""
     asked = _resolved(pipeline, device)
-    host = sorted({_dtype_name(computeop_deployment_dtype(op)) for op in _host_ops(hybrid_mapping)})
-    dtype = f"cores {_dtype_name(COMPUTE_DTYPE)}, host kernels {'/'.join(host) if host else 'none'}"
+    host = sorted({_dtype_name(SPIKING_ARITHMETIC.host_kernel_dtype(op)) for op in _host_ops(hybrid_mapping)})
+    dtype = f"cores {_dtype_name(SPIKING_ARITHMETIC.core_dtype)}, host kernels {'/'.join(host) if host else 'none'}"
     return CensusArithmetic(census=census, device=census_device(asked), dtype=dtype, pipeline_device=asked)
 
 

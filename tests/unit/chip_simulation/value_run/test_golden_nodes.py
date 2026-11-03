@@ -22,7 +22,7 @@ def test_kept_node_outputs_cover_every_materialized_node_and_leave_the_outputs_u
     assert np.array_equal(codes, plain_codes) and np.array_equal(steps, plain_steps)
     assert set(keep) == {"codes", "steps", "values"}
     with torch.no_grad():
-        _out, state, _flat = ValueHybridCoreFlow(hybrid, dtype=torch.float64).run_retaining_state(x.double())
+        _out, state, _flat = ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu").run_retaining_state(x.double())
     assert {k for k in state if k >= 0} == set(keep["values"])
     for node, value in keep["values"].items():
         assert np.array_equal(state[node].numpy(), value)

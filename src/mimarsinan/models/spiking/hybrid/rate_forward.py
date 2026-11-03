@@ -22,6 +22,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     requires_ttfs_firing,
 )
+from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.models.spiking.hybrid.carry import carry_scope
 from mimarsinan.models.spiking.hybrid.executors import runs_synchronized_counts
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
@@ -203,6 +204,7 @@ class HybridRateForwardMixin(HybridFlowHost):
                 host_op_for_evaluation(op, wire_divisors, simulation_length=T, spiking_mode=self.spiking_mode),
                 x,
                 gather_buffer,
+                arithmetic=SPIKING_ARITHMETIC,
                 in_scale=in_scale,
                 out_scale=out_scale,
             )
@@ -246,7 +248,7 @@ class HybridRateForwardMixin(HybridFlowHost):
         )
 
         final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
-        logits = final.to(torch.float32) * float(T)
+        logits = final.to(SPIKING_ARITHMETIC.final_read_dtype) * float(T)  # [U-DAR] the record's final read
         return apply_membrane_corrections_to_logits(
             logits, readout_corrections, self.hybrid_mapping.output_sources,
         )

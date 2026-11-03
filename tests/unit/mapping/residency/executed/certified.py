@@ -204,8 +204,8 @@ def integer_certificate(nf: Any, ir: Any, hybrid: Any, x_int: torch.Tensor) -> D
     identity = build_identity_hybrid_mapping(ir_graph=ir)
     with torch.no_grad():
         nf_out = nf.double()(x)
-        scm = ValueHybridCoreFlow(identity, dtype=torch.float64)(x)
-        hcm = ValueHybridCoreFlow(hybrid, dtype=torch.float64)(x)
+        scm = ValueHybridCoreFlow(identity, dtype=torch.float64, device="cpu")(x)
+        hcm = ValueHybridCoreFlow(hybrid, dtype=torch.float64, device="cpu")(x)
     codes, steps = run_golden(identity, x_int)
     codes_h, steps_h = run_golden(hybrid, x_int)
 

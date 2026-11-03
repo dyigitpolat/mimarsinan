@@ -77,7 +77,7 @@ def test_a_separate_operand_core_type_takes_the_operand_banks_and_only_them(prog
     for kind, operand in seen:
         assert (kind == (48, 48)) == operand, (kind, operand)
     x = image_inputs(8)
-    assert_exact(ValueHybridCoreFlow(mapping, dtype=torch.float64)(x), program.identity()(x))
+    assert_exact(ValueHybridCoreFlow(mapping, dtype=torch.float64, device="cpu")(x), program.identity()(x))
 
 
 def test_one_shared_core_type_packs_both_roles(program):
