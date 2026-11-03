@@ -189,6 +189,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "event_census_samples",
     # U-HV (registry/entries_odin_hacc.py): no default, absent is the development split for both ODIN steps.
     "odin_sample_split",
+    "readout_aware_training",  # U-ADC (registry/entries_endpoint.py): no default, absent is the law-free recovery
 }
 
 

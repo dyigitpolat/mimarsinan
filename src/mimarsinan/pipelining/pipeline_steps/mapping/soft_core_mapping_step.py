@@ -195,106 +195,13 @@ class SoftCoreMappingStep(PipelineStep):
         model = self.get_entry("fused_model")
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
-        cores = platform_constraints.get("cores", [])
-        mapping_params = resolve_platform_mapping_params(
-            cores,
-            allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
-        )
-        resolved_hardware_bias = mapping_params.hardware_bias
-        effective_max_axons = mapping_params.effective_max_axons
-        resolved_max_neurons = mapping_params.effective_max_neurons
-        resolved_allow_coalescing = mapping_params.allow_coalescing
-
-        for perceptron in model.get_perceptrons():
-            if isinstance(perceptron.layer, FusedLinear):
-                perceptron.layer = self.bring_back_bias(perceptron.layer)
-                refresh_perceptron_bias_references(perceptron)
-
-        apply_structured_pruning_if_enabled(self, model, "SoftCoreMappingStep")
-
-        # W-CAL-2: pruning must hold in the committed raw parameters at mapping
-        # time — the deployed executor never fires the enforcement hooks.
-        self._commit_pruning_to_raw_params(model)
-
-        if self.pipeline.config.get("generate_visualizations", False):
-            def _flowchart():
-                from mimarsinan.visualization.softcore_flowchart_dot import write_softcore_flowchart_dot
-
-                try:
-                    flowchart_device = next(model.parameters()).device
-                except StopIteration:
-                    flowchart_device = self.pipeline.config["device"]
-                out_dot = os.path.join(
-                    self.pipeline.working_directory, "softcore_flowchart.dot"
-                )
-                write_softcore_flowchart_dot(
-                    model.get_mapper_repr(),
-                    out_dot,
-                    input_shape=tuple(self.pipeline.config["input_shape"]),
-                    max_axons=int(effective_max_axons),
-                    max_neurons=int(resolved_max_neurons),
-                    device=flowchart_device,
-                )
-                print(f"[SoftCoreMappingStep] Wrote flowchart DOT: {out_dot}")
-
-            run_optional_viz("SoftCoreMappingStep", _flowchart)
-        
         _PHASE_TAG = "SoftCoreMappingStep"
         def _phase(name):
             return phase_profiler(_PHASE_TAG, name)
 
-        with _phase("basic_trainer_ctor"):
-            self.trainer = make_basic_trainer(self.pipeline, model)
-
-        act_q = plan.activation_quantization
-
-        if plan.uses_ttfs_floor_ceil_convention and not act_q:
-            print(
-                f"[SoftCoreMappingStep] Warning: spiking_mode={plan.spiking_mode!r} "
-                "trains the TTFS floor+half-step-bias convention but "
-                "activation_quantization is off; deployment accuracy may drop "
-                "compared to training."
-            )
-
-        self._apply_ttfs_quantization_bias_compensation(model, act_q)
-        # A SIGNED boundary carries negatives verbatim; this policy exists to
-        # guard the unsigned [0,1] spike-encode clamp, so the contract's own
-        # signedness decides — not the domain name.
-        if not packaging_contract_for(plan).boundary.signed:
-            self._apply_negative_boundary_policy(model)
-
-        bits = self.pipeline.config['weight_bits']
-        _, q_max = quantization_bounds(bits)
-
-        ir_mapping = IRMapping(
-            q_max=q_max,
-            firing_mode=self.pipeline.config["firing_mode"],
-            max_axons=effective_max_axons,
-            max_neurons=resolved_max_neurons,
-            allow_coalescing=resolved_allow_coalescing,
-            hardware_bias=resolved_hardware_bias,
+        ir_mapping, resolved_hardware_bias, bits, q_max = self._prepare_mapping(
+            model, platform_constraints, plan, phase=_phase, report=True,
         )
-        
-        mapper_repr = model.get_mapper_repr()
-        if hasattr(mapper_repr, "assign_perceptron_indices"):
-            mapper_repr.assign_perceptron_indices()
-        # Recompute per-source input scales here so mapping is self-contained; idempotent in activation_scales, so byte-identical when WeightQuantizationStep already populated them.
-        compute_per_source_scales(
-            mapper_repr,
-            arm_wire_value_ops=not requires_ttfs_firing(
-                str(DeploymentPlan.of(self.pipeline).spiking_mode)
-            ),
-        )
-        # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
-        propagate_boundary_input_scales(
-            model, input_data_scale=plan.workload.input_data_scale
-        )
-        # Fail loud if any bias/weight write since the commit above broke the
-        # committed-pruning contract (mask * param == param) about to be mapped.
-        self._verify_pruning_committed(model)
-        # [WI-5g] every core binds to its layer's core type before its codes quantize on that type's grid.
-        refuse_unbuilt_domain(platform_constraints, value_domain=is_mvm_core_semantics(plan.core_semantics),
-                              weight_quantization=plan.weight_quantization)
         # [E1 open item 1] the model as the declared mapping finds it, for the second mapping without core limits.
         reference_source = _reference_source(model)
         ir_graph, relay_cores_inserted, max_latency = self._derive_ir(
@@ -386,6 +293,124 @@ class SoftCoreMappingStep(PipelineStep):
                 )
             self._soft_core_spiking_metric = float(acc)
             print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
+
+    def derive_law_ir(self, model, platform_constraints):
+        """[U-ADC] The IR this step derives from ``model``, a copy the caller owns, handed over as Normalization Fusion
+        hands the model on: this step's own preparation (``_prepare_mapping``) and IR derivation (``_derive_ir``), so
+        every core's readout law is the one this step solves and the copy carries it stamped. Its stdout and random
+        draws are kept out of the run and no record is written (``report`` off), as for the second mapping."""
+        plan = DeploymentPlan.of(self.pipeline)
+        quiet = lambda _name: contextlib.nullcontext()  # noqa: E731 -- the phase profiler's no-op stand-in
+        with _run_state_kept(), contextlib.redirect_stdout(io.StringIO()):
+            ir_mapping, _bias, bits, _q_max = self._prepare_mapping(
+                model, platform_constraints, plan, phase=quiet, report=False,
+            )
+            ir_graph, _relays, _latency = self._derive_ir(
+                model, ir_mapping, plan, platform_constraints, bits, phase=quiet, report=False,
+            )
+        return ir_graph
+
+    def _prepare_mapping(self, model, platform_constraints, plan, *, phase, report: bool):
+        """The model's preparation before its IR derivation, in this step's order, and the declared mapping:
+        ``(ir_mapping, hardware_bias, weight_bits, q_max)``. ``report`` off (``derive_law_ir``) writes no
+        visualization."""
+        cores = platform_constraints.get("cores", [])
+        mapping_params = resolve_platform_mapping_params(
+            cores,
+            allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
+        )
+        resolved_hardware_bias = mapping_params.hardware_bias
+        effective_max_axons = mapping_params.effective_max_axons
+        resolved_max_neurons = mapping_params.effective_max_neurons
+        resolved_allow_coalescing = mapping_params.allow_coalescing
+
+        for perceptron in model.get_perceptrons():
+            if isinstance(perceptron.layer, FusedLinear):
+                perceptron.layer = self.bring_back_bias(perceptron.layer)
+                refresh_perceptron_bias_references(perceptron)
+
+        apply_structured_pruning_if_enabled(self, model, "SoftCoreMappingStep")
+
+        # W-CAL-2: pruning must hold in the committed raw parameters at mapping
+        # time — the deployed executor never fires the enforcement hooks.
+        self._commit_pruning_to_raw_params(model)
+
+        if report and self.pipeline.config.get("generate_visualizations", False):
+            def _flowchart():
+                from mimarsinan.visualization.softcore_flowchart_dot import write_softcore_flowchart_dot
+
+                try:
+                    flowchart_device = next(model.parameters()).device
+                except StopIteration:
+                    flowchart_device = self.pipeline.config["device"]
+                out_dot = os.path.join(
+                    self.pipeline.working_directory, "softcore_flowchart.dot"
+                )
+                write_softcore_flowchart_dot(
+                    model.get_mapper_repr(),
+                    out_dot,
+                    input_shape=tuple(self.pipeline.config["input_shape"]),
+                    max_axons=int(effective_max_axons),
+                    max_neurons=int(resolved_max_neurons),
+                    device=flowchart_device,
+                )
+                print(f"[SoftCoreMappingStep] Wrote flowchart DOT: {out_dot}")
+
+            run_optional_viz("SoftCoreMappingStep", _flowchart)
+
+        with phase("basic_trainer_ctor"):
+            self.trainer = make_basic_trainer(self.pipeline, model)
+
+        act_q = plan.activation_quantization
+
+        if plan.uses_ttfs_floor_ceil_convention and not act_q:
+            print(
+                f"[SoftCoreMappingStep] Warning: spiking_mode={plan.spiking_mode!r} "
+                "trains the TTFS floor+half-step-bias convention but "
+                "activation_quantization is off; deployment accuracy may drop "
+                "compared to training."
+            )
+
+        self._apply_ttfs_quantization_bias_compensation(model, act_q)
+        # A SIGNED boundary carries negatives verbatim; this policy exists to
+        # guard the unsigned [0,1] spike-encode clamp, so the contract's own
+        # signedness decides — not the domain name.
+        if not packaging_contract_for(plan).boundary.signed:
+            self._apply_negative_boundary_policy(model)
+
+        bits = self.pipeline.config['weight_bits']
+        _, q_max = quantization_bounds(bits)
+
+        ir_mapping = IRMapping(
+            q_max=q_max,
+            firing_mode=self.pipeline.config["firing_mode"],
+            max_axons=effective_max_axons,
+            max_neurons=resolved_max_neurons,
+            allow_coalescing=resolved_allow_coalescing,
+            hardware_bias=resolved_hardware_bias,
+        )
+
+        mapper_repr = model.get_mapper_repr()
+        if hasattr(mapper_repr, "assign_perceptron_indices"):
+            mapper_repr.assign_perceptron_indices()
+        # Recompute per-source input scales here so mapping is self-contained; idempotent in activation_scales, so byte-identical when WeightQuantizationStep already populated them.
+        compute_per_source_scales(
+            mapper_repr,
+            arm_wire_value_ops=not requires_ttfs_firing(
+                str(DeploymentPlan.of(self.pipeline).spiking_mode)
+            ),
+        )
+        # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
+        propagate_boundary_input_scales(
+            model, input_data_scale=plan.workload.input_data_scale
+        )
+        # Fail loud if any bias/weight write since the commit above broke the
+        # committed-pruning contract (mask * param == param) about to be mapped.
+        self._verify_pruning_committed(model)
+        # [WI-5g] every core binds to its layer's core type before its codes quantize on that type's grid.
+        refuse_unbuilt_domain(platform_constraints, value_domain=is_mvm_core_semantics(plan.core_semantics),
+                              weight_quantization=plan.weight_quantization)
+        return ir_mapping, resolved_hardware_bias, bits, q_max
 
     def _derive_ir(self, model, ir_mapping, plan, platform_constraints, bits, *, phase, report: bool):
         """The IR of ``model`` at ``ir_mapping``'s geometry through every post-mapping pass, in their order:

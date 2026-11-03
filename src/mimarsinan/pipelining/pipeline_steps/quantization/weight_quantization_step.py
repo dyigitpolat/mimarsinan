@@ -28,6 +28,7 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
 )
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
+from mimarsinan.pipelining.pipeline_steps.quantization.readout_aware_training import readout_aware_endpoint
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.models.nn.layers import FrozenStatsNormalization
 from mimarsinan.transformations.perceptron.bias_canonicalization import (
@@ -110,6 +111,9 @@ class WeightQuantizationStep(TunerPipelineStep):
         adaptation_manager = self.get_entry("adaptation_manager")
         # A shift bake the projection cannot re-derive (no recorded shift) is refused before any budget is spent.
         refuse_unrecorded_shift_bakes(model.get_perceptrons())
+        # [U-ADC] declared readout-aware training: its scope judged now (refused by name), its loop opened around the
+        # endpoint recovery; None when undeclared.
+        endpoint_forward = readout_aware_endpoint(self.pipeline)
         grids = projection_grids(
             self.pipeline.config, two_scale=bool(self.pipeline.config.get("wq_two_scale_projection", False)),
             on_chip_bias=lambda: resolve_bias_mode(self.pipeline.config) == "on_chip",
@@ -179,6 +183,7 @@ class WeightQuantizationStep(TunerPipelineStep):
             float_bias=grids.law_bias,
             bias_rows_floor=splitting.rows_override,
             register_bias=register_bias,
+            endpoint_forward=endpoint_forward,
         )
 
     def _freeze_exact_qat_theta(self, model) -> None:

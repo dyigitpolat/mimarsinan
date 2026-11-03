@@ -1,5 +1,7 @@
 """Weight quantization tuner using NormalizationAwarePerceptronQuantization."""
 
+import contextlib
+
 import torch
 
 from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
@@ -25,7 +27,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     def __init__(
         self, pipeline, model, quantization_bits, target_accuracy, lr,
         adaptation_manager, two_scale_projection=False, fractional_scale=False, float_bias=False,
-        bias_rows_floor=None, register_bias=False,
+        bias_rows_floor=None, register_bias=False, endpoint_forward=None,
     ):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits
@@ -43,6 +45,9 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
         )
         # The two-scale bias route the step names: an on-chip register (the weight lattice) or bias rows.
         self.register_bias = bool(register_bias)
+        # [U-ADC] The context the endpoint recovery runs in (``tuner -> context manager``, the step's readout-aware
+        # loop), else None: the recovery runs as it always has.
+        self.endpoint_forward = endpoint_forward
         self._axis = NAPQAxis(
             self._apply_rate, replica_apply_fn=self._apply_rate_to,
         )
@@ -104,8 +109,10 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
             float(cfg.get("endpoint_target_floor", 0.0)),
             float(cfg.get("wq_endpoint_target_floor", 0.0)),
         )
-        run_endpoint_recovery(
-            self,
-            base_steps=int(cfg.get("wq_endpoint_recovery_steps", 0)),
-            target_floor=target_floor,
-        )
+        forward = getattr(self, "endpoint_forward", None)
+        with contextlib.nullcontext() if forward is None else forward(self):
+            run_endpoint_recovery(
+                self,
+                base_steps=int(cfg.get("wq_endpoint_recovery_steps", 0)),
+                target_floor=target_floor,
+            )

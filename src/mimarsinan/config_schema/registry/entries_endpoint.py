@@ -53,6 +53,17 @@ ENTRIES = (
            "for families that pass by the floor climb).", bounds=(0, None),
        provenance="ConversionPolicy recipe", derived_default=_frozen(0),
        empty_means="the ConversionPolicy recipe cap for the mode"),
+    _E("readout_aware_training", domain="value", group="tuning",
+       owner="pipelining/pipeline_steps/quantization/readout_aware_training", type=T.BOOL,
+       category=Category.ADVANCED, exposure="user", label="Readout-aware Training",
+       effect="Trains Weight Quantization's endpoint recovery through the deployed readout law",
+       doc="true: Weight Quantization's endpoint recovery reads and trains the deployed readout law in its forward "
+           "(the ADC at readout_law.adc_bits and the output requantization, as Soft Core Mapping solves them for the "
+           "live weights, lane laws included where lanes execute), with the stamped readout quantizer's "
+           "straight-through gradient; the deployed program is the one Soft Core Mapping exports from the trained "
+           "weights. It needs a readout_law on a value-domain (mvm) row with the fast optimization driver, fixed "
+           "hardware, no structured pre-mapping pruning and no operand core type; elsewhere it is refused by name.",
+       empty_means="false — the recovery trains the law-free composition, every run byte for byte"),
     _E("endpoint_floor_lr", group="tuning", owner="workload_profile/tuning_policy",
        type=T.FLOAT, category=Category.ADVANCED, label="Endpoint Floor LR",
        doc="Floor-chasing endpoint LR ceiling. Builders register it via "

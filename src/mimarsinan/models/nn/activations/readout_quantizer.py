@@ -23,6 +23,12 @@ OFFSET_MULTIPLIER = "offset_multiplier"
 OUTPUT_OFFSET, OPERAND_M, OPERAND_STEP, OPERAND_OFFSET = "output_offset", "operand_m", "operand_step", "operand_offset"
 
 
+def straight_through(values: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """The stamped law's estimator: the law's ``values`` forward (in ``y``'s dtype), the identity onto the
+    perceptron's float output ``y`` backward."""
+    return values.to(y.dtype) + (y - y.detach())
+
+
 class ReadoutState:
     """One forward's hand-off from the input tap to the quantizer, and the re-entry flag of its rerun."""
 
@@ -219,6 +225,17 @@ class ReadoutQuantizer(nn.Module):
     def stamped(self) -> Optional[ReadoutStamp]:
         return self._stamp
 
+    def adopt_law(self, other: "ReadoutQuantizer") -> None:
+        """[U-ADC] Read the law ``other`` carries: its stamp and its hand-off state, the state its stamp's accumulator
+        rerun flags on ``other``'s own perceptron (a live model training through a law-carrying copy's laws)."""
+        self.__dict__.setdefault("_own_state", self._state)
+        self._stamp, self._state = other._stamp, other._state
+
+    def release_law(self) -> None:
+        """[U-ADC] Back to the unstamped quantizer on its own hand-off state."""
+        self._stamp = None
+        self._state = self.__dict__.pop("_own_state", self._state)
+
     def set_lane(self, *, unsigned: bool, offset: float = 0.0, continues: bool = False) -> None:
         """Make this quantizer its perceptron's lane: an unsigned (offset) grid, and its rounding at a fused
         add's end when the lane ``continues`` (the seam its calibration reads is then :attr:`lane_seam`)."""
@@ -245,7 +262,7 @@ class ReadoutQuantizer(nn.Module):
         if x is None:
             raise RuntimeError("ReadoutQuantizer: no input reached its tap; the lane law reads the perceptron input")
         values = self._stamp.evaluate(x, self._state, operand=operand)
-        return values.to(v.dtype) + (v - v.detach())
+        return straight_through(values, v)
 
     def forward(self, y: torch.Tensor) -> torch.Tensor:
         state = self._state
@@ -258,4 +275,4 @@ class ReadoutQuantizer(nn.Module):
         if x is None:
             raise RuntimeError("ReadoutQuantizer: no input reached its tap; the law reads the perceptron input")
         values = self._stamp.evaluate(x, state)
-        return values.to(y.dtype) + (y - y.detach())
+        return straight_through(values, y)
