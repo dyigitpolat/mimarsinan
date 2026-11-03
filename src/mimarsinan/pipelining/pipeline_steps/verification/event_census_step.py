@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from mimarsinan.chip_simulation.deployed_host import on_deployed_host
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.chip_simulation.synaptic_events import EventCensusRefusal, census_by_unit
 from mimarsinan.data_handling.sample_loader import load_validation_samples_by_index
@@ -59,11 +60,14 @@ class EventCensusStep(PipelineStep):
         samples = load_validation_samples_by_index(
             self.pipeline.data_provider_factory, range(int(plan.event_census_samples)),
             num_workers=int(self.pipeline.config.get("num_workers", 4)))
-        device = self.pipeline.config["device"]
-        flow = build_spiking_hybrid_flow(
-            self.pipeline, mapping, preprocessor=getattr(model, "preprocessor", None)).to(device).eval()
-        with measurement_plane(), torch.no_grad():
-            _out, records = flow.forward_with_recordings(torch.cat(samples, dim=0).to(device))
+        # [U-HDA] the deployed program on the deployed host (the CPU, where the deployed read runs).
+        with on_deployed_host("Event Census (the deployed program's spiking executor)", self.pipeline.config["device"],
+                              programs=(mapping,), model=model,
+                              reporter=getattr(self.pipeline, "reporter", None)) as host:
+            flow = build_spiking_hybrid_flow(
+                self.pipeline, mapping, preprocessor=getattr(model, "preprocessor", None)).to(host.device).eval()
+            with measurement_plane(), torch.no_grad():
+                _out, records = flow.forward_with_recordings(torch.cat(samples, dim=0).to(host.device))
         by_unit = [census_by_unit(record, mapping) for record in records]
         per_sample = [int(sum(units.values())) for units in by_unit]
         mean = float(np.mean(per_sample))

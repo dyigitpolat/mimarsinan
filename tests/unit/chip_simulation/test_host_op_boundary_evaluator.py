@@ -12,7 +12,9 @@ SANA-FE and Lava were the two backends that did not.
 
 The fix is structural: the evaluator rides on ``SpikingDeploymentContract``, and
 ``execute_compute_op_numpy`` REFUSES to default it, so a backend cannot silently
-re-derive a host op somewhere else.
+re-derive a host op somewhere else. [U-HDA] The evaluator is the deployed host's
+(``chip_simulation/deployed_host.py``: the CPU, where the census, the HCM
+reference and the deployed read run), whatever device the pipeline names.
 """
 
 from __future__ import annotations
@@ -109,7 +111,9 @@ def _op(module, size, src_node):
 
 
 def test_contract_carries_the_pipeline_device_as_the_host_op_evaluator():
-    assert _contract("cuda:0").host_compute_device == "cuda:0"
+    """[U-HDA] The evaluator a pipeline device names is the deployed host's (the CPU, where the census, the HCM
+    reference and the deployed read evaluate host ops), whatever device the pipeline trains on."""
+    assert _contract("cuda:0").host_compute_device == "cpu"
     assert _contract("cpu").host_compute_device == "cpu"
 
 
@@ -143,8 +147,8 @@ def test_sanafe_runner_evaluates_host_ops_on_the_contract_device(monkeypatch):
         contract=_contract("cuda:1"),
     )
     runner.run(np.asarray([[1.0, 2.0]], dtype=np.float32), sample_index=0)
-    assert seen["device"] == "cuda:1", (
-        "the runner must re-derive host ops where the census reference did"
+    assert seen["device"] == "cpu", (
+        "the runner must re-derive host ops where the census reference did: [U-HDA] on the deployed host"
     )
 
 

@@ -9,6 +9,7 @@ import torch
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+from mimarsinan.chip_simulation.deployed_host import borrowed_host_placement, deployed_host_device, held_on
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
 from mimarsinan.chip_simulation.membrane_export import deployed_membrane_readout_enabled
 from mimarsinan.chip_simulation.recording.spike_recorder import compare_records, format_first_diff
@@ -97,7 +98,9 @@ def build_spiking_hybrid_flow(
     membrane_readout_decode: bool = False,
     device: str | None = None,
 ) -> SpikingHybridCoreFlow:
-    """Build the deployed-read executor on ``device`` (default the pipeline's); count currencies stay counts ALWAYS.
+    """Build the deployed-read executor on ``device`` (default the deployed host's, ``chip_simulation/deployed_host.py``:
+    the CPU, whatever device the pipeline trains on [U-HDA]); count currencies stay counts ALWAYS. A preprocessor read
+    from ``model`` that lives on another device is held as a copy there, so the build never moves the model's modules.
 
     [C2] Records, parity gathers, and cross-sim comparisons keep the per-neuron
     counts decode unconditionally. The membrane-augmented FINAL logits decode
@@ -138,7 +141,9 @@ def build_spiking_hybrid_flow(
         apply_cycle_accurate_trains_to_model(model, True)
         if plan.weight_quantization:
             arm_integer_membrane_lattice(model)
-    return flow.to(device or cfg["device"])
+    target = device or deployed_host_device(cfg["device"])
+    flow.preprocessor = held_on(flow.preprocessor, target)
+    return flow.to(target)
 
 
 def deployed_membrane_decode_enabled(pipeline) -> bool:
@@ -197,7 +202,7 @@ def run_membrane_readout_diagnostic(
     ):
         return None
 
-    device = cfg["device"]
+    device = deployed_host_device(cfg["device"])  # [U-HDA] the deployed program on the deployed host
     samples = samples[:MEMBRANE_DIAGNOSTIC_MAX_SAMPLES]
     counts_flow = build_spiking_hybrid_flow(
         pipeline, hybrid_mapping, model=model,
@@ -206,7 +211,7 @@ def run_membrane_readout_diagnostic(
         pipeline, hybrid_mapping, model=model, membrane_readout_decode=True,
     ).eval()
     x = samples.to(device)
-    with torch.no_grad():
+    with torch.no_grad(), borrowed_host_placement(model, hybrid_mapping):
         counts_logits = counts_flow(x)
         membrane_logits = diagnostic_flow(x)
     delta = membrane_logits - counts_logits
@@ -287,7 +292,7 @@ def run_trainer_metric(
     max_batch_cap: int | None = None,
 ) -> float:
     """Run the same subsample/full test policy as HCM spiking simulation."""
-    device = device or pipeline.config["device"]
+    device = device or deployed_host_device(pipeline.config["device"])  # [U-HDA]
     trainer = BasicTrainer(
         model,
         device,
@@ -336,7 +341,7 @@ def run_hcm_spiking_test(
 ) -> float:
     """Run a deployed-metric census over the eval set (config-bounded
     subsample/batch). Flow-agnostic: spiking or value hybrid flows."""
-    device = device or pipeline.config["device"]
+    device = device or deployed_host_device(pipeline.config["device"])  # [U-HDA]
     attempt_cap = max_batch_cap
     last_error: Exception | None = None
 
@@ -369,7 +374,7 @@ def preprocess_hybrid_sample(
     device: str | None = None,
 ) -> np.ndarray:
     """Apply the hybrid flow preprocessor; return float64 ``(1, D)`` numpy input."""
-    device = device or pipeline.config["device"]
+    device = device or deployed_host_device(pipeline.config["device"])  # [U-HDA]
     flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping).to(device).eval()
     x = sample.to(device)
     with torch.no_grad():
@@ -389,7 +394,7 @@ def record_ttfs_hcm_reference(
         raise ValueError("record_ttfs_hcm_reference requires batch_size == 1")
 
     contract = build_deployment_contract(pipeline)
-    device = pipeline.config["device"]
+    device = deployed_host_device(pipeline.config["device"])  # [U-HDA]
 
     flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping).to(device).eval()
     x_np = preprocess_hybrid_sample(
@@ -416,12 +421,12 @@ def record_hcm_reference(
     flow = hcm_reference_flow(pipeline, hybrid_mapping, device=device)
     return flow, record_on_hcm_flow(
         flow, sample, sample_index=sample_index,
-        device=device or pipeline.config["device"])
+        device=device or deployed_host_device(pipeline.config["device"]))  # [U-HDA]
 
 
 def hcm_reference_flow(pipeline, hybrid_mapping, *, device: str | None = None):
     """The HCM reference executor, built once — reusable across samples."""
-    device = device or pipeline.config["device"]
+    device = device or deployed_host_device(pipeline.config["device"])  # [U-HDA]
     return build_spiking_hybrid_flow(pipeline, hybrid_mapping).to(device).eval()
 
 

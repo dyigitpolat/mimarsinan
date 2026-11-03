@@ -695,11 +695,15 @@ class TestDeviceConsistency:
         with pytest.raises(RuntimeError):
             model(x.to("cuda:0"))  # plain forward crosses devices → crash
 
+        seen = []
+        model.register_forward_pre_hook(lambda _m, args: seen.append(args[0].device.type))
         agreement = assert_torch_vs_deployed_sim_parity_or_raise(model, flow, x)
         assert agreement == pytest.approx(1.0)
-        assert {p.device.type for p in model.parameters()} == {"cuda"}, (
-            "the gate must unify the whole model onto one device before forward"
-        )
+        # [U-HDA] the gate unifies the whole model onto the deployed host (the CPU) for its forward, then hands
+        # every module back where it was.
+        assert seen == ["cpu"], "the gate must unify the whole model onto one device before forward"
+        assert (model.a.weight.device.type, model.b.weight.device.type) == ("cuda", "cpu")
+        assert (flow.a.weight.device.type, flow.b.weight.device.type) == ("cuda", "cpu")
 
 
 class TestTorchVsDeployedSimParity:

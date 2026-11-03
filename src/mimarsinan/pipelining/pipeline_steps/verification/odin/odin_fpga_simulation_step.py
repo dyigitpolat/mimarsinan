@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from mimarsinan.certification.record_certificates import certify_run_records
+from mimarsinan.chip_simulation.deployed_host import on_deployed_host
 from mimarsinan.chip_simulation.odin_fpga.transports.factory import build_transport
 from mimarsinan.chip_simulation.odin_fpga.records import (
     BACKEND_NAME,
@@ -92,23 +93,27 @@ class OdinFpgaDeploymentStep(PipelineStep):
 
         deployed: List[OdinFpgaRunRecord] = []
         certificates: List[Any] = []
-        device = config["device"]
-        for index, sample in enumerate(samples):
-            _flow, reference = record_hcm_reference(
-                self.pipeline, hard_core_mapping, sample,
-                sample_index=index, device=device)
-            actual = runner.run(
-                sample.detach().cpu().numpy().reshape(1, -1), sample_index=index)
-            assert_spike_parity_or_raise(reference, actual.to_hcm_subset())
-            certificate = certify_run_records(
-                reference, actual.to_hcm_subset(), backend=BACKEND_NAME)
-            print(f"[SpikeCountCertificate] {certificate.summary()}")
-            if not certificate.passed:
-                raise AssertionError(
-                    f"{BACKEND_NAME}: {certificate.summary()} — the device did "
-                    f"not reproduce the reference counts")
-            certificates.append(certificate)
-            deployed.append(actual)
+        # [U-HDA] the HCM reference and the runner's host kernels (the contract's host_compute_device) on the
+        # deployed host.
+        with on_deployed_host("ODIN FPGA spike parity (the HCM reference and the device run's host kernels)",
+                              config["device"], programs=(hard_core_mapping,),
+                              reporter=getattr(self.pipeline, "reporter", None)) as host:
+            for index, sample in enumerate(samples):
+                _flow, reference = record_hcm_reference(
+                    self.pipeline, hard_core_mapping, sample,
+                    sample_index=index, device=host.device)
+                actual = runner.run(
+                    sample.detach().cpu().numpy().reshape(1, -1), sample_index=index)
+                assert_spike_parity_or_raise(reference, actual.to_hcm_subset())
+                certificate = certify_run_records(
+                    reference, actual.to_hcm_subset(), backend=BACKEND_NAME)
+                print(f"[SpikeCountCertificate] {certificate.summary()}")
+                if not certificate.passed:
+                    raise AssertionError(
+                        f"{BACKEND_NAME}: {certificate.summary()} — the device did "
+                        f"not reproduce the reference counts")
+                certificates.append(certificate)
+                deployed.append(actual)
 
         self.deployed_records = deployed
         walls = aggregate_walls(deployed)

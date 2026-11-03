@@ -6,6 +6,7 @@ import os
 from typing import Any, Dict, List
 
 from mimarsinan.certification.record_certificates import certify_run_records
+from mimarsinan.chip_simulation.deployed_host import deployed_host_device, on_deployed_host
 from mimarsinan.chip_simulation.odin_hacc.artifact import (
     BUNDLE_BASENAME,
     CAPTURE_BASENAME,
@@ -114,12 +115,17 @@ class OdinHaccDeploymentStep(PipelineStep):
         # ONE reference executor for the whole campaign: rebuilding it per
         # sample cost more than the freezing did, and it carries no state
         # between samples (every window is recorded from a cleared membrane).
-        reference_flow = hcm_reference_flow(
-            self.pipeline, mapping, device=config["device"])
-        frozen = [
-            self._freeze_one(reference_flow, freezer, sample, label, index)
-            for index, (sample, label) in enumerate(pairs)
-        ]
+        # [U-HDA] the HCM reference and the freezer's host kernels (the contract's host_compute_device) on the
+        # deployed host.
+        with on_deployed_host("ODIN HACC bundle freeze (the HCM reference and the frozen twin's host kernels)",
+                              config["device"], programs=(mapping,),
+                              reporter=getattr(self.pipeline, "reporter", None)) as host:
+            reference_flow = hcm_reference_flow(
+                self.pipeline, mapping, device=host.device)
+            frozen = [
+                self._freeze_one(reference_flow, freezer, sample, label, index)
+                for index, (sample, label) in enumerate(pairs)
+            ]
         document, capture = self._build(
             frozen, config=config, contract=contract, freezer=freezer,
             params=params, platform=platform, arms=arms, plan=plan,
@@ -146,7 +152,7 @@ class OdinHaccDeploymentStep(PipelineStep):
         """One sample, with the HCM reference gated against the twin exactly."""
         reference = record_on_hcm_flow(
             reference_flow, sample, sample_index=index,
-            device=self.pipeline.config["device"])
+            device=deployed_host_device(self.pipeline.config["device"]))  # [U-HDA] where the reference flow is
         actual = freezer.freeze(
             sample.detach().cpu().numpy().reshape(1, -1),
             sample_index=index, label=int(label.reshape(-1)[0]))

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.deployed_host import deployed_host_device
 from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.membrane_export import (
     deployed_membrane_readout_enabled,
@@ -71,8 +72,9 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         self.spike_generation_mode = pipeline.config["spike_generation_mode"]
         self.firing_mode = pipeline.config["firing_mode"]
         # Bit-parity with the census flow: host ComputeOps run on the SAME
-        # device (CUDA/CPU f32 reductions decide half-grid wire ties).
-        self.host_compute_device = pipeline.config.get("device")
+        # device (CUDA/CPU f32 reductions decide half-grid wire ties): [U-HDA]
+        # the deployed host's, where the census and the HCM reference run.
+        self.host_compute_device = deployed_host_device(pipeline.config.get("device"))
         self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
         # The resolved soma point every nevresim segment of this run executes:
         # one law per run, resolved once, never re-read from raw keys.

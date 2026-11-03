@@ -33,22 +33,28 @@ from typing import Any, Iterator
 
 import torch
 
+from mimarsinan.chip_simulation.deployed_host import (
+    DEPLOYED_HOST_DEVICE,
+    DEPLOYED_VALUE_DTYPE,
+    borrowed_host_placement,
+    deployed_host_device,
+    program_host_ops,
+)
 from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.mapping.ir.deployment_dtype import computeop_deployment_dtype
-from mimarsinan.mapping.support.device_placement import preserved_module_placement
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
-#: The dtype a value census evaluates the deployed value program in: the deployed read's.
-VALUE_CENSUS_DTYPE = torch.float64
+#: The dtype a value census evaluates the deployed value program in: the deployed read's ([U-HDA] its SSOT,
+#: ``chip_simulation/deployed_host.py``).
+VALUE_CENSUS_DTYPE = DEPLOYED_VALUE_DTYPE
 #: The device of the deployed read.
-DEPLOYED_READ_DEVICE = "cpu"
+DEPLOYED_READ_DEVICE = DEPLOYED_HOST_DEVICE
 
 
 def census_device(pipeline_device: Any) -> str:
-    """The device a census runs on: the pipeline's device where it is the CPU, else the CPU (module docstring)."""
-    if pipeline_device is not None and torch.device(pipeline_device).type == DEPLOYED_READ_DEVICE:
-        return str(torch.device(pipeline_device))
-    return DEPLOYED_READ_DEVICE
+    """The device a census runs on: the pipeline's device where it is the CPU, else the CPU (module docstring; [U-HDA]
+    the deployed host's rule, ``deployed_host_device``)."""
+    return deployed_host_device(pipeline_device)
 
 
 @dataclass(frozen=True)
@@ -98,8 +104,7 @@ def spiking_census_arithmetic(pipeline: Any, census: str, hybrid_mapping: Any, *
 
 
 def _host_ops(hybrid_mapping: Any) -> list:
-    stages = getattr(hybrid_mapping, "stages", None) or ()
-    return [stage.compute_op for stage in stages if getattr(stage, "compute_op", None) is not None]
+    return program_host_ops(hybrid_mapping)
 
 
 def announce(pipeline: Any, arithmetic: CensusArithmetic) -> None:
@@ -112,13 +117,7 @@ def announce(pipeline: Any, arithmetic: CensusArithmetic) -> None:
 def borrowed_placement(arithmetic: CensusArithmetic, model: Any, hybrid_mapping: Any) -> Iterator[None]:
     """For a census moved off the pipeline's device: restore, on exit, the placement of every module it borrows, the
     model (its preprocessor feeds the spiking executor) and each host op's module (an evaluation moves it to the
-    census device). A census on the pipeline's own device moves nothing and is left as it is."""
-    if not arithmetic.moved:
-        yield
-        return
-    modules = [model] + [(op.params or {}).get("module") for op in _host_ops(hybrid_mapping)]
-    with contextlib.ExitStack() as stack:
-        for module in modules:
-            if module is not None:
-                stack.enter_context(preserved_module_placement(module))
+    census device). A census on the pipeline's own device moves nothing and is left as it is ([U-HDA] the deployed
+    host's one restore, ``borrowed_host_placement``)."""
+    with borrowed_host_placement(model, hybrid_mapping, moved=arithmetic.moved):
         yield

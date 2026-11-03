@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.deployed_host import DEPLOYED_HOST_DEVICE, DEPLOYED_VALUE_DTYPE
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import gather_final_output_torch
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 from mimarsinan.mapping.ir_mapping_class import IRMapping
@@ -45,7 +46,8 @@ def fp64_identity_program(ir_graph, *, exposed: Iterable[int] = ()) -> ValueHybr
     """The fp64 identity value program of an IR graph (one hard core per neural core, float weights); ``exposed``
     nodes are written out by their stages too (a twin certificate's backend carries)."""
     return ValueHybridCoreFlow(
-        build_identity_hybrid_mapping(ir_graph=ir_graph, exposed=exposed), device="cpu", dtype=torch.float64,
+        build_identity_hybrid_mapping(ir_graph=ir_graph, exposed=exposed), device=DEPLOYED_HOST_DEVICE,
+        dtype=DEPLOYED_VALUE_DTYPE,  # [U-HDA] the deployed host's arithmetic
     )
 
 

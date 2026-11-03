@@ -1,5 +1,6 @@
 """Optional Loihi-target HCM-vs-Lava spike-parity step (LIF-only)."""
 
+from mimarsinan.chip_simulation.deployed_host import on_deployed_host
 from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.data_handling.sample_loader import load_test_sample_by_index
@@ -47,15 +48,17 @@ class LoihiSimulationStep(PipelineStep):
             sample_index,
             num_workers=int(self.pipeline.config.get("num_workers", 4)),
         )
-        device = self.pipeline.config["device"]
-
-        _flow, ref = record_hcm_reference(
-            self.pipeline,
-            hard_core_mapping,
-            sample,
-            sample_index=sample_index,
-            device=device,
-        )
+        # [U-HDA] the HCM reference on the deployed host (the CPU, where the deployed read runs).
+        with on_deployed_host("Loihi Simulation spike parity (the HCM reference and Lava's twin)",
+                              self.pipeline.config["device"], programs=(hard_core_mapping,),
+                              reporter=getattr(self.pipeline, "reporter", None)) as host:
+            _flow, ref = record_hcm_reference(
+                self.pipeline,
+                hard_core_mapping,
+                sample,
+                sample_index=sample_index,
+                device=host.device,
+            )
 
         behavior = build_neural_behavior_config(self.pipeline)
         runner = LavaLoihiRunner(

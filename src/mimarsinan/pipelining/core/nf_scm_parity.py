@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 from collections import defaultdict
 from typing import Any, Dict, List
@@ -9,6 +10,14 @@ from typing import Any, Dict, List
 import numpy as np
 import torch
 
+from mimarsinan.chip_simulation.deployed_host import (
+    DEPLOYED_HOST_DEVICE,
+    announce,
+    borrowed_host_placement,
+    on_deployed_host,
+    place_on_host,
+    spiking_host_arithmetic,
+)
 from mimarsinan.common.env import nf_scm_parity_debug_enabled
 from mimarsinan.mapping.support.host_kernel_evaluation import forward_of, twin_as_program
 from mimarsinan.models.nn.lif_kernels import measurement_plane
@@ -30,16 +39,22 @@ def _unify_model_device(model):
     """Place the WHOLE model on one device and return it (``None`` if param-less).
 
     Prevents a cross-device matmul when the mapper graph left modules on different
-    devices; prefers a CUDA device when the model holds any CUDA parameter.
+    devices. [U-HDA] The device is the deployed host's (``chip_simulation/deployed_host.py``):
+    the NF twin evaluates in the deployed read's arithmetic beside an identity program
+    evaluated there too, so the twins share one host arithmetic by construction, whatever
+    device the model was trained on; each gate hands the model back where it was.
     """
     params = list(model.parameters())
     if not params:
         return None
-    device = next(
-        (p.device for p in params if p.device.type == "cuda"), params[0].device,
-    )
-    model.to(device)
-    return device
+    model.to(DEPLOYED_HOST_DEVICE)
+    return torch.device(DEPLOYED_HOST_DEVICE)
+
+
+def _model_device(model) -> str:
+    """The device the model's parameters ask for: its CUDA device where it holds one, else the CPU."""
+    devices = [p.device for p in model.parameters()] if hasattr(model, "parameters") else []
+    return str(next((d for d in devices if d.type == "cuda"), devices[0] if devices else DEPLOYED_HOST_DEVICE))
 
 
 def nf_scm_parity_enabled(contract: Any) -> bool:
@@ -88,7 +103,28 @@ def assert_nf_scm_parity_or_raise(
 
     Both sides are compared in the normalized [0, 1] TTFS domain; ``max_mismatch_fraction``
     budgets the honest mapping-level wire residual. Returns the measured fraction.
+    [U-HDA] Both twins evaluate on the deployed host (``_on_deployed_host``).
     """
+    with _on_deployed_host("Soft Core Mapping NF↔SCM per-neuron parity (the NF and identity twins)",
+                           pipeline, model, ir_graph) as device:
+        return _nf_scm_parity(pipeline, model, ir_graph, samples.to(device), atol=atol,
+                              max_mismatch_fraction=max_mismatch_fraction)
+
+
+@contextlib.contextmanager
+def _on_deployed_host(evaluation: str, pipeline, model, ir_graph):
+    """[U-HDA] A parity gate on the deployed host: its arithmetic printed, the program's host modules (which the NF
+    twin calls) placed there, the model and those modules handed back where they were on exit; yields the device the
+    gate's samples go to."""
+    with on_deployed_host(evaluation, pipeline.config.get("device"), programs=(ir_graph,), model=model,
+                          reporter=getattr(pipeline, "reporter", None)) as host:
+        place_on_host(ir_graph)
+        yield host.device
+
+
+def _nf_scm_parity(pipeline, model, ir_graph, samples: torch.Tensor, *, atol: float,
+                   max_mismatch_fraction: float) -> float:
+    """``assert_nf_scm_parity_or_raise`` on the deployed host."""
     from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
     from mimarsinan.pipelining.core.simulation_factory import (
         build_identity_mapping_for_pipeline,
@@ -205,7 +241,14 @@ def assert_streamed_nf_scm_exact_or_raise(
     """[P3] streamed-lif exactness gate: per-neuron WINDOW COUNTS of the NF
     forward must equal the identity-mapped streaming executor at atol=0 —
     no mismatch budget; parity holds by construction or the deployment is
-    wrong."""
+    wrong. [U-HDA] Both twins evaluate on the deployed host."""
+    with _on_deployed_host("Soft Core Mapping streamed NF↔SCM exactness (the NF and identity twins)",
+                           pipeline, model, ir_graph) as device:
+        _streamed_nf_scm_exact(pipeline, model, ir_graph, samples.to(device))
+
+
+def _streamed_nf_scm_exact(pipeline, model, ir_graph, samples: torch.Tensor) -> None:
+    """``assert_streamed_nf_scm_exact_or_raise`` on the deployed host."""
     from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
     from mimarsinan.mapping.pruning import derive_deployed_neuron_survival, record_layouts
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -312,7 +355,15 @@ def assert_cascaded_nf_scm_agreement_or_raise(
 
     Healthy agreement is ~1.0 (driver==executor bit-exact once bias references stay
     live); a wrong-NF-dynamics regression craters it. Returns the measured agreement.
+    [U-HDA] Both twins evaluate on the deployed host.
     """
+    with _on_deployed_host("Soft Core Mapping cascaded NF↔SCM decision agreement (the NF and identity twins)",
+                           pipeline, model, ir_graph) as device:
+        return _cascaded_nf_scm_agreement(pipeline, model, ir_graph, samples.to(device), min_agreement=min_agreement)
+
+
+def _cascaded_nf_scm_agreement(pipeline, model, ir_graph, samples: torch.Tensor, *, min_agreement: float) -> float:
+    """``assert_cascaded_nf_scm_agreement_or_raise`` on the deployed host."""
     executor = _build_cascaded_identity_executor(pipeline, model, ir_graph)
     device = _unify_model_device(model)
     if device is not None:
@@ -385,7 +436,23 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
     plane: its chip cores every cycle, its host-run lattice nodes (the C5 stem) through the host-op evaluator
     (``chip_simulation.hybrid_run.host_compute``). The armed torch node decides them so only inside the plane
     (outside it float32 dust decided them: the C5 T-LIF first core, SCM = NF + 1), so the plane is the NF's read.
+    [U-HDA] Both twins evaluate on the deployed host; the model, the flow and the program's host modules are handed
+    back where they were.
     """
+    program = getattr(flow, "hybrid_mapping", None)
+    arithmetic = spiking_host_arithmetic(
+        "Soft Core Mapping torch-model↔deployed-sim parity (the NF twin and the identity program)",
+        _model_device(model), program)
+    announce(arithmetic)
+    with borrowed_host_placement(model, flow, program):
+        place_on_host(program)
+        return _torch_vs_deployed_sim(model, flow, samples.to(arithmetic.device), min_agreement=min_agreement,
+                                      labels=labels)
+
+
+def _torch_vs_deployed_sim(model, flow, samples: torch.Tensor, *, min_agreement: float,
+                           labels: "torch.Tensor | None") -> float:
+    """``assert_torch_vs_deployed_sim_parity_or_raise`` on the deployed host."""
     device = _unify_model_device(model)
     if device is not None:
         samples = samples.to(device)

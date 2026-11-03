@@ -9,6 +9,7 @@ import torch
 from mimarsinan.certification.count_alignment import certify_twin_flow_counts
 from mimarsinan.certification.twin_schedule import twin_schedule_diagnostic
 from mimarsinan.chip_simulation.certification import CertificationCell
+from mimarsinan.chip_simulation.deployed_host import borrowed_host_placement, deployed_host_device, on_deployed_host
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
@@ -24,18 +25,22 @@ from mimarsinan.pipelining.core.simulation_factory import (
 
 
 def _certificate_samples(pipeline, model, n: int) -> "torch.Tensor | None":
-    trainer = BasicTrainer(
-        model, pipeline.config["device"],
-        DataLoaderFactory.for_pipeline(pipeline), None,
-    )
-    try:
-        batches = list(trainer.iter_validation_batches(1))
-    finally:
-        trainer.close()
+    """A certificate's first ``n`` validation samples, on the deployed host's device [U-HDA]: every twin of the
+    certificate evaluates there. The model, which the sampling trainer places, is handed back where it was."""
+    device = deployed_host_device(pipeline.config["device"])
+    with borrowed_host_placement(model):
+        trainer = BasicTrainer(
+            model, device,
+            DataLoaderFactory.for_pipeline(pipeline), None,
+        )
+        try:
+            batches = list(trainer.iter_validation_batches(1))
+        finally:
+            trainer.close()
     xs = [pair[0] for pair in batches]
     if not xs:
         return None
-    return xs[0][:n].to(pipeline.config["device"])
+    return xs[0][:n].to(device)
 
 
 def certificate_gate_armed(pipeline) -> bool:
@@ -108,6 +113,16 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     if n <= 0:
         return None
     assert certificate_gate_armed(pipeline)
+    # [U-HDA] both twins on the deployed host (the CPU, where the deployed read runs), every borrowed module handed
+    # back where it was.
+    with on_deployed_host("Hard Core Mapping spike-count certificate (K7: the identity and packed twins)",
+                          pipeline.config["device"], programs=(ir_graph, hybrid_mapping), model=model,
+                          reporter=getattr(pipeline, "reporter", None)):
+        return _certify_streaming_twin(pipeline, model, ir_graph, hybrid_mapping, n, plan)
+
+
+def _certify_streaming_twin(pipeline, model, ir_graph, hybrid_mapping, n: int, plan):
+    """The gate's certificate on the deployed host (``run_spike_count_certificate_gate``)."""
     samples = _certificate_samples(pipeline, model, n)
     if samples is None:
         return None

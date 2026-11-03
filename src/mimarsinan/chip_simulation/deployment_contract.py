@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+from mimarsinan.chip_simulation.deployed_host import deployed_host_device
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.soma_axes import (
@@ -35,6 +36,12 @@ from mimarsinan.spiking.boundary_config import BoundaryConfig
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 
 
+def _host_evaluator(device: Any) -> Any:
+    """[U-HDA] The host-op evaluator a pipeline device names: the deployed host's device (``deployed_host_device``);
+    a config without a device key declares none, and the executors evaluate on the CPU then too."""
+    return None if device is None else deployed_host_device(device)
+
+
 @dataclass(frozen=True)
 class SpikingDeploymentContract:
     """One object answering every schedule/mode-derived deployment question.
@@ -56,7 +63,9 @@ class SpikingDeploymentContract:
     # a pre-activation within f32 reduction noise of a step edge resolves to
     # DIFFERENT steps on cuda and cpu — and one step is exactly one spike after
     # the segment-boundary transcode. Every backend that re-derives a host op
-    # must therefore evaluate it where the census/HCM reference did. The same
+    # must therefore evaluate it where the census/HCM reference did: [U-HDA] on
+    # the deployed host (``chip_simulation/deployed_host.py``, the CPU, where
+    # the deployed read runs), whatever device the pipeline trains on. The same
     # evaluator (``hybrid_run.host_compute``) decides exact lattice ties of an
     # armed host node in the chip-lattice plane, whatever plane its caller runs.
     host_compute_device: Any = None
@@ -121,7 +130,7 @@ class SpikingDeploymentContract:
             firing_granularity=resolved_firing_granularity(cfg),
             membrane_arithmetic=resolved_membrane_arithmetic(cfg),
             membrane_bits=resolved_membrane_bits(cfg),
-            host_compute_device=cfg.get("device"),
+            host_compute_device=_host_evaluator(cfg.get("device")),
         )
 
     def soma_law(self, *, core: Any = None) -> SomaLaw:

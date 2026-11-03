@@ -6,6 +6,7 @@ from typing import List
 
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.certification.record_certificates import certify_run_records
+from mimarsinan.chip_simulation.deployed_host import deployed_host_device, on_deployed_host
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeCoreDiff, SanafeRunRecord, SanafeSegmentRecord, SanafeSegmentStore)
@@ -112,7 +113,7 @@ class SanafeSimulationStep(PipelineStep):
         custom_arch_path = self.pipeline.config.get("sanafe_custom_arch_path") or None
         log_potential = bool(self.pipeline.config.get("sanafe_log_potential_trace", False))
         log_messages = True
-        device = self.pipeline.config["device"]
+        device = deployed_host_device(self.pipeline.config["device"])  # [U-HDA] the deployed host's
 
         n = int(self.pipeline.config.get("sanafe_sample_count", 1))
         if n <= 0:
@@ -127,73 +128,77 @@ class SanafeSimulationStep(PipelineStep):
         # and sha256 with the totals and spike counts its readers need, so the step's memory stays flat
         store = SanafeSegmentStore(self.pipeline.working_directory, f"{self.name}.sanafe_segments")
 
-        for sample_idx, sample in enumerate(samples):
-            ref = None
-            ttfs_ref = None
-            if parity_check:
+        # [U-HDA] the HCM reference and SANA-FE's host kernels (the contract's host_compute_device) on the deployed host.
+        with on_deployed_host("SANA-FE Simulation spike parity (the HCM reference and SANA-FE's host kernels)",
+                              self.pipeline.config["device"], programs=(hard_core_mapping,),
+                              reporter=getattr(self.pipeline, "reporter", None)):
+            for sample_idx, sample in enumerate(samples):
+                ref = None
+                ttfs_ref = None
+                if parity_check:
+                    if is_ttfs:
+                        _flow, ttfs_ref = record_ttfs_hcm_reference(
+                            self.pipeline,
+                            hard_core_mapping,
+                            sample,
+                            sample_index=sample_idx,
+                        )
+                    else:
+                        _flow, ref = record_hcm_reference(
+                            self.pipeline,
+                            hard_core_mapping,
+                            sample,
+                            sample_index=sample_idx,
+                            device=device,
+                        )
+
+                contract = build_deployment_contract(self.pipeline)
+                runner = SanafeRunner(
+                    mapping=hard_core_mapping,
+                    simulation_length=T,
+                    contract=contract,
+                    pass_transfer=run_pass_transfer(self.pipeline.config),
+                    arch_preset=arch_preset,
+                    custom_arch_path=custom_arch_path,
+                    log_potential_trace=log_potential,
+                    log_message_trace=log_messages,
+                    cores_per_tile=cores_per_tile,
+                    tile_grid_rows=tile_grid_rows,
+                    tile_grid_cols=tile_grid_cols,
+                    declared_core_capacity=declared_core_capacity,
+                    segment_sink=_segment_sink(store, sample_idx, ref),
+                )
                 if is_ttfs:
-                    _flow, ttfs_ref = record_ttfs_hcm_reference(
-                        self.pipeline,
-                        hard_core_mapping,
-                        sample,
-                        sample_index=sample_idx,
+                    sample_np = preprocess_hybrid_sample(
+                        self.pipeline, hard_core_mapping, sample, device=device,
                     )
                 else:
-                    _flow, ref = record_hcm_reference(
-                        self.pipeline,
-                        hard_core_mapping,
-                        sample,
-                        sample_index=sample_idx,
-                        device=device,
-                    )
+                    sample_np = sample.detach().cpu().numpy().reshape(1, -1)
+                sanafe_rec = runner.run(sample_np, sample_index=sample_idx)
+                per_sample.append(sanafe_rec)
 
-            contract = build_deployment_contract(self.pipeline)
-            runner = SanafeRunner(
-                mapping=hard_core_mapping,
-                simulation_length=T,
-                contract=contract,
-                pass_transfer=run_pass_transfer(self.pipeline.config),
-                arch_preset=arch_preset,
-                custom_arch_path=custom_arch_path,
-                log_potential_trace=log_potential,
-                log_message_trace=log_messages,
-                cores_per_tile=cores_per_tile,
-                tile_grid_rows=tile_grid_rows,
-                tile_grid_cols=tile_grid_cols,
-                declared_core_capacity=declared_core_capacity,
-                segment_sink=_segment_sink(store, sample_idx, ref),
-            )
-            if is_ttfs:
-                sample_np = preprocess_hybrid_sample(
-                    self.pipeline, hard_core_mapping, sample, device=device,
-                )
-            else:
-                sample_np = sample.detach().cpu().numpy().reshape(1, -1)
-            sanafe_rec = runner.run(sample_np, sample_index=sample_idx)
-            per_sample.append(sanafe_rec)
-
-            if parity_check and is_ttfs and ttfs_ref is not None:
-                contract_diffs = compare_ttfs_contract_records(
-                    ttfs_ref,
-                    sanafe_rec.to_ttfs_contract_subset(spiking_mode=spiking_mode),
-                )
-                if contract_diffs:
-                    raise AssertionError(
-                        format_first_ttfs_diff(contract_diffs, layer="contract"),
+                if parity_check and is_ttfs and ttfs_ref is not None:
+                    contract_diffs = compare_ttfs_contract_records(
+                        ttfs_ref,
+                        sanafe_rec.to_ttfs_contract_subset(spiking_mode=spiking_mode),
                     )
-                hw_diffs = compare_ttfs_hardware_records(
-                    ttfs_ref,
-                    sanafe_rec.to_ttfs_hardware_subset(spiking_mode=spiking_mode),
-                )
-                if hw_diffs:
-                    raise AssertionError(
-                        format_first_ttfs_diff(hw_diffs, layer="hardware"),
+                    if contract_diffs:
+                        raise AssertionError(
+                            format_first_ttfs_diff(contract_diffs, layer="contract"),
+                        )
+                    hw_diffs = compare_ttfs_hardware_records(
+                        ttfs_ref,
+                        sanafe_rec.to_ttfs_hardware_subset(spiking_mode=spiking_mode),
                     )
-            elif parity_check and ref is not None:
-                subset = sanafe_rec.to_hcm_subset()
-                assert_spike_parity_or_raise(ref, subset)
-                cert = certify_run_records(ref, subset, backend="sanafe")
-                print(f"[SpikeCountCertificate] {cert.summary()}")
+                    if hw_diffs:
+                        raise AssertionError(
+                            format_first_ttfs_diff(hw_diffs, layer="hardware"),
+                        )
+                elif parity_check and ref is not None:
+                    subset = sanafe_rec.to_hcm_subset()
+                    assert_spike_parity_or_raise(ref, subset)
+                    cert = certify_run_records(ref, subset, backend="sanafe")
+                    print(f"[SpikeCountCertificate] {cert.summary()}")
 
         report = SanafeStepReport.from_records(arch_preset, per_sample)
         self.add_entry("sanafe_simulation_results", report, "pickle")

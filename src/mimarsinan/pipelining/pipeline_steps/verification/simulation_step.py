@@ -2,6 +2,7 @@ import numpy as np
 import torch
 
 from mimarsinan.certification.spike_certificate import certify_spike_counts
+from mimarsinan.chip_simulation.deployed_host import on_deployed_host
 from mimarsinan.chip_simulation.hybrid_run.stage_timing import StageTimer
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 from mimarsinan.config_schema.registry import effective_value as _effective
@@ -34,27 +35,31 @@ def _certify_nevresim_counts(*, pipeline, mapping, captured, samples):
         ("stage", k): torch.as_tensor(np.asarray(raw), dtype=torch.float64)
         for k, (_stage, raw) in enumerate(captured)
     }
-    # [V9 tie class, root-caused 2026-08-11] the twin runs on the PIPELINE
-    # device and inside the measurement plane, like the runner that fed the
-    # chip: host ComputeOps decide exact-lattice ties (pre-activation ==
-    # theta/T tread, which LSQ exact-QAT trains ONTO) by snapped values, not
-    # by the GEMM dust of whatever device/batch the samples arrived on
-    # (t0_05: the twin's encoder ran on CPU at batch-2 vs the runner's CUDA
-    # batch-25 — one tread tie flipped and 17 windows cascaded).
-    samples = samples.to(pipeline.config["device"])
-    flow_captured: list = []
-    flow = build_spiking_hybrid_flow(pipeline, mapping, model=None)
-    flow.stage_count_recorder = (
-        lambda stage, counts: flow_captured.append(counts.detach().cpu())
-    )
-    # nevresim executes the per-cycle chip program: the matching cell is
-    # streaming, regardless of the configured metric discipline.
-    flow.lif_execution_synchronized = False
-    try:
-        with measurement_plane(), torch.no_grad():
-            flow(samples)
-    finally:
-        flow.stage_count_recorder = None
+    # [V9 tie class, root-caused 2026-08-11] the twin runs on the device of
+    # the runner that fed the chip and inside the measurement plane: host
+    # ComputeOps decide exact-lattice ties (pre-activation == theta/T tread,
+    # which LSQ exact-QAT trains ONTO) by snapped values, not by the GEMM dust
+    # of whatever device/batch the samples arrived on (t0_05: the twin's
+    # encoder ran on CPU at batch-2 vs the runner's CUDA batch-25 — one tread
+    # tie flipped and 17 windows cascaded). [U-HDA] That device is the deployed
+    # host's (the runner's ``host_compute_device``), whatever the pipeline's.
+    with on_deployed_host("Simulation nevresim spike-count certificate (K8: the HCM twin and nevresim's host kernels)",
+                          pipeline.config["device"], programs=(mapping,),
+                          reporter=getattr(pipeline, "reporter", None)) as host:
+        samples = samples.to(host.device)
+        flow_captured: list = []
+        flow = build_spiking_hybrid_flow(pipeline, mapping, model=None)
+        flow.stage_count_recorder = (
+            lambda stage, counts: flow_captured.append(counts.detach().cpu())
+        )
+        # nevresim executes the per-cycle chip program: the matching cell is
+        # streaming, regardless of the configured metric discipline.
+        flow.lif_execution_synchronized = False
+        try:
+            with measurement_plane(), torch.no_grad():
+                flow(samples)
+        finally:
+            flow.stage_count_recorder = None
     hcm = {
         ("stage", k): c.to(torch.float64) for k, c in enumerate(flow_captured)
     }

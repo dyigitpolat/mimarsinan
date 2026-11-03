@@ -20,6 +20,7 @@ from mimarsinan.certification.randomized.instance import (
     Instance,
 )
 from mimarsinan.certification.randomized.program import VALUE_LAW
+from mimarsinan.chip_simulation.deployed_host import DEPLOYED_HOST_DEVICE
 from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import resolve_nevresim_path
 from mimarsinan.chip_simulation.recording.spike_modes import comb_spike_count
@@ -183,7 +184,7 @@ class _ChipProbe(SimulationRunner):
         self.firing_mode = "TTFS" if ttfs else "Default"
         self.thresholding_mode = "<="
         self.spiking_mode = run.flow["spiking_mode"]
-        self.host_compute_device = "cpu"
+        self.host_compute_device = DEPLOYED_HOST_DEVICE  # [U-HDA] the deployed host's device
         self.nevresim_connectivity_mode = "compile_time"
         self.pass_transfer = transfer
         self.simulation_step_timeout_s = resolve_simulation_step_timeout_s(None)
