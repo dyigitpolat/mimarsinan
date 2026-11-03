@@ -8,6 +8,7 @@ import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.mappers.base import resolve_activation_type
+from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 
@@ -160,7 +161,8 @@ def map_shared_weight_conv(
         )
 
     full_w = PerceptronTransformer().get_effective_weight(perceptron)
-    full_b = PerceptronTransformer().get_effective_bias(perceptron)
+    # The always-on row's weight: the bias over the row's drive (``transformations.perceptron.bias_drive``).
+    full_b = bias_row_values(perceptron, PerceptronTransformer().get_effective_bias(perceptron))
     has_bias = full_b is not None
     activation_type = resolve_activation_type(perceptron)
     perceptron_index = getattr(mapper, "perceptron_index", None)

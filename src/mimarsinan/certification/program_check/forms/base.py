@@ -107,6 +107,10 @@ _NODE: Dict[str, Readers] = {
     # [WI-5e] the law solver's and stamp's records: each column's operand row (the stamped law carries it, read by
     # ``laws``), a pool lane's owner key, a reduction's instance counts and producer theta.
     **_same((UNREAD,), "lane_operand_rows", "lane_owner", "lane_reduced_instances", "lane_producer_theta"),
+    # [bias-row gauge] the law solver's record of a core's always-on row drive (the top code value of its reader's input
+    # grid on the integer value path): it reaches the program only through the stamped law's bias term, which ``laws``
+    # reads.
+    "bias_row_drive": (UNREAD,),
     # [WI-5e] a pool lane's and a reduction's pool output per column and its pool op; [C5] a depth-balancing relay's
     # mark: the keys of ``ir-tiling`` (``unbounded.unit_keys``).
     **_same(("ir-tiling",), "lane_outputs", "lane_source_name", "_depth_relay"),

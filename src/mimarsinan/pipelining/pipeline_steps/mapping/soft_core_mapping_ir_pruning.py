@@ -23,8 +23,10 @@ from mimarsinan.mapping.pruning.liveness_transfer import (
     resolve_computeop_liveness_transfers,
     resolve_elimination_constant_folding,
 )
+from mimarsinan.mapping.pruning.liveness_transfer.constant_policy import ELIMINATION_CONSTANT_FOLDING_OFF
 from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
+from mimarsinan.mapping.support.bias_drive import refuse_bias_row_drives
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
@@ -57,6 +59,11 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str, *, report
         policy=resolve_elimination_constant_folding(step.pipeline.config),
         computeop_liveness_transfers=computeop_liveness_transfers,
     )
+    if elimination_constant_folding != ELIMINATION_CONSTANT_FOLDING_OFF:
+        # [bias-row gauge] the constant lattice and its carrier fold read an always-on axon at 1.0; with the lattice
+        # off (it never descends) the zero-only cascade reads no always-on value, so any positive drive leaves its
+        # kill sets unchanged.
+        refuse_bias_row_drives(ir_graph, "IR pruning's constant folding (elimination_constant_folding 'full')")
 
     with best_effort("report first-perceptron prune-mask buffers"):
         perceptrons_pre = model.get_perceptrons()

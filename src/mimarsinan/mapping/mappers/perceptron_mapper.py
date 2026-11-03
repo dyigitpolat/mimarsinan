@@ -14,6 +14,7 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_boundary_scale,
     perceptron_per_source_scale,
 )
+from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 
@@ -87,7 +88,8 @@ class PerceptronMapper(Mapper):
             layer_sources,
             output_shape,
             layer_weights,
-            layer_biases,
+            # The always-on row's weight: the bias over the row's drive (``transformations.perceptron.bias_drive``).
+            bias_row_values(self.perceptron, layer_biases),
             self.perceptron.activation_scale,
             self.perceptron.parameter_scale,
             self.perceptron.input_activation_scale,

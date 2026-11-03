@@ -15,7 +15,7 @@ from mimarsinan.mapping.export.entry_offsets import (
     refit_folded_laws,
     refuse_inexact_offset_readers,
 )
-from mimarsinan.mapping.export.law_grids import CoreGrid, assign_core_grids
+from mimarsinan.mapping.export.law_grids import CoreGrid, assign_core_grids, data_sources
 from mimarsinan.mapping.export.law_rules import (  # the law's public names stay importable from here
     MAX_SHIFT as MAX_SHIFT,
     ReadoutLawDeclarationError,
@@ -43,6 +43,7 @@ from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.ir.core_law import CoreLaw
 from mimarsinan.mapping.lanes.declaration import LaneDeclarationError, lane_operand_conflict, lanes_executed
 from mimarsinan.mapping.lanes.install import install_lane_laws
+from mimarsinan.mapping.support.bias_drive import install_bias_row_drives, reads_a_core, refuse_drives_off_their_grid
 from mimarsinan.mapping.support.grid_declarations import ParameterGrids, identity_output_law
 from mimarsinan.models.nn.activations.integer_law import (
     FP64_EXACT_BOUND,
@@ -127,6 +128,11 @@ def solve_ir_laws(ir_graph, perceptron_ranges: Mapping[int, float], spec: Readou
     refuse_psum(ir_graph)
     if grids is None:
         grids, _steps = assign_core_grids(ir_graph, perceptron_ranges, spec.activation_bits)
+    nodes_by_id = {int(n.id): n for n in ir_graph.nodes}
+    # [bias-row gauge] a core's row drive is the top code value of the input grid assigned here (m-5).
+    refuse_drives_off_their_grid(ir_graph, lambda core: (
+        grids[int(core.id)].input_step * grids[int(core.id)].input_levels
+        if reads_a_core(data_sources(core), nodes_by_id) else None))
     floors = dict(floors or {})
     memo: Dict[tuple, CoreLaw] = {}
     laws: Dict[int, CoreLaw] = {}
@@ -183,6 +189,8 @@ def install_readout_laws(ir_graph, model, platform_constraints: Mapping[str, Any
     spec = ReadoutLawSpec.from_declaration(
         readout_law, activation_bits=platform_constraints.get("activation_bits"), weight_bits=weight_bits,
     )
+    # Each core's always-on rows are read at its perceptron's row drive (``mapping.support.bias_drive``).
+    install_bias_row_drives(ir_graph, model)
     lanes = lanes_executed(platform_constraints)
     if lanes is not None:  # WI-5e: the declared lanes fuse first, then every core takes its lane law
         if getattr(ir_graph, "dynamic_bank_bindings", None):  # N2's operand banks take the per-core law path

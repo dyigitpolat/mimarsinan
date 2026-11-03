@@ -7,6 +7,7 @@ from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 from mimarsinan.advisories.graph_common import name_of
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.support.bias_rows import bias_row_bound
+from mimarsinan.pipelining.pipeline_steps.quantization.bias_row_drive_route import stamp_and_report_drives
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
     PerceptronTransformer,
 )
@@ -122,6 +123,7 @@ class WeightQuantizationStep(TunerPipelineStep):
         refuse_unbuilt_domain(self.pipeline.config, value_domain=is_mvm_core_semantics(DeploymentPlan.of(self.pipeline).core_semantics),
                               weight_quantization=True)
         install_layer_weight_bits(model, self.pipeline.config)
+        stamp_and_report_drives(model, self.pipeline.config)  # [bias-row gauge] before any projection
         self._freeze_exact_qat_theta(model)
         self._apply_lif_half_step_entry_fold(model)
         if not grids.law_bias:  # a float bias has no grid a bias outlier could starve

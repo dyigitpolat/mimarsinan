@@ -46,6 +46,7 @@ from mimarsinan.mapping.weight_reuse import (
 )
 from mimarsinan.models.nn.activations.ttfs_spiking import refresh_perceptron_bias_references
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
+from mimarsinan.mapping.support.bias_drive import install_bias_row_drives
 from mimarsinan.mapping.support.boundary_grids import install_boundary_grids
 from mimarsinan.spiking.scale_aware_boundaries import propagate_boundary_input_scales
 from mimarsinan.transformations.pruning.committed_masks import (
@@ -421,6 +422,8 @@ class SoftCoreMappingStep(PipelineStep):
         bind_core_types(ir_graph, model, platform_constraints)
         # [mvm AQ] realize the model's boundary grids onto the mapped cores.
         install_boundary_grids(ir_graph, model, quantizer_state=platform_constraints.get("quantizer_state"))
+        # [bias-row gauge] each core's always-on rows carry its perceptron's row drive (1.0 unless WQ stamped one).
+        install_bias_row_drives(ir_graph, model)
 
         if bool(self.pipeline.config.get("negative_value_shift", True)):
             transfer_negative_shifts_to_ir(model, ir_graph)

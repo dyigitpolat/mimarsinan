@@ -36,6 +36,7 @@ from mimarsinan.mapping.ir.core_law import CoreLaw
 from mimarsinan.mapping.ir.lane_law import LaneLaw
 from mimarsinan.mapping.lanes.ir.fusion import OPERAND_ROWS
 from mimarsinan.mapping.lanes.law.lane_grids import CoreLaneGrid, LaneGrid, assign_lane_grids, data_rows
+from mimarsinan.mapping.support.bias_drive import reads_a_core, refuse_drives_off_their_grid
 from mimarsinan.models.nn.activations.integer_law import (
     FP64_EXACT_BOUND,
     IntegerLawRangeError,
@@ -136,6 +137,11 @@ def solve_lane_laws(ir_graph: IRGraph, owners: Mapping[int, LaneGrid], spec: Rea
     runs over each channel's carriers."""
     refuse_psum(ir_graph)
     grids = assign_lane_grids(ir_graph, owners, spec.activation_bits)
+    nodes_by_id = {int(n.id): n for n in ir_graph.nodes}
+    # [bias-row gauge] a core's row drive is the top code value of the input grid assigned here (m-5).
+    refuse_drives_off_their_grid(ir_graph, lambda core: (
+        grids[int(core.id)].inputs.levels * grids[int(core.id)].inputs.step - grids[int(core.id)].inputs.offset
+        if reads_a_core(np.asarray(core.input_sources.flatten())[data_rows(core)], nodes_by_id) else None))
     memo: Dict[tuple, LaneLaw] = {}
     laws: Dict[int, LaneLaw] = {}
     folds: Dict[int, FoldRefit[LaneLaw]] = {}

@@ -14,6 +14,7 @@ from mimarsinan.transformations.perceptron.bias_saturation import (
     predicted_weight_zero_fraction,
 )
 from mimarsinan.transformations.quantization_bounds import layer_weight_bits
+from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
     PerceptronTransformer,
 )
@@ -180,7 +181,8 @@ def _remove_nuisance_grid_dominators(
         and attempts < 8
     ):
         attempts += 1
-        b = transformer.get_effective_bias(perceptron).detach()
+        # The grid compares the weights with the always-on row (the bias over its drive, 1.0 without a stamp).
+        b = bias_row_values(perceptron, transformer.get_effective_bias(perceptron).detach())
         w = transformer.get_effective_weight(perceptron).detach()
         w_max = float(w.abs().max())
         c = int(b.abs().argmax())

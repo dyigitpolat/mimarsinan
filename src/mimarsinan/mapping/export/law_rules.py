@@ -14,6 +14,7 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.support.quantizer_state import DECLARED_STATE_ATTRIBUTE
 from mimarsinan.models.nn.activations.integer_law import IntegerLawRangeError, round_half_away
+from mimarsinan.transformations.perceptron.bias_drive import bias_row_drive
 
 #: The int64 golden shifts by at most this many bits (``1 << (s - 1)`` stays an int64).
 MAX_SHIFT = 62
@@ -87,7 +88,9 @@ def core_bias_and_data_weights(core: NeuralCore, ir_graph, *,
                                real_bias: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     """(bias per column in weight-grid units, integer weight codes of the non-bias rows) of a quantized core; off
     and pruned rows stay in, so a bank slice's positions share one bound. The bias is an integer unless declared
-    at the law's resolution (``real_bias``)."""
+    at the law's resolution (``real_bias``). The always-on rows' codes are read at the core's row drive
+    (``transformations.perceptron.bias_drive``: the top code value of its reader's input grid on the integer value
+    path, else 1.0), so the bias is their code sum times the drive: the value the rows deliver."""
     matrix = np.asarray(core.get_core_matrix(ir_graph))
     sources = core.input_sources.flatten()
     if len(sources) != matrix.shape[0]:
@@ -98,6 +101,11 @@ def core_bias_and_data_weights(core: NeuralCore, ir_graph, *,
         bias = bias + np.asarray(core.hardware_bias, dtype=np.float64)
     if not real_bias and not np.array_equal(bias, np.round(bias)):
         raise ReadoutLawDeclarationError(f"core {core.name!r}: bias is not on the weight grid")
+    drive = bias_row_drive(core)
+    if drive != 1.0 and on.any():
+        if core.hardware_bias is not None:
+            raise ReadoutLawDeclarationError(f"core {core.name!r}: a row drive beside an on-chip bias register")
+        bias = bias * drive
     return bias, matrix[~on, :]
 
 

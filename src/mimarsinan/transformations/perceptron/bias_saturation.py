@@ -10,6 +10,7 @@ import torch
 from mimarsinan.models.nn.activations.value_quantizer import carries_value_grid, wire_output_grid
 from mimarsinan.models.nn.off_floor import has_off_floor
 from mimarsinan.models.perceptron_mixer.perceptron import reads_value_domain
+from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
     PerceptronTransformer,
 )
@@ -168,10 +169,10 @@ def empirical_bias_shift(
 
 
 def predicted_weight_zero_fraction(perceptron, bits: int) -> float:
-    """Fraction of effective weights that round to zero on the shared grid."""
+    """Fraction of effective weights that round to zero on the shared grid (the bias row read at its drive)."""
     transformer = PerceptronTransformer()
     w = transformer.get_effective_weight(perceptron).detach().abs()
-    b = transformer.get_effective_bias(perceptron).detach().abs()
+    b = bias_row_values(perceptron, transformer.get_effective_bias(perceptron).detach().abs())
     q_max = (2 ** (bits - 1)) - 1
     p_max = max(float(w.max()), float(b.max()), 1e-12)
     step = p_max / q_max

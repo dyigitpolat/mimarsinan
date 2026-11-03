@@ -1,5 +1,6 @@
 from mimarsinan.transformations.transformation_utils import *
 
+from mimarsinan.transformations.perceptron.bias_drive import bias_row_drive
 from mimarsinan.transformations.perceptron.bias_saturation import (
     clip_off_saturated_effective_bias,
 )
@@ -39,6 +40,11 @@ class NormalizationAwarePerceptronQuantization:
     route and at every rate (D-WQ, cause B). On the shared grid the scale is set
     before that compensation, so a compensated bias beyond the grid's top
     saturates as any bias there does.
+
+    An always-on row carries its drive ``d`` (``transformations.perceptron.bias_drive``: the top code value of its
+    reader's input grid on the integer value path, else 1.0): the row's weight is ``b / d``, so the shared grid sizes
+    ``max(max|w|, max|b| / d)``, the rows count ``ceil(max|b| s_w / (d q_max))`` and the projected bias is a row code
+    times ``d / s``.
 
     Declared value-domain grids (Wave 2): ``fractional_scale`` takes the scale
     ``q_max / max`` instead of its integer floor (the law's multiplier carries
@@ -90,11 +96,16 @@ class NormalizationAwarePerceptronQuantization:
         clip_off_saturated_effective_bias(perceptron, transformer=transformer)
         w = transformer.get_effective_weight(perceptron)
         b = transformer.get_effective_bias(perceptron)
+        # The always-on row carries its drive (its reader's grid top on the integer value path, else 1.0): its
+        # weight is the bias over the drive, which is what the shared grid and the rows must hold.
+        drive = bias_row_drive(perceptron)
 
         # All-tensor scale chain: this runs per perceptron per optimizer step,
         # and a python max()/CPU-tensor bound forces a GPU sync per call.
         w_max = torch.max(torch.abs(w))
         b_max = torch.max(torch.abs(b))
+        if drive != 1.0:
+            b_max = b_max / drive
         if torch.is_tensor(b_max) and b_max.device != w_max.device:
             b_max = b_max.to(w_max.device)
 
@@ -103,7 +114,7 @@ class NormalizationAwarePerceptronQuantization:
         # two-scale path too; only a perceptron with no seam at all -- whose
         # effective bias is structurally zero -- falls back to the weight grid.
         if self.two_scale and transformer.effective_bias_is_writable(perceptron):
-            self._transform_two_scale(perceptron, transformer, w_max, b_max)
+            self._transform_two_scale(perceptron, transformer, w_max, b_max, drive)
             return
 
         p_max = torch.clamp(torch.maximum(w_max, b_max), min=1e-12)
@@ -123,7 +134,9 @@ class NormalizationAwarePerceptronQuantization:
         self._stamp_membrane_lattice(perceptron, scale)
 
         self._project_weights(perceptron, transformer, scale)
-        transformer.apply_effective_bias_transform(perceptron, self._quantize_param_fn(scale))
+        # The row's code is round(b s / drive): the bias on the grid of step drive / s.
+        transformer.apply_effective_bias_transform(perceptron, self._quantize_param_fn(scale / drive if drive != 1.0
+                                                                                       else scale))
 
     def _project_weights(self, perceptron, transformer, scale) -> None:
         """The weight write on ``scale``'s grid; a recorded input shift's compensation follows the weights it
@@ -134,7 +147,7 @@ class NormalizationAwarePerceptronQuantization:
         if before is not None:
             compensate_projected_weights(perceptron, transformer, before)
 
-    def _transform_two_scale(self, perceptron, transformer, w_max, b_max):
+    def _transform_two_scale(self, perceptron, transformer, w_max, b_max, drive=1.0):
         # [nevresim parity] integer-lattice weight grid (see single-scale note).
         weight_scale = self._grid_scale(w_max)
         # A compensated bias is the one the bias grid is sized for: its weights are projected first.
@@ -142,6 +155,10 @@ class NormalizationAwarePerceptronQuantization:
         if projected:
             self._project_weights(perceptron, transformer, weight_scale)
             b_max = torch.max(torch.abs(transformer.get_effective_bias(perceptron))).to(w_max.device)
+            if drive != 1.0:
+                b_max = b_max / drive
+        if self.register_bias and drive != 1.0:
+            raise ValueError("an on-chip bias register has no always-on row, so no row drive: the WQ step stamps none")
         # r whole weight-grid steps cover the bias: r IS the bias-row count a
         # param-encoded platform maps and the span (±q_max r, weight-grid units)
         # an on-chip register holds, so the formula lives in the bias-row SSOT
@@ -161,9 +178,10 @@ class NormalizationAwarePerceptronQuantization:
             bias_scale, bias_quantize = weight_scale, self._quantize_param_fn(weight_scale, span=ratio)
         else:
             # The rows: an integer-ratio-snapped grid, so `bias * weight_scale = r * bias_int` exactly and each of
-            # the r rows emits bias_int (the lattice the chip export emits and the NF<->SCM parity consumes).
+            # the r rows emits bias_int (the lattice the chip export emits and the NF<->SCM parity consumes). Rows
+            # driven at `drive` hold the bias over the drive: `(bias / drive) * weight_scale = r * bias_int`.
             bias_scale = weight_scale / ratio
-            bias_quantize = self._quantize_param_fn(bias_scale)
+            bias_quantize = self._quantize_param_fn(bias_scale / drive if drive != 1.0 else bias_scale)
 
         perceptron.set_parameter_scale(weight_scale)
         perceptron.set_bias_scale(bias_scale)

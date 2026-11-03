@@ -6,6 +6,7 @@ from mimarsinan.mapping.support.grid_declarations import ParameterGrids
 from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_wq_two_scale_projection
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.transformations.quantization_bounds import LAYER_WEIGHT_BITS, layer_weight_bits, quantization_bounds
 
@@ -44,7 +45,8 @@ def assert_effective_parameters_on_chip_grid(perceptron, q_max: int, *, law_bias
     has no grid to be on."""
     transformer = PerceptronTransformer()
     fused_w = transformer.get_effective_weight(perceptron)
-    fused_b = transformer.get_effective_bias(perceptron)
+    # An always-on row driven at d holds the bias over d (d = 1.0 without a stamp): its codes are what the lattice holds.
+    fused_b = bias_row_values(perceptron, transformer.get_effective_bias(perceptron))
     param_scale = perceptron.parameter_scale
     bias_scale = getattr(perceptron, "bias_scale", None)
     if bias_scale is None:
