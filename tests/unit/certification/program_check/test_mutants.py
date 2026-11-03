@@ -317,6 +317,21 @@ def test_a_law_stamped_differently():
             "stamped_law")
 
 
+def test_a_drive_route_law_stamped_at_another_drive():
+    """[U-LMP, U-BRG review m-7] The drive form in the fuzz: an IR whose cores read their rows at another drive (here
+    1.0, the raw gauge) than the one the deployed laws were solved at fails ``laws``: the re-solve from the declared
+    ranges reads each core's drive."""
+    program, ir, law_inputs = P.drive_value_program(law_inputs=True)
+    bad_ir = copy.deepcopy(ir)
+    stamped = [n for n in bad_ir.get_neural_cores() if n.__dict__.get("bias_row_drive", 1.0) != 1.0]
+    assert stamped, "fixture: a drive-route program"
+    for node in stamped:
+        node.__dict__["bias_row_drive"] = 1.0
+    report = P.run(program, bad_ir, P.decl("value_integer", accumulation={"value_census": "float64"}),
+                   law_inputs=law_inputs)
+    _failed(report, "laws", "solved_law")
+
+
 def _scaled_ir(scale: float):
     from unit.mapping.residency.executed import vehicles as V
 

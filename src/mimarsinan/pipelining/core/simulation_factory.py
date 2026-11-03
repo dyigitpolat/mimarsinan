@@ -160,8 +160,9 @@ def build_deployed_metric_flow(
     model=None,
     device: str | None = None,
 ) -> SpikingHybridCoreFlow:
-    """Deployed-read flow for the SCM/HCM accuracy metrics on ``device`` (default the pipeline's): consumes the
-    membrane logits decode iff the honesty gate passes, else pure counts."""
+    """Deployed-read flow for the SCM/HCM accuracy metrics on ``device`` (default the deployed host's, as
+    :func:`build_spiking_hybrid_flow`'s: the CPU [U-HDA]): consumes the membrane logits decode iff the honesty gate
+    passes, else pure counts."""
     decode = deployed_membrane_decode_enabled(pipeline)
     if decode:
         print(

@@ -134,7 +134,9 @@ law per pool output. `lanes/law/lane_grids.py` gives
 each lane owner its grid (unsigned codes `0..2^b - 1` on a clamp or declared offset lane, else the symmetric grid)
 and each core its accumulator and operand grids; `lanes/law/solve.py` solves `y = clamp(rnd_s(M0 f_adc(acc) + M_1 q +
 B), lo, hi)` (one shift for `M0` and `M_1`, the operand's and output's offsets in `B`, the input offset folded per
-core), equal to `solve_core_law` integer for integer without lane clauses; `lanes/law/stamp.py` stamps the per-channel
+core), equal to `solve_core_law` integer for integer without lane clauses, and [U-LMP] `lanes/law/multiplier_paths.py`
+refuses by name a law whose shared shift loses a multiplier path (one at 0, or a starved path whose rounding moves an
+output by more than half a code over its reach); `lanes/law/stamp.py` stamps the per-channel
 lane laws on the model (and each pool lane's `PoolStamp`). `ir/lane_law.py` is the carrier: `LaneLaw(CoreLaw)`
 adds `input_offset`, `output_offset` and one operand per column (`operand_row`, `operand_m`, `operand_step`,
 `operand_offset`), keeps every column operation, shifts its operand rows by a placement's axon offset in

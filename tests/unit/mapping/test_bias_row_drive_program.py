@@ -103,8 +103,8 @@ def _perceptrons_by_index(flow) -> dict:
 def _exact(flow, ir, x) -> None:
     packed = _packed(ir)
     with torch.no_grad():
-        identity = ValueHybridCoreFlow(build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64)(x)
-        packed_out = ValueHybridCoreFlow(packed, dtype=torch.float64)(x)
+        identity = ValueHybridCoreFlow(build_identity_hybrid_mapping(ir_graph=ir), device="cpu", dtype=torch.float64)(x)
+        packed_out = ValueHybridCoreFlow(packed, device="cpu", dtype=torch.float64)(x)
         nf = flow.double()(x)
     torch.testing.assert_close(identity, packed_out, atol=0, rtol=0)
     torch.testing.assert_close(nf.double(), identity, atol=0, rtol=0)

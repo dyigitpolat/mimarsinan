@@ -145,7 +145,7 @@ def _certify(program, x, **geometry):
         scm = program.identity()(x)
         assert_exact(program.nf()(x), scm)
         mapping = program.packed_mapping(**geometry)
-        hcm = ValueHybridCoreFlow(mapping, dtype=torch.float64)(x)
+        hcm = ValueHybridCoreFlow(mapping, device="cpu", dtype=torch.float64)(x)
     assert_exact(hcm, scm)
     codes, steps = run_golden(mapping, x.numpy())
     assert np.array_equal(codes * steps, hcm.reshape(codes.shape).numpy())

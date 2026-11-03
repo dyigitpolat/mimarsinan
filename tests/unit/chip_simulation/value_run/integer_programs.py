@@ -12,7 +12,7 @@ import torch.nn as nn
 
 from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
-from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
+from mimarsinan.mapping.export.chip_quantize import ParameterGrids, quantize_ir_graph
 from mimarsinan.mapping.export.law_solver import install_readout_laws
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.packing.hybrid_build_pool import (
@@ -36,6 +36,45 @@ from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 LAW = {"adc_bits": 40, "range": "calibrated", "mult_bits": 16}
+#: [U-LMP] The drive route's declaration beside the readout law (W38's arm W documents' form): value-domain cores
+#: without a bias register, the bias on an always-on row of the weight grid, the fractional scale rule.
+WQ_DRIVE_ROUTE = {"device": "cpu", "weight_quantization": True, "core_semantics": "mvm", "has_bias": False,
+                  "weight_scale_rule": "fractional"}
+
+
+def weight_quantization_projection(flow, config: dict) -> dict:
+    """[U-LMP, U-BRG review m-7] The Weight Quantization step's own projection of ``flow`` at rate 1 for the flat
+    ``config``: the step's entry sequence (the always-on rows' drives stamped on the drive route) with its tuner
+    intercepted, then the tuner's rate-1 transform, as the step's last projection writes it (U-BRG's test reading,
+    ``tests/unit/transformations/test_bias_row_drive.py``). Returns the tuner's captured settings."""
+    from types import SimpleNamespace
+    from unittest import mock
+
+    from mimarsinan.pipelining.pipeline_steps.quantization.weight_quantization_step import WeightQuantizationStep
+    from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import (
+        NormalizationAwarePerceptronQuantizationTuner as Tuner,
+    )
+
+    entries = {"model": flow, "adaptation_manager": object()}
+    pipeline = SimpleNamespace(config=dict(config), reporter=SimpleNamespace(report=lambda *a, **k: None),
+                               get_entry=lambda _step, key: entries[key],
+                               add_entry=lambda _step, key, value, _strategy="basic": entries.__setitem__(key, value),
+                               update_entry=lambda _step, key, value, _strategy="basic": entries.__setitem__(key, value))
+    captured: dict = {}
+    with mock.patch.object(WeightQuantizationStep, "run_tuner", lambda self, cls, *a, **kw: captured.update(kw)), \
+            mock.patch.object(WeightQuantizationStep, "_canonicalize_starved_bias_outliers", lambda self, model: None):
+        WeightQuantizationStep(pipeline).process()
+    tuner = Tuner.__new__(Tuner)
+    for name in ("quantization_bits", "two_scale_projection", "fractional_scale", "float_bias"):
+        setattr(tuner, name, captured[name])
+    tuner.bias_rows_floor = captured.get("bias_rows_floor")
+    tuner.register_bias = captured.get("register_bias", False)
+    tuner.pipeline = SimpleNamespace(config={"device": "cpu"})
+    transform = tuner._get_new_perceptron_transform(1.0)
+    with torch.no_grad():
+        for perceptron in flow.get_perceptrons():
+            transform(perceptron)
+    return captured
 
 
 @dataclass
@@ -81,11 +120,17 @@ def build_integer_program(
     prune: Optional[dict] = None, seed: int = 0, calibration_size: int = 32, allow_coalescing: bool = False,
     boundary_scales: Optional[Sequence[float]] = None, readout_ranges: Optional[Sequence[float]] = None,
     parameter_scales: Optional[Sequence[float]] = None, hardware_bias: bool = False,
+    weight_quantization_step: bool = False,
 ) -> IntegerProgram:
     """``prune`` maps perceptron positions to output channels zeroed before mapping (IR pruning then compacts);
     the three scale lists, when given, replace the calibrated boundary scales, readout ranges and weight grids.
     ``hardware_bias`` [fix_b]: the bias on the core (the target's ``has_bias``, as the pipeline's IR mapping reads it),
-    else on one axon; a caller building for a declared target passes the target's."""
+    else on one axon; a caller building for a declared target passes the target's.
+    ``weight_quantization_step`` [U-LMP, U-BRG review m-7]: the weight grids are the Weight Quantization step's own
+    rate-1 projection under the readout law on cores without a bias register (:func:`weight_quantization_projection`),
+    so every always-on row carries its reader's drive (the drive route) and the laws read it."""
+    if weight_quantization_step and (hardware_bias or parameter_scales):
+        raise ValueError("the Weight Quantization form sets its own grids on cores without a bias register")
     torch.manual_seed(seed)
     flow = convert_torch_model(model.eval(), input_shape, num_classes, device="cpu", packaging=MVM_PACKAGING).eval()
     for perceptron in flow.get_perceptrons():
@@ -104,7 +149,13 @@ def build_integer_program(
     for quantizer, value in zip(quantizers, readout_ranges or [max(v, 1e-3) for v in measured]):
         quantizer.calibrate(value)
     q_max = quantization_bounds(weight_bits)[1]
-    for index, perceptron in enumerate(perceptrons):
+    law_platform = {"readout_law": dict(readout_law or LAW), "activation_bits": activation_bits}
+    grids = None
+    if weight_quantization_step:
+        flow.get_mapper_repr().assign_perceptron_indices()
+        weight_quantization_projection(flow, {**law_platform, **WQ_DRIVE_ROUTE, "weight_bits": weight_bits})
+        grids, law_platform = ParameterGrids(fractional_scale=True), {**law_platform, "weight_scale_rule": "fractional"}
+    for index, perceptron in enumerate(perceptrons if not weight_quantization_step else ()):
         peak = float(perceptron.layer.weight.detach().abs().max())
         default = max(1.0, math.floor(q_max / peak)) if peak > 0 else 1.0
         perceptron.set_parameter_scale(parameter_scales[index] if parameter_scales else default)
@@ -113,13 +164,10 @@ def build_integer_program(
     ir = IRMapping(q_max=q_max, firing_mode="Default", max_axons=max_axons, max_neurons=max_neurons,
                    allow_coalescing=allow_coalescing, hardware_bias=hardware_bias).map(repr_)
     install_boundary_grids(ir, flow)
-    quantize_ir_graph(ir, weight_bits, weight_quantization=True)
+    quantize_ir_graph(ir, weight_bits, weight_quantization=True, **({"grids": grids} if grids is not None else {}))
     if prune:
         ir = prune_ir_graph(ir, spiking_mode=INERT_SPIKING_MODE)
-    install_readout_laws(
-        ir, flow, {"readout_law": dict(readout_law or LAW), "activation_bits": activation_bits},
-        weight_quantization=True, weight_bits=weight_bits,
-    )
+    install_readout_laws(ir, flow, law_platform, weight_quantization=True, weight_bits=weight_bits)
     return IntegerProgram(flow, ir, tuple(input_shape))
 
 

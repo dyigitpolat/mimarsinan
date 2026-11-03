@@ -79,6 +79,21 @@ def test_an_integer_value_program_with_solved_laws():
     assert report.established("proposition2"), report.proposition2
 
 
+def test_a_drive_route_value_program_with_solved_laws():
+    """[U-LMP, U-BRG review m-7] The integer program generator's Weight Quantization form under the readout law on
+    cores without a bias register: every always-on row carries its reader's drive, the laws read it, and the static
+    check establishes Theorem 1 and Proposition 2 on it (its ``laws`` condition re-solves the drive's bias term)."""
+    program, ir, law_inputs = P.drive_value_program(law_inputs=True)
+    drives = [n.__dict__.get("bias_row_drive", 1.0) for n in ir.get_neural_cores()]
+    assert any(d != 1.0 for d in drives), "fixture: a drive-route program"
+    report = P.run(program, ir, P.decl("value_integer", accumulation={"value_census": "float64",
+                                                                       "int64_golden": "int64"}),
+                   law_inputs=law_inputs)
+    _established(report, "tiles", "laws", "H8")
+    assert "IR laws re-solved and equal" in report.results["laws"].note, report.results["laws"].note
+    assert report.established("proposition2"), report.proposition2
+
+
 def test_a_pruned_value_program_compacts_dead_columns_only():
     program, ir = P.value_program(prune={0: [1, 3]})
     report = P.run(program, ir, P.decl("value_integer", accumulation={"value_census": "float64"}))

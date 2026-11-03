@@ -656,7 +656,7 @@ class SoftCoreMappingStep(PipelineStep):
         agreement = nf_scm_parity.assert_torch_vs_deployed_sim_parity_or_raise(
             reference, flow, samples,
             min_agreement=min(0.90, configured),
-            labels=labels,
+            labels=labels, reporter=self.pipeline.reporter,  # [U-LMP] its host_arithmetic event reaches the run
         )
         status = "ok" if agreement >= configured else "DRIFT (non-fatal)"
         print(

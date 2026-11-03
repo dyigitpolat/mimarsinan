@@ -21,6 +21,7 @@ intercepted, then the tuner's rate-1 projection), so a tree without the drive re
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 from types import SimpleNamespace
 
@@ -291,20 +292,42 @@ def test_a_reader_full_scale_below_one_drives_its_row_at_that_full_scale(monkeyp
 
 
 _NO_DRIVE_ROUTES = [
-    pytest.param({"has_bias": True}, id="on-chip-register"),
-    pytest.param({"readout_law": None}, id="no-readout-law"),
-    pytest.param({"has_bias": True, "bias_resolution": "law"}, id="law-resolution-bias"),
-    pytest.param({"has_bias": True, "wq_two_scale_projection": True}, id="register-route"),
-    pytest.param({"readout_law": None, "bias_row_splitting": "auto"}, id="rows-without-a-law"),
+    pytest.param("on-chip-register", {"has_bias": True}, id="on-chip-register"),
+    pytest.param("no-readout-law", {"readout_law": None}, id="no-readout-law"),
+    pytest.param("law-resolution-bias", {"has_bias": True, "bias_resolution": "law"}, id="law-resolution-bias"),
+    pytest.param("register-route", {"has_bias": True, "wq_two_scale_projection": True}, id="register-route"),
+    pytest.param("rows-without-a-law", {"readout_law": None, "bias_row_splitting": "auto"}, id="rows-without-a-law"),
 ]
 
+#: [U-LMP, U-BRG review m-2] The base's per-perceptron digests of each route without a drive (sha256 over every
+#: parameter's name and float64 bytes, then ``repr`` of ``parameter_scale`` and of ``bias_scale``; first 16 hex),
+#: read on the stacked R5 candidate without U-LMP and equal to U-BRG's review reading of the tree before the drive
+#: (``xtree_probe.py``): a change of the drive-1 branch moves them, which the tuner-projection comparison cannot see.
+BASE_NO_DRIVE_DIGESTS = {
+    "on-chip-register": ["a64c5af3a114c1cd", "c8455d962cb6850f"],
+    "no-readout-law": ["a64c5af3a114c1cd", "c8455d962cb6850f"],
+    "law-resolution-bias": ["a01bc1973258e758", "4db39c8a0e60d021"],
+    "register-route": ["531bcd85cd1cd4a2", "c8455d962cb6850f"],
+    "rows-without-a-law": ["22a1a2edd72ec508", "c8455d962cb6850f"],
+}
 
-@pytest.mark.parametrize("config", _NO_DRIVE_ROUTES)
-def test_no_drive_where_the_row_has_no_value_grid_reader(monkeypatch, config):
+
+def _projection_digest(perceptron) -> str:
+    h = hashlib.sha256()
+    for name, parameter in perceptron.named_parameters():
+        h.update(name.encode())
+        h.update(parameter.detach().double().cpu().numpy().tobytes())
+    h.update(repr(float(perceptron.parameter_scale)).encode())
+    h.update(repr(float(getattr(perceptron, "bias_scale", perceptron.parameter_scale))).encode())
+    return h.hexdigest()[:16]
+
+
+@pytest.mark.parametrize("route, config", _NO_DRIVE_ROUTES)
+def test_no_drive_where_the_row_has_no_value_grid_reader(monkeypatch, route, config):
     """Guard (green on both trees), one per route that takes no drive: an on-chip bias register (no always-on row), a
     program without the integer law, a law-resolution bias, the register route and the rows route without a law
     carry no drive, and every parameter and scale is byte-equal to the tuner's own projection (its captured settings)
-    on an unstamped copy."""
+    on an unstamped copy and to the base's own projection (its pinned per-perceptron digests)."""
     declared = _value_config(**config)
     declared = {k: v for k, v in declared.items() if v is not None}
     flow, ref = _flow(), _flow()
@@ -318,6 +341,7 @@ def test_no_drive_where_the_row_has_no_value_grid_reader(monkeypatch, config):
                 assert torch.equal(a.detach(), b.detach()), name
             assert float(p.parameter_scale) == float(r.parameter_scale)
             assert float(getattr(p, "bias_scale", p.parameter_scale)) == float(getattr(r, "bias_scale", r.parameter_scale))
+    assert [_projection_digest(p) for p in flow.get_perceptrons()] == BASE_NO_DRIVE_DIGESTS[route]
 
 
 def test_the_route_predicate_needs_a_readout_law_on_value_domain_cores_with_the_bias_on_a_row():
@@ -335,7 +359,7 @@ def test_the_route_predicate_needs_a_readout_law_on_value_domain_cores_with_the_
     assert not bias_rows_take_a_drive(law, **{**route, "value_domain": False})
     assert bias_row_drive_route(_value_config())
     for config in _NO_DRIVE_ROUTES:
-        declared = {k: v for k, v in _value_config(**config.values[0]).items() if v is not None}
+        declared = {k: v for k, v in _value_config(**config.values[1]).items() if v is not None}
         assert not bias_row_drive_route(declared), config.id
 
 

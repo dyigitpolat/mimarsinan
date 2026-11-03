@@ -200,7 +200,7 @@ class TestStepWiring:
             lambda pipeline, mapping, model: object(),
         )
 
-        def _capture(reference, flow, samples, *, min_agreement, labels=None):
+        def _capture(reference, flow, samples, *, min_agreement, labels=None, reporter=None):
             captured["reference"] = reference
             captured["min_agreement"] = min_agreement
             return 1.0

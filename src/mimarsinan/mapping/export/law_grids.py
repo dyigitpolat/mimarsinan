@@ -122,6 +122,23 @@ class _Union:
 GridUnion = _Union
 
 
+def readout_grid_keys(quantizer) -> Tuple[GroupKey, ...]:
+    """[U-LMP] A readout quantizer's grid keys as one static reader reads them, keyed by ``id(quantizer)``: one key, or
+    one per consumer group (N2: a static consumer reads every group, ``consumer_group_partition``)."""
+    groups = getattr(quantizer, "channel_groups", None)
+    if groups is None:
+        return ((id(quantizer), 0),)
+    return tuple((id(quantizer), int(g)) for g in sorted({int(v) for v in groups}))
+
+
+def readout_key_grid(quantizer, group: int) -> Tuple[float, int, bool]:
+    """[U-LMP] (range, positive levels, grouped) of one of :func:`readout_grid_keys`' keys: the ``range_of`` and
+    ``levels_of`` :func:`assign_core_grids` reads for it (a plain quantizer's levels are its signed grid's)."""
+    if getattr(quantizer, "channel_groups", None) is None:
+        return float(quantizer.range), grid_levels(int(quantizer.activation_bits)), False
+    return float(quantizer.group_ranges[group]), int(quantizer.group_levels[group]), True
+
+
 def assign_core_grids(
     ir_graph, perceptron_ranges: Mapping[int, float], activation_bits: int, *,
     groups: Optional[Mapping[int, OutputGroups]] = None,

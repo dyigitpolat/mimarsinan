@@ -427,6 +427,7 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
     *,
     min_agreement: float = 0.98,
     labels: torch.Tensor | None = None,
+    reporter=None,
 ) -> float:
     """Torch↔deployed-sim parity: the NF torch forward must agree with the deployed spiking sim on ``min_agreement`` of samples.
 
@@ -437,13 +438,13 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
     (``chip_simulation.hybrid_run.host_compute``). The armed torch node decides them so only inside the plane
     (outside it float32 dust decided them: the C5 T-LIF first core, SCM = NF + 1), so the plane is the NF's read.
     [U-HDA] Both twins evaluate on the deployed host; the model, the flow and the program's host modules are handed
-    back where they were.
+    back where they were. [U-LMP] The arithmetic line's ``host_arithmetic`` event goes to the step's ``reporter``.
     """
     program = getattr(flow, "hybrid_mapping", None)
     arithmetic = spiking_host_arithmetic(
         "Soft Core Mapping torch-model↔deployed-sim parity (the NF twin and the identity program)",
         _model_device(model), program)
-    announce(arithmetic)
+    announce(arithmetic, reporter)
     with borrowed_host_placement(model, flow, program):
         place_on_host(program)
         return _torch_vs_deployed_sim(model, flow, samples.to(arithmetic.device), min_agreement=min_agreement,

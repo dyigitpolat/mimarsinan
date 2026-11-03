@@ -112,6 +112,25 @@ def value_program(passes: Optional[int] = 4, prune=None):
     return program.packed_mapping(axons=32, neurons=32, count=1, passes=passes), program.ir
 
 
+def drive_value_program(passes: Optional[int] = 4, *, law_inputs: bool = False):
+    """[U-LMP, U-BRG review m-7] G2's integer MLP on the drive route: the Weight Quantization step's own projection
+    under the readout law on cores without a bias register, so every always-on row carries its reader's drive and the
+    laws read it (``build_integer_program(..., weight_quantization_step=True)``); one 32 x 32 core. ``law_inputs``
+    also returns the calibrated ranges and the spec the static check's ``laws`` re-solve reads."""
+    from mimarsinan.mapping.export.law_rules import ReadoutLawSpec
+    from mimarsinan.mapping.export.law_stamp import readout_quantizers_by_perceptron
+    from unit.chip_simulation.value_run.integer_programs import LAW, build_integer_program, mlp
+
+    program = build_integer_program(mlp(), (8,), num_classes=4, readout_law=LAW, weight_quantization_step=True)
+    packed = program.packed_mapping(axons=32, neurons=32, count=1, passes=passes)
+    if not law_inputs:
+        return packed, program.ir
+    quantizers = readout_quantizers_by_perceptron(program.model.get_mapper_repr())
+    ranges = {int(index): float(entry[2].range) for index, entry in quantizers.items()}
+    return packed, program.ir, {"ranges": ranges,
+                                "spec": ReadoutLawSpec.from_declaration(LAW, activation_bits=8, weight_bits=8)}
+
+
 def identity_of(ir, *, retimed: bool = False):
     return build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=retimed)
 

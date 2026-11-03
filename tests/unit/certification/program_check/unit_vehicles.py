@@ -224,6 +224,13 @@ def columnar() -> Built:
     return build_identity_hybrid_mapping(ir_graph=program.ir), program.ir, value_decl()
 
 
+def drive_route() -> Built:
+    """[U-LMP, U-BRG review m-7] G2's integer MLP whose always-on rows carry their readers' drives (the Weight
+    Quantization step's projection under the readout law on cores without a bias register)."""
+    program, ir = _quiet(P.drive_value_program)
+    return program, ir, value_decl()
+
+
 BUILDERS: Dict[str, Callable[[], Built]] = {
     "operand_softmax": lambda: operand("softmax"), "operand_relu": lambda: operand("relu"),
     "operand_identity": lambda: operand_identity("softmax"), "lanes": lanes, "typed": typed,
@@ -231,4 +238,5 @@ BUILDERS: Dict[str, Callable[[], Built]] = {
     "pruned_entry_host": lambda: pruned("entry_host"),
     "pruned_entry_host_plain": lambda: pruned("entry_host_plain"), "neuron_split": neuron_split,
     "multiplexed": multiplexed, "windowed_multiplexed": windowed_multiplexed, "fit_chain": fit_chain, "per_axon": per_axon, "relays": relays, "columnar": columnar,
+    "drive_route": drive_route,
 }

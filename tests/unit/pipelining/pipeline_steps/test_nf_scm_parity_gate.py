@@ -441,7 +441,7 @@ class TestOneSampleCountKeyForBothBranches:
 
         calls = []
 
-        def _record(reference, flow, samples, *, min_agreement, labels=None):
+        def _record(reference, flow, samples, *, min_agreement, labels=None, reporter=None):
             calls.append((reference, flow, samples, min_agreement))
             return 1.0
 

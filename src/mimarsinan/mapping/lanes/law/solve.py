@@ -36,6 +36,7 @@ from mimarsinan.mapping.ir.core_law import CoreLaw
 from mimarsinan.mapping.ir.lane_law import LaneLaw
 from mimarsinan.mapping.lanes.ir.fusion import OPERAND_ROWS
 from mimarsinan.mapping.lanes.law.lane_grids import CoreLaneGrid, LaneGrid, assign_lane_grids, data_rows
+from mimarsinan.mapping.lanes.law.multiplier_paths import refuse_lost_paths
 from mimarsinan.mapping.support.bias_drive import reads_a_core, refuse_drives_off_their_grid
 from mimarsinan.models.nn.activations.integer_law import (
     FP64_EXACT_BOUND,
@@ -95,6 +96,9 @@ def solve_lane_law(*, core: NeuralCore, bias: np.ndarray, acc_bounds, grid: Core
         adc_shift = [adc_step_exponent(min(bound, clamp_reach(m0, int(bj), shift, grid.lo, grid.hi, term)),
                                        adc_levels, core=name)
                      for bound, bj, term in zip(bounds, b.tolist(), operand_terms(m1, grid))]
+    refuse_lost_paths(core, shift=shift, mult_bits=spec.mult_bits, ratio0=ratio0, m0=m0, ratio1=ratio1, m1=m1.tolist(),
+                      bias=b.tolist(), acc_bounds=bounds, adc_shift=adc_shift, lo=grid.lo, hi=grid.hi,
+                      codes=[None if op is None else op.codes for op in grid.operands])  # [U-LMP]
     op_levels = np.array([0 if op is None else op.levels for op in grid.operands], dtype=np.int64)
     bound = law_magnitude_bound(bounds, m0, b, adc_shift) + int((np.abs(m1) * op_levels).max(initial=0))
     if bound >= FP64_EXACT_BOUND:

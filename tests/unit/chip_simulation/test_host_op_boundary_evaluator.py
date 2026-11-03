@@ -112,7 +112,8 @@ def _op(module, size, src_node):
 
 def test_contract_carries_the_pipeline_device_as_the_host_op_evaluator():
     """[U-HDA] The evaluator a pipeline device names is the deployed host's (the CPU, where the census, the HCM
-    reference and the deployed read evaluate host ops), whatever device the pipeline trains on."""
+    reference and the deployed read evaluate host ops), whatever device the pipeline trains on. [U-LMP] The test id is
+    historical (kept for the per-test comparison across heads): the contract no longer carries the pipeline's device."""
     assert _contract("cuda:0").host_compute_device == "cpu"
     assert _contract("cpu").host_compute_device == "cpu"
 
