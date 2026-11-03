@@ -36,6 +36,11 @@ from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.spiking.hybrid.membrane_readout import final_only_output_nodes
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.pipelining.core.census.arithmetic import (
+    announce,
+    borrowed_placement,
+    spiking_census_arithmetic,
+)
 from mimarsinan.spiking.lif_utils import (
     apply_cycle_accurate_trains_to_model,
     arm_integer_membrane_lattice,
@@ -90,8 +95,9 @@ def build_spiking_hybrid_flow(
     preprocessor=None,
     model=None,
     membrane_readout_decode: bool = False,
+    device: str | None = None,
 ) -> SpikingHybridCoreFlow:
-    """Build the deployed-read executor; count currencies stay counts ALWAYS.
+    """Build the deployed-read executor on ``device`` (default the pipeline's); count currencies stay counts ALWAYS.
 
     [C2] Records, parity gathers, and cross-sim comparisons keep the per-neuron
     counts decode unconditionally. The membrane-augmented FINAL logits decode
@@ -132,7 +138,7 @@ def build_spiking_hybrid_flow(
         apply_cycle_accurate_trains_to_model(model, True)
         if plan.weight_quantization:
             arm_integer_membrane_lattice(model)
-    return flow.to(cfg["device"])
+    return flow.to(device or cfg["device"])
 
 
 def deployed_membrane_decode_enabled(pipeline) -> bool:
@@ -147,8 +153,9 @@ def build_deployed_metric_flow(
     hybrid_mapping,
     *,
     model=None,
+    device: str | None = None,
 ) -> SpikingHybridCoreFlow:
-    """Deployed-read flow for the SCM/HCM accuracy metrics: consumes the
+    """Deployed-read flow for the SCM/HCM accuracy metrics on ``device`` (default the pipeline's): consumes the
     membrane logits decode iff the honesty gate passes, else pure counts."""
     decode = deployed_membrane_decode_enabled(pipeline)
     if decode:
@@ -158,7 +165,7 @@ def build_deployed_metric_flow(
             "final membranes)."
         )
     return build_spiking_hybrid_flow(
-        pipeline, hybrid_mapping, model=model, membrane_readout_decode=decode,
+        pipeline, hybrid_mapping, model=model, membrane_readout_decode=decode, device=device,
     )
 
 
@@ -427,6 +434,30 @@ def record_on_hcm_flow(flow, sample: torch.Tensor, *, sample_index: int, device)
     return ref
 
 
+def _run_spiking_census(
+    pipeline,
+    hybrid_mapping,
+    census: str,
+    *,
+    model,
+    device: str | None,
+    max_batch_cap: int | None,
+    retry_on_oom: bool,
+    announce_census: bool,
+) -> float:
+    """[U-CEN] A spiking census in the deployed read's arithmetic (``pipelining/core/census/arithmetic.py``): the
+    executor's own, on the CPU or on the pipeline's device where that is the CPU, every module it borrows handed back
+    where it was; ``device`` is the device the pipeline asks for (its own when None)."""
+    arithmetic = spiking_census_arithmetic(pipeline, census, hybrid_mapping, device=device)
+    if announce_census:
+        announce(pipeline, arithmetic)
+    with borrowed_placement(arithmetic, model, hybrid_mapping):
+        flow = build_deployed_metric_flow(pipeline, hybrid_mapping, model=model, device=arithmetic.device)
+        return float(run_hcm_spiking_test(
+            pipeline, flow, device=arithmetic.device, max_batch_cap=max_batch_cap, retry_on_oom=retry_on_oom,
+        ))
+
+
 def run_hcm_mapping_metric(
     pipeline,
     ir_graph: IRGraph,
@@ -444,7 +475,6 @@ def run_hcm_mapping_metric(
 
     Returns test accuracy. Raises on simulation failure (including after OOM retry).
     """
-    device = device or pipeline.config["device"]
     attempt_cap = max_batch_cap
     last_exc: Exception | None = None
 
@@ -457,17 +487,9 @@ def run_hcm_mapping_metric(
                     pipeline_config=pipeline.config,
                 )
                 pipeline.cache.add(cache_key, hybrid_mapping, "pickle")
-            flow = build_deployed_metric_flow(
-                pipeline, hybrid_mapping, model=model,
-            )
-            return float(
-                run_hcm_spiking_test(
-                    pipeline,
-                    flow,
-                    device=device,
-                    max_batch_cap=attempt_cap,
-                    retry_on_oom=retry_on_oom,
-                )
+            return _run_spiking_census(
+                pipeline, hybrid_mapping, "Hard Core Mapping packed spiking program census", model=model,
+                device=device, max_batch_cap=attempt_cap, retry_on_oom=retry_on_oom, announce_census=attempt == 0,
             )
         except RuntimeError as exc:
             last_exc = exc
@@ -502,7 +524,6 @@ def run_scm_identity_metric(
     (``run_hcm_mapping_metric``) and is NOT built or cached here.
     """
     del platform_constraints  # identity mapping ignores hardware core shapes
-    device = device or pipeline.config["device"]
     attempt_cap = max_batch_cap
     last_exc: Exception | None = None
 
@@ -512,17 +533,9 @@ def run_scm_identity_metric(
 
     for attempt in range(2 if outer_oom_retry else 1):
         try:
-            flow = build_deployed_metric_flow(
-                pipeline, identity_mapping, model=model,
-            )
-            return float(
-                run_hcm_spiking_test(
-                    pipeline,
-                    flow,
-                    device=device,
-                    max_batch_cap=attempt_cap,
-                    retry_on_oom=retry_on_oom,
-                )
+            return _run_spiking_census(
+                pipeline, identity_mapping, "Soft Core Mapping identity spiking program census", model=model,
+                device=device, max_batch_cap=attempt_cap, retry_on_oom=retry_on_oom, announce_census=attempt == 0,
             )
         except RuntimeError as exc:
             last_exc = exc

@@ -17,6 +17,11 @@ from mimarsinan.certification.value_certificate import (
 )
 from mimarsinan.certification.operand_certificate import certify_operand_program
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
+from mimarsinan.pipelining.core.census.arithmetic import (
+    VALUE_CENSUS_DTYPE,
+    announce,
+    value_census_arithmetic,
+)
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir.core_law import graph_carries_laws
 from mimarsinan.mapping.lanes.ir.fusion import LANE_REPORT
@@ -186,16 +191,20 @@ def _operand_program_gate(model, ir_graph, hybrid_mapping, samples):
     return certificate
 
 
-def _value_metric_flow(pipeline, hybrid_mapping) -> ValueHybridCoreFlow:
-    device = pipeline.config["device"]
-    return ValueHybridCoreFlow(hybrid_mapping, device=device, dtype=torch.float32)
+def _run_value_census(pipeline, hybrid_mapping, census: str, device) -> float:
+    """[U-CEN] A value census in the deployed read's arithmetic (``pipelining/core/census/arithmetic.py``): float64
+    on the CPU, or on the pipeline's device where that is the CPU; ``device`` is the device the pipeline asks for (its
+    own when None)."""
+    arithmetic = value_census_arithmetic(pipeline, census, device=device)
+    announce(pipeline, arithmetic)
+    flow = ValueHybridCoreFlow(hybrid_mapping, device=arithmetic.device, dtype=VALUE_CENSUS_DTYPE)
+    return float(run_hcm_spiking_test(pipeline, flow, device=arithmetic.device, retry_on_oom=True))
 
 
 def run_value_identity_metric(pipeline, ir_graph, *, device=None) -> float:
     """Rung-2 census through the identity value program (unarmed configs only)."""
     identity = build_identity_hybrid_mapping(ir_graph=ir_graph)
-    flow = _value_metric_flow(pipeline, identity)
-    return float(run_hcm_spiking_test(pipeline, flow, device=device, retry_on_oom=True))
+    return _run_value_census(pipeline, identity, "Soft Core Mapping identity value program census", device)
 
 
 def run_value_mapping_metric(
@@ -213,5 +222,4 @@ def run_value_mapping_metric(
             ir_graph, platform_constraints, pipeline_config=pipeline.config,
         )
         pipeline.cache.add(cache_key, hybrid_mapping, "pickle")
-    flow = _value_metric_flow(pipeline, hybrid_mapping)
-    return float(run_hcm_spiking_test(pipeline, flow, device=device, retry_on_oom=True))
+    return _run_value_census(pipeline, hybrid_mapping, "Hard Core Mapping packed value program census", device)

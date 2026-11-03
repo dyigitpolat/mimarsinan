@@ -50,10 +50,10 @@ EXACT_INTEGER_REACH: Dict[str, int] = {"float64": 2 ** 53, "float32": 2 ** 24, "
 #: int64 golden; ``COMPUTE_DTYPE`` (``models/spiking/spiking_config.py``) is float64.
 DEFAULT_ACCUMULATION: Dict[str, str] = {"hcm": "float64"}
 VALUE_ACCUMULATION: Dict[str, str] = {"value_census": "float64", "int64_golden": "int64"}
-#: The dtype an executor uploads weights and input codes in, where it is narrower than its accumulation: the deployed
-#: value census runs ``ValueHybridCoreFlow`` at float32 (``pipelining/core/gates/value_gates.py``), the law then
-#: accumulating in float64 (``value_law.py``), so every weight and code must be exact in float32 (H8).
-VALUE_UPLOAD: Dict[str, str] = {"value_census": "float32"}
+#: The dtype an executor uploads weights and input codes in, where the check must bound it: the value census runs
+#: ``ValueHybridCoreFlow`` at float64, the deployed read's arithmetic (``pipelining/core/census/arithmetic.py``,
+#: ``VALUE_CENSUS_DTYPE``), so every weight and code must be exact in float64 (H8).
+VALUE_UPLOAD: Dict[str, str] = {"value_census": "float64"}
 PER_EVENT = "per_event"
 
 
