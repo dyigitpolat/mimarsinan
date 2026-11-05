@@ -18,6 +18,10 @@ composition as before. The deployed program is the one Soft Core Mapping exports
 law. The first eval-mode forward after the first solve is compared with the law-carrying copy's forward on the same
 inputs (``torch.equal``), and a difference is refused by name.
 
+[U-RAW] The recovery's rule under the law (``recovery_lr``, the endpoint's ``RECOVERY_RULE``): the rate the LR explorer
+finds non-destructive on the law-in-loop read, its probes at the rates they name, capped at the pipeline's ``lr`` (no
+step where every rate is destructive), over the declared budget with keep-best (the funded convergence geometry).
+
 Scope, refused by name at Weight Quantization's entry before any budget is spent: a value-domain (mvm) row with a
 declared readout law, the fast optimization driver (whose fixed ladder runs the endpoint recovery), fixed hardware (no
 architecture search), no structured pre-mapping pruning (it would change the mapped network's channels after the
@@ -37,12 +41,14 @@ import torch.nn as nn
 from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.support.operand_lowering import operand_declaration
+from mimarsinan.model_training.basic_trainer_steps import CONSTANT_RATE_EXACT
 from mimarsinan.models.nn.activations.lane_quantization import LanePoolModule
 from mimarsinan.models.nn.activations.readout_quantizer import ReadoutQuantizer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import SoftCoreMappingStep
 from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import RECOVERY_RULE
 
 READOUT_AWARE_TRAINING = "readout_aware_training"
 #: The tuner attribute naming the loop open on its endpoint recovery (absent outside one).
@@ -125,6 +131,7 @@ class ReadoutLawInLoop:
             raise RuntimeError("[U-ADC] the tuner's trainer trains another model than the tuner's")
         self._hook_model()
         setattr(self._tuner, LOOP_ATTRIBUTE, self)
+        setattr(self._tuner, RECOVERY_RULE, self.recovery_lr)   # [U-RAW] the recovery's rule under the law
         return self
 
     def __exit__(self, *_exc) -> bool:
@@ -132,6 +139,7 @@ class ReadoutLawInLoop:
         self._unwire()
         if getattr(self._tuner, LOOP_ATTRIBUTE, None) is self:
             delattr(self._tuner, LOOP_ATTRIBUTE)
+            delattr(self._tuner, RECOVERY_RULE)
         self._replica, self._snapshot = None, None
         gc.collect()
         law = self._platform.get("readout_law") or {}
@@ -139,6 +147,19 @@ class ReadoutLawInLoop:
               f"law (adc_bits {law.get('adc_bits')}): {self.solves} solve(s) of Soft Core Mapping's laws, "
               f"{self.solve_wall_s:.1f} s", flush=True)
         return False
+
+    def recovery_lr(self, lr: float) -> Optional[float]:
+        """The LR explorer's rate (``_find_lr``) on the law-in-loop read, its probes at the rates they name (the mark on
+        the trainer for this call only), capped at ``lr``; None (no step) when every probed rate is destructive."""
+        setattr(self._tuner.trainer, CONSTANT_RATE_EXACT, True)
+        try:
+            found = self._tuner._find_lr()
+        finally:
+            delattr(self._tuner.trainer, CONSTANT_RATE_EXACT)
+        rate = None if found is None else min(float(found), float(lr))
+        print(f"[ReadoutAwareTraining] the recovery trains at {rate} on the law-in-loop read (LR explorer {found}, "
+              f"pipeline lr {lr})", flush=True)
+        return rate
 
     def _hook_model(self) -> None:
         self._model_hooks = [self._model.register_forward_pre_hook(self._before_forward),

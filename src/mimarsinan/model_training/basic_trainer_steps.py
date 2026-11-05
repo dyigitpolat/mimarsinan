@@ -20,6 +20,11 @@ _TARGET_CONFIRM_FACTOR = 4
 are not difficulty-uniform, so one easy progress window must not end a stage
 (measured: an armed 16k floor truncated by a single window read)."""
 
+#: [U-RAW] A trainer attribute (absent: every rate as before): true makes a constant-rate step run (the LR explorer's
+#: probe) train each group at its own base rate, the rate the run names, whatever schedule the trainer builds (a recipe
+#: warmup's construction-time start factor included).
+CONSTANT_RATE_EXACT = "constant_rate_exact"
+
 
 def _recipe_recovery_enabled(trainer) -> bool:
     """Whether the step recovery routes through ``tuning_recipe`` (warmup+cosine).
@@ -45,6 +50,9 @@ def train_n_steps(
     else:
         scheduler, scaler = trainer._scheduler_and_scaler_for_optimizer(optimizer, lr, steps)
     if constant_lr:
+        if getattr(trainer, CONSTANT_RATE_EXACT, False):
+            for group in optimizer.param_groups:
+                group["lr"] = float(group.get("initial_lr", group["lr"]))
         scheduler = torch.optim.lr_scheduler.ConstantLR(
             optimizer, factor=1.0, total_iters=0
         )

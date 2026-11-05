@@ -43,6 +43,8 @@ def freed_ladder_steps(tuner) -> int:
 # Module-level alias: tests monkeypatch this seam; the shared implementation
 # lives in mbh_ledger (also the [MBH-DRAWS] selection read).
 _fp32_deployed_read = fp32_deployed_read
+#: [U-RAW] The tuner attribute an open readout-aware loop sets to its recovery rule (absent: the leg above, unchanged).
+RECOVERY_RULE = "_endpoint_recovery_rule"
 
 
 def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRecoveryReport:
@@ -88,6 +90,8 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
       wall time is a pure measurement.
     - keep-best + early stop live inside ``train_steps_until_target``; the
       outer fp32 entry guard makes the whole stage non-destructive.
+    - [U-RAW] a tuner carrying a recovery rule (``RECOVERY_RULE``, an open readout-aware loop's) trains its engaged
+      leg at ``rule(lr)`` (None: no step, the entry state kept) over the funded convergence geometry of its budget.
     """
     highwater = dhat_highwater.require(tuner.pipeline)
     if target_floor is None:
@@ -139,9 +143,13 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
             "endpoint_floor_min_cover_steps",
             TUNING_POLICY.endpoint_floor_min_cover_steps,
         ))
+        if (rule := getattr(tuner, RECOVERY_RULE, None)) is not None:
+            lr = rule(lr)
+            geometry = endpoint_convergence_geometry(budget, check_interval, min_cover)
+            min_steps, patience = geometry.min_steps, geometry.patience
         steps_left = endpoint_steps.remaining(tuner.pipeline, total_steps)
         if steps_left > 0:
-            lr = min(lr, effective_endpoint_floor_lr(tuner.pipeline.config))
+            lr = None if lr is None else min(lr, effective_endpoint_floor_lr(tuner.pipeline.config))
             budget = min(budget, steps_left)
             # [P4] the funded leg evals at the budget-aware effective cadence
             # (dense below the [C1] min-cover, widened at/above); the geometry
@@ -158,12 +166,13 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
             armed = True
         # The endpoint legs are where the run-total ledger burns; time them so
         # ft_pass_walls covers runs whose only training is endpoint recovery.
-        with tuner._ft_pass_wall_log().time_pass("endpoint_recover"):
-            steps_used, rescued, decoupled = _train_engaged(
-                tuner, lr=lr, target=target, budget=budget, min_steps=min_steps,
-                patience=patience, armed=armed, check_interval=check_interval,
-                trajectory=trajectory, entry=entry,
-            )
+        if lr is not None:
+            with tuner._ft_pass_wall_log().time_pass("endpoint_recover"):
+                steps_used, rescued, decoupled = _train_engaged(
+                    tuner, lr=lr, target=target, budget=budget, min_steps=min_steps,
+                    patience=patience, armed=armed, check_interval=check_interval,
+                    trajectory=trajectory, entry=entry,
+                )
         if armed:
             endpoint_steps.consume(tuner.pipeline, steps_used)
         exit_read = _fp32_deployed_read(tuner)
