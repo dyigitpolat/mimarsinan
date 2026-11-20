@@ -151,8 +151,22 @@ def test_a_law_that_keeps_every_path_is_the_base_law(name, args):
 # -- programs: the tree's residual-block lane program (lanes L, E, P) --------------------------------------------------
 
 #: The stacked base's residual-block lane program at 4-bit weights and mult_bits 24 (the lane fixtures' default form):
-#: sha256 over its laws in IR order.
-BASE_PROGRAM_LAW_SHA = "356ad15f113747ff381967886afb6915ef2f514e671b03216b85c1895230a151"
+#: sha256 over its laws in IR order. [U-BRANGE] Its boundary scales and lane ranges are the range rule's (each the
+#: least squared error of its own grid); under the former 0.999 quantile the same program's laws read
+#: ``QUANTILE_RULE_PROGRAM_LAW_SHA`` (the earlier base, restored byte for byte below). [U-BRANGE2 stage 1b] The lane
+#: fixture now calibrates by Readout Law's own lanes path (``ReadoutLawStep._calibrated``: pooled, no floor; the stage
+#: verify's M-3) where it had read ``measure_lane_ranges`` with a 1e-3 floor; this program's laws are unchanged by it.
+BASE_PROGRAM_LAW_SHA = "a95a507c363e987df7d1fb872d6f3c8835b066266af61167fcff69de04921fab"
+QUANTILE_RULE_PROGRAM_LAW_SHA = "356ad15f113747ff381967886afb6915ef2f514e671b03216b85c1895230a151"
+
+
+def _program_law_sha(program) -> str:
+    h = hashlib.sha256()
+    for node in program.ir.nodes:
+        if isinstance(node, NeuralCore) and getattr(node, "readout_law", None) is not None:
+            for part in _law_tuple(node.readout_law):
+                h.update(part)
+    return h.hexdigest()
 
 
 def _program(weight_bits: int, mult_bits: int):
@@ -188,6 +202,22 @@ def test_a_lane_program_that_keeps_every_path_is_unchanged_and_exact():
     assert_exact(hcm, scm)
     codes, steps = run_golden(mapping, x.numpy())
     assert np.array_equal(codes * steps, hcm.reshape(codes.shape).numpy())
+
+
+def test_the_former_quantile_restores_the_earlier_base_laws(monkeypatch):
+    """[U-BRANGE] With the boundary scales and the lane ranges put back at the former 0.999 quantile (read by the tests'
+    own reference), the program's laws are the earlier base's byte for byte: the range rule moves the ranges and nothing
+    else."""
+    import mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step as boundary_step
+    import mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step as readout_step
+    from unit.pipelining.range_rule_reference import former_rule
+
+    # [U-BRANGE2] the former rule read through the tests' own reference; [stage 1b] at the boundaries and at Readout
+    # Law's lanes path, which the lane fixture now calibrates through
+    monkeypatch.setattr(boundary_step, "least_squares_ranges", former_rule(boundary_step.least_squares_ranges))
+    monkeypatch.setattr(readout_step, "least_squares_pooled", former_rule(readout_step.least_squares_pooled,
+                                                                          pooled=True))
+    assert _program_law_sha(_program(4, 24)) == QUANTILE_RULE_PROGRAM_LAW_SHA
 
 
 def test_the_refusal_is_a_toolchain_refusal_raised_through_the_law_hook():

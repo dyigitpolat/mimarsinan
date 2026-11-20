@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 from mimarsinan.models.spiking.serial.refusals import (
     CycleAtomicRefusalError,
     MappingTransformRefusalError,
@@ -88,7 +89,8 @@ def _require_window_start_membrane(
     if not membrane_init:
         return
     for core_index, core in enumerate(getattr(mapping, "cores", []) or []):
-        theta = float(getattr(core, "threshold", 0.0) or 0.0)
+        theta = 0.0 if getattr(core, "threshold", None) is None else core_threshold(core, "the event-serial fold")
+        theta = theta or 0.0
         charge = float(membrane_init) * theta
         if abs(charge - round(charge)) > _INTEGRALITY_EPS:
             raise SerialMembraneInitError(

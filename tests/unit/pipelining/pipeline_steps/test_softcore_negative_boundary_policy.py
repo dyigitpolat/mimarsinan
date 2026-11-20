@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from conftest import MockPipeline
+from spiking_points import point_of_mode
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import (
     SoftCoreMappingStep,
 )
@@ -76,10 +77,10 @@ def test_no_validation_batches_skips_the_policy(spy):
 
 
 def test_the_calibration_forward_follows_the_spiking_mode(spy):
-    from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_mode
+    from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_point
 
     _step({"spiking_mode": "ttfs"})._apply_negative_boundary_policy(object())
-    assert spy["policy"]["forward_fn"] is calibration_forward_for_mode("ttfs", soma_law=DEFAULT_SOMA_LAW)
+    assert spy["policy"]["forward_fn"] is calibration_forward_for_point(point_of_mode("ttfs"))
 
 
 # ── The mode gate (folded in from the retired test_negative_shift_gate.py) ──
@@ -89,9 +90,11 @@ def test_the_calibration_forward_follows_the_spiking_mode(spy):
 @pytest.mark.parametrize("shift", [True, False])
 def test_unsupported_spiking_mode_fails_loud(mode, shift):
     """The gate now guards BOTH positions: OFF also calibrates, so an
-    unimplemented mode can no longer slip through as a silent no-op."""
+    unimplemented mode can no longer slip through as a silent no-op.
+    [U-LIF2 r2] The walk takes the run's resolved point: such a mode is
+    refused by name at its resolution."""
     step = _step({"negative_value_shift": shift, "spiking_mode": mode})
-    with pytest.raises(NotImplementedError, match="negative_value_shift"):
+    with pytest.raises(ValueError, match=f"spiking_mode '{mode}'"):
         step._apply_negative_boundary_policy(model=object())
 
 

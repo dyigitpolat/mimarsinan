@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from conftest import MockPipeline, default_config
+from spiking_points import declaring_fire_while_integrating
 from unit.deployment_record.record_fixtures import (
     PARAMS_PROGRAMMED_TOTAL,
     make_placement,
@@ -117,7 +118,7 @@ def _nevresim_entry() -> dict:
         "total_spikes": 12345.0,
         "compute_stage_walls": [
             {"stage_index": 0, "name": "maxpool_0",
-             "wall_s_total": 0.5, "invocations": 1},
+             "wall_s_total": 0.5, "invocations": 1, "samples_per_call": 1},  # [U-HOST] the timer's count
         ],
     }
 
@@ -126,7 +127,7 @@ def _build(tmp_path, *, sanafe: bool, nevresim: bool = True,
            gate_samples: int = 0, hcm_entry: dict | None = None,
            scm_entry: dict | None = None, seed_sanafe: bool = True,
            physics_profile: str | None = None):
-    config = default_config()
+    config = declaring_fire_while_integrating(default_config())  # [U-LIF2 W16] the simulators fire while integrating
     config["enable_sanafe_simulation"] = sanafe
     config["enable_nevresim_simulation"] = nevresim
     config["spike_count_parity_samples"] = gate_samples
@@ -212,13 +213,14 @@ class TestSealedArtifact:
         assert floorplan.cores_per_tile == 4
         assert floorplan.derivation == "derived"
         assert record.placement.tiles[0].core_indices == (0, 1)
-        # Host-op wall folded onto the ComputeOp + summed into the latency.
+        # Host-op wall folded onto the ComputeOp: [U-HOST] a diagnostic, never in a priced latency.
         (compute_op,) = [
             s for s in record.schedule.stages
             if isinstance(s, ComputeOpRecord)
         ]
-        assert compute_op.wall_s_total == 0.5
-        assert record.timing.latency.host_ops_s == 0.5
+        assert compute_op.wall_s_total == 0.5 and compute_op.samples_per_call == 1
+        assert record.timing.latency.host_ops_s_raw_total == 0.5  # [U-HOST2] the raw total, named apart
+        assert record.timing.latency.host_ops_s_per_pass == 0.5  # the one per-inference wall (one sample)
         assert "includes NoC hop latency" in record.timing.latency.note
         # The cache promise re-types cleanly.
         entry = pipeline.cache["DeploymentRecordStep.deployment_record"]
@@ -348,10 +350,12 @@ class TestPhysicsReport:
             report = DeploymentCostReport.from_dict(json.load(handle))
         area = [term for term in report.area if term.name == "chip_area_mm2"]
         assert area, "the declared profile prices chip area"
-        # 20 declared cores x 0.0936 mm2 + 46.6 mm2 of periphery.
-        assert area[0].value == pytest.approx(20 * 0.0936 + 46.6)
+        # [U-AREA] 20 declared cores below the published 4,096: the area_rule anchor's proportional nominal (ruling R3;
+        # R5: 20 declared cores x 0.0936 mm2 + 46.6 mm2 of periphery), its evidence by id in the basis.
+        from unit.deployment_record.area_rule._physics import rule_price
+        assert area[0].value == pytest.approx(rule_price("truenorth", ((20, 256, 256),)).nominal)
         assert area[0].band is not None
-        assert "akopyan2015truenorth" in area[0].source
+        assert "T1-TN-01" in area[0].source
 
     def test_the_measured_plane_is_untouched_by_the_priced_one(self, tmp_path):
         """Byte-identity where it matters: adding physics must not move a single

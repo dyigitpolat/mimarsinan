@@ -11,10 +11,11 @@ from mimarsinan.transformations.perceptron.bias_saturation import (
     _STARVATION_ZERO_FRAC,
     clip_off_saturated_effective_bias,
     empirical_bias_shift,
+    position_magnitudes,
     predicted_weight_zero_fraction,
 )
+from mimarsinan.transformations.perceptron import position_bias, position_fold
 from mimarsinan.transformations.quantization_bounds import layer_weight_bits
-from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
     PerceptronTransformer,
 )
@@ -59,6 +60,7 @@ def _apply_decision_verified(perceptron, model, batches, device, reference, appl
         perceptron.layer.bias.data.clone(),
         {k: v.clone() for k, v in perceptron.normalization.state_dict().items()},
     )
+    held = _position_snapshot(perceptron)  # [U-PFOLD] a fold per position's rows and offsets restore with it
     apply()
     verified = _decisions(model, batches, device)
     if all(torch.equal(a, b) for a, b in zip(reference, verified)):
@@ -66,7 +68,17 @@ def _apply_decision_verified(perceptron, model, batches, device, reference, appl
     perceptron.layer.weight.data.copy_(snapshot[0])
     perceptron.layer.bias.data.copy_(snapshot[1])
     perceptron.normalization.load_state_dict(snapshot[2])
+    position_fold.copy_position_state(held, perceptron)
     return False
+
+
+def _position_snapshot(perceptron):
+    """The per-position state (projected rows, bias offsets) as a holder ``copy_position_state`` restores from."""
+    holder = torch.nn.Module()
+    for name in (position_fold.POSITION_WEIGHT, position_fold.POSITION_BIAS):
+        held = getattr(perceptron, name, None)
+        holder.register_buffer(name, None if held is None else held.detach().clone())
+    return holder
 
 
 def canonicalize_starved_bias_outliers(
@@ -138,9 +150,12 @@ def canonicalize_starved_bias_outliers(
                 moved = int((delta.abs() > 0).sum())
                 return effective_bias + delta
 
+            # [U-PFOLD] a fold per position shifts the shared bias, every position's offset as it is
+            write = transformer.write_shared_bias if position_fold.holds_positions(perceptron) else (
+                transformer.apply_effective_bias_transform)
             kept = _apply_decision_verified(
                 perceptron, model, batches, device, reference,
-                lambda: transformer.apply_effective_bias_transform(perceptron, shift),
+                lambda: write(perceptron, shift),
             )
             if moved == 0:
                 continue
@@ -182,21 +197,26 @@ def _remove_nuisance_grid_dominators(
     ):
         attempts += 1
         # The grid compares the weights with the always-on row (the bias over its drive, 1.0 without a stamp).
-        b = bias_row_values(perceptron, transformer.get_effective_bias(perceptron).detach())
-        w = transformer.get_effective_weight(perceptron).detach()
-        w_max = float(w.abs().max())
-        c = int(b.abs().argmax())
-        if float(b.abs()[c]) <= w_max:
+        # [U-PFOLD] every position's weights and biases are scanned, a channel removed on every position alike.
+        w, b = position_magnitudes(perceptron, transformer)
+        b = position_fold.output_rows(b, position_fold.output_axes(perceptron, True).bias).amax(dim=1)
+        w_max = float(w.max())
+        c = int(b.argmax())
+        if float(b[c]) <= w_max:
             return
 
-        def zero_channel(t, c=c):
+        def zero_channel(t, axis, c=c):
             out = t.clone()
-            out[c] = 0.0
+            out.select(axis, c).zero_()  # on the output axis the reader declares for the view
             return out
 
         def remove_channel(zero_channel=zero_channel):
-            transformer.apply_effective_weight_transform(perceptron, zero_channel)
-            transformer.apply_effective_bias_transform(perceptron, zero_channel)
+            axes = position_fold.output_axes(perceptron, transformer.positions)
+            if position_fold.holds_positions(perceptron):
+                position_bias.zero_output_channel(perceptron, c)
+            else:
+                transformer.apply_effective_weight_transform(perceptron, lambda t: zero_channel(t, axes.weight))
+            transformer.apply_effective_bias_transform(perceptron, lambda t: zero_channel(t, axes.bias))
 
         if _apply_decision_verified(
             perceptron, model, batches, device, reference, remove_channel,

@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from spiking_points import declaring_fire_while_integrating
 
 from mimarsinan.config_schema.defaults import (
     CONFIG_KEYS_SET,
@@ -566,7 +567,7 @@ class TestRound5DerivedButOverridable:
             derive_pipeline_runtime_parameters,
         )
 
-        dp = {"spiking_mode": "lif", "firing_mode": "Novena"}
+        dp = declaring_fire_while_integrating({"spiking_mode": "lif", "firing_mode": "Novena"})  # zero reset: FWI only
         derive_pipeline_runtime_parameters(dp)
         assert dp["firing_mode"] == "Novena"
         assert dp["spike_generation_mode"] == "Uniform"

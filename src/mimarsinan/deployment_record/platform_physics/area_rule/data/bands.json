@@ -1,0 +1,159 @@
+{
+ "format_version": 1,
+ "what": "the band factors of chip_area_mm2 per type (review M4), fitted on the held-out estimate's per-chip values",
+ "min_points": 3,
+ "points": [
+  {
+   "chip": "CAP-RAM",
+   "type": "T2_analog",
+   "held_out": 0.8163878041759275,
+   "strict": [
+    1.088287494347677
+   ],
+   "strict_how": "refused by converter kind: its type-default reading"
+  },
+  {
+   "chip": "HERMES 64-core",
+   "type": "T4",
+   "held_out": 1.411149894281284,
+   "strict": [
+    1.411149894281284
+   ],
+   "strict_how": "priced"
+  },
+  {
+   "chip": "HERMES-core (JSSC)",
+   "type": "T4",
+   "held_out": 2.0984908757698664,
+   "strict": [
+    2.7933384046867955
+   ],
+   "strict_how": "priced"
+  },
+  {
+   "chip": "IMAGINE",
+   "type": "T2_analog",
+   "held_out": null,
+   "strict": [
+    1.186913745883268
+   ],
+   "strict_how": "refused by converter kind: its type-default reading"
+  },
+  {
+   "chip": "Loihi",
+   "type": "T1",
+   "held_out": 0.6904447182080065,
+   "strict": [
+    0.6904447182080065
+   ],
+   "strict_how": "priced"
+  },
+  {
+   "chip": "MorphIC",
+   "type": "T1",
+   "held_out": 1.5512144119278066,
+   "strict": [
+    1.5512144119278066
+   ],
+   "strict_how": "priced"
+  },
+  {
+   "chip": "NeuRRAM",
+   "type": "T3",
+   "held_out": 0.43291792400226764,
+   "strict": [
+    0.428699220312524
+   ],
+   "strict_how": "refused by converter kind: its type-default reading"
+  },
+  {
+   "chip": "ODIN",
+   "type": "T1",
+   "held_out": 1.7694909226043694,
+   "strict": [
+    1.7694909226043694
+   ],
+   "strict_how": "priced"
+  },
+  {
+   "chip": "ReckOn",
+   "type": "T1",
+   "held_out": 1.2062729996448938,
+   "strict": [
+    1.2062729996448938
+   ],
+   "strict_how": "priced"
+  },
+  {
+   "chip": "TrueNorth",
+   "type": "T1",
+   "held_out": 0.43296240042071027,
+   "strict": [
+    0.43296240042071027
+   ],
+   "strict_how": "priced"
+  },
+  {
+   "chip": "jiang2023a macro",
+   "type": "T2_digital",
+   "held_out": 0.4340378799861128,
+   "strict": [
+    0.4340378799861128
+   ],
+   "strict_how": "priced"
+  }
+ ],
+ "bands": {
+  "T1": {
+   "value": [
+    0.5651342921432915,
+    2.3096693824412893
+   ],
+   "unit": "1",
+   "evidence_kind": "fitted",
+   "citation": null,
+   "derivation": "L = 1 / max, H = 1 / min of the wider of the held-out and the strict spreads (the strict spread takes a row refused by converter kind at its type's default kind; a row refused for a missing cell enters nothing); a type with fewer than min_points priced points takes the pooled band",
+   "recompute": {
+    "aggregate": "band_wider_of_held_out_and_strict",
+    "types": [
+     "T1"
+    ]
+   },
+   "coverage": 0.6666666666666666,
+   "n_held_out": 5,
+   "n_strict": 5,
+   "held_out": {
+    "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+    "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+   }
+  },
+  "pooled": {
+   "value": [
+    0.3579945767838772,
+    2.332637785697382
+   ],
+   "unit": "1",
+   "evidence_kind": "fitted",
+   "citation": null,
+   "derivation": "L = 1 / max, H = 1 / min of the wider of the held-out and the strict spreads (the strict spread takes a row refused by converter kind at its type's default kind; a row refused for a missing cell enters nothing); a type with fewer than min_points priced points takes the pooled band",
+   "recompute": {
+    "aggregate": "band_wider_of_held_out_and_strict",
+    "types": null
+   },
+   "coverage": 0.8181818181818182,
+   "n_held_out": 10,
+   "n_strict": 11,
+   "held_out": {
+    "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+    "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+   }
+  }
+ },
+ "type_band": {
+  "T1": "T1",
+  "T2_analog": "pooled",
+  "T2_digital": "pooled",
+  "T3": "pooled",
+  "T4": "pooled"
+ }
+}

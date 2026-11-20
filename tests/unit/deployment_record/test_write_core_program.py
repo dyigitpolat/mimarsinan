@@ -16,6 +16,7 @@ import pytest
 
 from mimarsinan.deployment_record.build.write_census import PassRow, ProgramPasses
 from mimarsinan.deployment_record.cost.absolute.step_choice import cheapest_step, price_step
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.cost.absolute.writes import (
     ENERGY_WRITE, WriteInputs, price_write_inputs, price_write_terms,
 )
@@ -86,7 +87,9 @@ class TestEveryRewrittenCore:
     def test_a_chip_that_declares_no_core_programming_energy_prices_as_before(self):
         priced = _energy(price_write_terms(ROTATING, _physics(**FETCH_COMMIT), WritePolicy(batch_k=4)))
         assert _corners(priced.band) == pytest.approx([(2.0 + 3.0) * BYTES * 1e-12 / 4 * J_TO_MJ] * 3, rel=1e-12)
-        assert "e_core_program" not in priced.source
+        # [U-ENERGY, the class swept S-1] the undeclared per-core charge over the rewritten cores: named, never priced
+        assert "e_core_program [" not in priced.source
+        assert priced.source.endswith("; unpriced: e_core_program(core_program)")
 
     def test_kept_cores_and_a_census_that_rewrites_nothing_charge_none(self):
         chip = _physics(**FETCH_COMMIT, e_core_program=CORE)
@@ -168,7 +171,9 @@ def test_the_residency_step_choice_reads_the_charge():
                      e_readout_per_byte=constant(1.0, unit="pJ"))
     chip = apply_overrides(plain, {"e_core_program": constant(20.0, unit="pJ")})
     policy = WritePolicy(batch_k=1)
-    assert cheapest_step([four, two], plain, policy) == 0
-    assert price_step(four, chip, policy).nominal == pytest.approx((100 + 4 * 20) * 1e-12 * J_TO_MJ, rel=1e-12)
-    assert price_step(two, chip, policy).nominal == pytest.approx((100 + 2 * 20 + 10) * 1e-12 * J_TO_MJ, rel=1e-12)
-    assert cheapest_step([four, two], chip, policy) == 1
+    assert cheapest_step([four, two], plain, policy, static=NO_STATIC) == 0
+    assert price_step(four, chip, policy, static=NO_STATIC).nominal == pytest.approx((100 + 4 * 20) * 1e-12 * J_TO_MJ,
+                                                                     rel=1e-12)
+    assert price_step(two, chip, policy, static=NO_STATIC).nominal == pytest.approx(
+        (100 + 2 * 20 + 10) * 1e-12 * J_TO_MJ, rel=1e-12)
+    assert cheapest_step([four, two], chip, policy, static=NO_STATIC) == 1

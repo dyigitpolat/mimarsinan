@@ -9,6 +9,8 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
+from mimarsinan.tuning.model_snapshot import restore_model_state, snapshot_model_state
+
 
 @dataclass(frozen=True)
 class DeployedRiskResult:
@@ -19,8 +21,9 @@ class DeployedRiskResult:
     resumed_from: int
 
 
-def _cpu_state(model) -> dict:
-    return {k: v.detach().clone().cpu() for k, v in model.state_dict().items()}
+def _cpu_state(model):
+    """The one snapshot on the host (the state dictionary and the perceptrons' records)."""
+    return snapshot_model_state(model, {k: v.detach().clone().cpu() for k, v in model.state_dict().items()})
 
 
 def _atomic_save(payload: dict, path: str) -> None:
@@ -78,7 +81,7 @@ def run_deployed_risk_finetune(
     best_state: dict | None = None
     if checkpoint_path is not None and os.path.exists(checkpoint_path):
         payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-        model.load_state_dict(payload["model"])
+        restore_model_state(model, payload["model"])
         optimizer.load_state_dict(payload["optimizer"])
         schedule.load_state_dict(payload["schedule"])
         step = resumed_from = int(payload["step"])
@@ -141,7 +144,7 @@ def run_deployed_risk_finetune(
     last = float(eval_genuine())
     _record(last)
     if best_state is not None and best_val > last:
-        model.load_state_dict(best_state)
+        restore_model_state(model, best_state)
         final = best_val
     else:
         final = last

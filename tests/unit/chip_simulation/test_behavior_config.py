@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from spiking_points import declaring_fire_while_integrating
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.firing_strategy import FiringMode
@@ -23,9 +24,9 @@ def test_for_lava_rejects_non_lif():
 
 
 def test_for_lava_accepts_lif():
-    behavior = NeuralBehaviorConfig.for_lava(
+    behavior = NeuralBehaviorConfig.for_lava(declaring_fire_while_integrating(
         {"spiking_mode": "lif", "firing_mode": "Novena", "thresholding_mode": "<"}
-    )
+    ))
     assert behavior.spiking_mode == "lif"
     assert behavior.firing_mode == "Novena"
 

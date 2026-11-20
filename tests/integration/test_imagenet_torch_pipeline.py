@@ -133,6 +133,7 @@ def _merged_config_for_imagenet_torch_specs() -> dict:
             "finetune_epochs": 0,
             "model_config": {"base_activation": "ReLU"},
             "spiking_mode": "lif",
+            "lif_window_firing": "fire_while_integrating",  # [U-LIF2 W16] nevresim fires per cycle
             "activation_quantization": False,
             "weight_quantization": False,
             "degradation_tolerance": 0.0,

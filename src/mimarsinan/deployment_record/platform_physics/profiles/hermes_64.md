@@ -18,7 +18,6 @@ lies outside the per-core footprint and its area refuses by name.
 | `e_mac` | 204.9 fJ (one-phase), band to 806.5 fJ (four-phase) | published | Table I p.18: 9.76 and 2.48 TOPS/W, 1 MAC = 2 OPs; the MVM energy aggregates array, ADC and PWM (p.10) |
 | `t_cycle` | 133 ns, band to 520 ns | published | Table I p.18: one MVM one-phase and four-phase |
 | `area_per_core_total` | 1.392 mm^2 | published | core 1.2 x 1.16 mm (p.1-2) |
-| `area_global_fixed` | 54.912 mm^2 | derived | 144 mm^2 chip less 64 cores (p.1-2) |
 | `t_write_setup_per_event` | 1.536 ms per core (1.6384 ms with the 50 ns trailing edge) | derived | published p.689-690: every unit cell's four devices RESET (125 ns) and device 1 SET (250 ns), 32 source lines in parallel: 8,192 + 2,048 programming cycles |
 | `t_write_per_unit` | 0.4526 / 0.6492 / 1.0424 ms per core iteration | derived | published p.690: one 125 ns pulse per unit cell (32 in parallel) and one verify round of the 256 diagonals at 1, 2 or 4 reads of 512 + 256 ns |
 | `write_verify_iterations` | 1 - 30, nominal 5.48 | published | published p.690: "the maximum number of iterations (30)"; the mean is not stated |
@@ -58,3 +57,17 @@ different device and a different algorithm) programs with 100 ns block pulses, i
 1.125 V and 1.275 V" (Fig. 7), within a budget of at most 10 iterative steps per unit cell (Fig. 6, "<=10 OPS").
 `papandreou2011programming` (ref. 30) plots the spread of the iteration count, not its mean, so
 `write_verify_iterations` keeps 1 - 30 with no published mean.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T4 (phase-change in-memory compute); an anchor: its own published core scaled by the census's cells, converters or bits (rho), its size and word width flagged.
+- **Outside part (`outside: own_die`).** the published die's core-grid share (gamma of its own die); an area_global_fixed beside it is refused by name ('the outside part is stated twice').
+- **Node.** 14 nm.
+- **Anchor (die).** core_mm2 `v('T4-HE-02')`; die_mm2 `v('T4-HE-01')`; n_pub `s('T4-HE-01', 'scope', '64 cores', 64)`; its own share: published_split `r('types/t4:s')`.
+- **Organization.** 256 x 256, 4 weight bits per cell, 1 columns per converter; term weights {'cells': 36.0, 'converters': 27.0}. Citations: rows, cols: T4-HE-02 scope (256 x 256 unit cells); columns_per_converter: T4-HE-04 (256 ADCs per core) over 256 output lines; term_weights: T4-HE-03 (PCM array 36%, ADC 27% of the main components); weight_bits_per_cell: CO profiles/hermes_64.json validity.geometry.cell_bits.
+- **Converter.** kind `cco_time_based`, 256 per core; it resolves at the run's readout bits (review N-6), and an area_per_adc beside it is refused by name ('the converter area is stated twice').
+- **Dropped.** area_global_fixed 54.912 mm2 (derived): the outside part is gamma.
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

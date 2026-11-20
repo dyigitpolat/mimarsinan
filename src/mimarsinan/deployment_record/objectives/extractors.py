@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
+from mimarsinan.chip_simulation.hybrid_run.stage_timing import host_wall
 from mimarsinan.deployment_record.cost.terms import CostTerm, find_term_or_none
 from mimarsinan.deployment_record.objectives.spec import RecordView
 
@@ -155,16 +156,15 @@ def latency_steps_backing() -> Backing:
 
 
 def host_op_wall_backing() -> Backing:
-    """The measured whole-run host-ComputeOp wall, when any op was timed."""
+    """[U-HOST] The measured host-ComputeOp wall per inference (``stage_timing.host_wall``, the one per-inference
+    host wall: the development machine's, a diagnostic), when any op was timed with its sample count."""
 
     def read(view: RecordView) -> Optional[float]:
         record = view.record
-        if record is None or record.timing.latency.host_ops_s is None:
-            return None
-        return float(record.timing.latency.host_ops_s)
+        return None if record is None else host_wall(record.schedule.stages).per_inference_s
 
     return Backing(
-        requires="a timed host ComputeOp wall (timing.latency.host_ops_s)",
+        requires="a timed host ComputeOp wall with its calls and samples per call (stage_timing.host_wall)",
         reader=read,
     )
 

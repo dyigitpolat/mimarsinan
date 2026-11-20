@@ -1,13 +1,79 @@
 {
   "name": "xformer_pe_like",
-  "display_name": "X-Former PE crossbars (Sridharan 2023): 128 x 128",
+  "display_name": "X-Former PE crossbars (Sridharan 2023), 128 x 128",
   "geometry": "xformer_pe_like",
-  "keys": {},
+  "keys": {
+    "core_semantics": "mvm",
+    "activation_bits": 8
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
+  },
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "sridharan2023xformer",
+        "location": "Section I, PDF p.1",
+        "quote": "they provide high storage density while performing massively parallel matrix vector multiplications within memory arrays.",
+        "reads": "massively parallel matrix vector multiplications"
+      }
+    },
+    "weight_bits": {
+      "stated": {
+        "value": 8,
+        "source": "sridharan2023xformer",
+        "location": "Table II 'Summary of Network Topology', PDF p.7",
+        "quote": "Bit-width (W, Q, K, V) (8, 8, 8, 8)",
+        "reads": "Bit-width (W, Q, K, V) (8, 8, 8, 8)",
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The source bit-slices 8-bit weights over 2-bit ReRAM cells ('we use bit-slicing ... to represent the higher precision weights') and states no count per weight."
+            }
+          },
+          "cell_bits": {
+            "stated": {
+              "value": 2,
+              "source": "sridharan2023xformer",
+              "location": "Table I 'Simulation Parameters', NVM device row, PDF p.7",
+              "quote": "ReRAM - 2bit",
+              "reads": "ReRAM - 2bit"
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The source states no bias handling; the registered geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "activation_bits": {
+      "stated": {
+        "value": 8,
+        "source": "sridharan2023xformer",
+        "location": "Section IV 'Projection Engine', PDF p.4",
+        "quote": "The state of the art accuracy for Transformers inference on a variety of downstream tasks has been shown with 8-bit fixed point weights and 8-bit fixed point activations [27].",
+        "reads": "8-bit fixed point activations"
+      }
+    },
+    "readout_law": {
+      "unstated": {
+        "note": "Two shared 8-bit ADCs per crossbar read bit-sliced 2-bit cells under 1-bit bit-streamed inputs (Table I; Section IV): a per-array converter on partial products, not the toolchain's per-core law on the fused accumulator (W47's per-array ADC, not built); the deployment declares one."
+      }
+    },
+    "onchip_arithmetic": {
+      "unstated": {
+        "note": "Softmax, layer normalization and vector operations run on the CMOS attention engine's special function unit (Section IV), not at the crossbar cores' outputs; no class of the toolchain's lanes is stated for the cores."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The attention products of run-time matrices run on CMOS processing elements (an Attention engine comprising of CMOS tiles, Section I); the description declares only the NVM crossbars, so no operand core type: a deployment declares one."
+      }
+    }
   }
 }

@@ -11,6 +11,13 @@ from mimarsinan.deployment_record.platform_physics import (
 )
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 
+import tempfile
+from pathlib import Path
+
+from unit.deployment_record.registered_hosts import declared_rows, registered
+
+from unit.deployment_record.printed_names import unpriced_names
+
 
 def _quantities(**values):
     return Quantities({
@@ -26,7 +33,9 @@ def _physics(**extra):
                    "evidence_kind": "estimated", "note": "n"},
     }
     overrides.update(extra)
-    return apply_overrides(get_platform_physics("loihi"), overrides)
+    # [U-HOST2] the test numbers as a test host's own description, registered for the resolve
+    with tempfile.TemporaryDirectory() as directory, registered(Path(directory), "test_overhead_host", overrides):
+        return apply_overrides(get_platform_physics("loihi"), declared_rows("test_overhead_host", overrides))
 
 
 _BASE = dict(synaptic_events=1e6, host_macs=1_000_000, cores_physical=8,
@@ -39,7 +48,7 @@ class TestTheComposition:
         dwarf it — the shape the study measured (~2000x on tiny ops)."""
         physics = _physics(t_host_op_overhead={
             "nominal": 500.0, "unit": "us",
-            "evidence_kind": "measured", "note": "n"})
+            "evidence_kind": "estimated", "note": "n"})  # [U-HOST2] a test number
         with_ops = price_absolute(
             _quantities(**_BASE, compute_op_count=3), physics)
         term = {t.name: t for t in with_ops.terms}["latency_host_s"]
@@ -56,17 +65,17 @@ class TestTheComposition:
         assert term.value == pytest.approx(100e-6, rel=1e-6)
         assert "unpriced: t_host_op_overhead" in term.source
 
-    def test_a_measured_wall_never_double_charges_the_overhead(self):
-        """The record plane's measured wall already CONTAINS the dispatch —
-        the overhead term is candidate-plane only."""
+    def test_a_measured_wall_prices_nothing(self):
+        """[U-HOST] The development machine's measured wall is a diagnostic: the declared host's rate and dispatch
+        price the host time on every plane, with or without a wall."""
         physics = _physics(t_host_op_overhead={
             "nominal": 500.0, "unit": "us",
-            "evidence_kind": "measured", "note": "n"})
+            "evidence_kind": "estimated", "note": "n"})  # [U-HOST2] a test number
         pricing = price_absolute(
             _quantities(**_BASE, compute_op_count=3, host_ops_s=0.002), physics)
         term = {t.name: t for t in pricing.terms}["latency_host_s"]
-        assert term.value == pytest.approx(0.002, rel=1e-6)
-        assert "t_host_op_overhead" not in term.source
+        assert term.value == pytest.approx(100e-6 + 3 * 500e-6, rel=1e-6)
+        assert "t_host_op_overhead" in term.source and "host_ops_s" not in term.source
 
 
 _NO_HOST_MACS = dict(_BASE, host_macs=0)
@@ -77,7 +86,7 @@ class TestDispatchWithoutHostMacs:
 
     def test_a_declared_overhead_prices_the_dispatch(self):
         physics = _physics(t_host_op_overhead={
-            "nominal": 500.0, "unit": "us", "evidence_kind": "measured", "note": "n"})
+            "nominal": 500.0, "unit": "us", "evidence_kind": "estimated", "note": "n"})  # [U-HOST2] a test number
         pricing = price_absolute(_quantities(**_NO_HOST_MACS, compute_op_count=3), physics)
         term = {t.name: t for t in pricing.terms}["latency_host_s"]
         assert term.value == pytest.approx(3 * 500e-6, rel=1e-12)
@@ -87,22 +96,26 @@ class TestDispatchWithoutHostMacs:
         pricing = price_absolute(_quantities(**_NO_HOST_MACS, compute_op_count=3), _physics())
         terms = {t.name: t for t in pricing.terms}
         assert "latency_host_s" not in terms
-        assert "unpriced: t_host_op_overhead(per-invocation dispatch)" in terms["e2e_latency_s"].source
+        # [U-ENERGY class 2] read among the unpriced names: a row over a census the view does not produce precedes it
+        assert "t_host_op_overhead(per-invocation dispatch)" in unpriced_names(terms["e2e_latency_s"].source)
         assert "p_host x t_host_op_overhead(per-invocation dispatch)" in terms["energy_per_inference_mj"].source
 
     def test_host_macs_keep_their_behaviour(self):
         pricing = price_absolute(_quantities(**_BASE, compute_op_count=3), _physics())
         assert {t.name: t for t in pricing.terms}["latency_host_s"].value == pytest.approx(100e-6, rel=1e-6)
 
-    def test_a_measured_wall_without_host_macs_keeps_an_empty_host_time(self):
-        """ODIN declares no host_compute_rate: a record's measured wall must not turn into a refusal. [U-C2 G-2] ODIN
-        prices its compute on the event census of one core, so the census here is one ODIN core's."""
+    def test_a_measured_wall_without_host_macs_prices_nothing(self):
+        """[U-HOST] A record's measured wall without host MACs neither prices the host nor turns into a refusal: the
+        dispatch is named unpriced (no host is declared). [U-C2 G-2] ODIN prices its compute on the event census of
+        one core, so the census here is one ODIN core's."""
         odin = get_platform_physics("odin")
         pricing = price_absolute(
             _quantities(**dict(_NO_HOST_MACS, cores_physical=1), compute_op_count=3, host_ops_s=0.002), odin)
         assert "latency_host_s" not in {t.name for t in pricing.terms}
         assert not any("host" in r.reason for r in pricing.refusals)
-        assert "t_host_op_overhead" not in {t.name: t for t in pricing.terms}["e2e_latency_s"].source
+        source = {t.name: t for t in pricing.terms}["e2e_latency_s"].source
+        assert "t_host_op_overhead(per-invocation dispatch)" in source.split("unpriced: ", 1)[-1]
+        assert "host_ops_s" not in source
 
     def test_no_dispatch_no_host_term(self):
         pricing = price_absolute(_quantities(**_NO_HOST_MACS, compute_op_count=0), _physics())
@@ -125,11 +138,12 @@ class TestTheCandidateCountsItsOps:
 
 class TestTheCalibrationBlock:
     def test_the_measured_band_is_percentiles_not_a_point(self):
+        """[U-HOST] The calibration's rows are the development machine's diagnostic, measured percentiles."""
         from mimarsinan.deployment_record.platform_physics.host_calibration import (
-            calibration_overrides,
+            calibration_diagnostic,
         )
 
-        block = calibration_overrides(
+        block = calibration_diagnostic(
             macs_per_s=1e9, op_overhead_s=(10e-6, 20e-6, 40e-6),
             p_host_w=None, identity="h")
         overhead = block["t_host_op_overhead"]

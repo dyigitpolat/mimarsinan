@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.chip_simulation.hybrid_run.output_decode import decode_held
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.mappers.source_gauges import read_source_gauges
-from mimarsinan.mapping.support.gauge_channels import gauge_axis, gauge_view
+from mimarsinan.mapping.support.activation_scales import hop_scale
+from mimarsinan.mapping.support.gauge_channels import wire_gauge
 from mimarsinan.models.nn.activations.autograd import RoundedStaircaseFunction
+from mimarsinan.models.nn.lif_kernels import window_counts
 from mimarsinan.models.spiking.serial import refuse_cycle_atomic_walk
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 from mimarsinan.spiking.cycle_trains import SegmentReaders, encode_train, scale_train, train_mean
@@ -26,12 +29,6 @@ from mimarsinan.spiking.segment_policy_lif_serial import run_streamed_lif_cycles
 from mimarsinan.spiking.segment_policy_ttfs import TtfsSegmentPolicy
 
 __all__ = ["AnalyticalSegmentPolicy", "LifSegmentPolicy", "MixedGatherDitherError", "TtfsSegmentPolicy"]
-
-
-def _safe_scale(scale, ref: torch.Tensor):
-    if isinstance(scale, torch.Tensor):
-        return scale.to(device=ref.device, dtype=ref.dtype).clamp(min=1e-12)
-    return max(float(scale), 1e-12)
 
 
 class LifSegmentPolicy(HostCurrencyHooks):
@@ -91,10 +88,9 @@ class LifSegmentPolicy(HostCurrencyHooks):
         self._prepare_currencies(driver)
 
     def _wire_scale(self, dep, scalar, value):
-        """[U-SC2] A wire value's re-encode scale: its per-channel gauge per element where the source walk carries one
-        (the aligned vector the deployed core folds), else the boundary table's scalar."""
-        view = gauge_view((self._source_gauges or {}).get(dep), value, gauge_axis(dep))
-        return scalar if view is None else view
+        """[U-SC2, U-TGAUGE4] A wire value's re-encode scale: the gauge the source walk places each element at
+        (``gauge_channels.wire_gauge``: the aligned vector the deployed core folds), else the boundary table's scalar."""
+        return wire_gauge(dep, (self._source_gauges or {}).get(dep), scalar, value)
 
     def finalize(self, driver):
         self._set_all_cycle_accurate(driver, False)
@@ -218,7 +214,7 @@ class LifSegmentPolicy(HostCurrencyHooks):
             p = perceptron_of(node)
             if p is not None:
                 lif = self._lif_of(p)
-                scale = _safe_scale(getattr(lif or p, "activation_scale", 1.0), x)
+                scale = hop_scale(lif or p, p, x, lambda: rate_of(d[0]) if d else x)  # [U-PFOLD, S-12] its axis
                 if getattr(p, "is_encoding_layer", False):
                     if lif is not None:
                         lif.set_cycle_accurate(False)
@@ -237,7 +233,8 @@ class LifSegmentPolicy(HostCurrencyHooks):
                     if lif is not None:
                         lif.set_cycle_accurate(False)
                         functional.reset_net(lif.if_node)
-                    out_val = forward_node(node, [value_of(dep, p) for dep in d])
+                    with window_counts(lif):  # [U-LIF2 W10] each hop's count is its window charge's lif_window_count
+                        out_val = forward_node(node, [value_of(dep, p) for dep in d])
                     rate_norm = (out_val / scale).clamp(0.0, 1.0)
                     node_rate[node] = rate_norm
                     if node is driver._output:
@@ -272,6 +269,28 @@ class LifSegmentPolicy(HostCurrencyHooks):
         for n in driver.external_consumed(seg_nodes):
             values[n] = node_rate[n]
         if driver._output in seg_set:
-            train = node_train.get(driver._output)
-            return train_mean(train) if train is not None else node_rate[driver._output]
+            return self._segment_output(driver, node_train, node_rate)
         return None
+
+    def _segment_output(self, driver, node_train, node_rate):
+        """[U-TGAUGE] A segment's output node in the value domain: a core's own hop decodes it (its train carries the
+        activation scale, a two-window output hop multiplied its rate back by it); any other output (a layout node) is
+        decoded from its rate as a host output is, so no source of it is re-encoded for a reader that does not exist."""
+        out = driver._output
+        if perceptron_of(out) is None:
+            return self.decode_output(driver, out, node_rate[out])
+        train = node_train.get(out)
+        return train_mean(train) if train is not None else node_rate[out]
+
+    def decode_output(self, driver, node, value):
+        """[U-TGAUGE] ``node``'s value in the value domain by the inverse of the walk's encode there, through the one decode
+        every reader of an output as a value uses ([U-TGAUGE2] ``decode_held``): a wire value at the gauge the walk reads
+        it at (``_wire_scale``: per element where the source walk carries a per-channel gauge, else the boundary table's
+        scalar), an absolute value at one, a MIXED gather element by element. Applied to the walk's output only, once."""
+        currency = (self._absolute_nodes or {}).get(node, False)
+        if currency == MIXED:
+            mask, scale = (self._mixed_currency or {})[node]
+            scale = scale.to(device=value.device, dtype=value.dtype)
+            return decode_held(value, torch.where(mask > 0.5, torch.ones_like(scale), scale))
+        scalar = (self._boundary_scales or {}).get(node, 1.0)
+        return decode_held(value, None if currency else self._wire_scale(node, scalar, value))

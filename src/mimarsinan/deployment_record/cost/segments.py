@@ -1,10 +1,12 @@
 """Per-segment initialization cost: the reset constant + the programming payload.
 
 One scheduled ``(segment × pass)`` costs a per-core reset/init constant plus
-the payload its programming port has to move: the exact ``params_bytes`` the
-mapping wrote plus the exact span ``connectivity_entries`` at a MODELED byte
-width. A **resident** segment moves no payload at all — it costs exactly the
-reset constant — because nothing is reprogrammed into its cores.
+the payload its programming port has to move per round. [U-ENERGY] The payload is
+what the record's PERIOD CENSUS writes in the segment (one rule with every load,
+``quantities.planes.loads``): the payload bytes of the cores it rewrites plus their
+exact span ``connectivity_entries`` at a MODELED byte width. A segment the census
+rewrites nothing of (a resident one, or a lone written pass that stays loaded across
+rounds) moves no payload: it costs exactly the reset constant.
 
 The DMA energy is the existing per-phase model
 (``weight_reuse_cost_model.phase_cost_model``) applied to those real bytes; the
@@ -15,7 +17,7 @@ monotone).
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 from mimarsinan.deployment_record.cost.coefficients import (
     E_DMA_PER_BYTE_MJ,
@@ -27,28 +29,31 @@ from mimarsinan.deployment_record.cost.coefficients import (
 )
 from mimarsinan.deployment_record.cost.combine import modeled
 from mimarsinan.deployment_record.cost.terms import SegmentInitCost
+from mimarsinan.deployment_record.quantities.planes.loads import period_programming, record_load_inputs
 from mimarsinan.deployment_record.schema import Band, DeploymentRecord, SegmentRecord
 
 RESIDENT_PAYLOAD_BASIS = (
-    "a resident segment is not reprogrammed: no weight or connectivity payload "
-    "crosses the programming port, so it costs exactly the per-core reset "
-    "constant"
+    "the record's period census rewrites none of this segment's cores (a resident segment, or a lone written pass "
+    "that stays loaded across rounds): no weight or connectivity payload crosses the programming port, so it costs "
+    "exactly the per-core reset constant"
 )
 
 
 def payload_bytes_band(
-    segment: SegmentRecord, path: str, bytes_per_connectivity_entry: Band
+    segment: SegmentRecord, path: str, bytes_per_connectivity_entry: Band,
+    written: Tuple[int, Optional[int]] = (0, 0),
 ) -> Band:
-    """The programmed payload in bytes (identically zero for a resident pass)."""
-    if segment.programming == "resident":
+    """The payload the period census writes in the segment, in bytes (``written``: its rewritten cores' payload bytes
+    and connectivity entries; identically zero where it rewrites none)."""
+    payload, entries = written
+    if not payload and not entries:
         return Band(low=0.0, nominal=0.0, high=0.0, basis=RESIDENT_PAYLOAD_BASIS)
+    unstated = "" if entries is not None else "; the record states no connectivity entries per core: unpriced"
     return banded(
-        lambda corner: float(segment.params_bytes)
-        + float(segment.connectivity_entries)
-        * corner_value(bytes_per_connectivity_entry, corner),
+        lambda corner: float(payload) + float(entries or 0) * corner_value(bytes_per_connectivity_entry, corner),
         basis=(
-            f"{path}.params_bytes (exact) + {path}.connectivity_entries (exact) "
-            f"x bytes_per_connectivity_entry: {bytes_per_connectivity_entry.basis}"
+            f"{path}: the period census's rewritten cores, their payload bytes (exact) + their connectivity_entries "
+            f"(exact) x bytes_per_connectivity_entry: {bytes_per_connectivity_entry.basis}{unstated}"
         ),
     )
 
@@ -60,11 +65,12 @@ def segment_cost(
     core_init: CoreInitCoefficients,
     bytes_per_connectivity_entry: Band,
     programming_bandwidth_bytes_per_s: Band,
+    written: Tuple[int, Optional[int]] = (0, 0),
 ) -> SegmentInitCost:
     """One segment's initialization cost, every term banded and sourced."""
     path = f"schedule.stages[{position}]"
     cores = len(segment.cores)
-    payload = payload_bytes_band(segment, path, bytes_per_connectivity_entry)
+    payload = payload_bytes_band(segment, path, bytes_per_connectivity_entry, written)
     terms = (
         modeled(
             "reset_energy_mj", "mJ",
@@ -113,6 +119,17 @@ def segment_cost(
     )
 
 
+def programming_refusal(record: DeploymentRecord) -> str:
+    """Why the cost model cannot price a record's per-segment programming ("" when it can): it prices what the
+    record's period census writes (one rule with every load), so a record whose census cannot be stated is refused by
+    this name, as a precondition of the model, never mid-report."""
+    written, why = period_programming(record_load_inputs(record))
+    if written is not None:
+        return ""
+    return ("the cost model's per-segment programming prices what the record's period census writes (one rule with "
+            f"every load), and that census cannot be stated: {why}")
+
+
 def segment_costs(
     record: DeploymentRecord,
     *,
@@ -120,7 +137,14 @@ def segment_costs(
     bytes_per_connectivity_entry: Band,
     programming_bandwidth_bytes_per_s: Band,
 ) -> Tuple[SegmentInitCost, ...]:
-    """Every scheduled segment's initialization cost, in schedule order."""
+    """Every scheduled segment's initialization cost, in schedule order: each segment programs what the record's period
+    census writes in it (one census pass per segment, in schedule order), refused by name where that census cannot be
+    stated (``programming_refusal``, the model's precondition)."""
+    written, _ = period_programming(record_load_inputs(record))
+    if written is None:
+        raise ValueError(programming_refusal(record))
+    segments = [(position, stage) for position, stage in enumerate(record.schedule.stages)
+                if isinstance(stage, SegmentRecord)]
     return tuple(
         segment_cost(
             stage,
@@ -128,7 +152,7 @@ def segment_costs(
             core_init=core_init,
             bytes_per_connectivity_entry=bytes_per_connectivity_entry,
             programming_bandwidth_bytes_per_s=programming_bandwidth_bytes_per_s,
+            written=writes,
         )
-        for position, stage in enumerate(record.schedule.stages)
-        if isinstance(stage, SegmentRecord)
+        for (position, stage), writes in zip(segments, written, strict=True)
     )

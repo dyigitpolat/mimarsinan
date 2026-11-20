@@ -31,6 +31,7 @@ import torch
 from conftest import MockPipeline, make_tiny_supermodel, default_config
 
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
+from mimarsinan.models.perceptron_mixer.perceptron import placed_on_cores
 from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import (
     NormalizationAwarePerceptronQuantizationTuner,
 )
@@ -44,6 +45,12 @@ def _make_pipeline(tmp_path):
     cfg["tuning_budget_scale"] = 1.0
     cfg["degradation_tolerance"] = 0.05
     return MockPipeline(config=cfg, working_directory=str(tmp_path))
+
+
+def _projected(tuner):
+    """[U-POST G3] The perceptrons the projection reaches: the ones the placement maps to cores (the tiny model's
+    first perceptron is a subsumed encoder, which keeps its float weights)."""
+    return [p for p in tuner.model.get_perceptrons() if placed_on_cores(p)]
 
 
 def _make_tuner(tmp_path):
@@ -76,7 +83,7 @@ class TestMaskFrozenWithinCycle:
         successive invocations."""
         tuner = _make_tuner(tmp_path)
 
-        perceptrons = list(tuner.model.get_perceptrons())
+        perceptrons = _projected(tuner)
         assert perceptrons, "test supermodel must have at least one perceptron"
 
         base = copy.deepcopy(perceptrons[0]).to(tuner._device)
@@ -104,7 +111,7 @@ class TestMaskFrozenWithinCycle:
         ``temp_p``, refreshed from aux_model each step). All must yield
         bit-identical post-transform perceptron state."""
         tuner = _make_tuner(tmp_path)
-        perceptrons = list(tuner.model.get_perceptrons())
+        perceptrons = _projected(tuner)
         base = copy.deepcopy(perceptrons[0]).to(tuner._device)
         slot = copy.deepcopy(base).to(tuner._device)
 
@@ -132,7 +139,7 @@ class TestMaskRefreshedAcrossCycles:
     def test_different_rate_yields_different_mask(self, tmp_path):
         torch.manual_seed(0)
         tuner = _make_tuner(tmp_path)
-        perceptrons = list(tuner.model.get_perceptrons())
+        perceptrons = _projected(tuner)
 
         base = copy.deepcopy(perceptrons[0]).to(tuner._device)
 
@@ -157,7 +164,7 @@ class TestMaskRefreshedAcrossCycles:
         element-wise (they both redraw the mask)."""
         torch.manual_seed(123)
         tuner = _make_tuner(tmp_path)
-        perceptrons = list(tuner.model.get_perceptrons())
+        perceptrons = _projected(tuner)
         base = copy.deepcopy(perceptrons[0]).to(tuner._device)
 
         transform_a = tuner._mixed_transform(0.4)
@@ -184,7 +191,7 @@ class TestEndpointsAreDeterministic:
     def test_rate_zero_is_identity(self, tmp_path):
         torch.manual_seed(42)
         tuner = _make_tuner(tmp_path)
-        perceptrons = list(tuner.model.get_perceptrons())
+        perceptrons = _projected(tuner)
         base = copy.deepcopy(perceptrons[0]).to(tuner._device)
 
         transform = tuner._mixed_transform(0.0)
@@ -202,7 +209,7 @@ class TestEndpointsAreDeterministic:
         _get_new_perceptron_transform(1.0) alone."""
         torch.manual_seed(7)
         tuner = _make_tuner(tmp_path)
-        perceptrons = list(tuner.model.get_perceptrons())
+        perceptrons = _projected(tuner)
         base = copy.deepcopy(perceptrons[0]).to(tuner._device)
 
         p_mixed = copy.deepcopy(base).to(tuner._device)
@@ -229,7 +236,7 @@ class TestScalarParamMasking:
         transform calls on the same slot within one cycle must keep each
         scalar stable."""
         tuner = _make_tuner(tmp_path)
-        perceptrons = list(tuner.model.get_perceptrons())
+        perceptrons = _projected(tuner)
         base = copy.deepcopy(perceptrons[0]).to(tuner._device)
         slot = copy.deepcopy(base).to(tuner._device)
 

@@ -1,4 +1,5 @@
 import pytest
+from spiking_points import declaring_fire_while_integrating
 
 from mimarsinan.config_schema import build_flat_pipeline_config
 from mimarsinan.config_schema.defaults import get_default_deployment_parameters
@@ -127,7 +128,7 @@ def test_simulator_enables_are_recipe_derived_not_defaults():
     dict carries none, and the derivation always writes them."""
     dp = get_default_deployment_parameters()
     assert "enable_nevresim_simulation" not in dp
-    derived = {"spiking_mode": "lif"}
+    derived = declaring_fire_while_integrating({"spiking_mode": "lif"})  # [U-LIF2 W16] the simulators fire per cycle
     derive_deployment_parameters(derived)
     assert derived["enable_nevresim_simulation"] is True
     assert derived["enable_loihi_simulation"] is True
@@ -161,7 +162,7 @@ def test_ttfs_genuine_blend_ce_alpha_in_config_keys_set():
 def test_lif_folds_the_proven_recipe_and_enables_loihi():
     # A config carrying only the hypervolume coordinate (mode + precision) gets the
     # full proven LIF recipe folded in by the policy SSOT.
-    dp = {"spiking_mode": "lif", "weight_quantization": True}
+    dp = declaring_fire_while_integrating({"spiking_mode": "lif", "weight_quantization": True})  # [U-LIF2 W16]
     derive_deployment_parameters(dp)
     assert dp["optimization_driver"] == "fast"
     assert dp["lif_blend_fast"] is True
@@ -308,15 +309,15 @@ class TestVehicleUserOff:
         assert dp["enable_nevresim_simulation"] is False
 
     def test_unset_supported_vehicles_default_on(self):
-        dp = {"spiking_mode": "lif", "weight_quantization": True}
+        dp = declaring_fire_while_integrating({"spiking_mode": "lif", "weight_quantization": True})  # [U-LIF2 W16]
         derive_deployment_parameters(dp)
         assert dp["enable_nevresim_simulation"] is True
         assert dp["enable_loihi_simulation"] is True
         assert dp["enable_sanafe_simulation"] is True
 
     def test_explicit_on_of_a_supported_vehicle_is_accepted(self):
-        dp = {"spiking_mode": "lif", "weight_quantization": True,
-              "enable_loihi_simulation": True}
+        dp = declaring_fire_while_integrating({"spiking_mode": "lif", "weight_quantization": True,
+                                               "enable_loihi_simulation": True})  # [U-LIF2 W16]
         derive_deployment_parameters(dp)
         assert dp["enable_loihi_simulation"] is True
 
@@ -391,7 +392,7 @@ class TestRecipeKnobExplicitWins:
 def test_vanilla_float_still_gets_driver_and_sim_enables():
     # The mode-level recipe (driver + capability sim-enables) applies even for the
     # float regime; only the quant flags are forced off by the vanilla branch.
-    dp = {"spiking_mode": "lif", "weight_quantization": False}
+    dp = declaring_fire_while_integrating({"spiking_mode": "lif", "weight_quantization": False})  # [U-LIF2 W16]
     derive_deployment_parameters(dp)
     assert dp["pipeline_mode"] == "vanilla"
     assert dp["activation_quantization"] is False
@@ -424,7 +425,7 @@ class TestTtfsFiringValidation:
             derive_pipeline_runtime_parameters,
         )
 
-        dp = {"spiking_mode": "lif", "firing_mode": "Novena"}
+        dp = declaring_fire_while_integrating({"spiking_mode": "lif", "firing_mode": "Novena"})  # zero reset: FWI only
         derive_pipeline_runtime_parameters(dp)
         assert dp["firing_mode"] == "Novena"
 

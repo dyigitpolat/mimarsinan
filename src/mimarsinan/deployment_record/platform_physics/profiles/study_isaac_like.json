@@ -265,13 +265,6 @@
       "citation": "RA/06_build/pd_probe/pd_table.json row g6_ng45_128x64x4 (audit_v4/pd.md sec. 5.1)",
       "derivation": "The chip's own cells per bit: one cell is a 4-bit weight slot of area_per_cell 4.149207 um2 (plus 4 x area_per_cell_per_weight_bit, 0), so 1.037302 um2 per bit (the routed tile's fakeram45 macro area per bit, pd_table.json macro_um2_per_bit), x 8 per byte = 8.298413 um2 per byte, a point value as area_per_cell is.",
       "note": "[not priced by the study] Bitcells only: the buffer's decoder, sense-amplifier and driver periphery is not priced (no source read here states an SRAM macro's array efficiency at 45 nm). The study's estimator holds no on-chip buffer: every pass-boundary value it carries crosses its DDR store (x9_0_v3._front_mincarry). The buffer is U-F4's declared component (carry_buffer_bytes, a run's declaration); a carried byte is written once and read once (carry_onchip_bytes counts both accesses)."
-    },
-    "host_compute_rate": {
-      "nominal": 1.0,
-      "unit": "fraction",
-      "evidence_kind": "derived",
-      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
-      "note": "The derate a measured host wall is divided by (as generic_estimated_22nm); the host is not part of the study's chip."
     }
   },
   "carry_buffer": {
@@ -354,5 +347,11 @@
       "derivation": "",
       "note": "[U-J3] The study's backing store is the chip's own: 2 DDR4 channels at 36 GB/s feed the chip's write port and hold its carried values (cd41_chip.CTX, the counted contexts of the SRAM-DDR row; wang2020shuhai Table V p.7, the accelerator's own DDR4), reached through the chip's memory PHY (chip_components: two DDR x64 ports). The pass carry and the weight writes cross that store at the chip's DDR3/4 I/O energy (e_dma_per_byte, e_readout_per_byte) and the write port's time (t_program_per_byte), never the host-chip link: the edge host's LPDDR5 is not this store."
     }
+  },
+  "area_rule": {
+    "type": "T2_digital",
+    "terms": "complete",
+    "outside": "declared_parts",
+    "note": "ruling R1: the probe tile's measured terms, the router per NoC tile and the chip components stay as declared; no value moves"
   }
 }

@@ -12,6 +12,7 @@ from mimarsinan.deployment_record.platform_physics.constants import spec_for
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks
 
 from unit.deployment_record.g3_fixtures import constant, quantities
+from unit.deployment_record.printed_names import NOT_PRODUCED, named, parts, without
 
 _LANES = merge_override_blocks({"lane": {
     "area_per_lane": constant(741.8, unit="um^2", note="routed probe lane, Nangate 45 nm (test)"),
@@ -29,6 +30,26 @@ def _census(**extra):
 
 def _terms(physics, values):
     return {t.name: t for t in price_absolute(values, physics).terms}
+
+
+#: [U-ENERGY class 2] The lane rows: declared over a census the view does not produce, each is named beside the
+#: estimate with the plane's reason, never priced and never dropped silently.
+_LANE_ROWS = ("area_per_lane", "e_lane_op", "t_lane_op")
+
+
+def _lane_free(pricing):
+    """Each term's dict with the lane rows' names taken out of its texts, after checking that every such name states
+    "not produced on this plane": the values and the priced texts are the report's own."""
+    out = []
+    for term in pricing.terms:
+        data = term.to_dict()
+        for row in _LANE_ROWS:
+            assert all(NOT_PRODUCED in n for n in named(term.source, row)), (term.name, row)
+        data["source"] = without(term.source, _LANE_ROWS)
+        if data["band"] is not None:
+            data["band"] = {**data["band"], "basis": without(data["band"]["basis"], _LANE_ROWS)}
+        out.append(data)
+    return out
 
 
 class TestTheFormulas:
@@ -53,7 +74,7 @@ class TestTheFormulas:
 class TestAbsentByDefault:
     def test_without_a_lane_census_every_report_is_unchanged(self):
         values = _census()
-        assert [t.to_dict() for t in price_absolute(values, _WITH_LANES).terms] == \
+        assert _lane_free(price_absolute(values, _WITH_LANES)) == \
             [t.to_dict() for t in price_absolute(values, _BASE).terms]
 
     def test_no_shipped_profile_declares_a_lane_row(self):
@@ -104,14 +125,17 @@ class TestALaneCensusTheTargetCannotPrice:
         assert "area_per_lane(lanes; " in area.source and "tiles" in area.source
 
     def test_a_declared_lane_block_still_prices_its_three_formulas(self):
+        """Each lane row is in its term's priced part and never among its unpriced names ([U-ENERGY class 2] read by
+        the rows' names: the word "plane" of a printed reason holds "lane")."""
         terms = _terms(_WITH_LANES, _census(**self._LANE_CENSUS))
-        for name in ("chip_area_mm2", "e2e_latency_s", "energy_dynamic_mj"):
-            priced, _, unpriced = terms[name].source.partition("; unpriced: ")
-            assert "lane" in priced and "lane" not in unpriced, name
+        for name, row in (("chip_area_mm2", "area_per_lane"), ("e2e_latency_s", "t_lane_op"),
+                          ("energy_dynamic_mj", "e_lane_op")):
+            priced, _names = parts(terms[name].source)
+            assert row in priced and not any(named(terms[name].source, r) for r in _LANE_ROWS), name
 
     @pytest.mark.parametrize("profile", ["generic_estimated_22nm", "isaac_like", "truenorth", "loihi", "odin"])
     def test_a_lane_free_report_is_unchanged_by_the_lane_rows(self, profile):
         physics = get_platform_physics(profile)
         values = _census()
-        assert [t.to_dict() for t in price_absolute(values, physics).terms] == \
-            [t.to_dict() for t in price_absolute(values, apply_overrides(physics, _LANES)).terms]
+        assert _lane_free(price_absolute(values, apply_overrides(physics, _LANES))) == \
+            [t.to_dict() for t in price_absolute(values, physics).terms]

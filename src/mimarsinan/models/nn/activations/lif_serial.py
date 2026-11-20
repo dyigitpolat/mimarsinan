@@ -26,6 +26,7 @@ from mimarsinan.mapping.mappers.slot_unfold import (
     SerialSlotUnfold,
     WholeInputSlotUnfold,
 )
+from mimarsinan.models.nn.lif_kernels import lattice_scalar
 from mimarsinan.models.spiking.serial import (
     SerialDecompositionMismatchError,
     SerialFoldUnsupportedError,
@@ -62,6 +63,14 @@ def decomposition_tolerance(
     )
 
 
+def decomposed_charge(events: torch.Tensor, weight: torch.Tensor, bias) -> torch.Tensor:
+    """``(B, *cores, out)``: slot tables against one weight, or [U-PFOLD] each core against its own position's."""
+    if weight.dim() == 2:
+        return torch.nn.functional.linear(events, weight, bias)
+    charge = torch.einsum("bca,cna->bcn", events, weight)
+    return charge if bias is None else charge + bias
+
+
 class SerialFoldSlot:
     """One perceptron's armed per-event fold, in the deployed core's units.
 
@@ -75,7 +84,13 @@ class SerialFoldSlot:
                  membrane_init: float,
                  unfold: Optional[SerialSlotUnfold] = None,
                  integer_lattice: bool = False) -> None:
-        if weight.dim() != 2:
+        cores = None if unfold is None else int(unfold.n_cores)
+        if weight.dim() == 3 and int(weight.shape[0]) != cores:  # [U-PFOLD r2, m-6] one weight per core, or refused
+            raise SerialFoldUnsupportedError(
+                f"this perceptron's fold is held per core position ({int(weight.shape[0])} weights, one per core), "
+                f"but the mapper's unfold holds {cores or 0} core(s): the NF event-serial twin folds a fold per "
+                f"position only where its unfold holds one core per position.")
+        if weight.dim() not in (2, 3):
             raise SerialFoldUnsupportedError(
                 f"the NF event-serial twin decomposes a rank-2 effective "
                 f"weight (out, in); this perceptron's is rank {weight.dim()} "
@@ -83,7 +98,7 @@ class SerialFoldSlot:
                 f"mapper's unfold (``serial_slot_unfold``), never to the "
                 f"weight's rank."
             )
-        n_slots = int(weight.shape[1])
+        n_slots = int(weight.shape[-1])
         self.unfold: SerialSlotUnfold = (
             WholeInputSlotUnfold(n_slots) if unfold is None else unfold
         )
@@ -141,7 +156,7 @@ class SerialFoldSlot:
         """The reduction residual two orderings of one sum may differ by."""
         return decomposition_tolerance(
             charge, decomposed, theta=self.theta,
-            n_slots=int(self.weight.shape[1]),
+            n_slots=int(self.weight.shape[-1]),
         )
 
     def run_cycle(self, x: torch.Tensor, safe_scale) -> torch.Tensor:
@@ -153,8 +168,7 @@ class SerialFoldSlot:
                 "multiplicities; feed() must precede every forward."
             )
         charge = self.unfold.group_major(x / safe_scale) * self.theta
-        decomposed = torch.nn.functional.linear(
-            events.to(self.weight.dtype), self.weight, self.bias)
+        decomposed = decomposed_charge(events.to(self.weight.dtype), self.weight, self.bias)
         max_error = float((charge - decomposed).abs().max())
         tolerated = self._decomposition_tolerance(charge, decomposed)
         if not max_error <= tolerated:
@@ -171,7 +185,7 @@ class SerialFoldSlot:
             # One membrane per (core, neuron): a tiled hop's cores integrate
             # independently on the chip, and so must the twin.
             self.membrane = torch.full(
-                tuple(events.shape[:-1]) + (int(self.weight.shape[0]),),
+                tuple(events.shape[:-1]) + (int(self.weight.shape[-2]),),
                 self.membrane_init * self.theta,
                 dtype=self.weight.dtype, device=self.weight.device,
             )
@@ -219,4 +233,4 @@ def serial_fold_theta(lif) -> float:
     contract), so the same read serves both.
     """
     lattice_scale = getattr(lif.if_node, "lattice_scale", None)
-    return 1.0 if not lattice_scale else float(lattice_scale) / 2.0
+    return 1.0 if not lattice_scale else lattice_scalar(lattice_scale, "the event-serial fold") / 2.0

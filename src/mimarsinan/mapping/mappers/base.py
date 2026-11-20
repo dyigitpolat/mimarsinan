@@ -78,6 +78,11 @@ class Mapper(nn.Module):
     # The node only moves elements of its inputs (a layout gather or reshape: no arithmetic), so each output element
     # keeps its producer's currency (``value_domain_map``'s MIXED domain); a class default for pickled mappers.
     moves_elements_only: bool = False
+    # [U-TGAUGE3] The node is a C-order reshape of its one source (element ``k`` of its value is its source's element
+    # ``k``), so each element's source index is its own (``map_model_to_ir.reshape_gauge``); a class default for pickles.
+    keeps_element_order: bool = False
+    # [U-TGAUGE3] The node joins its sources' flattened values, all of one shape, in order (``map_model_to_ir``).
+    joins_equal_parts: bool = False
 
     def __init__(self, source_mapper: "Mapper | None" = None):
         super(Mapper, self).__init__()

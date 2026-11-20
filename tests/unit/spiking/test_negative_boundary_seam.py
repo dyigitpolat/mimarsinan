@@ -20,9 +20,10 @@ import copy
 import pytest
 import torch
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
-from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_mode
+from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_point
 from mimarsinan.mapping.support.negative_boundary import apply_negative_boundary_policy
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.wire_gauge_seam import establish_deployed_wire_gauge
@@ -67,7 +68,7 @@ def _inputs(seed: int, n: int) -> torch.Tensor:
 
 def _seam(ids: float = 2.0) -> NegativeBoundarySeam:
     return NegativeBoundarySeam(calibration_x=_inputs(7, 64), simulation_steps=T, input_data_scale=ids,
-                                soma_law=DEFAULT_SOMA_LAW)
+                                point=point_of_mode("lif"))
 
 
 def _bn1_entries(flow) -> list:
@@ -132,7 +133,7 @@ def test_soft_core_mapping_finds_the_lifted_boundaries_covered():
     flow = _pyramidnet()
     establish_deployed_wire_gauge(flow, input_data_scale=2.0, negative_boundary=_seam())
     result = apply_negative_boundary_policy(flow, _inputs(7, 64), T, shift_enabled=True,
-                                            forward_fn=calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW))
+                                            forward_fn=calibration_forward_for_point(point_of_mode("lif")))
     assert result.shifts == {} and result.subsumed == []
 
 
@@ -145,7 +146,7 @@ def test_the_seam_leaves_a_graph_without_a_signed_core_entry_unchanged():
     _, bound, _, _ = lif_net("encoding_skip", 0, 2.185)
     establish_deployed_wire_gauge(plain, input_data_scale=1.0)
     establish_deployed_wire_gauge(bound, input_data_scale=1.0, negative_boundary=NegativeBoundarySeam(
-        calibration_x=torch.rand(16, 8) * 2.0, simulation_steps=T, input_data_scale=1.0, soma_law=DEFAULT_SOMA_LAW))
+        calibration_x=torch.rand(16, 8) * 2.0, simulation_steps=T, input_data_scale=1.0, point=point_of_mode("lif")))
     for a, b in zip(plain.get_mapper_repr().execution_order(), bound.get_mapper_repr().execution_order()):
         assert getattr(b, "output_value_offset", None) is None
         assert (getattr(a, "output_scale", None) is None) == (getattr(b, "output_scale", None) is None)
@@ -353,13 +354,13 @@ def test_a_boundary_no_lift_carries_gets_soft_core_mappings_own_policy_at_the_se
     flow = _two_paddings()
     x = 2.0 * torch.rand(64, *_TwoPaddings.shape, generator=torch.Generator().manual_seed(3))
     establish_deployed_wire_gauge(flow, input_data_scale=1.0, negative_boundary=NegativeBoundarySeam(
-        calibration_x=x, simulation_steps=T, input_data_scale=1.0, soma_law=DEFAULT_SOMA_LAW))
+        calibration_x=x, simulation_steps=T, input_data_scale=1.0, point=point_of_mode("lif")))
     (bn,) = [n for n in flow.get_mapper_repr().execution_order()
              if isinstance(n, ComputeOpMapper) and n.name == "bn"]
     assert bn.output_value_offset is None, "fixture: no lift carries the BatchNorm read at two paddings"
     assert getattr(bn, "_negative_shift", None) is not None
     result = apply_negative_boundary_policy(flow, x, T, shift_enabled=True,
-                                            forward_fn=calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW))
+                                            forward_fn=calibration_forward_for_point(point_of_mode("lif")))
     assert result.shifts == {} and result.subsumed == []
 
 
@@ -372,7 +373,7 @@ def test_the_policy_preserves_the_run_random_state_and_training_flags():
     expected = torch.rand(4)
     torch.manual_seed(123)
     assert lift_negative_boundaries(flow, calibration, simulation_steps=T, input_data_scale=2.0,
-                                    soma_law=DEFAULT_SOMA_LAW) == []
+                                    point=point_of_mode("lif")) == []
     assert torch.equal(torch.rand(4), expected)
     assert all(m.training for m in flow.modules())
     assert all(op.output_value_offset is not None for op in _bn1_entries(flow))
@@ -392,7 +393,7 @@ def test_the_policy_calibration_walks_bounded_chunks(monkeypatch):
     flow = _pyramidnet()
     establish_deployed_wire_gauge(flow, input_data_scale=2.0)
     x = _inputs(7, 3 * CALIBRATION_CHUNK + 5)
-    forward = calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW)
+    forward = calibration_forward_for_point(point_of_mode("lif"))
     sizes: list = []
 
     def spy(model, xb, steps, **kw):
@@ -415,7 +416,7 @@ def test_the_policy_calibration_walks_bounded_chunks(monkeypatch):
             return super().__call__(xb, **kw)
 
     monkeypatch.setattr(seam_module, "SegmentForwardDriver", _Driver)
-    lift_negative_boundaries(flow, x, simulation_steps=T, input_data_scale=2.0, soma_law=DEFAULT_SOMA_LAW)
+    lift_negative_boundaries(flow, x, simulation_steps=T, input_data_scale=2.0, point=point_of_mode("lif"))
     assert walked and max(walked) <= CALIBRATION_CHUNK and sum(walked) == x.shape[0]
 
 
@@ -449,8 +450,58 @@ def test_the_s4_member_lifts_every_core_entry():
         p.activation = lif
     torch.manual_seed(7)
     seam = NegativeBoundarySeam(calibration_x=2.0 * torch.randn(16, *shape), simulation_steps=T, input_data_scale=2.0,
-                                soma_law=DEFAULT_SOMA_LAW)
+                                point=point_of_mode("lif"))
     establish_deployed_wire_gauge(flow, input_data_scale=2.0, negative_boundary=seam)
     entries = _bn1_entries(flow)
     assert len(entries) == 54
     assert all(op.output_value_offset is not None for op in entries)
+
+
+# ---------------------------------------------------------------------------
+# [U-LIF2 r2] The seam walks Soft Core Mapping's policy at the run's resolved point
+# ---------------------------------------------------------------------------
+
+_WINDOW_FIRINGS = ("fire_while_integrating", "integrate_then_emit")
+_DECLARATIONS = ({}, {"spike_phase_dither": True}, {"lif_membrane_init": -0.25})
+
+
+def _run_config(window_firing_declared, value, extension):
+    from mimarsinan.config_schema.runtime import derive_run_config
+
+    window_firing_declared(_WINDOW_FIRINGS, _WINDOW_FIRINGS[0])
+    return derive_run_config({"model_type": "simple_mlp", "spiking_family": "lif", "spiking_variant": "synchronized",
+                              "lif_window_firing": value, **extension},
+                             {"cores": [{"max_axons": 256, "max_neurons": 256, "count": 8}]})
+
+
+@pytest.mark.parametrize("value", _WINDOW_FIRINGS)
+@pytest.mark.parametrize("extension", _DECLARATIONS)
+def test_the_seam_walks_the_boundary_no_lift_carries_at_the_run_point(monkeypatch, window_firing_declared, value,
+                                                                       extension):
+    """At both values and with each execution extension, the walk the seam takes for a boundary no lift carries is
+    built from the seam's point, the run's record, never from a mode the seam names (it named 'lif')."""
+    import mimarsinan.tuning.orchestration.negative_boundary_seam as seam_module
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
+
+    point = resolve_spiking_point(_run_config(window_firing_declared, value, extension))
+    seen: list = []
+    real = seam_module.calibration_forward_for_point
+    monkeypatch.setattr(seam_module, "calibration_forward_for_point", lambda p: seen.append(p) or real(p))
+    flow = _two_paddings()
+    x = 2.0 * torch.rand(64, *_TwoPaddings.shape, generator=torch.Generator().manual_seed(3))
+    establish_deployed_wire_gauge(flow, input_data_scale=1.0, negative_boundary=NegativeBoundarySeam(
+        calibration_x=x, simulation_steps=T, input_data_scale=1.0, point=point))
+    assert seen == [point]
+
+
+@pytest.mark.parametrize("value", _WINDOW_FIRINGS)
+@pytest.mark.parametrize("extension", _DECLARATIONS)
+def test_the_deployed_seam_is_bound_to_the_run_point(window_firing_declared, value, extension):
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
+    from mimarsinan.tuning.orchestration.lif_exact_qat import deployed_negative_boundary_seam
+
+    cfg = _run_config(window_firing_declared, value, extension)
+    batches = [(_inputs(7, 8), torch.zeros(8)), (_inputs(8, 8), torch.zeros(8))]
+    trainer = type("_Trainer", (), {"iter_validation_batches": lambda self, n: iter(batches[:n])})()
+    seam = deployed_negative_boundary_seam(_pyramidnet(), trainer, {**cfg, "simulation_steps": T})
+    assert seam is not None and seam.point == resolve_spiking_point(cfg)

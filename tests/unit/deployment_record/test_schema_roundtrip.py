@@ -7,6 +7,7 @@ import json
 import pytest
 
 from mimarsinan.deployment_record.schema import (
+    DEPLOYMENT_RECORD_FORMAT_VERSION,
     Band,
     DeploymentRecord,
     ModeledValue,
@@ -86,8 +87,8 @@ def test_unknown_field_rejected(fragment):
 
 def test_wrong_version_rejected_on_record_load():
     wire = make_full_record().to_dict()
-    wire["format_version"] = 2
-    with pytest.raises(ValueError, match="format_version 2"):
+    wire["format_version"] = DEPLOYMENT_RECORD_FORMAT_VERSION + 1  # [U-HOST2] a version from the future
+    with pytest.raises(ValueError, match=f"format_version {DEPLOYMENT_RECORD_FORMAT_VERSION + 1}"):
         DeploymentRecord.from_dict(wire)
 
 
@@ -102,7 +103,7 @@ def test_wrong_version_rejected_at_construction():
     import dataclasses
 
     with pytest.raises(ValueError, match="format_version"):
-        dataclasses.replace(make_full_record(), format_version=2)
+        dataclasses.replace(make_full_record(), format_version=DEPLOYMENT_RECORD_FORMAT_VERSION + 1)
 
 
 def test_save_load_roundtrip(tmp_path):
@@ -110,7 +111,7 @@ def test_save_load_roundtrip(tmp_path):
     path = save_deployment_record(record, str(tmp_path))
     assert path.endswith("deployment_record.json")
     assert load_deployment_record(path) == record
-    assert json.loads(open(path).read())["format_version"] == 1
+    assert json.loads(open(path).read())["format_version"] == DEPLOYMENT_RECORD_FORMAT_VERSION
 
 
 def test_provenance_kind_validated():

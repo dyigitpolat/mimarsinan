@@ -2,12 +2,13 @@
 
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+from spiking_points import declaring_fire_while_integrating, point_of_mode
 
 _CORES = [{"max_axons": 256, "max_neurons": 256, "count": 64}]
 
 
 def _resolved(variant):
-    dp = {"spiking_family": "lif", "spiking_variant": variant}
+    dp = declaring_fire_while_integrating({"spiking_family": "lif", "spiking_variant": variant})  # [U-LIF2 W16]
     return build_flat_pipeline_config(dp, {"cores": _CORES}, pipeline_mode="phased")
 
 
@@ -37,10 +38,10 @@ class TestStreamedRecipe:
         assert _resolved("synchronized")["enable_loihi_simulation"] is True
 
     def test_policy_row_is_marked_streamed(self):
-        recipe = ConversionPolicy.derive("lif", spiking_variant="streamed")
+        recipe = ConversionPolicy.derive(point_of_mode("lif", spiking_variant="streamed"))
         assert recipe.special_case == "streamed_raw_cascade"
         assert "streaming" in recipe.rationale
-        windowed = ConversionPolicy.derive("lif")
+        windowed = ConversionPolicy.derive(point_of_mode("lif"))
         assert windowed.special_case == "bn_freeze"
         assert recipe.knobs == {**windowed.knobs, "lif_exact_qat": False}
 

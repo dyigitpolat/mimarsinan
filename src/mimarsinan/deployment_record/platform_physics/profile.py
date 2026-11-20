@@ -6,11 +6,15 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.common.refusal.format_version import exact_version
 # [U-E3] The value type and its evidence kinds live below the converter (``constants``), re-exported here.
 from mimarsinan.deployment_record.platform_physics.constants import (
     EVIDENCE_KINDS as EVIDENCE_KINDS, PhysicsConstantValue as PhysicsConstantValue, constant_from_declaration)
 from mimarsinan.deployment_record.platform_physics.area_components import ChipComponent
+from mimarsinan.deployment_record.platform_physics.area_rule.declaration import AreaRuleBlock
 from mimarsinan.deployment_record.platform_physics.converter import ConverterTable
+from mimarsinan.deployment_record.platform_physics.hosts.admission import ORIGIN_FIELD, admit_sealed
+from mimarsinan.deployment_record.platform_physics.hosts.registry import HostOrigin
 from mimarsinan.deployment_record.platform_physics.hosts.link_ends import link_ends_from_declaration, link_ends_to_dict
 from mimarsinan.deployment_record.platform_physics.hosts.store import (
     HOST, PAYLOAD_NOTE, TRANSFER_NOTE, BackingStore, judged_store, prices_host_link, store_from_declaration)
@@ -18,6 +22,7 @@ from mimarsinan.deployment_record.platform_physics.hosts.store import (
 from mimarsinan.deployment_record.platform_physics.hosts.transfer import (
     ExternalComponent as ExternalComponent, TransferPlace, judged_transfer_rows, transfer_rows_from_declaration,
     transfer_rows_to_dict)
+from mimarsinan.deployment_record.optional_blocks import blocks_from_dict, blocks_to_dict, optional_block
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwargs
 
@@ -164,28 +169,33 @@ class PlatformPhysics:
     conversion_model: Mapping[str, Any] = field(default_factory=dict)
     format_version: int = PHYSICS_FORMAT_VERSION
     #: [CL2] Components the profile leaves out; serialized only when present.
-    external_components: Tuple[ExternalComponent, ...] = ()
+    external_components: Tuple[ExternalComponent, ...] = optional_block(ExternalComponent.from_dict, many=True)
     #: [E-5] The converter over resolution (``readout_law.adc_bits``, ``converter.py``); serialized only when present.
-    converter: Optional[ConverterTable] = None
+    converter: Optional[ConverterTable] = optional_block(ConverterTable.from_dict)
     #: [U-G] The on-chip carry buffer over capacity (``carry_buffer_bytes``); serialized only when present.
-    carry_buffer: Optional[CarryBufferTable] = None
+    carry_buffer: Optional[CarryBufferTable] = optional_block(CarryBufferTable.from_dict)
     #: [U-A] The chip-level area components whose sum is ``area_global_fixed`` (``area_components``); only when present.
-    chip_components: Tuple[ChipComponent, ...] = ()
+    chip_components: Tuple[ChipComponent, ...] = optional_block(ChipComponent.from_dict, many=True)
     #: [U-J2] The host energy rows a host description states system-level (the host's own draw, printed with the
     #: whole-system line, never the headline: ``cost.host_terms``); serialized only when present.
-    system_energy_rows: Tuple[str, ...] = ()
+    system_energy_rows: Tuple[str, ...] = optional_block(str, many=True)
     #: [U-J3] Where the chip's backing store lives (``hosts.store``: its own DRAM, or the host's memory over the link);
     #: the area components agree with it; serialized only when present.
-    backing_store: Optional[BackingStore] = None
+    backing_store: Optional[BackingStore] = optional_block(store_from_declaration, named=True)
+    #: [U-AREA] The area rule block (``area_rule.declaration``): the chip area by rule; serialized only when present.
+    area_rule: Optional[AreaRuleBlock] = optional_block(AreaRuleBlock.from_dict)
     #: [U-J5 L-1] Where a transfer row prices, where the chip description places one (``hosts.transfer``: a
     #: chip-internal buffer; undeclared, the backing store); serialized only when present.
     transfer_rows: Mapping[str, TransferPlace] = field(default_factory=dict)
     #: [U-J5 L-2] Per link row, the ends of the host-chip link it counts at each corner, as the host's description
     #: declares them (``hosts.link_ends``); serialized only when present.
     link_ends: Mapping[str, Mapping[str, Tuple[str, ...]]] = field(default_factory=dict)
+    #: [U-HOST3] The description its host rows were judged against (``hosts.registry.HostOrigin``: name, path, digest,
+    #: shipped or registered), judged at read-back against the description held under that digest; only when present.
+    host_origin: Optional[HostOrigin] = None
 
     def __post_init__(self) -> None:
-        if self.format_version != PHYSICS_FORMAT_VERSION:
+        if exact_version(self.format_version, f"PlatformPhysics {self.name!r}") != PHYSICS_FORMAT_VERSION:
             raise ValueError(f"PlatformPhysics format_version {self.format_version} != "
                              f"{PHYSICS_FORMAT_VERSION}; migrate explicitly, never tolerate silently")
         for key, value in self.constants.items():
@@ -258,31 +268,22 @@ class PlatformPhysics:
                 "description_file": self.description_file, "validity": self.validity.to_dict(),
                 "conversion_model": dict(self.conversion_model),
                 "constants": {k: v.to_dict() for k, v in sorted(self.constants.items())},
-                **({"external_components": [c.to_dict() for c in self.external_components]}
-                   if self.external_components else {}),
-                **({"converter": self.converter.to_dict()} if self.converter is not None else {}),
-                **({"carry_buffer": self.carry_buffer.to_dict()} if self.carry_buffer is not None else {}),
-                **({"chip_components": [c.to_dict() for c in self.chip_components]} if self.chip_components else {}),
-                **({"system_energy_rows": list(self.system_energy_rows)} if self.system_energy_rows else {}),
-                **({"backing_store": self.backing_store.to_dict()} if self.backing_store is not None else {}),
-                **transfer_rows_to_dict(self.transfer_rows), **link_ends_to_dict(self.link_ends)}
+                **blocks_to_dict(self),  # [U-AREA fix round, MA-4] each optional block by its field's reader
+                **transfer_rows_to_dict(self.transfer_rows), **link_ends_to_dict(self.link_ends),
+                **({ORIGIN_FIELD: self.host_origin.to_dict()} if self.host_origin is not None else {})}
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "PlatformPhysics":
         kwargs = strict_kwargs(cls, data)
-        kwargs["external_components"] = tuple(
-            ExternalComponent.from_dict(c) for c in kwargs.get("external_components") or ())
+        blocks_from_dict(cls, kwargs, str(kwargs.get("name")))  # [U-AREA fix round, MA-4] the optional blocks
         kwargs["validity"] = PlatformPhysicsValidity.from_dict(kwargs["validity"])
         kwargs["constants"] = {key: PhysicsConstantValue.from_dict(value)
                                for key, value in (kwargs.get("constants") or {}).items()}
         kwargs["conversion_model"] = dict(kwargs.get("conversion_model") or {})
-        kwargs["converter"] = None if kwargs.get("converter") is None else ConverterTable.from_dict(kwargs["converter"])
-        kwargs["carry_buffer"] = (None if kwargs.get("carry_buffer") is None
-                                  else CarryBufferTable.from_dict(kwargs["carry_buffer"]))
-        kwargs["chip_components"] = tuple(ChipComponent.from_dict(c) for c in kwargs.get("chip_components") or ())
-        kwargs["system_energy_rows"] = tuple(str(key) for key in kwargs.get("system_energy_rows") or ())
-        store = kwargs.get("backing_store")
-        kwargs["backing_store"] = None if store is None else store_from_declaration(store, str(kwargs.get("name")))
         kwargs["transfer_rows"] = transfer_rows_from_declaration(kwargs.get("transfer_rows"), str(kwargs.get("name")))
         kwargs["link_ends"] = link_ends_from_declaration(kwargs.get("link_ends"), str(kwargs.get("name")))
+        origin = kwargs.get(ORIGIN_FIELD)
+        kwargs[ORIGIN_FIELD] = None if origin is None else HostOrigin.from_dict(origin)
+        admit_sealed(kwargs["constants"], f"sealed physics {kwargs.get('name')!r}", kwargs["system_energy_rows"],
+                     kwargs["link_ends"], kwargs[ORIGIN_FIELD])  # [U-HOST2] the one rule; [U-HOST3] by its origin
         return cls(**kwargs)

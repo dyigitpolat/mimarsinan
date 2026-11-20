@@ -1,0 +1,70 @@
+{
+ "type": "T2_digital",
+ "what": "digital SRAM compute-in-memory (cores accumulate in the array)",
+ "scaled_terms": "bits",
+ "cell_family": "sram",
+ "eta": {
+  "value": 0.852395742223279,
+  "unit": "1",
+  "evidence_kind": "derived",
+  "citation": [],
+  "derivation": "the T2 analog array efficiency",
+  "recompute": {
+   "expression": "r('types/t2_analog:eta')"
+  },
+  "note": ""
+ },
+ "s": {
+  "value": 0.3246069455016809,
+  "unit": "1",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T2-JI-01",
+   "T2-JI-02"
+  ],
+  "derivation": "the cell share of a digital SRAM CIM macro (one macro: no held-out point of its own; held out, the analog share)",
+  "recompute": {
+   "aggregate": "geometric_mean",
+   "points": [
+    {
+     "label": "jiang2023a",
+     "expression": "s('T2-JI-01', 'quote', '128KB', 128 * 8192) * r('cell_kinds:kinds.sram_6t_logic_rule.factor_of_sigma') * sigma(16) / r('types/t2_analog:eta') / (v('T2-JI-02') * 1e6)"
+    }
+   ],
+   "fallback": "r('types/t2_analog:s')"
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "gamma": {
+  "value": 0.8777264028620466,
+  "unit": "1",
+  "evidence_kind": "derived",
+  "citation": [],
+  "derivation": "no T2 die publishes its core-grid share: the T1 dies' (flagged)",
+  "recompute": {
+   "expression": "r('types/t1:gamma')"
+  },
+  "note": ""
+ },
+ "default_cell_kind": "cim_logic_rule_6t_digital",
+ "default_converter_kind": null,
+ "default_cell_factor": {
+  "value": 1.0,
+  "unit": "1",
+  "evidence_kind": "derived",
+  "citation": [
+   "T2-JI-01"
+  ],
+  "derivation": "the type's definition: a plain logic-rule 6T (k_L carries its evidence; the strict hold-out's replacement of an own cell)",
+  "recompute": {
+   "expression": "1"
+  },
+  "note": ""
+ },
+ "outside_parts": "types/t1",
+ "band": "bands:pooled"
+}

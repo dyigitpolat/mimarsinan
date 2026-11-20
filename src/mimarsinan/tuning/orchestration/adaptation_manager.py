@@ -8,10 +8,7 @@ from mimarsinan.models.nn.decorators.clamp_quantize import (
 )
 from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 from mimarsinan.tuning.orchestration.frontier import frontier_position
-from mimarsinan.tuning.orchestration.lif_exact_qat import (
-    lif_exact_qat_active,
-    mark_lif_exact_qat,
-)
+from mimarsinan.tuning.orchestration.lif_exact_qat import lif_charge_bound, lif_exact_qat_active, mark_lif_exact_qat
 from mimarsinan.tuning.orchestration.ttfs_exact_qat import (
     mark_ttfsq_exact_qat,
     ttfsq_exact_qat_active,
@@ -252,7 +249,8 @@ class AdaptationManager(nn.Module):
             mark_lif_exact_qat(perceptron)
             return self._exact_qat_decorator(LIFCountStaircaseDecorator(
                 pipeline_config["simulation_steps"], perceptron.activation_scale,
-                thresholding_mode=str(pipeline_config.get("thresholding_mode", "<="))))
+                thresholding_mode=str(pipeline_config.get("thresholding_mode", "<=")),
+                charge_bound=lif_charge_bound(perceptron)))
 
         if sync_exact_qat_active(pipeline_config):
             # [MBH T6] deployed ceil kernel; floor+half-step proxy bypassed.

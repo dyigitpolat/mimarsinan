@@ -19,6 +19,7 @@ import pytest
 from mimarsinan.deployment_record.cost import host_terms as HT
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.absolute.step_choice import price_step
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_terms
 from mimarsinan.deployment_record.platform_physics.hosts import store as ST
 from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block
@@ -78,9 +79,9 @@ def _census(payload=400, cells=100, carry=(0, 0), producer=10):
     return PassPeriodCensus(passes=passes, boundaries=boundary)
 
 
-def _priced(physics, source="host", census=None, **values):
+def _priced(physics, source="host", census=None, loads=None, **values):
     writes = WriteInputs(census or _census(), _policy(source))
-    pricing = price_absolute(_q(**(values or VALUES)), physics, writes=writes)
+    pricing = price_absolute(_q(**(values or VALUES)), physics, writes=writes, loads=loads)
     return {t.name: t for t in pricing.terms}, {r.name: r.reason for r in pricing.refusals}
 
 
@@ -178,7 +179,11 @@ class TestTheChipsOwnEndOfTheLink:
         assert self.END in terms["energy_per_inference_mj"].source
 
     def test_a_program_load_over_the_link_names_it(self):
-        terms, _ = _priced(PHYSICS[ST.HOST], "host", **dict(VALUES, reprogrammed_bytes=1000))
+        """[U-ENERGY] The program load is the one load law over the program's census (1000 B per round)."""
+        from unit.deployment_record.load_census_fixtures import written_program
+
+        loads = written_program((500,), (500,), granularity="cell")
+        terms, _ = _priced(PHYSICS[ST.HOST], "host", loads=loads, **VALUES)
         assert self.END in terms["energy_programming_mj"].source
 
     def test_without_the_link_nothing_names_it(self):
@@ -190,7 +195,8 @@ class TestTheChipsOwnEndOfTheLink:
 def test_the_step_choice_prices_a_host_sourced_payload_on_the_link(store):
     """The residency step choice's write energy: the payload's transfer at the link and host memory, not e_dma."""
     physics = PHYSICS[store]
-    host, own = price_step(_census(), physics, _policy("host")), price_step(_census(), physics, _policy("on_chip"))
+    host = price_step(_census(), physics, _policy("host"), static=NO_STATIC)
+    own = price_step(_census(), physics, _policy("on_chip"), static=NO_STATIC)
     for corner in CORNERS:
         assert getattr(host.write, corner) - getattr(own.write, corner) == pytest.approx(
             PAYLOAD_BYTES * _link_and_memory(physics, corner) * 1e3, rel=1e-9), corner

@@ -78,25 +78,36 @@ DESIGN_SPACE_CLAIMS = frozenset({"synthetic", "curve-only"})
 
 class TestBundles:
     def test_every_value_domain_bundle_declares_lanes_with_a_block(self):
+        """The priced design-space chips (a physics profile; [U-CHIPKEYS] a geometry-only chip states the classes its
+        source states instead, below) declare the estimated lane block on L, E and P."""
         bundles = target_bundles()
         value = [b for b in bundles.values() if b.values.get("core_semantics") == "mvm"
-                 and b.claim_class in DESIGN_SPACE_CLAIMS]
+                 and b.claim_class in DESIGN_SPACE_CLAIMS and "platform_physics_profile" in b.values]
         assert {b.name for b in value} >= {"generic_estimated_22nm", "isaac_like"}
         for bundle in value:
             declaration = lane_declaration(bundle.values)
             assert declaration is not None and declaration.classes == frozenset("LEP"), bundle.name
             assert declaration.lane_block in lane_block_names() and declaration.lanes_per_core, bundle.name
-            assert "output-stage lanes estimated" in bundle.faithfulness.named, bundle.name
+            assert 'named "output-stage lanes estimated"' in bundle.faithfulness.named, bundle.name  # [U-CHIPKEYS6]
             assert any("per-array ADC not built" in label for label in bundle.faithfulness.named), bundle.name
 
     def test_a_published_value_chip_declares_no_lane_block(self):
-        """The CL2 chips (HERMES-64, NeuRRAM, the SRAM-CIM macro) are bundled as their pages state them: no lanes, so
-        their programs keep the output stage's ops on the host and price no lane block."""
+        """The CL2 chips (HERMES-64, NeuRRAM, the SRAM-CIM macro) and the geometry-only chips are bundled as their
+        pages state them: [U-CHIPKEYS] the classes their sources state run at the core's output stage (HERMES-64's
+        LDPU: ReLU and the residual addition; NeuRRAM's neuron: ReLU), with no lane block, since that periphery is
+        inside the chip's own measured rows (the lane terms named unpriced); a chip whose source states none
+        declares no lanes and keeps the output stage's ops on the host."""
         published = [b for b in target_bundles().values() if b.values.get("core_semantics") == "mvm"
-                     and b.claim_class not in DESIGN_SPACE_CLAIMS]
+                     and (b.claim_class not in DESIGN_SPACE_CLAIMS or "platform_physics_profile" not in b.values)]
         assert {b.name for b in published} >= {"hermes_64", "neurram", "sram_cim_macro"}
         for bundle in published:
-            assert lane_declaration(bundle.values) is None and LANE_KEY not in bundle.values, bundle.name
+            declaration = lane_declaration(bundle.values)
+            if declaration is None:
+                assert LANE_KEY not in bundle.values, bundle.name
+                continue
+            assert declaration.lane_block is None and declaration.lanes_per_core is None, bundle.name
+            assert bundle.statements[LANE_KEY]["kind"] == "stated", bundle.name
+        assert lane_declaration(target_bundles()["sram_cim_macro"].values) is None
 
     def test_no_other_bundle_declares_lanes(self):
         for bundle in target_bundles().values():

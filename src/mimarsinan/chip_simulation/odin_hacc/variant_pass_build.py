@@ -37,6 +37,7 @@ from mimarsinan.mapping.export.odin.feasibility import (
 from mimarsinan.mapping.export.odin_gen.feasibility import check_variant_theta
 from mimarsinan.mapping.export.odin_gen.packer import build_variant_core_image
 from mimarsinan.mapping.export.odin_gen.spec import CoreSpec
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 
 #: The pass runs one core, and the packed image is that core's replica at 0.
 PASS_CORE_INDEX = 0
@@ -55,7 +56,7 @@ class VariantPassBuild:
         self.used = used_neurons(self.core)
         self.routes = core_routes(self.core)
         self.theta = check_variant_theta(
-            self.core.threshold, spec=spec, core_index=self.index)
+            core_threshold(self.core, "the ODIN variant pass build"), spec=spec, core_index=self.index)
         initial = check_membrane_init(
             membrane_init, theta=self.theta, core_index=self.index)
         check_fan_in(

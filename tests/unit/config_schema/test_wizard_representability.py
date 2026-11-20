@@ -21,6 +21,10 @@ from mimarsinan.config_schema.registry import (
 from mimarsinan.config_schema.resolve import resolve_draft
 from mimarsinan.gui.wizard.emit import emit_deployment_config
 
+from mimarsinan.deployment_record.platform_physics.hosts.description import (
+    host_description_block, host_descriptions,
+)
+
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _CONFIG_PATHS = sorted(
     glob.glob(os.path.join(_REPO_ROOT, "tests", "fixtures", "deployment_configs", "*.json"))
@@ -164,7 +168,9 @@ def test_a_physics_declaring_config_is_representable():
     config.setdefault("platform_constraints", {})
     config["platform_constraints"]["platform_physics_profile"] = "truenorth"
     config["platform_constraints"]["platform_physics_overrides"] = {
-        "p_host": {"nominal": 45.0, "unit": "W", "note": "measured on the deployment host"}
+        # [U-HOST2] a host row is admitted only as an identified host description's own row (or a declared
+        # derivation of its rows): the first read description's power row, as its block declares it
+        "p_host": host_description_block(host_descriptions()[0])["p_host"]
     }
 
     parsed = parse_deployment_document(config)

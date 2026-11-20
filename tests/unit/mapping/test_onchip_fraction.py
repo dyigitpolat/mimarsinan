@@ -23,6 +23,10 @@ from mimarsinan.mapping.verification.onchip_majority import (
     OnchipMajorityError,
     count_host_params,
 )
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
+
+#: The cases below measure the spiking contract (the converter's own default contract): stated, never assumed.
+SPIKING_CONVERSION = DeployedConversion()
 
 
 def _build(model_type, model_config, input_shape, num_classes, placement="subsume"):
@@ -105,6 +109,7 @@ def test_param_estimate_matches_model_spec(
         num_classes,
         encoding_placement=placement,
         metric="params",
+        conversion=SPIKING_CONVERSION,
     )
     assert isinstance(est, OnchipFractionEstimate)
     assert est.metric == "params"
@@ -127,7 +132,8 @@ def test_param_estimate_reproduces_authoritative_gate(
     # rebuild fresh — conversion mutates the model in place
     model = _build(model_type, model_config, input_shape, num_classes)
     est = estimate_onchip_fraction(
-        model, input_shape, num_classes, encoding_placement=placement, metric="params"
+        model, input_shape, num_classes, encoding_placement=placement, metric="params",
+        conversion=SPIKING_CONVERSION,
     )
     assert est.host == host
     assert est.total == total
@@ -142,12 +148,14 @@ def test_offload_strictly_exceeds_subsume_for_deep_mlp():
         input_shape,
         num_classes,
         encoding_placement="subsume",
+        conversion=SPIKING_CONVERSION,
     )
     off = estimate_onchip_fraction(
         _build("deep_mlp", cfg, input_shape, num_classes),
         input_shape,
         num_classes,
         encoding_placement="offload",
+        conversion=SPIKING_CONVERSION,
     )
     assert off.fraction > sub.fraction
 
@@ -159,6 +167,7 @@ def test_macs_metric_returns_sane_fraction():
         input_shape,
         num_classes,
         metric="macs",
+        conversion=SPIKING_CONVERSION,
     )
     assert est.metric == "macs"
     assert est.total > 0
@@ -175,12 +184,14 @@ def test_macs_and_params_differ_for_conv_model():
         input_shape,
         num_classes,
         metric="params",
+        conversion=SPIKING_CONVERSION,
     )
     m = estimate_onchip_fraction(
         _build("deep_cnn", cfg, input_shape, num_classes),
         input_shape,
         num_classes,
         metric="macs",
+        conversion=SPIKING_CONVERSION,
     )
     assert 0.0 <= m.fraction <= 1.0
     assert m.total != p.total  # MAC budget and param budget are different totals
@@ -236,7 +247,8 @@ class TestAssertHelper:
         model = _build("deep_mlp", {"depth": 4, "width": 64}, input_shape, num_classes)
         with pytest.raises(OnchipMajorityError) as exc:
             assert_onchip_majority_estimate_or_raise(
-                model, input_shape, num_classes, encoding_placement="subsume"
+                model, input_shape, num_classes, encoding_placement="subsume",
+                conversion=SPIKING_CONVERSION,
             )
         assert "on-chip" in str(exc.value).lower()
 
@@ -245,7 +257,8 @@ class TestAssertHelper:
         input_shape, num_classes = (1, 28, 28), 10
         model = _build("deep_mlp", {"depth": 8, "width": 64}, input_shape, num_classes)
         est = assert_onchip_majority_estimate_or_raise(
-            model, input_shape, num_classes, encoding_placement="offload"
+            model, input_shape, num_classes, encoding_placement="offload",
+            conversion=SPIKING_CONVERSION,
         )
         assert est.fraction >= 0.5
 
@@ -254,13 +267,15 @@ class TestAssertHelper:
         input_shape, num_classes = (1, 28, 28), 10
         model = _build("deep_mlp", {"depth": 8, "width": 64}, input_shape, num_classes)
         est = assert_onchip_majority_estimate_or_raise(
-            model, input_shape, num_classes, min_fraction=0.30
+            model, input_shape, num_classes, min_fraction=0.30,
+            conversion=SPIKING_CONVERSION,
         )
         assert est.fraction >= 0.30
         model = _build("deep_mlp", {"depth": 8, "width": 64}, input_shape, num_classes)
         with pytest.raises(OnchipMajorityError):
             assert_onchip_majority_estimate_or_raise(
-                model, input_shape, num_classes, min_fraction=0.50
+                model, input_shape, num_classes, min_fraction=0.50,
+                conversion=SPIKING_CONVERSION,
             )
 
 
@@ -289,7 +304,8 @@ class TestClassifyValidity:
     def _verdict(self, model_type, model_config, input_shape, num_classes, placement):
         model = _build(model_type, model_config, input_shape, num_classes)
         return classify_validity(
-            model, input_shape, num_classes, encoding_placement=placement
+            model, input_shape, num_classes, encoding_placement=placement,
+            conversion=SPIKING_CONVERSION,
         )
 
     def test_deep_cnn_d8_is_valid(self):
@@ -350,7 +366,8 @@ class TestClassifyValidity:
 
     def test_synthetic_host_majority_is_invalid(self):
         model = _HostMajorityModel()
-        v = classify_validity(model, (1, 28, 28), 10, encoding_placement="subsume")
+        v = classify_validity(
+            model, (1, 28, 28), 10, encoding_placement="subsume", conversion=SPIKING_CONVERSION)
         assert v.tier == "INVALID"
         assert min(v.param_frac, v.mac_frac) < 0.20
 
@@ -401,6 +418,7 @@ def _tier0_model_specs():
             dp["model_type"],
             dp["model_config"],
             dp.get("encoding_layer_placement", "subsume"),
+            cfg,
             id=path.stem,
         ))
     return specs
@@ -411,9 +429,18 @@ class TestTier0MatrixClearsTheStaticFloor:
     cell (the mandate for landing it in the pipeline; W2 Q3)."""
 
     @pytest.mark.parametrize(
-        "model_type,model_config,placement", _tier0_model_specs()
+        "model_type,model_config,placement,document", _tier0_model_specs()
     )
-    def test_cell_clears_the_20pct_floor(self, model_type, model_config, placement):
+    def test_cell_clears_the_20pct_floor(self, model_type, model_config, placement, document):
+        """Each cell on its own deployed conversion (the gate's reading in its pipeline)."""
+        from mimarsinan.config_schema.runtime import build_flat_pipeline_config
+        from mimarsinan.mapping.platform.packaging_contract import deployed_conversion_of
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+        flat = build_flat_pipeline_config(
+            document["deployment_parameters"], document.get("platform_constraints") or {},
+            pipeline_mode=document.get("pipeline_mode", "phased"))
+        conversion = deployed_conversion_of(DeploymentPlan.resolve(flat), flat)
         input_shape, num_classes = (1, 28, 28), 10
         model = _build(model_type, model_config, input_shape, num_classes, placement)
         # ModelBuildingStep warms up before the gate (materializes Lazy modules).
@@ -421,7 +448,7 @@ class TestTier0MatrixClearsTheStaticFloor:
             model(torch.randn(2, *input_shape))
         est = assert_onchip_majority_estimate_or_raise(
             model, input_shape, num_classes,
-            encoding_placement=placement, min_fraction=0.2,
+            encoding_placement=placement, min_fraction=0.2, conversion=conversion,
         )
         assert est.fraction >= 0.2
 
@@ -490,6 +517,7 @@ class TestCountHostOpsReproducesEstimator:
         est = estimate_onchip_fraction(
             _build(model_type, model_config, input_shape, num_classes),
             input_shape, num_classes, encoding_placement=placement, metric="macs",
+            conversion=SPIKING_CONVERSION,
         )
         assert count_host_ops(ir_graph) == est.host
         ops = compute_onchip_ops_fraction(ir_graph, total_ops=est.total)

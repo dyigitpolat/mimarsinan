@@ -113,7 +113,7 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     if not steps_data:
         return None
     config = get_run_config(run_id) or {}
-    config_view = _build_run_config_view(config)
+    config_view = _build_run_config_view(config, str(run_dir))
     groups = semantic_groups_from_config_view(config_view)
     # A historical run is dead by definition: persisted statuses win, and a
     # stale "running" (hard kill) reads failed instead of forever-live.
@@ -138,13 +138,14 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     }
 
 
-def _build_run_config_view(config: dict) -> dict | None:
+def _build_run_config_view(config: dict, run_dir: str) -> dict | None:
+    """[U-LIF2 r3] The run directory's view, derived at the point its run resolved (``build_pipeline_config_view``)."""
     if not config:
         return None
     result = None
     with best_effort("build run config display view", logger=logger):
-        from mimarsinan.config_schema.display_view import build_config_display_view
-        result = build_config_display_view(config, saved_config=config)
+        from mimarsinan.config_schema.display_view import build_pipeline_config_view
+        result = build_pipeline_config_view(config, working_dir=run_dir)
     return result
 
 

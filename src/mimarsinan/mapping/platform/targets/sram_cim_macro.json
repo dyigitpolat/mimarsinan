@@ -1,6 +1,6 @@
 {
   "name": "sram_cim_macro",
-  "display_name": "Digital SRAM-CIM macro (16 nm, 128 kB, Jiang 2023): one core of 128 x 1024, 8-bit weights",
+  "display_name": "Digital SRAM-CIM macro (16 nm, 128 kB, Jiang 2023), one core of 128 x 1024, 8-bit weights",
   "geometry": {
     "name": "dimc_macro_128x1024",
     "cores": [
@@ -20,14 +20,96 @@
     "activation_bits": 4,
     "platform_physics_profile": "sram_cim_macro",
     "allow_coalescing": true,
-    "allow_neuron_splitting": false
+    "allow_neuron_splitting": false,
+    "readout_law": {
+      "adc_bits": 32,
+      "mult_bits": 24,
+      "output_law": "identity",
+      "range": "calibrated"
+    }
   },
   "faithfulness": {
     "class": "approximate",
     "named": [
       "array write energy derived from the read energy"
     ],
-    "note": "The macro accumulates exactly (8-bit weights, 4-bit inputs, 32-bit partial sums, jiang2023a p.2-3), the toolchain's integer value law; its weight write energy is not stated and the sram_cim_macro profile brackets it from the measured read energy (derived). Macro-level constants only: the profile names the backing store as an external component, so no absolute number is read until a run declares it (a backing_store block through merge_override_blocks)."
+    "note": "The macro accumulates exactly (8-bit weights, 4-bit inputs, 32-bit partial sums, jiang2023a p.2-3), the integer value law of the toolchain. Its weight write energy is not stated and the sram_cim_macro profile brackets it from the measured read energy (derived). Macro-level constants only. The profile names the backing store as an external component, so no absolute number is read until a run declares it (a backing_store block through merge_override_blocks)."
   },
-  "notes": "Population 1 is a single macro, the degenerate case the curated table quarantines (as ODIN's single core); a study that tiles macros declares the count through target_overrides with a note. allow_coalescing is true: \"In case one when FX*FY*C >128 (Fig. 5.a), W needs to be stored in multiple addresses of an SR group. It takes at least 2 steps to compute the output.\" and \"Unlike AIMC, our macro provides a full precision partial sum, causing no precision lost from truncation of that partial sum.\" (jiang2023a, Section III.A, p.3), with \"The results are buffered locally when partial sums are needed.\" (Section II, p.2). allow_neuron_splitting is false: every output of the macro reads the same 128 inputs (p.2), and the source states no input sharing across macros. The bundle binds activation_bits 4: \"The input activation (IA) driver delivers 128 (4b) IA to all 16 SR groups\" (jiang2023a, Section II, p.2); a run at another width declares it through target_overrides with a note."
+  "notes": "Population 1 is a single macro, the degenerate case the curated table quarantines (as ODIN's single core); a study that tiles macros declares the count through target_overrides with a note. allow_coalescing is true: \"In case one when FX*FY*C >128 (Fig. 5.a), W needs to be stored in multiple addresses of an SR group. It takes at least 2 steps to compute the output.\" and \"Unlike AIMC, our macro provides a full precision partial sum, causing no precision lost from truncation of that partial sum.\" (jiang2023a, Section III.A, p.3), with \"The results are buffered locally when partial sums are needed.\" (Section II, p.2). allow_neuron_splitting is false: every output of the macro reads the same 128 inputs (p.2), and the source states no input sharing across macros. The bundle binds activation_bits 4: \"The input activation (IA) driver delivers 128 (4b) IA to all 16 SR groups\" (jiang2023a, Section II, p.2); a run at another width declares it through target_overrides with a note.",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "jiang2023a",
+        "location": "Title, PDF p.1",
+        "quote": "A 16nm 128kB high-density fully digital In Memory Compute macro with reverse SRAM pre-charge achieving 0.36TOPs/mm2 , 256kB/mm2 and 23.8TOPs/W",
+        "reads": "fully digital In Memory Compute macro"
+      }
+    },
+    "weight_bits": {
+      "stated": {
+        "value": 8,
+        "source": "jiang2023a",
+        "location": "Section II, Fig. 3 description, PDF p.2",
+        "quote": "Each SR produces 16 8b weights (W) in every clock cycle.",
+        "reads": "Each SR produces 16 8b weights (W)",
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The macro stores each 8b weight in unmodified 6T bitcells (Section II); the source states no count per weight."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "A 6T bitcell holds one bit, which the source does not state as a number."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The macro computes dot products of 4-bit inputs with 8-bit weights into 32-bit sums (Section II) and states no bias input; the declared geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "activation_bits": {
+      "stated": {
+        "value": 4,
+        "source": "jiang2023a",
+        "location": "Section II, Fig. 3 description, PDF p.2",
+        "quote": "The input activation (IA) driver delivers 128 (4b) IA to all 16 SR groups, which are further divided equally into 8 parts for each SR in the SR group.",
+        "reads": "delivers 128 (4b) IA"
+      }
+    },
+    "readout_law": {
+      "stated": {
+        "value": {
+          "adc_bits": 32,
+          "mult_bits": 24,
+          "output_law": "identity",
+          "range": "calibrated"
+        },
+        "source": "jiang2023a",
+        "location": "Section II, PDF p.2, and Section III.A, PDF p.3",
+        "quote": "In total 16 32b outputs (SUM[31:0]) are computed each clock cycle for the macro. ... Unlike AIMC, our macro provides a full precision partial sum, causing no precision lost from truncation of that partial sum.",
+        "reads": "In total 16 32b outputs (SUM[31:0]) are computed each clock cycle for the macro. ... Unlike AIMC, our macro provides a full precision partial sum",
+        "assumed_fields": {
+          "range": "the toolchain's converter form (W34's point form): the range calibrated from data; the source converts nothing",
+          "mult_bits": "the toolchain's converter form (W34's point form): a 24-bit requantization multiplier; the source states no multiplier"
+        },
+        "note": "A digital macro: its 32-bit sums are exact, the identity converter at 32 bits (route (b)'s READOUT_LAW_INT is this law)."
+      }
+    },
+    "onchip_arithmetic": {
+      "unstated": {
+        "note": "The macro's outputs are its 32-bit sums (Section II); it states no activation, addition or pooling unit; absent, they run on the host."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The macro's weights are 6T SRAM, rewritable (Section II); the description declares no operand core type, and a deployment that places operand products on it declares one (Fig. 1's rows)."
+      }
+    }
+  }
 }

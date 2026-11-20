@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
+from mimarsinan.common.refusal.format_version import exact_version
 from mimarsinan.deployment_record.schema import Band
 from mimarsinan.deployment_record.schema.serde import (
     optional,
@@ -73,6 +74,17 @@ class CostTerm:
         kwargs = strict_kwargs(cls, data)
         kwargs["band"] = optional(Band.from_dict, kwargs["band"])
         return cls(**kwargs)
+
+
+@dataclass(frozen=True)
+class PricingFlag:
+    """[U-AREA] A departure a priced term names (computed at read, never sealed in a record): the term, the flag's
+    kind, its reason and, for a reading beside the band, the reading's value in the term's unit."""
+
+    name: str
+    kind: str
+    reason: str
+    value: Optional[float] = None
 
 
 def find_term(terms: Sequence[CostTerm], name: str) -> CostTerm:
@@ -139,7 +151,7 @@ class DeploymentCostReport:
     lifetime: Tuple[CostTerm, ...] = ()
 
     def __post_init__(self) -> None:
-        if int(self.format_version) != COST_REPORT_FORMAT_VERSION:
+        if exact_version(self.format_version, "DeploymentCostReport") != COST_REPORT_FORMAT_VERSION:  # [U-HOST3]
             raise ValueError(
                 f"DeploymentCostReport format_version {self.format_version} != "
                 f"{COST_REPORT_FORMAT_VERSION}; migrate explicitly, never "

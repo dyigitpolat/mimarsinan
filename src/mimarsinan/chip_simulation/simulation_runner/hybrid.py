@@ -21,6 +21,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
     run_hybrid_stages,
 )
+from mimarsinan.chip_simulation.hybrid_run.output_decode import decode_held, program_output_gauge
 from mimarsinan.chip_simulation.spiking_semantics import is_analytical_ttfs, requires_ttfs_firing
 from mimarsinan.chip_simulation.simulation_runner.emit import (
     _PreparedSegment,
@@ -203,7 +204,7 @@ class SimulationHybridMixin(SimulationHostContract):
         # segments are the chip simulator's to measure.
         run_hybrid_stages(
             hybrid, state_buffer, on_neural=on_neural, on_compute=on_compute,
-            stage_timer=self.stage_timer,
+            stage_timer=self.stage_timer, timed_samples=num_samples,  # [U-HOST] the traversal carries every sample
         )
 
         final_output = gather_final_output_numpy(
@@ -221,7 +222,8 @@ class SimulationHybridMixin(SimulationHostContract):
                 hybrid.output_sources,
                 simulation_length=int(self.simulation_length),
             )
-        predictions = np.argmax(final_output, axis=1)
+        # [U-TGAUGE2] the deployed readout's classes are the value domain's: each output at its producer's gauge
+        predictions = np.argmax(decode_held(final_output, program_output_gauge(hybrid, timing=is_ttfs)), axis=1)
 
         print("Evaluating simulator output...")
         return self._evaluate_chip_output(predictions)

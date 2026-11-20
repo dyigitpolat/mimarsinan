@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from mimarsinan.chip_simulation.odin_fpga.transports.factory import TRANSPORTS
 from mimarsinan.config_schema.registry.entries_platform_backends import (
+    ENABLE_BASIS,
     _meta_backend_enable,
     _why_backend_enable,
 )
@@ -28,11 +29,11 @@ ENTRIES = (
            "executor, but it stays off until the document asks for it, because "
            "running it needs a device (an RTL simulator or an Alveo board) that "
            "no config can assume is present.",
-       derived_from=("spiking_mode", "firing_granularity", "membrane_arithmetic"),
+       derived_from=ENABLE_BASIS,
        why=_why_backend_enable(
-           "odin_fpga",
+           "enable_odin_fpga_simulation",
            "the ODIN crossbar has no executor for this soma law or mode"),
-       meta=_meta_backend_enable("odin_fpga"), provenance="ConversionPolicy recipe"),
+       meta=_meta_backend_enable("enable_odin_fpga_simulation"), provenance="ConversionPolicy recipe"),
     _E("odin_fpga_transport", domain="event", group="deployment_target",
        owner="odin_fpga_backend", type=T.ENUM, options=TRANSPORTS,
        category=Category.ADVANCED, exposure="user", label="ODIN Device Transport",

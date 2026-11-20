@@ -9,13 +9,8 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.support.period_census import natural, settle_residency_segment
 from mimarsinan.mapping.support.schedule.pass_cut import TRANSFER_DISCIPLINES
 from mimarsinan.deployment_record.schema.wavefront import WavefrontRecord, settle_core_fields, wavefronts_from
-from mimarsinan.deployment_record.schema.serde import (
-    declared_only,
-    require_choice,
-    strict_kwargs,
-    tuple_of,
-    without_unset_declared,
-)
+from mimarsinan.deployment_record.schema.serde import (declared_only, require_choice, strict_kwargs, tuple_of,
+                                                       without_unset_declared)
 
 PASS_REASONS = frozenset({"initial", "capacity_overflow"})
 PROGRAMMING_KINDS = frozenset({"reprogram", "resident"})
@@ -30,12 +25,14 @@ class ComputeOpRecord:
     op_type: str
     output_width: int
     wall_s_total: Optional[float]
-    # Executions the wall covers: the divisor that puts a whole-run measured
-    # total onto the per-pass (per-sample) axis the latency decomposition uses.
+    # Executions (calls) the wall covers.
     invocations: Optional[int] = None
+    #: [U-HOST] The samples each timed call carried, as the runner stated them: with the calls, the inferences the wall
+    #: covers (``stage_timing.host_wall``, the one per-inference host wall). Unset on an untimed op (its bytes kept).
+    samples_per_call: Optional[int] = declared_only()
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return without_unset_declared(self, asdict(self))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ComputeOpRecord":
@@ -95,8 +92,9 @@ class SegmentRecord:
     operand_core_cells: Optional[Tuple[int, ...]] = declared_only()
     #: [U-F4] A wavefront group's first pass: its cores no instance of the pass uses (loaded, not evaluated).
     dark_core_indices: Optional[Tuple[int, ...]] = declared_only()
-    #: [U-F4] A wavefront group's later pass: per core, the ordinal of the head core it runs on.
-    core_ordinals: Optional[Tuple[int, ...]] = declared_only()
+    core_ordinals: Optional[Tuple[int, ...]] = declared_only()  # [U-F4] a later wavefront pass: each core's head core
+    dependency_depth: Optional[int] = declared_only()  # [U-LIF2 W7] the pass's level count D (unset: a format-1 record)
+    window_arrivals: Optional[int] = declared_only()  # [U-LIF2 r6] neuron-weighted producer windows taken early
 
     def __post_init__(self) -> None:
         require_choice("SegmentRecord", "pass_reason", self.pass_reason, PASS_REASONS)
@@ -162,12 +160,11 @@ def _stage_from_dict(data: Mapping[str, Any]) -> ScheduleStage:
 class PassCarryRecord:
     """What crossed the INTRA-SEGMENT pass boundaries, and under which discipline.
 
-    A pass boundary is one the schedule INTRODUCES, so the intermediate signal has to
-    be buffered either way; ``transfer`` says what was buffered. VERBATIM keeps the
-    spike raster and reproduces the fused execution bit-for-bit; COLLAPSE keeps window
-    counts and re-emits an even train, which is cheaper and normalizes rhythm. They are
-    DIFFERENT computations, so a record that did not name the one it ran would leave a
-    reader unable to say what produced the numbers.
+    A pass boundary is one the schedule INTRODUCES, so the intermediate signal has to be buffered either way;
+    ``transfer`` says what was buffered. VERBATIM keeps the spike raster and reproduces the fused execution
+    bit-for-bit; COLLAPSE keeps window counts and re-emits an even train, which is cheaper and normalizes rhythm. They
+    are DIFFERENT computations, so a record that did not name the one it ran would leave a reader unable to say what
+    produced the numbers.
     """
 
     transfer: str

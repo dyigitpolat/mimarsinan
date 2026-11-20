@@ -6,7 +6,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from mimarsinan.chip_simulation.activation_semantics import effective_legacy_spiking_mode, resolve_activation_semantics
+from mimarsinan.chip_simulation.activation_semantics import resolve_activation_semantics
+from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
 from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics, resolve_core_semantics
 from mimarsinan.config_schema.registry.decision_classes import COST_ONLY
 from mimarsinan.config_schema.registry.relevance import Relevance as R
@@ -102,14 +103,15 @@ _UNSEEN_BY_THE_SHAPE_ONLY_PLANE = ("pruning", "lif_depth_balancing_relays")
 
 def _run_value(cfg, key: str) -> Any:
     """``key`` as the run reads it: the declared value, else the conversion recipe's for the run's mode (the
-    ConversionPolicy SSOT that ``recipe_fold`` folds beneath the declarations: the LIF recipe arms the depth-balancing
-    relays); a value-domain run folds no spiking recipe, and an unknown mode (its own schema's keyed error) none."""
+    ConversionPolicy SSOT that ``recipe_fold`` folds beneath the declarations: the recipe of every per-cycle cascade
+    arms the depth-balancing relays), its schedule resolved from the declared variant as the plan resolves it
+    ([U-TGAUGE5]: a synchronized timing declaration is no cascade); a value-domain run folds no spiking recipe, and an
+    unknown mode (its own schema's keyed error) none."""
     declared = cfg.get(key)
     if declared is not None or is_mvm_core_semantics(resolve_core_semantics(cfg)):
         return declared
     try:
-        recipe = ConversionPolicy.derive(effective_legacy_spiking_mode(cfg), cfg.get("ttfs_cycle_schedule"),
-                                         spiking_variant=cfg.get("spiking_variant"))
+        recipe = ConversionPolicy.derive(resolve_spiking_point(cfg))
     except ValueError:
         return declared
     return recipe.knobs.get(key)
@@ -130,9 +132,11 @@ def _multiplexing_legal(cfg):
 
 def _pipelined_legal(cfg):
     """True only where position multiplexing may be true and the run's executors compose a wavefront pass: the value
-    domain, streamed LIF and every TTFS variant; windowed LIF (the synchronized variant, whose recipe arms per-hop
-    re-timing: each level its own unit) refuses it by name. An unresolvable semantics axis rules nothing out here: its
-    own keyed error is the single truth."""
+    domain, streamed LIF and every TTFS variant; the synchronized LIF variant refuses it by name under every
+    lif_window_firing, for two reasons: its recipe arms per-hop re-timing (each level its own unit), and under
+    integrate_then_emit one membrane holds a window's charge through its emission window, so a neuron is busy 2T
+    cycles an inference and no executor declares a window-end count emission. An unresolvable semantics axis rules
+    nothing out here: its own keyed error is the single truth."""
     if True not in _multiplexing_legal(cfg):
         return (False,)
     try:

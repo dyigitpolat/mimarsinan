@@ -95,11 +95,14 @@ def test_measured_validity_tier_is_valid_flagged():
         TIER_VALID_FLAGGED,
     )
 
+    from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
+
     verdict = classify_validity(
         load_pretrained_resnet18(_NUM_CLASSES, pretrained=False),
         _SHAPE,
         _NUM_CLASSES,
         encoding_placement="offload",
+        conversion=DeployedConversion(),  # the spiking contract this verdict reads, stated
     )
     print(
         f"\n[ResNet18 MEASURED] tier={verdict.tier} "
@@ -121,6 +124,7 @@ def test_measured_validity_tier_is_valid_flagged():
 
 
 def _classify(loader, *, placement):
+    from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
     from mimarsinan.mapping.verification.onchip_fraction import classify_validity
 
     return classify_validity(
@@ -128,6 +132,7 @@ def _classify(loader, *, placement):
         _SHAPE,
         _NUM_CLASSES,
         encoding_placement=placement,
+        conversion=DeployedConversion(),  # the spiking contract these verdicts read, stated
     )
 
 

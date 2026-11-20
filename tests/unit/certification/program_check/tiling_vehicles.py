@@ -8,7 +8,12 @@ tiled at ``max_neurons`` 2 the tile read only by E runs at 0 (``RA/11_wave2/e1/r
 ``two_depth``: C = [c0 reads a0, c1 reads b0] with b0 one deeper than a0, the rows listed but zero (M1, M2 there).
 ``host_compacted``: A (3 neurons, one dead) read by a host op and by B in the next segment, so A's outputs are encoded
 at a stage input under the dithered encode; the dead column is dropped at soft-core compaction (``pruned_col_mask``)
-on both IRs, so the programs' channel tables take the packer's reindexed branch."""
+on both IRs, so the programs' channel tables take the packer's reindexed branch.
+
+[U-TGAUGE5] ``consumer_split`` and ``two_depth`` hold a producer read at two depths: under a timed semantics (a
+per-cycle cascade) their identity programs read it at a latency gap other than one, which the per-cycle executor
+refuses by name (the window rule), so the sampled run records that refusal (``Case.refused``) beside the static
+verdict."""
 
 from __future__ import annotations
 
@@ -26,6 +31,7 @@ from mimarsinan.certification.randomized import program as P
 from mimarsinan.certification.randomized.arms import ARMS
 from mimarsinan.certification.randomized.instance import HOST, INPUT, NEURAL, Instance, Layer, Network
 from mimarsinan.certification.randomized.runner import _run, compare
+from mimarsinan.mapping.latency.depth_balancing import UnbalancedFanInError
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.mappers.structural import ConcatMapper, InputMapper, ReshapeMapper, SubscriptMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
@@ -127,12 +133,14 @@ def expanded(ir, nodes):
 @dataclass
 class Case:
     report: Any
-    windows: int
-    mismatches: int
+    windows: Optional[int]
+    mismatches: Optional[int]
     ir: Any
     unbounded: Any
     program: Any
     theorem: Any
+    #: ``"<run>: <refusal>"`` where the per-cycle executor refused a sampled run by the window rule, else ``None``
+    refused: Optional[str] = None
 
 
 def case(vehicle, *, max_neurons: int, dithered: bool = False, mutate: Optional[Callable] = None,
@@ -152,14 +160,20 @@ def case(vehicle, *, max_neurons: int, dithered: bool = False, mutate: Optional[
         cons = constraints(max_neurons)
         program = build_hybrid_mapping_for_pipeline(ir, dict(cons), pipeline_config=dict(run.config))
         theorem = build_identity_hybrid_mapping(ir_graph=unbounded, retimed_level_stages=run.retimed)
-        with torch.no_grad():
-            want, got = _run(theorem, instance, arm, identity=True), _run(program, instance, arm)
-    windows, mismatches, _ = compare(unbounded, expanded(unbounded, want), ir, expanded(ir, got))
+        refused = None
+        try:
+            with torch.no_grad():
+                want, got = _run(theorem, instance, arm, identity=True), _run(program, instance, arm)
+        except UnbalancedFanInError as exc:
+            refused = f"{type(exc).__name__}: {exc}"
+    windows = mismatches = None
+    if refused is None:
+        windows, mismatches, _ = compare(unbounded, expanded(unbounded, want), ir, expanded(ir, got))
     decl = CheckDeclaration(semantics=semantics, window=int(instance.timesteps), pass_transfer=TRANSFER[semantics],
                             dithered_encode=dithered, core_types=tuple(dict(c) for c in cons["cores"]))
     given = unbounded if reference is None else reference(ir, unbounded)
     report = check_deployment(program, ir_graph=ir, declaration=decl, unbounded_ir=given)
-    return Case(report, windows, mismatches, ir, unbounded, program, theorem)
+    return Case(report, windows, mismatches, ir, unbounded, program, theorem, refused)
 
 
 def dead_row_masks(*irs) -> None:

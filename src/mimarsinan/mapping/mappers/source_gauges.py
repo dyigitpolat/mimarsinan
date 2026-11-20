@@ -10,6 +10,7 @@ every layout node and the input root their own (pure) rule.
 
 from __future__ import annotations
 
+from mimarsinan.mapping.map_model_to_ir import LayoutGaugePlacement
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.scale_propagation import (
     first_source_scale,
@@ -34,4 +35,4 @@ def _visit(node, deps, out_scales):
 def read_source_gauges(model_repr) -> dict:
     """``node -> its per-channel gauge vector`` at the stamped state of the graph (the vectors the last source walk
     emitted, when nothing changed since)."""
-    return walk_out_scales(model_repr, _visit)
+    return walk_out_scales(model_repr, _visit, LayoutGaugePlacement(model_repr))

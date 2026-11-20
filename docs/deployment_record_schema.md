@@ -38,14 +38,42 @@ Module home: new top-level `src/mimarsinan/deployment_record/` (near-leaf: `pipe
 ## 1. Artifact, versioning, identity
 
 - Filename: `deployment_record.json`, in the run's working directory, written atomically.
-- `DEPLOYMENT_RECORD_FORMAT_VERSION = 1`, duplicated top-level for cheap sniffing.
+- `DEPLOYMENT_RECORD_FORMAT_VERSION = 3`, duplicated top-level for cheap sniffing. [composed head] Format 3 holds both named
+  changes since the base: U-HOST2's raw host wall named apart (the version 1 rule below) and U-LIF2 W7's run's
+  `lif_window_firing` in the identity with each pass's dependency depth. A format-1 record is migrated explicitly on
+  read (`migrate_format_1`: `VERSION_1_RULE`, then no window firing and no depth stated, read as what it ran, firing
+  while integrating with one level a pass). A format-2 record is refused by name: each unit sealed its own format 2
+  on its own tree only, never a record of record, and one number does not say which.
 - `from_dict` **rejects** unknown fields and wrong versions (the `CostRecord.from_dict`
   discipline). Schema evolution = version bump + explicit migration, never silent tolerance.
+- [U-HOST2] Version 2 names the sealed raw host wall apart from the per-inference `host_ops_s` quantity
+  (`timing.latency.host_ops_s_raw_total`) and seals `host_ops_s_per_pass` per inference. The one stated rule a
+  version 1 record is read by (`schema/record.py` `VERSION_1_RULE`, applied by `DeploymentRecord.from_dict`):
+  a version 1 record is read as version 3: timing.latency.host_ops_s (the raw total over the whole run) becomes
+  host_ops_s_raw_total with its value, host_ops_s_per_pass (per call in version 1, never per inference) is withheld
+  as None, and every other field is read as sealed. Any other version refuses.
+- [U-HOST3] A format_version is read exactly (`common/refusal/format_version.py`: an int, never a bool, a float or
+  a string; 1.5, 1.0, "1" and True refuse by name), by the record and by every other reader of a version (the sealed
+  physics, a physics profile, a host description, a cost record, a cost report, a floor book, an area component, a
+  lane block). The fields `VERSION_1_RULE` reads (`schema/record.py` `VERSION_1_FIELDS`: identity.format_version,
+  timing.latency.host_ops_s and timing.latency.host_ops_s_per_pass) are required of a version 1 record, its identity
+  states version 1, and it does not already name host_ops_s_raw_total; else it refuses by name
+  (`RecordVersionError`).
+- [U-HOST3] The sealed physics (`identity.platform.platform_physics_resolved`, and every other sealed physics) states,
+  where a row names a host, the description those rows were judged against: `host_origin` = `{kind: shipped |
+  registered, name, path, sha256}` (`platform_physics/hosts/registry.py` `HostOrigin`; the digest of the
+  description's JSON bytes; a shipped path is stated under the source root). At read-back the rows are judged
+  against the description held under that digest (a shipped one in `hosts/held/<sha256>.json`, every version kept;
+  a registered one while it stays registered), never against the description that holds the name now; a digest not
+  held, an origin beside no row naming a host, and rows naming a host with no origin (a physics sealed before the
+  origin seal) refuse by name. No record version changes: the field is serialized only where a row names a host.
+  [U-HOST4] A description is identified by its digest (with its kind and name), never by its path: one digest held
+  at two paths is one description, and the stated path stays in the record as stated text.
 - All schema types are frozen dataclasses (repo idiom); JSON-safe `to_dict`/`from_dict`.
 
 ```python
 RecordIdentity:
-    format_version: int              # == 1
+    format_version: int              # == 3
     run_dir: str
     cell_key: str                    # CertificationCell (firing × sync × backend axes)
     mode: str                        # spiking_mode / mvm dispatch string
@@ -57,6 +85,7 @@ RecordIdentity:
     deployment_options: Mapping      # max_schedule_passes, weight_bits,
                                      #   target_tq, T, tolerances
     created_at: str                  # ISO timestamp
+    window_firing: Optional[str]     # [U-LIF2] lif_window_firing the run resolved (None away from synchronized LIF)
 ```
 
 ## 2. Fragment schemas
@@ -69,6 +98,9 @@ ComputeOpRecord:                     # one per host ComputeOp stage
     name: str;  op_type: str
     output_width: int
     wall_s_total: Optional[float]    # measured host wall (StageTimer); None until timed
+    invocations: Optional[int]       # the timed calls the wall covers; None until timed
+    samples_per_call: Optional[int]  # [U-HOST] the samples each timed call carried, as the runner stated them;
+                                     #   serialized only when timed (an untimed op keeps its bytes)
 
 SegmentCoreRecord:                   # one per hard core of a neural segment
     core_index: int
@@ -93,6 +125,9 @@ SegmentRecord:                       # one per (neural segment × pass)
     params_bytes: int                # Σ core params_bytes (0 when resident)
     connectivity_entries: int
     static_latency_levels: int       # dependence-level currency (LayoutVerificationStats)
+    dependency_depth: Optional[int]  # [U-LIF2] levels of the pass by its cores' in-pass reads (unset: format 1)
+    window_arrivals: Optional[int]   # [U-LIF2 r6] producer windows its neurons integrate early, neuron-weighted
+                                     # (a wire that skips a level without a relay; unset where none)
 
 ScheduleRecord:
     stages: tuple[SegmentRecord | ComputeOpRecord, ...]   # program order
@@ -170,7 +205,11 @@ LatencyDecomposition:
     programming_s: Optional[ModeledValue]    # payload bytes / bandwidth band — MODELED
     compute_steps: int                       # Σ timesteps_executed (measured; legacy latency_steps)
     compute_sim_time_s: Optional[float]      # Σ sim_time_s (measured, includes NoC)
-    host_ops_s: Optional[float]              # Σ ComputeOpRecord.wall_s_total (measured)
+    host_ops_s_raw_total: Optional[float]    # Σ ComputeOpRecord.wall_s_total over the whole run (measured on the
+                                             #   development machine): a labelled diagnostic, never priced
+    host_ops_s_per_pass: Optional[float]     # the one per-inference host wall (stage_timing.host_wall: each op's
+                                             #   wall over calls x samples_per_call, summed over the ops); None when
+                                             #   untimed; a diagnostic, never priced
     sync_s: Optional[ModeledValue]           # sync_count × barrier band — MODELED
     note: str                                # explicit no-double-count statement
 
@@ -235,7 +274,7 @@ DeploymentRecord:
     energy: Optional[EnergyRecord]       # None ⟺ SANA-FE disabled and no event census declared
     adaptation: Optional[AdaptationRecord]
     provenance: Mapping[str, Provenance] # one entry per attached fragment group (seal-enforced)
-    format_version: int = 1
+    format_version: int = 3              # [composed head] version 1 is read by migrate_format_1 (section 1); 2 is refused
 ```
 
 ---

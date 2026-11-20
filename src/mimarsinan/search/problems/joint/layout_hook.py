@@ -246,6 +246,7 @@ class JointLayoutMixin(JointHostContract):
                 return cache.onchip_census
         census = compute_onchip_census(
             model, tuple(self.input_shape), int(self.num_classes), placement,
+            conversion=self.conversion,
         )
         if not self._searches_model:
             cache = self._hw_only_cache.get(placement)
@@ -258,7 +259,7 @@ class JointLayoutMixin(JointHostContract):
         """[E1] The firing semantics the executed-window rule branches on."""
         return stage_semantics_of(
             self.spiking_mode, self.ttfs_cycle_schedule,
-            retimed=bool(self.per_hop_retiming),
+            retimed=bool(self.per_hop_retiming), window_firing=self.window_firing,
         )
 
     def _static_view(

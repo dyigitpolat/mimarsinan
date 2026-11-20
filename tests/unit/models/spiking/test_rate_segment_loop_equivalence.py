@@ -5,6 +5,10 @@ cycle even though latency gating discards all work outside a core's
 ``[latency, latency+T)`` window. The optimized loop iterates precomputed
 per-cycle active sets; this file locks bit-equality against a verbatim copy of
 the pre-W3c loop across firing modes, span kinds, latencies, and recording.
+
+[U-TGAUGE5] The per-cycle executor refuses by name a segment whose live core read spans an executed latency gap other
+than one (the window rule), so each random segment is drawn gap free: a core read the drawn latencies leave at another
+gap reads a segment input instead (``_window_balanced``). The unbalanced draw is the refusal's test.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from mimarsinan.chip_simulation.recording.spike_recorder import (
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.mapping.latency.depth_balancing import UnbalancedFanInError
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
@@ -234,7 +239,28 @@ def _reference_run_neural_segment_rate(
     return output_counts
 
 
-def _random_segment(rng: random.Random, *, T: int, n_cores: int = 5):
+def _window_balanced(segment) -> None:
+    """Rewire every live core read at an executed latency gap other than one (``ChipLatency``'s latencies) to a segment
+    input, until no such read is left: the drawn spans, weights and latencies stay, and every core read the executor
+    runs is one gap long."""
+    from mimarsinan.mapping.latency.cycle_windows import core_window_gaps
+
+    for _ in range(len(segment.cores) + 1):
+        ChipLatency(segment).calculate()
+        gaps = core_window_gaps(segment)
+        if not gaps:
+            return
+        for gap in gaps:
+            core = segment.cores[gap.consumer]
+            core.axon_sources = [
+                SpikeSource(-2, 0, is_input=True)
+                if (not s.is_input_ and not s.is_off_ and not s.is_always_on_ and int(s.core_) == gap.producer)
+                else s for s in core.axon_sources]
+            core._axon_source_spans = None
+    raise AssertionError("the random segment did not balance")
+
+
+def _random_segment(rng: random.Random, *, T: int, n_cores: int = 5, balanced: bool = True):
     """Random small multi-core neural segment with mixed span kinds and latencies."""
     input_width = rng.randint(2, 4)
     cores = []
@@ -285,6 +311,8 @@ def _random_segment(rng: random.Random, *, T: int, n_cores: int = 5):
             out_sources.append(SpikeSource(src_core, src_neuron))
     segment.output_sources = np.asarray(out_sources, dtype=object)
 
+    if balanced:
+        _window_balanced(segment)
     stage = HybridStage(
         kind="neural",
         name="random_segment",
@@ -389,3 +417,13 @@ class TestRateSegmentLoopEquivalence:
     @pytest.mark.parametrize("seed", range(3))
     def test_recording_path_bit_equal(self, seed):
         self._assert_equal(seed, "Default", batch=1, record=True)
+
+    def test_an_unbalanced_segment_is_refused_by_name(self):
+        """The window rule's refusal: the raw draw of seed 0 holds a live core read at an executed latency gap other
+        than one, which the per-cycle loop refuses before a cycle folds (the verbatim pre-W3c loop read it)."""
+        rng = random.Random(0)
+        hybrid, stage, width = _random_segment(rng, T=6, balanced=False)
+        flow = _make_flow(hybrid, T=6, mode="Default")
+        train = _input_train(rng, T=6, batch=3, width=width, single_spike=False)
+        with pytest.raises(UnbalancedFanInError, match="no mapping armed"):
+            flow._run_neural_segment_rate(stage, input_spike_train=train)

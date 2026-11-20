@@ -26,6 +26,7 @@ import pytest
 import torch
 
 from integration.parity_harness import ensure_nevresim_ready, ensure_sanafe
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import enumerate_execution_stages
 from mimarsinan.chip_simulation.synaptic_events import (
     census_by_unit,
@@ -102,7 +103,7 @@ def _nevresim_records(vehicle, mapping, records):
                                     int if config.get("weight_quantization") else float,
                                     spike_generation_mode=config["spike_generation_mode"],
                                     firing_mode=config["firing_mode"], thresholding_mode=config["thresholding_mode"],
-                                    spiking_mode=config["spiking_mode"], verbose=False)
+                                    point=point_of_mode(config["spiking_mode"]), verbose=False)
             _raw, spk = driver.predict_spiking_raw_with_records([(rates[0], np.zeros(1))], T,
                                                                 ChipLatency(segment).calculate())
         out.append(spk[0])

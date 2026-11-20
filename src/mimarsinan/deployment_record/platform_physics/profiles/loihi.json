@@ -123,13 +123,6 @@
       "citation": "davies2018loihi Table 2, p.96",
       "note": "'Mesh-wide barrier sync time (1-32 tiles) | 113-465 ns'. The band IS the published tile-count range; nominal takes the 32-tile end, since a real deployment spans the mesh rather than one tile."
     },
-    "host_compute_rate": {
-      "nominal": 1.0,
-      "unit": "fraction",
-      "evidence_kind": "derived",
-      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
-      "note": "The derate a MEASURED host wall is divided by. Identity by definition here: Loihi-hosted deployments measure their CPU walls end-to-end (frady2020neuromorphic Sec 5.4 states 220us + 300us on the latency critical path), and derating a measurement would invent headroom. Only the measured-wall pricing path reads this; no host THROUGHPUT rate (host_macs_per_s) is declared, so a run that never measured its wall still refuses host-inclusive axes by name."
-    },
     "t_cycle": {
       "low": 5.8,
       "nominal": 13.0,
@@ -189,19 +182,12 @@
       "derivation": "No ADC exists in a Loihi core; see area_per_adc."
     },
     "area_per_core_total": {
-      "nominal": 468750.0,
+      "nominal": 410000.0,
       "unit": "um^2",
-      "evidence_kind": "derived",
-      "citation": "davies2018loihi Section Silicon Realization, p.95",
-      "derivation": "60 mm^2 die / 128 neuromorphic cores = 0.46875 mm^2 = 468750 um^2 per core. This is a DIE-AREA SHARE, not a measured core layout: the die also carries three x86 cores and I/O, so the real neuromorphic core is smaller. Cross-checked against the paper's own 'maximum neuron density of 2,184 per mm^2': 1024 neurons / 0.46875 mm^2 = 2184.5 neurons/mm^2, reproducing it to four figures \u2014 which is what confirms the division is the one the authors made.",
-      "note": "An upper bound on the per-core footprint. Supersedes the decomposed area constants."
-    },
-    "area_global_fixed": {
-      "nominal": 0.0,
-      "unit": "mm^2",
-      "evidence_kind": "derived",
-      "citation": "davies2018loihi Section Silicon Realization, p.95",
-      "derivation": "The whole 60 mm^2 die is already attributed across the 128 cores by area_per_core_total (a die-area SHARE, not a core layout), so charging any of it again chip-wide would double-count the same measurement."
+      "evidence_kind": "published",
+      "citation": "intel_loihi2_brief Table 2 'Comparison of Loihi to Loihi 2', row 'Core Area', column 'Loihi', p.7 (T1-LO-05)",
+      "derivation": "The vendor's own neuromorphic core: 'Core Area 0.41 mm2 0.21 mm2' (0.41 mm^2 = 410,000 um^2). [U-AREA] It replaces the die-area share 468,750 um^2 (60 mm^2 / 128 cores), which counted the x86 cores and the I/O into every core.",
+      "note": "The area rule's anchor core (area_rule.anchor.core_mm2 reads T1-LO-05); chip area is priced by the area_rule block. Supersedes the decomposed area constants."
     },
     "p_static_per_core": {
       "nominal": 815.0,
@@ -227,5 +213,46 @@
       "citation": "davies2018loihi Table 2, p.96",
       "note": "'Energy per synaptic spike op (min) | 23.6 pJ'. This is a PER-OPERATION energy, not a whole-chip average: it does not contain the neuron-update or static power the same table reports separately, so it belongs beside them rather than superseding them. Published as a MINIMUM with no maximum, so the band is a point at the published value -- inventing an upper corner would fabricate the number the paper withheld, and a prediction built on a minimum is expected to land high."
     }
+  },
+  "area_rule": {
+    "type": "T1",
+    "terms": "type_rule",
+    "outside": "own_die",
+    "node": {
+      "node_nm": 14
+    },
+    "anchor": {
+      "scope": "die",
+      "core_mm2": "v('T1-LO-05')",
+      "die_mm2": "v('T1-LO-01')",
+      "n_pub": "s('T1-LO-01', 'quote', '128 neuromorphic cores', 128)",
+      "own_share": {
+        "basis": "own_memory_share"
+      }
+    },
+    "organization": {
+      "rows": 128,
+      "cols": 1024,
+      "weight_bits_per_cell": 8,
+      "terms": "bits",
+      "term_weights": {
+        "bits": 1.0
+      },
+      "stored_bits_per_cell": 8,
+      "bits_per_neuron": 640.0,
+      "citation": {
+        "rows": "CO profiles/loihi.json validity.geometry.axons (128)",
+        "cols": "davies2018loihi p05.raw.txt:45 'Each neuromorphic core implements 1,024'",
+        "synaptic memory": "davies2018loihi p08.raw.txt:6 'must not exceed 128 KB'",
+        "core memory": "intel_loihi2_brief p07.raw.txt:16 'Memory/Neuron Core 208 KB'",
+        "stored_bits_per_cell": "128 KB / (128 x 1,024)",
+        "bits_per_neuron": "(208 KB - 128 KB) / 1,024 compartments",
+        "weight_bits_per_cell": "CO profiles/loihi.json validity.geometry.cell_bits"
+      }
+    },
+    "drops": [
+      "area_global_fixed 0",
+      "area_per_core_total 468,750 um2 becomes 410,000 (T1-LO-05)"
+    ]
   }
 }

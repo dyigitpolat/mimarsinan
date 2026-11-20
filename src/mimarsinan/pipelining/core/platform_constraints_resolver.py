@@ -22,7 +22,7 @@ from mimarsinan.config_schema.registry.declaration_judge import (
 from mimarsinan.config_schema.registry.entries_write import platform_bias_mode
 from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 from mimarsinan.deployment_record.platform_physics.resolve import (
-    compute_physics_profile, resolve_platform_physics, write_physics_profile,
+    compute_physics_profile, physics_declarations, resolve_platform_physics, write_physics_profile,
 )
 from mimarsinan.deployment_record.quantities.compute_technology import COMPUTE_PHYSICS_RESOLVED
 from mimarsinan.deployment_record.quantities.write_technology import WRITE_PHYSICS_RESOLVED, core_technologies
@@ -153,8 +153,7 @@ def build_platform_constraints_resolved(
     # an unknown constant fails loud HERE, at resolution time.
     physics = _read_by_consumer(
         pipeline_config, ("platform_physics_profile", "platform_physics_overrides", LANE_KEY),
-        lambda: resolve_platform_physics(str(pipeline_config.get("platform_physics_profile", "") or ""),
-                                         pipeline_config.get("platform_physics_overrides") or {},
+        lambda: resolve_platform_physics(*physics_declarations(pipeline_config),  # [U-CHIPKEYS4] the label's too
                                          lane_block=declared_lane_block(pipeline_config)))
     pcfg["platform_physics_resolved"] = physics.to_dict() if physics else None
     # [U-C4] The conversion model's cells_per_weight is the core types' own count, stated twice: they agree.
@@ -164,7 +163,7 @@ def build_platform_constraints_resolved(
     # description stores a weight in a block states its block.
     _read_by_consumer(pipeline_config, ("cores", "platform_physics_profile"),
                       lambda: check_technology_blocks(cores, target_bundles.technology_blocks(),
-                                                      str(pipeline_config.get("platform_physics_profile", "") or "")))
+                                                      physics_declarations(pipeline_config)[0]))
     # N2b: each core type's named write physics, sealed the same way (only when a core type names one).
     sealed = _read_by_consumer(pipeline_config, ("cores",), lambda: _sealed_write_physics(cores))
     if sealed:

@@ -1,0 +1,178 @@
+{
+ "format_version": 2,
+ "logic_rule_reference": "sram_6t_logic_rule",
+ "kinds": {
+  "sram_6t_push_rule": {
+   "factor_of_sigma": {
+    "value": 1.0,
+    "unit": "1",
+    "evidence_kind": "derived",
+    "citation": [
+     "S-SRAM-65"
+    ],
+    "derivation": "the series' own cell (definition)",
+    "recompute": {
+     "expression": "1"
+    },
+    "note": ""
+   },
+   "applies_to": "SRAM storage and state bits"
+  },
+  "sram_6t_logic_rule": {
+   "factor_of_sigma": {
+    "value": 1.8848254220263398,
+    "unit": "1",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-22",
+     "T2-VA-01"
+    ],
+    "derivation": "k_L: the node's published logic-rule 6T over its reference cell sigma(n), geometric mean (rule A)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "65 nm",
+       "expression": "v('T2-VA-01') / r('cell_kinds:kinds.cim_8t_multiplying_bitcell_mom.factor_of_logic_6t') / sigma(65)"
+      },
+      {
+       "label": "22 nm",
+       "expression": "v('S-SRAM-22', 1) / sigma(22)"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   },
+   "applies_to": "the logic-rule 6T every SRAM compute cell is stated against"
+  },
+  "cim_amortized_6t_charge_domain": {
+   "factor_of_logic_6t": {
+    "value": 1.38,
+    "unit": "1",
+    "evidence_kind": "derived",
+    "citation": [
+     "T2-CR-02"
+    ],
+    "derivation": "amortized bitcell 38% larger than the standard 6T, read as the logic-rule 6T (chen2021capram; N-4: read from the quote)",
+    "recompute": {
+     "expression": "1 + qn('T2-CR-02', 'quote', 'about 38% larger') / 100"
+    },
+    "note": ""
+   }
+  },
+  "cim_8t_multiplying_bitcell_mom": {
+   "factor_of_logic_6t": {
+    "value": 1.8,
+    "unit": "1",
+    "evidence_kind": "derived",
+    "citation": [
+     "T2-VA-01"
+    ],
+    "derivation": "8T M-BC, 80% larger than a logic-rule 6T (valavi2019a; N-4: read from the quote)",
+    "recompute": {
+     "expression": "1 + qn('T2-VA-01', 'quote', 'roughly 80% larger') / 100"
+    },
+    "note": ""
+   }
+  },
+  "cim_10t1c_mom": {
+   "factor_of_logic_6t": {
+    "value": 2.0,
+    "unit": "1",
+    "evidence_kind": "derived",
+    "citation": [
+     "S-SRAM-22",
+     "T2-IM-04"
+    ],
+    "derivation": "10T1C compute cell over the logic-rule 6T at 22 nm (kneip2024imagine)",
+    "recompute": {
+     "expression": "v('T2-IM-04') / v('S-SRAM-22', 1)"
+    },
+    "note": ""
+   }
+  },
+  "cim_logic_rule_6t_digital": {
+   "factor_of_logic_6t": {
+    "value": 1.0,
+    "unit": "1",
+    "evidence_kind": "derived",
+    "citation": [
+     "T2-JI-01"
+    ],
+    "derivation": "an unmodified logic-rule 6T with MAC logic beside it (jiang2023a; N-4: r1's snum form on the quote)",
+    "recompute": {
+     "expression": "s('T2-JI-01', 'quote', 'logic rule 6T bit-cell', 1)"
+    },
+    "note": ""
+   }
+  },
+  "rram_1t1r": {
+   "F2": {
+    "value": 270.8379962382808,
+    "unit": "F^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "T3-IN-01",
+     "T3-NR-05"
+    ],
+    "derivation": "a 1T1R cell in node-name units: geometric mean of the 22FFL subarray density and NeuRRAM's RRAM share per cell",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "22 nm subarray",
+       "expression": "1e6 / (v('T3-IN-01') * 1e6) / (s('T3-IN-01', 'node', '22 nm', 22) / 1e3) ** 2"
+      },
+      {
+       "label": "130 nm chip",
+       "expression": "v('T3-NR-05', 1) / (s('T3-NR-05', 'node', '130 nm', 130) / 1e3) ** 2"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   },
+   "area": "f x (node)^2"
+  },
+  "rram_crosspoint": {
+   "F2": {
+    "value": 4.0,
+    "unit": "F^2",
+    "evidence_kind": "published",
+    "citation": [
+     "S-NVM-01"
+    ],
+    "entry_value": {
+     "id": "S-NVM-01",
+     "index": null,
+     "key": null
+    },
+    "note": "a review's statement (model)"
+   }
+  },
+  "pcm_analog_unit_cell": {
+   "um2": {
+    "value": 11.76,
+    "unit": "um^2",
+    "evidence_kind": "published",
+    "citation": [
+     "T4-KA-01"
+    ],
+    "entry_value": {
+     "id": "T4-KA-01",
+     "index": null,
+     "key": null
+    },
+    "note": "node-flat: the footprint is set by the access transistors"
+   }
+  }
+ },
+ "naming": "kinds are named by circuit; a chip appears only in a citation (review m7)"
+}

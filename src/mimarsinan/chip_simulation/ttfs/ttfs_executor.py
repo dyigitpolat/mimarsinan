@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -48,6 +48,8 @@ class TtfsContractNeuralStageResult:
     neural_result: NeuralSegmentResult
     membrane_voltages: List[np.ndarray]
     seg_input: np.ndarray
+    # The executor's per-core lattice record of the same execution (``NeuralSegmentResult.membrane_lattice``).
+    membrane_lattice: Optional[List[Optional[Tuple[np.ndarray, np.ndarray]]]] = None
 
 
 @dataclass
@@ -86,12 +88,14 @@ class TtfsAnalyticalExecutor:
         if seg_in.ndim != 2:
             raise ValueError(f"seg_input must be 2-D; got shape {seg_in.shape}")
         seg_arrays = segment_ttfs_arrays_from_mapping(hcm)
+        lattice: List[Optional[Tuple[np.ndarray, np.ndarray]]] = [None] * len(seg_arrays.core_params)
         seg_out, bufs, membrane = run_ttfs_segment(
             seg_arrays,
             seg_in,
             simulation_length=int(simulation_length),
             spiking_mode=spiking_mode,
             comparator_half_step=comparator_half_step,
+            lattice_out=lattice,
         )
 
         per_core: List[np.ndarray] = []
@@ -108,6 +112,7 @@ class TtfsAnalyticalExecutor:
             inter_stage=np.asarray(seg_out, dtype=np.float64),
             per_core_activations=per_core,
             membrane_voltages=membrane,
+            membrane_lattice=lattice,
         )
 
     def membrane_voltages(
@@ -216,6 +221,7 @@ def run_ttfs_contract_neural_stage(
         neural_result=result,
         membrane_voltages=membrane_V,
         seg_input=seg_in,
+        membrane_lattice=result.membrane_lattice,
     )
 
 

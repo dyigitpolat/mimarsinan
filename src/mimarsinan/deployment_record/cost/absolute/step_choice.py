@@ -24,7 +24,8 @@ from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.cost.absolute.context import PricingContext
 from mimarsinan.deployment_record.cost.absolute.formulas import ENERGY_COMPONENTS, add_bands
 from mimarsinan.deployment_record.cost.absolute.context import external_refusals
-from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_terms
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import StaticSum, static_leg
+from mimarsinan.deployment_record.cost.absolute.writes import LATENCY_WRITE, WriteInputs, price_write_terms
 from mimarsinan.deployment_record.cost.host_terms import chip_store_table, store_refusal, write_link_bytes
 from mimarsinan.deployment_record.platform_physics.hosts.store import (
     host_owned, prices_host_link, store_byte_energy, undeclared_link_energy)
@@ -91,8 +92,13 @@ def carry_energy(census: Any, physics: PlatformPhysics) -> Band:
     return add_bands(bands, " + ".join(b.basis for b in bands)) if bands else Band(0.0, 0.0, 0.0, "no carry")
 
 
-def price_step(census: Any, physics: PlatformPhysics, policy: Any) -> StepPrice:
-    """``price_write_terms``'s write energy plus the carry components of one step's period census."""
+def price_step(census: Any, physics: PlatformPhysics, policy: Any, *, static: StaticSum) -> StepPrice:
+    """``price_write_terms``'s write energy plus the carry components of one step's period census. [U-ENERGY class 1,
+    m-3] ``static`` is required: the chip's one static sum (``static_power.StaticSum``), or ``static_power.NO_STATIC``
+    stated by a caller that prices no static leg. The step's exposed write time carries the sum's leg by the one leg
+    form, corner by corner (the compute's leg is the same for every step, the write wall's is not); a leg the form
+    refuses refuses the step by its reason. No pricer of record calls this function: the printed rows' steps are
+    declared indices, so this leg moves no printed value."""
     if refusals := external_refusals(physics):
         raise StepChoiceError("; ".join(f"{r.name}: {r.reason}" for r in refusals))
     writes = price_write_terms(census, physics, policy)
@@ -100,6 +106,12 @@ def price_step(census: Any, physics: PlatformPhysics, policy: Any) -> StepPrice:
         reason = next((r.reason for r in writes.refusals if r.name == "energy_write_mj"), "write energy refused")
         raise StepChoiceError(f"the step's write energy is not priced: {reason}")
     write = writes.energy
+    wall_refused = next((r.reason for r in writes.refusals if r.name == LATENCY_WRITE), "")
+    form = static_leg(static, writes.exposed, "the step's exposed write time", wall_refused)  # [V-M1]
+    if form.refused:
+        raise StepChoiceError(f"the step's write energy is not priced: {form.refused}")
+    if form.band is not None:
+        write = add_bands([write, form.band], f"{write.basis} + {form.band.basis}")
     if host_owned(physics):  # [U-J3] the write transfer from a host-owned store: the period's payload over K
         payload = sum(p.payload_bytes for p in census.passes) / int(policy.batch_k)
         transfer = _store_bytes(physics, payload, "the period's payload bytes / K")
@@ -112,13 +124,15 @@ def price_step(census: Any, physics: PlatformPhysics, policy: Any) -> StepPrice:
     return StepPrice(write=write, carry=carry_energy(census, physics))
 
 
-def cheapest_step(censuses: Sequence[Any], physics: PlatformPhysics, policy: Any, *, corner: str = "nominal") -> int:
-    """Index of the step whose census prices the least writes plus carry at ``corner`` (ties to the first)."""
+def cheapest_step(censuses: Sequence[Any], physics: PlatformPhysics, policy: Any, *, static: StaticSum,
+                  corner: str = "nominal") -> int:
+    """Index of the step whose census prices the least writes plus carry at ``corner`` (ties to the first); [m-3]
+    ``static`` required, as ``price_step``'s."""
     if corner not in CORNERS:
         raise StepChoiceError(f"corner {corner!r} is not one of {CORNERS}")
     best_index, best_cost = None, None
     for index, census in enumerate(censuses):
-        cost = price_step(census, physics, policy).at(corner)
+        cost = price_step(census, physics, policy, static=static).at(corner)
         if best_cost is None or cost < best_cost - TIE * abs(best_cost):
             best_index, best_cost = index, cost
     if best_index is None:

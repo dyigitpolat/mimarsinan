@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from mimarsinan.mapping.platform.packaging_contract import SPIKING_PACKAGING
+from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block, host_descriptions
 from unit.deployment_record.introspection.test_scaling_ladder import F_HAND, _network, _OneConv, _platform
 
 SCRIPT = Path(__file__).resolve().parents[4] / "scripts" / "scaling_ladder.py"
@@ -172,7 +173,9 @@ class TestBundleTargetsVariantsAndArms:
         assert [(c["max_axons"], c["max_neurons"], c["count"]) for c in macro["cores"]] == [(128, 1024, 1)]
         assert script.target_spec("truenorth")["packaging"] == "spiking"
         puma = script.target_spec("puma_node_like")
-        assert puma["bundle"]["physics"] is False and puma["packaging"] == "value" and puma["bundle"]["packaging_note"]
+        # [U-CHIPKEYS] every description states its core semantics: PUMA's MVM is read from its source, no note
+        assert puma["bundle"]["physics"] is False and puma["packaging"] == "value"
+        assert puma["bundle"]["packaging_note"] is None and puma["keys"]["core_semantics"] == "mvm"
 
     def test_a_bundle_permission_replaces_the_scripts_capability_and_core_fields_reach_every_core(self):
         script = _script()
@@ -188,8 +191,8 @@ class TestBundleTargetsVariantsAndArms:
         script = _script()
         store = {"e_dma_per_byte": {"nominal": 1.0, "unit": "pJ", "evidence_kind": "estimated", "note": "test"},
                  "t_program_per_byte": {"nominal": 2.0, "unit": "ns", "evidence_kind": "estimated", "note": "test"}}
-        host = {"platform_physics_overrides": {
-            "p_host": {"nominal": 3.0, "unit": "W", "evidence_kind": "estimated", "note": "test"}}}
+        host = {"platform_physics_overrides": {  # [U-HOST2] the first read description's own power row
+            "p_host": host_description_block(host_descriptions()[0])["p_host"]}}
         (tmp_path / "store.json").write_text(json.dumps(store))
         (tmp_path / "host.json").write_text(json.dumps(host))
         variants = script.variant_blocks(["shipped=", f"s=host:{tmp_path}/host.json,backing_store:{tmp_path}/store.json"])

@@ -111,6 +111,9 @@ _NODE: Dict[str, Readers] = {
     # grid on the integer value path): it reaches the program only through the stamped law's bias term, which ``laws``
     # reads.
     "bias_row_drive": (UNREAD,),
+    # [U-BRANGE2] the export's census of the on-chip bias register codes it saturated (NAPQ saturates the same codes in
+    # the trained model): a count for the run's log, read by no builder.
+    "bias_register_clipped": (UNREAD,),
     # [WI-5e] a pool lane's and a reduction's pool output per column and its pool op; [C5] a depth-balancing relay's
     # mark: the keys of ``ir-tiling`` (``unbounded.unit_keys``).
     **_same(("ir-tiling",), "lane_outputs", "lane_source_name", "_depth_relay"),

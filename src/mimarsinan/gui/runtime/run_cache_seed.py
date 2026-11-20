@@ -1,4 +1,10 @@
-"""Seed a new run working directory with pipeline cache from a previous run (edit & continue)."""
+"""Seed a new run working directory with pipeline cache from a previous run (edit & continue).
+
+[U-LIF2 r4] A run directory holds one point: a seed that copies a run's entries (its cache, its steps file) writes that
+run's own point into the new run with them (``_carry_run_point``), so the new run takes it.
+
+[U-LIF2 r5] Each seed reads the source's point before its first copy (``run_directory_point``): a source whose point
+is refused by name leaves the new run without entries."""
 
 from __future__ import annotations
 
@@ -7,7 +13,10 @@ import logging
 import re
 import shutil
 from pathlib import Path
+from typing import Optional
 
+from mimarsinan.chip_simulation.stored_point import DirectoryPoint, persist_run_point, run_directory_point
+from mimarsinan.mapping.platform.target_expansion import door_read
 from mimarsinan.gui.runtime.persistence.paths import (
     RESOURCE_SOURCES_DIRNAME,
     RESOURCES_DIRNAME,
@@ -43,6 +52,7 @@ def copy_pipeline_cache_from_previous_run(
     if not meta_path.is_file():
         logger.warning("No pipeline cache at %s (skip seeding)", meta_path)
         return
+    held = run_directory_point(str(src), door=door_read)  # [U-LIF2 r5] before the first copy: a refusal leaves no entry
 
     dest = Path(dest_working_dir).resolve()
     dest.mkdir(parents=True, exist_ok=True)
@@ -70,6 +80,7 @@ def copy_pipeline_cache_from_previous_run(
             shutil.copy2(src_file, dest / f"{name}{ext}")
         else:
             logger.warning("Cache entry missing expected file %s", src_file)
+    _carry_run_point(held, dest)
 
 
 def copy_steps_json_from_previous_run(
@@ -84,9 +95,19 @@ def copy_steps_json_from_previous_run(
     if not src.is_file():
         logger.debug("No steps.json at %s (skip seeding)", src)
         return
+    held = run_directory_point(str(src.parent.parent), door=door_read)  # [U-LIF2 r5] before the first copy
     dest_dir = Path(dest_working_dir).resolve() / "_GUI_STATE"
     dest_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest_dir / "steps.json")
+    _carry_run_point(held, dest_dir.parent)
+
+
+def _carry_run_point(held: Optional[DirectoryPoint], dest: Path) -> None:
+    """[U-LIF2 r4] Write the point the source run directory held (persisted, else stated by its saved document beside
+    its entries; [U-LIF2 r5] read before the first copy) into the run directory its entries were copied to; nothing
+    where the source held none."""
+    if held is not None:
+        persist_run_point(str(dest), held.point)
 
 
 def copy_resources_from_previous_run(

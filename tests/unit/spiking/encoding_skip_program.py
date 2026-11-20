@@ -27,6 +27,7 @@ from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
 from mimarsinan.models.nn.activations import LIFActivation
+from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.pipelining.core.nf_scm_parity import _group_record_by_perceptron
 from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
@@ -119,7 +120,10 @@ class Program:
 
 
 def build_program(theta_enc: float, *, retimed: bool = False, thetas=THETAS,
-                  weight_bits: Optional[int] = None) -> Program:
+                  weight_bits: Optional[int] = None, stem_entry_grid: bool = False) -> Program:
+    """``stem_entry_grid``: the stem's input passes the window's entry quantizer (the 1/T entry grid its samples sit
+    on), declared before the projection, so its membrane lives on the ``s T`` lattice the projection then stamps
+    (U-POST G4: a host-side stem reading a float input carries no lattice)."""
     torch.manual_seed(0)
     net = EncodingSkipBlock()
     with torch.no_grad():  # a live cascade: both cores' counts span the window
@@ -135,6 +139,8 @@ def build_program(theta_enc: float, *, retimed: bool = False, thetas=THETAS,
         lif.use_cycle_accurate_trains = True
         p.base_activation = lif
         p.activation = lif
+    if stem_entry_grid:
+        perceptrons[0].append_input_wire_op(ChipInputQuantizer(T=T, activation_scale=perceptrons[0].input_activation_scale))
     repr_ = flow.get_mapper_repr()
     compute_per_source_scales(repr_, arm_wire_value_ops=True)
     propagate_boundary_input_scales(flow, input_data_scale=1.0)

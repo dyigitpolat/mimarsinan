@@ -22,6 +22,8 @@ from mimarsinan.chip_simulation.nevresim.connectivity import (
 )
 from mimarsinan.chip_simulation.nevresim.execute_nevresim import execute_simulator
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver, _python_to_cpp_type_name
+from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
+from mimarsinan.chip_simulation.window_firing import FIRE_WHILE_INTEGRATING, WINDOW_FIRING_KEY
 from mimarsinan.chip_simulation.nevresim.profiling.compile_profile import (
     NevresimCompileProfile,
     ProfileTimer,
@@ -33,6 +35,12 @@ from mimarsinan.common.file_utils import input_to_file, prepare_containing_direc
 from mimarsinan.mapping.export.chip_export import hard_cores_to_chip
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore.hard_core_mapping import HardCoreMapping
+
+
+#: [U-LIF2 r2] The document a profile emits: the LIF program nevresim executes, its window firing stated (the value
+#: nevresim's capability row runs), resolved through the one resolution like any run's.
+PROFILED_DOCUMENT = {"spiking_mode": "lif", "firing_mode": "Default", "thresholding_mode": "<=",
+                     WINDOW_FIRING_KEY: FIRE_WHILE_INTEGRATING}
 
 
 def profile_mapping_compile(
@@ -95,7 +103,7 @@ def profile_mapping_compile(
                 spike_gen_mode="Deterministic",
                 firing_mode="Default",
                 weight_type=wt_cpp,
-                spiking_mode="lif",
+                point=resolve_spiking_point(PROFILED_DOCUMENT),
                 threshold_type=tt_cpp,
             )
             if connectivity_mode == "runtime":
@@ -116,7 +124,7 @@ def profile_mapping_compile(
                     simulation_length,
                     latency,
                     main_cpp_template,
-                    sim_cfg,
+                    simulation_config=sim_cfg,
                     verbose=False,
                 )
         row.codegen_s = codegen_timer.elapsed

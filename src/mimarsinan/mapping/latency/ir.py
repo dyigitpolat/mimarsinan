@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from mimarsinan.mapping.ir import IRGraph, IRNode, IRSource, NeuralCore
-from mimarsinan.mapping.latency.upstream import iter_upstream_neural_ids
+from mimarsinan.mapping.ir import IRGraph, IRNode, NeuralCore
+from mimarsinan.mapping.latency.upstream import ir_reads
 
 
 class IRLatency:
-    """Calculate and assign per-core latency for an IRGraph: core depth = 1 + max(upstream core depths), O(nodes) with memoization."""
+    """Calculate and assign per-core latency for an IRGraph: core depth = 1 + max(upstream core depths) over the reads
+    the one liveness predicate keeps (``upstream.ir_reads``), O(nodes) with memoization."""
 
     def __init__(self, ir_graph: IRGraph):
         self.ir_graph = ir_graph
@@ -26,12 +27,10 @@ class IRLatency:
             self._depth[node_id] = 0
             return 0
 
-        upstream_ids = list(
-            iter_upstream_neural_ids(
-                (s for s in node.input_sources.flat if isinstance(s, IRSource)),
-                skip_off=True,
-            )
-        )
+        # [U-LIVE] a read counts where the one liveness predicate keeps it (a dead row raises no tier)
+        # a live read is never off and never outside, so its node id is a producer's (distinct, in read order)
+        ids, live = ir_reads(node, self.ir_graph)
+        upstream_ids = list(dict.fromkeys(ids[live].tolist()))
 
         if not upstream_ids:
             depth = 1 if isinstance(node, NeuralCore) else 0

@@ -44,7 +44,17 @@ BASE_DIGESTS = {
 
 
 def _digest(fragment) -> str:
-    return hashlib.sha256(json.dumps(fragment.to_dict(), sort_keys=True).encode()).hexdigest()
+    data = fragment.to_dict()
+    if isinstance(fragment, DeploymentRecord):
+        # [composed head] the base's form of a format-3 record: U-LIF2 W7's window firing removed, U-HOST2's raw host
+        # wall named back as host_ops_s, the version 1.
+        data = json.loads(json.dumps(data))
+        assert data["format_version"] == data["identity"]["format_version"] == 3
+        data["format_version"] = data["identity"]["format_version"] = 1
+        assert data["identity"].pop("window_firing") is None
+        if "timing" in data:
+            data["timing"]["latency"]["host_ops_s"] = data["timing"]["latency"].pop("host_ops_s_raw_total")
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
 def _plan() -> ResidencyPlanRecord:

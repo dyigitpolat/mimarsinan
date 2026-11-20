@@ -36,13 +36,6 @@
       "citation": "frenkel2019odin Abstract and Section III, p.1 and p.5",
       "note": "'only 0.68um2 per 4-bit synapse'. Declared for decomposition studies, not summed with the aggregate above. Cross-check: 65536 x 0.68 = 44564 um^2, i.e. 51.6% of the 86400 um^2 core — about half the core is the synapse array, leaving the neurons, the SDSP update logic, the scheduler and the controller."
     },
-    "area_global_fixed": {
-      "nominal": 0.0,
-      "unit": "mm^2",
-      "evidence_kind": "derived",
-      "citation": "frenkel2019odin Fig. 8a, p.8",
-      "derivation": "The published 320 um x 270 um IS the whole neuromorphic processor and is already charged by area_per_core_total over the single core. Silicon outside it belongs to other blocks on the shared test chip, not to ODIN."
-    },
     "e_mac": {
       "nominal": 8.43,
       "unit": "pJ",
@@ -156,5 +149,41 @@
       "evidence_kind": "derived",
       "derivation": "[U-C C-1] An SRAM bit cell is written by one write operation, the unit in which ielmini2018inmemory p.7 counts its 1e16 cycles: one pulse per write."
     }
+  },
+  "area_rule": {
+    "type": "T1",
+    "terms": "type_rule",
+    "outside": "type",
+    "node": {
+      "node_nm": 28
+    },
+    "anchor": {
+      "scope": "core",
+      "core_mm2": "v('T1-OD-01')",
+      "n_pub": "s('T1-OD-01', 'scope', 'whole single-core processor', 1)",
+      "own_share": {
+        "basis": "own_memory_share"
+      }
+    },
+    "organization": {
+      "rows": 256,
+      "cols": 256,
+      "weight_bits_per_cell": 3,
+      "terms": "bits",
+      "term_weights": {
+        "bits": 1.0
+      },
+      "stored_bits_per_cell": 4,
+      "bits_per_neuron": 128.0,
+      "citation": {
+        "rows, cols": "T1-OD-01 scope (256 neurons, 64k synapses)",
+        "stored_bits_per_cell": "T1-OD-01 scope (64k 4-bit synapses)",
+        "bits_per_neuron": "frenkel2018a p03.raw.txt:266 'in 4kB and 32kB high-density single-port foundry SRAMs' / 256 neurons",
+        "weight_bits_per_cell": "CO profiles/odin.json validity.geometry.cell_bits"
+      }
+    },
+    "drops": [
+      "area_global_fixed 0"
+    ]
   }
 }

@@ -1,0 +1,199 @@
+{
+ "format_version": 2,
+ "kinds": {
+  "sar_dedicated": {
+   "law": {
+    "value": 739.269911780849,
+    "unit": "um^2 at the reference bits",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-ADC-01",
+     "T2-CR-03",
+     "T2-JA-02",
+     "T2-VA-01"
+    ],
+    "derivation": "dedicated SAR converters at 65 nm: a(b) = a_ref x 2^(alpha (b - ref)), least squares in log",
+    "recompute": {
+     "aggregate": "log_linear_least_squares",
+     "points": [
+      {
+       "label": "7-bit charge-injection SAR",
+       "expression": "v('T2-CR-03')"
+      },
+      {
+       "label": "8-bit column SAR",
+       "expression": "v('T2-JA-02') / 100 * (s('T2-JA-02', 'scope', 'column of 2304 bitcells', 2304) * v('T2-VA-01'))"
+      },
+      {
+       "label": "10-bit SAR",
+       "expression": "s('S-ADC-01', 'scope', '60 um x 36 um', 60 * 36)"
+      }
+     ],
+     "reference_bits": 8,
+     "bits": [
+      "s('T2-CR-03', 'scope', '7-bit', 7)",
+      "s('T2-JA-02', 'scope', '8-b SAR ADC', 8)",
+      "s('S-ADC-01', 'scope', '10 bit', 10)"
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": "",
+    "alpha_per_bit": 0.7757679939707942,
+    "bits_range": [
+     7.0,
+     10.0
+    ]
+   },
+   "reading": "the dedicated SAR law",
+   "outside_bits": "a named refusal",
+   "kind_basis_quotes": [
+    "TXT-chen2021capram-p06-33",
+    "TXT-chen2021capram-p06-34"
+   ],
+   "node": "all three points at 65 nm: node dependence open; lifting figure: a dedicated SAR's unit area at 7 to 10 bits at a second node"
+  },
+  "sar_gsps": {
+   "unit_area": {
+    "value": 1248.9995996796797,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-ADC-02",
+     "T3-IS-23"
+    ],
+    "derivation": "GS/s SAR converters at 8 bits, node-flat on a model and a silicon point",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "32 nm model",
+       "expression": "v('T3-IS-23', 0)"
+      },
+      {
+       "label": "14 nm silicon",
+       "expression": "v('S-ADC-02') * 1e6"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   },
+   "bits": {
+    "value": 8.0,
+    "unit": "bit",
+    "evidence_kind": "derived",
+    "citation": [
+     "T3-IS-09"
+    ],
+    "derivation": "the kind's published bits (T3-IS-09; S-ADC-02 'single-channel 8b')",
+    "recompute": {
+     "expression": "s('T3-IS-09', 'scope', 'resolution 8 bits', 8)"
+    },
+    "note": "",
+    "fallback": "s('S-ADC-02', 'scope', 'single-channel 8b', 8)"
+   },
+   "outside_bits": "a named refusal"
+  },
+  "sar_bitcell_reusing": {
+   "unit_area": {
+    "value": 153.125,
+    "unit": "um^2",
+    "evidence_kind": "derived",
+    "citation": [
+     "T2-IM-01",
+     "T2-IM-03"
+    ],
+    "derivation": "upper bound: the converters' share of the macro over its converters (one per four columns)",
+    "recompute": {
+     "expression": "v('T2-IM-03') / 100 * (v('T2-IM-01', 0) * 1e6) / (s('T2-IM-01', 'scope', '1152 x 256', 256) / s('T2-IM-03', 'scope', 'one per four columns', 4))"
+    },
+    "note": "",
+    "bound": "upper"
+   },
+   "bits": {
+    "value": 8.0,
+    "unit": "bit",
+    "evidence_kind": "derived",
+    "citation": [
+     "TXT-kneip2024imagine-p06-100"
+    ],
+    "derivation": "the kind's bits (kneip2024imagine p.6)",
+    "recompute": {
+     "expression": "v('TXT-kneip2024imagine-p06-100')"
+    },
+    "note": ""
+   },
+   "requires_cell_kind": "cim_10t1c_mom",
+   "kind_basis_quotes": [
+    "TXT-kneip2024imagine-p06-92",
+    "TXT-kneip2024imagine-p06-93"
+   ],
+   "separation": "its DAC is the compute cell array itself (N-5: priced only beside that cell kind)"
+  },
+  "cco_time_based": {
+   "default": {
+    "value": 400.0,
+    "unit": "um^2",
+    "evidence_kind": "derived",
+    "citation": [
+     "T4-HC-02"
+    ],
+    "derivation": "the layout strip's dimensions (a direct figure; N-4: the entry)",
+    "recompute": {
+     "expression": "v('T4-HC-02')"
+    },
+    "note": ""
+   },
+   "band_edge": {
+    "value": 1529.296875,
+    "unit": "um^2",
+    "evidence_kind": "derived",
+    "citation": [
+     "T4-HE-01",
+     "T4-HE-02",
+     "T4-HE-03",
+     "T4-HE-04"
+    ],
+    "derivation": "a reading of HERMES' split: the ADC share of the main components over its converters",
+    "recompute": {
+     "expression": "v('T4-HE-03', key='ADC') / 100 * (s('T4-HE-01', 'scope', '64 cores', 64) * v('T4-HE-02') * 1e6 / (1 - v('T4-HE-03', key='GDPU') / 100)) / (s('T4-HE-01', 'scope', '64 cores', 64) * v('T4-HE-04'))"
+    },
+    "note": ""
+   },
+   "resolution": [
+    "default",
+    "band_edge"
+   ],
+   "bits": null,
+   "bits_note": "not stated by the sources: priced with that flag"
+  },
+  "neuron_integrating": {
+   "unit_area": {
+    "value": 1270.0,
+    "unit": "um^2",
+    "evidence_kind": "published",
+    "citation": [
+     "T3-NR-03"
+    ],
+    "entry_value": {
+     "id": "T3-NR-03",
+     "index": null,
+     "key": null
+    },
+    "note": ""
+   },
+   "resolution": [
+    "unit_area"
+   ],
+   "bits": null,
+   "bits_note": "the neuron's output bits are not part of its area figure"
+  }
+ },
+ "resolution": "a description declares its kind; the kind's unit area resolves at the requested bits, else a named refusal; a type's default kind applies only where the description declares none"
+}

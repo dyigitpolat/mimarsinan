@@ -8,12 +8,12 @@ from mimarsinan.chip_simulation.nevresim_policy_types import (
     nevresim_integration_policy,
     nevresim_lif_fire_policy,
 )
-from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import (
     ExecPolicySpec,
     NevresimExecParams,
     policy_for_spiking_mode,
 )
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 
 # The reset/compare/fire strings have ONE resolver (chip_simulation.
 # nevresim_policy_types); these names stay as this module's call surface.
@@ -36,7 +36,7 @@ def _input_load_statement(spike_gen_mode: str, generated_files_path: str) -> str
 
 def resolve_exec_policy(
     *,
-    spiking_mode: str,
+    point: SpikingPoint,
     firing_mode: str,
     thresholding_mode: str,
     spike_gen_mode: str,
@@ -50,6 +50,7 @@ def resolve_exec_policy(
 
     Delegates the firing × sync → codegen choice to ``SpikingModePolicy`` and
     selects the comparator and LIF reset/fire strings as the thresholding/firing SSOT.
+    [U-LIF2 r2] The policy is the run's resolved point's (the driver's record), never a mode's.
     """
     params = NevresimExecParams(
         compare=resolve_compare_policy(thresholding_mode),
@@ -61,12 +62,12 @@ def resolve_exec_policy(
         output_count=output_count,
         integration_policy=integration_policy,
     )
-    return policy_for_spiking_mode(spiking_mode).nevresim_exec_policy(params)
+    return policy_for_spiking_mode(point).nevresim_exec_policy(params)
 
 
 def _build_chip_and_exec_decl(
     *,
-    spiking_mode: str,
+    point: SpikingPoint,
     firing_mode: str,
     thresholding_mode: str,
     spike_gen_mode: str,
@@ -79,7 +80,7 @@ def _build_chip_and_exec_decl(
 ) -> str:
     """Return C++ lines declaring ``chip`` and ``exec`` for compile-time connectivity."""
     spec = resolve_exec_policy(
-        spiking_mode=spiking_mode,
+        point=point,
         firing_mode=firing_mode,
         thresholding_mode=thresholding_mode,
         spike_gen_mode=spike_gen_mode,
@@ -101,16 +102,15 @@ def get_config(
     spike_gen_mode="Stochastic",
     firing_mode="Default",
     weight_type="double",
-    spiking_mode="lif",
+    *,
+    point: SpikingPoint,
     threshold_type=None,
     thresholding_mode="<=",
-    *,
-    soma_law: SomaLaw | None = None,
 ):
     """The emitted-program config dict (the codegen SSOT the drivers build).
 
-    ``soma_law`` is the resolved soma point; ``None`` and the default point
-    both resolve to the default integration policy, which is never emitted.
+    [U-LIF2 r2] ``point`` is the run's resolved point (the driver's record): the program's policy is built from it and
+    its soma law gives the integration policy (the default law's is never emitted).
     """
     if threshold_type is None:
         threshold_type = weight_type
@@ -120,14 +120,15 @@ def get_config(
         "thresholding_mode": thresholding_mode,
         "weight_type": weight_type,
         "threshold_type": threshold_type,
-        "spiking_mode": spiking_mode,
-        "integration_policy": resolve_integration_policy(soma_law),
+        "spiking_mode": point.spiking_mode,
+        "spiking_point": point,
+        "integration_policy": resolve_integration_policy(point.soma_law),
     }
 
 
 def _build_runtime_exec_decl(
     *,
-    spiking_mode: str,
+    point: SpikingPoint,
     firing_mode: str,
     thresholding_mode: str,
     spike_gen_mode: str,
@@ -139,7 +140,7 @@ def _build_runtime_exec_decl(
 ) -> tuple[str, str]:
     """Return (compute_policy_type, exec_type_decl) for runtime-chip main."""
     spec = resolve_exec_policy(
-        spiking_mode=spiking_mode,
+        point=point,
         firing_mode=firing_mode,
         thresholding_mode=thresholding_mode,
         spike_gen_mode=spike_gen_mode,
@@ -159,14 +160,15 @@ def generate_main_function(
     simulation_length,
     latency,
     cpp_code_template=main_cpp_template,
-    simulation_config=get_config(),
+    *,
+    simulation_config,
     verbose=True,
 ):
     if verbose:
         print("Generating main function code...")
 
     chip_exec_decl = _build_chip_and_exec_decl(
-        spiking_mode=simulation_config["spiking_mode"],
+        point=simulation_config["spiking_point"],
         firing_mode=simulation_config["firing_mode"],
         thresholding_mode=simulation_config.get("thresholding_mode", "<="),
         spike_gen_mode=simulation_config["spike_gen_mode"],
@@ -209,14 +211,15 @@ def generate_main_function_runtime(
     output_count,
     simulation_length,
     latency,
-    simulation_config=get_config(),
+    *,
+    simulation_config,
     verbose=True,
 ):
     if verbose:
         print("Generating runtime main function code...")
 
     compute_policy, exec_decl = _build_runtime_exec_decl(
-        spiking_mode=simulation_config["spiking_mode"],
+        point=simulation_config["spiking_point"],
         firing_mode=simulation_config["firing_mode"],
         thresholding_mode=simulation_config.get("thresholding_mode", "<="),
         spike_gen_mode=simulation_config["spike_gen_mode"],

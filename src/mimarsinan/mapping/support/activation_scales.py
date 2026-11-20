@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import torch
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
@@ -69,6 +70,35 @@ def _aggregate_source_scales(src_scales: list[NodeScale]) -> float:
     return sum(reduced) / len(reduced)
 
 
+def _laid_out(scale: NodeScale, node, module) -> NodeScale:
+    """[U-PFOLD, S-12] A host-run perceptron's per-channel scale over an output of more elements than channels, per
+    element of that output (the buffer's order): along its declared channel axis, a convolution's channel-first."""
+    shape = getattr(node, "output_shape", None)
+    size = int(np.prod(shape)) if shape else 0
+    if not isinstance(scale, np.ndarray) or size <= scale.size or size % scale.size:
+        return scale
+    if _channel_first(getattr(module, "perceptron", module)):
+        return np.repeat(scale, size // scale.size)
+    return np.tile(scale, size // scale.size)
+
+
+def _channel_first(perceptron) -> bool:
+    return int(getattr(perceptron, "output_channel_axis", -1)) == 1
+
+
+def hop_scale(holder, perceptron, ref, like) -> "torch.Tensor | float":
+    """[U-PFOLD, S-12] The count walk's hop scale, floored away from zero on ``ref``'s device and dtype: a per-channel
+    one of a channel-first perceptron (a convolution) viewed along that axis of the hop's per-sample value, whose rank
+    its input's (``like()``, read only then) keeps; the deployed table lays it out alike (``_laid_out``)."""
+    scale = getattr(holder, "activation_scale", 1.0)
+    if not isinstance(scale, torch.Tensor):
+        return max(float(scale), 1e-12)
+    scale = scale.to(device=ref.device, dtype=ref.dtype).clamp(min=1e-12)
+    if scale.numel() > 1 and _channel_first(perceptron):
+        return scale.reshape(-1, *[1] * (like().dim() - 2))
+    return scale
+
+
 def compute_node_output_scales(ir_graph: IRGraph) -> dict[int, NodeScale]:
     """Per-node output activation_scale for state-buffer / TTFS normalization.
 
@@ -86,7 +116,7 @@ def compute_node_output_scales(ir_graph: IRGraph) -> dict[int, NodeScale]:
             if wrapped_scale is not None:
                 # Vector-preserving kappa_fold: scalar consumers collapse via
                 # the same float(np.mean) arithmetic (scalar_node_scale).
-                scales[node.id] = wrapped_scale
+                scales[node.id] = _laid_out(wrapped_scale, node, module)
                 continue
             src_scales: list[NodeScale] = []
             for src in node.input_sources.flatten():

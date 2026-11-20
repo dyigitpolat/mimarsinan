@@ -4,6 +4,7 @@ import pytest
 
 from mimarsinan.chip_simulation.mvm_core_policy import MvmCorePolicy
 from mimarsinan.chip_simulation.spiking_mode_policy import SpikingModePolicy
+from spiking_points import point_of_mode
 
 
 @pytest.fixture
@@ -70,7 +71,7 @@ class TestActivationAlignmentCapability:
             policy_for_spiking_mode,
         )
         for mode in ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
-            assert policy_for_spiking_mode(mode).requires_activation_alignment()
+            assert policy_for_spiking_mode(point_of_mode(mode)).requires_activation_alignment()
 
     def test_the_alignment_steps_consult_it_not_the_domain(self):
         import inspect
@@ -99,7 +100,7 @@ class TestObservesValuesCapability:
             policy_for_spiking_mode,
         )
         for mode in ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
-            assert policy_for_spiking_mode(mode).observes_values() is False
+            assert policy_for_spiking_mode(point_of_mode(mode)).observes_values() is False
 
     def test_it_is_derived_from_the_observable_not_duplicated(self):
         # A domain cannot answer the two questions inconsistently.

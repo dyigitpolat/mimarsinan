@@ -26,6 +26,7 @@ from mimarsinan.chip_simulation.nevresim.nevresim_driver import resolve_nevresim
 from mimarsinan.chip_simulation.recording.spike_modes import comb_spike_count
 from mimarsinan.chip_simulation.simulation_runner.core import SimulationRunner
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
 from mimarsinan.chip_simulation.spiking_semantics import lif_per_hop_retiming_enabled
 from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contract
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
@@ -60,8 +61,7 @@ class SemanticsRun:
     def decode(self) -> str:
         if self.name == VALUE:
             return "value"
-        return policy_for_spiking_mode(self.flow["spiking_mode"],
-                                       self.flow.get("ttfs_cycle_schedule", "cascaded")).decode_mode()
+        return policy_for_spiking_mode(resolve_spiking_point(self.config)).decode_mode()  # [U-LIF2 r2] its config's point
 
 
 _TTFS_FLOW = dict(firing_mode="TTFS", spike_mode="TTFS")
@@ -69,13 +69,15 @@ RUNS: Dict[str, SemanticsRun] = {
     STREAMED_LIF: SemanticsRun(STREAMED_LIF, dict(spiking_family="lif", spiking_variant="streamed",
                                                   spiking_mode="lif"),
                                dict(spiking_mode="lif", cycle_accurate_lif_forward=True)),
+    # [U-LIF2 W14] each synchronized LIF semantics declares the window firing its flow executes (the flow follows the
+    # point: ``run_flow_point``)
     WINDOWED_LIF: SemanticsRun(WINDOWED_LIF, dict(spiking_family="lif", spiking_variant="synchronized",
-                                                  spiking_mode="lif", lif_per_hop_retiming=True),
+                                                  spiking_mode="lif", lif_per_hop_retiming=True,
+                                                  lif_window_firing="fire_while_integrating"),
                                dict(spiking_mode="lif", cycle_accurate_lif_forward=True)),
     SYNCHRONIZED_LIF: SemanticsRun(SYNCHRONIZED_LIF, dict(spiking_family="lif", spiking_variant="synchronized",
-                                                          spiking_mode="lif"),
-                                   dict(spiking_mode="lif", cycle_accurate_lif_forward=True,
-                                        lif_execution_synchronized=True)),
+                                                          spiking_mode="lif", lif_window_firing="integrate_then_emit"),
+                                   dict(spiking_mode="lif", cycle_accurate_lif_forward=True)),
     CASCADED_TTFS: SemanticsRun(CASCADED_TTFS, dict(spiking_family="ttfs", spiking_variant="cascaded",
                                                     spiking_mode="ttfs_cycle_based"),
                                 dict(spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded", **_TTFS_FLOW)),
@@ -146,9 +148,12 @@ def run_nodes(mapping, instance: Instance, *, transfer: Optional[str] = None,
         return _timing_nodes(mapping, instance, run)
     kwargs = dict(run.flow)
     kwargs.setdefault("spike_mode", spike_mode)
+    # [U-LIF2 W14, n-7] the flow runs the semantics' point: its two-window flag follows the point's window firing
+    point = resolve_spiking_point({**run.config, **({"spike_phase_dither": True} if phase_dither else {})})
     flow = SpikingHybridCoreFlow((instance.network.input_width,), mapping, simulation_length=instance.timesteps,
                                  thresholding_mode="<=", pass_transfer=transfer or run.transfer,
-                                 phase_dither=phase_dither, **kwargs)
+                                 phase_dither=phase_dither, lif_execution_synchronized=point.integrates_then_emits,
+                                 spiking_point=point, **kwargs)
     captured: Dict[int, torch.Tensor] = {}
 
     def record(stage, counts):
@@ -186,6 +191,7 @@ class _ChipProbe(SimulationRunner):
         self.firing_mode = "TTFS" if ttfs else "Default"
         self.thresholding_mode = "<="
         self.spiking_mode = run.flow["spiking_mode"]
+        self.spiking_point = resolve_spiking_point(run.config)  # [U-LIF2 r2] the semantics' record, never a mode's
         self.host_compute_device = DEPLOYED_HOST_DEVICE  # [U-HDA] the deployed host's device
         self.nevresim_connectivity_mode = "compile_time"
         self.pass_transfer = transfer

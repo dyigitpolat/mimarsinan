@@ -22,6 +22,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.deployment_record.platform_physics.area_rule.declaration import judge_beside
 from mimarsinan.deployment_record.platform_physics.constants import constant_from_declaration  # [U-E3] below
 from mimarsinan.deployment_record.units import to_canonical, unit_for
 
@@ -139,8 +140,13 @@ def declared_adc_bits(platform: Optional[Mapping[str, Any]]) -> Optional[int]:
 
 
 def with_converter(physics: Any, declaration: Optional[Mapping[str, Any]]) -> Any:
-    """The physics with ``declaration`` as its converter (None removes it), judged as a profile's."""
-    return replace(physics, converter=None if declaration is None else ConverterTable.from_dict(declaration))
+    """The physics with ``declaration`` as its converter (None removes it), judged as a profile's: [U-AREA N-6] a
+    table row's area_per_adc beside an area rule block's converter kind is the converter area stated twice."""
+    table = None if declaration is None else ConverterTable.from_dict(declaration)
+    block = getattr(physics, "area_rule", None)
+    if block is not None and table is not None:
+        judge_beside(block, converter_table=any("area_per_adc" in row for row in table.rows.values()))
+    return replace(physics, converter=table)
 
 
 def resolve(physics: Any, bits: Optional[int]) -> Tuple[Any, Dict[str, str]]:

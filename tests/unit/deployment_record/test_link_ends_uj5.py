@@ -21,11 +21,14 @@ from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.platform_physics.hosts import description as D
 from mimarsinan.deployment_record.platform_physics.hosts import store as ST
 from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block
+from mimarsinan.deployment_record.platform_physics.hosts.registry import description_path
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks, resolve_platform_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensus
+
+from unit.deployment_record.registered_hosts import registered_copy
 
 HOST = "jetson_orin_nano_8gb"
 GENERIC = "generic_estimated_22nm"
@@ -42,12 +45,43 @@ VALUES = dict(synaptic_events=1e6, cores_physical=8, latency_steps=32, timesteps
 
 
 def _block(ends="keep"):
+    """The shipped block, or a hand block whose link row states ``ends`` (a declaration the loader judges)."""
     block = {key: dict(row) for key, row in host_description_block(HOST).items()}
     if ends != "keep":
         block[ROW].pop(FIELD, None)
         if ends is not None:
             block[ROW][FIELD] = ends
     return block
+
+
+_COPIES = []
+
+
+@pytest.fixture(autouse=True)
+def _copies(tmp_path):
+    """[U-HOST2] Where a test's description of other link ends is written; each is taken out when the test ends."""
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        _COPIES.append((tmp_path, stack))
+        yield
+        _COPIES.pop()
+
+
+def _described_block(ends):
+    """[U-HOST2] The block of a test-only description: the shipped one with its link row's ``ends`` declared (None:
+    no declaration), registered through the registry's contract (a host row's ends are its description's statement,
+    so another statement is another description)."""
+    def edit(data):
+        data[FIELD]["rows"].pop(ROW, None)
+        if ends is not None:
+            data[FIELD]["rows"][ROW] = ends
+        if not data[FIELD]["rows"]:
+            del data[FIELD]
+    directory, stack = _COPIES[-1]
+    tag = "none" if ends is None else "_".join("".join(e[0] for e in ends[c]) for c in sorted(ends))
+    name = stack.enter_context(registered_copy(directory / tag, HOST, edit, as_name=f"test_{HOST}_ends_{tag}"))
+    return {key: dict(row) for key, row in host_description_block(name).items()}
 
 
 def _physics(block=None, store=ST.CHIP):
@@ -64,20 +98,20 @@ def _resolved(block=None, store=ST.CHIP):
     return physics
 
 
-def _terms(physics, **extra):
+def _terms(physics, loads=None, **extra):
     pricing = price_absolute(Quantities({k: QuantityValue(float(v), "static") for k, v in {**VALUES, **extra}.items()}),
-                             physics)
+                             physics, loads=loads)
     return {t.name: t for t in pricing.terms}
 
 
 class TestTheJetsonDescriptionDeclaresItsEnds:
     def test_the_description_declares_the_ends_its_note_states(self):
-        data = json.loads((D._DIR / f"{HOST}.json").read_text())
+        data = json.loads(description_path(HOST).read_text())
         declared = (data.get(FIELD) or {}).get("rows", {}).get(ROW)
         assert declared == JETSON_ENDS, data.get(FIELD)
         assert "both ends" in data["constants"][ROW]["note"] and "host's end alone" in data["constants"][ROW]["note"]
         assert (data.get(FIELD) or {}).get("basis"), "the declaration states its basis"
-        assert FIELD in (D._DIR / f"{HOST}.md").read_text(), "the md states it"
+        assert FIELD in description_path(HOST).with_suffix(".md").read_text(), "the md states it"
 
     def test_the_block_row_carries_it_into_the_resolved_physics(self):
         assert host_description_block(HOST)[ROW].get(FIELD) == JETSON_ENDS
@@ -95,17 +129,20 @@ class TestTheBoundaryFollowsTheDeclaredEnds:
         assert "counts both ends at the high corner" in source, source
 
     def test_a_description_without_the_declaration_keeps_the_text_at_every_corner(self, store):
-        source = _terms(_resolved(_block(ends=None), store))["energy_host_link_mj"].source
+        source = _terms(_resolved(_described_block(None), store))["energy_host_link_mj"].source
         assert EVERY_CORNER in source, source
 
     def test_both_ends_counted_at_every_corner_names_nothing(self, store):
         both = {corner: ["host", "chip"] for corner in ("low", "nominal", "high")}
-        terms = _terms(_resolved(_block(ends=both), store))
+        terms = _terms(_resolved(_described_block(both), store))
         assert not any(END in term.source for term in terms.values()), terms["energy_host_link_mj"].source
 
 
 def test_a_program_load_over_the_link_names_the_same_corners():
-    terms = _terms(_resolved(store=ST.HOST), reprogrammed_bytes=1000)
+    """[U-ENERGY] The program load is the one load law over the program's census (1000 B rewritten per round)."""
+    from unit.deployment_record.load_census_fixtures import written_program
+
+    terms = _terms(_resolved(store=ST.HOST), loads=written_program((500,), (500,)))
     source = terms["energy_programming_mj"].source
     assert f"{END} is unpriced at the low and nominal corners" in source and EVERY_CORNER not in source, source
 
@@ -123,7 +160,7 @@ def test_the_values_do_not_move():
                               boundaries=())
     writes = WriteInputs(census, WritePolicy(batch_k=1, producer_write_source="host", payload_bits=8,
                                              write_granularity="cell"))
-    declared, plain = _resolved(), _resolved(_block(ends=None))
+    declared, plain = _resolved(), _resolved(_described_block(None))
     q = Quantities({k: QuantityValue(float(v), "static") for k, v in VALUES.items()})
     a = {t.name: t.band for t in price_absolute(q, declared, writes=writes).terms}
     b = {t.name: t.band for t in price_absolute(q, plain, writes=writes).terms}
@@ -152,15 +189,13 @@ class TestARefusedDeclaration:
         assert physics is None and FIELD in str(error) and "e_host_mem_per_byte" in str(error), error
         assert "unknown fields" not in str(error), error
 
-    def test_the_description_refuses_ends_for_a_row_that_prices_no_link_end(self, tmp_path, monkeypatch):
-        for suffix in (".json", ".md"):
-            shutil.copy(D._DIR / f"{HOST}{suffix}", tmp_path / f"{HOST}{suffix}")
-        data = json.loads((tmp_path / f"{HOST}.json").read_text())
-        data[FIELD] = {"rows": {"p_host": JETSON_ENDS}, "basis": "test"}
-        (tmp_path / f"{HOST}.json").write_text(json.dumps(data))
-        monkeypatch.setattr(D, "_DIR", tmp_path)
+    def test_the_description_refuses_ends_for_a_row_that_prices_no_link_end(self, tmp_path):
+        """[U-HOST2] The edited copy enters through the registry's contract, whose judge refuses it."""
+        def edit(data):
+            data[FIELD] = {"rows": {"p_host": JETSON_ENDS}, "basis": "test"}
         try:
-            D.host_description(HOST)
+            with registered_copy(tmp_path, HOST, edit):
+                pass
             error = None
         except Exception as exc:  # noqa: BLE001 - the refusal is the subject
             error = exc

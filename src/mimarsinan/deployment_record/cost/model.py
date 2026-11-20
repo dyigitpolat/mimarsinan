@@ -44,13 +44,15 @@ from mimarsinan.deployment_record.cost.combine import (
     modeled,
     sum_bands,
 )
+from mimarsinan.deployment_record.cost.absolute.walls.measured import measured_static_leg, measured_total, total_wall
 from mimarsinan.deployment_record.cost.segments import segment_costs
 from mimarsinan.deployment_record.cost.terms import (
     CostTerm,
     DeploymentCostReport,
     SegmentInitCost,
-    find_term,
+    find_term_or_none,
 )
+from mimarsinan.deployment_record.platform_physics.hosts.host_work import host_work_refusal, record_host_work
 from mimarsinan.deployment_record.schema import Band, DeploymentRecord
 
 _NOC_NOTE_TOKENS = ("noc", "double-count")
@@ -61,10 +63,10 @@ _TOTAL_ENERGY_BASIS = (
     "are never added on top of it"
 )
 _TOTAL_LATENCY_BASIS = (
-    "PER SAMPLE (one program traversal): measured compute (SANA-FE sim_time_s "
-    "for one sample, NoC transport already inside) + measured host-op walls "
-    "normalized per pass + modeled programming, per-core init and sync; no "
-    "term adds NoC hops a second time and no whole-run total joins unscaled"
+    "PER SAMPLE (one program traversal), the chip side: measured compute (SANA-FE sim_time_s "
+    "for one sample, NoC transport already inside) + modeled programming, per-core init and sync; no "
+    "term adds NoC hops a second time; [U-HOST] the measured host-op wall is the development machine's, a diagnostic "
+    "term beside the total, never in it (host time is priced from an identified host description's rows)"
 )
 _THROUGHPUT_BASIS = (
     "steady-state samples/s = 1 / per-sample latency total; no cross-sample "
@@ -129,9 +131,9 @@ class DeploymentCostModel:
             raise ValueError("the cost model requires SANA-FE's measured energy: an event census alone (U-S) "
                              "seals only synaptic_events")
         segments = self.segment_initialization(record)
-        measured_total = float(record_energy.total_energy_mj)
+        measured_total_mj = float(record_energy.total_energy_mj)
         terms: List[CostTerm] = [
-            measured("measured_total_mj", "mJ", measured_total, "energy.total_energy_mj")
+            measured("measured_total_mj", "mJ", measured_total_mj, "energy.total_energy_mj")
         ]
         terms += [
             measured(
@@ -148,7 +150,7 @@ class DeploymentCostModel:
                     segments, "payload_energy_mj",
                     basis=f"sum over scheduled segments; {E_DMA_PER_BYTE_MJ.basis}",
                 ),
-                "sum of segment payload_energy_mj",
+                "sum of segment payload_energy_mj; dynamic only, no static power (static is modeled_static_mj)",
             ),
             modeled(
                 "modeled_core_init_mj", "mJ",
@@ -159,7 +161,7 @@ class DeploymentCostModel:
                         f"{self.core_init.energy_mj.basis}"
                     ),
                 ),
-                "sum of segment reset_energy_mj",
+                "sum of segment reset_energy_mj; dynamic only, no static power",
             ),
             modeled(
                 "modeled_sync_mj", "mJ",
@@ -167,24 +169,20 @@ class DeploymentCostModel:
                     lambda corner: sync_energy_mj(record.schedule.sync_count, corner),
                     basis=E_SYNC_BARRIER_MJ.basis,
                 ),
-                "schedule.sync_count x weight_reuse_cost_model sync channel",
+                "schedule.sync_count x weight_reuse_cost_model sync channel; dynamic only, no static power",
             ),
         )
-        total = sum_bands(
-            [band_of(term) for term in modeled_terms]
-            + [flat_band(measured_total, _TOTAL_ENERGY_BASIS)],
-            basis=_TOTAL_ENERGY_BASIS,
-        )
-        return tuple(terms) + modeled_terms + (
-            derived(
-                "total_mj", "mJ", total.nominal,
-                "measured_total_mj + modeled programming/core-init/sync",
-                band=total,
-            ),
-        )
+        # [U-ENERGY class 1, V-M1] the record's one static sum over the whole latency by the one leg form: the total
+        # with its leg, its absence named, or the total withheld where the leg is refused (``walls.measured``)
+        return tuple(terms) + measured_total(record, lambda: total_wall(self.latency(record)),
+                                             modeled_terms, measured_total_mj, _TOTAL_ENERGY_BASIS)[0]
+
+    def energy_withheld(self, record: DeploymentRecord) -> str:
+        """[V-M1] Why ``energy`` withholds ``total_mj`` (its static leg is refused), "" where it does not."""
+        return measured_static_leg(record, lambda: total_wall(self.latency(record)))[2]
 
     def latency(self, record: DeploymentRecord) -> Tuple[CostTerm, ...]:
-        """Programming/init/sync (modeled) + compute and host ops (measured)."""
+        """Programming/init/sync (modeled) + compute (measured); [U-HOST] the host wall a diagnostic term beside."""
         decomposition = record.timing.latency
         _require_no_double_count_note(decomposition.note)
         compute_s = decomposition.compute_sim_time_s
@@ -217,22 +215,17 @@ class DeploymentCostModel:
             measured("compute_s", "s", float(compute_s), "timing.latency.compute_sim_time_s"),
         ]
         measured_s = float(compute_s)
-        host_term = host_ops_term(decomposition)
-        if host_term is not None:
-            measured_s += host_term.value
-            terms.append(host_term)
+        host_term, _uncounted = host_ops_term(record)  # [U-HOST] a diagnostic beside the total, never in it
+        terms += [host_term] if host_term is not None else []
         terms.append(modeled("sync_s", "s", sync, "schedule.sync_count x sync_barrier_s"))
         total = sum_bands(
             [programming, core_init, sync, flat_band(measured_s, _TOTAL_LATENCY_BASIS)],
             basis=_TOTAL_LATENCY_BASIS,
         )
-        terms.append(
-            derived(
-                "total_s", "s", total.nominal,
-                "measured compute + host ops, modeled programming/core-init/sync",
-                band=total,
-            )
-        )
+        host = record_host_work(record)  # [U-HOST2] host work this plane does not price withholds the total
+        if host.blocked is None and not host.missing:
+            terms.append(derived("total_s", "s", total.nominal, "measured compute, modeled programming/core-init/"
+                                 "sync (the chip side; the host wall a diagnostic)", band=total))
         return tuple(terms)
 
     def area(self, record: DeploymentRecord) -> Tuple[CostTerm, ...]:
@@ -260,7 +253,9 @@ class DeploymentCostModel:
         return self._throughput(self.latency(record))
 
     def _throughput(self, latency_terms: Sequence[CostTerm]) -> Tuple[CostTerm, ...]:
-        total = band_of(find_term(latency_terms, "total_s"))
+        if (term := find_term_or_none(latency_terms, "total_s")) is None:
+            return ()  # [U-HOST2] the total is withheld (host work unpriced), and so is its inverse
+        total = band_of(term)
         if total.low <= 0.0:
             raise ValueError(
                 f"per-sample latency total must be positive to invert, got "
@@ -280,11 +275,21 @@ class DeploymentCostModel:
     def evaluate(self, record: DeploymentRecord) -> DeploymentCostReport:
         """The whole cost surface, JSON-safe, every term banded and sourced."""
         latency_terms = self.latency(record)
+        energy = self.energy(record)
+        withheld = "" if any(t.name == "total_mj" for t in energy) else self.energy_withheld(record)  # [V-M1] named
+        _host, uncounted = host_ops_term(record)  # [U-HOST] a wall without its count is named, never put per inference
+        host = record_host_work(record)  # [U-HOST2] the absolute plane's refusal, by the same judgment and words
+        refused = host.blocked is not None or bool(host.missing)
         return DeploymentCostReport(
             segments=self.segment_initialization(record),
-            energy=self.energy(record),
+            energy=energy,
             latency=latency_terms,
             area=self.area(record),
             throughput=self._throughput(latency_terms),
-            notes=(record.timing.latency.note, _MODEL_NOTE),
+            notes=(record.timing.latency.note, _MODEL_NOTE) + ((f"host wall diagnostic withheld: {uncounted}",)
+                                                               if uncounted else ())
+            + ((f"total_s and samples_per_s withheld: {host_work_refusal(host)}",) if refused else ())
+            + ((f"unpriced: {', '.join(host.unpriced)} (host work beside the chip-side total)",)
+               if host.unpriced else ())
+            + ((f"total_mj withheld: {withheld}",) if withheld else ()),
         )

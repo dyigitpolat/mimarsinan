@@ -7,26 +7,24 @@ from typing import Any, Callable
 import torch
 
 from mimarsinan.data_handling import batch_integrity
+from mimarsinan.tuning.model_snapshot import restore_model_state, snapshot_model_state
 from mimarsinan.tuning.orchestration.tuning_budget import TuningBudget
 
 
-def _clone(model) -> dict:
-    return {k: v.detach().clone() for k, v in model.state_dict().items()}
-
-
 def clone_state_for_trainer(trainer) -> Any:
-    """Snapshot trainable weights on the model's device; supports aux-model trainers."""
+    """Snapshot the model on its device (the one snapshot: the state dictionary and the perceptrons' records);
+    supports aux-model trainers."""
     if hasattr(trainer, "aux_model"):
-        return (_clone(trainer.aux_model), _clone(trainer.model))
-    return _clone(trainer.model)
+        return (snapshot_model_state(trainer.aux_model), snapshot_model_state(trainer.model))
+    return snapshot_model_state(trainer.model)
 
 
 def restore_state_for_trainer(trainer, state: Any) -> None:
     if isinstance(state, tuple):
-        trainer.aux_model.load_state_dict(state[0])
-        trainer.model.load_state_dict(state[1])
+        restore_model_state(trainer.aux_model, state[0])
+        restore_model_state(trainer.model, state[1])
     else:
-        trainer.model.load_state_dict(state)
+        restore_model_state(trainer.model, state)
 
 
 class LRRangeFinder:

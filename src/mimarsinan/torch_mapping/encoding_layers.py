@@ -200,14 +200,9 @@ def resolve_unstamped_encoding_placement(
     return True
 
 
-def segment_entry_perceptrons(model_repr: ModelRepresentation, on_chip: frozenset = frozenset()) -> list:
-    """Perceptrons that are the FIRST on-chip core of a neural segment.
-
-    These read a freshly assembled hybrid stage input — the seam the synchronized
-    TTFS wire contract grid-quantizes. Structural mappers are transparent in the walk.
-    A host-op mapper whose ``id`` is in ``on_chip`` (a lane absorbs it, WI-5e) is
-    on chip: a perceptron reading it reads a core, not a segment entry.
-    """
+def _segment_entries(model_repr: ModelRepresentation, on_chip: frozenset) -> list:
+    """``(perceptron, producer)`` for every first on-chip core of a neural segment, in execution order: the producer is
+    the subsumed encoder, the raw input or the host op it reads (structural mappers are transparent)."""
     model_repr._ensure_exec_graph()
     exec_order = model_repr._exec_order
     assert exec_order is not None  # populated by _ensure_exec_graph
@@ -221,12 +216,30 @@ def segment_entry_perceptrons(model_repr: ModelRepresentation, on_chip: frozense
         while src is not None:
             if _is_perceptron_holder(src):
                 if getattr(src.perceptron, "is_encoding_layer", False):
-                    entries.append(node.perceptron)
+                    entries.append((node.perceptron, src))
                 break
             if isinstance(src, ComputeOpMapper) and id(src) in on_chip:
                 break
             if isinstance(src, (InputMapper, ComputeOpMapper)):
-                entries.append(node.perceptron)
+                entries.append((node.perceptron, src))
                 break
             src = src.source_mapper
     return entries
+
+
+def segment_entry_perceptrons(model_repr: ModelRepresentation, on_chip: frozenset = frozenset()) -> list:
+    """Perceptrons that are the FIRST on-chip core of a neural segment.
+
+    These read a freshly assembled hybrid stage input — the seam the synchronized
+    TTFS wire contract grid-quantizes. Structural mappers are transparent in the walk.
+    A host-op mapper whose ``id`` is in ``on_chip`` (a lane absorbs it, WI-5e) is
+    on chip: a perceptron reading it reads a core, not a segment entry.
+    """
+    return [perceptron for perceptron, _ in _segment_entries(model_repr, on_chip)]
+
+
+def host_fed_segment_entries(model_repr: ModelRepresentation, on_chip: frozenset = frozenset()) -> list:
+    """``(perceptron, producer)`` for the segment entries a host VALUE feeds (the raw input or a host op): the entries
+    whose deployed encode rounds a float. An entry fed by a subsumed encoder reads its staircase, already on its grid."""
+    return [(p, src) for p, src in _segment_entries(model_repr, on_chip)
+            if isinstance(src, (InputMapper, ComputeOpMapper))]

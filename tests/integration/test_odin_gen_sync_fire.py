@@ -46,6 +46,7 @@ from integration.odin_gen_harness import (
 )
 from integration.parity_harness import ensure_nevresim_ready, have_cxx_compiler
 from integration.nevresim_policy import requires_nevresim_policy
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.nevresim_policy_types import WHOLE_VECTOR_SATURATING_SIGNED
 
 from mimarsinan.chip_simulation.odin_rtl.gen_cosim import run_variant_cosim
@@ -245,9 +246,8 @@ class TestNevresimIsTheThirdArm:
             driver = NevresimDriver(
                 AXONS, mapping, tmp, int,
                 spike_generation_mode="SpikeTrain", firing_mode="Novena",
-                thresholding_mode="<=", spiking_mode="lif", threshold_type=int,
-                connectivity_mode="runtime", verbose=False,
-                soma_law=spec.soma_law)
+                thresholding_mode="<=", point=point_of_mode("lif", soma_law=spec.soma_law), threshold_type=int,
+                connectivity_mode="runtime", verbose=False)
             _raw, records = driver.predict_spiking_raw_with_records(
                 loader, S, max(samples[0].trace.latencies))
 

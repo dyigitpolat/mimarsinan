@@ -18,6 +18,7 @@ from mimarsinan.tuning.lif_affine_fold import (
     apply_lif_affine_fold,
     evaluate_crater_premise,
 )
+from mimarsinan.tuning.model_snapshot import restore_model_state, snapshot_model_state
 
 _CALIBRATION_BATCHES = 4
 
@@ -104,9 +105,9 @@ class LIFAffineFoldStep(TrainerPipelineStep):
 
         # A destructive fold must never survive: snapshot for keep-best
         # rollback (measured collapse 0.9386 -> 0.3847 on a true-crater cell).
-        pre_fold_state = {
-            k: v.detach().clone() for k, v in model.state_dict().items()
-        }
+        # [U-POST2] The one snapshot: the rollback returns the bake's and the
+        # fold's records with the parameters they describe.
+        pre_fold_state = snapshot_model_state(model)
 
         # The estimator is fitted on the nearest (half-step) chain; the fold is
         # idempotent, so the WeightQuantizationStep's own bake stays a no-op.
@@ -131,7 +132,7 @@ class LIFAffineFoldStep(TrainerPipelineStep):
                 (model(cal_x).argmax(dim=-1) == cal_y).float().mean().item()
             )
         if post_read < verdict.deployed_read:
-            model.load_state_dict(pre_fold_state)
+            restore_model_state(model, pre_fold_state)
             print(
                 f"[LIFAffineFoldStep] fold ROLLED BACK: post-fold calibration "
                 f"read {post_read:.4f} < entry {verdict.deployed_read:.4f} "

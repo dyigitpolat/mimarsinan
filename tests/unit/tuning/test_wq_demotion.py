@@ -24,6 +24,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
     create_adaptation_manager_for_model,
 )
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+from spiking_points import point_of_mode
 
 _ALL_MODES = [
     ("lif", None),
@@ -71,7 +72,7 @@ def _inject_accepting_gate(monkeypatch):
 class TestRecipeCarriesTheDemotion:
     @pytest.mark.parametrize("mode,schedule", _ALL_MODES)
     def test_every_mode_folds_the_wq_knobs(self, mode, schedule):
-        knobs = ConversionPolicy.derive(mode, schedule).knobs
+        knobs = ConversionPolicy.derive(point_of_mode(mode, schedule)).knobs
         assert knobs["wq_fast_rates"] == [0.5, 1.0]
         assert knobs["wq_fast_steps_per_rate"] == 0
         # [5u] the bit-parity-lossless ttfs row AND [5u generalized + C4] the
@@ -152,7 +153,7 @@ class TestGeneralizedFloorRecipeKnobs:
          ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized")],
     )
     def test_well_conditioned_modes_carry_the_wq_scoped_floor(self, mode, schedule):
-        knobs = ConversionPolicy.derive(mode, schedule).knobs
+        knobs = ConversionPolicy.derive(point_of_mode(mode, schedule)).knobs
         assert knobs["wq_endpoint_target_floor"] == pytest.approx(0.98)
         # WQ-scoped: the every-endpoint floor stays OFF so only the final
         # composition lifts (one bounded wall lift).
@@ -165,13 +166,13 @@ class TestGeneralizedFloorRecipeKnobs:
         0.0092), so a floor-funded proxy climb survives to the deployed read
         and the mode earns the well-conditioned WQ floor. C1's convergence
         stop bounds the funded burn."""
-        knobs = ConversionPolicy.derive("ttfs_quantized", None).knobs
+        knobs = ConversionPolicy.derive(point_of_mode("ttfs_quantized", None)).knobs
         assert knobs["wq_endpoint_target_floor"] == pytest.approx(0.98)
         assert knobs["wq_endpoint_recovery_steps"] == 16000
         assert "endpoint_target_floor" not in knobs
 
     def test_bit_parity_ttfs_uses_the_every_endpoint_floor(self):
-        knobs = ConversionPolicy.derive("ttfs", None).knobs
+        knobs = ConversionPolicy.derive(point_of_mode("ttfs", None)).knobs
         assert knobs["endpoint_target_floor"] == pytest.approx(0.98)
         assert "wq_endpoint_target_floor" not in knobs
 

@@ -11,6 +11,8 @@ from typing import Optional
 
 import torch
 
+from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from spiking_points import point_of_mode
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
@@ -34,6 +36,49 @@ def flow(mapping, **semantics) -> SpikingHybridCoreFlow:
 
 def retimed(semantics) -> bool:
     return semantics is WINDOWED_LIF
+
+
+def per_cycle(semantics) -> bool:
+    """[U-TGAUGE5] Whether the run reads a fused segment cycle by cycle at its latencies, where the per-cycle
+    executor holds the window rule: a per-cycle cascade (the mode policy's one predicate) that neither runs level
+    units (the windowed run) nor reads whole windows (the synchronized count executor)."""
+    policy = policy_for_spiking_mode(point_of_mode(semantics["spiking_mode"], semantics.get("ttfs_cycle_schedule")))
+    return (policy.runs_per_cycle_cascade and not retimed(semantics)
+            and not semantics.get("lif_execution_synchronized", False))
+
+
+def mapped(rep, semantics, **kwargs):
+    """[U-TGAUGE5] The vehicle's IR for ``semantics`` as Soft Core Mapping builds it where the run reads the window:
+    the depth-balancing relays the recipe of every per-cycle cascade arms. The other runs keep the relay-free vehicle,
+    whose fused timing (pins, delivery delays) they read without a window."""
+    return V.ir_of(rep, relays=per_cycle(semantics), **kwargs)
+
+
+def planned_budget(ir, count: int, residency_plan, **kwargs) -> int:
+    """The smallest core budget at least ``count`` at which ``ir`` plans under ``residency_plan``: the relays add cores,
+    so a relayed vehicle may need one or two more than its relay-free twin."""
+    from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
+
+    for budget in range(count, count + 4):
+        try:
+            V.build(ir, budget, residency_plan, **kwargs)
+            return budget
+        except ResidencyPlanError:
+            continue
+    raise AssertionError(f"no plan at {count} to {count + 3} cores")
+
+
+def assert_refused_at_the_executor(mapping, semantics) -> None:
+    """A per-cycle run of a stage holding a live edge at a latency gap other than one is refused by name at the
+    executor (the window rule; no mapping armed the relays on the relay-free vehicle)."""
+    import pytest
+
+    from mimarsinan.mapping.latency.depth_balancing import UnbalancedFanInError
+
+    x = torch.rand(6, V.IN, generator=torch.Generator().manual_seed(0))
+    with pytest.raises(UnbalancedFanInError, match="no mapping armed"):
+        with torch.no_grad():
+            flow(mapping, **semantics)(x)
 
 
 def assert_runs_equal_to_the_identity_run(ir, count: int, semantics, mapping=None, *,

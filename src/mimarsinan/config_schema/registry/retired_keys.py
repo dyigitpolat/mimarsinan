@@ -86,13 +86,13 @@ _RETIRED_STANDALONE_MESSAGES: Dict[str, Dict[str, str]] = {
         ),
         "lif_execution_discipline": (
             "lif_execution_discipline is retired: the temporal discipline is the "
-            "spiking_variant axis; the internal executor evaluation form is "
-            "derivation-owned. Remove the key."
+            "spiking_variant axis, and how a synchronized LIF hop fires inside "
+            "its window is lif_window_firing. Remove the key."
         ),
         "lif_per_hop_retiming": (
-            "lif_per_hop_retiming is retired: per-hop re-timing is part of the "
-            "windowed-lif (lif_sync) semantics via the exact-QAT recipe pairing, "
-            "never a knob. Remove the key."
+            "lif_per_hop_retiming is retired: per-hop re-timing is armed for the "
+            "synchronized LIF variant by the exact-QAT recipe pairing under every "
+            "lif_window_firing, never a knob. Remove the key."
         ),
         "schedule_policy": (
             "schedule_policy is retired: the scheduler composes residency-first "

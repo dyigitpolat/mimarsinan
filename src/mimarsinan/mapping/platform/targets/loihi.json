@@ -1,19 +1,124 @@
 {
   "name": "loihi",
-  "display_name": "Intel Loihi 1 (14 nm, Davies 2018): 128 cores, dense equivalent 128 x 1024",
+  "display_name": "Intel Loihi 1 (14 nm, Davies 2018), 128 cores, dense equivalent 128 x 1024",
   "geometry": "loihi_dense_equiv_128x1024",
   "keys": {
     "core_semantics": "spiking",
     "platform_physics_profile": "loihi",
     "allow_coalescing": false,
-    "allow_neuron_splitting": true
+    "allow_neuron_splitting": true,
+    "spiking_family": "lif",
+    "firing_granularity": "per_cycle",
+    "firing_mode": "Novena",
+    "thresholding_mode": "<"
   },
   "faithfulness": {
     "class": "approximate",
     "named": [
       "dense-equivalent capacity"
     ],
-    "note": "Loihi's per-core capacity is a synaptic memory (128 KB) with fan-in and fan-out list limits (davies2018loihi p89); the registered geometry is its dense equivalent until a memory-bound core type exists (CH-B2)."
+    "note": "The per-core capacity of Loihi is a synaptic memory (128 KB) with fan-in and fan-out list limits (davies2018loihi p89). The registered geometry is its dense equivalent until a memory-bound core type exists (CH-B2)."
   },
-  "notes": "allow_coalescing is false: \"Each neuromorphic core implements 1,024 primitive spiking neural units (compartments) grouped into sets of trees constituting neurons\" (davies2018loihi p.86, the registered geometry's provenance), so a neuron integrates within its core and no inter-core partial sum exists; a wide fan-in the dense equivalent's 128 axons cannot hold is the approximation's, and a deployment that needs one declares coalescing through target_overrides with a note, which its faithfulness names. allow_neuron_splitting is true: \"The total number of core-to-core fan-out edges mapped to any given core must not exceed 4,096 (Naxout)\" (p.89), so an axon reaches neurons on several cores, the input sharing a split core needs."
+  "notes": "allow_coalescing is false: \"Each neuromorphic core implements 1,024 primitive spiking neural units (compartments) grouped into sets of trees constituting neurons\" (davies2018loihi p.86, the registered geometry's provenance), so a neuron integrates within its core and no inter-core partial sum exists; a wide fan-in the dense equivalent's 128 axons cannot hold is the approximation's, and a deployment that needs one declares coalescing through target_overrides with a note, which its faithfulness names. allow_neuron_splitting is true: \"The total number of core-to-core fan-out edges mapped to any given core must not exceed 4,096 (Naxout)\" (p.89), so an axon reaches neurons on several cores, the input sharing a split core needs.",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "spiking",
+        "source": "davies2018loihi",
+        "location": "'Chip Overview', PDF p.5",
+        "quote": "Each neuromorphic core implements 1,024 primitive spiking neural units (compartments) grouped into sets of trees constituting neurons.",
+        "reads": "1,024 primitive spiking neural units"
+      }
+    },
+    "weight_bits": {
+      "unstated": {
+        "note": "The source states any weight precision between one and nine bits, signed or unsigned ('Variable synaptic formats', p.84); the dense-equivalent geometry declares 8-bit weights (128 KB of synaptic memory over 1,024 neurons), the description's assumption.",
+        "assumed": 8,
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "A digital weight memory: the source states no cell precision apart from the weight's. The source states no count of cells per weight."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "A digital weight memory: the source states no cell precision apart from the weight's."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "stated": {
+        "value": true,
+        "source": "davies2018loihi",
+        "location": "'Spiking Neural Unit', Eq. (1), PDF p.2",
+        "quote": "The synaptic response current is the sum of filtered input spike trains and a constant bias current:",
+        "reads": "a constant bias current",
+        "note": "Each compartment adds its constant bias b_i (Eq. (1)). The registered dense-equivalent geometry declared bias rows (an extraction-card default); the geometry now states the on-chip bias (imc_platforms_literature, U-CHIPKEYS)."
+      }
+    },
+    "spiking_family": {
+      "stated": {
+        "value": "lif",
+        "source": "davies2018loihi",
+        "location": "'Spiking Neural Unit', PDF p.2",
+        "quote": "We adopt a variation of the well-known CUBA leaky-integrate-and-fire model that has two internal state variables: the synaptic response current ui(t) and the membrane potential vi(t).",
+        "reads": "CUBA leaky-integrate-and-fire model",
+        "note": "The current and membrane decays are per-compartment parameters; a deployment sets them for the toolchain's integrate-and-fire law."
+      }
+    },
+    "spiking_variant": {
+      "unstated": {
+        "note": "Loihi advances every neuron in fixed-size, synchronized algorithmic time-steps with barrier synchronization (p.83-85); a spike of time-step t reaches its targets for t + 1. Both of the toolchain's LIF variants schedule onto that; the deployment declares one."
+      }
+    },
+    "simulation_steps": {
+      "unstated": {
+        "note": "The source states no window; the deployment declares it."
+      }
+    },
+    "target_tq": {
+      "unstated": {
+        "note": "The source states no level count; the deployment declares it."
+      }
+    },
+    "firing_granularity": {
+      "stated": {
+        "value": "per_cycle",
+        "source": "davies2018loihi",
+        "location": "'Architecture', PDF p.5",
+        "quote": "state variables are updated in a time-multiplexed, pipelined manner every algorithmic time-step. When a neuron’s activation exceeds some threshold level, it generates a spike message",
+        "reads": "updated in a time-multiplexed, pipelined manner every algorithmic time-step"
+      }
+    },
+    "firing_mode": {
+      "stated": {
+        "value": "Novena",
+        "source": "davies2018loihi",
+        "location": "'Spiking Neural Unit', PDF p.3",
+        "quote": "vi is initialized with a value less than θi and is reset to 0 right after a spiking event occurs.",
+        "reads": "is reset to 0 right after a spiking event occurs"
+      }
+    },
+    "membrane_bits": {
+      "unstated": {
+        "note": "The source states no membrane width."
+      }
+    },
+    "membrane_signed": {
+      "unstated": {
+        "note": "The source states no membrane register."
+      }
+    },
+    "thresholding_mode": {
+      "stated": {
+        "value": "<",
+        "source": "davies2018loihi",
+        "location": "'Architecture', PDF p.5",
+        "quote": "state variables are updated in a time-multiplexed, pipelined manner every algorithmic time-step. When a neuron’s activation exceeds some threshold level, it generates a spike message",
+        "reads": "exceeds some threshold level"
+      }
+    }
+  }
 }

@@ -5,6 +5,7 @@ import os
 
 from mimarsinan.chip_simulation.activation_semantics import axes_from_legacy
 from mimarsinan.config_schema.resolve import resolve_draft
+from spiking_points import declaring_fire_while_integrating
 
 _TTFS_AXES = {"spiking_family": "ttfs", "spiking_variant": "analytical"}
 
@@ -126,7 +127,7 @@ class TestPolicyOwnedSimulatorEnables:
 
     def _derived_for(self, mode, schedule=None):
         family, variant = axes_from_legacy(mode, schedule)
-        dp = {"spiking_family": family, "spiking_variant": variant}
+        dp = declaring_fire_while_integrating({"spiking_family": family, "spiking_variant": variant})  # [U-LIF2 W16]
         res = resolve_draft(_minimal_draft(deployment_parameters=dp))
         assert res.ok, res.errors
         return res.derived

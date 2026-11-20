@@ -19,6 +19,7 @@ from mimarsinan.pipelining.pipeline_steps.adaptation.scale_migration_step import
     ScaleMigrationStep,
 )
 from mimarsinan.transformations.channel_scale_equalization import DEFAULT_CLIP_RATIO
+from spiking_points import declaring_fire_while_integrating
 
 
 def _config(**overrides) -> dict:
@@ -30,7 +31,7 @@ def _config(**overrides) -> dict:
         "model_type": "mlp_mixer",
     }
     cfg.update(overrides)
-    return cfg
+    return declaring_fire_while_integrating(cfg)
 
 
 def _step_names(config: dict) -> list[str]:

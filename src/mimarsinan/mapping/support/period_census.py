@@ -153,9 +153,13 @@ class PassCensus:
     #: [U-C C-6] Rewritten cores of this pass whose every placement reads a bound bank (N2): they hold no static
     #: program, so they take no per-core programming charge. Serialized only when nonzero.
     operand_only_cores: int = 0
+    #: [U-ENERGY] The connectivity entries of exactly the cores this pass writes, where the plane states each core's
+    #: (a sealed record does); None: unstated. Serialized only when stated.
+    connectivity_entries: Optional[int] = None
 
     def __post_init__(self) -> None:
-        settle_naturals(self, [f.name for f in fields(self) if f.name != "resident"])
+        settle_naturals(self, [f.name for f in fields(self) if f.name != "resident"
+                               and not (f.name == "connectivity_entries" and self.connectivity_entries is None)])
         _require(self.resident_cores <= self.cores,
                  f"PassCensus.resident_cores {self.resident_cores} exceeds cores {self.cores}")
         _require(self.operand_only_cores <= self.cores - self.resident_cores,
@@ -213,7 +217,8 @@ class PassPeriodCensus:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "passes": [{k: v for k, v in asdict(p).items() if k != "operand_only_cores" or v} for p in self.passes],
+            "passes": [{k: v for k, v in asdict(p).items() if (k != "operand_only_cores" or v)
+                        and (k != "connectivity_entries" or v is not None)} for p in self.passes],
             "boundaries": [asdict(b) for b in self.boundaries],
             "label": self.label,
         }

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Dict, List, Mapping, Optional, Set
 
+from mimarsinan.chip_simulation.stored_point import (
+    derived_at_stored_point, document_at_stored_point, read_run_document, stored_run_point,
+)
 from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
@@ -13,6 +15,7 @@ from mimarsinan.config_schema.defaults import (
 from mimarsinan.config_schema.registry import REGISTRY, Category
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
 from mimarsinan.config_schema import display_view_meta as _meta
+import mimarsinan.mapping.platform.target_expansion as target_expansion
 from mimarsinan.config_schema.display_view_build import (
     build_nested_blocks,
     build_pipeline_preview,
@@ -152,18 +155,14 @@ def build_config_display_view(
 
 
 def load_saved_config_from_run_dir(working_dir: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Load raw ``config.json`` from a run working directory, if present."""
+    """Load raw ``config.json`` from a run working directory, if present (``read_run_document``, the one reader)."""
     if not working_dir:
         return None
-    path = os.path.join(working_dir, "_RUN_CONFIG", "config.json")
-    if not os.path.isfile(path):
-        return None
     try:
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data if isinstance(data, dict) else None
+        data = read_run_document(working_dir)
     except (OSError, json.JSONDecodeError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def build_pipeline_config_view(
@@ -172,6 +171,12 @@ def build_pipeline_config_view(
     saved_config: Optional[Mapping[str, Any]] = None,
     working_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build config view, loading saved JSON from *working_dir* when needed."""
+    """Build a config view. A document handed in (``saved_config``) is derived as the doors derive it. [U-LIF2 r3] A run
+    directory's saved document (*working_dir*) is derived at the point its run resolved (``stored_run_point``: the point
+    it persisted, else the historical point it states), never under today's entry data."""
     saved = saved_config if saved_config is not None else load_saved_config_from_run_dir(working_dir)
-    return build_config_display_view(raw_config, saved_config=saved)
+    if saved_config is not None or saved is None or not working_dir:
+        return build_config_display_view(raw_config, saved_config=saved)
+    point = stored_run_point(working_dir, saved, door=target_expansion.door_read)  # [U-LIF2 r6] as its door read it
+    with derived_at_stored_point(point):
+        return build_config_display_view(raw_config, saved_config=document_at_stored_point(saved, point))

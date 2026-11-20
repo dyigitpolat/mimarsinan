@@ -15,6 +15,8 @@ from mimarsinan.common.refusal import ToolchainRefusal
 def _scalar_equal(a: Any, b: Any) -> bool:
     if a is None or b is None:
         return a is b
+    if np.ndim(a) or np.ndim(b):  # [U-PCH] per-neuron values compare neuron for neuron
+        return _tensor_equal(a, b)
     fa, fb = float(a), float(b)
     if math.isnan(fa) or math.isnan(fb):
         return False
@@ -170,6 +172,7 @@ def adopt_or_check(
     softcore: Any,
     *,
     constrained: Iterable[str] = ALL_SINGLETON_NAMES,
+    assembled: Iterable[str] = (),
 ) -> None:
     """First softcore into a hardware core sets its singleton values; later ones must agree.
 
@@ -180,10 +183,13 @@ def adopt_or_check(
     ``constrained`` is the target's declaration. A property it does NOT constrain is one the
     hardware stores per neuron rather than per core, so it is recorded per neuron range instead
     of being checked -- relaxing a constraint means storing the values, never skipping the check.
+    ``assembled`` names the values the hard core placed per neuron itself (U-PCH: per-neuron thresholds).
     """
     names = frozenset(constrained)
     per_neuron = getattr(hard_core, "per_neuron_names", None)
     for prop in CORE_SINGLETON_PROPERTIES:
+        if prop.name in assembled:
+            continue
         incoming = getattr(softcore, prop.name, None)
         if prop.name not in names:
             # PER_NEURON is stored per range; ABSENT is vacuous on this target, so the first

@@ -1,5 +1,6 @@
 """Neuron-split fragments of a real SoftCore: each windows a column range of the parent's weight payload (by
-reference, through the compaction descriptor) and owns its window of the bias and law."""
+reference, through the compaction descriptor) and owns its window of every value held per neuron (its threshold
+registers, bias and law: ``compaction.take_neuron_columns``)."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir.lane_law import OPERAND_AXONS
+from mimarsinan.mapping.packing.softcore.compaction import take_neuron_columns
 from mimarsinan.mapping.packing.softcore.matrix_placement import materialize_compacted
 from mimarsinan.mapping.packing.softcore.sign_split import (
     is_sign_split,
@@ -42,7 +44,6 @@ def build_real_fragment(
     *,
     window,
     matrix_slice,
-    hardware_bias_slice,
     bank_neuron_slice,
     fragment_index,
     group_id,
@@ -74,7 +75,7 @@ def build_real_fragment(
     )
     if descriptor is not None:
         frag.compact_source_matrix, frag.compact_keep_rows, frag.compact_keep_cols = descriptor
-    frag.threshold = parent.threshold
+    take_neuron_columns(parent, np.arange(lo, hi), into=frag)  # [U-LIVE r2] every value held per neuron, windowed
     frag.latency = parent.latency
     # [W04] A fragment keeps its parent's residency class (its singleton values are the parent's): before, it read
     # as an ungrouped core and shared no core with its own layer, so the deployed program used cores the shape-only
@@ -91,13 +92,9 @@ def build_real_fragment(
     bits = getattr(parent, CORE_WEIGHT_BITS, None)
     if bits is not None:  # [WI-5g] a fragment binds to its parent's core type
         setattr(frag, CORE_WEIGHT_BITS, bits)
-    if hardware_bias_slice is not None:
-        frag.hardware_bias = hardware_bias_slice
     axons = getattr(parent, OPERAND_AXONS, None)
     if axons:  # [W08] every parent operand row stays an axon of each fragment (priced as the operand port)
         setattr(frag, OPERAND_AXONS, int(axons))
-    if law is not None:
-        frag.readout_law = law.take_columns(np.arange(lo, hi))
     role = getattr(parent, "core_role", None)
     if role is not None:
         frag.core_role = role  # pyright: ignore[reportAttributeAccessIssue] -- declared-only (N2)
@@ -154,7 +151,6 @@ def make_real_fragments(*, softcore, first_neurons, remaining_neurons, group_id,
     ``memo`` shares index arrays across the splits of one placement."""
     memo = {} if memo is None else memo
     total = first_neurons + remaining_neurons
-    hb = getattr(softcore, "hardware_bias", None)
     bns = None
     if getattr(softcore, "weight_bank_id", None) is not None:
         bns_parent = getattr(softcore, "bank_neuron_slice", None) or (0, total)
@@ -177,7 +173,6 @@ def make_real_fragments(*, softcore, first_neurons, remaining_neurons, group_id,
             window=(lo, hi),
             matrix_slice=None if descriptor is not None else copied(lo, hi),
             descriptor=descriptor,
-            hardware_bias_slice=None if hb is None else hb[lo:hi].copy(),
             bank_neuron_slice=None if bns is None else bns[index],
             fragment_index=index,
             group_id=group_id,

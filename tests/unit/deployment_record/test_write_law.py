@@ -36,6 +36,7 @@ from unit.deployment_record.g3_fixtures import (
     schedule,
     segment,
 )
+from unit.deployment_record.printed_names import NOT_PRODUCED, named, without
 
 
 def _pass(position, *, cells=0, producer=0, cores=1, kept=0, payload=None, steps=0, segment=0):
@@ -368,7 +369,35 @@ class TestPolicyKeysOnBothPlanes:
         assert write_policy_of(_resolved()) is None
 
     def test_candidate_equals_record_on_the_write_terms_of_a_capacity_split(self):
+        """The two planes price one write law. [U-ENERGY c-2] A sealed record states its written cores' connectivity
+        entries and the candidate plane states none: on a description that declares no entry width the planes print
+        the same values (their texts differ only by the record's name of the undeclared width); where the width is
+        declared, the record also prices its written cores' entries and the candidate names the width as not
+        produced on its plane (the plane difference m-2 names)."""
         pcfg = _resolved(**self._DECLARED)
+        physics = pcfg["platform_physics_resolved"]
+        undeclared = {**pcfg, "platform_physics_resolved": {**physics, "constants": {
+            k: v for k, v in physics["constants"].items() if k != "bytes_per_connectivity_entry"}}}
+        candidate, sealed = self._planes(undeclared)
+        for name in ("energy_write_mj", "latency_write_exposed_s", "lifetime_inferences", "lifetime_hours"):
+            a, b = candidate[name].to_dict(), sealed[name].to_dict()
+            assert {**a, "source": None, "band": {**a["band"], "basis": None}} == {
+                **b, "source": None, "band": {**b["band"], "basis": None}}, name
+            assert without(a["source"], ["bytes_per_connectivity_entry"]) == without(
+                b["source"], ["bytes_per_connectivity_entry"]), name
+        # Core 0 is written by both passes: 2 writes per period at K = 16.
+        assert sealed["lifetime_inferences"].value == pytest.approx(
+            get_platform_physics("generic_estimated_22nm").band("endurance_cycles").nominal * 16 / 2)
+        candidate, sealed = self._planes(pcfg)
+        for name in ("lifetime_inferences", "lifetime_hours"):
+            assert candidate[name].to_dict() == sealed[name].to_dict(), name
+        for name in ("energy_write_mj", "latency_write_exposed_s"):
+            assert all(getattr(sealed[name].band, c) > getattr(candidate[name].band, c)
+                       for c in ("low", "nominal", "high")), name
+        assert any(NOT_PRODUCED in n for n in named(candidate["energy_write_mj"].source,
+                                                     "bytes_per_connectivity_entry"))
+
+    def _planes(self, pcfg):
         softcores = [SimpleNamespace(segment_id=0, latency_tag=i, output_count=4) for i in range(2)]
         noc = SimpleNamespace(pass_placements=(((0, 0), (0, 1)), ((1, 0),)),
                               pass_programs=(HandPassProgram(core_cells=(100, 50)), HandPassProgram(core_cells=(30,))),
@@ -385,11 +414,7 @@ class TestPolicyKeysOnBothPlanes:
         candidate = {t.name: t for t in report.energy + report.latency + report.lifetime}
         record = record_with(schedule((segment(1, 0, 0, [100, 50]), segment(2, 0, 1, [30]))), **pcfg)
         sealed = {t.name: t for t in absolute_pricing_for_record(record).terms}
-        for name in ("energy_write_mj", "latency_write_exposed_s", "lifetime_inferences", "lifetime_hours"):
-            assert candidate[name].to_dict() == sealed[name].to_dict(), name
-        # Core 0 is written by both passes: 2 writes per period at K = 16.
-        assert sealed["lifetime_inferences"].value == pytest.approx(
-            get_platform_physics("generic_estimated_22nm").band("endurance_cycles").nominal * 16 / 2)
+        return candidate, sealed
 
 
 class TestWearAndRefusalCoverage:

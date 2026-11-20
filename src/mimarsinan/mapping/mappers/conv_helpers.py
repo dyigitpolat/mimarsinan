@@ -8,8 +8,11 @@ import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.mappers.base import resolve_activation_type
+from mimarsinan.mapping.mappers.position_cores import position_banks
 from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import (
+    PER_INPUT, ROW_AXIS, effective_weight_rows, holds_positions, outputs_first)
 
 
 def _chunk_sizes(total: int, chunk: int):
@@ -160,10 +163,22 @@ def map_shared_weight_conv(
             input_sources, ((0, 0),) + tuple((int(p), int(p)) for p in padding)
         )
 
-    full_w = PerceptronTransformer().get_effective_weight(perceptron)
-    # The always-on row's weight: the bias over the row's drive (``transformations.perceptron.bias_drive``).
-    full_b = bias_row_values(perceptron, PerceptronTransformer().get_effective_bias(perceptron))
-    has_bias = full_b is not None
+    if holds_positions(perceptron):
+        # [U-PFOLD] one bank set per distinct patch fold (and bias): each output position's core folds its own patch;
+        # a weight row (and a position's bias) taken on the row axis is in the per-input form.
+        weights, biases, groups = position_banks(perceptron)
+        _rows, row_of = effective_weight_rows(perceptron)
+        bank_inputs = [(outputs_first(weights.select(ROW_AXIS, int(row_of[g[0]])), PER_INPUT.weight),
+                        bias_row_values(perceptron, outputs_first(biases.select(ROW_AXIS, g[0]), PER_INPUT.bias)))
+                       for g in groups]
+        group_of = {p: i for i, g in enumerate(groups) for p in g}
+    else:
+        # The always-on row's weight: the bias over the row's drive (``transformations.perceptron.bias_drive``).
+        weight, bias = PerceptronTransformer().get_effective_parameters(perceptron)  # the per-input reader's views
+        bank_inputs = [(outputs_first(weight, PER_INPUT.weight),
+                        bias_row_values(perceptron, outputs_first(bias, PER_INPUT.bias)))]
+        group_of = None
+    has_bias = bank_inputs[0][1] is not None
     activation_type = resolve_activation_type(perceptron)
     perceptron_index = getattr(mapper, "perceptron_index", None)
 
@@ -172,22 +187,26 @@ def map_shared_weight_conv(
     else:
         group_sizes = _chunk_sizes(out_channels, int(mapper.max_neurons))
 
-    bank_ids: list[int] = []
+    bank_sets: list[list[int]] = []
     bank_channel_ranges: list[tuple[int, int]] = []
-    start_idx = 0
-    for g in group_sizes:
-        end_idx = start_idx + g
-        bank_ids.append(ir_mapping.register_weight_bank(
-            weights=full_w[start_idx:end_idx, :],
-            biases=full_b[start_idx:end_idx] if has_bias else None,
-            activation_scale=perceptron.activation_scale,
-            parameter_scale=perceptron.parameter_scale,
-            input_activation_scale=perceptron.input_activation_scale,
-            perceptron_index=perceptron_index,
-            bias_scale=getattr(perceptron, "bias_scale", None),
-        ))
-        bank_channel_ranges.append((start_idx, end_idx))
-        start_idx = end_idx
+    for full_w, full_b in bank_inputs:
+        bank_ids: list[int] = []
+        bank_channel_ranges = []
+        start_idx = 0
+        for g in group_sizes:
+            end_idx = start_idx + g
+            bank_ids.append(ir_mapping.register_weight_bank(
+                weights=full_w[start_idx:end_idx, :],
+                biases=full_b[start_idx:end_idx] if has_bias else None,
+                activation_scale=perceptron.activation_scale,
+                parameter_scale=perceptron.parameter_scale,
+                input_activation_scale=perceptron.input_activation_scale,
+                perceptron_index=perceptron_index,
+                bias_scale=getattr(perceptron, "bias_scale", None),
+            ))
+            bank_channel_ranges.append((start_idx, end_idx))
+            start_idx = end_idx
+        bank_sets.append(bank_ids)
 
     patches = gather_conv_patches(input_sources, kernel_size, stride, dilation, out_size)
 
@@ -195,7 +214,7 @@ def map_shared_weight_conv(
     for pos in range(patches.shape[0]):
         label = _position_label(pos, out_size)
         position_outputs = []
-        for g_idx, bank_id in enumerate(bank_ids):
+        for g_idx, bank_id in enumerate(bank_sets[0 if group_of is None else group_of[pos]]):
             position_outputs.append(ir_mapping.add_shared_neural_core(
                 input_sources=patches[pos],
                 weight_bank_id=bank_id,

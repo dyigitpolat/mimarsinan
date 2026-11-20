@@ -11,6 +11,8 @@ from mimarsinan.deployment_record.platform_physics import (
 from mimarsinan.deployment_record.quantities.from_record import from_record
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 
+from unit.deployment_record.area_rule._physics import rule_price
+from unit.deployment_record.registered_hosts import declared_rows, registered
 from unit.deployment_record.record_fixtures import make_full_record
 
 _TRUENORTH = get_platform_physics("truenorth")
@@ -39,28 +41,34 @@ def _reasons(pricing):
 
 
 class TestArea:
-    def test_truenorth_area_is_cores_times_footprint_plus_global(self):
+    def test_truenorth_area_is_its_anchor_at_its_cores(self):
+        """[U-AREA] TrueNorth's area_rule block: its published core scaled to the census's cores below its published
+        4,096 (ruling R3: the proportional nominal; R5 priced 20 x 0.0936 + 46.6, the footprint plus the derived die
+        remainder)."""
         pricing = price_absolute(_quantities(cores_physical=20, host_macs=0), _TRUENORTH)
         term = _by_name(pricing)["chip_area_mm2"]
-        assert term.value == pytest.approx(20 * 0.0936 + 46.6)
+        assert term.value == pytest.approx(rule_price("truenorth", ((20, 256, 256),)).nominal)
         assert term.unit == "mm^2"
         assert term.kind == "modeled"
         assert term.band is not None
 
-    def test_the_area_aggregate_supersedes_the_decomposition(self):
-        """TrueNorth declares BOTH the measured footprint and per-cell figures; only
-        the aggregate may be charged, or every component counts twice."""
+    def test_the_area_rule_supersedes_the_footprint_and_the_decomposition(self):
+        """TrueNorth declares BOTH the measured footprint and per-cell figures; [U-AREA] its area_rule block prices the
+        chip and neither is charged, or a component counts twice (R5: only the aggregate, 2 x 0.0936 + 46.6)."""
         pricing = price_absolute(
             _quantities(cores_physical=2, cells_physical=131072, neurons_physical=512,
                         host_macs=0),
             _TRUENORTH,
         )
         term = _by_name(pricing)["chip_area_mm2"]
-        assert term.value == pytest.approx(2 * 0.0936 + 46.6)
+        assert term.value == pytest.approx(rule_price("truenorth", ((2, 256, 256),)).nominal)
+        assert "area_per_cell" not in term.source and "area_per_core_total" not in term.source
 
     def test_area_evidence_rides_in_the_basis(self):
+        """[U-AREA] The anchor's published figures by evidence id (R5: the footprint's citation)."""
         pricing = price_absolute(_quantities(cores_physical=1, host_macs=0), _TRUENORTH)
-        assert "akopyan2015truenorth" in _by_name(pricing)["chip_area_mm2"].source
+        source = _by_name(pricing)["chip_area_mm2"].source
+        assert "T1-TN-01" in source and "T1-TN-02" in source
 
     def test_area_refused_without_a_compute_area_source(self):
         physics = profile_from_dict({
@@ -120,7 +128,8 @@ class TestEnergy:
         """The §8b rig: host MACs exist, no host pricing declared — a headline that
         silently omitted them would make subsume look free. (Every SHIPPED
         profile now declares the identity host_compute_rate [H5], so the
-        no-host-pricing target is built inline.)"""
+        no-host-pricing target is built inline.) [U-HOST] A measured wall prices nothing: the refusal names the
+        declared host's rate and the identified host description it comes from."""
         hostless = profile_from_dict({
             "format_version": 1, "name": "hostless", "display_name": "H",
             "description_file": "h.md",
@@ -146,7 +155,8 @@ class TestEnergy:
         # latency first, and static power needs that latency — so a headline that
         # only said "no latency" would send a reader hunting the wrong constant.
         reason = _reasons(pricing)["energy_per_inference_mj"]
-        assert "host" in reason and "host_compute_rate" in reason, reason
+        assert "host_macs_per_s" in reason and "identified host description" in reason, reason
+        assert "host_compute_rate" not in reason, reason
 
     def test_known_zero_host_work_needs_no_host_constants(self):
         pricing = price_absolute(
@@ -156,28 +166,32 @@ class TestEnergy:
         )
         assert "energy_per_inference_mj" in _by_name(pricing)
 
-    def test_host_energy_prices_the_measured_wall(self):
-        physics = profile_from_dict({
+    def test_host_energy_prices_the_declared_host_never_the_measured_wall(self, tmp_path):
+        """[U-HOST] p_host over the declared host's priced time (host_macs / host_macs_per_s); the measured wall
+        (0.5 s here) prices nothing."""
+        chip = profile_from_dict({
             "format_version": 1, "name": "t", "display_name": "T",
             "description_file": "t.md",
             "validity": {"measurement_kind": "mixed"},
             "constants": {
                 "e_synaptic_event_total": {"nominal": 10.0, "unit": "pJ",
                                            "evidence_kind": "estimated", "note": "n"},
-                "p_host": {"nominal": 40.0, "unit": "W",
-                           "evidence_kind": "estimated", "note": "n"},
-                "host_compute_rate": {"nominal": 2.0, "unit": "fraction",
-                                      "evidence_kind": "estimated", "note": "n"},
             },
         })
+        rows = {  # [U-HOST2] a test host's own description (test numbers), registered by the test
+            "p_host": {"nominal": 40.0, "unit": "W", "evidence_kind": "estimated", "note": "n"},
+            "host_macs_per_s": {"nominal": 0.02, "unit": "G/s", "evidence_kind": "estimated", "note": "n"},
+        }
+        with registered(tmp_path, "test_absolute_energy_host", rows):
+            physics = apply_overrides(chip, declared_rows("test_absolute_energy_host", rows))
         pricing = price_absolute(
             _quantities(synaptic_events=1e6, host_macs=5000, host_ops_s=0.5), physics
         )
         by_name = _by_name(pricing)
-        # Host wall on the deployment host = 0.5 s / 2.0; energy = 40 W x 0.25 s.
-        assert by_name["energy_host_mj"].value == pytest.approx(40 * 0.25 * 1e3)
+        # Host time = 5000 MACs / 2e7 MAC/s = 0.25 ms; energy = 40 W x 0.25 ms.
+        assert by_name["energy_host_mj"].value == pytest.approx(40 * 0.25e-3 * 1e3)
         assert by_name["energy_per_inference_mj"].value == pytest.approx(
-            10e-12 * 1e6 * 1e3 + 40 * 0.25 * 1e3
+            10e-12 * 1e6 * 1e3 + 40 * 0.25e-3 * 1e3
         )
 
 
@@ -200,10 +214,13 @@ class TestLatency:
         assert band.high == pytest.approx(64 * 1e-3)
 
     def test_programming_is_an_overhead_term_not_the_steady_state_headline(self):
+        """[U-ENERGY] The reprogramming per round is the one load law over the program's census (two written passes of
+        500 B, each core with 12 connectivity entries), priced beside the headline, never inside it."""
+        from unit.deployment_record.load_census_fixtures import written_program
+
         pricing = price_absolute(
-            _quantities(latency_steps=64, reprogrammed_bytes=1000,
-                        connectivity_entries=24, host_macs=0),
-            _TRUENORTH,
+            _quantities(latency_steps=64, host_macs=0), _TRUENORTH,
+            loads=written_program((500,), (500,), entries=((12,), (12,))),
         )
         by_name = _by_name(pricing)
         # 800 ns/B over (1000 payload + 24 entries x 4 B) = 1096 B.
@@ -248,22 +265,23 @@ class TestLatency:
         pricing = price_absolute(_quantities(latency_steps=64, host_macs=0), physics)
         assert "t_cycle" in _reasons(pricing)["e2e_latency_s"]
 
-    def test_host_time_models_from_the_declared_rate_when_no_wall_exists(self):
-        physics = profile_from_dict({
+    def test_host_time_models_from_the_declared_rate(self, tmp_path):
+        """[U-HOST] On every plane: the declared host's rate, never a measured wall."""
+        chip = profile_from_dict({
             "format_version": 1, "name": "t", "display_name": "T",
             "description_file": "t.md",
             "validity": {"measurement_kind": "mixed"},
             "constants": {
                 "t_cycle": {"nominal": 1.0, "unit": "us",
                             "evidence_kind": "estimated", "note": "n"},
-                "p_host": {"nominal": 40.0, "unit": "W",
-                           "evidence_kind": "estimated", "note": "n"},
-                "host_compute_rate": {"nominal": 1.0, "unit": "fraction",
-                                      "evidence_kind": "estimated", "note": "n"},
-                "host_macs_per_s": {"nominal": 2.0, "unit": "G/s",
-                                    "evidence_kind": "estimated", "note": "n"},
             },
         })
+        rows = {  # [U-HOST2] a test host's own description (test numbers), registered by the test
+            "p_host": {"nominal": 40.0, "unit": "W", "evidence_kind": "estimated", "note": "n"},
+            "host_macs_per_s": {"nominal": 2.0, "unit": "G/s", "evidence_kind": "estimated", "note": "n"},
+        }
+        with registered(tmp_path, "test_absolute_rate_host", rows):
+            physics = apply_overrides(chip, declared_rows("test_absolute_rate_host", rows))
         pricing = price_absolute(
             _quantities(latency_steps=32, host_macs=4e9), physics
         )

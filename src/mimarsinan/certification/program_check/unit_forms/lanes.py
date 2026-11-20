@@ -15,6 +15,8 @@ from typing import Any, List, Optional, Tuple
 
 import numpy as np
 
+from mimarsinan.mapping.support.value_layouts import placement_value
+
 #: The code a law row outside the core's used rows reads (no source either program can name).
 NO_ROW = np.iinfo(np.int64).min
 
@@ -26,8 +28,7 @@ def laws_equal(a: Any, b: Any) -> bool:
 
 
 def law_columns(core: Any, lo: int, hi: int) -> Any:
-    law = getattr(core, "readout_law", None)
-    return None if law is None else law.take_columns(np.arange(lo, hi))
+    return placement_value(core, "readout_law", lo, hi)  # [U-PCH3] per neuron, by the core's declaration
 
 
 def _operands(law: Any, codes: np.ndarray) -> Tuple[Any, Optional[np.ndarray]]:

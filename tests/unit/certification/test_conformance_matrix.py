@@ -12,6 +12,7 @@ import pytest
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.spiking_semantics import ALL_SPIKING_MODES
+from spiking_points import point_of_mode
 
 _SCHEDULES = (None, "cascaded", "synchronized")
 
@@ -46,7 +47,7 @@ def test_every_mode_cell_has_a_typed_certification_outcome(
     mode, schedule, law, point_id
 ):
     del point_id
-    policy = policy_for_spiking_mode(mode, schedule, soma_law=law)
+    policy = policy_for_spiking_mode(point_of_mode(mode, schedule, soma_law=law))
     observable, reason = policy.certification_observable()
     assert observable in ("counts", "events", "skip"), (
         f"{mode}/{schedule}: unknown observable {observable!r}"
@@ -60,7 +61,7 @@ def test_every_mode_cell_has_a_typed_certification_outcome(
 
 
 def test_lif_family_certifies_counts():
-    observable, reason = policy_for_spiking_mode("lif").certification_observable()
+    observable, reason = policy_for_spiking_mode(point_of_mode("lif")).certification_observable()
     assert (observable, reason) == ("counts", None)
 
 
@@ -70,7 +71,7 @@ def test_counts_stay_the_observable_at_every_soma_point(law, point_id):
     """A per-event law changes how many spikes a window holds, not the
     currency that crosses a boundary — the POINT separates the cells instead."""
     del point_id
-    policy = policy_for_spiking_mode("lif", soma_law=law)
+    policy = policy_for_spiking_mode(point_of_mode("lif", soma_law=law))
     assert policy.certification_observable() == ("counts", None)
 
 
@@ -78,15 +79,15 @@ def test_the_new_point_does_not_inherit_the_default_points_cell():
     from mimarsinan.chip_simulation.certification import CertificationCell
 
     default = CertificationCell.from_mode_policy(
-        policy_for_spiking_mode("lif", soma_law=DEFAULT_SOMA_LAW), backend="hcm")
+        policy_for_spiking_mode(point_of_mode("lif", soma_law=DEFAULT_SOMA_LAW)), backend="hcm")
     odin = CertificationCell.from_mode_policy(
-        policy_for_spiking_mode("lif", soma_law=_ODIN_POINT), backend="hcm")
+        policy_for_spiking_mode(point_of_mode("lif", soma_law=_ODIN_POINT)), backend="hcm")
     assert default.cell_key != odin.cell_key
 
 
 def test_analytic_ttfs_is_a_typed_skip_never_certified():
     """[§17.5 law] nothing analytic is certified as deployed physics."""
-    observable, reason = policy_for_spiking_mode("ttfs").certification_observable()
+    observable, reason = policy_for_spiking_mode(point_of_mode("ttfs")).certification_observable()
     assert observable == "skip"
     assert "analytic" in (reason or "")
 
@@ -114,7 +115,7 @@ def test_gate_certifies_or_skips_typed_for_every_cell(mode, schedule, monkeypatc
         pipeline, model=None, ir_graph=None, hybrid_mapping=None,
     )
     assert result is None
-    observable, _ = policy_for_spiking_mode(mode, schedule).certification_observable()
+    observable, _ = policy_for_spiking_mode(point_of_mode(mode, schedule)).certification_observable()
     out = capsys.readouterr().out
     if observable != "counts":
         assert "SKIP" in out, f"{mode}/{schedule}: skip must be printed, not silent"

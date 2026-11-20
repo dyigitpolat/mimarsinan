@@ -9,10 +9,10 @@ from mimarsinan.chip_simulation.backend_extensions import (
     EXECUTION_EXTENSIONS,
     BackendExtensionRefusal,
     declared_extensions,
-    require_extensions,
 )
-from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.point_capability import require_resolved_point
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint, resolve_spiking_point
 from mimarsinan.chip_simulation.spiking_semantics import supports_spiking_mode
 
 __all__ = [
@@ -26,33 +26,22 @@ __all__ = [
 ]
 
 
-def _spiking_mode_of(contract: Any) -> str:
-    """The spiking mode of a contract / plan / raw mode string."""
-    mode = getattr(contract, "spiking_mode", contract)
-    return str(mode or "lif")
-
-
-def _soma_law_of(contract: Any) -> Optional[SomaLaw]:
-    """The resolved soma point a plan / contract carries.
-
-    ``None`` for a raw mode STRING — the pinned legacy surface carries no
-    point and keeps its mode-keyed answer.
-    """
-    if isinstance(contract, str):
-        return None
+def _point_of(contract: Any) -> SpikingPoint:
+    """[U-LIF2 W5, r2] The resolved point a plan (its config) or a contract carries, or the point itself; a mode alone is
+    refused by name (no capability judgment takes a point the run did not resolve)."""
+    if isinstance(contract, SpikingPoint):
+        return contract
     config = getattr(contract, "config", None)
     if isinstance(config, Mapping):
-        return SomaLaw.resolve(config)
-    if hasattr(contract, "firing_granularity"):
-        return SomaLaw.resolve(contract)
-    return None
+        return resolve_spiking_point(config)
+    if callable(getattr(contract, "spiking_point", None)):
+        return contract.spiking_point()
+    return require_resolved_point(contract, context="a backend question")
 
 
 def _policy_of(contract: Any):
-    """The point-aware mode policy for a contract / plan / raw mode string."""
-    return policy_for_spiking_mode(
-        _spiking_mode_of(contract), soma_law=_soma_law_of(contract)
-    )
+    """The point-aware mode policy for a plan, a contract or a resolved point."""
+    return policy_for_spiking_mode(_point_of(contract))
 
 
 class Backend(ABC):
@@ -109,11 +98,8 @@ class SimulationBackend(Backend):
         unsupported_error: Optional[Callable[[Any], str]] = None,
         exports_final_membrane: bool = False,
         decodes_accuracy: bool = False,
-        implements: frozenset = frozenset(),
     ) -> None:
         self.name = name
-        # [W15, W33] the execution extensions (``backend_extensions``) this backend runs as the HCM does.
-        self.implements = frozenset(implements)
         self.step_name = step_name
         self.step_class = step_class
         self._enabled_for = enabled_for
@@ -133,20 +119,18 @@ class SimulationBackend(Backend):
         return True if self._applies_for is None else bool(self._applies_for(plan))
 
     def require_supported(self, contract: Any, *, context: str) -> None:
-        """Validate the backend×mode×point, naming the cause that actually refused, then every execution
-        extension the plan declares (refused by name where this backend does not implement it).
+        """Validate the backend against the plan's whole resolved point (the mode, the soma law, the window firing
+        and every declared execution extension), naming the value that actually refused: a guard, since the
+        recipe derives a backend that does not execute the point off at resolution.
 
-        The registered message explains this backend's MODE refusal only; a soma point with no executor refuses
-        through the shared typed error, so a refusal can never mis-report which axis it is about.
+        The registered message explains this backend's MODE refusal only; every other value refuses through the
+        shared typed errors, so a refusal can never mis-report which axis it is about.
         """
         if not self.supports(contract):
             mode_refused = not supports_spiking_mode(self.name, _policy_of(contract).spiking_mode)
             if self._unsupported_error is not None and mode_refused:
                 raise ValueError(self._unsupported_error(contract))
             super().require_supported(contract, context=context)
-        config = getattr(contract, "config", None)
-        if isinstance(config, dict):
-            require_extensions(self.name, self.implements, config, context=context)
 
     def step_spec(self) -> tuple[str, type]:
         """The ``(step_name, step_class)`` this backend contributes."""
@@ -209,7 +193,7 @@ class BackendRegistry:
 def _loihi_ttfs_error(contract: Any) -> str:
     return (
         f"enable_loihi_simulation is not supported for "
-        f"spiking_mode={_spiking_mode_of(contract)!r}; "
+        f"spiking_mode={_point_of(contract).spiking_mode!r}; "
         "Loihi/Lava only implements LIF dynamics."
     )
 

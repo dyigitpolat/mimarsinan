@@ -25,6 +25,7 @@ from mimarsinan.pipelining.pipeline_steps.adaptation.lif_affine_fold_step import
     LIFAffineFoldStep,
 )
 from mimarsinan.tuning.lif_affine_fold import AFFINE_FOLD_FLAG, CraterPremiseVerdict
+from spiking_points import declaring_fire_while_integrating
 
 
 def _config(**overrides):
@@ -38,7 +39,7 @@ def _config(**overrides):
     cfg["lif_affine_fold"] = True
     cfg["lif_half_step_bias"] = False
     cfg.update(overrides)
-    return cfg
+    return declaring_fire_while_integrating(cfg)
 
 
 def _deployed_model(cfg, hidden_layers=2):
@@ -247,10 +248,12 @@ class TestProcess:
         import mimarsinan.pipelining.pipeline_steps.adaptation.lif_affine_fold_step as sut
 
         mp = pytest.MonkeyPatch()
+        # [U-POST2] the entry read is pinned at 0 so the fold is kept (a fold the rollback undoes takes its records
+        # with it, the one snapshot's restore; the rollback has its own test below).
         mp.setattr(
             sut, "evaluate_crater_premise",
             lambda *a, **k: CraterPremiseVerdict(
-                holds=True, deployed_read=0.5, reference_read=1.0,
+                holds=True, deployed_read=0.0, reference_read=1.0,
                 standard_error=0.0,
             ),
         )

@@ -9,6 +9,11 @@ def _ensure_providers_registered() -> None:
 
 
 class DataProviderFactory:
+    @property
+    def provider_name(self) -> str | None:
+        """The registered provider id this factory serves; ``None`` when it declares none."""
+        return None
+
     def create(self) -> DataProvider:
         raise NotImplementedError
 
@@ -26,6 +31,10 @@ class BasicDataProviderFactory(DataProviderFactory):
         
         if self._name not in self._provider_registry:
              raise ValueError(f"Data provider '{self._name}' not registered. Available providers: {list(self._provider_registry.keys())}")
+
+    @property
+    def provider_name(self) -> str:
+        return self._name
 
     @classmethod
     def register(cls, name: str):

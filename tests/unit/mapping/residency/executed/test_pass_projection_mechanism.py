@@ -411,7 +411,7 @@ class TestTheChipPaths:
 
         rep = V.chain_repr(seed=0) if kind == "chain" else V.random_rep(58) if kind == "seed58" else \
             V.branchy_repr(kind)
-        ir = V.ir_of(rep)
+        ir = R.mapped(rep, R.STREAMED_LIF)  # [U-TGAUGE5] as the mapping builds it: the HCM reference reads the window
         u1 = build_identity_hybrid_mapping(ir_graph=ir) if count is None else V.build(ir, count, None)
         flow = R.flow(u1, **R.STREAMED_LIF, spike_mode="Uniform")
         behavior = NeuralBehaviorConfig(spiking_mode="lif", firing_mode="Default", thresholding_mode="<=",
@@ -620,8 +620,14 @@ class TestSingleSpikeCarry:
 
     @pytest.mark.parametrize("kind,count", [("skew3", 2), ("shift_probe", 3), ("late_skip", 2)])
     def test_cascaded_ttfs_carries_its_raster(self, kind, count):
-        R.assert_runs_equal_to_the_identity_run(V.ir_of(V.branchy_repr(kind)), count,
+        R.assert_runs_equal_to_the_identity_run(R.mapped(V.branchy_repr(kind), R.CASCADED_TTFS), count,
                                                 dict(R.CASCADED_TTFS, pass_transfer=VERBATIM))
+
+    def test_the_relay_free_vehicle_is_refused_by_name(self):
+        """[U-TGAUGE5] This file's refusal test: the relay-free skew vehicle cut at C 2, read by the cascaded
+        per-cycle executor, is refused by name (the window rule)."""
+        R.assert_refused_at_the_executor(V.build(V.ir_of(V.branchy_repr("skew3")), 2, None),
+                                         dict(R.CASCADED_TTFS, pass_transfer=VERBATIM))
 
 
 class TestTheCensusPlanePricesPinnedSpans:

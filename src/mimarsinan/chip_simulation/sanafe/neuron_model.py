@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
 
+if TYPE_CHECKING:
+    from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 
-def soma_hw_name_for_spiking_mode(spiking_mode: str, schedule=None) -> str:
-    """SANA-FE soma plugin name for ``(spiking_mode, schedule)`` (via the policy)."""
+
+def soma_hw_name_for_point(point: "SpikingPoint") -> str:
+    """SANA-FE soma plugin name of the run's resolved point (via its policy; [U-LIF2 r2] never a mode's)."""
     from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
-    return policy_for_spiking_mode(spiking_mode, schedule).soma_hw_name()
+    return policy_for_spiking_mode(point).soma_hw_name()
 
 
 def lif_model_attributes(

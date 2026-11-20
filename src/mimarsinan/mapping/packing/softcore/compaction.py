@@ -13,6 +13,7 @@ from mimarsinan.mapping.packing.spike_source import (
 from mimarsinan.mapping.packing.softcore.sign_split import physical_row_counts
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON
 from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns, dict_lookup
+from mimarsinan.mapping.support.value_layouts import ValueLayout, ValueLayoutError, declared_names
 
 
 def compaction_masks_apply(
@@ -137,11 +138,30 @@ def _memoized_keep_arrays(memo: dict, keep_rows, keep_cols):
     return hit
 
 
-def _compact_readout_law(core, keep_cols) -> None:
-    """Slice a law beside its bias: one memoized ``take_columns`` per distinct ``keep_cols``."""
-    law = getattr(core, "readout_law", None)
-    if law is not None:
-        core.readout_law = law.take_columns(keep_cols)
+def take_neuron_columns(core, keep_cols, *, into=None, count=None) -> None:
+    """[U-LIVE r2] A value a core holds per neuron follows its neuron through every site that drops, selects or
+    reorders neurons: each name ``core``'s class declares ``PER_NEURON`` (``VALUE_LAYOUTS``) is taken at ``keep_cols``
+    (its kept columns before the cut, in order) onto ``into`` (``core`` by default; a fragment, a bank's instance). A
+    law takes its own columns, one held entry stays as held, one entry per neuron is taken in its own type, any other
+    size is refused by name. ``count``: the neurons before the cut, for a holder that counts none (a weight bank)."""
+    count = int(core.get_output_count() if count is None else count)
+    index = np.asarray(keep_cols, dtype=np.intp).reshape(-1)
+    for name in declared_names(type(core), ValueLayout.PER_NEURON):
+        held = getattr(core, name, None)
+        if held is not None:
+            setattr(core if into is None else into, name, _neuron_value_at(core, name, held, keep_cols, index, count))
+
+
+def _neuron_value_at(core, name: str, held, keep_cols, index: np.ndarray, count: int):
+    if hasattr(held, "take_columns"):
+        return held.take_columns(keep_cols)
+    size = int(held.numel() if hasattr(held, "numel") else np.size(held))
+    if np.ndim(held) == 0 or (size == 1 and count != 1):
+        return held
+    if size != count:
+        raise ValueLayoutError(f"{type(core).__name__} {getattr(core, 'name', None) or getattr(core, 'id', '?')!r} "
+                               f"holds {name!r} with {size} entries for its {count} neurons: refused by name")
+    return held.reshape(-1)[index.tolist()] if hasattr(held, "detach") else np.asarray(held).reshape(-1)[index]
 
 
 def _compact_output_columns(output_sources: SpikeSourceColumns, reindex_maps: dict) -> None:
@@ -163,8 +183,8 @@ def compact_soft_core_mapping(cores, output_sources):
     """Compact soft cores from IR pruning masks; return core_id → neuron reindex maps.
 
     Elimination is stored as a DESCRIPTOR (shared source matrix + keep-index
-    arrays) resolved lazily by ``SoftCore.get_core_matrix``; sources, hardware
-    bias, and reindexing stay eager. Public bank metadata still nulls so the
+    arrays) resolved lazily by ``SoftCore.get_core_matrix``; sources, every
+    value held per neuron (``take_neuron_columns``) and reindexing stay eager. Public bank metadata still nulls so the
     packer's affinity/placement bookkeeping is unchanged.
     """
     reindex_maps = {}
@@ -192,7 +212,7 @@ def compact_soft_core_mapping(cores, output_sources):
                 core.bank_axon_slice = None
                 core.bank_neuron_slice = None
                 core.bank_includes_bias_row = False
-            from mimarsinan.mapping.pruning.pruning_apply import compact_hardware_bias_columns
+            take_neuron_columns(core, keep_cols)  # [U-LIVE r2] every value held per neuron follows it, before the cut
 
             if keep_rows and keep_cols:
                 rows_arr, cols_arr = _memoized_keep_arrays(
@@ -207,10 +227,6 @@ def compact_soft_core_mapping(cores, output_sources):
                     if isinstance(core.axon_sources, SpikeSourceColumns)
                     else [core.axon_sources[r] for r in keep_rows]
                 )
-                core.hardware_bias = compact_hardware_bias_columns(
-                    core.hardware_bias, keep_cols
-                )
-                _compact_readout_law(core, cols_arr)
             elif keep_cols:
                 # BIAS_ONLY core: collapse to a single OFF-source axon but keep the live bias-driven columns; collapsing to (1,1) would silently delete live neurons still referenced downstream.
                 core.core_matrix = np.zeros((1, len(keep_cols)), dtype=np.float64)
@@ -218,10 +234,6 @@ def compact_soft_core_mapping(cores, output_sources):
                 core.axon_sources = (
                     SpikeSourceColumns.of(off) if isinstance(core.axon_sources, SpikeSourceColumns) else off
                 )
-                core.hardware_bias = compact_hardware_bias_columns(
-                    core.hardware_bias, keep_cols
-                )
-                _compact_readout_law(core, keep_cols)
             else:
                 raise AssertionError(
                     f"compact_soft_core_mapping: SoftCore id={core.id} has "

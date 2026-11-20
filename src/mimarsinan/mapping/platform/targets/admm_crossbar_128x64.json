@@ -1,13 +1,70 @@
 {
   "name": "admm_crossbar_128x64",
-  "display_name": "ADMM crossbar study (Yuan 2019, Ma 2019): 128 x 64",
+  "display_name": "ADMM crossbar study (Yuan 2019, Ma 2019), 128 x 64",
   "geometry": "admm_crossbar_128x64",
-  "keys": {},
+  "keys": {
+    "core_semantics": "mvm"
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
+  },
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "ma2019tiny",
+        "location": "Sec. II 'Memristor crossbar', PDF p.2",
+        "quote": "Due to its outstanding performance on computing matrix-vector multiplications (MVM), memristor crossbars are widely used as dot-product accelerator in recent neuromorphic computing designs [19].",
+        "reads": "computing matrix-vector multiplications (MVM)"
+      }
+    },
+    "weight_bits": {
+      "stated": {
+        "value": 8,
+        "source": "ma2019tiny",
+        "location": "Abstract, PDF p.1",
+        "quote": "For quantizing structured pruned model, our framework achieves nearly no accuracy loss after quantizing weights to 8-bit memristor weight representation.",
+        "reads": "quantizing weights to 8-bit memristor weight representation",
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The sources state an 8-bit memristor weight representation and no cells per weight."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "The sources state no memristor cell precision apart from the 8-bit weight representation."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "Neither source states how a bias is held on the crossbars (yuan2019an Sec. III names each layer's biases b_i in training only); the registered geometry's bias row on the weight grid is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "activation_bits": {
+      "unstated": {
+        "note": "The sources quantize weights only; the activation grid is the deployment's."
+      }
+    },
+    "readout_law": {
+      "unstated": {
+        "note": "ma2019tiny places DACs and ADCs at the crossbar periphery (Sec. II) and states no ADC resolution; the deployment declares the converter law."
+      }
+    },
+    "onchip_arithmetic": {
+      "unstated": {
+        "note": "The sources state no on-chip activation, addition or pooling unit; absent, every activation, add and pool runs on the host."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The crossbars hold programmed memristor weights (ma2019tiny Sec. II); the description declares no run-time writable matrix."
+      }
+    }
   }
 }

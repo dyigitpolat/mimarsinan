@@ -65,7 +65,9 @@ from mimarsinan.deployment_record.introspection.scaling_ladder import (  # noqa:
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks  # noqa: E402
 from mimarsinan.deployment_record.introspection.scaling_ladder_law import RegimeReading  # noqa: E402
 from mimarsinan.mapping.platform.imc_platforms import get_imc_platform  # noqa: E402
-from mimarsinan.mapping.platform.target_bundles import declared_departures, target_bundles  # noqa: E402
+from mimarsinan.mapping.platform.target_bundles import (  # noqa: E402
+    PricingAbsentError, declared_departures, declared_pricing_refusal, get_target_bundle, run_faithfulness,
+    target_names)
 from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING, SPIKING_PACKAGING  # noqa: E402
 from mimarsinan.mapping.support.schedule.pass_cut import transfer_for  # noqa: E402
 from mimarsinan.mapping.verification.onchip_fraction import estimate_onchip_fractions  # noqa: E402
@@ -110,7 +112,7 @@ ROSTER: Dict[str, Optional[tuple]] = {
 #: The G8 targets that are not bundles: physics profile, registered geometry, packaging contract.
 LEGACY_TARGETS = {"generic_22nm_on_imc_256x256": ("generic_estimated_22nm", "imc_256x256", "value")}
 #: Every target: the shipped bundles by name (CL5) and the legacy points.
-TARGETS: Dict[str, Any] = {**{name: name for name in target_bundles()}, **LEGACY_TARGETS}
+TARGETS: Dict[str, Any] = {**{name: name for name in target_names()}, **LEGACY_TARGETS}
 PACKAGINGS = {"spiking": SPIKING_PACKAGING, "value": MVM_PACKAGING}
 BUDGET_FRACTIONS = (1.0, 2 ** -0.25, 2 ** -0.5, 2 ** -0.75, 0.5, 0.25, 0.125, 0.0625)
 KS = (1, 16, 64)
@@ -232,31 +234,36 @@ def declared_values(items: Sequence[str]) -> Dict[str, Any]:
     return out
 
 
-def target_spec(target: str) -> Dict[str, Any]:
+def target_spec(target: str, declared: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """A target's geometry and declared keys: {geometry, cores, weight_bits, keys, packaging, bundle}. A target
     "declared:<axons>x<neurons>x<count>:<packaging>[:<profile>]" is a declared geometry of one core type
-    (8-bit weights, no on-core bias) under a packaging contract and an optional physics profile."""
+    (8-bit weights, no on-core bias) under a packaging contract and an optional physics profile. [U-CHIPKEYS4] A
+    bundle's label names the pricing the run's ``declared`` keys resolve on it (``run_faithfulness``)."""
     if target.startswith("declared:"):
         _, shape, packaging, *profile = target.split(":")
         axons, neurons, count = (int(v) for v in shape.split("x"))
         return {"geometry": shape, "cores": [{"max_axons": axons, "max_neurons": neurons, "count": count,
                                               "has_bias": False}], "weight_bits": 8,
                 "keys": {"platform_physics_profile": profile[0]} if profile else {}, "packaging": packaging,
+                "pricing_absent": "",
                 "bundle": {"name": target, "claim_class": "declared", "faithfulness": "declared geometry",
                            "physics": bool(profile), "packaging_note": None}}
     if target in LEGACY_TARGETS:
         profile, geometry, packaging = LEGACY_TARGETS[target]
         chip = get_imc_platform(geometry)
         return {"geometry": geometry, "cores": [dict(c) for c in chip.cores], "weight_bits": chip.weight_bits,
-                "keys": {"platform_physics_profile": profile}, "packaging": packaging, "bundle": None}
-    bundle = target_bundles()[TARGETS[target]]
+                "keys": {"platform_physics_profile": profile}, "packaging": packaging, "pricing_absent": "",
+                "bundle": None}
+    bundle = get_target_bundle(TARGETS[target])
     values = bundle.values
     cores, bits = values.pop("cores"), values.pop("weight_bits")
     semantics = values.get("core_semantics")
     return {"geometry": bundle.geometry, "cores": cores, "weight_bits": bits, "keys": values,
             "packaging": "spiking" if semantics not in (None, "mvm") else "value",
+            "pricing_absent": bundle.pricing_absent,  # [U-CHIPKEYS3] read by resolved_platform
             "bundle": {"name": bundle.name, "claim_class": bundle.claim_class,
-                       "faithfulness": bundle.faithfulness.label(), "physics": "platform_physics_profile" in values,
+                       "faithfulness": run_faithfulness(bundle, {**values, **(declared or {})}).label(),
+                       "physics": "platform_physics_profile" in values,
                        "packaging_note": None if semantics else "no core_semantics declared: MVM packaging read"}}
 
 
@@ -264,7 +271,7 @@ def departure_labels(target: str, declared: Optional[Dict[str, Any]],
                      core_fields: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """[U-C C-5] The bundle keys and core fields ``--declare`` and ``--core-field`` set to other values than the target
     bundle's, printed by name on every row (``declared_departures``); none on a target that is no bundle."""
-    if TARGETS.get(target) not in target_bundles():
+    if TARGETS.get(target) not in target_names():
         return {}
     departures = declared_departures(TARGETS[target], declared, core_fields)
     return {"declared_departures": list(departures)} if departures else {}
@@ -285,6 +292,10 @@ def resolved_platform(target: str, fraction_or_declared, packed: Optional[int],
         else:
             count = max(1, math.floor(float(fraction_or_declared) * int(packed or 0)))
         cores.append({**ct, **(core_fields or {}), "count": count})
+    # [U-CHIPKEYS3] M-2: a pricing given on a target whose description states pricing absent refuses by name
+    given = {**(declared or {}), "cores": cores, **({"platform_physics_overrides": overrides} if overrides else {})}
+    if (why := declared_pricing_refusal(target, spec["pricing_absent"], given, {})) is not None:
+        raise PricingAbsentError(why)
     return build_platform_constraints_resolved({
         **CAPABILITIES, **spec["keys"], **(declared or {}), "cores": cores, "weight_bits": spec["weight_bits"],
         **({"platform_physics_overrides": overrides} if overrides else {}),
@@ -442,7 +453,7 @@ def run(networks: Sequence[str], targets: Sequence[str], budgets: Sequence, ks: 
             continue
         built: Dict[str, Tuple[Optional[LadderNetwork], Optional[Dict[str, Any]]]] = {}
         for target in targets:
-            spec = target_spec(target)
+            spec = target_spec(target, declared)
             packaging = spec["packaging"]
 
             def convert(clock: StageClock, name=name, packaging=packaging) -> LadderNetwork:

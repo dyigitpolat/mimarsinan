@@ -1,13 +1,67 @@
 {
   "name": "meng_subarray_144x32",
-  "display_name": "Meng 2021 structured-pruning RRAM subarrays: 144 x 32",
+  "display_name": "Meng 2021 structured-pruning RRAM subarrays of 144 x 32",
   "geometry": "meng_subarray_144x32",
-  "keys": {},
+  "keys": {
+    "core_semantics": "mvm"
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
+  },
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "meng2021structured",
+        "location": "title (the full text is not open access)",
+        "quote": "Structured Pruning of RRAM Crossbars for Efficient In-Memory Computing Acceleration of Deep Neural Networks",
+        "reads": "RRAM Crossbars for Efficient In-Memory Computing"
+      }
+    },
+    "weight_bits": {
+      "unstated": {
+        "note": "The full text is not open access (the asta tools report not_open_access); the registered geometry's 4-bit weights come from the extraction card and are the description's assumption.",
+        "assumed": 4,
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The full text is not open access: no count of cells per weight is read."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "The full text is not open access: no cell precision is read."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The full text is not open access; the registered geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "activation_bits": {
+      "unstated": {
+        "note": "The full text is not open access; the deployment declares the activation grid."
+      }
+    },
+    "readout_law": {
+      "unstated": {
+        "note": "The full text is not open access; the deployment declares the converter law."
+      }
+    },
+    "onchip_arithmetic": {
+      "unstated": {
+        "note": "The full text is not open access; no class is stated."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "RRAM subarrays hold programmed weights; no run-time writable matrix is declared."
+      }
+    }
   }
 }

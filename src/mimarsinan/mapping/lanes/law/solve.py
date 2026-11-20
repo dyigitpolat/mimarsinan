@@ -38,6 +38,7 @@ from mimarsinan.mapping.lanes.ir.fusion import OPERAND_ROWS
 from mimarsinan.mapping.lanes.law.lane_grids import CoreLaneGrid, LaneGrid, assign_lane_grids, data_rows
 from mimarsinan.mapping.lanes.law.multiplier_paths import refuse_lost_paths
 from mimarsinan.mapping.support.bias_drive import reads_a_core, refuse_drives_off_their_grid
+from mimarsinan.mapping.support.drive_rule import DriveGrid
 from mimarsinan.models.nn.activations.integer_law import (
     FP64_EXACT_BOUND,
     IntegerLawRangeError,
@@ -152,9 +153,10 @@ def solve_lane_laws(ir_graph: IRGraph, owners: Mapping[int, LaneGrid], spec: Rea
     refuse_psum(ir_graph)
     grids = assign_lane_grids(ir_graph, owners, spec.activation_bits)
     nodes_by_id = {int(n.id): n for n in ir_graph.nodes}
-    # [bias-row gauge] a core's row drive is the top code value of the input grid assigned here (m-5).
+    # [bias-row gauge, U-BRANGE2] a core's row drive is a code value of the input grid assigned here (m-5).
     refuse_drives_off_their_grid(ir_graph, lambda core: (
-        grids[int(core.id)].inputs.levels * grids[int(core.id)].inputs.step - grids[int(core.id)].inputs.offset
+        DriveGrid(step=grids[int(core.id)].inputs.step, offset=grids[int(core.id)].inputs.offset,
+                  code_max=int(grids[int(core.id)].inputs.levels))
         if reads_a_core(np.asarray(core.input_sources.flatten())[data_rows(core)], nodes_by_id) else None))
     memo: Dict[tuple, LaneLaw] = {}
     laws: Dict[int, LaneLaw] = {}

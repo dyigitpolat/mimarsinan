@@ -119,8 +119,11 @@ def correlate(case: ReferenceCase) -> CaseCorrelation:
     physics = _with_overrides(
         get_platform_physics(case.profile), case.overrides, case.name
     )
+    census = dict(case.census)
+    if "timesteps" in census:  # [U-LIF2 W12] a reference chip fires per cycle: one neuron cycle per timestep
+        census.setdefault("neuron_cycles_per_window", census["timesteps"])
     quantities = Quantities({
-        key: QuantityValue(value, "measured") for key, value in case.census.items()
+        key: QuantityValue(value, "measured") for key, value in census.items()
     })
     pricing = price_absolute(quantities, physics)
     terms = {term.name: term for term in pricing.terms}

@@ -29,6 +29,8 @@ from mimarsinan.certification.program_check.unbounded.keys import (
     WHOLE_FAN_IN_ROLES, KeyedIR, KeySpace, kept, keyed, node_width,
 )
 from mimarsinan.certification.program_check.unbounded.latency import IdentityFacts, facts_of, identity_timing
+from mimarsinan.certification.program_check.unbounded.node_values import NeuronPair
+from mimarsinan.mapping.support.value_layouts import neuron_entries
 from mimarsinan.certification.program_check.unbounded.laws import column_bounds, output_levels, same_function
 from mimarsinan.certification.program_check.unbounded.reference import check_reference
 from mimarsinan.certification.program_check.unit_forms.lanes import laws_equal as _laws_equal
@@ -41,7 +43,8 @@ from mimarsinan.mapping.support.activation_scales import (
 )
 
 #: Per-neuron values a core's executor reads, as node attributes (scales) and as the boundary maps every program built
-#: from the IR carries (``node_activation_scales`` and its kin, computed by these functions).
+#: from the IR carries (``node_activation_scales`` and its kin, computed by these functions), each read by the layout
+#: its node declares (``NeuralCore.VALUE_LAYOUTS``).
 NEURON_SCALES = ("activation_scale", "parameter_scale", "input_activation_scale", "bias_scale")
 NODE_MAPS = (("node_activation_scales", compute_node_output_scales),
              ("node_input_activation_scales", compute_node_input_scales),
@@ -55,19 +58,6 @@ def _take(can: Canonical, columns: np.ndarray) -> Canonical:
     weights = can.weights[:, columns]
     live = np.any(weights != 0, axis=1)
     return Canonical(can.codes[live], weights[live])
-
-
-def _at(value: Any, width: int, columns: np.ndarray) -> Any:
-    """The values a per-neuron read gives ``columns``: a per-column vector's entries (one per column of the node), a
-    scalar broadcast to every column, any other shape as a whole (compared as one object)."""
-    if value is None:
-        return None
-    flat = np.asarray(value.detach().cpu() if hasattr(value, "detach") else value, dtype=np.float64).reshape(-1)
-    if flat.size == width:
-        return flat[columns]
-    if flat.size == 1:
-        return np.full(len(columns), float(flat[0]))
-    return tuple(flat.tolist())
 
 
 def _same(a: Any, b: Any) -> bool:
@@ -160,20 +150,23 @@ class _Compare:
         return f"node {nid} columns {int(columns[0])}-{int(columns[-1])} (unbounded node {unode})"
 
     def values(self, mine, theirs, mine_cols, their_cols, width_t: int, width_u: int, where: str) -> None:
-        bias = (_at(getattr(mine, "hardware_bias", None), width_t, mine_cols),
-                _at(getattr(theirs, "hardware_bias", None), width_u, their_cols))
-        if not _same(*bias):
-            self.fail("bias", where, "the hardware bias differs from the unbounded neuron's")
-        if float(mine.threshold) != float(theirs.threshold):
-            self.fail("threshold", where, f"threshold {mine.threshold} against {theirs.threshold}")
+        pair = NeuronPair((self.t, mine, mine_cols, width_t), (self.u, theirs, their_cols, width_u))
+
+        def check(rule: str, name: str, a: Any, b: Any, detail: str) -> None:  # [U-PCH3] by the node's declaration
+            refused = pair.differs(name, a, b)
+            if refused is not None:
+                self.fail(rule, where, refused or detail)
+
+        check("bias", "hardware_bias", getattr(mine, "hardware_bias", None), getattr(theirs, "hardware_bias", None),
+              "the hardware bias differs from the unbounded neuron's")
+        check("threshold", "threshold", mine.threshold, theirs.threshold,
+              f"threshold {mine.threshold} against {theirs.threshold}")
         for name in NEURON_SCALES:
-            if not _same(_at(getattr(mine, name, None), width_t, mine_cols),
-                         _at(getattr(theirs, name, None), width_u, their_cols)):
-                self.fail("neuron_scale", where, f"{name} differs from the unbounded neuron's")
+            check("neuron_scale", name, getattr(mine, name, None), getattr(theirs, name, None),
+                  f"{name} differs from the unbounded neuron's")
         for name, (table_t, table_u) in self.maps.items():
-            if not _same(_at(table_t.get(int(mine.id)), width_t, mine_cols),
-                         _at(table_u.get(int(theirs.id)), width_u, their_cols)):
-                self.fail("neuron_scale", where, f"the programs' {name} differ from the unbounded neuron's")
+            check("neuron_scale", name, table_t.get(int(mine.id)), table_u.get(int(theirs.id)),
+                  f"the programs' {name} differ from the unbounded neuron's")
         if not _same_value(getattr(mine, "boundary_grid", None), getattr(theirs, "boundary_grid", None)):
             self.fail("boundary_grid", where, "the boundary grid differs from the unbounded neuron's")
         if not self.same_law(mine, theirs, mine_cols, their_cols):
@@ -186,7 +179,8 @@ class _Compare:
         laws = (getattr(mine, "readout_law", None), getattr(theirs, "readout_law", None))
         if laws[0] is None or laws[1] is None:
             return laws[0] is laws[1]
-        a, b = laws[0].take_columns(mine_cols), laws[1].take_columns(their_cols)
+        a, b = (neuron_entries(node, "readout_law", cols, width=len(cols), value=law)  # [U-PCH3] its declaration
+                for node, cols, law in ((mine, mine_cols, laws[0]), (theirs, their_cols, laws[1])))
         if _laws_equal(a, b):
             return True
         if self.levels is None:

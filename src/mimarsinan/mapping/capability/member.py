@@ -13,7 +13,7 @@ from mimarsinan.mapping.capability.ladder import LADDER, CapabilityLevel
 from mimarsinan.mapping.capability.mac_split import MacCounters
 from mimarsinan.mapping.ir import ComputeOp, IRGraph
 from mimarsinan.mapping.map_model_to_ir import map_model_to_ir
-from mimarsinan.mapping.platform.packaging_contract import PackagingContract
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion, PackagingContract
 from mimarsinan.mapping.verification.onchip_fraction import estimate_onchip_fraction
 from mimarsinan.mapping.verification.onchip_majority import count_host_ops
 from mimarsinan.torch_mapping.conversion_probe import guarded
@@ -131,7 +131,9 @@ def convert_for_census(
         ir = map_model_to_ir(mapper_repr)
     finally:
         mapper_repr.clear_ir_caches()
-    estimate = estimate_onchip_fraction(flow, tuple(input_shape), int(num_classes), metric="macs")
+    estimate = estimate_onchip_fraction(
+        flow, tuple(input_shape), int(num_classes), metric="macs",
+        conversion=DeployedConversion(packaging=packaging, decompose_leaf_modules=decompose_leaf_modules))
     counters = MacCounters(count_host_ops(ir), int(estimate.host), int(estimate.total), has_multi_input_op(ir))
     return ConvertedMember(ir, counters)
 

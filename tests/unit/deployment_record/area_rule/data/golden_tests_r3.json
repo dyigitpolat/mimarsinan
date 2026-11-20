@@ -1,0 +1,955 @@
+{
+ "T-1 node_series": {
+  "130": "sigma(130 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+  "90": "sigma(90 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+  "65": 0.5338539126015656,
+  "45": 0.29570639420096767,
+  "40": 0.24472788011296692,
+  "32": 0.171,
+  "28": 0.15200000000000002,
+  "22": 0.116,
+  "16": 0.07,
+  "14": 0.0588,
+  "10": 0.031200000000000006,
+  "7": 0.026999999999999996,
+  "5": 0.021000000000000005,
+  "4": "sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+  "3": "sigma(3 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own"
+ },
+ "T-3/T-4 anchor_identities (lanes out)": {
+  "truenorth": {
+   "nominal": 430.0,
+   "low": 430.0,
+   "high": 430.0,
+   "fixed_reading": 430.0,
+   "flags": [
+    "anchor identity: its published size, geometry and word"
+   ],
+   "ratio": 1.0,
+   "cells_per_weight": 1
+  },
+  "odin": {
+   "nominal": 0.09843614105519805,
+   "low": 0.0864,
+   "high": 0.09843614105519805,
+   "fixed_reading": 0.09843614105519803,
+   "flags": [
+    "anchor identity: its published size, geometry and word"
+   ],
+   "ratio": 1.0,
+   "cells_per_weight": 1
+  },
+  "loihi": {
+   "nominal": 60.0,
+   "low": 60.0,
+   "high": 60.0,
+   "fixed_reading": 60.0,
+   "flags": [
+    "anchor identity: its published size, geometry and word"
+   ],
+   "ratio": 1.0,
+   "cells_per_weight": 1
+  },
+  "hermes_64": {
+   "nominal": 144.0,
+   "low": 144.0,
+   "high": 144.0,
+   "fixed_reading": 144.0,
+   "flags": [
+    "anchor identity: its published size, geometry and word"
+   ],
+   "ratio": 1.0,
+   "cells_per_weight": 1
+  },
+  "neurram": {
+   "nominal": 158.76000000000002,
+   "low": 158.76000000000002,
+   "high": 158.76000000000002,
+   "fixed_reading": 158.76,
+   "flags": [
+    "anchor identity: its published size, geometry and word"
+   ],
+   "ratio": 1.0,
+   "cells_per_weight": 1
+  },
+  "sram_cim_macro": {
+   "nominal": 0.5696535940694331,
+   "low": 0.5,
+   "high": 0.5696535940694331,
+   "fixed_reading": 0.5696535940694331,
+   "flags": [
+    "anchor identity: its published size, geometry and word"
+   ],
+   "ratio": 1.0,
+   "cells_per_weight": 1
+  },
+  "generic_estimated_22nm": {
+   "nominal": 471.99869222895893,
+   "low": 120.54149831259764,
+   "high": 1101.0019842930187,
+   "t1_reading": 213.2970870612714,
+   "t1_reading_tn_bits_per_neuron": 226.4737410882225,
+   "flags": [
+    "projection: T2 digital nominal, T1 reading the low edge (ruling R2)"
+   ]
+  },
+  "isaac_like": {
+   "nominal": 85.4499255738368,
+   "low": 85.4499255738368,
+   "high": 85.4499255738368,
+   "flags": [
+    "complete declared terms (R1 / Table I rows): R5's own path, unchanged"
+   ]
+  },
+  "study_compass": {
+   "nominal": 95.4302211,
+   "low": 90.0677211,
+   "high": 169.02654143227042,
+   "flags": [
+    "complete declared terms (R1 / Table I rows): R5's own path, unchanged"
+   ]
+  },
+  "study_vr_like": {
+   "nominal": 95.4302211,
+   "low": 90.0677211,
+   "high": 169.02654143227042,
+   "flags": [
+    "complete declared terms (R1 / Table I rows): R5's own path, unchanged"
+   ]
+  },
+  "study_isaac_like": {
+   "nominal": 73.14501150000001,
+   "low": 56.8292955,
+   "high": 146.74133183227042,
+   "flags": [
+    "complete declared terms (R1 / Table I rows): R5's own path, unchanged"
+   ]
+  }
+ },
+ "T-6 held_out_parity_after": {
+  "TrueNorth|core": {
+   "loco": 0.4329624004207103,
+   "insample": 0.5160885798642277,
+   "strict": 0.4329624004207103
+  },
+  "TrueNorth|die": {
+   "loco": 0.44326398917437937,
+   "insample": 0.5242427433106024,
+   "strict": 0.44326398917437937
+  },
+  "ODIN|core": {
+   "loco": 1.7694909226043694,
+   "insample": 1.5786238913494028,
+   "strict": 1.7694909226043694
+  },
+  "MorphIC|core (derived)": {
+   "loco": 1.5512144119278066,
+   "insample": 1.4208147754403198,
+   "strict": 1.5512144119278066
+  },
+  "MorphIC|chip w/o pads": {
+   "loco": 1.4629503118891145,
+   "insample": 1.3399704147177656,
+   "strict": 1.4629503118891145
+  },
+  "MorphIC|die": {
+   "loco": 1.361972698801216,
+   "insample": 1.2474812761687748,
+   "strict": 1.361972698801216
+  },
+  "ReckOn|core": {
+   "loco": 1.2062729996448938,
+   "insample": 1.1618671840331602,
+   "strict": 1.2062729996448938
+  },
+  "Loihi|core (vendor)": {
+   "loco": 0.6904447182080065,
+   "insample": 0.7435379322500538,
+   "strict": 0.6904447182080065
+  },
+  "Loihi|die": {
+   "loco": 0.6868375522692046,
+   "insample": 0.740945974304474,
+   "strict": 0.6868375522692046
+  },
+  "Loihi 2|core (vendor)": {
+   "loco": "refused: sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+   "insample": "refused: sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+   "strict": "refused: sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own"
+  },
+  "Loihi 2|die": {
+   "loco": "refused: sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+   "insample": "refused: sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+   "strict": "refused: sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own"
+  },
+  "jiang2023a macro|macro": {
+   "loco": 0.4340378799861128,
+   "insample": 1.0,
+   "strict": 0.4340378799861128
+  },
+  "IMAGINE|macro": {
+   "loco": "refused: converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)",
+   "insample": 1.098961295425214,
+   "strict": "refused: converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)"
+  },
+  "CAP-RAM|macro": {
+   "loco": 0.8163878041759275,
+   "insample": 0.900042502969839,
+   "strict": "refused: converter kind sar_dedicated: its law holds over 8 to 10 bits; 7.0 requested"
+  },
+  "Jia 2020 processor|die": {
+   "loco": 0.21793347587986384,
+   "insample": 0.2180485720158483,
+   "strict": 0.21793347587986384
+  },
+  "NeuRRAM|die": {
+   "loco": 0.43291792400226764,
+   "insample": 0.4844282854015518,
+   "strict": "refused: converter kind neuron_integrating: no published unit area remains (outside the held-out chip)"
+  },
+  "ISAAC (model)|tile": {
+   "loco": 0.6693968559368282,
+   "insample": 0.7641290285997527,
+   "strict": 0.6693968559368282
+  },
+  "ISAAC (model)|chip": {
+   "loco": 0.7577825047848714,
+   "insample": 0.8271078193368868,
+   "strict": 0.7577825047848714
+  },
+  "PUMA (model)|tile": {
+   "loco": 0.7912484304498482,
+   "insample": 0.7912484304498482,
+   "strict": 0.7912484304498482
+  },
+  "PUMA (model)|node": {
+   "loco": 0.8294876734878953,
+   "insample": 0.8473830374632698,
+   "strict": 0.8294876734878953
+  },
+  "PUMA (model)|MVMU": {
+   "loco": 0.8774056424531198,
+   "insample": 0.8774056424531198,
+   "strict": 0.8774056424531198
+  },
+  "PUMA (model)|core": {
+   "loco": 0.5849370949687466,
+   "insample": 0.5849370949687466,
+   "strict": 0.5849370949687466
+  },
+  "HERMES 64-core|core": {
+   "loco": 1.4111498942812843,
+   "insample": 1.0,
+   "strict": 1.4111498942812843
+  },
+  "HERMES 64-core|die": {
+   "loco": 0.9946509509287677,
+   "insample": 1.0,
+   "strict": 0.9946509509287677
+  },
+  "HERMES-core (JSSC)|core": {
+   "loco": 2.0984908757698664,
+   "insample": 2.0984908757698664,
+   "strict": 2.7933384046867955
+  }
+ },
+ "T-6 held_out_stats_after": {
+  "loco": {
+   "primary_silicon_no_mismatch": {
+    "n": 10,
+    "geomean": 0.92317807428225,
+    "min": 0.43291792400226764,
+    "max": 2.0984908757698664,
+    "worst": 0.43291792400226764,
+    "worst_factor": 2.3099066695024666,
+    "within_2x": 6,
+    "within_3x": 10
+   },
+   "predicted_no_mismatch": {
+    "n": 7,
+    "geomean": 0.8822039958940279,
+    "min": 0.43291792400226764,
+    "max": 2.0984908757698664,
+    "worst": 0.43291792400226764,
+    "worst_factor": 2.3099066695024666,
+    "within_2x": 4,
+    "within_3x": 7
+   },
+   "independent_no_mismatch": {
+    "n": 3,
+    "geomean": 1.1516963278120838,
+    "min": 0.8163878041759275,
+    "max": 1.5512144119278066,
+    "worst": 1.5512144119278066,
+    "worst_factor": 1.5512144119278066,
+    "within_2x": 3,
+    "within_3x": 3
+   },
+   "refused": [
+    "IMAGINE",
+    "Loihi 2"
+   ]
+  },
+  "insample": {
+   "primary_silicon_no_mismatch": {
+    "n": 11,
+    "geomean": 1.0004987375107428,
+    "min": 0.4844282854015518,
+    "max": 2.0984908757698664,
+    "worst": 2.0984908757698664,
+    "worst_factor": 2.0984908757698664,
+    "within_2x": 9,
+    "within_3x": 11
+   },
+   "predicted_no_mismatch": {
+    "n": 8,
+    "geomean": 1.0266499356787966,
+    "min": 0.4844282854015518,
+    "max": 2.0984908757698664,
+    "worst": 2.0984908757698664,
+    "worst_factor": 2.0984908757698664,
+    "within_2x": 6,
+    "within_3x": 8
+   },
+   "independent_no_mismatch": {
+    "n": 4,
+    "geomean": 1.1304070087924567,
+    "min": 0.900042502969839,
+    "max": 1.4208147754403198,
+    "worst": 1.4208147754403198,
+    "worst_factor": 1.4208147754403198,
+    "within_2x": 4,
+    "within_3x": 4
+   },
+   "refused": [
+    "Loihi 2"
+   ]
+  },
+  "strict": {
+   "primary_silicon_no_mismatch": {
+    "n": 8,
+    "geomean": 1.0680612297669105,
+    "min": 0.4329624004207103,
+    "max": 2.7933384046867955,
+    "worst": 2.7933384046867955,
+    "worst_factor": 2.7933384046867955,
+    "within_2x": 5,
+    "within_3x": 8
+   },
+   "predicted_no_mismatch": {
+    "n": 5,
+    "geomean": 1.0939047474112817,
+    "min": 0.4340378799861128,
+    "max": 2.7933384046867955,
+    "worst": 2.7933384046867955,
+    "worst_factor": 2.7933384046867955,
+    "within_2x": 3,
+    "within_3x": 5
+   },
+   "independent_no_mismatch": {
+    "n": 2,
+    "geomean": 1.3679137625481166,
+    "min": 1.2062729996448938,
+    "max": 1.5512144119278066,
+    "worst": 1.5512144119278066,
+    "worst_factor": 1.5512144119278066,
+    "within_2x": 2,
+    "within_3x": 2
+   },
+   "refused": [
+    "CAP-RAM",
+    "IMAGINE",
+    "Loihi 2",
+    "NeuRRAM"
+   ]
+  },
+  "chips": [
+   "CAP-RAM",
+   "HERMES 64-core",
+   "HERMES-core (JSSC)",
+   "IMAGINE",
+   "Loihi",
+   "Loihi 2",
+   "MorphIC",
+   "NeuRRAM",
+   "ODIN",
+   "ReckOn",
+   "TrueNorth",
+   "jiang2023a macro"
+  ]
+ },
+ "T-7 refusals": {
+  "strict": [
+   "CAP-RAM",
+   "IMAGINE",
+   "Loihi 2",
+   "NeuRRAM"
+  ],
+  "loco": [
+   "IMAGINE",
+   "Loihi 2"
+  ]
+ },
+ "T-12 exploration (lanes out)": {
+  "points_total": 27822,
+  "unique_configurations": 2003,
+  "after_refused_total": 0,
+  "beyond_published_total": 12036,
+  "beyond_published": {
+   "hermes_64": 2700,
+   "isaac_like": 1404,
+   "loihi": 1716,
+   "neurram": 2736,
+   "odin": 768,
+   "sram_cim_macro": 2712
+  },
+  "identity_points": {
+   "hermes_64": 306,
+   "loihi": 180,
+   "neurram": 306,
+   "sram_cim_macro": 204,
+   "truenorth": 180
+  },
+  "off_word_width_points": {
+   "odin": 864
+  },
+  "weight_bits_not_stated_points": {
+   "neurram": 12,
+   "sram_cim_macro": 72
+  },
+  "identity_points_whose_weights_exceed_the_cell": 0
+ },
+ "T-12 odin rows (one core, 4-bit)": [
+  {
+   "nominal": 0.18593493310426298,
+   "low": 0.1330154369909091,
+   "high": 0.18593493310426298,
+   "fixed_reading": 0.17523614105519805,
+   "flags": [
+    "off word width: 4-bit weights over 3-bit cells take 2 cells"
+   ],
+   "ratio": 1.8888888888888888,
+   "cells_per_weight": 2
+  }
+ ],
+ "T-13 band": {
+  "T1": {
+   "L": 0.5651342921432915,
+   "H": 2.309669382441289,
+   "n_loco": 5,
+   "n_strict": 5,
+   "coverage": 0.6666666666666666,
+   "from": "T1 points"
+  },
+  "pooled": {
+   "L": 0.3579945767838772,
+   "H": 2.332637785697382,
+   "n_loco": 10,
+   "n_strict": 11,
+   "coverage": 0.8181818181818182
+  },
+  "generic_1000_cores_8bit (lanes out)": {
+   "nominal": 471.99869222895893,
+   "low": 120.54149831259764,
+   "high": 1101.0019842930187,
+   "t1_reading": 213.2970870612714,
+   "t1_reading_tn_bits_per_neuron": 226.4737410882225,
+   "flags": [
+    "projection: T2 digital nominal, T1 reading the low edge (ruling R2)"
+   ]
+  },
+  "truenorth_512 (lanes out)": {
+   "nominal": 53.75,
+   "low": 53.75,
+   "high": 94.53759999999997,
+   "fixed_reading": 94.53759999999997,
+   "flags": [
+    "below the published chip: a design study at another size"
+   ],
+   "ratio": 1.0,
+   "cells_per_weight": 1
+  }
+ },
+ "T-17 anchors off geometry": {
+  "cases": [
+   {
+    "description": "odin",
+    "cores": 1,
+    "rows": 256,
+    "cols": 256,
+    "weight_bits": 4,
+    "ratio": 1.8888888888888888,
+    "cells_per_weight": 2,
+    "nominal_mm2": 0.18593493310426298,
+    "low_mm2": 0.1330154369909091,
+    "high_mm2": 0.18593493310426298,
+    "flags": [
+     "off word width: 4-bit weights over 3-bit cells take 2 cells"
+    ],
+    "mutant_ratio_1_nominal_mm2": 0.09843614105519805,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "odin",
+    "cores": 1,
+    "rows": 256,
+    "cols": 256,
+    "weight_bits": 3,
+    "ratio": 1.0,
+    "cells_per_weight": 1,
+    "nominal_mm2": 0.09843614105519805,
+    "low_mm2": 0.0864,
+    "high_mm2": 0.09843614105519805,
+    "flags": [
+     "anchor identity: its published size, geometry and word"
+    ],
+    "mutant_ratio_1_nominal_mm2": 0.09843614105519805,
+    "mutant_differs": false,
+    "mutant_caught": true
+   },
+   {
+    "description": "truenorth",
+    "cores": 4096,
+    "rows": 128,
+    "cols": 128,
+    "weight_bits": 1,
+    "ratio": 0.3431372549019608,
+    "cells_per_weight": 1,
+    "nominal_mm2": 147.54901960784312,
+    "low_mm2": 147.54901960784312,
+    "high_mm2": 380.0282515457455,
+    "flags": [
+     "off geometry: 128 x 128 against the anchor's 256 x 256"
+    ],
+    "mutant_ratio_1_nominal_mm2": 430.0,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "truenorth",
+    "cores": 512,
+    "rows": 128,
+    "cols": 128,
+    "weight_bits": 1,
+    "ratio": 0.3431372549019608,
+    "cells_per_weight": 1,
+    "nominal_mm2": 18.44362745098039,
+    "low_mm2": 18.44362745098039,
+    "high_mm2": 88.29113144321816,
+    "flags": [
+     "off geometry: 128 x 128 against the anchor's 256 x 256",
+     "below the published chip: a design study at another size"
+    ],
+    "mutant_ratio_1_nominal_mm2": 53.75,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "truenorth",
+    "cores": 4096,
+    "rows": 256,
+    "cols": 256,
+    "weight_bits": 12,
+    "ratio": 1.6274509803921569,
+    "cells_per_weight": 2,
+    "nominal_mm2": 699.8039215686274,
+    "low_mm2": 477.73420747869085,
+    "high_mm2": 699.8039215686274,
+    "flags": [
+     "off word width: 12-bit weights over 9-bit cells take 2 cells"
+    ],
+    "mutant_ratio_1_nominal_mm2": 430.0,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "loihi",
+    "cores": 128,
+    "rows": 64,
+    "cols": 512,
+    "weight_bits": 8,
+    "ratio": 0.34615384615384615,
+    "cells_per_weight": 1,
+    "nominal_mm2": 20.769230769230766,
+    "low_mm2": 20.769230769230766,
+    "high_mm2": 50.19014930187101,
+    "flags": [
+     "off geometry: 64 x 512 against the anchor's 128 x 1024"
+    ],
+    "mutant_ratio_1_nominal_mm2": 60.0,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "hermes_64",
+    "cores": 64,
+    "rows": 128,
+    "cols": 128,
+    "weight_bits": 4,
+    "ratio": 0.35714285714285715,
+    "cells_per_weight": 1,
+    "nominal_mm2": 51.42857142857143,
+    "low_mm2": 51.42857142857143,
+    "high_mm2": 106.41600000000003,
+    "flags": [
+     "off geometry: 128 x 128 against the anchor's 256 x 256"
+    ],
+    "mutant_ratio_1_nominal_mm2": 144.0,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "hermes_64",
+    "cores": 64,
+    "rows": 256,
+    "cols": 256,
+    "weight_bits": 8,
+    "ratio": 1.5714285714285714,
+    "cells_per_weight": 2,
+    "nominal_mm2": 226.2857142857143,
+    "low_mm2": 177.40800000000002,
+    "high_mm2": 226.2857142857143,
+    "flags": [
+     "off word width: 8-bit weights over 4-bit cells take 2 cells"
+    ],
+    "mutant_ratio_1_nominal_mm2": 144.0,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "neurram",
+    "cores": 48,
+    "rows": 256,
+    "cols": 128,
+    "weight_bits": 4,
+    "ratio": 0.5,
+    "cells_per_weight": 1,
+    "nominal_mm2": 79.38000000000001,
+    "low_mm2": 79.38000000000001,
+    "high_mm2": 127.00799999999998,
+    "flags": [
+     "off geometry: 256 x 128 against the anchor's 256 x 256"
+    ],
+    "mutant_ratio_1_nominal_mm2": 158.76000000000002,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "sram_cim_macro",
+    "cores": 1,
+    "rows": 64,
+    "cols": 1024,
+    "weight_bits": 8,
+    "ratio": 0.5,
+    "cells_per_weight": 1,
+    "nominal_mm2": 0.28482679703471653,
+    "low_mm2": 0.25,
+    "high_mm2": 0.48850185769401283,
+    "flags": [
+     "off geometry: 64 x 1024 against the anchor's 128 x 1024"
+    ],
+    "mutant_ratio_1_nominal_mm2": 0.5696535940694331,
+    "mutant_differs": true,
+    "mutant_caught": true
+   },
+   {
+    "description": "sram_cim_macro",
+    "cores": 1,
+    "rows": 128,
+    "cols": 1024,
+    "weight_bits": 16,
+    "ratio": 2.0,
+    "cells_per_weight": 2,
+    "nominal_mm2": 1.1393071881388661,
+    "low_mm2": 0.6623034727508404,
+    "high_mm2": 1.1393071881388661,
+    "flags": [
+     "off word width: 16-bit weights over 8-bit cells take 2 cells"
+    ],
+    "mutant_ratio_1_nominal_mm2": 0.5696535940694331,
+    "mutant_differs": true,
+    "mutant_caught": true
+   }
+  ],
+  "pooled": [
+   {
+    "case": "neurram, pooled census (m = 1: the converter count is neurons_physical, linear)",
+    "result": {
+     "ratio": 0.75,
+     "cells_per_weight": 1,
+     "counts": {
+      "cells": 49152,
+      "converters": 192
+     },
+     "anchor_counts": {
+      "cells": 65536,
+      "converters": 256
+     }
+    }
+   },
+   {
+    "case": "a description converting every 4 columns, pooled census",
+    "refused": "converter count: the census pools core types and the description converts every 4 columns per converter; pass the declared core types"
+   }
+  ]
+ },
+ "T-22 converter kinds": {
+  "bitcell_reusing_bound_um2": 153.125,
+  "imagine_insample_ratio": 1.098961295425214,
+  "imagine_loco": "refused: converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)"
+ },
+ "T-23 morphic_core_scope": {
+  "mm2": 0.6743165,
+  "derivation": "2.86 mm2 (T1-MO-01, chip without pads) x (1 - 0.0569 routers L1, L2 and clock generator, T1-MO-02) / 4 cores = 0.6743 mm2",
+  "ids": [
+   "T1-MO-01",
+   "T1-MO-02"
+  ]
+ },
+ "T-25 lanes": {
+  "m11": {
+   "r5_cores_only": 0.0358086293971468,
+   "r5_lanes_per_core": 0.012475584871135653,
+   "r5_with_lanes": 0.04828421426828246,
+   "unit_cores_only": 0.23599934611447945,
+   "unit_with_lanes": 0.2484749309856151,
+   "ratio_cores_only": 6.590571884141526,
+   "ratio_with_lanes_both": 5.146090388983226,
+   "source": "ladder row C1.T-INT.b.B0.256x256 (21,730 cores): R5's prices from r1 fig_area_data.json; the lanes adder is R5's ng45_os_lane block"
+  },
+  "statement": "every golden above prices cores without lanes or buffer (lanes out); the m11 comparison states both"
+ },
+ "T-26 decomposition at the published scope": {
+  "published_array_um2": 15953.92,
+  "published_scope_entry": "T1-TN-04",
+  "scope": "bitcells",
+  "base": {
+   "eta": 0.8742282462276212,
+   "array_macro_scope_ratio": 1.1151703525511443,
+   "array_bitcell_scope_ratio": 0.9749134215558249,
+   "moved_to_rest_um2": 2237.647856544846
+  },
+  "after": {
+   "eta": 0.8460550490176183,
+   "array_macro_scope_ratio": 1.1523049507095644,
+   "array_bitcell_scope_ratio": 0.9749134215558248,
+   "moved_to_rest_um2": 2830.0902647964303
+  }
+ },
+ "T-27 strict forms": {
+  "form_i_under_r1": [
+   2.4719377155121625,
+   4.100893751535795
+  ],
+  "form_i_under_unit": [
+   2.332637785697382,
+   4.377225657261291
+  ],
+  "form_i_readings_rule_E_refuses": [
+   7,
+   10
+  ],
+  "form_ii": {
+   "n_priced": 8,
+   "worst_factor": 2.7933384046867955,
+   "worst_chip": "HERMES-core (JSSC)",
+   "n_refused_by_kind": 3,
+   "refused_by_kind": [
+    "CAP-RAM",
+    "IMAGINE",
+    "NeuRRAM"
+   ],
+   "readings_max_factor": 2.332637785697382,
+   "spread_min": 0.428699220312524,
+   "spread_max": 2.7933384046867955
+  },
+  "whiskers": {
+   "jiang2023a macro": {
+    "form_i": [
+     0.4340378799861128,
+     0.7406075969383697
+    ],
+    "form_i_rule_E": [
+     "no converter: rule E does not apply",
+     "no converter: rule E does not apply"
+    ],
+    "form_ii": {
+     "priced": 0.4340378799861128
+    }
+   },
+   "IMAGINE": {
+    "form_i": [
+     1.186913745883268,
+     1.3071083496733595
+    ],
+    "form_i_rule_E": [
+     "refused by rule E (1 reason(s))",
+     "refused by rule E (1 reason(s))"
+    ],
+    "form_ii": {
+     "refused": "converter kind",
+     "type_default_reading": 1.186913745883268
+    }
+   },
+   "CAP-RAM": {
+    "form_i": [
+     0.6205459572327451,
+     0.8981671296659162
+    ],
+    "form_i_rule_E": [
+     "refused by rule E (1 reason(s))",
+     "refused by rule E (1 reason(s))"
+    ],
+    "form_ii": {
+     "refused": "converter kind",
+     "type_default_reading": 1.088287494347677
+    }
+   },
+   "NeuRRAM": {
+    "form_i": [
+     0.228455208458609,
+     0.428699220312524
+    ],
+    "form_i_rule_E": [
+     "refused by rule E (1 reason(s))",
+     "refused by rule E (2 reason(s))"
+    ],
+    "form_ii": {
+     "refused": "converter kind",
+     "type_default_reading": 0.428699220312524
+    }
+   },
+   "HERMES-core (JSSC)": {
+    "form_i": [
+     2.3072409972441577,
+     2.7933384046867955
+    ],
+    "form_i_rule_E": [
+     "priced by rule E",
+     "refused by rule E (1 reason(s))"
+    ],
+    "form_ii": {
+     "priced": 2.7933384046867955
+    }
+   }
+  }
+ },
+ "T-28 type-rule fixed-outside reading": {
+  "held": {
+   "die": "TrueNorth",
+   "mm2": 46.6144,
+   "die_mm2": 430.0,
+   "core_grid_share": 0.8915944186046512,
+   "ids": [
+    "T1-TN-01",
+    "T1-TN-02"
+   ],
+   "derivation": "430 mm2 x (1 - 4096 x 0.0936 / 430.0)",
+   "evidence_kind": "derived"
+  },
+  "parts": [
+   {
+    "die": "TrueNorth",
+    "mm2": 46.6144,
+    "die_mm2": 430.0,
+    "core_grid_share": 0.8915944186046512,
+    "ids": [
+     "T1-TN-01",
+     "T1-TN-02"
+    ],
+    "derivation": "430 mm2 x (1 - 4096 x 0.0936 / 430.0)",
+    "evidence_kind": "derived"
+   },
+   {
+    "die": "Loihi",
+    "mm2": 7.520000000000005,
+    "die_mm2": 60.0,
+    "core_grid_share": 0.8746666666666666,
+    "ids": [
+     "T1-LO-01",
+     "T1-LO-05"
+    ],
+    "derivation": "60 mm2 x (1 - 128 x 0.41 / 60.0)",
+    "evidence_kind": "derived"
+   },
+   {
+    "die": "Loihi 2",
+    "mm2": 4.120000000000001,
+    "die_mm2": 31.0,
+    "core_grid_share": 0.8670967741935484,
+    "ids": [
+     "T1-L2-01",
+     "T1-L2-02"
+    ],
+    "derivation": "31 mm2 x (1 - 128 x 0.21 / 31.0)",
+    "evidence_kind": "derived"
+   }
+  ],
+  "rows": {
+   "C1.T-INT.b.B0.256x256": {
+    "nominal": 5128.265791067638,
+    "fixed_reading": 4547.828685714287
+   },
+   "C1.T-INT.b.B2.256x256": {
+    "nominal": 641.2102233930407,
+    "fixed_reading": 609.421542857143
+   },
+   "C1.T-INT.b.B5.256x64": {
+    "nominal": 14.277960439926007,
+    "fixed_reading": 59.14654285714286
+   },
+   "S1.T-INT.b.B0.256x256": {
+    "nominal": 14350.41223918315,
+    "fixed_reading": 12642.350114285715
+   },
+   "S1.T-INT.b.planned.d24": {
+    "nominal": 598.0223430540909,
+    "fixed_reading": 571.5144000000001
+   }
+  },
+  "generic_saving_1_8_median": {
+   "nominal": {
+    "n": 15,
+    "median": 0.8750143444974507,
+    "min": 0.875,
+    "max": 0.8754448398576512
+   },
+   "fixed_reading": {
+    "n": 15,
+    "median": 0.87184226171473,
+    "min": 0.6251310023617228,
+    "max": 0.8742260640698696
+   },
+   "present": {
+    "n": 15,
+    "median": 0.8702414035582758,
+    "min": 0.545905960846091,
+    "max": 0.8738307290272126
+   },
+   "fixed_reading Loihi": {
+    "n": 15,
+    "median": 0.87449918673873,
+    "min": 0.8223251953800401,
+    "max": 0.8748783684655155
+   },
+   "fixed_reading Loihi 2": {
+    "n": 15,
+    "median": 0.8747310224189013,
+    "min": 0.8455211321023064,
+    "max": 0.8749351447255607
+   }
+  }
+ },
+ "T-9 registry_check": {
+  "values_checked": 57,
+  "recomputed": 28,
+  "problems": [],
+  "chip_names_in_keys": []
+ },
+ "inputs": {
+  "parity_r3.json": "52f6a1d4",
+  "sweep_r3.json": "d3a9e9dd",
+  "published.json (r1)": "e386c381"
+ }
+}

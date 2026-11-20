@@ -18,6 +18,7 @@ from mimarsinan.models.nn.activations.readout_quantizer import (
     ReadoutStamp,
 )
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import holds_positions
 from mimarsinan.transformations.quantization_bounds import layer_weight_bits, quantization_bounds
 
 
@@ -108,6 +109,9 @@ def _check_form(perceptron, index: int) -> np.ndarray:
     """The perceptron's effective weight (fp64), refused unless it is the layer's own weight."""
     if not isinstance(perceptron.normalization, nn.Identity):
         raise ReadoutLawPerceptronFormError(f"perceptron {index}: normalization is not fused into its layer")
+    if holds_positions(perceptron):  # [U-PFOLD] a fold per position: a fold other than one, as any other
+        raise ReadoutLawPerceptronFormError(f"perceptron {index}: its fold is held per core position, so its "
+                                            "effective weight differs from its layer weight (input scale)")
     effective = PerceptronTransformer().get_effective_weight(perceptron)
     if not bool((effective == perceptron.layer.weight.data).all()):
         raise ReadoutLawPerceptronFormError(

@@ -1,9 +1,11 @@
-"""Static on-chip-fraction pre-check: reproduce the on-chip validity gate from a native model without a pipeline run."""
+"""Static on-chip-fraction pre-check: reproduce the on-chip validity gate from a native model without a pipeline run.
+
+A native model is measured on the deployment's own conversion (``DeployedConversion``), never on a default contract."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -12,6 +14,7 @@ from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
 from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
 from mimarsinan.mapping.support.device_placement import single_device_of
 from mimarsinan.mapping.support.module_macs import observed_macs
 from mimarsinan.mapping.support.host_contributors import (
@@ -51,6 +54,13 @@ _UNSUPPORTED_HOST_OP_TYPES = (
     nn.LayerNorm,
     nn.GELU,
 )
+
+
+class ConversionUnstatedError(ValueError):
+    """A native model reached a static on-chip estimator without the deployment's conversion.
+
+    A static reading converts the model the way the deployment does; with no conversion stated there is no such
+    way, and none is assumed (a silent default contract reads another program than the one that deploys)."""
 
 
 @dataclass(frozen=True)
@@ -151,7 +161,11 @@ def _classify_host_node(node):
     return None, None
 
 
-def _build_flow(model, input_shape, num_classes, placement):
+def _build_flow(model, input_shape, num_classes, placement, *, conversion: Optional[DeployedConversion]):
+    """The flow a static estimate measures: a flow as born, or a native model converted the deployment's way.
+
+    ``conversion`` is the deployment's (``deployed_conversion_of(plan, config)``): its packaging contract and leaf
+    decomposition, the ones the Torch Mapping step converts with. A native model without one is refused by name."""
     # Lazy: the torch_mapping package pulls the converter, which imports back
     # through mapping -> chip_simulation -> here.
     from mimarsinan.torch_mapping.encoding_layers import (
@@ -170,6 +184,17 @@ def _build_flow(model, input_shape, num_classes, placement):
             model.get_mapper_repr(), placement, context="the on-chip fraction gate"
         )
         return model
+    if conversion is None:
+        raise ConversionUnstatedError(
+            f"the static on-chip estimate of a native {type(model).__name__} needs the deployment's conversion "
+            "(DeployedConversion: its packaging contract and leaf decomposition, deployed_conversion_of(plan, config)); "
+            "none was stated and none is assumed: a model converted under another contract reads another program "
+            "than the one that deploys"
+        )
+    if not isinstance(conversion, DeployedConversion):
+        raise TypeError(
+            f"the static on-chip estimate takes a DeployedConversion, got {type(conversion).__name__}"
+        )
     from mimarsinan.torch_mapping.converter import convert_torch_model
 
     return convert_torch_model(
@@ -177,6 +202,8 @@ def _build_flow(model, input_shape, num_classes, placement):
         tuple(input_shape),
         int(num_classes),
         encoding_layer_placement=placement,
+        packaging=conversion.packaging,
+        decompose_leaf_modules=conversion.decompose_leaf_modules,
     )
 
 
@@ -269,14 +296,16 @@ def estimate_onchip_fraction(
     *,
     encoding_placement: str = "subsume",
     metric: str = "params",
+    conversion: Optional[DeployedConversion] = None,
 ) -> OnchipFractionEstimate:
     """Statically estimate the on-chip fraction of a native model under ``metric``.
 
     ``metric="params"`` reproduces ``count_host_params`` exactly; ``metric="macs"``
     reports the on-chip forward-compute fraction at the model's input shape.
+    ``conversion`` is the deployment's (see :func:`_build_flow`); a flow is measured as born.
     """
     _require_metric_and_placement("estimate_onchip_fraction", metric, encoding_placement)
-    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement, conversion=conversion)
     return _estimate_from_flow(flow, input_shape, encoding_placement, metric)
 
 
@@ -287,17 +316,18 @@ def estimate_onchip_fractions(
     *,
     encoding_placement: str = "subsume",
     metrics: Sequence[str] = ("params", "macs"),
+    conversion: Optional[DeployedConversion] = None,
 ) -> Tuple[OnchipFractionEstimate, ...]:
     """[H4] Every requested metric off ONE flow conversion.
 
     The conversion dominates the estimator's cost; the per-metric breakdowns
     are cheap walks over the same flow, so a caller wanting both metrics paid
-    the conversion twice for nothing.
+    the conversion twice for nothing. ``conversion`` as in :func:`estimate_onchip_fraction`.
     """
     for metric in metrics:
         _require_metric_and_placement(
             "estimate_onchip_fractions", metric, encoding_placement)
-    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement, conversion=conversion)
     return tuple(
         _estimate_from_flow(flow, input_shape, encoding_placement, metric)
         for metric in metrics
@@ -341,16 +371,17 @@ def assert_onchip_majority_estimate_or_raise(
     encoding_placement: str = "subsume",
     metric: str = "params",
     min_fraction: float = 0.5,
+    conversion: Optional[DeployedConversion] = None,
 ) -> OnchipFractionEstimate:
     """Raise :class:`OnchipMajorityError` when the static on-chip fraction is below floor.
 
     The static analogue of ``assert_onchip_majority_or_raise`` for callers with a
-    model spec but no mapped IR graph.
+    model spec but no mapped IR graph, measured on the deployment's ``conversion``.
     """
     _require_metric_and_placement(
         "assert_onchip_majority_estimate_or_raise", metric, encoding_placement
     )
-    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement, conversion=conversion)
     est = _estimate_from_flow(flow, input_shape, encoding_placement, metric)
     if est.fraction < min_fraction:
         contributors = host_contributors_from_flow(flow, _host_unit)
@@ -429,11 +460,13 @@ def classify_validity(
     encoding_placement: str = "subsume",
     floor: float = _DEFAULT_FLOOR,
     majority: float = _DEFAULT_MAJORITY,
+    conversion: Optional[DeployedConversion] = None,
 ) -> ValidityVerdict:
     """Tiered deployment validity on both the param and MAC on-chip fractions.
 
     ``INVALID`` iff ``min(param_frac, mac_frac) < floor``; ``VALID`` iff both
-    ``>= majority``; else ``VALID_FLAGGED``. One flow (which mutates ``model``) is reused.
+    ``>= majority``; else ``VALID_FLAGGED``. One flow (which mutates ``model``) is reused,
+    converted under the deployment's ``conversion``.
     """
     if encoding_placement not in _VALID_PLACEMENTS:
         raise ValueError(
@@ -441,7 +474,7 @@ def classify_validity(
             f"{_VALID_PLACEMENTS!r}; got {encoding_placement!r}"
         )
 
-    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement, conversion=conversion)
     param_est = _estimate_from_flow(flow, input_shape, encoding_placement, "params")
     mac_est = _estimate_from_flow(flow, input_shape, encoding_placement, "macs")
     research_gap_ops, placement_fixable_ops = _collect_host_op_classes(flow)
@@ -491,6 +524,7 @@ def assert_onchip_validity_or_raise(
     encoding_placement: str = "subsume",
     floor: float = _DEFAULT_FLOOR,
     majority: float = _DEFAULT_MAJORITY,
+    conversion: Optional[DeployedConversion] = None,
 ) -> OnchipValidityReport:
     """Authoritative tiered gate on a fully-mapped IR graph, over BOTH metrics.
 
@@ -500,7 +534,8 @@ def assert_onchip_validity_or_raise(
     reuse and attention, which the raw crossbar count cannot reproduce). A run is
     INVALID iff EITHER fraction is below ``floor``; the error names which metric
     and both actual fractions. Between ``floor`` and ``majority`` the run is
-    VALID_FLAGGED (recorded, non-fatal).
+    VALID_FLAGGED (recorded, non-fatal). The pipeline's ``model`` here is its flow,
+    measured as born; ``conversion`` applies to a native model only.
     """
     total_params = int(sum(p.numel() for p in model.parameters()))
     param_breakdown = compute_onchip_fraction(ir_graph, total_params=total_params)
@@ -510,6 +545,7 @@ def assert_onchip_validity_or_raise(
         num_classes,
         encoding_placement=encoding_placement,
         metric="macs",
+        conversion=conversion,
     )
     param_frac = param_breakdown.fraction
     mac_frac = mac_estimate.fraction

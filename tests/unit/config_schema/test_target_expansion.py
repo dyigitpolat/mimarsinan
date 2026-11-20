@@ -12,6 +12,7 @@ import pytest
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
+from mimarsinan.mapping.platform.descriptions.computation_keys import CHIP_COMPUTATION_KEYS
 from mimarsinan.mapping.platform.target_bundles import (
     DP,
     PC,
@@ -32,6 +33,7 @@ from mimarsinan.mapping.platform.target_expansion import (
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import merge_pipeline_config
 from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved
+from unit.mapping.platform.hand_descriptions import described
 
 _FIXTURES = os.path.join(os.path.dirname(__file__), "..", "..", "fixtures", "deployment_configs")
 #: A spiking and a value-domain fixture: each bundle is declared over the one of its core semantics.
@@ -47,16 +49,24 @@ TARGET_KEYS = ("target", "target_claim_class", "target_faithfulness_class")
 #: default grid's count), TrueNorth's floorplan from its profile's validity text (4096 cores, 64 x 64 mesh), and
 #: each profile's core semantics.
 HAND = {
-    "odin": {DP: {"core_semantics": "spiking"}, PC: {
+    # [U-CHIPKEYS] each spiking chip's neuron law as its source states it: ODIN's RTL (per-event compare, an 8-bit
+    # unsigned saturating membrane, reset to zero, threshold at equality), TrueNorth's (per-tick compare, a 20-bit
+    # signed membrane, threshold at equality, merolla2014a), Loihi's (per-time-step compare, reset to zero, a strict
+    # threshold and a bias current per compartment, davies2018loihi)
+    "odin": {DP: {"core_semantics": "spiking", "spiking_family": "lif", "spiking_variant": "streamed",
+                  "firing_granularity": "per_event", "firing_mode": "Novena", "thresholding_mode": "<="}, PC: {
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": False,
                    "weight_sign_granularity": "per_axon"}], "weight_bits": 4,
-        "allow_coalescing": False, "allow_neuron_splitting": False, "platform_physics_profile": "odin"}},
-    "truenorth": {DP: {"core_semantics": "spiking"}, PC: {
+        "allow_coalescing": False, "allow_neuron_splitting": False, "platform_physics_profile": "odin",
+        "membrane_bits": 8, "membrane_signed": False}},
+    "truenorth": {DP: {"core_semantics": "spiking", "spiking_family": "lif", "firing_granularity": "per_cycle",
+                       "thresholding_mode": "<="}, PC: {
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 4096, "has_bias": True}], "weight_bits": 1,
         "platform_physics_profile": "truenorth", "cores_per_tile": 1, "tile_grid_rows": 64, "tile_grid_cols": 64,
-        "allow_coalescing": False, "allow_neuron_splitting": False}},
-    "loihi": {DP: {"core_semantics": "spiking"}, PC: {
-        "cores": [{"max_axons": 128, "max_neurons": 1024, "count": 128, "has_bias": False}], "weight_bits": 8,
+        "allow_coalescing": False, "allow_neuron_splitting": False, "membrane_bits": 20, "membrane_signed": True}},
+    "loihi": {DP: {"core_semantics": "spiking", "spiking_family": "lif", "firing_granularity": "per_cycle",
+                   "firing_mode": "Novena", "thresholding_mode": "<"}, PC: {
+        "cores": [{"max_axons": 128, "max_neurons": 1024, "count": 128, "has_bias": True}], "weight_bits": 8,
         "platform_physics_profile": "loihi", "allow_coalescing": False, "allow_neuron_splitting": True}},
     "isaac_like": {DP: {"core_semantics": "mvm"}, PC: {
         # [U-C4] 128 x 128 two-bit cells, eight per 16-bit weight along its row: 128 x 16 weights per array.
@@ -88,6 +98,11 @@ def _forms(name):
     """``(hand, bundle)``: a fixture with the literal hand declaration ``HAND[name]``, and with ``target`` instead."""
     doc = _load(FIXTURE_FOR[HAND[name][DP]["core_semantics"]])
     written = {key for section in HAND[name].values() for key in section}
+    # [U-CHIPKEYS] the fixture's own neuron law gives way to the chip's: every spiking chip key and the fixture's
+    # other spiking-group keys (a TTFS input encoding) leave the fixture of a spiking chip
+    if HAND[name][DP]["core_semantics"] == "spiking":
+        written |= {k for k, (applies, _) in CHIP_COMPUTATION_KEYS.items() if applies == "spiking"}
+        written |= {k for k, e in REGISTRY.items() if e.group == "spiking" and k != "core_semantics"}
     dp = {k: v for k, v in doc["deployment_parameters"].items() if k not in written}
     pc = {k: v for k, v in doc["platform_constraints"].items() if k not in GEOMETRY_KEYS and k not in written}
     bits = target_bundles()[name].values.get("weight_bits")
@@ -210,7 +225,9 @@ class TestConflictsAndOverrides:
     @pytest.mark.parametrize("pc,named", [
         ({"target_claim_class": "synthetic"}, "no target is declared"),
         ({"target": "odin", "target_claim_class": "synthetic"}, "'quarantined', which target='odin' derives"),
-        ({"target": "odin", "target_faithfulness_class": "exact"}, "target_faithfulness_class='exact' differs"),
+        # [U-CHIPKEYS] ODIN derives 'exact' now that it states its soma law: a hand-written other label differs
+        ({"target": "odin", "target_faithfulness_class": "approximate"},
+         "target_faithfulness_class='approximate' differs"),
     ], ids=lambda x: str(x)[:40])
     def test_a_declared_label_refuses_where_labels_are_written(self, pc, named):
         with pytest.raises(TargetDeclarationError, match=named):
@@ -221,8 +238,10 @@ class TestConflictsAndOverrides:
         dp, pc = expand_target({}, {"target": "odin", "target_overrides": {"cores": ODIN_CORES}},
                                write_derived=True)
         assert pc["cores"] == ODIN_CORES["value"]
-        assert pc["target_faithfulness_class"] == (
-            "approximate: per-cycle soma law; unbounded membrane for the 8-bit saturating one; cores declared")
+        # [U-CHIPKEYS] the exact ODIN description becomes approximate by the one override, named
+        # [U-CHIPKEYS2] and its label keeps the configuration the exact class rested on
+        assert pc["target_faithfulness_class"] == ('approximate, given "leakage and SDSP learning off by the '
+                                                   'deployment": cores declared')  # [U-CHIPKEYS6] a quoted field
         pcfg = build_platform_constraints_resolved(merge_pipeline_config(dp, pc))
         assert pcfg["target_overrides"] == {"cores": ODIN_CORES}
         assert target_departures(pcfg) == ({
@@ -230,15 +249,16 @@ class TestConflictsAndOverrides:
             "declared": ODIN_CORES["value"], "note": ODIN_CORES["note"]},)
 
     def test_an_override_lowers_an_exact_bundle_to_approximate_naming_the_key(self, tmp_path):
-        (tmp_path / "exact_chip.json").write_text(json.dumps({
-            "name": "exact_chip", "geometry": "recom_64x64_256", "keys": {}, "faithfulness": {"class": "exact"}}))
+        (tmp_path / "exact_chip.json").write_text(json.dumps(described({  # [U-CHIPKEYS] a hand chip under the rule
+            "name": "exact_chip", "geometry": "recom_64x64_256", "keys": {}, "faithfulness": {"class": "exact"}})))
         bundles = load_bundles(tmp_path)
         _, plain = expand_target({}, {"target": "exact_chip"}, write_derived=True, bundles=bundles)
-        assert plain["target_faithfulness_class"] == "exact"
+        # [U-CHIPKEYS4] 3(f) the chip states no pricing, so its label names the pricing the run resolves (none) first
+        assert plain["target_faithfulness_class"] == "approximate: no physics profile"
         overrides = {"cores": {"value": [{"max_axons": 64, "max_neurons": 64, "count": 512}], "note": "twice"}}
         _, declared = expand_target({}, {"target": "exact_chip", "target_overrides": overrides},
                                     write_derived=True, bundles=bundles)
-        assert declared["target_faithfulness_class"] == "approximate: cores declared"
+        assert declared["target_faithfulness_class"] == "approximate: no physics profile; cores declared"
 
     def test_an_explicit_key_must_equal_its_override(self):
         cores = copy.deepcopy(ODIN_CORES["value"])

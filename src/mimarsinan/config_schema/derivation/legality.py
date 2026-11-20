@@ -4,16 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping, Optional, Tuple
 
+from mimarsinan.common.refusal.legal_value import illegal_value_message
 from mimarsinan.config_schema.registry import REGISTRY
 
 
 def legal_value_error(flat_key: str, value: Any, legal: Iterable[Any]) -> ValueError:
     """THE canonical illegal-value message (the wizard renders the same text)."""
-    options = ", ".join(repr(option) for option in legal)
-    return ValueError(
-        f"{flat_key}={value!r} is not legal here: the current config admits "
-        f"{{{options}}}. Remove {flat_key} to accept the derived value."
-    )
+    return ValueError(illegal_value_message(flat_key, value, legal))
 
 
 def legal_values_for(flat_key: str, cfg: Mapping[str, Any]) -> Optional[Tuple[Any, ...]]:

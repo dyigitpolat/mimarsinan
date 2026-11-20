@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.mapping.support.received_field import ReceivedShift, received_shifts
+from mimarsinan.mapping.support.received_shift import bake_received_shift, correct_for_received_shift
 from mimarsinan.mapping.support.tensor_stats import safe_quantile
 import torch.nn as nn
 
@@ -68,11 +70,10 @@ def _prearm_marked_value_ops(repr_, boundary_table) -> int:
 
 
 def _bake_walk_feasible(node, consumers) -> bool:
-    """Dry-run of the σ consumer walk: True iff every reachable host consumer
-    is compensable (bias carrier / shift-invariant / equivariant pass-through).
-    Non-compensable chains (the ViT stem's ``cat`` class) are SKIPPED by the
-    installer — left trained-clamp — instead of crashing the install
-    (σ-scope law: σ belongs to producer→entry edges it can actually reach)."""
+    """The lift's admission (today's, O3): True iff every host consumer the lift reaches is a bias carrier, a LayerNorm,
+    or a host op a lift may cross (``_lift_admits``). Chains outside it (a host ``cat`` of a lifted value) are SKIPPED by
+    the installer — left trained-clamp — instead of crashing the install (σ-scope law: σ belongs to producer→entry
+    edges it can actually reach). The correction is no part of it: the one writer's (``received_shift``)."""
     import torch.nn as _nn
 
     from mimarsinan.mapping.support.negative_boundary import (
@@ -96,11 +97,19 @@ def _bake_walk_feasible(node, consumers) -> bool:
             continue
         if isinstance(module, _nn.LayerNorm):
             continue
-        if _scalar_shift_equivariant(module):
+        if _lift_admits(module):
             frontier.extend(boundary_consumers(consumer, consumers))
             continue
         return False
     return True
+
+
+def _lifts_admitted(repr_, nodes, consumers) -> set:
+    """The ops a lift may take: today's admission (``_bake_walk_feasible``) and a field every reader can be corrected for
+    (``received_shifts`` refuses nothing; checked for all of them at once)."""
+    refused: dict = {}
+    received_shifts(repr_, {node: 1.0 for node in nodes}, refused=refused)
+    return {id(node) for node in nodes if node not in refused and _bake_walk_feasible(node, consumers)}
 
 
 def install_signed_seam_offsets(
@@ -113,12 +122,6 @@ def install_signed_seam_offsets(
     so the install is value-preserving in-range and the QAT trains the exact
     deployed composition with the negative band alive. Returns installs."""
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
-    from mimarsinan.mapping.support.negative_boundary import (
-        _is_host_node,
-        _perceptron_of,
-        boundary_consumers,
-    )
-    from mimarsinan.mapping.support.negative_shift import apply_negative_shift_bias
     from mimarsinan.mapping.support.per_source_scales import (
         compute_per_source_scales,
     )
@@ -156,6 +159,9 @@ def install_signed_seam_offsets(
     )
     installed = 0
     skipped: list = []
+    armed = [node for node in samples if isinstance(node, ComputeOpMapper) and getattr(node, "is_wire_value_op", False)
+             and node.per_source_scales is not None and node.output_value_offset is None]
+    admitted = _lifts_admitted(repr_, armed, consumers)
     for node, sample in samples.items():
         # ONLY armed ops: the wrapper carries the offset into every deployed
         # representation; an unarmed op's offset would exist in the plain
@@ -168,7 +174,7 @@ def install_signed_seam_offsets(
             continue
         if node.output_value_offset is not None:
             continue  # idempotent: one install owns the seam
-        if not _bake_walk_feasible(node, consumers):
+        if id(node) not in admitted:
             skipped.append(getattr(node, "name", None) or type(node.module).__name__)
             continue
         sigma, kappa = _signed_seam_quantiles(sample, quantile=quantile)
@@ -194,44 +200,14 @@ def install_signed_seam_offsets(
         verify_boundary_currency_coherence(model)
         return 0
 
-    # Consumer bake AFTER the currencies settle: entry charge shift is
-    # W_eff . (sigma / s_out_final) (the T4 identity, buffer units).
+    # Consumer bake AFTER the currencies settle: each reader corrected for the field it receives from every lift at once
+    # (the entry charge W_eff . (sigma / s_out_final), the T4 identity in buffer units, where every axon receives it).
+    lifts = {}
     for node in repr_.execution_order():
-        if not (
-            isinstance(node, ComputeOpMapper)
-            and node.output_value_offset is not None
-        ):
-            continue
-        sigma_v = float(node.output_value_offset)
-        s_out = float(
-            torch.as_tensor(node.output_scale).float().mean()
-        ) if node.output_scale is not None else 1.0
-        frontier = list(boundary_consumers(node, consumers))
-        while frontier:
-            consumer = frontier.pop()
-            if not _is_host_node(consumer):
-                perceptron = _perceptron_of(consumer)
-                if perceptron is not None:
-                    apply_negative_shift_bias(
-                        perceptron, torch.tensor(sigma_v / max(s_out, 1e-12)),
-                    )
-                continue
-            module = getattr(consumer, "module", None)
-            if _bake_shift_into_host_bias(module, sigma_v):
-                continue
-            if isinstance(module, nn.LayerNorm):
-                # Shift-INVARIANT (mean-subtracting): a scalar sigma vanishes
-                # here — the walk ends with nothing to bake.
-                continue
-            if _scalar_shift_equivariant(module):
-                # f(v + c) = f(v) + c: sigma passes through unchanged.
-                frontier.extend(boundary_consumers(consumer, consumers))
-                continue
-            raise NotImplementedError(
-                "sigma-in-the-op: a lifted seam feeds a host consumer with no "
-                f"bias carrier ({type(module).__name__}); extend the bake or "
-                "leave this op unlifted."
-            )
+        if isinstance(node, ComputeOpMapper) and node.output_value_offset is not None:
+            s_out = float(torch.as_tensor(node.output_scale).float().mean()) if node.output_scale is not None else 1.0
+            lifts[node] = torch.tensor(float(node.output_value_offset) / max(s_out, 1e-12))
+    bake_received_shift(repr_, lifts)
     # The install seam is the last currency writer: certify one-writer
     # coherence LOUD before training adapts to the stamps (calculus §11.2).
     verify_boundary_currency_coherence(model)
@@ -239,43 +215,37 @@ def install_signed_seam_offsets(
 
 
 def _bake_shift_into_host_bias(module, sigma_v: float) -> bool:
-    """Subtract the shift response sigma.W.sum(dim=1) from the module's bias so
-    f_baked(v + sigma) == f(v); True iff the module is a bias carrier."""
-    if isinstance(module, nn.Linear) and module.bias is not None:
-        with torch.no_grad():
-            module.bias.sub_(sigma_v * module.weight.sum(dim=1))
-        return True
-    if (
-        isinstance(module, nn.MultiheadAttention)
-        and module.in_proj_weight is not None
-        and module.in_proj_bias is not None
-    ):
-        # Self-attention: q=k=v arrive from the same lifted seam (the graph
-        # dedupes the edges), so ONE packed-in_proj bake covers all three.
-        with torch.no_grad():
-            module.in_proj_bias.sub_(
-                sigma_v * module.in_proj_weight.sum(dim=1)
-            )
-        return True
-    return False
+    """[U-RSHIFT, kept for its importers] A host bias carrier takes the shift ``sigma_v`` on every input of every operand
+    through the one writer (``f_baked(v + sigma) == f(v)``: a Linear's ``sigma W`` summed, self-attention's packed
+    projection alike); True iff the module is a bias carrier. Self-attention's q, k and v arrive from the same lifted
+    seam (the graph dedupes the edges), so one call covers all three."""
+    if not (isinstance(module, nn.Linear) and module.bias is not None) and not (
+            isinstance(module, nn.MultiheadAttention) and module.in_proj_weight is not None
+            and module.in_proj_bias is not None):
+        return False
+    width = int(module.weight.shape[1]) if isinstance(module, nn.Linear) else int(module.embed_dim)
+    row = torch.full((1, width), float(sigma_v), dtype=torch.float64)
+    operands = (row,) if isinstance(module, nn.Linear) else (row, row, row)
+    correct_for_received_shift(module, ReceivedShift(rows=row, sources=(), uniform=torch.tensor(sigma_v),
+                                                     operands=operands))
+    return True
 
 
-_SHIFT_EQUIVARIANT_ADAPTER_FNS = frozenset({
-    # f(v + c) = f(v) + c for a scalar c on the shifted input; "add" passes a
-    # single shifted operand's c through; "getitem" selects; "cat" stays OUT
-    # (a partial-slice shift is not bias-compensable downstream).
+_LIFT_ADMITTED_ADAPTER_FNS = frozenset({
+    # [O3] the host adapters a lift may cross (today's admission, no widening): the mean and select family and the
+    # element moves; "cat" and "sum" stay OUT. Admission only: the field each reader receives is carried by each op's
+    # own forward (``received_field``), never by this set.
     "mean", "amax", "amin", "flatten", "reshape", "permute", "transpose",
     "add", "getitem",
 })
 
 
-def _scalar_shift_equivariant(module) -> bool:
-    """Whether ``f(v + c) = f(v) + c`` for a scalar c: pools/relays and the
-    mean/select adapter family qualify; ``sum`` does NOT (it scales c by N)."""
+def _lift_admits(module) -> bool:
+    """Whether a lift may cross ``module`` (today's admission): the pools and relays and the adapter family above."""
     from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 
     if isinstance(module, ComputeAdapter):
-        return getattr(module.fn, "__name__", "") in _SHIFT_EQUIVARIANT_ADAPTER_FNS
+        return getattr(module.fn, "__name__", "") in _LIFT_ADMITTED_ADAPTER_FNS
     return isinstance(module, (
         nn.MaxPool1d, nn.MaxPool2d, nn.MaxPool3d,
         nn.AvgPool1d, nn.AvgPool2d, nn.AvgPool3d,

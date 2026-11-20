@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from mimarsinan.mapping.platform.target_expansion import door_read
 from mimarsinan.gui.runtime.run_cache_seed import (
     copy_pipeline_cache_from_previous_run,
     copy_resources_from_previous_run,
@@ -21,9 +22,30 @@ def tmp_gen_root():
         yield Path(d)
 
 
+def _saved_document(run_dir: Path) -> None:
+    """A run's saved document, which every run directory with entries holds ([U-LIF2 r5] entries beside no point and no
+    saved document are refused by name), silent on every key: the seed carries the point it states."""
+    (run_dir / "_RUN_CONFIG").mkdir(parents=True)
+    (run_dir / "_RUN_CONFIG" / "config.json").write_text(json.dumps({"deployment_parameters": {}}), encoding="utf-8")
+
+
+def _carried_point(run_dir: Path):
+    return json.loads((run_dir / "_RUN_CONFIG" / "point.json").read_text(encoding="utf-8"))["spiking_point"]
+
+
+def _held_point(run_dir: Path):
+    """The whole point record the source run directory holds."""
+    from mimarsinan.chip_simulation.spiking_point import point_record
+    from mimarsinan.chip_simulation.stored_point import run_directory_point
+
+    held = run_directory_point(str(run_dir), door=door_read)
+    return None if held.point is None else point_record(held.point)
+
+
 def test_copy_pipeline_cache_basic(tmp_gen_root: Path) -> None:
     prev = tmp_gen_root / "myexp_phased_deployment_run_20250101_120000"
     prev.mkdir(parents=True)
+    _saved_document(prev)
     meta = {"Model Building.model": ["basic", "Model Building.model"]}
     (prev / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
     (prev / "Model Building.model.json").write_text('{"x": 1}', encoding="utf-8")
@@ -36,6 +58,7 @@ def test_copy_pipeline_cache_basic(tmp_gen_root: Path) -> None:
     assert (dest / "metadata.json").is_file()
     assert json.loads((dest / "metadata.json").read_text(encoding="utf-8")) == meta
     assert json.loads((dest / "Model Building.model.json").read_text(encoding="utf-8")) == {"x": 1}
+    assert _carried_point(dest) == _held_point(prev)
 
 
 def test_invalid_run_id_skips(tmp_gen_root: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -90,11 +113,12 @@ def test_copy_steps_json_from_previous_run(tmp_gen_root: Path) -> None:
     prev = tmp_gen_root / "run_a"
     gui = prev / "_GUI_STATE"
     gui.mkdir(parents=True)
+    _saved_document(prev)
     (gui / "steps.json").write_text('{"steps": {"S1": {"end_time": 1.0}}}', encoding="utf-8")
     dest = tmp_gen_root / "run_b"
     dest.mkdir()
     copy_steps_json_from_previous_run(str(tmp_gen_root), prev.name, str(dest))
-    assert (dest / "_GUI_STATE" / "steps.json").is_file()
+    assert (dest / "_GUI_STATE" / "steps.json").is_file() and _carried_point(dest) == _held_point(prev)
     import json
 
     data = json.loads((dest / "_GUI_STATE" / "steps.json").read_text(encoding="utf-8"))

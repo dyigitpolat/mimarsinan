@@ -159,9 +159,9 @@ CONFIG_KEYS_SET: Set[str] = {
     "per_channel_theta", "s_aware_theta_quantile",
     # Every-endpoint D-hat target floor (recipe may set it).
     "endpoint_target_floor", "origin_teacher_kd", "origin_anchored_compact", "spike_phase_dither", "lif_membrane_init",
-    "lif_execution_discipline", "spike_count_parity_samples", "aa_endpoint_recovery_steps",
+    "lif_window_firing", "spike_count_parity_samples", "aa_endpoint_recovery_steps",
     "tuning_lossless_entry_fast_path", "endpoint_target_margin", "activation_scale_policy", "core_semantics",
-    "value_parity_samples",
+    "value_parity_samples", "wq_host_normalization_batches",  # [U-POST G1] WQ's host normalizations
     # [ODIN P1] the soma-law axes (derived defaults, no schema default) and their platform widths.
     "firing_granularity", "membrane_arithmetic", "membrane_bits", "membrane_signed", "weight_sign_granularity",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
@@ -180,7 +180,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "position_multiplexing", "pipelined_multiplexing", "carry_buffer_bytes", "reduction_core_banks",
     # Wave 2 WI-5a to WI-5c declarations (registry/entries_grids.py): no default, absent is the calibrated,
     # integer-lattice, weight-grid-bias program.
-    "quantizer_state", "weight_scale_rule", "bias_resolution",
+    "quantizer_state", "weight_scale_rule", "bias_resolution", "weight_scale_granularity",
     # Wave 2 WI-5e (registry/entries_lanes.py): no default, absent is the lane-free MVM contract.
     "onchip_arithmetic",
     # Wave 2 WI-5g (registry/entries_core_types.py): no default, absent binds no layer to a core type.

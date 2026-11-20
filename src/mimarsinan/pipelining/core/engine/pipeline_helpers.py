@@ -7,7 +7,6 @@ from typing import Any
 
 import torch
 
-from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -27,11 +26,11 @@ def require_spiking_mode_supported(
     *,
     backend: str,
 ) -> None:
+    """[U-LIF2 W5] Every step's guard judges the plan's whole resolved point (mode, soma law, window firing and
+    the declared execution extensions) for ``backend``, refusing by name."""
     plan = DeploymentPlan.of(pipeline)
-    policy_for_spiking_mode(
-        plan.spiking_mode, plan.ttfs_cycle_schedule,
-        soma_law=SomaLaw.resolve(plan.config),
-    ).require_backend_supported(backend=backend, context=step_name)
+    policy_for_spiking_mode(plan.require_spiking_point()).require_backend_supported(
+        backend=backend, context=step_name)
 
 
 def run_optional_viz(step_name: str, fn: Callable[[], Any]) -> None:

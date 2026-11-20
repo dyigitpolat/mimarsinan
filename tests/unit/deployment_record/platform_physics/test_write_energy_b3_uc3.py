@@ -135,7 +135,10 @@ class TestNeuRRAMWriteLaw:
         band = _terms(pricing)["energy_write_mj"].band
         expected = tuple(p * 1e-12 * CELLS * 1e3 for p in PER_DEVICE_WRITE)
         assert (band.low, band.nominal, band.high) == pytest.approx(expected, rel=1e-12)
-        assert band.basis == "e_write_per_cell x runtime_written_cells x write_verify_iterations"
+        # [U-ENERGY, the class swept S-1] NeuRRAM declares no per-core program charge over the cores the census
+        # programs: named, never priced, never dropped
+        assert band.basis == ("e_write_per_cell x runtime_written_cells x write_verify_iterations; unpriced: "
+                              "e_core_program(core_program)")
         without_verify = tuple(w * ITERATIONS * 1e-12 * CELLS * 1e3 for w in E_WRITE)
         assert band.high == pytest.approx(without_verify[2] + 16.0 * ITERATIONS * 1e-12 * CELLS * 1e3, rel=1e-12)
 

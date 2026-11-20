@@ -3,6 +3,7 @@
 import pytest
 import torch
 
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
 from mimarsinan.mapping.verification.streamed import streamed_span_report_model
 from mimarsinan.models.vehicles.narrow_conv import (
     ACTIVATED_READOUT,
@@ -112,6 +113,7 @@ class TestNarrowConvNet:
         for placement in ("subsume", "offload"):
             report = streamed_span_report_model(
                 model, (1, 28, 28), 10, encoding_placement=placement,
+                conversion=DeployedConversion(),  # the streamed-lif vehicle's spiking contract, stated
             )
             assert report.end_to_end, placement
 

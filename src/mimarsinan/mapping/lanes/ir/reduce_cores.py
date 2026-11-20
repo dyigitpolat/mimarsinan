@@ -19,6 +19,7 @@ from mimarsinan.mapping.ir import ComputeOp, IRSource, NeuralCore
 from mimarsinan.mapping.lanes.forms import PoolForm
 from mimarsinan.mapping.lanes.ir.pool_cores import LANE_OUTPUTS, pool_windows
 from mimarsinan.mapping.lanes.ir.refusal import LaneFusionError
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 
 #: The attribute a reduced core carries: per column, the window instances it sums (a padded window has fewer).
 REDUCED_INSTANCES = "lane_reduced_instances"
@@ -57,7 +58,7 @@ def reduced_lane_cores(op: ComputeOp, sources: np.ndarray, cores: Dict[int, Neur
     built: List[NeuralCore] = []
     outputs = np.empty(len(windows), dtype=object)
     for g, (key, members) in enumerate(groups.items()):
-        thetas = {float(cores[c].threshold) for c in key}
+        thetas = {core_threshold(cores[c], f"reduction {op.name!r}") for c in key}  # [U-LIVE r2] one register each
         if len(thetas) != 1:
             raise LaneFusionError(f"reduction {op.name!r} sums producer cores of thresholds {sorted(thetas)}: one "
                                   "accumulator, one theta")

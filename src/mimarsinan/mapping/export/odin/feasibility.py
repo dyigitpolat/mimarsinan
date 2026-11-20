@@ -11,6 +11,7 @@ from mimarsinan.chip_simulation.soma_axes import (
     PER_SYNAPSE_SIGN,
     physical_row_expansion,
 )
+from mimarsinan.mapping.support.neuron_thresholds import one_register
 from mimarsinan.models.spiking.serial.refusals import (
     EMISSION_COUNT_CEILING,
     # Re-exported: the ODIN export side takes the currency SSOT from HERE, so
@@ -245,7 +246,9 @@ def entry_event_bound(source: Any):
 
 
 def _core_theta(core: Any, core_index: int) -> int:
-    theta = _as_integer(getattr(core, "threshold", None))
+    # [U-PCH3] the emission bound divides by the core's one register, read as held (a per-neuron threshold refused
+    # by name first, then the bound's own refusal of an unset, boolean or non-integral one)
+    theta = _as_integer(one_register(core, "the ODIN export's emission bound"))
     if theta is None or theta < 1:
         raise OdinFeasibilityError(
             KEY_EMISSION_BOUND,

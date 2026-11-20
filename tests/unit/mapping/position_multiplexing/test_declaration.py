@@ -95,11 +95,18 @@ class TestTheCombinationsTheShapeOnlyPlaneCannotSee:
         assert tuple(entry.legal_values(state)) == (False,)
         assert tuple(entry.legal_values({**state, "lif_depth_balancing_relays": False})) == (False, True)
 
-    @pytest.mark.parametrize("variant", ["analytical", "quantized", "synchronized", "cascaded"])
+    @pytest.mark.parametrize("variant", ["analytical", "quantized", "synchronized"])
     def test_a_ttfs_run_whose_recipe_arms_no_relays_admits_both(self, variant):
         entry = REGISTRY["position_multiplexing"]
         state = {"allow_scheduling": True, "spiking_family": "ttfs", "spiking_variant": variant}
         assert tuple(entry.legal_values(state)) == (False, True)
+
+    def test_a_cascaded_ttfs_run_leaving_the_relays_to_its_recipe_admits_only_false(self):
+        """[U-TGAUGE5] The cascaded schedule is a per-cycle cascade, whose recipe arms the relays."""
+        entry = REGISTRY["position_multiplexing"]
+        state = {"allow_scheduling": True, "spiking_family": "ttfs", "spiking_variant": "cascaded"}
+        assert tuple(entry.legal_values(state)) == (False,)
+        assert tuple(entry.legal_values({**state, "lif_depth_balancing_relays": False})) == (False, True)
         assert tuple(entry.legal_values({**state, "lif_depth_balancing_relays": True})) == (False,)
 
     def test_a_value_domain_run_folds_no_relays_and_admits_both(self):

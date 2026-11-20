@@ -204,14 +204,18 @@ class TestDroppedRowReach:
             assert (np.asarray(law.adc_levels, dtype=np.int64) >= reach).all(), core.name
 
     def test_the_record_follows_a_later_column_compaction_and_adds_later_drops(self):
-        from types import SimpleNamespace
-
+        """[U-LIVE r2] The record is a value held per neuron: a later column compaction carries it through the one
+        function (``take_neuron_columns``), and a later drop adds to the carried record."""
+        from mimarsinan.mapping.ir import IRSource, NeuralCore
+        from mimarsinan.mapping.packing.softcore.compaction import take_neuron_columns
         from mimarsinan.mapping.pruning.pruning_apply import PRUNED_ROW_MAGNITUDE, record_dropped_rows
 
-        node = SimpleNamespace()
+        node = NeuralCore(id=0, name="n", input_sources=np.array([IRSource(-2, i) for i in range(3)], dtype=object),
+                          core_matrix=np.zeros((3, 4)))
         record_dropped_rows(node, np.zeros((3, 4)), [])
         assert not hasattr(node, PRUNED_ROW_MAGNITUDE), "nothing recorded where nothing was dropped"
         record_dropped_rows(node, np.array([[1, -2, 3, 0], [4, 5, -6, 7], [0, 0, 0, 0]]), [0, 2])
         assert getattr(node, PRUNED_ROW_MAGNITUDE).tolist() == [1, 2, 3, 0]
-        record_dropped_rows(node, np.array([[-1, 1], [9, 9]]), [0], keep_cols=[1, 3])
+        take_neuron_columns(node, [1, 3])
+        record_dropped_rows(node, np.array([[-1, 1], [9, 9]]), [0])
         assert getattr(node, PRUNED_ROW_MAGNITUDE).tolist() == [2 + 1, 0 + 1]

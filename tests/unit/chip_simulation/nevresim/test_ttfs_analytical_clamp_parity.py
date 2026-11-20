@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
 from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
@@ -95,7 +96,7 @@ def outputs(tmp_path_factory):
         float,
         spike_generation_mode="TTFS",
         firing_mode="TTFS",
-        spiking_mode="ttfs",
+        point=point_of_mode("ttfs"),
         connectivity_mode="runtime",
         verbose=False,
     thresholding_mode="<=", )

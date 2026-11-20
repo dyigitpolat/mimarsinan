@@ -7,7 +7,9 @@ over the listed sources, then every core raised to its deepest consumer's latenc
 
 Which neurons share a node, and so whom the node's core feeds, is the tiling: two IRs equal neuron by neuron can run a
 neuron at different latencies (``executed_latency``). The derivation is held, on every check, to the identity program
-the check builds for the deployment's IR (``timing_derivation``, through ``IdentityFacts``)."""
+the check builds for the deployment's IR (``timing_derivation``, through ``IdentityFacts``). [U-LIVE] A row is a source
+of its node's core where the one liveness predicate keeps it (``upstream.ir_reads``, with its producer), the source
+set ChipLatency reads."""
 
 from __future__ import annotations
 
@@ -16,9 +18,10 @@ from typing import Any, Dict, Iterator, Mapping, Optional, Tuple
 
 import numpy as np
 
-from mimarsinan.certification.program_check.unbounded.keys import kept, source_pairs
+from mimarsinan.certification.program_check.unbounded.keys import kept
 from mimarsinan.mapping.ir import IRGraph
 from mimarsinan.mapping.latency.core_graph import alap_latencies
+from mimarsinan.mapping.latency.upstream import ir_reads
 from mimarsinan.mapping.layout.segmentation import NeuralSegment, partition_ir_graph
 from mimarsinan.mapping.packing.pass_timing import executed_core_latencies
 
@@ -57,7 +60,12 @@ def identity_timing(graph: IRGraph) -> Tuple[Dict[int, int], Dict[int, int]]:
         sources = []
         for node, (rows, _cols) in zip(segment.nodes, keep):
             flat = np.asarray(node.input_sources, dtype=object).flatten()
-            producers, idx = source_pairs(flat[rows].tolist() if len(rows) else [])
+            # [U-LIVE] a kept row counts where the one liveness predicate keeps it (ChipLatency's source set); its
+            # producer is the predicate's node id, its producer's neuron the source's index
+            ids, live = ir_reads(node, graph, members=position)
+            rows = rows[live[rows]] if len(rows) else rows
+            producers = ids[rows].astype(np.int64)
+            idx = np.fromiter((int(s.index) for s in flat[rows]), np.int64, len(rows))
             reads = {position[p] for p, sel in _groups(producers)
                      if p in position and bool(np.isin(idx[sel], columns[p]).any())}
             sources.append(sorted(reads))

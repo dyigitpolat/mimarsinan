@@ -67,7 +67,7 @@ a clock (below).
   520 µs CPU wall` lands at −22.8% of Table 3's published 3.03 ms query latency,
   and the inverted throughput at +16.8% of the published 366 s⁻¹. An operator
   who runs throttled (1 ms/step) or on a different mesh scale overrides it.
-- **`host_compute_rate` is the identity (1.0).** The derate a MEASURED host wall
+- **`host_compute_rate` is withdrawn [U-HOST]: no profile declares a host row; a host row is admitted only from an identified host description (hosts/<name>.json) as the run's host block, and a measured host wall prices nothing.** It was the identity (1.0), the derate a MEASURED host wall
   is divided by. Loihi-hosted deployments measure their CPU walls end-to-end
   (§5.4), and derating a measurement would invent headroom; no host THROUGHPUT
   rate (`host_macs_per_s`) is declared, so a run that never measured its wall
@@ -92,11 +92,7 @@ a clock (below).
   4.0 pJ / 6.5 ns per N–S hop. A hop count does not say which axis it took, so the two
   published values are the band and the nominal is their mean — collapsing them would
   hide a 1.33×/1.59× directional spread the paper actually reports.
-- **`area_per_core_total` is a die-area SHARE**, not a measured core layout: 60 mm² ÷
-  128 cores, on a die that also carries three x86 cores and I/O. The real
-  neuromorphic core is therefore *smaller*. What makes the division trustworthy is
-  that it reproduces the paper's own figure — 1024 neurons / 0.46875 mm² = 2184.5
-  neurons/mm², against the stated *"maximum neuron density of 2,184 per mm²"*.
+- **`area_per_core_total` is the vendor's neuromorphic core**, 0.41 mm² (intel_loihi2_brief, Table 2 'Comparison of Loihi to Loihi 2', row 'Core Area', column 'Loihi', p.7: *"Core Area 0.41 mm2 0.21 mm2"*). [U-AREA] It replaces the die-area share 60 mm² ÷ 128 cores (0.46875 mm²), which counted the three x86 cores and the I/O into every core; the die's remainder is the outside part of the area rule's own-die anchor (gamma).
 - **Zeros are facts.** `area_per_adc`, `e_adc_conversion`, `t_adc_conversion`,
   `write_sigma` and `read_sigma` are 0.0 because Loihi is fully digital — no
   converter, no analog programming spread. That is different from an undeclared
@@ -136,7 +132,7 @@ measurement. A ratio band's nominal always sits at the band's **log-space centre
 *journey* stays unpriced even though its *commit* is now derived), `e_sync_barrier`
 (only its *time* is published), `e_row_drive`, `e_leak_per_neuron_step` (already inside
 `e_neuron_update`, see above), and — of the `host` group — everything except the
-measured-wall identity `host_compute_rate`. None are published; each absence disables
+measured-wall identity `host_compute_rate`, now withdrawn [U-HOST]: no profile declares a host row; a host row is admitted only from an identified host description (hosts/<name>.json) as the run's host block, and a measured host wall prices nothing. None are published; each absence disables
 exactly the objectives that need it.
 
 ## Cross-check against what the repository already claims
@@ -170,3 +166,17 @@ Eq. (1) (*"b_i is a constant bias current"*).
   8-bit weights (the repository's `loihi_dense_equiv_128x1024`), on chips of 1 - 128 cores. The derived
   `area_per_core_total` (the chip over its 128 cores) holds at that core only: another searched geometry
   refuses `chip_area_mm2` by name (E190) until a decomposition or a scaling rule is declared.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T1 (digital spiking cores); an anchor: its own published core scaled by the census's cells, converters or bits (rho), its size and word width flagged.
+- **Outside part (`outside: own_die`).** the published die's core-grid share (gamma of its own die); an area_global_fixed beside it is refused by name ('the outside part is stated twice').
+- **Node.** 14 nm.
+- **Anchor (die).** core_mm2 `v('T1-LO-05')`; die_mm2 `v('T1-LO-01')`; n_pub `s('T1-LO-01', 'quote', '128 neuromorphic cores', 128)`; its own share: own_memory_share.
+- **Organization.** 128 x 1024, 8 weight bits per cell, 8 stored bits per cell, 640 bits per neuron; term weights {'bits': 1.0}. Citations: rows: CO profiles/loihi.json validity.geometry.axons (128); cols: davies2018loihi p05.raw.txt:45 'Each neuromorphic core implements 1,024'; synaptic memory: davies2018loihi p08.raw.txt:6 'must not exceed 128 KB'; core memory: intel_loihi2_brief p07.raw.txt:16 'Memory/Neuron Core 208 KB'; stored_bits_per_cell: 128 KB / (128 x 1,024); bits_per_neuron: (208 KB - 128 KB) / 1,024 compartments; weight_bits_per_cell: CO profiles/loihi.json validity.geometry.cell_bits.
+- **Dropped.** area_global_fixed 0.
+- **Dropped.** area_per_core_total 468,750 um2 becomes 410,000 (T1-LO-05).
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

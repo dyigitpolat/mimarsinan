@@ -53,6 +53,7 @@
     "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
     "thresholding_mode": "<",
+    "lif_window_firing": "fire_while_integrating",
     "encoding_layer_placement": "offload",
     "weight_quantization": true,
     "scale_migration": true,

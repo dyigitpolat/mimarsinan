@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.nevresim import integration_policy_read as P
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim_policy_types import (
@@ -145,6 +146,7 @@ class TestTheDriverRefusesBeforeItEmits:
         monkeypatch.setattr(NevresimDriver, "nevresim_path", str(root))
         driver = NevresimDriver.__new__(NevresimDriver)
         driver.soma_law = _PER_EVENT_8
+        driver.point = point_of_mode("lif", soma_law=_PER_EVENT_8)  # [U-LIF2 r2] the run's point it emits
         driver.spiking_mode, driver.firing_mode, driver.spike_generation_mode = "lif", "Novena", "Uniform"
         driver.thresholding_mode, driver.weight_type, driver.threshold_type = "<=", int, int
         driver.generated_files_path = str(tmp_path / "generated")

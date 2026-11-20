@@ -1,30 +1,26 @@
-"""The always-on bias row's drive on the integer value path: the largest code value of the grid its reader reads.
+"""The always-on bias row's drive on the integer value path: a code value of the grid its reader reads.
 
 A parameter-encoded bias (cores without a bias register) rides an always-on axon row of the shared weight grid. On the
 integer value path (a declared ``readout_law`` on value-domain cores) the network keeps its own units, so the row's
 input value was the raw 1.0, a code of the reader's input grid only by accident; where a folded bias is large in those
 units it set the shared grid and rounded most weights to 0 (W38: ResNet-50 at 8 bits, max|b| up to 21.9 max|w|). The
-row now carries the largest code value of the grid its reader's input lies on (``reader_input_full_scales``):
+row now carries a code value of the grid its reader's input lies on (``reader_grids.reader_input_grids``):
 
 * a reader of host-sourced axons reads its armed entry grid, whose top value is ``code_max step - offset``;
 * a reader of core outputs reads the grid the law solver assigns it: the producers read together by any one core share
   the widest range of their union (``law_grids.assign_core_grids``, ``lane_grids.assign_lane_grids``), so the reader's
-  grid is that union's grid and its top value ``levels (range / levels) - offset``. The producers are traced through
-  layout nodes and the declared lanes (an on-chip add, reduction or pool writes on its lane quantizer; an absorbed clamp
-  passes its producer's lane grid), the same union rule over the same quantizers' ranges; [U-LMP] a consumer-grouped
-  producer (N2) joins one key per group, as the solver joins them (a static reader reads every group);
+  grid is that union's grid and its top value ``levels (range / levels) - offset``;
 * a reader whose grid is not determinable here (a reader mixing host and core inputs, an unarmed grid, groups of
   different levels joined by one reader: each a form the law solver refuses) is refused by name at Weight
   Quantization entry wherever a nonzero bias rides its row; without one its row carries no value and keeps 1.0, printed.
 
-The value is stamped on the perceptron at Weight Quantization entry (``stamp_bias_row_drives``), before any projection,
-so every projection of the run (rungs, probes, recovery) codes the row on one lattice; the IR's cores carry it from their
-perceptron (``install_bias_row_drives``); the readout law's bias term multiplies the row codes by it
-(``law_rules.core_bias_and_data_weights``), and each solver refuses by name a core whose drive is not the top code value
-of the input grid it assigned that core (``refuse_drives_off_their_grid``). The deployed program then computes
-``(Delta_in acc + c x_fs) / theta`` with the projected model's bias exactly; what moves is the rounding: the bias is coded
-on the drive's lattice (step ``x_fs / s``), and the shared grid compares ``max|w|`` with ``max|b| / x_fs``, which is
-finer than the raw gauge's where ``x_fs > 1`` and can be coarser where ``x_fs < 1``.
+[U-BRANGE2] The code is the drive site's rule (``drive_rule``): the code whose row grid departs least from the bias,
+with the rows the deployment gives it (``RowBudget``). The value is stamped on the perceptron at Weight Quantization
+entry (``stamp_bias_row_drives``), before any projection, so every projection of the run (rungs, probes, recovery) codes
+the row on one lattice; the IR's cores carry it from their perceptron, one source (``install_bias_row_drives`` refuses
+by name a core already carrying another drive); the readout law's bias term multiplies the row codes by it
+(``law_rules.core_bias_and_data_weights``), and each solver refuses by name a core whose drive is no code value of the
+input grid it assigned that core (``refuse_drives_off_their_grid``).
 
 Where the bias is not on a row of the weight grid (an on-chip register, a law-resolution bias, the register route), no
 integer law reads the row, or the cores are not value-domain cores (the spiking wires, whose normalized full scale is 1),
@@ -34,35 +30,39 @@ no drive is stamped and every program is unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, Iterable, Mapping, Optional, Tuple
 
 import torch
 
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.mapping.export.law_grids import GridUnion, readout_grid_keys, readout_key_grid
 from mimarsinan.mapping.ir import NeuralCore
-from mimarsinan.models.nn.activations.integer_law import grid_levels
-from mimarsinan.models.nn.activations.lane_quantization import (
-    LaneAddModule,
-    LanePoolModule,
-    LaneReduceModule,
-    unsigned_levels,
+from mimarsinan.mapping.support.drive_rule import (
+    DriveGrid,
+    DriveRowBudgetRefusal,
+    RowBudget,
+    least_error_drive_and_rows,
 )
-from mimarsinan.models.nn.activations.readout_quantizer import ReadoutQuantizer
-from mimarsinan.models.nn.activations.value_quantizer import boundary_grid_of
+from mimarsinan.mapping.support.reader_grids import (
+    _perceptron_nodes,
+    entry_drive_grid,
+    entry_grid_top,
+    reader_input_full_scales,
+    reader_input_grids,
+)
+from mimarsinan.transformations.quantization_bounds import layer_weight_bits
 from mimarsinan.transformations.perceptron.bias_drive import bias_row_drive, set_bias_row_drive
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 __all__ = [
     "BiasRowDriveRefusal", "BiasRowDriveStamps", "bias_rows_take_a_drive", "clear_bias_row_drives",
-    "entry_grid_top", "install_bias_row_drives", "model_bias_row_drives", "perceptron_bias_row_drives",
-    "reader_input_full_scales", "refuse_bias_row_drives", "refuse_drives_off_their_grid", "stamp_bias_row_drives",
+    "entry_drive_grid", "entry_grid_top", "install_bias_row_drives", "model_bias_row_drives", "perceptron_bias_row_drives",
+    "reader_input_full_scales", "reader_input_grids", "refuse_bias_row_drives", "refuse_drives_off_their_grid", "stamp_bias_row_drives",
 ]
 
 
 class BiasRowDriveRefusal(ToolchainRefusal, ValueError):
-    """A pass that reads an always-on axon at 1.0 met a row driven at another value, or a core's row drive is not the
-    top code value of the input grid its law solver assigned it."""
+    """A pass that reads an always-on axon at 1.0 met a row driven at another value, a core's row drive is no code value
+    of the input grid its law solver assigned it, or a core carries another drive than its perceptron's stamp."""
 
 
 def bias_rows_take_a_drive(config, *, on_chip_bias: bool, law_bias: bool, register_bias: bool,
@@ -74,116 +74,15 @@ def bias_rows_take_a_drive(config, *, on_chip_bias: bool, law_bias: bool, regist
             and not (on_chip_bias or law_bias or register_bias))
 
 
-def entry_grid_top(grid) -> Optional[float]:
-    """The largest code value of an armed entry grid (``code_max step - offset``), None without a positive one."""
-    if grid is None or not grid.armed:
-        return None
-    top = float(grid.value_range[1])
-    return top if top > 0.0 else None
-
-
-def _perceptron_nodes(model_repr):
-    order, _, _ = model_repr._ensure_exec_graph()
-    return [n for n in order if getattr(n, "perceptron", None) is not None]
-
-
-def _writer(node):
-    """The quantizer whose grid a reader of ``node``'s output reads: a core-mapped perceptron's readout quantizer, or
-    the quantizer a declared lane op (an on-chip add, reduction or pool) rounds its output on; None otherwise."""
-    perceptron = getattr(node, "perceptron", None)
-    if perceptron is not None:
-        scaler = getattr(perceptron, "scaler", None)
-        if getattr(perceptron, "is_encoding_layer", False) or not isinstance(scaler, ReadoutQuantizer):
-            return None
-        return scaler
-    module = getattr(node, "module", None)
-    if isinstance(module, (LaneAddModule, LaneReduceModule, LanePoolModule)):
-        return module.quantizer
-    return None
-
-
-def _traced_writers(model_repr, node, absorbed: FrozenSet[int]) -> Tuple[List, bool]:
-    """(the writers of ``node``'s data inputs, whether any input is host-side), traced back through layout nodes and
-    the lane-absorbed nodes that pass their producer's lane grid (an absorbed clamp)."""
-    deps = model_repr._deps
-    stack, seen, writers, host = list(deps.get(node, [])), set(), [], False
-    while stack:
-        source = stack.pop()
-        if id(source) in seen:
-            continue
-        seen.add(id(source))
-        writer = _writer(source)
-        if writer is not None:
-            writers.append(writer)
-        elif getattr(source, "moves_elements_only", False) or id(source) in absorbed:
-            stack.extend(deps.get(source, []))
-        else:
-            host = True
-    return writers, host
-
-
-def _lane_top(quantizer, widest: float) -> Optional[float]:
-    """The largest code value of ``quantizer``'s grid kind at range ``widest``: codes ``[0, 2^b - 1]`` when unsigned,
-    else ``[-L, L]``, values ``k (range / k_max) - offset`` (``lane_grids.LaneGrid``; a plain readout grid is the
-    symmetric kind without offset, ``law_grids.assign_core_grids``)."""
-    bits = int(quantizer.activation_bits)
-    high = unsigned_levels(bits) if bool(getattr(quantizer, "lane_unsigned", False)) else grid_levels(bits)
-    top = high * (float(widest) / high) - float(getattr(quantizer, "lane_offset", 0.0))
-    return top if high > 0 and top > 0.0 else None
-
-
-def reader_input_full_scales(model_repr, *, absorbed: FrozenSet[int] = frozenset(),
-                             why: Optional[Dict[int, str]] = None) -> Dict[int, Optional[float]]:
-    """``{id(perceptron node): the top code value of the grid its input lies on}`` for every core-mapped perceptron
-    (encoding layers left out), None where it is not determinable ([U-LMP] its reason in ``why``). ``absorbed`` holds
-    the ``id`` of every host-op mapper the declared lanes absorb (``mapping.lanes.model_lanes.lane_absorbed``). The
-    union is the solvers' own (``law_grids.GridUnion``) over their keys (``readout_grid_keys``: one per consumer group)."""
-    why = {} if why is None else why
-    nodes = [n for n in _perceptron_nodes(model_repr) if not getattr(n.perceptron, "is_encoding_layer", False)]
-    union = GridUnion()
-    quantizers: Dict[int, Any] = {}
-    reads: Dict[int, Tuple[Tuple[int, int], ...]] = {}
-    tops: Dict[int, Optional[float]] = {}
-    for node in nodes:
-        writers, host = _traced_writers(model_repr, node, absorbed)
-        if not writers:
-            tops[id(node)] = entry_grid_top(boundary_grid_of(getattr(node.perceptron, "input_activation", None)))
-            if tops[id(node)] is None:
-                why[id(node)] = "it reads host values without an armed entry grid (the law solver refuses it)"
-        elif host:
-            tops[id(node)], why[id(node)] = None, "it reads host values and core outputs (no one DAC grid)"
-        else:
-            quantizers.update((id(w), w) for w in writers)
-            reads[id(node)] = tuple(key for w in writers for key in readout_grid_keys(w))
-            union.join_keys(reads[id(node)])
-    widest: Dict[Tuple[int, int], Tuple[float, Any, int, bool]] = {}
-    kinds: Dict[Tuple[int, int], set] = {}
-    for key in list(union.keys()):
-        root, quantizer = union.find_key(key), quantizers[key[0]]
-        value, count, grouped = readout_key_grid(quantizer, key[1])
-        kinds.setdefault(root, set()).add((count, grouped))
-        if root not in widest or value > widest[root][0]:
-            widest[root] = (value, quantizer, count, grouped)
-    for node_id, keys in reads.items():
-        value, quantizer, count, grouped = widest[union.find_key(keys[0])]
-        joined = kinds[union.find_key(keys[0])]
-        if any(g for _c, g in joined) and len({c for c, _g in joined}) > 1:
-            tops[node_id] = None
-            why[node_id] = f"it joins producer grids of {sorted({c for c, _g in joined})} levels (no one DAC grid)"
-        elif value <= 0.0:
-            tops[node_id] = None
-        else:
-            tops[node_id] = count * (value / count) if grouped else _lane_top(quantizer, value)
-    return tops
-
-
 @dataclass
 class BiasRowDriveStamps:
-    """What :func:`stamp_bias_row_drives` stamped: ``{perceptron name: drive}`` of the drives other than 1.0, and the
-    perceptrons whose reader grid is not determinable (their rows stay at 1.0)."""
+    """What :func:`stamp_bias_row_drives` stamped: ``{perceptron name: drive}`` of the drives other than 1.0, the
+    perceptrons whose reader grid is not determinable (their rows stay at 1.0), and ``{perceptron name: rows}`` of the
+    biases the drive site reads on more than one always-on row (the row cost: one axon per row on every core)."""
 
     drives: Dict[str, float] = field(default_factory=dict)
     undetermined: Tuple[str, ...] = ()
+    rows: Dict[str, int] = field(default_factory=dict)
 
 
 def _name(perceptron) -> str:
@@ -192,24 +91,43 @@ def _name(perceptron) -> str:
 
 def _rides_a_row(perceptron) -> bool:
     """Whether a nonzero effective bias rides the perceptron's always-on row (a zero bias carries no row value)."""
-    bias = PerceptronTransformer().get_effective_bias(perceptron)
+    bias = PerceptronTransformer(positions=True).get_effective_bias(perceptron)  # [U-PFOLD] every position's
     return bias is not None and bool(torch.any(torch.as_tensor(bias) != 0))
 
 
-def stamp_bias_row_drives(model, *, absorbed: FrozenSet[int] = frozenset()) -> BiasRowDriveStamps:
-    """Stamp every core-mapped perceptron's row drive (the top code value of its reader's input grid,
-    :func:`reader_input_full_scales`); encoding layers (run on the host) and undeterminable readers keep 1.0."""
+def stamp_bias_row_drives(model, *, absorbed: FrozenSet[int] = frozenset(), weight_bits: Optional[int] = None,
+                          fractional: bool = False, budget: Optional[RowBudget] = None) -> BiasRowDriveStamps:
+    """Stamp every core-mapped perceptron's row drive, a code value of its reader's input grid
+    (:func:`reader_input_grids`): [U-BRANGE2] given the projection's ``weight_bits``, scale rule and row ``budget``
+    (one row unless declared), the code whose row grid departs least from the bias (``drive_rule``), else the top
+    code value; encoding layers (run on the host) and undeterminable readers keep 1.0. A perceptron whose bias needs
+    more rows than the budget is refused by name."""
+    budget = RowBudget() if budget is None else budget
     model_repr = model.get_mapper_repr()
     why: Dict[int, str] = {}
-    tops = reader_input_full_scales(model_repr, absorbed=absorbed, why=why)
+    grids = reader_input_grids(model_repr, absorbed=absorbed, why=why)
     stamps = BiasRowDriveStamps()
     undetermined = []
+    transformer = PerceptronTransformer(positions=True)  # [U-PFOLD r2, m-3] every weight row and position's bias
     for node in _perceptron_nodes(model_repr):
         perceptron = node.perceptron
         if getattr(perceptron, "is_encoding_layer", False):
             set_bias_row_drive(perceptron, 1.0)
             continue
-        drive = tops.get(id(node))
+        grid = grids.get(id(node))
+        drive = None if grid is None else grid.top
+        if grid is not None and weight_bits is not None:
+            bias = transformer.get_effective_bias(perceptron)
+            if bias is not None:
+                q_max = (1 << (layer_weight_bits(perceptron, int(weight_bits)) - 1)) - 1
+                try:
+                    drive, rows = least_error_drive_and_rows(transformer.get_effective_weight(perceptron),
+                                                             torch.as_tensor(bias), grid, q_max,
+                                                             fractional=fractional, budget=budget)
+                except DriveRowBudgetRefusal as refused:
+                    raise DriveRowBudgetRefusal(f"perceptron {_name(perceptron)!r}: {refused}") from None
+                if rows > 1:
+                    stamps.rows[_name(perceptron)] = int(rows)
         if drive is None and _rides_a_row(perceptron):  # [U-LMP] never the raw 1.0 gauge silently
             raise BiasRowDriveRefusal(
                 f"perceptron {_name(perceptron)!r}: its always-on bias row has no drive on the integer value path: "
@@ -246,13 +164,20 @@ def model_bias_row_drives(model) -> Dict[int, float]:
 
 
 def install_bias_row_drives(ir_graph, model) -> int:
-    """Stamp each IR core with its perceptron's row drive (idempotent); return how many carry one other than 1.0."""
+    """Stamp each IR core with its perceptron's row drive (idempotent); return how many carry one other than 1.0.
+    [U-BRANGE2] One source: a core that already carries a drive other than its perceptron's stamp is refused by name
+    (a code value of the grid is not enough: the drive is its perceptron's)."""
     drives = model_bias_row_drives(model)
     stamped = 0
     for node in ir_graph.nodes:
         if not isinstance(node, NeuralCore):
             continue
         drive = drives.get(node.perceptron_index, 1.0) if node.perceptron_index is not None else 1.0
+        carried = node.__dict__.get("bias_row_drive")
+        if carried is not None and float(carried) != drive:
+            raise BiasRowDriveRefusal(
+                f"core {node.name!r}: its always-on rows carry the drive {float(carried)!r}, not its perceptron's "
+                f"stamp {drive!r}: a row's drive has one source, the perceptron Weight Quantization stamped")
         set_bias_row_drive(node, drive)
         stamped += int(drive != 1.0)
     return stamped
@@ -268,23 +193,24 @@ def reads_a_core(sources: Iterable, nodes_by_id: Mapping[int, object]) -> bool:
                for source in sources)
 
 
-def refuse_drives_off_their_grid(ir_graph, core_fed_top: Callable[[NeuralCore], Optional[float]]) -> int:
-    """Refuse by name a core whose always-on rows carry a drive other than the top code value of the input grid its
-    law solver assigned it: ``core_fed_top(core)`` for a reader of core outputs (None for a reader of host-sourced axons,
-    which reads its entry grid). Returns how many cores were checked."""
+def refuse_drives_off_their_grid(ir_graph, core_fed_grid: Callable[[NeuralCore], Optional[DriveGrid]]) -> int:
+    """Refuse by name a core whose always-on rows carry a drive that is no positive code value of the input grid its
+    law solver assigned it: ``core_fed_grid(core)`` for a reader of core outputs (None for a reader of host-sourced
+    axons, which reads its entry grid). [U-BRANGE2] any code of that grid is a value its DAC writes. Returns how many
+    cores were checked."""
     checked = 0
     for node in ir_graph.nodes:
         if not isinstance(node, NeuralCore) or bias_row_drive(node) == 1.0 or not _has_always_on_rows(node):
             continue
-        top = core_fed_top(node)
-        if top is None:
-            top = entry_grid_top(getattr(node, "boundary_grid", None))
+        grid = core_fed_grid(node)
+        if grid is None:
+            grid = entry_drive_grid(getattr(node, "boundary_grid", None))
         drive = bias_row_drive(node)
-        if top != drive:
+        if grid is None or not grid.holds(drive):
             raise BiasRowDriveRefusal(
-                f"core {node.name!r}: its always-on rows are driven at {drive!r}, but the input grid its readout law "
-                f"reads tops out at {top!r}: the drive stamped at Weight Quantization is not a code of the grid the "
-                "deployed core reads")
+                f"core {node.name!r}: its always-on rows are driven at {drive!r}, which is no code value of the input "
+                f"grid its readout law reads ({grid!r}): the drive stamped at Weight Quantization is not a code of the "
+                "grid the deployed core reads")
         checked += 1
     return checked
 
@@ -295,6 +221,6 @@ def refuse_bias_row_drives(ir_graph, what: str) -> None:
     drives = [bias_row_drive(n) for n in ir_graph.nodes if isinstance(n, NeuralCore) and bias_row_drive(n) != 1.0]
     if drives:
         raise BiasRowDriveRefusal(
-            f"{what} reads an always-on axon at 1.0, but {len(drives)} core(s) carry their bias rows at their "
-            f"reader's input full scale (drives {min(drives):.6g} to {max(drives):.6g}): this combination is not "
-            "built on this tree")
+            f"{what} reads an always-on axon at 1.0, but {len(drives)} core(s) carry their bias rows at the drive "
+            f"rule's codes of their reader's input grid (drives {min(drives):.6g} to {max(drives):.6g}): this "
+            "combination is not built on this tree")

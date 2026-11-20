@@ -13,14 +13,15 @@ from mimarsinan.pipelining.pipeline_steps.adaptation.activation_adaptation_step 
 from mimarsinan.pipelining.pipeline_steps.adaptation.clamp_adaptation_step import ClampAdaptationStep
 from mimarsinan.pipelining.pipeline_steps.adaptation.activation_shift_step import ActivationShiftStep
 from mimarsinan.pipelining.pipeline_steps.quantization.activation_quantization_step import ActivationQuantizationStep
+from spiking_points import declaring_fire_while_integrating
 
 
 def _step_names(config: dict) -> list[str]:
-    return [name for name, _ in get_pipeline_step_specs(config)]
+    return [name for name, _ in get_pipeline_step_specs(declaring_fire_while_integrating(config))]
 
 
 def _step_classes(config: dict) -> list[type]:
-    return [cls for _, cls in get_pipeline_step_specs(config)]
+    return [cls for _, cls in get_pipeline_step_specs(declaring_fire_while_integrating(config))]
 
 
 class TestActivationAdaptationAlwaysPresent:

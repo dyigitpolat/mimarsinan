@@ -128,6 +128,7 @@ def _prepare_step(monkeypatch, *, diffs=None):
         data_provider_factory=MockDataProviderFactory(input_shape=(1, 8, 8), size=3),
     )
     pipeline.config["spiking_mode"] = "lif"
+    pipeline.config["lif_window_firing"] = "fire_while_integrating"  # [U-LIF2 W16] the backend fires while integrating
     pipeline.config["simulation_steps"] = 4
     pipeline.config["firing_mode"] = "Novena"
     pipeline.config["thresholding_mode"] = "<"

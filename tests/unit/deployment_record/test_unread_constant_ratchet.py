@@ -17,7 +17,10 @@ UNREAD_ALLOWLIST = frozenset({"t_array_read", "t_adc_conversion", "t_hop"})
 
 
 def _pricing_source() -> str:
-    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(_PRICERS.glob("*.py")) + [_COMPUTE_TIME, _HOST_TERMS])
+    """[U-ENERGY m-6] Every module of the pricer's package, its subpackages included (``walls``, ``tables``: the
+    module budget splits a package into subpackages, and the rows they read are read by the pricer)."""
+    return "\n".join(path.read_text(encoding="utf-8")
+                     for path in sorted(_PRICERS.rglob("*.py")) + [_COMPUTE_TIME, _HOST_TERMS])
 
 
 def unread_rows(rows, source: str):

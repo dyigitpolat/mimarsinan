@@ -32,7 +32,7 @@ from mimarsinan.chip_simulation.sanafe.analysis import (
     _spike_trace_to_group_counts,
     _summarize_message_trace,
 )
-from mimarsinan.chip_simulation.sanafe.net_synth import apply_ttfs_preset_membranes
+from mimarsinan.chip_simulation.sanafe.net_synth import apply_ttfs_preset_membranes, stamp_timing_lattice
 from mimarsinan.chip_simulation.sanafe.records import SanafeSegmentRecord
 from mimarsinan.chip_simulation.sanafe.runner.bounded_sim import SPIKE_TRACE_COMPACT, simulate_chip_bounded
 from mimarsinan.mapping.latency.chip import ChipLatency
@@ -65,6 +65,7 @@ class SanafeNeuralStageMixin:
         firing_mode: str
         spiking_mode: str
         ttfs_cycle_schedule: str
+        spiking_point: Any
         log_potential_trace: bool
         log_message_trace: bool
         read_final_potentials: bool
@@ -115,8 +116,7 @@ class SanafeNeuralStageMixin:
             cores_per_tile=self.cores_per_tile,
             simulation_length=self.T,
             firing_mode=self.firing_mode,
-            spiking_mode=self.spiking_mode,
-            ttfs_cycle_schedule=self.ttfs_cycle_schedule,
+            point=self.spiking_point,
         )
 
         from mimarsinan.chip_simulation.spiking_semantics import (
@@ -182,10 +182,11 @@ class SanafeNeuralStageMixin:
                     simulation_length=self.T,
                     firing_mode=self.firing_mode,
                 )
-            if not is_cycle:
                 _runner.set_ttfs_input_spike_trains(
                     core_input_neurons, hcm, seg_input_rates, self.T,
                 )
+            stamp_timing_lattice(core_to_group, hcm, contract_stage.membrane_lattice,  # [U-CSOMA] the integers
+                                 simulation_length=self.T, preset=not is_cycle)
             from mimarsinan.chip_simulation.ttfs.ttfs_encoding import (
                 ttfs_latched_spike_train,
                 ttfs_single_spike_train,

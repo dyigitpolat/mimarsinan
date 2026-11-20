@@ -11,24 +11,15 @@ import numpy as np
 PRUNED_ROW_MAGNITUDE = "pruned_row_magnitude"
 
 
-def record_dropped_rows(node, matrix: np.ndarray, rows: Sequence[int], keep_cols=None) -> None:
+def record_dropped_rows(node, matrix: np.ndarray, rows: Sequence[int]) -> None:
     """Add the dropped ``rows``' per-column ``Σ|W|`` of ``matrix`` (columns already compacted) to the node's record;
-    an earlier record is compacted to ``keep_cols`` first. Nothing is recorded where nothing was ever dropped."""
+    an earlier record already follows the kept columns (a value held per neuron, carried by the column compaction's
+    ``take_neuron_columns``). Nothing is recorded where nothing was ever dropped."""
     prior = getattr(node, PRUNED_ROW_MAGNITUDE, None)
     if not len(rows) and prior is None:
         return
     magnitude = np.abs(np.asarray(matrix, dtype=np.float64)[np.asarray(rows, dtype=np.int64), :]).sum(axis=0)
     if prior is not None:
-        prior = np.asarray(prior, dtype=np.float64)
-        magnitude = magnitude + (prior if keep_cols is None else prior[np.asarray(keep_cols, dtype=np.int64)])
+        magnitude = magnitude + np.asarray(prior, dtype=np.float64)
     setattr(node, PRUNED_ROW_MAGNITUDE, magnitude)
 
-
-def compact_hardware_bias_columns(
-    hardware_bias: np.ndarray | None,
-    keep_cols: "np.ndarray | Sequence[int]",
-) -> np.ndarray | None:
-    """Slice ``hardware_bias`` along neuron columns when pruning compacts a core."""
-    if hardware_bias is None:
-        return None
-    return hardware_bias[keep_cols]

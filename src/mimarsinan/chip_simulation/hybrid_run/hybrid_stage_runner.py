@@ -97,6 +97,7 @@ def run_hybrid_stages(
     on_unknown=None,
     context_factory: Optional[Callable[[int, Any, Dict[int, Any]], HybridStageContext]] = None,
     stage_timer=None,
+    timed_samples: Optional[int] = None,
 ) -> Any:
     """Iterate ``mapping.stages`` with optional post-stage hooks.
 
@@ -108,7 +109,9 @@ def run_hybrid_stages(
     ``stage_timer`` (opt-in, default ``None`` — byte-identical behavior): a
     ``stage_timing.StageTimer`` that wraps every ``on_compute`` invocation to
     accumulate the measured host-op wall. Neural segments are untimed — the
-    chip simulator measures those.
+    chip simulator measures those. [U-HOST] ``timed_samples``: the samples this
+    traversal carries, stated by the runner that drives it (each timed call's
+    count); a timed call without it refuses by name (``stage_timing``).
     """
 
     def _ctx(index: int, stage) -> HybridStageContext:
@@ -146,7 +149,7 @@ def run_hybrid_stages(
             index += 1
             require_inputs_produced(stage, state_buffer)
             if stage_timer is not None:
-                with stage_timer.time_compute_stage(ctx.stage_index, stage.name):
+                with stage_timer.time_compute_stage(ctx.stage_index, stage.name, timed_samples):
                     _invoke_cb(on_compute, ctx)
             else:
                 _invoke_cb(on_compute, ctx)

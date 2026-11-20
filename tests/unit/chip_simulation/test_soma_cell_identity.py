@@ -16,6 +16,7 @@ from mimarsinan.chip_simulation.hypervolume_axis_encoder import (
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from spiking_points import point_of_mode
 
 _STREAMED = {"spiking_family": "lif", "spiking_variant": "streamed"}
 _ODIN = {**_STREAMED, "firing_mode": "Novena", "firing_granularity": "per_event",
@@ -32,7 +33,7 @@ def _plan(**cfg) -> DeploymentPlan:
 class TestCertificationCellDiscriminates:
     def test_the_default_point_keeps_its_historical_key(self):
         cell = CertificationCell.from_mode_policy(
-            policy_for_spiking_mode("lif", soma_law=DEFAULT_SOMA_LAW),
+            policy_for_spiking_mode(point_of_mode("lif", soma_law=DEFAULT_SOMA_LAW)),
             backend="hcm",
         )
         assert cell.variant is None
@@ -40,13 +41,13 @@ class TestCertificationCellDiscriminates:
 
     def test_a_lawless_policy_keeps_its_historical_key(self):
         cell = CertificationCell.from_mode_policy(
-            policy_for_spiking_mode("lif"), backend="hcm")
+            policy_for_spiking_mode(point_of_mode("lif")), backend="hcm")
         assert cell.cell_key == "lif@hcm"
 
     def test_the_odin_point_gets_its_own_cell_key(self):
         law = SomaLaw.resolve(_ODIN)
         cell = CertificationCell.from_mode_policy(
-            policy_for_spiking_mode("lif", soma_law=law), backend="hcm")
+            policy_for_spiking_mode(point_of_mode("lif", soma_law=law)), backend="hcm")
         assert cell.variant == law.point_tag()
         assert cell.cell_key == "lif@hcm#per_event-sat8"
         assert cell.cell_key != "lif@hcm"
@@ -54,12 +55,12 @@ class TestCertificationCellDiscriminates:
     def test_the_point_key_round_trips(self):
         law = SomaLaw.resolve(_ODIN)
         cell = CertificationCell.from_mode_policy(
-            policy_for_spiking_mode("lif", soma_law=law), backend="hcm")
+            policy_for_spiking_mode(point_of_mode("lif", soma_law=law)), backend="hcm")
         assert CertificationCell.from_key(cell.cell_key) == cell
 
     def test_an_explicit_variant_still_wins(self):
         cell = CertificationCell.from_mode_policy(
-            policy_for_spiking_mode("lif", soma_law=SomaLaw.resolve(_ODIN)),
+            policy_for_spiking_mode(point_of_mode("lif", soma_law=SomaLaw.resolve(_ODIN))),
             backend="hcm", variant="pruned",
         )
         assert cell.variant == "pruned"

@@ -14,6 +14,7 @@ from mimarsinan.chip_simulation.hypervolume_axis_encoder import (
     syncs_from_row,
 )
 from mimarsinan.chip_simulation.parity_contract import parity_contract_metadata
+from mimarsinan.chip_simulation.spiking_point import recorded_window_firing
 
 
 class LedgerSchemaError(ValueError):
@@ -192,6 +193,7 @@ def normalize_ledger_record(
             "model": data["vehicle"],
             "dataset": data["dataset"],
             "spiking_mode": data["firing"],
+            "window_firing": recorded_window_firing(row),  # [U-LIF2 f-1] the row's own, or the historical one
             "sync": data["sync"],
             "syncs": list(syncs),
             "backend": data["backend"],

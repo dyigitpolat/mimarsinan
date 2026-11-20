@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from spiking_points import declaring_fire_while_integrating
 import torch
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
@@ -42,7 +43,7 @@ def _behavior(*, firing_mode: str = "Default", thresholding_mode: str | None = N
     cfg = {"spiking_mode": "lif", "firing_mode": firing_mode, "spike_generation_mode": "Uniform"}
     if thresholding_mode is not None:
         cfg["thresholding_mode"] = thresholding_mode
-    return NeuralBehaviorConfig.for_lava(cfg)
+    return NeuralBehaviorConfig.for_lava(declaring_fire_while_integrating(cfg))  # [U-LIF2 W16] Lava fires per cycle
 
 
 def _reference_spikes(
@@ -177,4 +178,5 @@ def test_each_comparator_is_exact_to_the_reference(
 
 def test_the_original_cases_read_the_deployment_default_comparator():
     """The seven original cases run the comparator a deployment runs when it declares none."""
-    assert _behavior().thresholding_mode == NeuralBehaviorConfig.from_deployment_config({}).thresholding_mode == "<="
+    default = NeuralBehaviorConfig.from_deployment_config(declaring_fire_while_integrating({}))  # Lava fires per cycle
+    assert _behavior().thresholding_mode == default.thresholding_mode == "<="

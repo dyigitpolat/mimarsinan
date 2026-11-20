@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+from typing import Any
 
 import torch
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.models.spiking.wire_semantics import lif_window_count
 
 _MEASUREMENT_PLANE = contextvars.ContextVar("lif_measurement_plane", default=False)
 
@@ -79,7 +81,73 @@ def enforce_membrane_rails(
 CHIP_LATTICE_SCALE = 2.0
 
 
-def snap_membrane_to_lattice(memb: torch.Tensor, lattice_scale: float) -> None:
+class PerNeuronThresholdRefusal(ToolchainRefusal, ValueError):
+    """[U-PCH] Per-neuron weight scales (one threshold per neuron) where the program, a consumer or the target holds
+    one threshold per core or per perceptron, refused by name."""
+
+
+class NeuronLattice:
+    """[U-PCH] One membrane lattice per output neuron: ``scales[c]`` along the membrane's ``axis`` (its perceptron's
+    declared ``output_channel_axis``), for a perceptron projected per neuron (``theta_c = s_c``): the NF's normalized
+    membrane of neuron ``c`` lives on the ``1 / scales[c]`` grid."""
+
+    def __init__(self, scales: torch.Tensor, axis: int) -> None:
+        self.scales = torch.as_tensor(scales).detach().to(device="cpu", dtype=torch.float64).reshape(-1).clone()
+        self.axis = int(axis)
+
+    def times(self, factor: float) -> "NeuronLattice":
+        return NeuronLattice(self.scales * float(factor), self.axis)
+
+    def on(self, memb: torch.Tensor) -> torch.Tensor:
+        """The scales shaped to broadcast against ``memb`` (its neurons along ``axis``), on its device and dtype."""
+        axis = self.axis % memb.dim()
+        if int(memb.shape[axis]) != self.scales.numel():
+            raise PerNeuronThresholdRefusal(
+                f"a per-neuron membrane lattice of {self.scales.numel()} neurons read on a membrane of shape "
+                f"{tuple(memb.shape)} along axis {self.axis}: the membrane's neurons are not its perceptron's")
+        shape = [1] * memb.dim()
+        shape[axis] = self.scales.numel()
+        return self.scales.to(device=memb.device, dtype=memb.dtype).reshape(shape)
+
+
+def neuron_lattice(scale, axis: int) -> "NeuronLattice | None":
+    """The per-neuron integer lattice of a per-neuron scale when every entry is a positive integer, else None."""
+    values = torch.as_tensor(scale).detach().to(device="cpu", dtype=torch.float64).reshape(-1)
+    if values.numel() == 0 or bool((values <= 0).any()) or bool(((values - values.round()).abs() > 1e-6).any()):
+        return None
+    return NeuronLattice(values.round(), axis)
+
+
+def integral_lattice(scale, axis: int = -1) -> "int | NeuronLattice | None":
+    """[U-PCH2] The integer lattice a weight scale puts a membrane on, the one reading every arming takes: the integer
+    of one grid per perceptron, a ``NeuronLattice`` of one grid per output neuron (along ``axis``), None for a scale
+    off the positive integers. [U-PCH3] A perceptron's weight scale is declared per output neuron: one held entry is
+    every neuron's (one grid, whatever its shape), and more entries are one per neuron (``NeuronLattice.on``
+    refuses any other count by name); its size never selects another layout."""
+    if torch.is_tensor(scale) and scale.numel() > 1:
+        return neuron_lattice(scale, axis)
+    value = float(scale.reshape(-1)[0].item() if torch.is_tensor(scale) else scale)
+    return round(value) if value > 0 and abs(value - round(value)) <= 1e-6 else None
+
+
+def membrane_lattice_scale(theta_int) -> "float | NeuronLattice | None":
+    """The lattice an armed node snaps on: ``CHIP_LATTICE_SCALE * theta_int`` (per neuron for a ``NeuronLattice``),
+    None to clear."""
+    if isinstance(theta_int, NeuronLattice):
+        return theta_int.times(CHIP_LATTICE_SCALE)
+    return CHIP_LATTICE_SCALE * float(theta_int) if theta_int else None
+
+
+def lattice_scalar(lattice_scale, consumer: str) -> float:
+    """An armed lattice for a consumer that reads one threshold per perceptron; a per-neuron one is refused by name."""
+    if isinstance(lattice_scale, NeuronLattice):
+        raise PerNeuronThresholdRefusal(
+            f"{consumer} reads one threshold per perceptron, but the perceptron's membrane lattice is per neuron "
+            f"(weight_scale_granularity 'per_neuron'): declare weight_scale_granularity 'per_perceptron'")
+    return float(lattice_scale)
+
+
+def snap_membrane_to_lattice(memb: torch.Tensor, lattice_scale) -> None:
     """Project the membrane onto its exact arithmetic lattice, in place.
 
     On the integer chip every true membrane value is a multiple of the
@@ -87,8 +155,10 @@ def snap_membrane_to_lattice(memb: torch.Tensor, lattice_scale: float) -> None:
     summation-order noise (~1e-7) pushed values ACROSS threshold ties —
     which the integer-theta lattice makes common (the 2026-08-09 NF↔SCM
     13/788 catch: a true tie fired on one twin and not the other). This is
-    an EXACT projection, not a tolerance: noise ≪ half a quantum."""
-    memb.mul_(lattice_scale).round_().div_(lattice_scale)
+    an EXACT projection, not a tolerance: noise ≪ half a quantum. A
+    ``NeuronLattice`` [U-PCH] snaps each neuron on its own quantum."""
+    scale = lattice_scale.on(memb) if isinstance(lattice_scale, NeuronLattice) else float(lattice_scale)
+    memb.mul_(scale).round_().div_(scale)
 
 
 def lif_fire_and_reset(
@@ -119,3 +189,35 @@ def lif_fire_and_reset(
     if output_dtype is not None:
         return fired.to(output_dtype)
     return fired.float()
+
+
+@contextlib.contextmanager
+def window_counts(lif: Any):
+    """[U-LIF2 W10] The training walk's count branch: evaluate ``lif`` (an ``LIFActivation``, when it is one) by its
+    window count for the duration. A synchronized LIF hop that integrates then emits is read as ``lif_window_count`` of
+    its window charge, never through the IF kernel (whose float accumulation order decides ties differently under its
+    torch and compiled forms)."""
+    if lif is None:
+        yield
+        return
+    previous = lif._window_count_mode
+    lif._window_count_mode = True
+    try:
+        yield
+    finally:
+        lif._window_count_mode = previous
+
+
+def window_count_forward(lif: Any, x: torch.Tensor) -> torch.Tensor:
+    """[U-LIF2 W10] The hop's window count times ``theta / T``: a value held for the window's T cycles charges
+    ``T x / theta`` on the precharge ``v0`` (the membrane guard), and the measurement plane's chip lattice decides its
+    ties as the IF kernel's snap does. Its gradient is the straight-through clamp of the charge to the window."""
+    safe_scale = lif._safe_scale(x)
+    charge = x / safe_scale * lif.T + float(getattr(lif, "membrane_init", 0.0))
+    decided = charge.detach().clone()
+    lattice = getattr(lif.if_node, "_snapped_scale", lambda: None)()
+    if lattice is not None:
+        snap_membrane_to_lattice(decided, float(lattice))
+    count = lif_window_count(decided, 1.0, lif.T, compare_mode=lif.thresholding_mode)
+    surrogate = charge.clamp(0.0, float(lif.T))
+    return (surrogate + (count - surrogate).detach()) / lif.T * safe_scale

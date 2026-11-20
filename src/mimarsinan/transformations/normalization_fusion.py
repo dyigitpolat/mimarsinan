@@ -12,6 +12,7 @@ from mimarsinan.models.perceptron_mixer.perceptron import (
     effective_preactivation_bias,
 )
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import fuse_output_scale
 
 
 def fuse_into_perceptron(perceptron, *, device: torch.device | str) -> None:
@@ -25,6 +26,7 @@ def fuse_into_perceptron(perceptron, *, device: torch.device | str) -> None:
 
     W = perceptron.layer.weight.data
     fused_W = W * u.unsqueeze(-1)
+    fuse_output_scale(perceptron, u)  # [U-PFOLD] each projected row of a fold per position, as the raw weight
     fused_b = effective_preactivation_bias(perceptron).detach()
 
     saved_buffers = {

@@ -2,7 +2,12 @@
 delay on a host-encoded slice, the level flag, a weight bank, a memo, a span cache), and, where the vehicle
 discriminates, changes the HCM's output against the identity program's; the check fails it by name.
 
-The first check established every one of them (``RA/11_wave2/exact/review_soundness.md``, B1 to B3 and M1)."""
+The first check established every one of them (``RA/11_wave2/exact/review_soundness.md``, B1 to B3 and M1).
+
+[U-TGAUGE5] A per-cycle executor refuses by name a program whose fused segment reads a producer at a latency gap other
+than one (the window rule), and the vehicle's pins and delivery delays exist only there: a mutant whose subject needs
+neither runs on the vehicle as the mapping builds it (``streamed_multipass(relays=True)``); the level-flag mutant of a
+delayed pass keeps the relay-free vehicle, which the executor now refuses by name (this file's refusal test)."""
 
 from __future__ import annotations
 
@@ -69,7 +74,7 @@ def delay_an_encoded_slice(program):
 
 @pytest.mark.parametrize("semantics", ["streamed_lif", "cascaded_ttfs"])
 def test_a_delivery_delay_on_a_host_encoded_slice(semantics):
-    program, ir = P.streamed_multipass()
+    program, ir = P.streamed_multipass(relays=True)
     bad = copy.deepcopy(program)
     delay_an_encoded_slice(bad)
     assert differing_entries(P.identity_of(ir), bad, RUNS[semantics]) > 0
@@ -82,7 +87,8 @@ def test_the_level_flag_on_a_streamed_pass_with_delayed_slices():
     bad = copy.deepcopy(program)
     target = next(s for s in P.neural(bad) if getattr(s, "replay_delays", None))
     target.is_retimed_level = True
-    assert differing_entries(P.identity_of(ir), bad, R.STREAMED_LIF) > 0
+    for gapped in (P.identity_of(ir), bad):  # the fused segment reads a producer at a gap: refused, never misread
+        R.assert_refused_at_the_executor(gapped, R.STREAMED_LIF)
     report = P.run(bad, ir, P.decl("streamed_lif"))
     _failed(report, "H0", "level_flag")
     _failed(report, "H5-collapse", "wire_delivery")
@@ -199,7 +205,7 @@ def test_a_channel_table_keyed_off_the_identity_under_a_dithered_encode():
 
 
 def test_a_stale_carried_output_memo():
-    program, ir = P.streamed_multipass()
+    program, ir = P.streamed_multipass(relays=True)
     bad = copy.deepcopy(program)
     bad._carried_output_cache = {}
     assert differing_entries(P.identity_of(ir), bad, R.STREAMED_LIF) > 0
@@ -214,7 +220,7 @@ def _live_rows(core):
 
 def test_a_stale_axon_span_cache():
     """Two live, differently weighted rows swapped in a core's cached spans only (``get_axon_source_spans``)."""
-    program, ir = P.streamed_multipass()
+    program, ir = P.streamed_multipass(relays=True)
     bad = copy.deepcopy(program)
     for stage in P.neural(bad):
         for core in stage.hard_core_mapping.cores:
@@ -235,7 +241,7 @@ def test_a_stale_axon_span_cache():
 
 def test_a_stale_output_span_cache():
     """Two output positions of the last pass swapped in its cached spans only (``get_output_source_spans``)."""
-    program, ir = P.streamed_multipass()
+    program, ir = P.streamed_multipass(relays=True)
     bad = copy.deepcopy(program)
     hcm = P.neural(bad)[-1].hard_core_mapping
     out = list(np.asarray(hcm.output_sources).flatten())

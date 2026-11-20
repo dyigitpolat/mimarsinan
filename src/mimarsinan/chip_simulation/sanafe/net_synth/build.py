@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -12,6 +12,10 @@ from mimarsinan.chip_simulation.sanafe.noc_geometry import tile_and_local_of_cor
 from mimarsinan.chip_simulation.sanafe.presets import SOMA_INPUT_RANGE_NAME, SYNAPSE_NAME
 from mimarsinan.mapping.support.core_geometry import used_axons as _used_axons
 from mimarsinan.mapping.support.core_geometry import used_neurons as _used_neurons
+from mimarsinan.mapping.support.neuron_thresholds import neuron_thresholds
+
+if TYPE_CHECKING:
+    from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 
 
 def _pack_tile_index(core_global_idx: int, cores_per_tile: int) -> Tuple[int, int]:
@@ -27,8 +31,7 @@ def build_network_for_segment(
     cores_per_tile: int = 0,
     simulation_length: Optional[int] = None,
     firing_mode: str = "Default",
-    spiking_mode: str = "lif",
-    ttfs_cycle_schedule: str = "cascaded",
+    point: "SpikingPoint",
 ) -> Tuple[
     Any,
     Dict[int, Any],
@@ -39,7 +42,8 @@ def build_network_for_segment(
 
     Returns ``(network, core_to_group, core_input_neurons, core_always_on_neurons)``.
     ``simulation_length`` (HCM ``T``), when set, gates each LIF soma to the window
-    ``[core.latency, core.latency+T)``; ``None`` keeps somas active all simulation.
+    ``[core.latency, core.latency+T)``; ``None`` keeps somas active all simulation. [U-LIF2 r2] ``point`` is the run's
+    resolved point the runner holds: the soma's policy is built from it and its mode and schedule are read from it.
     """
     sanafe = _net_synth._sanafe()
     net = sanafe.Network()
@@ -53,7 +57,8 @@ def build_network_for_segment(
     from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
     from mimarsinan.chip_simulation.ttfs.ttfs_cycle_genuine import latency_groups
 
-    policy = policy_for_spiking_mode(spiking_mode, ttfs_cycle_schedule)
+    spiking_mode, ttfs_cycle_schedule = point.spiking_mode, point.ttfs_cycle_schedule
+    policy = policy_for_spiking_mode(point)
     soma_hw = policy.soma_hw_name()
     is_ttfs = requires_ttfs_firing(spiking_mode)
     is_cycle = is_synchronized_ttfs(spiking_mode, ttfs_cycle_schedule)
@@ -113,13 +118,15 @@ def build_network_for_segment(
                 else:
                     active_length = (int(simulation_length)
                                      if simulation_length is not None else None)
+            # [U-PCH] one register, or each used neuron's of the core's register column
+            thetas = neuron_thresholds(core.threshold, used_neurons, int(core.neurons_per_core))
             for n_idx in range(used_neurons):
                 neuron = group[n_idx]
                 bias = None
                 if core.hardware_bias is not None:
                     bias = float(np.asarray(core.hardware_bias)[n_idx])
                 model_attrs = policy.soma_model_attributes(
-                    threshold=float(core.threshold),
+                    threshold=float(thetas[n_idx]),
                     hardware_bias=bias,
                     active_start=active_start,
                     active_length=active_length,

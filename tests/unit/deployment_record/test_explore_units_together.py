@@ -30,12 +30,15 @@ from mimarsinan.deployment_record.cost.absolute.host_split import corner_order, 
 from mimarsinan.deployment_record.cost.absolute.metrics import ABSOLUTE_PRICING
 from mimarsinan.deployment_record.cost.absolute.report import ABSOLUTE_TERM_NAMES
 from mimarsinan.deployment_record.cost.absolute.step_choice import StepChoiceError, cheapest_step, price_step
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
-from mimarsinan.deployment_record.platform_physics.host_calibration import calibration_overrides, host_block
+from mimarsinan.deployment_record.platform_physics.host_calibration import calibration_diagnostic
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks, resolve_platform_physics
 from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 
 from unit.deployment_record.g3_fixtures import constant, quantities
+from unit.deployment_record.registered_hosts import declared_rows, registered_fixture
+from unit.deployment_record.load_census_fixtures import gated_loads, written_program
 
 _T = (256, 256)
 _ENDS = ("low", "nominal", "high")
@@ -48,11 +51,29 @@ _STORE_ENERGY_ONLY = {"e_dma_per_byte": constant(31.25, unit="pJ", note="HBM2 I/
 _STORE = {**_STORE_ENERGY_ONLY, "t_program_per_byte": constant(0.0754, unit="ns", note="HBM channel rate (test)")}
 
 
+#: [U-HOST2] CL0's numbers (the calibration's rate and dispatch, the declared p_host band) as a test host's own
+#: description, registered by the tests (the calibration itself is a diagnostic, refused as a host block).
+_HOST_NAME = "test_explore_units_host"
+_HOST_ROWS = {"host_macs_per_s": {"nominal": 2.0, "unit": "G/s", "evidence_kind": "estimated", "note": "test rate"},
+              "t_host_op_overhead": {"low": 10.0, "nominal": 20.0, "high": 40.0, "unit": "us",
+                                     "evidence_kind": "estimated", "note": "test dispatch"},
+              "p_host": _P_HOST}
+_host_description = registered_fixture(_HOST_NAME, _HOST_ROWS)
+
+
 def _host():
-    """CL0's host block as the calibration builds it: measured rate and dispatch, the declared p_host band."""
-    return host_block({"platform_physics_overrides": calibration_overrides(
-        macs_per_s=2.0e9, op_overhead_s=(1e-5, 2e-5, 4e-5), p_host_w=None, identity="h",
-        declared={"p_host": _P_HOST})})
+    """The test host's block: its description's own rows."""
+    return declared_rows(_HOST_NAME, _HOST_ROWS)
+
+
+def test_the_calibration_stays_a_diagnostic():
+    """The calibration's rows (a development machine's measurement) never price: refused as a host block."""
+    from mimarsinan.common.refusal import ToolchainRefusal
+
+    rows = calibration_diagnostic(macs_per_s=2.0e9, op_overhead_s=(1e-5, 2e-5, 4e-5), p_host_w=None, identity="h",
+                                  declared={"p_host": _P_HOST})
+    with pytest.raises(ToolchainRefusal):
+        resolve_platform_physics("generic_estimated_22nm", merge_override_blocks({"host": rows}))
 
 
 def _row(cells, *, segment_index=0, resident=False):
@@ -157,9 +178,10 @@ class TestTheMacroWithTheHostBlockAndItsBackingStore:
         assert pricing.terms == ()
         refusal, *suppressed = pricing.refusals
         assert refusal.name == ABSOLUTE_PRICING
-        # [U-CR C-2, declared pin amendment] each headline the gate suppresses is refused by name, by its reason
+        # [U-CR C-2, declared pin amendment] each headline the gate suppresses is refused by name, by its reason;
+        # [U-ENERGY] then each load figure of the one load law, by the law's own reason (no load census given)
         assert [(r.name, r.reason) for r in suppressed] == [
-            (headline, f"{ABSOLUTE_PRICING}: {refusal.reason}") for headline in ABSOLUTE_TERM_NAMES]
+            (headline, f"{ABSOLUTE_PRICING}: {refusal.reason}") for headline in ABSOLUTE_TERM_NAMES] + gated_loads()
         return refusal.reason
 
     def test_the_host_block_does_not_declare_the_backing_store(self):
@@ -175,12 +197,23 @@ class TestTheMacroWithTheHostBlockAndItsBackingStore:
             {"host": _host(), "backing_store": _STORE}))
         assert physics.undeclared_external() == ()
         assert {"e_dma_per_byte", "t_program_per_byte", "p_host"} <= set(physics.overridden_keys())
-        pricing = price_absolute(self._quantities(), physics, geometry=UNJUDGED)
+        loads = written_program((2048,), (2048,), granularity="cell")  # [U-ENERGY] 4096 B per round
+        pricing = price_absolute(self._quantities(), physics, geometry=UNJUDGED, loads=loads)
         terms = {t.name: t for t in pricing.terms}
         assert "energy_per_inference_mj" in terms, [r.reason for r in pricing.refusals]
         assert "[backing_store]" in terms["energy_per_inference_mj"].source
         assert "edge-host running power" in terms["energy_per_inference_mj"].source    # the host block's p_host
-        assert "[backing_store]" in terms["energy_programming_mj"].source
+        # [U-ENERGY] the program load (the one load law over the census) reads the block's transfer row: a block whose
+        # e_dma_per_byte is twice as large adds the program's 4096 B at the block's 31.25 pJ, and nothing else (the
+        # macro states no static power, so no leg)
+        doubled = resolve_platform_physics("sram_cim_macro", merge_override_blocks({"host": _host(), "backing_store": {
+            **_STORE, "e_dma_per_byte": constant(62.5, unit="pJ", note="HBM2 I/O per byte, doubled (test)")}}))
+        twice = {t.name: t for t in price_absolute(self._quantities(), doubled, geometry=UNJUDGED, loads=loads).terms}
+        assert "energy_static_programming_mj" not in terms
+        assert "e_dma_per_byte x period_rewrite_bytes / K" in terms["energy_programming_mj"].source
+        for corner in ("low", "nominal", "high"):
+            assert getattr(twice["energy_programming_mj"].band, corner) - getattr(
+                terms["energy_programming_mj"].band, corner) == pytest.approx(4096 * 31.25e-12 * 1e3, rel=1e-9)
         assert host_energy_split(pricing.terms).host is not None
 
     def test_the_rotation_writes_on_the_macro_read_the_backing_store(self):
@@ -190,7 +223,9 @@ class TestTheMacroWithTheHostBlockAndItsBackingStore:
             {"host": _host(), "backing_store": _STORE}))
         terms, pricing = _point(physics, _WITNESS, 33, 1)
         write = terms["energy_write_mj"]
-        assert "e_dma_per_byte x period_rewrite_bytes / K" in write.source and "unpriced" not in write.source
+        # [U-ENERGY, the class swept S-1] the macro declares no per-core program charge: named, nothing else
+        assert "e_dma_per_byte x period_rewrite_bytes / K" in write.source
+        assert write.source.split("; unpriced: ")[1:] == ["e_core_program(core_program)"]
         split = host_energy_split(pricing.terms)
         assert split is not None and split.host is not None
         for end in _ENDS:
@@ -207,18 +242,20 @@ class TestTheStepChoiceOnAProfileWithAnExternalComponent:
     def test_the_macro_without_its_backing_store_refuses_the_step_price_by_name(self):
         macro = resolve_platform_physics("sram_cim_macro", None)
         with pytest.raises(StepChoiceError) as info:
-            price_step(self._census(), macro, WritePolicy(batch_k=1))
+            price_step(self._census(), macro, WritePolicy(batch_k=1), static=NO_STATIC)
         assert ABSOLUTE_PRICING in str(info.value) and "backing store" in str(info.value)
         with pytest.raises(StepChoiceError):
-            cheapest_step([self._census()], macro, WritePolicy(batch_k=1))
+            cheapest_step([self._census()], macro, WritePolicy(batch_k=1), static=NO_STATIC)
 
     def test_a_partial_backing_store_still_refuses(self):
         macro = resolve_platform_physics("sram_cim_macro", merge_override_blocks({"backing_store": _STORE_ENERGY_ONLY}))
         with pytest.raises(StepChoiceError, match="t_program_per_byte"):
-            price_step(self._census(), macro, WritePolicy(batch_k=1))
+            price_step(self._census(), macro, WritePolicy(batch_k=1), static=NO_STATIC)
 
     def test_the_macro_with_its_backing_store_prices_the_transfer(self):
         macro = resolve_platform_physics("sram_cim_macro", merge_override_blocks({"backing_store": _STORE}))
-        price = price_step(self._census(), macro, WritePolicy(batch_k=1))
-        assert "e_dma_per_byte" in price.write.basis and "unpriced" not in price.write.basis
-        assert cheapest_step([self._census()], macro, WritePolicy(batch_k=1)) == 0
+        price = price_step(self._census(), macro, WritePolicy(batch_k=1), static=NO_STATIC)
+        # [U-ENERGY, the class swept S-1] the macro declares no per-core program charge: named, nothing else
+        assert "e_dma_per_byte" in price.write.basis
+        assert price.write.basis.split("; unpriced: ")[1:] == ["e_core_program(core_program)"]
+        assert cheapest_step([self._census()], macro, WritePolicy(batch_k=1), static=NO_STATIC) == 0

@@ -408,6 +408,9 @@ class TestTheJudgedStateHoldsAdmittedDeclarations:
 #: the K2 claim that weight_bits is inert under float weights was false). A new site fails until it is classified.
 WEIGHT_BITS_READERS = {
     "pipelining/pipeline_steps/quantization/weight_quantization_step.py": "grid",
+    # [U-BRANGE2] the drive site's rule codes each always-on row on the projection's own weight width (Weight
+    # Quantization's entry call, on the bias-row route only).
+    "pipelining/pipeline_steps/quantization/bias_row_drive_route.py": "grid",
     "pipelining/pipeline_steps/quantization/quantization_verification_step.py": "grid",
     "pipelining/pipeline_steps/mapping/core_quantization_verification_step.py": "grid",
     "advisories/rules_graph_scale.py": "grid",
@@ -432,6 +435,8 @@ WEIGHT_BITS_READERS = {
     # [U-AX] the per-axon row census: the joint search's walk reads the candidate's rows on the declared grid.
     "search/problems/joint/layout_hook.py": "every run",
     "mapping/platform/target_bundles.py": "every run",
+    # [U-CHIPKEYS] a produced realization's declared geometry sets its weight width, as a bundle's geometry does.
+    "mapping/platform/descriptions/realizations.py": "every run",
     # CL-SG: the per-axon register bound (a sign and a (bits - 1)-bit magnitude) on every per-axon run.
     "pipelining/core/simulation_factory.py": "every run",
     # Wave 2 WI-5g: the width of the layers no layer-to-type rule selects, read only on a chip with typed widths.
@@ -482,10 +487,11 @@ class TestWeightBitsIsReadInEveryRun:
         bundle = TargetBundle("pruned_chip", "recom_64x64_256", "quarantined", Faithfulness("exact"),
                               json.dumps({"pruning": True, "pruning_fraction": 0.5}))
         written = target_assignments({}, {"target": "pruned_chip"}, write_derived=True, bundles={"pruned_chip": bundle})
-        assert written[PC]["target_faithfulness_class"] == "exact"
+        assert written[PC]["target_faithfulness_class"] == "approximate: no physics profile"  # [U-CHIPKEYS4] 3(f)
         overridden = {"target": "pruned_chip", "target_overrides": {"pruning": {"value": False, "note": "dense"}}}
         written = target_assignments({}, overridden, write_derived=True, bundles={"pruned_chip": bundle})
-        assert written[PC]["target_faithfulness_class"] == "approximate: pruning declared; pruning_fraction not applied"
+        assert written[PC]["target_faithfulness_class"] == ("approximate: no physics profile; pruning declared; "
+                                                              "pruning_fraction not applied")
 
 
 #: A value of a key no value schema judges whole, and the consumer that refuses it at the run.

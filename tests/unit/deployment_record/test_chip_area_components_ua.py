@@ -83,31 +83,46 @@ class TestTheStudyChipPricedByHand:
         assert _close((fixed.low, fixed.nominal, fixed.high), FIXED, rel=1e-9)
 
 
+#: [U-AREA] A physics without an ``area_rule`` block keeps R5's path whole, its chip-level part by this rule: the shipped
+#: descriptions now carry blocks (their outside part gamma, area_global_fixed dropped), so these tests take a shipped
+#: physics with its block removed and state the chip-level row themselves (test constants), as a record sealed
+#: before the unit carries it.
+def _without_block(name, **constants):
+    from dataclasses import replace
+    physics = replace(get_platform_physics(name), area_rule=None)
+    return replace(physics, constants={**physics.constants, **constants})
+
+
 class TestRefusedByName:
     def test_an_unsourced_fixed_area_on_a_chip_that_is_not_a_projection(self):
-        bare = apply_overrides(get_platform_physics("truenorth"), {})
-        estimate = bare.constants["area_global_fixed"]
-        from dataclasses import replace
-        physics = replace(bare, constants={**bare.constants, "area_global_fixed": replace(
-            estimate, evidence_kind="estimated", citation="", derivation="", note="a band borrowed elsewhere")})
+        from mimarsinan.deployment_record.platform_physics import PhysicsConstantValue
+        physics = _without_block("truenorth", area_global_fixed=PhysicsConstantValue(
+            key="area_global_fixed", low=46.6, nominal=46.6, high=46.6, unit="mm^2", evidence_kind="estimated",
+            note="a band borrowed elsewhere (test)"))
         area, _s, refused = _area(physics, cores_physical=4)
         assert area is None and "area_global_fixed is an unsourced estimate" in refused and "'silicon'" in refused
 
     def test_an_absent_fixed_area(self):
-        physics = get_platform_physics("odin")
-        from dataclasses import replace
-        stripped = replace(physics, constants={k: v for k, v in physics.constants.items() if k != "area_global_fixed"})
-        area, _s, refused = _area(stripped, cores_physical=1)
+        area, _s, refused = _area(_without_block("odin"), cores_physical=1)
         assert area is None and "neither chip_components nor area_global_fixed" in refused
 
     def test_a_projection_prices_its_estimate_unchanged(self):
-        """generic_estimated_22nm is a projection: every constant an estimate by declaration (its validity notes)."""
+        """generic_estimated_22nm is a projection: every constant an estimate by declaration (its validity notes).
+        [U-AREA] Its area_rule block prices the chip as a type rule (its estimated area constants are dropped); on
+        R5's path, a projection's estimated chip-level part still prices (a test footprint and part below)."""
+        from mimarsinan.deployment_record.platform_physics import PhysicsConstantValue
         physics = get_platform_physics("generic_estimated_22nm")
         assert physics.validity.measurement_kind == "projection"
         area, source, refused = _area(physics, cells_physical=65536, weight_bits=8, neurons_physical=256,
                                       axons_physical=256, cores_physical=1, tiles=1)
-        fixed = physics.constants["area_global_fixed"]
-        assert refused is None and fixed.evidence_kind == "estimated" and "area_global_fixed [estimated" in source
+        assert refused is None and "area_rule T2_digital type rule" in source
+        estimate = dict(unit="mm^2", evidence_kind="estimated", note="a projection's estimate (test)")
+        r5_path = _without_block("generic_estimated_22nm", area_per_core_total=PhysicsConstantValue(
+            key="area_per_core_total", low=0.1, nominal=0.1, high=0.1, **estimate),
+            area_global_fixed=PhysicsConstantValue(key="area_global_fixed", low=10.0, nominal=10.0, high=10.0,
+                                                   **estimate))
+        area, source, refused = _area(r5_path, cores_physical=1)
+        assert refused is None and "area_global_fixed [estimated" in source
 
 
 class TestIsaacLike:

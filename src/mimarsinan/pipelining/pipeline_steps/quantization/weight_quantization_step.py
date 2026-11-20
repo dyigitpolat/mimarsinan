@@ -7,7 +7,10 @@ from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 from mimarsinan.advisories.graph_common import name_of
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.support.bias_rows import bias_row_bound
-from mimarsinan.pipelining.pipeline_steps.quantization.bias_row_drive_route import stamp_and_report_drives
+from mimarsinan.pipelining.pipeline_steps.quantization.bias_row_drive_route import (
+    stamp_and_report_drives,
+    stamp_projection_drives,
+)
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
     PerceptronTransformer,
 )
@@ -18,10 +21,12 @@ from mimarsinan.mapping.support.bias_compensation import (
 )
 from mimarsinan.tuning.orchestration.adaptation_manager import sync_exact_qat_active
 from mimarsinan.tuning.orchestration.lif_exact_qat import model_trained_lif_exact
+from mimarsinan.tuning.orchestration.mbh_ledger import live_model_acc_fp32
 from mimarsinan.tuning.orchestration.ttfs_exact_qat import model_trained_ttfsq_exact
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.mapping.support.core_types import install_layer_weight_bits, refuse_unbuilt_domain
 from mimarsinan.mapping.support.grid_declarations import projection_grids
+from mimarsinan.mapping.support.neuron_thresholds import per_neuron_weight_scales
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     resolve_bias_mode,
     resolve_wq_two_scale_projection as resolve_wq_two_scale_projection,
@@ -30,6 +35,7 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.pipelining.pipeline_steps.quantization.readout_aware_training import readout_aware_endpoint
+from mimarsinan.pipelining.pipeline_steps.quantization.host_normalization_recalibration import reestimate_at_step_end
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.models.nn.layers import FrozenStatsNormalization
 from mimarsinan.transformations.perceptron.bias_canonicalization import (
@@ -65,7 +71,7 @@ def refuse_split_under_event_serial_soma(model_repr, bits: int, soma_law) -> Non
     if not (soma_law.is_per_event and soma_law.saturates):
         return
     q_max = float(2 ** (int(bits) - 1) - 1)
-    transformer = PerceptronTransformer()
+    transformer = PerceptronTransformer(positions=True)  # [U-PFOLD] every weight row and position's bias
     worst_rows, worst_name = 1, None
     for perceptron in model_repr.get_perceptrons():
         weight = transformer.get_effective_weight(perceptron)
@@ -112,6 +118,10 @@ class WeightQuantizationStep(TunerPipelineStep):
         adaptation_manager = self.get_entry("adaptation_manager")
         # A shift bake the projection cannot re-derive (no recorded shift) is refused before any budget is spent.
         refuse_unrecorded_shift_bakes(model.get_perceptrons())
+        # [U-PCH] one grid per output neuron, refused by name before any projection on a chip with one threshold
+        # register per core (and on a value-domain core); absent, one grid per perceptron.
+        per_neuron = per_neuron_weight_scales(
+            self.pipeline.config, value_domain=is_mvm_core_semantics(DeploymentPlan.of(self.pipeline).core_semantics))
         # [U-ADC] declared readout-aware training: its scope judged now (refused by name), its loop opened around the
         # endpoint recovery; None when undeclared.
         endpoint_forward = readout_aware_endpoint(self.pipeline)
@@ -123,11 +133,14 @@ class WeightQuantizationStep(TunerPipelineStep):
         refuse_unbuilt_domain(self.pipeline.config, value_domain=is_mvm_core_semantics(DeploymentPlan.of(self.pipeline).core_semantics),
                               weight_quantization=True)
         install_layer_weight_bits(model, self.pipeline.config)
-        stamp_and_report_drives(model, self.pipeline.config)  # [bias-row gauge] before any projection
+        stamp_projection_drives(model, self.pipeline.config)  # [bias-row gauge] the canonicalization reads the rows
         self._freeze_exact_qat_theta(model)
         self._apply_lif_half_step_entry_fold(model)
         if not grids.law_bias:  # a float bias has no grid a bias outlier could starve
             self._canonicalize_starved_bias_outliers(model)
+        # [U-BRANGE2] each drive is the least-error code of the bias the projection codes (after the canonicalization
+        # and the OFF clip), stamped before any projection.
+        stamp_and_report_drives(model, self.pipeline.config)
         compute_per_source_scales(
             model.get_mapper_repr(),
             arm_wire_value_ops=not requires_ttfs_firing(
@@ -142,7 +155,7 @@ class WeightQuantizationStep(TunerPipelineStep):
                     perceptron.normalization
                 )
         bits = self.pipeline.config["weight_bits"]
-        print(f"Quantizing to {bits} bits")
+        print(f"Quantizing to {bits} bits" + (", one scale per output neuron (theta_c = s_c)" if per_neuron else ""))
         splitting = DeploymentPlan.of(self.pipeline).bias_row_splitting
         weight_only = resolve_wq_weight_only_grid(self.pipeline.config)
         # The two routes of the weight-only grid, named: an on-chip bias register (the bias on the weight lattice
@@ -180,6 +193,7 @@ class WeightQuantizationStep(TunerPipelineStep):
             model,
             adaptation_manager,
             quantization_bits=bits,
+            per_neuron=per_neuron,
             two_scale_projection=weight_only,
             fractional_scale=grids.fractional_scale,
             float_bias=grids.law_bias,
@@ -187,6 +201,15 @@ class WeightQuantizationStep(TunerPipelineStep):
             register_bias=register_bias,
             endpoint_forward=endpoint_forward,
         )
+
+    def _commit_tuner_entries(self, model, adaptation_manager):
+        """[U-POST G1] The step's end, on its final weights: the host normalizations re-estimated, then the commit;
+        [U-POST2] a kept re-estimation's calibration read is the committed model's exit read (ledger, high-water)."""
+        report = reestimate_at_step_end(model, self.tuner, self.pipeline,
+                                        calibration_read=lambda: live_model_acc_fp32(self.tuner))
+        if report is not None and report.kept:
+            self.hold_committed_read(report.after)
+        super()._commit_tuner_entries(model, adaptation_manager)
 
     def _freeze_exact_qat_theta(self, model) -> None:
         """[R1/P-L6] the WQ stage trains weights on a FIXED scale lattice: the

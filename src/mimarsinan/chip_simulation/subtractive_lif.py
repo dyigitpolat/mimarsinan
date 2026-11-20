@@ -33,9 +33,13 @@ class SubtractiveLIFReset(LIFReset):
         sample_start=None,
         thresholding_mode: str = "<=",
         zero_reset: bool = False,
+        vth_per_neuron=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
+        # [U-PCH] per-neuron threshold registers override the one ``vth`` (absent: the one register, as before)
+        if vth_per_neuron is not None:
+            self.proc_params["vth_per_neuron"] = np.asarray(vth_per_neuron, dtype=float).reshape(-1).copy()
         if active_start is None:
             active_start = self.proc_params["reset_offset"]
         if active_length is None:
@@ -72,17 +76,23 @@ class PySubtractiveLIFResetModelFloat(AbstractPyLifModelFloat):
         self._thresholding_mode = str(proc_params.get("thresholding_mode", "<="))
         self._zero_reset = bool(proc_params.get("zero_reset", False))
         self._last_spike = np.zeros_like(self.v, dtype=float)
+        self._vth_per_neuron = proc_params.get("vth_per_neuron", None)
+
+    def _threshold(self):
+        return self.vth if self._vth_per_neuron is None else self._vth_per_neuron
 
     def spiking_activation(self):
         if self._thresholding_mode == "<=":
-            return self.v >= self.vth
-        return self.v > self.vth
+            return self.v >= self._threshold()
+        return self.v > self._threshold()
 
     def reset_voltage(self, spike_vector: np.ndarray):
         if self._zero_reset:
             self.v[spike_vector] = 0.0
-        else:
+        elif self._vth_per_neuron is None:
             self.v[spike_vector] -= self.vth
+        else:
+            self.v[spike_vector] -= self._vth_per_neuron[spike_vector]
 
     def run_spk(self):
         a_in = cast(np.ndarray, self.a_in.recv())

@@ -18,8 +18,9 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
-from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_mode
+from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_point
 from mimarsinan.mapping.support.negative_boundary import (
     apply_negative_boundary_policy,
     calibrated_compute_op_minima,
@@ -110,7 +111,7 @@ def _x():
 def _fwd():
     """The analytical NF: pointwise, activation-agnostic, and it never clamps —
     so it records the TRUE boundary minima whatever the mechanism does next."""
-    return calibration_forward_for_mode("ttfs", soma_law=DEFAULT_SOMA_LAW)
+    return calibration_forward_for_point(point_of_mode("ttfs"))
 
 
 def _minima(flow, x):

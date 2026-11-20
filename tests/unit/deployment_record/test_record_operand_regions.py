@@ -89,12 +89,20 @@ def test_the_record_plane_prices_an_operand_program_as_the_mapping_plane(mapping
     writes = record_write_census(record)
     assert writes is not None and writes.census is not None
     mapped = plane_writes(mapping_program_passes(mapping), platform, weight_bits=8, timesteps=1, label="mapping")
-    sealed_terms = {t.name: t.band for t in price_write_inputs(WriteInputs.of(writes), _physics()).terms}
-    mapped_terms = {t.name: t.band for t in price_write_inputs(WriteInputs.of(mapped), _physics()).terms}
+    # [U-ENERGY c-2] the sealed record states its written cores' connectivity entries and the mapping plane states
+    # none: on a description without an entry width both planes price the same operand program; with the width the
+    # record also prices its written cores' entries (the plane difference m-2 names)
+    no_width = replace(_physics(), constants={k: v for k, v in _physics().constants.items()
+                                              if k != "bytes_per_connectivity_entry"})
+    sealed_terms = {t.name: t.band for t in price_write_inputs(WriteInputs.of(writes), no_width).terms}
+    mapped_terms = {t.name: t.band for t in price_write_inputs(WriteInputs.of(mapped), no_width).terms}
     assert sealed_terms and sealed_terms.keys() == mapped_terms.keys()
     for name in sealed_terms:
         a, b = sealed_terms[name], mapped_terms[name]
         assert (a.low, a.nominal, a.high) == (b.low, b.nominal, b.high), name
+    with_width = {t.name: t.band for t in price_write_inputs(WriteInputs.of(writes), _physics()).terms}
+    mapped_width = {t.name: t.band for t in price_write_inputs(WriteInputs.of(mapped), _physics()).terms}
+    assert with_width["energy_write_mj"].nominal >= mapped_width["energy_write_mj"].nominal
 
 
 def test_a_record_sealed_without_operand_regions_still_refuses_by_name(mapping):

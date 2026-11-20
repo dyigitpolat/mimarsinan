@@ -38,8 +38,8 @@ import torch
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.scale_propagation import arm_wrap_slots
-from mimarsinan.chip_simulation.soma_law import SomaLaw
-from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_mode
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint
+from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_point
 from mimarsinan.mapping.support.negative_boundary import (
     CALIBRATION_CHUNK,
     NEGATIVE_TOLERANCE,
@@ -51,15 +51,16 @@ from mimarsinan.mapping.support.negative_boundary import (
     lossy_negative_boundaries,
     subsume_forward_negative_boundaries,
 )
-from mimarsinan.mapping.support.negative_shift import apply_negative_shift_bias, apply_negative_value_shifts
+from mimarsinan.mapping.support.negative_shift import apply_negative_value_shifts
 from mimarsinan.mapping.support.padded_output import ZeroPaddedOutput
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.mapping.support.received_shift import bake_received_shift, correct_for_received_shift, every_axon_shift
 from mimarsinan.spiking.scale_aware_boundaries import propagate_boundary_input_scales, read_boundary_out_scales
 from mimarsinan.spiking.segment_forward import AnalyticalSegmentPolicy, SegmentForwardDriver
 from mimarsinan.tuning.orchestration.signed_seam_install import (
     _bake_shift_into_host_bias,
-    _bake_walk_feasible,
-    _scalar_shift_equivariant,
+    _lift_admits,
+    _lifts_admitted,
     _signed_seam_quantiles,
 )
 
@@ -90,27 +91,34 @@ def _calibration_mode(model):
             m.training = training
 
 
-def _bake(op, sigma: float, consumers) -> None:
-    """Every consumer compensates the lift: an entry core's effective bias (``W_eff . sigma / kappa``), a host bias
-    carrier's bias, a shift-equivariant pass-through forwards it, a mean-subtracting LayerNorm absorbs it."""
+def _lift_shift(op, sigma: float) -> torch.Tensor:
+    """The lift as an entry core's axons receive it: sigma over the op's emitted gauge kappa (wire units)."""
     kappa = float(torch.as_tensor(op.output_scale).float().mean())
+    return torch.tensor(sigma / max(kappa, 1e-12))
+
+
+def _bake(op, sigma: float, consumers) -> None:
+    """[U-RSHIFT, kept for its importers] The lift over every axon of each consumer today's admission reaches, through
+    the one writer: an entry core's effective bias (``W_eff . sigma / kappa``), a host bias carrier's bias; a LayerNorm
+    absorbs it. The seam itself bakes each reader's received field (``bake_received_shift``)."""
     frontier = list(boundary_consumers(op, consumers))
     while frontier:
         consumer = frontier.pop()
         if not _is_host_node(consumer):
             perceptron = _perceptron_of(consumer)
             if perceptron is not None:
-                apply_negative_shift_bias(perceptron, torch.tensor(sigma / max(kappa, 1e-12)))
+                correct_for_received_shift(perceptron, every_axon_shift(perceptron, _lift_shift(op, sigma)))
             continue
         module = getattr(consumer, "module", None)
         if _bake_shift_into_host_bias(module, sigma) or isinstance(module, torch.nn.LayerNorm):
             continue
-        if _scalar_shift_equivariant(module):
+        if _lift_admits(module):
             frontier.extend(boundary_consumers(consumer, consumers))
 
 
 def _entries(op, consumers) -> list:
-    """The core perceptrons the lift reaches (through shift-equivariant host pass-throughs), the ones ``_bake`` bakes."""
+    """The core perceptrons the lift reaches through the host ops a lift may cross (today's admission): the mechanism's
+    choice reads them (a core another lift reaches takes Soft Core Mapping's policy), never a correction."""
     found, frontier = [], list(boundary_consumers(op, consumers))
     while frontier:
         consumer = frontier.pop()
@@ -118,7 +126,7 @@ def _entries(op, consumers) -> list:
             perceptron = _perceptron_of(consumer)
             if perceptron is not None:
                 found.append(perceptron)
-        elif _scalar_shift_equivariant(getattr(consumer, "module", None)):
+        elif _lift_admits(getattr(consumer, "module", None)):
             frontier.extend(boundary_consumers(consumer, consumers))
     return found
 
@@ -132,7 +140,7 @@ def _padded_reads(op, consumers) -> list:
         if not _is_host_node(consumer):
             if any(int(p) for p in getattr(consumer, "padding", ()) or ()):
                 found.append(consumer)
-        elif _scalar_shift_equivariant(getattr(consumer, "module", None)):
+        elif _lift_admits(getattr(consumer, "module", None)):
             frontier.extend(boundary_consumers(consumer, consumers))
     return found
 
@@ -159,11 +167,11 @@ def _carry_padding(op, consumers) -> bool:
     return True
 
 
-def _shift_left(model, left: list, calibration_x: torch.Tensor, *, simulation_steps: int, soma_law: SomaLaw) -> list:
-    """[review M2] Soft Core Mapping's own policy on the boundaries no lift carries: its minima (its LIF calibration
-    walk, in its chunks), its shift and bake (``apply_negative_value_shifts``, refusing a topology it cannot bake by
+def _shift_left(model, left: list, calibration_x: torch.Tensor, *, simulation_steps: int, point: SpikingPoint) -> list:
+    """[review M2] Soft Core Mapping's own policy on the boundaries no lift carries: its minima (its calibration walk at
+    the run's point, in its chunks), its shift and bake (``apply_negative_value_shifts``, refusing a topology it cannot bake by
     name, as at Soft Core Mapping), and its recheck that no encoded boundary stays negative. Returns the ops shifted."""
-    forward = calibration_forward_for_mode("lif", soma_law=soma_law)
+    forward = calibration_forward_for_point(point)
     minima = {op: m for op, m in calibrated_compute_op_minima(model, calibration_x, int(simulation_steps),
                                                                forward_fn=forward).items() if op in left}
     shifted = list(apply_negative_value_shifts(model, minima))
@@ -179,7 +187,7 @@ def _shift_left(model, left: list, calibration_x: torch.Tensor, *, simulation_st
 
 
 def lift_negative_boundaries(model, calibration_x: torch.Tensor, *, simulation_steps: int, input_data_scale: float,
-                             soma_law: SomaLaw, shift_enabled: bool = True, quantile: float = SEAM_QUANTILE) -> list:
+                             point: SpikingPoint, shift_enabled: bool = True, quantile: float = SEAM_QUANTILE) -> list:
     """Apply the negative-value boundary policy before any walk: returns the names of the boundaries no lift carries,
     each given Soft Core Mapping's own policy here (empty when every signed boundary was lifted, or none was signed)."""
     if not negative_boundary_candidates(model):
@@ -203,6 +211,7 @@ def lift_negative_boundaries(model, calibration_x: torch.Tensor, *, simulation_s
             propagate_boundary_input_scales(model, input_data_scale=float(input_data_scale))
         return []
     table = read_boundary_out_scales(repr_, input_data_scale=float(input_data_scale))
+    admitted = _lifts_admitted(repr_, list(signed), consumers)
     lifted, left = {}, []
     reached: dict = {}
     for op in signed:
@@ -212,7 +221,7 @@ def lift_negative_boundaries(model, calibration_x: torch.Tensor, *, simulation_s
         entries = _entries(op, consumers)
         # A carrier is a wire value op whose consumers all compensate, reaching cores no other lift or earlier bake
         # reaches (an entry's bake is once per core).
-        if (not getattr(op, "is_wire_value_op", False) or not _bake_walk_feasible(op, consumers)
+        if (not getattr(op, "is_wire_value_op", False) or id(op) not in admitted
                 or any(reached[id(p)] > 1 or getattr(p, "_neg_shift_baked", False) for p in entries)
                 or not _carry_padding(op, consumers)):
             left.append(getattr(op, "name", None) or type(op.module).__name__)
@@ -226,15 +235,14 @@ def lift_negative_boundaries(model, calibration_x: torch.Tensor, *, simulation_s
     if lifted:
         compute_per_source_scales(repr_)
         propagate_boundary_input_scales(model, input_data_scale=float(input_data_scale))
-        for op, sigma in lifted.items():
-            _bake(op, sigma, consumers)
+        bake_received_shift(repr_, {op: _lift_shift(op, sigma) for op, sigma in lifted.items()})
         print(f"[NEGATIVE-BOUNDARY SEAM] lifted {len(lifted)} signed boundary/boundaries (name, sigma, kappa): "
               f"{[(op.name, round(s_, 6), round(float(op.boundary_traffic_scale), 6)) for op, s_ in lifted.items()]}",
               flush=True)
     if left:
         left_ops = [op for op in signed if op not in lifted]
         with _calibration_mode(model):
-            shifted = _shift_left(model, left_ops, calibration_x, simulation_steps=simulation_steps, soma_law=soma_law)
+            shifted = _shift_left(model, left_ops, calibration_x, simulation_steps=simulation_steps, point=point)
         print(f"[NEGATIVE-BOUNDARY SEAM] {len(left)} signed boundary/boundaries no lift carries: {left}; Soft Core "
               f"Mapping's shift applied at the seam to {[(op.name, op._negative_shift.tolist()) for op in shifted]}",
               flush=True)
@@ -243,15 +251,16 @@ def lift_negative_boundaries(model, calibration_x: torch.Tensor, *, simulation_s
 
 @dataclass(frozen=True)
 class NegativeBoundarySeam:
-    """The policy as the gauge seam calls it: the calibration batch and the run's switches, bound once."""
+    """The policy as the gauge seam calls it: the calibration batch, the run's switches and [U-LIF2 r2] the run's resolved
+    point (the record Soft Core Mapping's walk at the seam is built from), bound once."""
 
     calibration_x: torch.Tensor
     simulation_steps: int
     input_data_scale: float
-    soma_law: SomaLaw
+    point: SpikingPoint
     shift_enabled: bool = True
 
     def __call__(self, model) -> list:
         return lift_negative_boundaries(model, self.calibration_x, simulation_steps=self.simulation_steps,
-                                        input_data_scale=self.input_data_scale, soma_law=self.soma_law,
+                                        input_data_scale=self.input_data_scale, point=self.point,
                                         shift_enabled=self.shift_enabled)

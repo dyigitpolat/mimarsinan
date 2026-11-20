@@ -22,6 +22,7 @@ from mimarsinan.tuning.orchestration.conversion_policy import (
     DEVICE_OPT_IN_ENABLES,
     ConversionPolicy,
 )
+from spiking_points import point_of_mode
 
 ODIN_KEY = "enable_odin_fpga_simulation"
 
@@ -58,7 +59,7 @@ class TestTheRuleItself:
 
 class TestTheOdinDeviceIsTheOptInMember:
     def test_the_recipe_admits_it_under_the_streamed_lif_law(self):
-        recipe = ConversionPolicy.derive("lif", None)
+        recipe = ConversionPolicy.derive(point_of_mode("lif", None))
         assert recipe.sim_enables[ODIN_KEY] is True
         assert ODIN_KEY in recipe.sim_opt_in
         assert recipe.sim_opt_in == DEVICE_OPT_IN_ENABLES
@@ -67,7 +68,7 @@ class TestTheOdinDeviceIsTheOptInMember:
         for mode, schedule in (("ttfs", None), ("ttfs_quantized", None),
                                ("ttfs_cycle_based", "cascaded"),
                                ("ttfs_cycle_based", "synchronized")):
-            recipe = ConversionPolicy.derive(mode, schedule)
+            recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
             assert recipe.sim_enables[ODIN_KEY] is False, (mode, schedule)
 
     def test_a_silent_document_resolves_it_off(self):

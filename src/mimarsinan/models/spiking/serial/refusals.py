@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from mimarsinan.chip_simulation.soma_axes import MEMBRANE_BITS_KEY
+from mimarsinan.chip_simulation.spiking_semantics import is_default_firing_mode
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.models.nn.lif_kernels import MembraneRailTouchedError
 
@@ -30,10 +31,12 @@ __all__ = [
     "SerialMembraneInitError",
     "SerialResetLawError",
     "SomaLawRefusalError",
+    "ZeroResetWindowCountError",
     "count_ceiling",
     "refuse_cycle_atomic",
     "refuse_cycle_atomic_walk",
     "refuse_saturating_membrane",
+    "refuse_zero_reset_window_count",
 ]
 
 COUNT_CURRENCY_FLOOR_BITS = 8
@@ -130,6 +133,20 @@ class SerialResetLawError(SomaLawRefusalError):
 
 class SerialDecompositionMismatchError(SomaLawRefusalError):
     """The NF twin's event order is not the mapper's canonical slot order."""
+
+
+class ZeroResetWindowCountError(SomaLawRefusalError):
+    """[U-LIF2, the review's p-11(b)] A window-count executor asked to run a zero reset, refused by name."""
+
+
+def refuse_zero_reset_window_count(firing_mode: Any, *, mechanism: str) -> None:
+    """Refuse ``mechanism`` (an executor of integrate then emit) under a reset other than the subtractive one: an
+    input-free emission window of a zero-reset neuron emits at most one spike, never the window's count."""
+    if firing_mode is None or is_default_firing_mode(str(firing_mode)):
+        return
+    raise ZeroResetWindowCountError(
+        f"{mechanism} is refused under firing_mode={firing_mode!r}: it emits each window's count, which needs the "
+        f"subtractive reset (a zero-reset emission window emits at most one spike). Deploy firing_mode='Default'.")
 
 
 class EmissionBoundExceededError(ToolchainRefusal, ValueError):

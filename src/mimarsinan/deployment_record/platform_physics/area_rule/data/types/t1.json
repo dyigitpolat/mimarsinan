@@ -1,0 +1,163 @@
+{
+ "type": "T1",
+ "what": "digital spiking cores with SRAM synapses",
+ "scaled_terms": "bits",
+ "cell_family": "sram",
+ "eta": {
+  "value": 0.8547788151759844,
+  "unit": "1",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T1-MO-01",
+   "T1-OD-01",
+   "T1-OD-03"
+  ],
+  "derivation": "SRAM macro efficiency (bitcells over the macros' area) of the T1 chips that print their SRAM macro area",
+  "recompute": {
+   "aggregate": "geometric_mean",
+   "points": [
+    {
+     "label": "ODIN",
+     "expression": "s('T1-OD-01', 'scope', '64k 4-bit synapses', 65536 * 4) * sigma(28) / (v('T1-OD-03', 0) / 100 * (v('T1-OD-01') * 1e6))"
+    },
+    {
+     "label": "MorphIC",
+     "expression": "s('T1-MO-01', 'scope', '256 kB synapse SRAM, 32 kB neuron SRAM', 256 + 32) * 8192 * sigma(65) / (v('T1-MO-01', 2) * 1e6)"
+    }
+   ]
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "s": {
+  "value": 0.3844942669024798,
+  "unit": "1",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T1-L2-02",
+   "T1-LO-05",
+   "T1-MO-01",
+   "T1-MO-02",
+   "T1-OD-01",
+   "T1-RK-01",
+   "T1-TN-01",
+   "T1-TN-08",
+   "TXT-frenkel2018a-p03-266",
+   "TXT-intel_loihi2_brief-p07-16-a",
+   "TXT-intel_loihi2_brief-p07-16-b"
+  ],
+  "derivation": "the memory share of a T1 core per calibration chip (memory bits x sigma / eta over its core area), geometric mean; MorphIC at core scope (M6); a point whose cell rule B refuses is dropped by name",
+  "recompute": {
+   "aggregate": "geometric_mean",
+   "points": [
+    {
+     "label": "TrueNorth",
+     "expression": "v('T1-TN-08') * sigma(28) / r('types/t1:eta') / (v('T1-TN-01') * 1e6)"
+    },
+    {
+     "label": "ODIN",
+     "expression": "(s('T1-OD-01', 'scope', '64k 4-bit synapses', 65536 * 4) + v('TXT-frenkel2018a-p03-266')) * sigma(28) / r('types/t1:eta') / (v('T1-OD-01') * 1e6)"
+    },
+    {
+     "label": "MorphIC",
+     "expression": "s('T1-MO-01', 'scope', '256 kB synapse SRAM, 32 kB neuron SRAM', (256 + 32) * 8192) / s('T1-MO-01', 'scope', '4 cores', 4) * sigma(65) / r('types/t1:eta') / ((v('T1-MO-01', 1) * (1 - (v('T1-MO-02', key='router L1') + v('T1-MO-02', key='router L2') + v('T1-MO-02', key='clock generator')) / 100) / s('T1-MO-01', 'scope', '4 cores', 4)) * 1e6)"
+    },
+    {
+     "label": "ReckOn",
+     "expression": "s('T1-RK-01', 'scope', '(138 kB SRAM total)', 138 * 8192) * sigma(28) / r('types/t1:eta') / (v('T1-RK-01') * 1e6)"
+    },
+    {
+     "label": "Loihi",
+     "expression": "v('TXT-intel_loihi2_brief-p07-16-a') * sigma(14) / r('types/t1:eta') / (v('T1-LO-05') * 1e6)"
+    },
+    {
+     "label": "Loihi 2",
+     "expression": "v('TXT-intel_loihi2_brief-p07-16-b') * sigma(4) / r('types/t1:eta') / (v('T1-L2-02') * 1e6)"
+    }
+   ]
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "gamma": {
+  "value": 0.8777264028620466,
+  "unit": "1",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T1-L2-01",
+   "T1-L2-02",
+   "T1-LO-01",
+   "T1-LO-05",
+   "T1-TN-01",
+   "T1-TN-02"
+  ],
+  "derivation": "the core-grid share of the T1 dies (cores x core area / die), geometric mean",
+  "recompute": {
+   "aggregate": "geometric_mean",
+   "points": [
+    {
+     "label": "TrueNorth",
+     "expression": "s('T1-TN-02', 'scope', '4096 cores (64 x 64)', 4096) * v('T1-TN-01') / v('T1-TN-02')"
+    },
+    {
+     "label": "Loihi",
+     "expression": "s('T1-LO-01', 'quote', '128 neuromorphic cores', 128) * v('T1-LO-05') / v('T1-LO-01')"
+    },
+    {
+     "label": "Loihi 2",
+     "expression": "s('T1-L2-01', 'scope', '128 neuron cores', 128) * v('T1-L2-02') / v('T1-L2-01')"
+    }
+   ]
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "outside_parts": {
+  "value": 46.6144,
+  "unit": "mm^2",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T1-L2-01",
+   "T1-L2-02",
+   "T1-LO-01",
+   "T1-LO-05",
+   "T1-TN-01",
+   "T1-TN-02"
+  ],
+  "derivation": "the published outside parts of the dies gamma averages (die less its core grid); the type rule's fixed-outside reading holds the largest (MA-3, T-28)",
+  "recompute": {
+   "aggregate": "max",
+   "points": [
+    {
+     "label": "TrueNorth",
+     "expression": "v('T1-TN-02') * (1 - s('T1-TN-02', 'scope', '4096 cores (64 x 64)', 4096) * v('T1-TN-01') / v('T1-TN-02'))"
+    },
+    {
+     "label": "Loihi",
+     "expression": "v('T1-LO-01') * (1 - s('T1-LO-01', 'quote', '128 neuromorphic cores', 128) * v('T1-LO-05') / v('T1-LO-01'))"
+    },
+    {
+     "label": "Loihi 2",
+     "expression": "v('T1-L2-01') * (1 - s('T1-L2-01', 'scope', '128 neuron cores', 128) * v('T1-L2-02') / v('T1-L2-01'))"
+    }
+   ]
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "default_cell_kind": "sram_6t_push_rule",
+ "default_converter_kind": null,
+ "band": "bands:T1"
+}

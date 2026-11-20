@@ -43,7 +43,7 @@ core of 128 x 64 four-bit slots; no aggregate constant is declared.
 | `conductance_levels` | 16 | derived | a 4-bit weight slot |
 | `write_sigma`, `read_sigma` | 0 | derived | exact digital storage and accumulation |
 | `membrane_bits` | 24 | derived | the probe tile's 24-bit accumulators |
-| `host_compute_rate` | 1 | derived | identity on a measured host wall |
+| `host_compute_rate` | withdrawn [U-HOST]: no profile declares a host row; a host row is admitted only from an identified host description (hosts/<name>.json) as the run's host block, and a measured host wall prices nothing | | |
 
 ## Not priced by the study
 
@@ -113,7 +113,6 @@ profiles describe different chips; `isaac_like` stays as it ships, its area reco
 | `membrane_bits` | 16 | 24 | ISAAC's 16-bit fixed point against the probe tile's 24-bit accumulators |
 | `write_sigma` | not declared | 0 | exact digital storage |
 | `read_sigma` | not declared | 0 | exact digital accumulation |
-| `host_compute_rate` | 1 | 1 | the same identity, its note naming that the host is not the study's chip |
 | `p_carry_buffer_static_per_byte` | not declared | 0.244 / 12.2 / 450.7 nW per byte | [U-G] the study chip's carry buffer: its own leakage over its 32,768 bit cells (not priced by the study) |
 | `area_carry_buffer_per_byte` | not declared | 8.2984 um2 per byte | [U-G] the study chip's carry buffer: its own cells per bit, bitcells only (not priced by the study) |
 
@@ -201,3 +200,13 @@ value NoC are added; the area adds one router per NoC tile and the chip-level ar
 per core slot (13,047.9 um2 nominal, 15,000.1 um2 high) where the study scales this tile by s_AU = 1.130 (13.0% of
 0.07677 mm2, 9,980 um2): the toolchain's lane is about 1.5x the study's on this tile. The tile part is the probe's
 instance area 0.076766 mm2, which the study rounds to 0.07677 mm2.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T2_digital (digital in-memory compute); complete declared terms: the constants above price the chip on R5's own path, unchanged.
+- **Outside part (`outside: declared_parts`).** gamma 1: the chip components' sum or a sourced area_global_fixed, as declared (R5's fixed-area refusal kept where neither is stated).
+- **Note.** ruling R1: the probe tile's measured terms, the router per NoC tile and the chip components stay as declared; no value moves.
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

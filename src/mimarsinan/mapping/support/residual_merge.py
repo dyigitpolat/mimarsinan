@@ -20,6 +20,10 @@ MERGE_NAME_SUFFIX = "_merge"
 class _ResidualConcatMapper(Mapper):
     """Concatenate two equal-width branches into one ``2*width`` axon space (flattened to 1-D)."""
     moves_elements_only = True
+    # [U-TGAUGE3] Its parts are one shape (a residual add's operands), joined in order: their gauges joined in order hold
+    # every element at its part's gauge as readers lay the join, where each part holds one gauge or its gauge's
+    # channels lead (``map_model_to_ir.LayoutGaugePlacement``); a class default for pickles.
+    joins_equal_parts = True
 
     def __init__(self, source_mappers, name: str = "ResidualConcat"):
         super().__init__()

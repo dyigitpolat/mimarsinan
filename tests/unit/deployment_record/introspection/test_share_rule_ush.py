@@ -71,11 +71,12 @@ class TestOneRule:
         assert terms["compute_only"][DYNAMIC] is not None and terms["no_host"][DYNAMIC] is not None
 
     def test_both_planes_price_and_read_their_shares_through_the_one_rule(self):
-        """Neither plane holds share variants of its own: the ladder and the record plane both call ``price_shares``,
-        and ``axis_columns`` and the record plane both read the shares with ``law.shares``."""
+        """Neither plane holds share variants of its own: the ladder and the record plane both price them by the one
+        rule (``share_pricings``, which ``price_shares`` reads; [V-M1] the ladder reads the variants' pricings whole, for
+        each cost's static legs), and ``axis_columns`` and the record plane both read the shares with ``law.shares``."""
         ladder_source = inspect.getsource(ladder.price_scheduled)
         record_source = inspect.getsource(pricing.record_variant)
-        assert "price_shares(" in ladder_source and "price_shares(" in record_source
+        assert "share_pricings(" in ladder_source and "price_shares(" in record_source
         assert "law.shares(" in record_source or " shares(" in record_source
         assert " shares(" in inspect.getsource(law.axis_columns)
         for module in (ladder, pricing):

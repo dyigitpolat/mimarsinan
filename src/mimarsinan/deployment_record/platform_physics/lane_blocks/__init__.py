@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.common.refusal.format_version import is_version
 
 LANE_BLOCK_FORMAT_VERSION = 1
 #: The G3 lane rows a block may declare (``platform_physics/vocabulary.py``).
@@ -57,7 +58,8 @@ def load_lane_block(name: str) -> LaneBlock:
     if not path.is_file():
         raise LaneBlockError(f"lane_block {name!r} is no shipped lane block; known: {list(lane_block_names())}")
     data = json.loads(path.read_text(encoding="utf-8"))
-    if set(data) - _FIELDS or data.get("format_version") != LANE_BLOCK_FORMAT_VERSION or data.get("name") != name:
+    if set(data) - _FIELDS or not is_version(data.get("format_version"), LANE_BLOCK_FORMAT_VERSION) \
+            or data.get("name") != name:  # [U-HOST3] the version rule's one reading
         raise LaneBlockError(f"lane block {path.name}: fields {sorted(data)}, format_version "
                              f"{data.get('format_version')!r}, name {data.get('name')!r}")
     constants = data.get("constants") or {}

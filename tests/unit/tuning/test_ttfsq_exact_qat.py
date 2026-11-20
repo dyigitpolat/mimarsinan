@@ -26,6 +26,7 @@ from mimarsinan.tuning.orchestration.ttfs_exact_qat import (
     model_trained_ttfsq_exact,
     ttfsq_exact_qat_active,
 )
+from spiking_points import point_of_mode
 
 
 def _ttfsq_cfg(*, exact=True, steps=8):
@@ -54,7 +55,7 @@ class TestRegistryAndRecipe:
             ("lif", None), ("ttfs", None), ("ttfs_quantized", None),
             ("ttfs_cycle_based", "synchronized"),
         ]:
-            assert "ttfsq_exact_qat" not in ConversionPolicy.derive(mode, schedule).knobs
+            assert "ttfsq_exact_qat" not in ConversionPolicy.derive(point_of_mode(mode, schedule)).knobs
 
 
 class TestPredicate:

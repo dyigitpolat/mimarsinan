@@ -28,6 +28,8 @@ from mimarsinan.pipelining.core.gates.value_gates import (
     run_value_twin_certificate_gate,
 )
 from mimarsinan.pipelining.core.gates.static_program_gate import run_static_program_check
+from mimarsinan.certification.program_check.unit_forms.window_sum import require_window_sum_held
+from mimarsinan.chip_simulation.spiking_semantics import lif_membrane_init
 from mimarsinan.pipelining.core.gates.host_condition_gate import host_condition_records, host_kernel_replay
 
 import torch
@@ -128,6 +130,10 @@ class HardCoreMappingStep(PipelineStep):
             run_pass_transfer(self.pipeline.config, hybrid_mapping=hybrid_mapping),
             self.pipeline.config.get("pass_buffer_capacity_bytes", 0),
         )
+        # [U-LIF2 W15] integrate then emit holds each window's whole charge: a declared register too narrow for the
+        # program's window sums is refused here, at generation, before any simulation.
+        require_window_sum_held(hybrid_mapping, DeploymentPlan.of(self.pipeline).spiking_point, window=sim_len,
+                                membrane_init=lif_membrane_init(self.pipeline.config))
 
         _vram_probe("after_build_hybrid")
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")

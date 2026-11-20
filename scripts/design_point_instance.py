@@ -62,15 +62,20 @@ from mimarsinan.deployment_record.design_point.rows import judged_row, plane_agr
 from mimarsinan.deployment_record.design_point.schema import SCHEMA_ID, SCHEMA_VERSION, validate_instance  # noqa: E402
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics  # noqa: E402
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks  # noqa: E402
+from mimarsinan.mapping.platform.descriptions.label_clauses import clause  # noqa: E402
+from mimarsinan.mapping.platform.descriptions.realizations import SEPARATOR  # noqa: E402
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params  # noqa: E402
 import mimarsinan.mapping.platform.target_bundles as bundle_module  # noqa: E402
-from mimarsinan.mapping.platform.target_bundles import declared_departures, target_bundles  # noqa: E402
+from mimarsinan.mapping.platform.target_bundles import (  # noqa: E402
+    declared_departures, get_target_bundle, run_faithfulness)
 from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline  # noqa: E402
 from unit.chip_simulation.value_run.integer_programs import build_integer_program, integer_inputs  # noqa: E402
 from unit.chip_simulation.value_run.operand_programs import LAW as OPERAND_LAW, build_operand_program  # noqa: E402
 
 #: Declared on every built program beside the bundle's keys: the 8-bit value grid of the integer readout law.
-BUILD_DECLARATIONS = {"activation_bits": 8, "core_semantics": "mvm"}
+# [U-CHIPKEYS] the instance's executed build is a lane-free integer program (build_integer_program), so it declares no
+# on-chip classes: a departure, named, on a chip whose description states classes (NeuRRAM's ReLU, HERMES-64's LDPU).
+BUILD_DECLARATIONS = {"activation_bits": 8, "core_semantics": "mvm", "onchip_arithmetic": {"classes": []}}
 EVIDENCE = {"MEASURED": "toolchain output of a run on the named worktree (single run)",
             "ESTIMATE": "priced from declared constants and the measured census (a band per constant)",
             "SECONDARY": "a published constant read in a secondary source (NeuRRAM's endurance band)",
@@ -121,8 +126,10 @@ def row_variants(spec: Mapping[str, Any], row: Mapping[str, Any]) -> Dict[str, O
 
 
 def bundle_document(name: str) -> Dict[str, Any]:
-    """The shipped bundle file (its display name and faithfulness note, which the loaded bundle does not keep)."""
-    return load_json(os.path.join(os.path.dirname(bundle_module.__file__), "targets", f"{name}.json"))
+    """The shipped bundle file (its display name and faithfulness note, which the loaded bundle does not keep); a
+    realization's (``<bundle>@<realization>``) is its bundle's file."""
+    base = name.split(SEPARATOR)[0]
+    return load_json(os.path.join(os.path.dirname(bundle_module.__file__), "targets", f"{base}.json"))
 
 
 def declaration_of(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
@@ -142,7 +149,7 @@ def declared_core_types(row: Mapping[str, Any]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     if declaration is None:
         for declared in row["core_types"]:
-            bundle = target_bundles()[declared["target"]]
+            bundle = get_target_bundle(declared["target"])
             out.append({**dict(bundle.values["cores"][0]), "role": declared.get("role", "any"),
                         "count": declared.get("count"),
                         "write_technology": bundle.values.get("platform_physics_profile"),
@@ -202,12 +209,11 @@ def chip_block(spec: Mapping[str, Any], row: Mapping[str, Any], cores: Optional[
                resolved: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """The row's chip declaration in the instance's form (``resolved``: a declared row's resolved platform, once
     judged)."""
-    bundles = target_bundles()
     if row.get("core_types"):
         types = [core_type_record({k: v for k, v in ct.items() if k not in ("write_physics", "compute_physics")})
                  for ct in declared_core_types(row)]
         # [U-C C-5] each core type's bundle against the build's own declarations, by name
-        departures = [f"{d['key']} declared ({ct.get('role', 'any')} core type, bundle {ct['target']})"
+        departures = [clause("declared", key=d["key"]) + f" ({ct.get('role', 'any')} core type, bundle {ct['target']})"
                       for ct in row["core_types"] for d in declared_departures(ct["target"], BUILD_DECLARATIONS)]
         names = [ct["target"] for ct in row["core_types"]]
         judged = resolved is not None
@@ -217,15 +223,16 @@ def chip_block(spec: Mapping[str, Any], row: Mapping[str, Any], cores: Optional[
                                  "named": departures, "note": row.get("note", "")},
                 "claim_class": None, "arithmetic_class": row["arithmetic_class"], "backing_store": None,
                 "physics_profile": None if not judged else resolved.get("platform_physics_profile")}
-    bundle = bundles[row["target"]]
+    bundle = get_target_bundle(row["target"])
     document = bundle_document(bundle.name)
     values = bundle.values
     core = dict(values["cores"][0])
     fields = dict(row.get("core_fields", {}))
     store = row.get("backing_store")
     # [U-C C-5] the build's own declarations and the spec's core fields, where they depart from the bundle, by name
-    departed = bundle.faithfulness.with_departures(
-        f"{d['key']} declared" for d in declared_departures(bundle.name, BUILD_DECLARATIONS, fields))
+    # [U-CHIPKEYS4] 3(f) the label names the pricing the row's resolved platform resolves (none given: the bundle's)
+    departed = run_faithfulness(bundle, bundle.values if resolved is None else resolved).with_departures(
+        clause("declared", key=d["key"]) for d in declared_departures(bundle.name, BUILD_DECLARATIONS, fields))
     return {
         "target": bundle.name, "display_name": str(document.get("display_name", bundle.name)),
         "core_types": [core_type_record({**core, **fields, "role": "any", "count": cores,
@@ -249,11 +256,14 @@ def chip_block(spec: Mapping[str, Any], row: Mapping[str, Any], cores: Optional[
 
 def ladder_rows(spec, row, network, variants) -> List[Dict[str, Any]]:
     target, fields = row["target"], dict(row.get("core_fields", {}))
-    chip = ladder.resolved_platform(target, "declared", None, None, fields)
+    # [U-CHIPKEYS] the priced plane reads the executed build's declarations (one program on both planes): a key a
+    # chip description states that the build departs from (its on-chip classes) departs on both
+    chip = ladder.resolved_platform(target, "declared", None, dict(BUILD_DECLARATIONS), fields)
 
     def platform_at(budget, packed, residency=None, overrides=None):
         plan = {} if residency is None else {"residency_plan": dict(residency)}
-        return ladder.resolved_platform(target, budget, packed, plan, fields, overrides)
+        return ladder.resolved_platform(target, budget, packed, {**dict(BUILD_DECLARATIONS), **plan}, fields,
+                                        overrides)
 
     return list(ladder.cell_rows(network, target, "value", chip, platform_at, budgets=[spec["budget_fraction"]],
                                  ks=spec["k_grid"], point_budget_s=spec.get("point_budget_s"), wire_census=True,
@@ -298,7 +308,7 @@ def judged_part(spec: Mapping[str, Any], row: Mapping[str, Any]) -> Dict[str, An
                         physics=PlatformPhysics.from_dict(platform["platform_physics_resolved"]),
                         k_grid=spec["k_grid"], weight_bits=int(platform["weight_bits"]), names=names,
                         x_fluid=at_one.get("x_fluid"), x_packed=at_one.get("x_packed"),
-                        write_technology=target_bundles()[row["target"]].values.get("platform_physics_profile"))
+                        write_technology=get_target_bundle(row["target"]).values.get("platform_physics_profile"))
     judged["program"].update(route="build_integer_program + build_hybrid_mapping_for_pipeline (U1), integer "
                                    "readout law", build_wall_s=round(built, 1))
     judged["budget"] = {"packed_tiles_F": tiles, "fraction": float(spec["budget_fraction"]), "cores": cores,
@@ -307,7 +317,7 @@ def judged_part(spec: Mapping[str, Any], row: Mapping[str, Any]) -> Dict[str, An
                         "x_packed": at_one.get("x_packed"), "replication": at_one.get("replication")}
     judged["pricing"] = ladder_pricing(rows, operand_cells=judged["writes"]["operand_written_cells_per_inference"])
     judged["planes"] = plane_agreement(executed_facts(judged, cores), candidate_facts(at_one))
-    judged["chip"] = chip_block(spec, row, cores)
+    judged["chip"] = chip_block(spec, row, cores, resolved=platform)
     return judged
 
 

@@ -1,0 +1,2226 @@
+{
+ "rows": {
+  "held_out": [
+   {
+    "array_um2": 18383.780999224335,
+    "chip": "TrueNorth",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 0.8460550490176183,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.0936,
+    "ratio": 0.43296240042071027,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 18383.780999224335,
+     "converters_um2": 0.0,
+     "core_um2": 40525.280679378484,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 18383.780999224335,
+    "chip": "TrueNorth",
+    "cls": "anchor",
+    "count": 4096.0,
+    "eta": 0.8460550490176183,
+    "gamma": 0.8708734954982211,
+    "model": false,
+    "primary": false,
+    "published_mm2": 430.0,
+    "ratio": 0.4432639891743793,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 18383.780999224335,
+     "converters_um2": 0.0,
+     "core_um2": 40525.280679378484,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 56588.514735765966,
+    "chip": "ODIN",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 0.7921505664058007,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.0864,
+    "ratio": 1.7694909226043694,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 56588.514735765966,
+     "converters_um2": 0.0,
+     "core_um2": 152884.01571301752,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 341385.5283215274,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.9223585185185187,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.6743165,
+    "ratio": 1.5512144119278066,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core (derived)",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 341385.5283215274,
+     "converters_um2": 0.0,
+     "core_um2": 1046009.4730007169,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 341385.5283215274,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 4.0,
+    "eta": 0.9223585185185187,
+    "gamma": null,
+    "model": false,
+    "primary": false,
+    "published_mm2": 2.86,
+    "ratio": 1.4629503118891145,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "chip w/o pads",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 341385.5283215274,
+     "converters_um2": 0.0,
+     "core_um2": 1046009.4730007169,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 341385.5283215274,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 4.0,
+    "eta": 0.9223585185185187,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": false,
+    "published_mm2": 3.5,
+    "ratio": 1.361972698801216,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 341385.5283215274,
+     "converters_um2": 0.0,
+     "core_um2": 1046009.4730007169,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 201029.07202329533,
+    "chip": "ReckOn",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.45,
+    "ratio": 1.2062729996448938,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 201029.07202329533,
+     "converters_um2": 0.0,
+     "core_um2": 542822.8498402023,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 117213.28959161474,
+    "chip": "Loihi",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.41,
+    "ratio": 0.6904447182080065,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core (vendor)",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 117213.28959161474,
+     "converters_um2": 0.0,
+     "core_um2": 283082.3344652826,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 117213.28959161474,
+    "chip": "Loihi",
+    "cls": "anchor",
+    "count": 128.0,
+    "eta": 0.8547788151759844,
+    "gamma": 0.8792602824312408,
+    "model": false,
+    "primary": false,
+    "published_mm2": 60.0,
+    "ratio": 0.6868375522692046,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 117213.28959161474,
+     "converters_um2": 0.0,
+     "core_um2": 283082.3344652826,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": null,
+    "chip": "Loihi 2",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.21,
+    "ratio": null,
+    "readings": [],
+    "refused": "sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+    "refused_by": "rule",
+    "scope": "core (vendor)",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T1"
+   },
+   {
+    "array_um2": null,
+    "chip": "Loihi 2",
+    "cls": "cited",
+    "count": 128.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": false,
+    "published_mm2": 31.0,
+    "ratio": null,
+    "readings": [],
+    "refused": "sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+    "refused_by": "rule",
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T1"
+   },
+   {
+    "array_um2": 162303.47275084048,
+    "chip": "jiang2023a macro",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 0.852395742223279,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.5,
+    "ratio": 0.4340378799861128,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 162303.47275084048,
+     "converters_um2": 0.0,
+     "core_um2": 217018.9399930564,
+     "state_um2": 0.0
+    },
+    "type": "T2_digital"
+   },
+   {
+    "array_um2": 148968.3745705538,
+    "chip": "IMAGINE",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.196,
+    "ratio": null,
+    "readings": [
+     {
+      "converter_um2": 0.0,
+      "label": "no converter area (the bound's open low edge)",
+      "ratio": 1.0735066771197523,
+      "type_default": false
+     },
+     {
+      "converter_um2": 739.269911780849,
+      "label": "the type's default kind sar_dedicated at 8.0 bits (its range lifted)",
+      "ratio": 1.4144590173853349,
+      "type_default": true
+     }
+    ],
+    "refused": "converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)",
+    "refused_by": "converter",
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 101717.39938851792,
+    "chip": "CAP-RAM",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.8946585769442912,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.179,
+    "ratio": 0.8163878041759275,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 101717.39938851792,
+     "converters_um2": 13728.0,
+     "core_um2": 146133.41694749103,
+     "state_um2": 0.0
+    },
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 1253277.475090264,
+    "chip": "Jia 2020 processor",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.852395742223279,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": true,
+    "published_mm2": 13.5,
+    "ratio": 0.21793347587986384,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": true,
+    "terms": {
+     "array_um2": 1253277.475090264,
+     "converters_um2": 188233.13575083492,
+     "core_um2": 2582360.538937949,
+     "state_um2": 0.0
+    },
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 226568.69323295966,
+    "chip": "NeuRRAM",
+    "cls": "cited",
+    "count": 48.0,
+    "eta": 1.0,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": true,
+    "published_mm2": 158.76,
+    "ratio": 0.43291792400226753,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 226568.69323295966,
+     "converters_um2": 325120.0,
+     "core_um2": 1256795.4003490177,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 6442.450944,
+    "chip": "ISAAC (model)",
+    "cls": "anchor (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": true,
+    "published_mm2": 0.372,
+    "ratio": 0.6693968559368282,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "tile",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 6442.450944,
+     "converters_um2": 124800.0,
+     "core_um2": 249015.6304085001,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 6442.450944,
+    "chip": "ISAAC (model)",
+    "cls": "anchor (model)",
+    "count": 168.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 85.4,
+    "ratio": 0.7577825047848714,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "chip",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 6442.450944,
+     "converters_um2": 124800.0,
+     "core_um2": 249015.6304085001,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": true,
+    "published_mm2": 0.479,
+    "ratio": 0.791248430449848,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "tile",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 138.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 90.638,
+    "ratio": 0.8294876734878953,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "node",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 0.012,
+    "ratio": 0.8774056424531198,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "MVMU",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 0.036,
+    "ratio": 0.5849370949687466,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES 64-core",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 1.392,
+    "ratio": 1.411149894281284,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 102400.0,
+     "core_um2": 1964320.6528395473,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES 64-core",
+    "cls": "anchor",
+    "count": 64.0,
+    "eta": 1.0,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": false,
+    "published_mm2": 144.0,
+    "ratio": 0.9946509509287673,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 102400.0,
+     "core_um2": 1964320.6528395473,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES-core (JSSC)",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.634,
+    "ratio": 2.0984908757698664,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 102400.0,
+     "core_um2": 1330443.2152380953,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   }
+  ],
+  "in_sample": [
+   {
+    "array_um2": 18573.338176065332,
+    "chip": "TrueNorth",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.0936,
+    "ratio": 0.5160885798642277,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 18573.338176065332,
+     "converters_um2": 0.0,
+     "core_um2": 48305.89107529172,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 18573.338176065332,
+    "chip": "TrueNorth",
+    "cls": "anchor",
+    "count": 4096.0,
+    "eta": 0.8547788151759844,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": false,
+    "published_mm2": 430.0,
+    "ratio": 0.5242427433106024,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 18573.338176065332,
+     "converters_um2": 0.0,
+     "core_um2": 48305.89107529172,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 52442.3666147727,
+    "chip": "ODIN",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.0864,
+    "ratio": 1.5786238913494028,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 52442.3666147727,
+     "converters_um2": 0.0,
+     "core_um2": 136393.1042125884,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 368375.8237287121,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.6743165,
+    "ratio": 1.4208147754403198,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core (derived)",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 368375.8237287121,
+     "converters_um2": 0.0,
+     "core_um2": 958078.8465232023,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 368375.8237287121,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 4.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": false,
+    "published_mm2": 2.86,
+    "ratio": 1.3399704147177656,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "chip w/o pads",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 368375.8237287121,
+     "converters_um2": 0.0,
+     "core_um2": 958078.8465232023,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 368375.8237287121,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 4.0,
+    "eta": 0.8547788151759844,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": false,
+    "published_mm2": 3.5,
+    "ratio": 1.2474812761687748,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 368375.8237287121,
+     "converters_um2": 0.0,
+     "core_um2": 958078.8465232023,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 201029.07202329533,
+    "chip": "ReckOn",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.45,
+    "ratio": 1.1618671840331602,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 201029.07202329533,
+     "converters_um2": 0.0,
+     "core_um2": 522840.2328149221,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 117213.28959161474,
+    "chip": "Loihi",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.41,
+    "ratio": 0.7435379322500538,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core (vendor)",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 117213.28959161474,
+     "converters_um2": 0.0,
+     "core_um2": 304850.55222252203,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 117213.28959161474,
+    "chip": "Loihi",
+    "cls": "anchor",
+    "count": 128.0,
+    "eta": 0.8547788151759844,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": false,
+    "published_mm2": 60.0,
+    "ratio": 0.740945974304474,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 117213.28959161474,
+     "converters_um2": 0.0,
+     "core_um2": 304850.55222252203,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": null,
+    "chip": "Loihi 2",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.21,
+    "ratio": null,
+    "readings": [],
+    "refused": "sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+    "refused_by": "rule",
+    "scope": "core (vendor)",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T1"
+   },
+   {
+    "array_um2": null,
+    "chip": "Loihi 2",
+    "cls": "cited",
+    "count": 128.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": false,
+    "published_mm2": 31.0,
+    "ratio": null,
+    "readings": [],
+    "refused": "sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+    "refused_by": "rule",
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T1"
+   },
+   {
+    "array_um2": 162303.47275084048,
+    "chip": "jiang2023a macro",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 0.852395742223279,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.5,
+    "ratio": 1.0000000000000002,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 162303.47275084048,
+     "converters_um2": 0.0,
+     "core_um2": 500000.00000000006,
+     "state_um2": 0.0
+    },
+    "type": "T2_digital"
+   },
+   {
+    "array_um2": 151290.0228141763,
+    "chip": "IMAGINE",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.852395742223279,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.196,
+    "ratio": 1.098961295425214,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 151290.0228141763,
+     "converters_um2": 9800.0,
+     "core_um2": 215396.41390334195,
+     "state_um2": 0.0
+    },
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 106760.67380398545,
+    "chip": "CAP-RAM",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.852395742223279,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.179,
+    "ratio": 0.900042502969839,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 106760.67380398545,
+     "converters_um2": 13728.0,
+     "core_um2": 161107.60803160118,
+     "state_um2": 0.0
+    },
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 1253277.475090264,
+    "chip": "Jia 2020 processor",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.852395742223279,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": true,
+    "published_mm2": 13.5,
+    "ratio": 0.2180485720158483,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": true,
+    "terms": {
+     "array_um2": 1253277.475090264,
+     "converters_um2": 189253.09741589735,
+     "core_um2": 2583724.348323132,
+     "state_um2": 0.0
+    },
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 299968.8977728764,
+    "chip": "NeuRRAM",
+    "cls": "cited",
+    "count": 48.0,
+    "eta": 1.0,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": true,
+    "published_mm2": 158.76,
+    "ratio": 0.48442828540155164,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 299968.8977728764,
+     "converters_um2": 325120.0,
+     "core_um2": 1406334.1043103642,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 6442.450944,
+    "chip": "ISAAC (model)",
+    "cls": "anchor (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": true,
+    "published_mm2": 0.372,
+    "ratio": 0.7641290285997523,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "tile",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 6442.450944,
+     "converters_um2": 119903.96156924925,
+     "core_um2": 284255.99863910786,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 6442.450944,
+    "chip": "ISAAC (model)",
+    "cls": "anchor (model)",
+    "count": 168.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 85.4,
+    "ratio": 0.8271078193368865,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "chip",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 6442.450944,
+     "converters_um2": 119903.96156924925,
+     "core_um2": 284255.99863910786,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": true,
+    "published_mm2": 0.479,
+    "ratio": 0.791248430449848,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "tile",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 138.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 90.638,
+    "ratio": 0.8473830374632698,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "node",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 0.012,
+    "ratio": 0.8774056424531198,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "MVMU",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 0.036,
+    "ratio": 0.5849370949687466,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES 64-core",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 1.392,
+    "ratio": 0.9557781718664478,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 102400.0,
+     "core_um2": 1330443.2152380953,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES 64-core",
+    "cls": "anchor",
+    "count": 64.0,
+    "eta": 1.0,
+    "gamma": 0.6186666666666666,
+    "model": false,
+    "primary": false,
+    "published_mm2": 144.0,
+    "ratio": 0.9557781718664479,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 102400.0,
+     "core_um2": 1330443.2152380953,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES-core (JSSC)",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.634,
+    "ratio": 2.0984908757698664,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 102400.0,
+     "core_um2": 1330443.2152380953,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   }
+  ],
+  "strict": [
+   {
+    "array_um2": 18383.780999224335,
+    "chip": "TrueNorth",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 0.8460550490176183,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.0936,
+    "ratio": 0.43296240042071027,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 18383.780999224335,
+     "converters_um2": 0.0,
+     "core_um2": 40525.280679378484,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 18383.780999224335,
+    "chip": "TrueNorth",
+    "cls": "anchor",
+    "count": 4096.0,
+    "eta": 0.8460550490176183,
+    "gamma": 0.8708734954982211,
+    "model": false,
+    "primary": false,
+    "published_mm2": 430.0,
+    "ratio": 0.4432639891743793,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 18383.780999224335,
+     "converters_um2": 0.0,
+     "core_um2": 40525.280679378484,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 56588.514735765966,
+    "chip": "ODIN",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 0.7921505664058007,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.0864,
+    "ratio": 1.7694909226043694,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 56588.514735765966,
+     "converters_um2": 0.0,
+     "core_um2": 152884.01571301752,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 341385.5283215274,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.9223585185185187,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.6743165,
+    "ratio": 1.5512144119278066,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core (derived)",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 341385.5283215274,
+     "converters_um2": 0.0,
+     "core_um2": 1046009.4730007169,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 341385.5283215274,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 4.0,
+    "eta": 0.9223585185185187,
+    "gamma": null,
+    "model": false,
+    "primary": false,
+    "published_mm2": 2.86,
+    "ratio": 1.4629503118891145,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "chip w/o pads",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 341385.5283215274,
+     "converters_um2": 0.0,
+     "core_um2": 1046009.4730007169,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 341385.5283215274,
+    "chip": "MorphIC",
+    "cls": "independent",
+    "count": 4.0,
+    "eta": 0.9223585185185187,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": false,
+    "published_mm2": 3.5,
+    "ratio": 1.361972698801216,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 341385.5283215274,
+     "converters_um2": 0.0,
+     "core_um2": 1046009.4730007169,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 201029.07202329533,
+    "chip": "ReckOn",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.45,
+    "ratio": 1.2062729996448938,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 201029.07202329533,
+     "converters_um2": 0.0,
+     "core_um2": 542822.8498402023,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 117213.28959161474,
+    "chip": "Loihi",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 0.8547788151759844,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.41,
+    "ratio": 0.6904447182080065,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core (vendor)",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 117213.28959161474,
+     "converters_um2": 0.0,
+     "core_um2": 283082.3344652826,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": 117213.28959161474,
+    "chip": "Loihi",
+    "cls": "anchor",
+    "count": 128.0,
+    "eta": 0.8547788151759844,
+    "gamma": 0.8792602824312408,
+    "model": false,
+    "primary": false,
+    "published_mm2": 60.0,
+    "ratio": 0.6868375522692046,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 117213.28959161474,
+     "converters_um2": 0.0,
+     "core_um2": 283082.3344652826,
+     "state_um2": 0.0
+    },
+    "type": "T1"
+   },
+   {
+    "array_um2": null,
+    "chip": "Loihi 2",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.21,
+    "ratio": null,
+    "readings": [],
+    "refused": "sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+    "refused_by": "rule",
+    "scope": "core (vendor)",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T1"
+   },
+   {
+    "array_um2": null,
+    "chip": "Loihi 2",
+    "cls": "cited",
+    "count": 128.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": false,
+    "published_mm2": 31.0,
+    "ratio": null,
+    "readings": [],
+    "refused": "sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+    "refused_by": "rule",
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T1"
+   },
+   {
+    "array_um2": 162303.47275084048,
+    "chip": "jiang2023a macro",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 0.852395742223279,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.5,
+    "ratio": 0.4340378799861128,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 162303.47275084048,
+     "converters_um2": 0.0,
+     "core_um2": 217018.9399930564,
+     "state_um2": 0.0
+    },
+    "type": "T2_digital"
+   },
+   {
+    "array_um2": 117392.37233475498,
+    "chip": "IMAGINE",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.196,
+    "ratio": null,
+    "readings": [
+     {
+      "converter_um2": 0.0,
+      "label": "no converter area (the bound's open low edge)",
+      "ratio": 0.8459614056176855,
+      "type_default": false
+     },
+     {
+      "converter_um2": 739.269911780849,
+      "label": "the type's default kind sar_dedicated at 8.0 bits (its range lifted)",
+      "ratio": 1.186913745883268,
+      "type_default": true
+     }
+    ],
+    "refused": "converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)",
+    "refused_by": "converter",
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 139851.5911898848,
+    "chip": "CAP-RAM",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.179,
+    "ratio": null,
+    "readings": [
+     {
+      "converter_um2": 438.8482308068818,
+      "label": "the type's default kind sar_dedicated at 7.0 bits (its range lifted)",
+      "ratio": 1.088287494347677,
+      "type_default": true
+     }
+    ],
+    "refused": "converter kind sar_dedicated: its law holds over 8 to 10 bits; 7.0 requested",
+    "refused_by": "converter",
+    "scope": "macro",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 1253277.475090264,
+    "chip": "Jia 2020 processor",
+    "cls": "independent",
+    "count": 1.0,
+    "eta": 0.852395742223279,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": true,
+    "published_mm2": 13.5,
+    "ratio": 0.21793347587986384,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": true,
+    "terms": {
+     "array_um2": 1253277.475090264,
+     "converters_um2": 188233.13575083492,
+     "core_um2": 2582360.538937949,
+     "state_um2": 0.0
+    },
+    "type": "T2_analog"
+   },
+   {
+    "array_um2": 226568.69323295966,
+    "chip": "NeuRRAM",
+    "cls": "cited",
+    "count": 48.0,
+    "eta": null,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 158.76,
+    "ratio": null,
+    "readings": [
+     {
+      "converter_um2": 1248.9995996796797,
+      "label": "the type's default kind sar_gsps at 6.0 bits (its range lifted)",
+      "ratio": 0.4286992203125239,
+      "type_default": true
+     },
+     {
+      "converter_um2": 252.19946391695606,
+      "label": "the dedicated SAR law at 6.0 bits (extrapolated)",
+      "ratio": 0.22845520845860898,
+      "type_default": false
+     }
+    ],
+    "refused": "converter kind neuron_integrating: no published unit area remains (outside the held-out chip)",
+    "refused_by": "converter",
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": null,
+    "type": "T3"
+   },
+   {
+    "array_um2": 6442.450944,
+    "chip": "ISAAC (model)",
+    "cls": "anchor (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": true,
+    "published_mm2": 0.372,
+    "ratio": 0.6693968559368282,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "tile",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 6442.450944,
+     "converters_um2": 124800.0,
+     "core_um2": 249015.6304085001,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 6442.450944,
+    "chip": "ISAAC (model)",
+    "cls": "anchor (model)",
+    "count": 168.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 85.4,
+    "ratio": 0.7577825047848714,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "chip",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 6442.450944,
+     "converters_um2": 124800.0,
+     "core_um2": 249015.6304085001,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": true,
+    "published_mm2": 0.479,
+    "ratio": 0.791248430449848,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "tile",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 138.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 90.638,
+    "ratio": 0.8294876734878953,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "node",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 0.012,
+    "ratio": 0.8774056424531198,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "MVMU",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 8589.934592,
+    "chip": "PUMA (model)",
+    "cls": "cited (model)",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": true,
+    "primary": false,
+    "published_mm2": 0.036,
+    "ratio": 0.5849370949687466,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 8589.934592,
+     "converters_um2": 159871.948758999,
+     "core_um2": 379007.9981854772,
+     "state_um2": 0.0
+    },
+    "type": "T3"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES 64-core",
+    "cls": "anchor",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 1.392,
+    "ratio": 1.411149894281284,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 102400.0,
+     "core_um2": 1964320.6528395473,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES 64-core",
+    "cls": "anchor",
+    "count": 64.0,
+    "eta": 1.0,
+    "gamma": 0.8777264028620466,
+    "model": false,
+    "primary": false,
+    "published_mm2": 144.0,
+    "ratio": 0.9946509509287673,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "die",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 102400.0,
+     "core_um2": 1964320.6528395473,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   },
+   {
+    "array_um2": 770703.36,
+    "chip": "HERMES-core (JSSC)",
+    "cls": "cited",
+    "count": 1.0,
+    "eta": 1.0,
+    "gamma": null,
+    "model": false,
+    "primary": true,
+    "published_mm2": 0.634,
+    "ratio": 2.7933384046867955,
+    "readings": [],
+    "refused": null,
+    "refused_by": null,
+    "scope": "core",
+    "scope_mismatch": false,
+    "terms": {
+     "array_um2": 770703.36,
+     "converters_um2": 391500.0,
+     "core_um2": 1770976.5485714283,
+     "state_um2": 0.0
+    },
+    "type": "T4"
+   }
+  ]
+ },
+ "sram_array_fact": {
+  "macro": {
+   "chip": "TrueNorth",
+   "chips": [
+    "TrueNorth",
+    "ODIN",
+    "MorphIC",
+    "IMAGINE",
+    "CAP-RAM"
+   ],
+   "max_deviation": 0.1523049507095644,
+   "ratios": {
+    "CAP-RAM": 0.907753399151462,
+    "IMAGINE": 1.0270847667578171,
+    "MorphIC": 0.8588315177900061,
+    "ODIN": 1.007630248143981,
+    "TrueNorth": 1.1523049507095644
+   }
+  },
+  "published": {
+   "chip": "MorphIC",
+   "chips": [
+    "TrueNorth",
+    "ODIN",
+    "MorphIC",
+    "IMAGINE",
+    "CAP-RAM"
+   ],
+   "max_deviation": 0.1411684822099939,
+   "ratios": {
+    "CAP-RAM": 0.907753399151462,
+    "IMAGINE": 1.0270847667578171,
+    "MorphIC": 0.8588315177900061,
+    "ODIN": 1.007630248143981,
+    "TrueNorth": 0.9749134215558248
+   }
+  }
+ },
+ "stacks": {
+  "macro": [
+   {
+    "array_ratio": 1.1523049507095644,
+    "array_um2": 18383.780999224335,
+    "chip": "TrueNorth",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 15953.92,
+    "scope": "core",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 40525.280679378484,
+    "total_um2": 40525.280679378484,
+    "type": "T1"
+   },
+   {
+    "array_ratio": 1.007630248143981,
+    "array_um2": 56588.514735765966,
+    "chip": "ODIN",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 56160.0,
+    "scope": "core",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 152884.01571301752,
+    "total_um2": 152884.01571301752,
+    "type": "T1"
+   },
+   {
+    "array_ratio": 0.8588315177900061,
+    "array_um2": 1365542.1132861096,
+    "chip": "MorphIC",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 1590000.0,
+    "scope": "chip w/o pads",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 4184037.8920028675,
+    "total_um2": 4184037.8920028675,
+    "type": "T1"
+   },
+   {
+    "array_ratio": 1.0270847667578171,
+    "array_um2": 148968.3745705538,
+    "chip": "IMAGINE",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 145040.0,
+    "scope": "macro",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": null,
+    "total_um2": null,
+    "type": "T2_analog"
+   },
+   {
+    "array_ratio": 0.907753399151462,
+    "array_um2": 101717.39938851792,
+    "chip": "CAP-RAM",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 112054.0,
+    "scope": "macro",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 146133.41694749103,
+    "total_um2": 146133.41694749103,
+    "type": "T2_analog"
+   },
+   {
+    "array_ratio": 0.570845787938926,
+    "array_um2": 10875297.275182065,
+    "chip": "NeuRRAM",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 19051199.999999996,
+    "scope": "die",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 68730049.61459999,
+    "total_um2": 68730049.61459999,
+    "type": "T3"
+   },
+   {
+    "array_ratio": 2.68435456,
+    "array_um2": 6442.450944,
+    "chip": "ISAAC (model)",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 2400.0,
+    "scope": "tile",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 249015.6304085001,
+    "total_um2": 249015.6304085001,
+    "type": "T3"
+   },
+   {
+    "array_ratio": 1.4764432183908045,
+    "array_um2": 770703.36,
+    "chip": "HERMES 64-core",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 522000.0,
+    "scope": "core",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 1964320.6528395473,
+    "total_um2": 1964320.652839547,
+    "type": "T4"
+   }
+  ],
+  "published": [
+   {
+    "array_ratio": 0.9749134215558248,
+    "array_um2": 15553.690734427904,
+    "chip": "TrueNorth",
+    "moved_to_rest_um2": 2830.0902647964303,
+    "published_um2": 15953.92,
+    "scope": "core",
+    "scope_class": "bitcells",
+    "total_macro_scope_um2": 40525.280679378484,
+    "total_um2": 40525.280679378484,
+    "type": "T1"
+   },
+   {
+    "array_ratio": 1.007630248143981,
+    "array_um2": 56588.514735765966,
+    "chip": "ODIN",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 56160.0,
+    "scope": "core",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 152884.01571301752,
+    "total_um2": 152884.01571301752,
+    "type": "T1"
+   },
+   {
+    "array_ratio": 0.8588315177900061,
+    "array_um2": 1365542.1132861096,
+    "chip": "MorphIC",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 1590000.0,
+    "scope": "chip w/o pads",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 4184037.8920028675,
+    "total_um2": 4184037.8920028675,
+    "type": "T1"
+   },
+   {
+    "array_ratio": 1.0270847667578171,
+    "array_um2": 148968.3745705538,
+    "chip": "IMAGINE",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 145040.0,
+    "scope": "macro",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": null,
+    "total_um2": null,
+    "type": "T2_analog"
+   },
+   {
+    "array_ratio": 0.907753399151462,
+    "array_um2": 101717.39938851792,
+    "chip": "CAP-RAM",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 112054.0,
+    "scope": "macro",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 146133.41694749103,
+    "total_um2": 146133.41694749103,
+    "type": "T2_analog"
+   },
+   {
+    "array_ratio": 0.570845787938926,
+    "array_um2": 10875297.275182065,
+    "chip": "NeuRRAM",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 19051199.999999996,
+    "scope": "die",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 68730049.61459999,
+    "total_um2": 68730049.61459999,
+    "type": "T3"
+   },
+   {
+    "array_ratio": 2.68435456,
+    "array_um2": 6442.450944,
+    "chip": "ISAAC (model)",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 2400.0,
+    "scope": "tile",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 249015.6304085001,
+    "total_um2": 249015.6304085001,
+    "type": "T3"
+   },
+   {
+    "array_ratio": 1.4764432183908045,
+    "array_um2": 770703.36,
+    "chip": "HERMES 64-core",
+    "moved_to_rest_um2": 0.0,
+    "published_um2": 522000.0,
+    "scope": "core",
+    "scope_class": "macro_or_block",
+    "total_macro_scope_um2": 1964320.6528395473,
+    "total_um2": 1964320.652839547,
+    "type": "T4"
+   }
+  ]
+ },
+ "stats_held_out": {
+  "geomean": 0.9231780742822498,
+  "max": 2.0984908757698664,
+  "min": 0.43291792400226753,
+  "n": 10,
+  "within_2x": 6,
+  "within_3x": 10,
+  "worst": 0.43291792400226753,
+  "worst_factor": 2.309906669502467
+ },
+ "strict_form": {
+  "n_priced": 8,
+  "n_refused_by_kind": 3,
+  "readings_max_factor": 2.3326377856973823,
+  "refused_by_kind": [
+   "CAP-RAM",
+   "IMAGINE",
+   "NeuRRAM"
+  ],
+  "spread_max": 2.7933384046867955,
+  "spread_min": 0.4286992203125239,
+  "worst_chip": "HERMES-core (JSSC)",
+  "worst_factor": 2.7933384046867955
+ },
+ "strict_spread": {
+  "CAP-RAM": {
+   "how": "refused by converter kind",
+   "type": "T2_analog",
+   "values": [
+    1.088287494347677
+   ]
+  },
+  "HERMES 64-core": {
+   "how": "priced",
+   "type": "T4",
+   "values": [
+    1.411149894281284
+   ]
+  },
+  "HERMES-core (JSSC)": {
+   "how": "priced",
+   "type": "T4",
+   "values": [
+    2.7933384046867955
+   ]
+  },
+  "IMAGINE": {
+   "how": "refused by converter kind",
+   "type": "T2_analog",
+   "values": [
+    1.186913745883268
+   ]
+  },
+  "Loihi": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    0.6904447182080065
+   ]
+  },
+  "MorphIC": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    1.5512144119278066
+   ]
+  },
+  "NeuRRAM": {
+   "how": "refused by converter kind",
+   "type": "T3",
+   "values": [
+    0.4286992203125239
+   ]
+  },
+  "ODIN": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    1.7694909226043694
+   ]
+  },
+  "ReckOn": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    1.2062729996448938
+   ]
+  },
+  "TrueNorth": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    0.43296240042071027
+   ]
+  },
+  "jiang2023a macro": {
+   "how": "priced",
+   "type": "T2_digital",
+   "values": [
+    0.4340378799861128
+   ]
+  }
+ },
+ "strict_spread_all": {
+  "CAP-RAM": {
+   "how": "refused by converter kind",
+   "type": "T2_analog",
+   "values": [
+    1.088287494347677
+   ]
+  },
+  "HERMES 64-core": {
+   "how": "priced",
+   "type": "T4",
+   "values": [
+    1.411149894281284
+   ]
+  },
+  "HERMES-core (JSSC)": {
+   "how": "priced",
+   "type": "T4",
+   "values": [
+    2.7933384046867955
+   ]
+  },
+  "IMAGINE": {
+   "how": "refused by converter kind",
+   "type": "T2_analog",
+   "values": [
+    0.8459614056176855,
+    1.186913745883268
+   ]
+  },
+  "Loihi": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    0.6904447182080065
+   ]
+  },
+  "MorphIC": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    1.5512144119278066
+   ]
+  },
+  "NeuRRAM": {
+   "how": "refused by converter kind",
+   "type": "T3",
+   "values": [
+    0.4286992203125239,
+    0.22845520845860898
+   ]
+  },
+  "ODIN": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    1.7694909226043694
+   ]
+  },
+  "ReckOn": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    1.2062729996448938
+   ]
+  },
+  "TrueNorth": {
+   "how": "priced",
+   "type": "T1",
+   "values": [
+    0.43296240042071027
+   ]
+  },
+  "jiang2023a macro": {
+   "how": "priced",
+   "type": "T2_digital",
+   "values": [
+    0.4340378799861128
+   ]
+  }
+ }
+}

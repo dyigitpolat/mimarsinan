@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from spiking_points import declaring_fire_while_integrating
 
 from mimarsinan.chip_simulation.sanafe import runner as runner_mod
 from mimarsinan.chip_simulation.sanafe.records import (
@@ -573,14 +574,14 @@ def test_runner_sim_wall_cap_comes_from_the_contract(monkeypatch):
     from mimarsinan.common.env import SIMULATION_STEP_TIMEOUT_VAR
 
     monkeypatch.delenv(SIMULATION_STEP_TIMEOUT_VAR, raising=False)
-    contract = SpikingDeploymentContract.from_pipeline_config({
+    contract = SpikingDeploymentContract.from_pipeline_config(declaring_fire_while_integrating({
         "spiking_mode": "lif",
         "firing_mode": "Default",
         "thresholding_mode": "<=",
         "spike_generation_mode": "Uniform",
         "simulation_steps": 8,
         "simulation_step_timeout_s": 240,
-    })
+    }))
     mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
     runner = SanafeRunner(mapping=mapping, simulation_length=8, contract=contract)
     assert runner._sim_timeout_s == 240.0
@@ -905,3 +906,48 @@ def test_run_per_core_input_count_always_on_axon_counts_T(monkeypatch):
     rec = runner.run(np.asarray([[0.0]], dtype=np.float32), sample_index=0)
     assert rec.segments[0].per_core[0].input_spike_count.tolist() == [12]
     assert rec.segments[0].per_core[0].n_always_on_axons == 1
+
+
+# ---------------------------------------------------------------------------
+# [U-LIF2 r2] The network build takes the runner's resolved point
+# ---------------------------------------------------------------------------
+
+
+class _BuildSeen(Exception):
+    """Raised by the recording build once it has seen its arguments."""
+
+
+@pytest.mark.parametrize("values,default,declaration", [
+    (("fire_while_integrating",), "fire_while_integrating", {}),
+    (("fire_while_integrating",), "fire_while_integrating", {"lif_window_firing": "fire_while_integrating"}),
+    (("fire_while_integrating", "integrate_then_emit"), "fire_while_integrating", {}),
+    (("fire_while_integrating", "integrate_then_emit"), "integrate_then_emit",
+     {"lif_window_firing": "fire_while_integrating"}),
+])
+def test_the_network_build_takes_the_runner_point(monkeypatch, window_firing_declared, values, default, declaration):
+    """Under each declared set that holds the value SANA-FE executes (silent at its default, declared under the other
+    default): the network build receives the contract's own record. A point SANA-FE does not execute (the other value,
+    an execution extension) is refused before any build (t04b, m-3)."""
+    from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
+    from mimarsinan.config_schema.runtime import derive_run_config
+
+    window_firing_declared(values, default)
+    cfg = derive_run_config({"model_type": "simple_mlp", "spiking_family": "lif", "spiking_variant": "synchronized",
+                             "spike_generation_mode": "Uniform", **declaration},
+                            {"cores": [{"max_axons": 256, "max_neurons": 256, "count": 8}]})
+    contract = SpikingDeploymentContract.from_pipeline_config(cfg)
+    stage = _fake_stage("neural", name="s0", hcm=_fake_hcm(_fake_hard_core(axons=2, neurons=3, latency=0)),
+                        input_map=[_seg_io_slice(node_id=-2, offset=0, size=2)],
+                        output_map=[_seg_io_slice(node_id=0, offset=0, size=3)])
+    _patch_sanafe_stack(monkeypatch)
+    seen = []
+
+    def recording_build(arch, hcm, **kw):
+        seen.append(kw["point"])
+        raise _BuildSeen
+
+    monkeypatch.setattr(runner_mod, "build_network_for_segment", recording_build)
+    runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=8, contract=contract)
+    with pytest.raises(_BuildSeen):
+        runner.run(np.asarray([[0.5, 1.0]], dtype=np.float32), sample_index=0)
+    assert seen == [contract.spiking_point()]

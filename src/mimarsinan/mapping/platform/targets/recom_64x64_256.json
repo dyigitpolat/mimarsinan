@@ -1,13 +1,81 @@
 {
   "name": "recom_64x64_256",
-  "display_name": "ReCom (Ji 2018): 256 crossbars of 64 x 64",
+  "display_name": "ReCom (Ji 2018), 256 crossbars of 64 x 64",
   "geometry": "recom_64x64_256",
-  "keys": {},
+  "keys": {
+    "core_semantics": "mvm",
+    "onchip_arithmetic": {
+      "classes": [
+        "L"
+      ]
+    }
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
+  },
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "ji2018recom",
+        "location": "Section II, PDF p.1",
+        "quote": "With bit-line current accumulation, a matrix-vector multiplication can be performed in such a direct and fast way.",
+        "reads": "a matrix-vector multiplication can be performed"
+      }
+    },
+    "weight_bits": {
+      "unstated": {
+        "note": "The source states no weight precision (its Table II lists the crossbar size and count only); the registered geometry's 8 bits are the description's assumption.",
+        "assumed": 8,
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The source states no weight storage format. The source states no count of cells per weight."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "The source states no ReRAM cell precision."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The source states no bias handling; the registered geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "activation_bits": {
+      "unstated": {
+        "note": "The source states no activation precision; the deployment declares the grid."
+      }
+    },
+    "readout_law": {
+      "unstated": {
+        "note": "Each PE carries ADCs (Section III, Fig. 3) of no stated resolution; the deployment declares the converter law."
+      }
+    },
+    "onchip_arithmetic": {
+      "stated": {
+        "value": {
+          "classes": [
+            "L"
+          ]
+        },
+        "source": "ji2018recom",
+        "location": "Section III, PDF p.2",
+        "quote": "components like ADC, DAC, partial sum buffer, and rectified linear unit (ReLU) module are also equipped in PEs.",
+        "reads": "rectified linear unit (ReLU) module are also equipped in PEs",
+        "note": "ReLU (L) runs in the PE; no addition or pooling unit is stated."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The crossbars hold programmed ReRAM weights; the description declares no run-time writable matrix."
+      }
+    }
   }
 }

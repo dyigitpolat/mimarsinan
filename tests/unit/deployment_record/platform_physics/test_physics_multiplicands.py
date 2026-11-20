@@ -1,5 +1,7 @@
 """The multiplicand column is a checked contract: every token resolves somewhere."""
 
+from mimarsinan.deployment_record.cost.absolute.metrics import LATENCY_HEADLINE
+from mimarsinan.deployment_record.cost.absolute.walls.loads import LOAD_FIGURES
 from mimarsinan.deployment_record.platform_physics.constants import PHYSICS_CONSTANTS
 from mimarsinan.deployment_record.quantities.spec import QUANTITY_SPECS
 
@@ -7,9 +9,12 @@ from mimarsinan.deployment_record.quantities.spec import QUANTITY_SPECS
 #: consumed inside another constant's formula) declares itself with this marker.
 _DECLARED_MARKER = "declared, not multiplied"
 
-#: Outputs of the pricer itself that static-power constants multiply — priced
-#: quantities, not recorded ones.
-_PRICED_OUTPUTS = {"e2e_latency_s"}
+#: Outputs of the pricers themselves that constants multiply: priced quantities, not recorded ones.
+#: [U-ENERGY class 1] every priced chip time a static power multiplies: the inference's latency, each
+#: load's wall (the one load law's figures) and the measured model's whole latency (its ``total_s``
+#: term); [U-HOST] the priced host time p_host multiplies.
+_PRICED_OUTPUTS = {LATENCY_HEADLINE, *(wall for _kind, wall, _energy, _leg in LOAD_FIGURES), "total_s",
+                   "latency_host_s"}
 
 
 def test_every_multiplicand_token_resolves():
@@ -55,9 +60,11 @@ def test_core_init_counts_every_pass_programming_only_reprogram_passes():
     assert PHYSICS_CONSTANTS["t_program_per_byte"].multiplicand == "reprogrammed_bytes"
 
 
-def test_host_constants_multiply_the_host_wall():
-    assert PHYSICS_CONSTANTS["p_host"].multiplicand == "host_ops_s"
-    assert PHYSICS_CONSTANTS["host_compute_rate"].multiplicand == "host_ops_s"
+def test_host_constants_multiply_the_priced_host_time_never_the_measured_wall():
+    """[U-HOST] p_host multiplies the declared host's priced time; no constant multiplies the measured wall."""
+    assert PHYSICS_CONSTANTS["p_host"].multiplicand == "latency_host_s"
+    assert PHYSICS_CONSTANTS["host_compute_rate"].multiplicand == _DECLARED_MARKER
+    assert not any("host_ops_s" in spec.multiplicand for spec in PHYSICS_CONSTANTS.values())
 
 
 def test_static_power_multiplies_the_priced_latency():

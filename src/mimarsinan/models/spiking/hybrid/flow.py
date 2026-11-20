@@ -10,6 +10,9 @@ import torch.nn as nn
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_point import HISTORICAL_WINDOW_FIRING, SpikingPoint, stated_point
+from mimarsinan.chip_simulation.window_firing import INTEGRATE_THEN_EMIT
+from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.models.spiking.serial import (
     refuse_saturating_membrane,
     require_serial_deployment_admissible,
@@ -27,6 +30,10 @@ from mimarsinan.models.spiking.hybrid.ttfs_step import HybridTtfsStepMixin
 
 # Re-exported by hybrid/__init__ for backward compatibility; keep the alias.
 _COMPUTE_DTYPE = COMPUTE_DTYPE
+
+
+class FlowPointRefusal(ToolchainRefusal, ValueError):
+    """[U-LIF2 r2] A builder's point the executor's own fields do not execute, refused by name."""
 
 
 class SpikingHybridCoreFlow(
@@ -70,6 +77,7 @@ class SpikingHybridCoreFlow(
         membrane_integer_lattice: bool = False,
         pass_transfer: str = VERBATIM,
         soma_law: SomaLaw = DEFAULT_SOMA_LAW,
+        spiking_point: SpikingPoint | None = None,
     ):
         super().__init__()
         # The resolved soma point this executor runs. Constructed from the
@@ -118,10 +126,13 @@ class SpikingHybridCoreFlow(
         self.lif_membrane_init = (
             float(lif_membrane_init) if spiking_mode == "lif" else 0.0
         )
-        # [calculus §16] count-domain reference execution (LIF-family only).
+        # [calculus §16] integrate then emit (LIF-family only): [U-LIF2 W9] executed by the gated cycle-level executor.
         self.lif_execution_synchronized = bool(
             lif_execution_synchronized and spiking_mode == "lif"
         )
+        # [U-LIF2 W9] Its closed form (the count executor) instead, asked for by name: the certification's analytic
+        # gauge only (count_alignment), never a builder, so the closed form is never the executor of record.
+        self.window_count_closed_form = False
         self._boundary_config = BoundaryConfig(
             simulation_length=self.simulation_length,
             spiking_mode=self.spiking_mode,
@@ -151,6 +162,11 @@ class SpikingHybridCoreFlow(
             ),
         )
 
+        # [U-LIF2 r2] The run's point the builder holds (the contract's): checked against what the fields execute.
+        self._run_point = spiking_point
+        if spiking_point is not None:
+            self._require_fields_execute(spiking_point)
+
         self._segment_tensor_cache: Dict[int, dict] = {}
         self._segment_tensor_cache_key: int | None = None
 
@@ -161,14 +177,43 @@ class SpikingHybridCoreFlow(
             x = self.preprocessor(x)
             x = x.view(x.shape[0], -1)
 
-            policy = policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
-            if policy.decode_mode() == "timing":
-                return self._forward_ttfs(x)
-            return self._forward_rate(x)
+            policy = policy_for_spiking_mode(self.spiking_point())
+            if policy.runs_per_cycle_cascade:  # [U-TGAUGE5] the one predicate the relays and the window rule read
+                return self._forward_rate(x)
+            return self._forward_ttfs(x)
         finally:
             self._evict_segment_cache()
             if isinstance(x, torch.Tensor) and x.is_cuda:
                 torch.cuda.empty_cache()
+
+    def spiking_point(self) -> SpikingPoint:
+        """[U-LIF2 r2] The point this executor runs: its builder's record (the contract's), else the point its own fields
+        state (a flow built directly, or stored before the point existed), whose window firing is the one its two-window
+        flag executes, never the declared default."""
+        point = getattr(self, "_run_point", None)
+        return point if point is not None else self._stated_point()
+
+    def _stated_point(self) -> SpikingPoint:
+        boundary = getattr(self, "_boundary_config", None)
+        record = {"spiking_mode": self.spiking_mode, "ttfs_cycle_schedule": self.ttfs_cycle_schedule,
+                  "spike_phase_dither": bool(getattr(boundary, "phase_dither", False)),
+                  "lif_membrane_init": float(getattr(self, "lif_membrane_init", 0.0))}
+        firing = INTEGRATE_THEN_EMIT if getattr(self, "lif_execution_synchronized", False) else HISTORICAL_WINDOW_FIRING
+        return stated_point(record, window_firing=firing, soma_law=getattr(self, "soma_law", DEFAULT_SOMA_LAW))
+
+    def _require_fields_execute(self, point: SpikingPoint) -> None:
+        """Refuse a builder's point the fields would run another function than (the mode, the two-window discipline, the
+        declared execution extensions), naming the value."""
+        fields = self._stated_point()
+        for what, run, executed in (("spiking_mode", point.spiking_mode, fields.spiking_mode),
+                                    ("lif_window_firing", point.window_firing, fields.window_firing),
+                                    ("execution extensions", point.execution_extensions, fields.execution_extensions)):
+            if what == "lif_window_firing" and point.integrates_then_emits == fields.integrates_then_emits:
+                continue
+            if run != executed:
+                raise FlowPointRefusal(f"SpikingHybridCoreFlow: the run's point declares {what}={run!r}, and the "
+                                       f"executor's own fields execute {what}={executed!r}: build it from the same "
+                                       f"contract")
 
     def forward_with_recording(
         self, x: torch.Tensor, *, sample_index: int = 0,
@@ -179,10 +224,7 @@ class SpikingHybridCoreFlow(
         ``ttfs_cycle_based``); analytical TTFS modes are rejected.
         """
         assert x.shape[0] == 1, "forward_with_recording requires batch_size == 1"
-        assert (
-            self.spiking_mode == "lif"
-            or is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
-        ), (
+        assert policy_for_spiking_mode(self.spiking_point()).runs_per_cycle_cascade, (
             f"forward_with_recording requires spiking_mode='lif' or cascaded "
             f"ttfs_cycle_based; got {self.spiking_mode!r}"
         )

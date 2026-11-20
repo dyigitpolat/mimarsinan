@@ -15,6 +15,7 @@ from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.build.write_census import stage_latency
 from mimarsinan.deployment_record.quantities.spec import QuantityValue
+from mimarsinan.deployment_record.quantities.planes.states import VALUE_DOMAIN_ZEROS
 from mimarsinan.mapping.noc.value_traffic import stage_value_noc_wire_hops
 from mimarsinan.mapping.support.period_census import natural
 from mimarsinan.mapping.support.schedule.pass_cut import raster_bytes
@@ -215,7 +216,9 @@ def apply_value_rule(values: Dict[str, QuantityValue], facts: ValueDomainFacts) 
     quantities the rule withholds (``Quantities(withheld=)``)."""
     for key in RASTER_ONLY + ("carry_out_bytes", "carry_in_bytes", "latency_steps", ONCHIP_CARRY):
         values.pop(key, None)
-    values["timesteps"] = QuantityValue(1.0, "static")
+    values["timesteps"] = values["neuron_cycles_per_window"] = QuantityValue(1.0, "static")
+    for key in VALUE_DOMAIN_ZEROS:  # [U-ENERGY class 2] values, never spikes: the spike census is a known zero
+        values.setdefault(key, QuantityValue(0.0, "static"))
     for key, value in (("synaptic_events", facts.mac_events), ("latency_steps", facts.latency_steps),
                        ("carry_out_bytes", facts.carry_out_bytes), ("carry_in_bytes", facts.carry_in_bytes),
                        ("noc_value_bytes", facts.noc_value_bytes), (ONCHIP_CARRY, facts.onchip_bytes)):

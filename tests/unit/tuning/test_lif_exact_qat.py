@@ -45,6 +45,7 @@ from mimarsinan.tuning.orchestration.lif_exact_qat import (
     model_trained_lif_exact,
 )
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
+from spiking_points import point_of_mode
 
 
 def _lif_cfg(*, exact=True, steps=8, thresholding="<"):
@@ -98,14 +99,14 @@ class TestRegistryAndRecipe:
         # Tier-0 A/B verdict 2026-07-13: 10/10 runnable cells hold or gain
         # (mixers +0.6..+5.2 pp; four cells strictly >= pretrain; no strict
         # cell regressed) — the recipe arms the exact-QAT composition.
-        assert ConversionPolicy.derive("lif").knobs.get("lif_exact_qat") is True
+        assert ConversionPolicy.derive(point_of_mode("lif")).knobs.get("lif_exact_qat") is True
 
     def test_non_lif_recipes_do_not_carry_it(self):
         for mode, schedule in [
             ("ttfs", None), ("ttfs_quantized", None),
             ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized"),
         ]:
-            assert "lif_exact_qat" not in ConversionPolicy.derive(mode, schedule).knobs
+            assert "lif_exact_qat" not in ConversionPolicy.derive(point_of_mode(mode, schedule)).knobs
 
 
 class TestPairingDerivation:
@@ -128,8 +129,8 @@ class TestPairingDerivation:
             derive_deployment_parameters(dp)
 
     def test_novena_fails_loud(self):
-        dp = {"spiking_mode": "lif", "weight_quantization": True,
-              "firing_mode": "Novena", "lif_exact_qat": True}
+        dp = {"spiking_mode": "lif", "weight_quantization": True,  # zero reset: fire while integrating only
+              "firing_mode": "Novena", "lif_exact_qat": True, "lif_window_firing": "fire_while_integrating"}
         with pytest.raises(ValueError, match="Novena|Default"):
             derive_deployment_parameters(dp)
 
@@ -142,8 +143,8 @@ class TestPairingDerivation:
     def test_recipe_default_yields_on_novena(self):
         # P-L5 is a CAPABILITY conflict for the recipe default (same contract
         # as the sim-enable fold): the Novena cell stays on the shipped path.
-        dp = {"spiking_mode": "lif", "weight_quantization": True,
-              "firing_mode": "Novena"}
+        dp = {"spiking_mode": "lif", "weight_quantization": True,  # zero reset: fire while integrating only
+              "firing_mode": "Novena", "lif_window_firing": "fire_while_integrating"}
         derive_deployment_parameters(dp)
         assert dp["lif_exact_qat"] is False
         assert dp["lif_per_hop_retiming"] is False
@@ -397,16 +398,16 @@ class TestTrainedMarker:
 
 
 class TestEntryInputQuantizers:
-    def test_installs_on_encoders_only_idempotently(self):
+    def test_subsume_installs_no_input_grid_on_the_encoder_idempotently(self):
+        # [U-LIF D1] the subsumed encoder runs on the host: it takes no input grid. Its consumers read its staircase,
+        # already on their grid, so a graph without host ops between perceptrons carries no entry encode at all.
         model = make_tiny_supermodel()
         cfg = _lif_cfg(steps=8)
-        assert install_lif_entry_input_quantizers(model, cfg) == 1
+        assert install_lif_entry_input_quantizers(model, cfg) == 0
         assert install_lif_entry_input_quantizers(model, cfg) == 0
         perceptrons = list(model.get_perceptrons())
         assert perceptrons[0].is_encoding_layer
-        assert isinstance(perceptrons[0].input_activation, ChipInputQuantizer)
-        assert perceptrons[0].input_activation.T == 8
-        for p in perceptrons[1:]:
+        for p in perceptrons:
             assert isinstance(p.input_activation, nn.Identity)
 
     def test_knob_off_installs_nothing(self):
@@ -500,14 +501,12 @@ class TestEntryInputQuantizersOffload:
 
     def test_subsume_placement_is_unchanged_by_the_offload_branch(self):
         # The subsume pin: explicit placement="subsume" behaves exactly like the
-        # default-placement test above (encoders themselves, consumers untouched).
+        # default-placement test above (no encoder grid, consumers untouched).
         model = make_tiny_supermodel()
         cfg = _lif_cfg(steps=8)
         cfg["encoding_layer_placement"] = "subsume"
-        assert install_lif_entry_input_quantizers(model, cfg) == 1
-        perceptrons = list(model.get_perceptrons())
-        assert isinstance(perceptrons[0].input_activation, ChipInputQuantizer)
-        for p in perceptrons[1:]:
+        assert install_lif_entry_input_quantizers(model, cfg) == 0
+        for p in model.get_perceptrons():
             assert isinstance(p.input_activation, nn.Identity)
 
 
@@ -603,8 +602,8 @@ class TestAQTunerArm:
             assert not getattr(encoder, LIF_HALF_STEP_FLAG, False)
             assert getattr(hidden, LIF_HALF_STEP_FLAG, False)
             assert getattr(head, LIF_HALF_STEP_FLAG, False)
-            # Entry snap on the encoder (the deployed entry round, §4.3).
-            assert isinstance(encoder.input_activation, ChipInputQuantizer)
+            # [U-LIF D1] no input grid on the host-side encoder; no host-fed entry in this graph.
+            assert isinstance(encoder.input_activation, nn.Identity)
             # Theta in-loop: encoder frozen; matching-axis hop per-channel;
             # externally-consumed head scalar-trainable (§6.2 seam constraints).
             assert not encoder.activation_scale.requires_grad

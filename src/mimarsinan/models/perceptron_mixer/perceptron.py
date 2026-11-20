@@ -1,4 +1,4 @@
-from mimarsinan.models.nn.layers import MaxValueScaler, LeakyGradReLU, norm_affine_params
+from mimarsinan.models.nn.layers import MaxValueScaler, LeakyGradReLU, declare_channel_axis, norm_affine_params
 
 import torch.nn as nn
 import torch
@@ -110,6 +110,12 @@ def reads_value_domain(perceptron) -> bool:
     return bool(getattr(perceptron, VALUE_DOMAIN_INPUT_ATTR, False))
 
 
+def placed_on_cores(perceptron) -> bool:
+    """[U-POST G3] Whether the placement maps the perceptron to cores: a host-placed one (``is_encoding_layer``: a
+    subsumed encoder, a negative-boundary subsume-forward) runs as a host op in float, as the perceptron mapper maps it."""
+    return not bool(getattr(perceptron, "is_encoding_layer", False))
+
+
 def as_affine_package(perceptron: "Perceptron") -> "Perceptron":
     """Value-domain (mvm) affine package: a true Identity activation by
     construction — never the spiking flow's ReLU-ification of unnamed acts."""
@@ -166,12 +172,18 @@ class Perceptron(nn.Module):
         self.output_channel_axis = -1
 
         self.is_encoding_layer = False
+        # [U-POST2] The kind of membrane lattice the weight projection put this perceptron on (``membrane_lattice``:
+        # a core, an encoder on the entry grid), else None. The lattice is derived from it and the persisted scale at
+        # every arming; an unprojected perceptron (the default scale 1.0 included) records none and arms nothing.
+        self.membrane_lattice_kind = None
 
     def __setstate__(self, state):
         super().__setstate__(state)
         # Caches saved before the layout declaration carry the nn.Linear
         # channels-last layout; conv mappers re-stamp channels-first on load.
         self.__dict__.setdefault("output_channel_axis", -1)
+        # Caches saved before the lattice record carry none: no projection recorded it (re-run Weight Quantization).
+        self.__dict__.setdefault("membrane_lattice_kind", None)
         # Caches saved before the buffer registration carry per_input_scales
         # as a plain attr that .to()/offload cannot move; migrate it.
         if "per_input_scales" not in self._buffers:
@@ -184,6 +196,18 @@ class Perceptron(nn.Module):
             source = self._parameters.get("parameter_scale")
             data = source.data.clone() if source is not None else torch.tensor(1.0)
             self._parameters["bias_scale"] = nn.Parameter(data, requires_grad=False)
+        # [U-PFOLD r2, m-7] A cache written before the channel-axis declaration loads its spiking activations at the
+        # last axis: the load declares its own axis on them, in whichever order its owner restores it.
+        declare_channel_axis(self.__dict__, ("activation", "base_activation"))
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # [U-PCH] The grids' shapes follow their projection (one scale per perceptron or one per output neuron): a
+        # state of the other granularity is adopted at its own shape, never refused on it.
+        for name in ("parameter_scale", "bias_scale"):
+            incoming, own = state_dict.get(prefix + name), self._parameters.get(name)
+            if incoming is not None and own is not None and tuple(incoming.shape) != tuple(own.shape):
+                write_scale(own, incoming)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def set_parameter_scale(self, new_scale):
         """Declare the (shared) quantization grid; ``bias_scale`` follows so
@@ -223,13 +247,22 @@ class Perceptron(nn.Module):
     def set_scaler(self, scaler):
         self.scaler = scaler
 
+    def __setattr__(self, name, value):  # [U-PFOLD, S-12] its spiking activations divide along its channel axis
+        super().__setattr__(name, value)
+        if name in ("activation", "base_activation", "output_channel_axis"):
+            declare_channel_axis(self.__dict__, ("activation", "base_activation"))
+
     def forward(self, x):
         if not isinstance(self.input_activation, nn.Identity):
             x = self.input_activation(x)
 
-        out = self.layer(x)
-        if not isinstance(self.normalization, nn.Identity):
-            out = self.normalization(out)
+        if self._buffers.get("position_weight") is not None or self._buffers.get("position_bias") is not None:
+            from mimarsinan.transformations.perceptron.position_forward import positional_preactivation
+            out = positional_preactivation(self, x)  # [U-PFOLD] each position at its own row and bias
+        else:
+            out = self.layer(x)
+            if not isinstance(self.normalization, nn.Identity):
+                out = self.normalization(out)
         if not isinstance(self.scaler, nn.Identity):
             out = self.scaler(out)
 

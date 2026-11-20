@@ -13,10 +13,10 @@ from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.deployment_record.platform_physics.resolve import (
     resolve_platform_physics,
 )
+from mimarsinan.mapping.platform.packaging_contract import deployed_conversion_of
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
     declared_int_pair,
-    deployed_conversion_of,
     firing_semantics_kwargs,
     make_platform_resolver,
     resolve_evaluation_budget,

@@ -27,7 +27,8 @@ def _select(program: PassProgram, keep: Sequence[int]) -> PassProgram:
 
     return replace(program, core_cells=pick(program.core_cells), core_sign_rows=pick(program.core_sign_rows),
                    core_tile_cells=pick(program.core_tile_cells), core_tile_sign_rows=pick(program.core_tile_sign_rows),
-                   core_geometry=None if program.core_geometry is None else pick(program.core_geometry))
+                   core_geometry=None if program.core_geometry is None else pick(program.core_geometry),
+                   core_used=pick(program.core_used))  # [U-ENERGY] every per-core field follows its core
 
 
 def wavefront_passes(plan: Any, softcores: Sequence[Any], global_index: Dict[int, int], core_types,

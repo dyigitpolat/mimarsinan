@@ -841,7 +841,7 @@
       },
       "tags": [],
       "expected_wall_min": 7,
-      "note": "ODIN bundle (4-bit weights, 256 x 256 cores with one sign per axon row, so dense layers use the rows in sign pairs; no bias lane, no coalescing or neuron splitting), the minimal pair of t0_45; the core count and coalescing are declared overrides, so the faithfulness names both ('...; allow_coalescing declared; cores declared')"
+      "note": "ODIN bundle (4-bit weights, 256 x 256 cores with one sign per axon row, so dense layers use the rows in sign pairs; no bias lane, no coalescing or neuron splitting), the minimal pair of t0_45; the core count and coalescing are declared overrides, so the faithfulness names both ('...; allow_coalescing declared; cores declared'); [U-CHIPKEYS] the cell's soma law (per-cycle compare, unbounded membrane, subtractive reset, strict compare) departs from the one ODIN states, each key named ('...; firing_granularity declared; firing_mode declared; membrane_bits declared; thresholding_mode declared')"
     },
     {
       "name": "t0_62_lifs_simplemlp_fp_s8_truenorth",
@@ -862,7 +862,7 @@
       },
       "tags": [],
       "expected_wall_min": 7,
-      "note": "TrueNorth bundle (4096 cores of 256 x 256 on a 64 x 64 mesh, no coalescing or neuron splitting): a float (vanilla) cell, because both doors refuse weight quantization on a 1-bit signed grid (no nonzero level); no weight grid quantizes a float run's weights, while its payload sizes, pricing and record read the bundle's weight_bits=1, and the faithfulness names it ('...; allow_coalescing declared; weight grid not applied')"
+      "note": "TrueNorth bundle (4096 cores of 256 x 256 on a 64 x 64 mesh, no coalescing or neuron splitting): a float (vanilla) cell, because both doors refuse weight quantization on a 1-bit signed grid (no nonzero level); no weight grid quantizes a float run's weights, while its payload sizes, pricing and record read the bundle's weight_bits=1, and the faithfulness names it ('...; allow_coalescing declared; thresholding_mode declared; weight grid not applied'; [U-CHIPKEYS] the strict compare departs from TrueNorth's stated one)"
     },
     {
       "name": "t0_63_lifsync_simplemlp_wq_s4_loihi",
@@ -883,7 +883,7 @@
       },
       "tags": [],
       "expected_wall_min": 7,
-      "note": "Loihi bundle (dense equivalent 128 x 1024, 8-bit weights, no coalescing, neuron splitting), the minimal pair of t0_05; coalescing is a declared override, so the faithfulness names it ('...; allow_coalescing declared')"
+      "note": "Loihi bundle (dense equivalent 128 x 1024, 8-bit weights, no coalescing, neuron splitting), the minimal pair of t0_05; coalescing is a declared override, so the faithfulness names it ('...; allow_coalescing declared; firing_mode declared'; [U-CHIPKEYS] the subtractive reset departs from Loihi's stated one)"
     },
     {
       "name": "t0_64_mvm_lenet5_wq_pruned_isaac_like",

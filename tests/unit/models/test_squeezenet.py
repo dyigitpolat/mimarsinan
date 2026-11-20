@@ -127,8 +127,11 @@ def test_measured_validity_tier_is_valid():
         TIER_INVALID,
     )
 
+    from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
+
     verdict = classify_validity(
-        _build(), _MNIST_SHAPE, _NUM_CLASSES, encoding_placement="offload"
+        _build(), _MNIST_SHAPE, _NUM_CLASSES, encoding_placement="offload",
+        conversion=DeployedConversion(),  # the spiking contract this verdict reads, stated
     )
     print(
         f"\n[SqueezeNet MEASURED] tier={verdict.tier} "

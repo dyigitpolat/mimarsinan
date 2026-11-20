@@ -29,6 +29,7 @@ from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensu
 
 from unit.deployment_record.g3_fixtures import constant
 from unit.deployment_record.introspection.test_ladder_tile_writes import TILES, _physics, _row
+from unit.deployment_record.load_census_fixtures import steady, written_program
 from unit.deployment_record.introspection.test_scaling_ladder import CONSTANTS, READING, _facts, _network, _platform
 
 #: The stock ODIN core image (8,192 x 32-bit synapse words + 256 x 128-bit neuron words), its SPI frame floor
@@ -47,8 +48,8 @@ def _q(**values: float) -> Quantities:
     return Quantities({k: QuantityValue(float(v), "static") for k, v in values.items()})
 
 
-def _terms(physics, quantities):
-    pricing = price_absolute(quantities, physics)
+def _terms(physics, quantities, loads=None):
+    pricing = price_absolute(quantities, physics, loads=loads)
     return {t.name: t for t in pricing.terms}, {r.name: r.reason for r in pricing.refusals}
 
 
@@ -113,54 +114,59 @@ class TestTheOdinDeclaration:
 
 
 class TestThePerLoadTerm:
+    """[U-ENERGY] Every program load is the one load law over its census: the reprogramming per round's wall is the
+    write law's per-pass walls at K = 1, serial (``t_program_per_byte`` x the pass's payload plus ``t_core_program``
+    x its written cores). The census counts the written cores itself, so a per-core wall never meets a withheld core
+    count: a view that states no pass structure hands the law no census, and each load figure is refused by that
+    name, never priced in part."""
+
+    BOTH = profile_from_dict({
+        "format_version": 1, "name": "both", "display_name": "both", "description_file": "b.md",
+        "validity": {"measurement_kind": "projection"},
+        "constants": {"t_program_per_byte": constant(2.0, unit="ns"), "t_core_program": constant(3.0, unit="us")}})
+    REASON = "the cores holding a static program are not determined"
+
+    def _withheld(self):
+        return Quantities({"reprogrammed_bytes": QuantityValue(1000.0, "measured")},
+                          withheld={"reprogrammed_cores": self.REASON})
+
     def test_an_odin_load_is_priced_whole_whatever_the_occupancy(self):
-        sparse = _terms(_odin(), _q(reprogrammed_bytes=100, reprogrammed_cores=3))[0]["latency_programming_s"]
-        dense = _terms(_odin(), _q(reprogrammed_bytes=3 * 32_768, reprogrammed_cores=3))[0]["latency_programming_s"]
-        assert sparse.value == dense.value == pytest.approx(3 * ODIN_WALL_S, rel=1e-9)
-        assert "t_core_program" in sparse.source and "reprogrammed_cores" in sparse.source
+        sparse = _terms(_odin(), _q(), loads=written_program((10, 10), (10,), weight_bits=4))[0]
+        dense = _terms(_odin(), _q(), loads=written_program((65536, 65536), (65536,), weight_bits=4))[0]
+        assert sparse["latency_programming_s"].value == dense["latency_programming_s"].value == pytest.approx(
+            3 * ODIN_WALL_S, rel=1e-9)
+        assert sparse["latency_load_s"].value == pytest.approx(3 * ODIN_WALL_S, rel=1e-9)
 
     def test_a_chip_declaring_both_walls_pays_both(self):
-        physics = profile_from_dict({
-            "format_version": 1, "name": "both", "display_name": "both", "description_file": "b.md",
-            "validity": {"measurement_kind": "projection"},
-            "constants": {"t_program_per_byte": constant(2.0, unit="ns"), "t_core_program": constant(3.0, unit="us")}})
-        term = _terms(physics, _q(reprogrammed_bytes=1000, reprogrammed_cores=4))[0]["latency_programming_s"]
+        term = _terms(self.BOTH, _q(), loads=written_program((250, 250), (250, 250)))[0]["latency_programming_s"]
         assert term.value == pytest.approx(1000 * 2e-9 + 4 * 3e-6, rel=1e-12)
-        assert "t_program_per_byte" in term.source and "t_core_program" in term.source
 
     def test_a_withheld_core_count_is_named_and_never_drops_the_priced_bytes(self):
-        """A record whose reprogrammed cores are withheld by name (U-C C-6's unmarked operand chip): the per-byte part
-        still prices and the per-core part is named unpriced with the reason, as the per-load energy term does."""
-        physics = profile_from_dict({
-            "format_version": 1, "name": "both", "display_name": "both", "description_file": "b.md",
-            "validity": {"measurement_kind": "projection"},
-            "constants": {"t_program_per_byte": constant(2.0, unit="ns"), "t_core_program": constant(3.0, unit="us")}})
-        reason = "the cores holding a static program are not determined"
-        quantities = Quantities({"reprogrammed_bytes": QuantityValue(1000.0, "measured")},
-                                withheld={"reprogrammed_cores": reason})
-        term = _terms(physics, quantities)[0]["latency_programming_s"]
-        assert term.value == pytest.approx(1000 * 2e-9, rel=1e-12)
-        assert term.source.endswith(f"; unpriced: t_core_program(core_program; {reason})")
+        """A view whose reprogrammed cores are withheld by name (U-C C-6's unmarked operand chip) and that states no
+        pass structure: no part of the load is priced, each load figure refused by the law's named reason. On the
+        program's census both parts price."""
+        terms, refusals = _terms(self.BOTH, self._withheld())
+        steady(refusals)  # each load figure refused by the law's named reason
+        assert "latency_programming_s" not in terms
+        terms, _ = _terms(self.BOTH, self._withheld(), loads=written_program((250, 250), (250, 250)))
+        assert terms["latency_programming_s"].value == pytest.approx(1000 * 2e-9 + 4 * 3e-6, rel=1e-12)
 
     def test_a_withheld_core_count_refuses_the_per_core_wall_by_name_where_it_is_the_only_part(self):
-        """[targeted M1] ODIN declares t_core_program and no per-byte wall: with its reprogrammed cores withheld by name
-        (a sealed core of no declared type, an unmarked operand chip) nothing of the per-load wall can be priced, so the
-        term is refused by name with the withheld reason, as its energy twin is, never dropped without a word."""
-        reason = "the cores holding a static program are not determined"
-        quantities = Quantities({"reprogrammed_bytes": QuantityValue(1000.0, "measured")},
-                                withheld={"reprogrammed_cores": reason})
-        terms, refusals = _terms(_odin(), quantities)
-        assert "latency_programming_s" not in terms
-        assert refusals["latency_programming_s"] == (
-            f"t_core_program is declared but its multiplicand reprogrammed_cores is withheld: {reason}")
-        assert "energy_programming_mj" in terms  # the per-byte commit energy prices; e_core_program is named unpriced
-        assert f"e_core_program(core_program; {reason})" in terms["energy_programming_mj"].source
+        """[targeted M1] ODIN declares t_core_program and no per-byte wall: a view with its reprogrammed cores withheld
+        by name and no pass structure refuses the wall and its energy twin by the law's named reason, never dropped
+        without a word; on the program's census the per-core wall prices whole."""
+        terms, refusals = _terms(_odin(), self._withheld())
+        steady(refusals)  # each load figure refused by the law's named reason
+        assert not {"latency_programming_s", "energy_programming_mj"} & set(terms)
+        terms, _ = _terms(_odin(), self._withheld(), loads=written_program((250, 250), (250,), weight_bits=4))
+        assert terms["latency_programming_s"].value == pytest.approx(3 * ODIN_WALL_S, rel=1e-9)
+        assert "e_core_program" in terms["energy_programming_mj"].source
 
     def test_a_per_byte_chip_keeps_its_term_as_it_was(self):
         loihi = get_platform_physics("loihi")
-        term = _terms(loihi, _q(reprogrammed_bytes=1000, reprogrammed_cores=4))[0]["latency_programming_s"]
+        term = _terms(loihi, _q(), loads=written_program((250, 250), (250, 250)))[0]["latency_programming_s"]
         assert term.value == pytest.approx(loihi.band("t_program_per_byte").nominal * 1000, rel=1e-12)
-        assert term.source.startswith("t_program_per_byte [") and "t_core_program" not in term.source
+        assert "t_core_program" not in term.source
 
 
 def _pass(position, *, cores, cells, operand_only=0, steps=10):

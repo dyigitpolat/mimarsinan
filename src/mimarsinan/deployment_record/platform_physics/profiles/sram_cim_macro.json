@@ -97,5 +97,39 @@
       ],
       "note": "the macro holds 128 kB of weights and no store for the rest of a program: the backing store sets the tile write cost (constants.md sec. 5: an 8 KiB tile write costs 0.62-7.7 nJ in the array and 1.33 uJ over DDR3/4 I/O), so an SRAM-CIM point is defined only with its store's transfer energy and time declared, by a named backing_store block"
     }
-  ]
+  ],
+  "area_rule": {
+    "type": "T2_digital",
+    "terms": "type_rule",
+    "outside": "type",
+    "node": {
+      "node_nm": 16
+    },
+    "anchor": {
+      "scope": "macro",
+      "core_mm2": "v('T2-JI-02')",
+      "n_pub": "s('T2-JI-02', 'scope', 'whole 128 kB macro', 1)",
+      "own_share": {
+        "basis": "published_split",
+        "expression": "r('types/t2_digital:s')"
+      }
+    },
+    "organization": {
+      "rows": 128,
+      "cols": 1024,
+      "weight_bits_per_cell": 8,
+      "terms": "bits",
+      "term_weights": {
+        "bits": 1.0
+      },
+      "stored_bits_per_cell": 8,
+      "bits_per_neuron": 0,
+      "citation": {
+        "rows, cols": "CO profiles/sram_cim_macro.json validity.geometry (128 x 1024)",
+        "stored_bits_per_cell": "T2-JI-01 quote (128KB over 128 x 1024 cells)",
+        "weight_bits_per_cell": "CO profiles/sram_cim_macro.json validity.geometry.cell_bits"
+      }
+    },
+    "cell_kind": "cim_logic_rule_6t_digital"
+  }
 }

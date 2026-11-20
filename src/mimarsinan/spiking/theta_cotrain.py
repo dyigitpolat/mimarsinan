@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.mapping.map_model_to_ir import LayoutGaugePlacement
 from mimarsinan.mapping.mappers.scale_propagation import arm_compute_op_wrap_slots
 from mimarsinan.spiking.per_channel_theta import eligible_per_channel_perceptrons
 
@@ -89,7 +90,7 @@ def promote_theta_for_exact_qat(model, *, per_channel: bool = True) -> dict:
     if per_channel_names:
         # The deployed ScaleNormalizingWrapper and the NF twin must agree on the
         # per-channel host decode from the install seam on (per_channel_theta).
-        arm_compute_op_wrap_slots(model.get_mapper_repr())
+        arm_compute_op_wrap_slots(model.get_mapper_repr(), LayoutGaugePlacement(model.get_mapper_repr()))
     return {"per_channel": per_channel_names, "scalar": scalar, "params": params}
 
 

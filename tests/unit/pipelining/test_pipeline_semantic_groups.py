@@ -6,6 +6,7 @@ and that specific well-known steps map to expected group ids.
 """
 
 import pytest
+from spiking_points import declaring_fire_while_integrating
 
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     get_pipeline_step_specs,
@@ -16,7 +17,7 @@ from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
 # ── Helper ───────────────────────────────────────────────────────────────────
 
 def _base_config(**overrides) -> dict:
-    return {
+    return declaring_fire_while_integrating({
         "model_config_mode": "user",
         "hw_config_mode": "fixed",
         "spiking_mode": "lif",
@@ -26,7 +27,7 @@ def _base_config(**overrides) -> dict:
         "pruning_fraction": 0.0,
         "model_type": "mlp_mixer",
         **overrides,
-    }
+    })
 
 
 # ── Coverage: every step class must be in the group map ──────────────────────

@@ -102,8 +102,8 @@ LANE_OPS_PER_LANE = DerivedFactor("lane_ops / (lanes_per_tile x tiles)", over=("
 ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[Factor, ...], str], ...] = (
     ("e_adc_conversion", ("adc_conversions",), "adc"),
     ("e_row_drive", ("boundary_events",), "row_drive"),
-    ("e_neuron_update", ("neurons_used", "timesteps"), "neuron_update"),
-    ("e_leak_per_neuron_step", ("neurons_used", "timesteps"), "leak"),
+    ("e_neuron_update", ("neurons_used", "neuron_cycles_per_window"), "neuron_update"),  # [U-LIF2 W12]
+    ("e_leak_per_neuron_step", ("neurons_used", "neuron_cycles_per_window"), "leak"),
     ("e_intra_tile_packet", ("noc_intra_tile_packets",), "intra_tile"),
     ("e_inter_tile_hop", ("noc_total_hops",), "inter_tile"),
     ("e_sync_barrier", ("sync_count",), "sync"),
@@ -123,6 +123,10 @@ ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[Factor, ...], str], ...] = (
     ("e_noc_value_per_byte_hop", ("noc_value_bytes",), "noc_value"),
     # Element operations on arithmetic lanes (present only when a capability census supplies them).
     ("e_lane_op", ("lane_ops",), "lane"),
+    # [U-ENERGY class 3] Core-local memories, read and write apart: the inputs a core reads into its array and the
+    # outputs it writes out.
+    ("e_local_mem_read_per_byte", ("local_mem_read_bytes",), "local_memory_read"),
+    ("e_local_mem_write_per_byte", ("local_mem_write_bytes",), "local_memory_write"),
 )
 
 #: [U-F4] The declared on-chip carry buffer's capacity quantity and the constants priced on it: its static power
@@ -232,33 +236,6 @@ def factor_withheld(quantities: Quantities, factor: Factor) -> Optional[str]:
     if isinstance(factor, DerivedFactor):
         return factor.withheld(quantities)
     return quantities.withheld_reason(factor)
-
-
-def programming_payload_bytes(
-    quantities: Quantities, physics: PlatformPhysics
-) -> Optional[Tuple[float, str]]:
-    """Reprogrammed payload bytes: weights + connectivity at the declared wire width.
-
-    Returns ``(bytes, basis note)`` or None when the byte census is absent. The
-    connectivity contribution needs the target's declared entry width; without it the
-    weight bytes still price, and the note says what was left out.
-    """
-    if not quantities.has("reprogrammed_bytes"):
-        return None
-    total = quantities.get("reprogrammed_bytes").value
-    note = "weight payload bytes"
-    if quantities.has("connectivity_entries"):
-        entries = quantities.get("connectivity_entries").value
-        if physics.has("bytes_per_connectivity_entry"):
-            width = physics.band("bytes_per_connectivity_entry")
-            total += entries * width.nominal
-            note = "weight payload + connectivity entries at the declared wire width"
-        elif entries > 0:
-            note = (
-                "weight payload bytes; connectivity entries present but "
-                "bytes_per_connectivity_entry is undeclared, so they are unpriced"
-            )
-    return total, note
 
 
 def per_core_type_compute(split: Any, chip: PlatformPhysics, compute_constant: Optional[str], synaptic_events: float,

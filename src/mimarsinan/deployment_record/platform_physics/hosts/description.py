@@ -10,8 +10,11 @@ that ran the toolchain). A mode that lacks a row the host terms read refuses by 
 a preprint, another module's measurement) is named in the description's ``departures``, and its block row's note
 states the departure.
 Every row of a block names its host (``HOST_IDENTITY_FIELD``: the description and mode), so the resolver keeps one
-host per deployment (``require_one_host``): an identified host replaces the profile's host rows whole, and a host
-row that names no host (a measured server row) beside it refuses by name.
+host per deployment (``require_one_host``): an identified host replaces the profile's host rows whole. [U-HOST2] A
+row naming a host is admitted only as its description's own row or a declared derivation of its rows
+(``hosts.admission``, the one admission rule at the loader, judged on the value); a row naming no host, or another
+value under a host's name, refuses by name. A description is read from this directory or registered
+(``hosts.registry``).
 [U-J2] The description states, per energy row (a power, an energy per byte), whether the row's energy is attributable
 (the deployment's work) or system-level (the host's own draw, as its idle power): ``energy_attribution``. Every
 energy row of its block carries that statement (``ENERGY_PLANE_FIELD``), so the pricer's main energy sums the
@@ -30,8 +33,11 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.common.refusal.format_version import is_version
 from mimarsinan.deployment_record.platform_physics.constants import constant_from_declaration, spec_for
+from mimarsinan.deployment_record.platform_physics.hosts.derivation import DERIVATION_FIELD
 from mimarsinan.deployment_record.platform_physics.hosts.link_ends import LINK_ENDS_FIELD, judged_link_ends
+from mimarsinan.deployment_record.platform_physics.hosts.registry import description_paths, name_refusal, read_description
 from mimarsinan.deployment_record.platform_physics.hosts.rows import HOST
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.units import ENERGY, POWER
@@ -45,8 +51,9 @@ REQUIRED_HOST_ROWS: Tuple[str, ...] = ("p_host", "p_host_idle", "host_macs_per_s
                                        "t_link_per_byte", "t_link_transfer")
 #: The mode rule that takes the description's documented default mode.
 DEFAULT_RULE = "default"
-_DIR = Path(__file__).resolve().parent
-_CLASSES = ("published", "datasheet", "derived", "estimated")
+#: [U-HOST] The evidence classes a host row is admitted with (``hosts.admission``): a description of a machine the
+#: toolchain does not run on, never measured.
+ADMITTED_CLASSES = ("published", "datasheet", "derived", "estimated")
 #: [U-J2] The field of a host energy row stating whose energy it is: the deployment's work, or the host's own draw.
 ENERGY_PLANE_FIELD = "energy_plane"
 ATTRIBUTABLE, SYSTEM = "attributable", "system"
@@ -66,8 +73,14 @@ class HostModeIncompleteError(ToolchainRefusal, ValueError):
     """A mode that lacks a row the host terms read."""
 
 
-class HostBlockMixError(ToolchainRefusal, ValueError):
-    """Host rows of two hosts in one deployment (an edge host's beside a measured server row, or two descriptions)."""
+class HostRowAdmissionError(ToolchainRefusal, ValueError):
+    """[U-HOST] A host row that no identified host description declares (no host named, a host no description
+    ships, a measured row, or rows of two hosts in one physics), refused by name (``hosts.admission``)."""
+
+
+#: Host rows of two hosts in one deployment (an edge host's beside a measured server row, or two descriptions): the
+#: one admission rule's refusal since [U-HOST].
+HostBlockMixError = HostRowAdmissionError
 
 
 @dataclass(frozen=True)
@@ -90,30 +103,38 @@ class HostDescription:
 
 
 def host_descriptions() -> Tuple[str, ...]:
-    """The shipped host descriptions, by name."""
-    return tuple(sorted(path.stem for path in _DIR.glob("*.json")))
+    """The read host descriptions, by name: the shipped ones and [U-HOST2] any registered (``hosts.registry``)."""
+    return tuple(sorted(description_paths()))
 
 
 def _judged(name: str, where: str, rows: Mapping[str, Mapping[str, Any]]) -> None:
     for key, row in rows.items():
         if spec_for(key).group != HOST:
             raise HostDescriptionError(f"host description {name!r} ({where}): {key!r} is not a host row")
-        if row.get("evidence_kind") not in _CLASSES:
+        if row.get("evidence_kind") not in ADMITTED_CLASSES:
             raise HostDescriptionError(f"host description {name!r} ({where}): {key!r} has class "
-                                       f"{row.get('evidence_kind')!r}, not one of {list(_CLASSES)}")
+                                       f"{row.get('evidence_kind')!r}, not one of {list(ADMITTED_CLASSES)}")
         constant_from_declaration(key, row)
 
 
 def host_description(name: str) -> HostDescription:
-    """The shipped description ``name``, every row judged; an unknown name refuses, listing the shipped ones."""
-    path = _DIR / f"{name}.json"
-    if not path.is_file():
-        raise HostDescriptionError(f"no host description {name!r}; shipped: {list(host_descriptions())}")
-    data = json.loads(path.read_text())
-    if data.get("format_version") != FORMAT_VERSION or data.get("name") != name:
-        raise HostDescriptionError(f"{path.name}: format_version {data.get('format_version')!r} (expected "
+    """The read description ``name`` (``hosts.registry.read_description``), every row judged; unknown, it refuses."""
+    found = read_description(name)
+    if found is None:
+        raise HostDescriptionError(f"no host description {name!r}; read: {list(host_descriptions())}")
+    return judged_description(name, found[1], found[0].name, found[0].parent)
+
+
+def judged_description(name: str, raw: bytes, where: str, beside: Optional[Path]) -> HostDescription:
+    """One description's JSON bytes judged whole (its prose file checked ``beside`` it where it is read as a pair;
+    [U-HOST3] a held description, read by its digest, is its JSON alone)."""
+    data = json.loads(raw)
+    if why := name_refusal(name):
+        raise HostDescriptionError(f"{where}: {why}")
+    if not is_version(data.get("format_version"), FORMAT_VERSION) or data.get("name") != name:
+        raise HostDescriptionError(f"{where}: format_version {data.get('format_version')!r} (expected "
                                    f"{FORMAT_VERSION}) or name {data.get('name')!r} does not match its file")
-    if not (_DIR / str(data.get("description_file", ""))).is_file():
+    if beside is not None and not (beside / str(data.get("description_file", ""))).is_file():
         raise HostDescriptionError(f"host description {name!r}: its description file "
                                    f"{data.get('description_file')!r} is missing beside it")
     modes = dict(data["modes"])
@@ -257,24 +278,10 @@ def describes_host(physics: Any) -> bool:
 def require_one_host(overrides: Mapping[str, Mapping[str, Any]],
                      profile_constants: Mapping[str, Any]) -> Tuple[str, ...]:
     """One host per deployment, judged on a run's overrides: the profile's host rows an identified host replaces
-    (empty without one, so a server block keeps the profile's), or a refusal by name of host rows of two hosts."""
-    host_rows = {key: row for key, row in overrides.items() if spec_for(key).group == HOST}
-    named = {key: row.get(HOST_IDENTITY_FIELD) for key, row in host_rows.items()}
-    hosts = sorted({host for host in named.values() if host})
-    if not hosts:
+    whole (empty without one). [U-HOST] Which rows are admitted (an identified description's, never measured, one
+    host) is the one admission rule's (``hosts.admission``), judged on the result."""
+    if not any(row.get(HOST_IDENTITY_FIELD) for key, row in overrides.items() if spec_for(key).group == HOST):
         return ()
-    if len(hosts) > 1:
-        raise HostBlockMixError(f"one deployment has one host: its host rows name {hosts}")
-    unnamed = sorted(key for key, host in named.items() if not host)
-    if unnamed:
-        raise HostBlockMixError(
-            f"host rows {unnamed} name no host beside the rows of host {hosts[0]!r}: one deployment has one host, "
-            "and a row measured on another machine (a server's calibration) is not this host's")
-    measured = sorted(key for key, row in host_rows.items() if row.get("evidence_kind") == "measured")
-    if measured:
-        raise HostBlockMixError(f"host rows {measured} of host {hosts[0]!r} are measured: a host description's rows "
-                                "are published, derived or estimated, never a measurement of the machine running "
-                                "the toolchain")
     return tuple(key for key in profile_constants if spec_for(key).group == HOST and key not in overrides)
 
 
@@ -283,8 +290,11 @@ def host_attach_block(name: str, mode_rule: str = DEFAULT_RULE) -> Dict[str, Dic
     payload byte moves no faster than the slower of the chip's ``t_program_per_byte`` and the link's
     ``t_link_per_byte`` (``combine: slower``, the backing store's rule); merged beside the host block."""
     link = host_description_block(name, mode_rule)["t_link_per_byte"]
-    fields = ("low", "nominal", "high", "unit", "evidence_kind", "citation", "derivation", "note", HOST_IDENTITY_FIELD)
+    fields = ("low", "nominal", "high", "unit", "citation", HOST_IDENTITY_FIELD)  # class, words and note: below
     row = {key: link[key] for key in fields if key in link}
-    row["note"] = ("the host-chip link as the programming channel's host stage (its t_link_per_byte); "
-                   + str(link.get("note", "")))
-    return {"t_program_per_byte": {**row, "combine": "slower"}}
+    row["note"] = ("the host-chip link as the programming channel's host stage (its t_link_per_byte, derived as: "
+                   + str(link.get("derivation") or "") + "); " + str(link.get("note", "")))
+    # [U-HOST2] the stage is declared as what it is, a derivation of the host's link row (``hosts.derivation``);
+    # [U-HOST3] its derivation text states that declaration, the link row's own arithmetic kept in the note
+    row.update(evidence_kind="derived", derivation="the slower stage of 1.0 x t_link_per_byte, the host's link row")
+    return {"t_program_per_byte": {**row, "combine": "slower", DERIVATION_FIELD: {"of": {"t_link_per_byte": 1.0}}}}

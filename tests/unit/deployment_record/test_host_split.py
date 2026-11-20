@@ -15,28 +15,37 @@ from mimarsinan.deployment_record.cost.absolute.host_split import (
     lowest,
 )
 from mimarsinan.deployment_record.cost.terms import CostTerm
-from mimarsinan.deployment_record.platform_physics import profile_from_dict
+from mimarsinan.deployment_record.platform_physics import apply_overrides, profile_from_dict
 from mimarsinan.deployment_record.schema.provenance import Band
 
 from unit.deployment_record.g3_fixtures import quantities
+import tempfile
+from pathlib import Path
+
+from unit.deployment_record.registered_hosts import declared_rows, registered
 
 
 def _physics(p_host=(5.0, 40.0, 280.0)):
-    """A chip priced by one per-event aggregate and a host block: the headline is compute + host."""
+    """A chip priced by one per-event aggregate and a host block: the headline is compute + host. [U-HOST] The host
+    rows are an identified host's block (a profile declares no host row of its own)."""
     low, nominal, high = p_host
-    return profile_from_dict({
+    chip = profile_from_dict({
         "format_version": 1, "name": "t", "display_name": "T", "description_file": "t.md",
         "validity": {"measurement_kind": "mixed"},
         "constants": {
             "e_synaptic_event_total": {"low": 5.0, "nominal": 10.0, "high": 20.0, "unit": "pJ",
                                        "evidence_kind": "estimated", "note": "n"},
-            "p_host": {"low": low, "nominal": nominal, "high": high, "unit": "W",
-                       "evidence_kind": "estimated", "note": "n"},
-            "host_macs_per_s": {"nominal": 10.0, "unit": "G/s", "evidence_kind": "measured", "note": "n"},
-            "t_host_op_overhead": {"low": 10.0, "nominal": 20.0, "high": 40.0, "unit": "us",
-                                   "evidence_kind": "measured", "note": "n"},
         },
     })
+    rows = {  # [U-HOST2] the test numbers as a test host's own description, registered for the resolve
+        "p_host": {"low": low, "nominal": nominal, "high": high, "unit": "W",
+                   "evidence_kind": "estimated", "note": "n"},
+        "host_macs_per_s": {"nominal": 10.0, "unit": "G/s", "evidence_kind": "estimated", "note": "n"},
+        "t_host_op_overhead": {"low": 10.0, "nominal": 20.0, "high": 40.0, "unit": "us",
+                               "evidence_kind": "estimated", "note": "n"},
+    }
+    with tempfile.TemporaryDirectory() as directory, registered(Path(directory), "test_host_split_host", rows):
+        return apply_overrides(chip, declared_rows("test_host_split_host", rows))
 
 
 def _priced(events=1e8, host_macs=1e6, ops=10):

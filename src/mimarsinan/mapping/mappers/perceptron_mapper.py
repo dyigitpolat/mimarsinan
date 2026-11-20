@@ -14,8 +14,10 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_boundary_scale,
     perceptron_per_source_scale,
 )
+from mimarsinan.mapping.mappers.position_cores import map_linear_positions
 from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import holds_positions
 
 
 class PerceptronFanInError(ToolchainRefusal, ValueError):
@@ -55,8 +57,11 @@ class PerceptronMapper(Mapper):
         self.perceptron = perceptron
 
     def _map_to_ir(self, ir_mapping):
-        layer_weights = PerceptronTransformer().get_effective_weight(self.perceptron)
-        layer_biases = PerceptronTransformer().get_effective_bias(self.perceptron)
+        if holds_positions(self.perceptron):  # [U-PFOLD] each position's core of its own row (position_cores)
+            layer_weights, layer_biases = self.perceptron.layer.weight.data, None
+        else:
+            layer_weights = PerceptronTransformer().get_effective_weight(self.perceptron)
+            layer_biases = PerceptronTransformer().get_effective_bias(self.perceptron)
 
         sources = self.require_source_mapper().map_to_ir(ir_mapping)
         lead = leading_axes(sources, int(layer_weights.shape[1]))
@@ -83,6 +88,15 @@ class PerceptronMapper(Mapper):
         refusal = fan_in_refusal(layer_sources, int(layer_weights.shape[1]), getattr(self.perceptron, "name", None))
         if refusal is not None:
             raise refusal
+        if holds_positions(self.perceptron):
+            common = dict(name=getattr(self.perceptron, "name", None), normalization_type=normalization_type,
+                          activation_type=activation_type, perceptron_index=getattr(self, "perceptron_index", None),
+                          bias_scale=getattr(self.perceptron, "bias_scale", None),
+                          scales=(self.perceptron.activation_scale, self.perceptron.parameter_scale,
+                                  self.perceptron.input_activation_scale))
+            mapped = map_linear_positions(self, ir_mapping, layer_sources,
+                                          lambda b: bias_row_values(self.perceptron, b), common)
+            return mapped.transpose()
         output_shape = np.array([layer_weights.shape[0], layer_sources.shape[-1]])
         layer_sources = ir_mapping.map_fc(
             layer_sources,

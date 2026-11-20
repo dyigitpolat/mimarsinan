@@ -128,8 +128,13 @@ def deploy_and_eval(
     Fast/subset bridge: keep ``model`` and ``eval_inputs`` small so the deployed spiking sim
     stays cheap. Only ``spiking_mode='lif'`` is wired; conversion/mapping errors propagate verbatim.
     """
+    from mimarsinan.chip_simulation.hybrid_run.output_decode import executor_output_values
+    from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
+    from mimarsinan.chip_simulation.window_firing_axis import FIRE_WHILE_INTEGRATING, WINDOW_FIRING_KEY
     from mimarsinan.torch_mapping.converter import convert_torch_model
     from mimarsinan.mapping.ir_mapping_class import IRMapping
+    from mimarsinan.mapping.latency.depth_balancing import balance_cycle_windows
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping,
     )
@@ -171,6 +176,13 @@ def deploy_and_eval(
         q_max=127.0, firing_mode="Default",
         max_axons=int(max_axons), max_neurons=int(max_neurons),
     ).map(repr_)
+    # [U-TGAUGE5] a LIF program is a per-cycle cascade (the one predicate): the mapping's window pass (dead in-segment
+    # reads off, then the depth-balancing relays the LIF recipe arms), so every live in-segment edge reads its producer
+    # one cycle on.
+    # [composed head, rule 10] the point the bridge deploys: its mode, and the window firing its flow executes
+    point = resolve_spiking_point({"spiking_mode": spiking_mode, WINDOW_FIRING_KEY: FIRE_WHILE_INTEGRATING})
+    balance_cycle_windows(ir, cascade=policy_for_spiking_mode(point).runs_per_cycle_cascade, armed=True,
+                          thresholding_mode="<=")
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=ir,
         cores_config=[{
@@ -189,7 +201,8 @@ def deploy_and_eval(
     )
 
     with torch.no_grad():
-        deployed = hcm(eval_inputs.float()).double() / float(T)
+        # [U-TGAUGE2] the deployed readout in the value domain: the final read decoded by its program's output gauge
+        deployed = executor_output_values(hcm, hcm(eval_inputs.float()).double())
     predictions = deployed.argmax(dim=1)
     correct = int((predictions == eval_targets.to(predictions.device)).sum())
     num_samples = int(eval_targets.shape[0])

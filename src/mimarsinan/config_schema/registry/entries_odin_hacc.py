@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.config_schema.registry.entries_platform_backends import (
+    ENABLE_BASIS,
     _meta_backend_enable,
     _why_backend_enable,
 )
@@ -30,11 +31,10 @@ ENTRIES = (
            "ODIN crossbar has an executor for the declared soma law, but it "
            "stays off until the document asks, because freezing costs a full "
            "pass over the shipped sample set.",
-       derived_from=("spiking_mode", "firing_granularity", "membrane_arithmetic"),
+       derived_from=ENABLE_BASIS,
        why=_why_backend_enable(
-           "odin_hacc",
-           "the ODIN crossbar has no executor for this soma law or mode"),
-       meta=_meta_backend_enable("odin_hacc"), provenance="ConversionPolicy recipe"),
+           _ENABLE, "the ODIN crossbar has no executor for this soma law or mode"),
+       meta=_meta_backend_enable(_ENABLE), provenance="ConversionPolicy recipe"),
     _E("odin_hacc_bundle_samples", domain="event", group="deployment_target",
        owner="odin_hacc_export", type=T.INT, category=Category.ADVANCED,
        exposure="user", label="ODIN Bundle Samples", bounds=(1, None),

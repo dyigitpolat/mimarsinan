@@ -3,27 +3,14 @@ from collections import defaultdict
 import numpy as np
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.mapping.latency.upstream import CoreReads, core_reads, direct_signals, source_arrays
 
 #: A pass's hard-core-mapping attribute: per core, the latency the fused segment runs it at (set only where pinned).
 PINNED_LATENCIES = "pinned_latencies"
 
 
-def _source_arrays(sources):
-    """``(core, neuron, off, input, always on)`` of a core's axon sources, one array each: a columnar sequence's own
-    (``SpikeSourceColumns.source_arrays``, coverage W9), else read source by source as the walks below read them."""
-    own = getattr(sources, "source_arrays", None)
-    if callable(own):
-        return own()
-    listed = list(sources)
-    count = len(listed)
-
-    def column(read, dtype):
-        return np.fromiter((read(s) for s in listed), dtype=dtype, count=count)
-
-    return (column(lambda s: int(s.core_), np.int64), column(lambda s: int(s.neuron_), np.int64),
-            column(lambda s: bool(getattr(s, "is_off_", False)), bool),
-            column(lambda s: bool(getattr(s, "is_input_", False)), bool),
-            column(lambda s: bool(getattr(s, "is_always_on_", False)), bool))
+#: A hard core's axon sources as arrays (``upstream.source_arrays``; the name kept for its importers).
+_source_arrays = source_arrays
 
 
 class CyclicCoreGraphError(ToolchainRefusal, RuntimeError):
@@ -35,67 +22,51 @@ class ChipLatency:
     def __init__(self, mapping):
         self.mapping = mapping
         self.memo = {}
-        # Padded composites materialize per call, so the recursive walk (one
-        # column read per neuron) resolves each core at most once per instance.
-        self._matrix_cache = {}
-        # Each core's axon sources as arrays, read once per instance (coverage W9).
-        self._arrays_cache = {}
+        # [U-LIVE] each core's axons under the one liveness predicate (``upstream.core_reads``), read once per
+        # instance; the matrix is read inside the predicate and never held here.
+        self._reads_cache = {}
 
-    def _arrays(self, core_idx):
-        cached = self._arrays_cache.get(core_idx)
-        if cached is None:
-            cached = _source_arrays(self.mapping.cores[core_idx].axon_sources)
-            self._arrays_cache[core_idx] = cached
+    def _reads(self, core_idx, *, entries: bool = False) -> CoreReads:
+        cached = self._reads_cache.get(core_idx)
+        if cached is None or (entries and cached.entries is None):
+            cached = core_reads(self.mapping.cores[core_idx])
+            self._reads_cache[core_idx] = cached
         return cached
 
     def _live_source_cores(self, core_idx):
-        """Source core of every axon that is not off, always on or a segment input (a cross-core reference)."""
-        cores, _neurons, off, is_input, on = self._arrays(core_idx)  # pyright: ignore[reportGeneralTypeIssues] -- a 5-tuple of arrays (_source_arrays)
-        return cores[~(off | is_input | on)]
+        """[U-LIVE] Source core of every live axon (the predicate: not off, not a stage input or the always-on line,
+        and its weight row nonzero): the sweep, the shift alignment and the consumer map read one source set with the
+        per-neuron delays."""
+        reads = self._reads(core_idx)
+        return reads.core[reads.live]
 
-    def _core_matrix(self, core_idx):
-        cached = self._matrix_cache.get(core_idx)
-        if cached is None:
-            cached = self.mapping.cores[core_idx].get_core_matrix()
-            self._matrix_cache[core_idx] = cached
-        return cached
-
-    def __get_non_zero_axon_sources(self, core_idx, neuron_idx):
-        core = self.mapping.cores[core_idx]
-        non_zero_axon_sources = []
-        for axon_idx, w in enumerate(self._core_matrix(core_idx)[:, neuron_idx]):
-            if abs(w) == 0:
-                continue
-            src = core.axon_sources[axon_idx]
-            # Skip off axons: IR may mark is_off_ without zeroing core_matrix; counting them as inputs under-schedules sources.
-            if getattr(src, "is_off_", False):
-                continue
-            non_zero_axon_sources.append(src)
-
-        return non_zero_axon_sources
-
-    def __is_direct_signal(self, source):
-        return source.core_ < 0
+    def _charged_sources(self, core_idx, neuron_idx):
+        """The ``(core, neuron)`` of each axon whose entry for ``neuron_idx`` delivers charge (the predicate per
+        neuron), a stage core's own where it is live and ``(-1, neuron)`` (a direct signal) where it reads none."""
+        reads = self._reads(core_idx, entries=True)
+        entries = reads.entries
+        assert entries is not None  # read with its entries
+        rows = min(entries.shape[0], len(reads.core))
+        hit = np.flatnonzero(entries[:rows, neuron_idx])
+        return [(int(reads.core[a]) if reads.live[a] else -1, int(reads.neuron[a])) for a in hit]
 
     def get_delay_for(self, source):
-        key = (source.core_, source.neuron_)
+        """Per-neuron delay of an output source: 0 for a direct signal (off, a stage input or the always-on line, by
+        the predicate's marks), else ``1 +`` the largest delay over the entries that deliver charge to it."""
+        key = (int(source.core_), int(source.neuron_))
+        if bool(direct_signals([source])[0]):
+            return self.memo.setdefault(key, 0)
+        return self._delay_of(key)
 
-        if key in self.memo: return self.memo[key]
-
-        if self.__is_direct_signal(source):
+    def _delay_of(self, key):
+        if key in self.memo:
+            return self.memo[key]
+        core, neuron = key
+        if core < 0:
             self.memo[key] = 0
             return 0
-
-        non_zero_axon_sources = self.__get_non_zero_axon_sources(
-            source.core_, source.neuron_)
-
-        if len(non_zero_axon_sources) == 0:
-            self.memo[key] = 0
-            return 0
-
-        result = 1 + max([
-            self.get_delay_for(source) for source in non_zero_axon_sources])
-
+        sources = self._charged_sources(core, neuron)
+        result = 1 + max((self._delay_of(s) for s in sources), default=-1) if sources else 0
         self.memo[key] = result
         return result
 
@@ -106,27 +77,25 @@ class ChipLatency:
         cores = self.mapping.cores
         n_cores = len(cores)
         live_masks, axon_meta, deps = [], [], [set() for _ in range(n_cores)]
-        for ci, core in enumerate(cores):
-            # Rows are matrix rows: sources are dereferenced only where a
-            # weight is nonzero (bias rows may extend past axon_sources),
-            # mirroring the recursive walk's zero-weight skip.
-            live = np.asarray(core.get_core_matrix()) != 0
+        for ci in range(n_cores):
+            # [U-LIVE] per (row, neuron) the entries that deliver charge (nonzero, not off; bias rows may extend past
+            # axon_sources) and per axon the predicate: a producer's delay is read only through a live axon.
+            reads = self._reads(ci, entries=True)
+            live = reads.entries
+            assert live is not None  # read with its entries
             n_rows = live.shape[0]
-            n_src = len(core.axon_sources)
+            n_src = len(reads.core)
             if n_rows > n_src and bool(live[n_src:].any()):
                 raise IndexError(
                     f"core {ci}: nonzero weight row {n_src}+ has no axon source"
                 )
             src_core = np.full(n_rows, -1, dtype=np.int64)
             src_neuron = np.zeros(n_rows, dtype=np.int64)
-            source_cores, source_neurons, off, _input, _on = self._arrays(ci)  # pyright: ignore[reportGeneralTypeIssues] -- a 5-tuple of arrays (_source_arrays)
             rows = min(n_rows, n_src)
-            off_rows = off[:rows]
-            live[:rows][off_rows] = False
-            src_core[:rows] = np.where(off_rows, -1, source_cores[:rows])
-            src_neuron[:rows] = np.where(off_rows, 0, source_neurons[:rows])
-            read = (src_core[:rows] >= 0) & live[:rows].any(axis=1)
-            deps[ci].update(int(c) for c in np.unique(src_core[:rows][read]))
+            source = reads.live[:rows]
+            src_core[:rows] = np.where(source, reads.core[:rows], -1)
+            src_neuron[:rows] = np.where(source, reads.neuron[:rows], 0)
+            deps[ci].update(int(c) for c in np.unique(src_core[:rows][source]))
             live_masks.append(live)
             axon_meta.append((src_core, src_neuron))
 
@@ -180,8 +149,7 @@ class ChipLatency:
                 core.latency = int(pin)
             return max((int(p) for p in pins), default=-1) + 1
         self.memo = {}
-        self._matrix_cache = {}
-        self._arrays_cache = {}
+        self._reads_cache = {}
         if len(self.mapping.output_sources) == 0:
             raise ValueError(
                 "ChipLatency.calculate: mapping has no output_sources (empty list). "
@@ -189,21 +157,25 @@ class ChipLatency:
                 "Check IR pruning and soft-core compaction."
             )
         self._compute_all_delays()
-        result = max([
-            self.get_delay_for(source) for source in self.mapping.output_sources])
+        # every (core, neuron) is in the memo: the sweep reads the live sources only, so the entries are let go
+        self._reads_cache = {ci: r._replace(entries=None) for ci, r in self._reads_cache.items()}
+        outputs = list(self.mapping.output_sources)
+        direct = direct_signals(outputs)  # the output sources' direct signals by the predicate's marks, at once
+        keys = [(int(s.core_), int(s.neuron_)) for s in outputs]
+        result = max(self.memo.setdefault(key, 0) if d else self._delay_of(key) for key, d in zip(keys, direct.tolist()))
 
         latencies = defaultdict(int)
-        for key in self.memo:
-            core_idx, neuron_idx = key
-            latencies[core_idx] = max(latencies[core_idx], self.memo[key] - 1)
+        for (core_idx, _neuron_idx), delay in self.memo.items():
+            latencies[core_idx] = max(latencies[core_idx], delay - 1)
 
-        for core_idx in latencies:
-            if core_idx >= 0:
-                self.mapping.cores[core_idx].latency = latencies[core_idx]
+        # a direct signal's pseudo-core (a negative index) is no core of the mapping
+        for core_idx, core in enumerate(self.mapping.cores):
+            if core_idx in latencies:
+                core.latency = latencies[core_idx]
 
         result = max(result, self._enforce_core_latency_invariant())
         result = self._align_shiftable_cores(result)
-        self._matrix_cache = {}
+        self._reads_cache = {}
         return result
 
     def _classify_shiftable(self):

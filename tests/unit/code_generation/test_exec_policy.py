@@ -13,6 +13,7 @@ from mimarsinan.chip_simulation.spiking_mode_policy import (
     NevresimExecParams,
     policy_for_spiking_mode,
 )
+from spiking_points import point_of_mode
 
 
 @pytest.mark.parametrize(
@@ -21,7 +22,7 @@ from mimarsinan.chip_simulation.spiking_mode_policy import (
 )
 def test_resolve_exec_policy_all_modes(spiking_mode: str) -> None:
     spec = resolve_exec_policy(
-        spiking_mode=spiking_mode,
+        point=point_of_mode(spiking_mode),
         firing_mode="Default",
         thresholding_mode="<=",
         spike_gen_mode="Deterministic",
@@ -37,7 +38,7 @@ def test_resolve_exec_policy_all_modes(spiking_mode: str) -> None:
 
 def test_resolve_exec_policy_lif() -> None:
     spec = resolve_exec_policy(
-        spiking_mode="lif",
+        point=point_of_mode("lif"),
         firing_mode="Novena",
         thresholding_mode="<=",
         spike_gen_mode="Uniform",
@@ -52,7 +53,7 @@ def test_resolve_exec_policy_lif() -> None:
 
 def test_resolve_exec_policy_ttfs() -> None:
     spec = resolve_exec_policy(
-        spiking_mode="ttfs",
+        point=point_of_mode("ttfs"),
         firing_mode="TTFS",
         thresholding_mode="<=",
         spike_gen_mode="TTFS",
@@ -67,7 +68,7 @@ def test_resolve_exec_policy_ttfs() -> None:
 
 def test_resolve_exec_policy_ttfs_quantized() -> None:
     spec = resolve_exec_policy(
-        spiking_mode="ttfs_quantized",
+        point=point_of_mode("ttfs_quantized"),
         firing_mode="TTFS",
         thresholding_mode="<=",
         spike_gen_mode="TTFS",
@@ -82,7 +83,7 @@ def test_resolve_exec_policy_ttfs_quantized() -> None:
 
 def test_resolve_exec_policy_ttfs_quantized_strict_compare() -> None:
     spec = resolve_exec_policy(
-        spiking_mode="ttfs_quantized", firing_mode="TTFS", thresholding_mode="<",
+        point=point_of_mode("ttfs_quantized"), firing_mode="TTFS", thresholding_mode="<",
         spike_gen_mode="TTFS", weight_type="double",
         simulation_length=6, latency=1, output_count=2,
     )
@@ -95,7 +96,7 @@ def test_resolve_exec_policy_ttfs_cycle_based_cascaded() -> None:
     through the standard SpikingExecution; config-driven compare policy.
     """
     spec = resolve_exec_policy(
-        spiking_mode="ttfs_cycle_based",
+        point=point_of_mode("ttfs_cycle_based"),
         firing_mode="TTFS",
         thresholding_mode="<=",
         spike_gen_mode="TTFS",
@@ -113,7 +114,7 @@ def test_resolve_exec_policy_ttfs_cycle_based_cascaded() -> None:
 
 def test_resolve_exec_policy_ttfs_cycle_based_strict_compare() -> None:
     spec = resolve_exec_policy(
-        spiking_mode="ttfs_cycle_based", firing_mode="TTFS", thresholding_mode="<",
+        point=point_of_mode("ttfs_cycle_based"), firing_mode="TTFS", thresholding_mode="<",
         spike_gen_mode="TTFS", weight_type="int",
         simulation_length=6, latency=1, output_count=2,
     )
@@ -172,6 +173,11 @@ _LEGACY_CASES = [
 ]
 
 
+def _at_point(kwargs):
+    """[U-LIF2 r2] A legacy case's arguments with its mode as the point the code generation takes."""
+    return {**{k: v for k, v in kwargs.items() if k != "spiking_mode"}, "point": point_of_mode(kwargs["spiking_mode"])}
+
+
 @pytest.mark.parametrize(
     "kwargs,compute,exec_decl", _LEGACY_CASES,
     ids=[c[0]["spiking_mode"] for c in _LEGACY_CASES],
@@ -180,7 +186,7 @@ def test_policy_driven_exec_policy_equals_legacy_string(
     kwargs, compute, exec_decl
 ) -> None:
     """The migrated, policy-driven dispatch reproduces every legacy string."""
-    spec = resolve_exec_policy(**kwargs)
+    spec = resolve_exec_policy(**_at_point(kwargs))
     assert spec.compute_policy == compute
     assert spec.exec_decl == exec_decl
 
@@ -203,8 +209,8 @@ def test_resolve_exec_policy_delegates_to_policy(kwargs, compute, exec_decl) -> 
         latency=kwargs["latency"],
         output_count=kwargs["output_count"],
     )
-    direct = policy_for_spiking_mode(kwargs["spiking_mode"]).nevresim_exec_policy(params)
-    assert direct == resolve_exec_policy(**kwargs)
+    direct = policy_for_spiking_mode(point_of_mode(kwargs["spiking_mode"])).nevresim_exec_policy(params)
+    assert direct == resolve_exec_policy(**_at_point(kwargs))
     assert direct == ExecPolicySpec(compute_policy=compute, exec_decl=exec_decl)
 
 
@@ -215,7 +221,7 @@ def test_synchronized_ttfs_cycle_policy_rejects_nevresim() -> None:
         "InclusiveCompare>", spike_gen_mode="TTFS", weight_type="int",
         simulation_length=6, latency=1, output_count=2,
     )
-    sync_policy = policy_for_spiking_mode("ttfs_cycle_based", "synchronized")
+    sync_policy = policy_for_spiking_mode(point_of_mode("ttfs_cycle_based", "synchronized"))
     with pytest.raises(ValueError, match="synchronized"):
         sync_policy.nevresim_exec_policy(params)
 
@@ -226,7 +232,7 @@ def test_synchronized_ttfs_cycle_policy_rejects_nevresim() -> None:
 )
 def test_build_runtime_exec_decl_all_modes(spiking_mode: str) -> None:
     compute, exec_decl = _build_runtime_exec_decl(
-        spiking_mode=spiking_mode,
+        point=point_of_mode(spiking_mode),
         firing_mode="Default" if spiking_mode == "lif" else "TTFS",
         thresholding_mode="<=",
         spike_gen_mode="Deterministic" if spiking_mode == "lif" else "TTFS",
@@ -264,7 +270,7 @@ def test_a_ttfs_family_refuses_a_non_default_integration_policy(
         simulation_length=6, latency=1, output_count=2,
         integration_policy="EventSerialIntegrate<8>",
     )
-    policy = policy_for_spiking_mode(spiking_mode, schedule)
+    policy = policy_for_spiking_mode(point_of_mode(spiking_mode, schedule))
     with pytest.raises(ValueError, match=f"no {family} executor"):
         policy.nevresim_exec_policy(params)
 
@@ -282,5 +288,5 @@ def test_the_same_families_are_untouched_at_the_default_integration(
         spike_gen_mode="TTFS", weight_type="int",
         simulation_length=6, latency=1, output_count=2,
     )
-    spec = policy_for_spiking_mode(spiking_mode, schedule).nevresim_exec_policy(params)
+    spec = policy_for_spiking_mode(point_of_mode(spiking_mode, schedule)).nevresim_exec_policy(params)
     assert "Integrate" not in spec.exec_decl

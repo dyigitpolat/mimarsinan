@@ -7,8 +7,9 @@ from mimarsinan.mapping.verification.onchip_fraction import (
     assert_onchip_majority_estimate_or_raise,
 )
 from mimarsinan.mapping.platform.packaging_contract import (
+    DeployedConversion,
     PackagingContract,
-    packaging_contract_for,
+    deployed_conversion_of,
 )
 from mimarsinan.models.builders import build_model
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -39,10 +40,15 @@ class ModelBuildingStep(PipelineStep):
     def _encoding_placement(self) -> str:
         return str(self.pipeline.config.get("encoding_layer_placement", "subsume"))
 
+    def _conversion(self) -> DeployedConversion:
+        """The deployment's conversion (its packaging contract and leaf decomposition): the one object the build,
+        the static gate, its span report and the Torch Mapping step's conversion read."""
+        return deployed_conversion_of(DeploymentPlan.of(self.pipeline), self.pipeline.config)
+
     def _packaging(self) -> PackagingContract:
         """The deployment's packaging contract — the SSOT for whether this
         target family HAS an encoding layer to place at all."""
-        return packaging_contract_for(DeploymentPlan.of(self.pipeline))
+        return self._conversion().packaging
 
     def process(self):
         builder = self.get_entry('model_builder')
@@ -87,13 +93,16 @@ class ModelBuildingStep(PipelineStep):
             config["input_shape"],
             int(num_classes),
             encoding_placement=self._encoding_placement(),
+            conversion=self._conversion(),
         )
         print(f"[ModelBuildingStep] {report.describe()}")
 
     def _run_static_onchip_majority_gate(self, model) -> None:
         """Static fail-fast twin of the SCM on-chip-majority floor gate: a
         host-majority model SPEC dies in seconds at build instead of after
-        pretraining (W2 Q3; SAME floor key onchip_min_fraction, same opt-out knob)."""
+        pretraining (W2 Q3; SAME floor key onchip_min_fraction, same opt-out knob).
+        It measures the program the deployment converts: the deployed conversion
+        (``deployed_conversion_of``), the one the Torch Mapping step converts with."""
         config = self.pipeline.config
         if not bool(config.get("onchip_majority_gate", True)):
             return
@@ -106,6 +115,7 @@ class ModelBuildingStep(PipelineStep):
             int(num_classes),
             encoding_placement=self._encoding_placement(),
             min_fraction=float(effective_value(config, "onchip_min_fraction")),
+            conversion=self._conversion(),
         )
         print(
             f"[ModelBuildingStep] static on-chip parameter majority: "

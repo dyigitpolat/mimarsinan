@@ -14,6 +14,9 @@ from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
 from mimarsinan.transformations.perceptron.perceptron_transformer import (
     PerceptronTransformer,
 )
+from mimarsinan.transformations.perceptron.position_fold import (
+    PER_POSITION, bias_offsets, effective_bias_rows, effective_weight_rows, holds_positions, outputs_first,
+    position_folds)
 
 _STARVATION_ZERO_FRAC = 0.8
 """Predicted weight-zero fraction at the target grid above which a perceptron
@@ -76,7 +79,9 @@ def declared_input_range(perceptron, transformer=None) -> Optional[InputRange]:
     if grid is None:
         return None
     low, high = grid.value_range
-    scale = (transformer or PerceptronTransformer()).input_scale(perceptron)
+    # [U-PFOLD] a fold per position: each position's inputs at its own row (the one reader's, on the weight's device)
+    scale = position_folds(perceptron) if holds_positions(perceptron) else (
+        transformer or PerceptronTransformer()).input_scale(perceptron)
     a, b = min(low, 0.0) / scale, max(high, 0.0) / scale
     if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
         return InputRange(torch.minimum(a, b), torch.maximum(a, b))
@@ -111,9 +116,7 @@ def clip_off_saturated_effective_bias(perceptron, transformer=None) -> int:
     input_range = constant_off_input_range(perceptron, transformer)
     if input_range is None:
         return 0
-    bound = off_saturation_bias_bound(
-        transformer.get_effective_weight(perceptron).detach(), input_range,
-    )
+    bound = _off_bound(perceptron, transformer, input_range)
     clipped = 0
     max_delta = 0.0
 
@@ -126,7 +129,9 @@ def clip_off_saturated_effective_bias(perceptron, transformer=None) -> int:
             max_delta = float((limit - effective_bias)[below].max())
         return torch.where(below, limit, effective_bias)
 
-    transformer.apply_effective_bias_transform(perceptron, clip)
+    # [U-PFOLD] a fold per position clips the shared bias to the bound every position keeps (its offsets as they are)
+    (transformer.write_shared_bias if holds_positions(perceptron) else transformer.apply_effective_bias_transform)(
+        perceptron, clip)
     # QAT drift re-clips dead channels by epsilons every projection; only a
     # MATERIAL clip (a real crater canonicalization) is worth a log line.
     if clipped and max_delta > 1e-3:
@@ -171,9 +176,40 @@ def empirical_bias_shift(
 def predicted_weight_zero_fraction(perceptron, bits: int) -> float:
     """Fraction of effective weights that round to zero on the shared grid (the bias row read at its drive)."""
     transformer = PerceptronTransformer()
-    w = transformer.get_effective_weight(perceptron).detach().abs()
-    b = bias_row_values(perceptron, transformer.get_effective_bias(perceptron).detach().abs())
+    w, b = position_magnitudes(perceptron, transformer)
     q_max = (2 ** (bits - 1)) - 1
     p_max = max(float(w.max()), float(b.max()), 1e-12)
     step = p_max / q_max
     return float((w < step / 2).float().mean())
+
+
+def _off_bound(perceptron, transformer, input_range: InputRange) -> torch.Tensor:
+    """The per-output-channel OFF bound; [U-PFOLD] over a fold per position the minimum over positions of each
+    position's bound less its bias offset (the shared bias at it keeps every position OFF)."""
+    if not holds_positions(perceptron):
+        return off_saturation_bias_bound(transformer.get_effective_weight(perceptron).detach(), input_range)
+    rows, index = effective_weight_rows(perceptron)
+    weights = outputs_first(rows[index].detach(), PER_POSITION.weight)  # out, positions, fan-in
+    out, positions, fan_in = (int(d) for d in weights.shape)
+
+    def per_row(v):
+        v = torch.as_tensor(v, dtype=weights.dtype, device=weights.device)
+        return v if v.dim() == 0 else v.reshape(1, positions, fan_in).expand(out, positions, fan_in).reshape(-1, fan_in)
+
+    rows_range = input_range if input_range is UNIT_INPUT_RANGE else InputRange(per_row(input_range.low),
+                                                                               per_row(input_range.high))
+    bound = off_saturation_bias_bound(weights.reshape(-1, fan_in), rows_range).reshape(out, positions)
+    offsets = bias_offsets(perceptron)
+    if offsets is not None:
+        bound = bound - outputs_first(offsets, PER_POSITION.bias).to(bound.dtype)
+    return bound.amin(dim=1)
+
+
+def position_magnitudes(perceptron, transformer) -> tuple[torch.Tensor, torch.Tensor]:
+    """``(|w~|, |b~| / drive)``: [U-PFOLD] every position's where the fold or the bias is held per position."""
+    if not holds_positions(perceptron):
+        return (transformer.get_effective_weight(perceptron).detach().abs(),
+                bias_row_values(perceptron, transformer.get_effective_bias(perceptron).detach().abs()))
+    rows, index = effective_weight_rows(perceptron)
+    shared = transformer.shared_effective_bias(perceptron).detach()
+    return rows[index].detach().abs(), bias_row_values(perceptron, effective_bias_rows(perceptron, shared).abs())

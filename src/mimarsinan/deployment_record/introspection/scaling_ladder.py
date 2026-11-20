@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.build.payload_sizes import pass_program_bytes
 from mimarsinan.deployment_record.cost.absolute import price_absolute
-from mimarsinan.deployment_record.cost.absolute.host_split import price_shares
+from mimarsinan.deployment_record.cost.absolute.host_split import columns_of, share_pricings, static_legs
 from mimarsinan.deployment_record.cost.compute_time import busiest_stage, compute_law
 import mimarsinan.deployment_record.introspection.scaling_ladder_law as law
 import mimarsinan.deployment_record.introspection.scaling_ladder_reading as point_reading
@@ -51,10 +51,12 @@ from mimarsinan.mapping.verification.layout_verification_scheduling import compu
 #: (softcores, NoC fragments, resolved platform) -> (fragments, program facts with ``latency_steps``,
 #: ``programming`` and ``carry``): the candidate plane's census, injected by the caller.
 ProgramFacts = Callable[[Sequence[Any], Any, Mapping[str, Any]], Tuple[Any, Any]]
-#: axis -> (compute-only term, headline (whose refusal names an absence), programming term, host term); [consts] the
-#: programming term is the write law's tile writes (``scaling_ladder_reading.tile_writes``)
+#: axis -> (compute-only term, headline (whose refusal names an absence), programming term, host term); the
+#: programming term is the one load law's (``cost/absolute/walls/loads.py``, read off the program pricing); [U-ENERGY]
+#: each energy cost with its static leg: the compute-only cost over its own time, the load over its own serial wall
 _AXES = {
-    "energy": ("energy_dynamic_mj", "energy_per_inference_mj", "energy_write_mj", "energy_host_mj"),
+    "energy": (("energy_dynamic_mj", "energy_static_mj"), "energy_per_inference_mj", "energy_load_mj",
+               "energy_host_mj"),
     "time": ("e2e_latency_s", "e2e_latency_s", "latency_write_exposed_s", "latency_host_s"),
 }
 _HEADLINES = ("e2e_latency_s", "energy_per_inference_mj")
@@ -165,8 +167,8 @@ def price_scheduled(
 ) -> PricedProgram:
     """Price a scheduled program on ``platform``, which may differ from the scheduled one only in its physics and
     the row keys (refused by name otherwise): three variants (the program, its compute-only cost, the program
-    without host), the write law's tile writes at K = 1 (writing every tile once, and the program's period writes,
-    [consts] ``tile_writes``) and, at a declared ``inference_batch_K``, the write law at that batch."""
+    without host), the one load law's two loads at K = 1 (writing every tile once, and the program's period writes,
+    read off the program pricing) and, at a declared ``inference_batch_K``, the write law at that batch."""
     require_declared_change(platform, scheduled.platform, PRICE_KEYS,
                             "a priced platform may differ from its scheduled program")
     start = time.time()
@@ -196,15 +198,17 @@ def price_scheduled(
     terms: Dict[str, Dict[str, Band]] = {}
     refusals: Dict[str, Dict[str, str]] = {}
     write_law: Dict[str, Any] = {}
+    legs: Dict[str, Any] = {}
     if physics is not None:
-        pricing = price_absolute(q, physics, compute=context.compute, readout_bits=context.readout_bits)
-        terms["program"] = {t.name: t.band for t in pricing.terms if t.band is not None}
-        refusals["program"] = {r.name: r.reason for r in pricing.refusals}
-        shares = price_shares(q, physics, compute=context.compute, readout_bits=context.readout_bits)  # [U-SH]
-        terms.update(shares[0])
-        refusals.update(shares[1])
-        for name, load in (("once", True), ("period", False)):
-            terms[name], refusals[name] = point_reading.tile_writes(facts.passes, platform, bits, physics, load=load)
+        pricing = price_absolute(q, physics, compute=context.compute, readout_bits=context.readout_bits,
+                                 loads=context.loads)  # [U-ENERGY] the one load law's censuses
+        shared = share_pricings(q, physics, compute=context.compute, readout_bits=context.readout_bits)  # [U-SH]
+        terms, refusals = columns_of({"program": pricing, **shared})
+        legs = static_legs(pricing, shared, {"once": "latency_load_s", "period": "latency_programming_s"})  # [V-M1]
+        for name, (wall, energy) in (("once", ("latency_load_s", "energy_load_mj")),
+                                     ("period", ("latency_programming_s", "energy_programming_mj"))):
+            terms[name], refusals[name] = point_reading.load_column(terms["program"], refusals["program"],
+                                                                    wall=wall, energy=energy)
         if context.writes is not None:
             at_k = price_absolute(q, physics, writes=WriteInputs.of(context.writes), compute=context.compute,
                                   readout_bits=context.readout_bits)
@@ -216,7 +220,8 @@ def price_scheduled(
         census_passes=None if facts.passes is None else len(facts.passes.rows),
         reprogram_passes=int(facts.programming.reprogram_passes), written_passes=written, carry=facts.carry,
         period_bytes=period_bytes, once_bytes=once_bytes, once_cores=once_tiles,
-        max_writes=max_writes, terms=terms, refusals=refusals, wall_s=scheduled.wall_s + time.time() - start,
+        max_writes=max_writes, terms=terms, refusals=refusals, static_legs=legs,
+        wall_s=scheduled.wall_s + time.time() - start,
         write_law=write_law, **point_reading.endurance_fields(physics),
         compute_law=None if physics is None else compute_law(physics),
         event_stage=None if stage is None else (stage.low, stage.nominal, stage.high),
@@ -270,7 +275,8 @@ def ladder_row(
                headline_refusals={h: priced.refusals.get("program", {}).get(h) for h in _HEADLINES})
     for axis, names in _AXES.items():
         row[axis] = law.axis_columns(priced.terms, priced.refusals, names, k=k, reading=reading,
-                                     multiplexed=multiplexed, x=x_packed, passes=priced.passes, axis=axis)
+                                     multiplexed=multiplexed, x=x_packed, passes=priced.passes, axis=axis,
+                                     legs=priced.static_legs)
     row["axes_priced"] = [axis for axis in _AXES if row[axis]["pi"] is not None]
     row["k_star"] = law.k_star(
         x_fluid=x_fluid, x_packed=x_packed, max_writes=priced.max_writes[0], max_writes_source=priced.max_writes[1],

@@ -6,7 +6,8 @@ two places could price the same byte. A chip with no link rows has one store pla
 (``e_dma_per_byte`` in, ``e_readout_per_byte`` out, the commit and the write port), so it prices as on RC1
 (d1c05c51): the pass carry both ways, the write transfer, a host-sourced operand payload and a program load on those
 rows, no refusal by the store's name and no link term. The tests price by hand from the profile's own rows and
-import nothing RC1 lacks, so the same file runs on RC1's tree (the unit's record runs it there)."""
+import nothing RC1 lacks, so the same file runs on RC1's tree (the unit's record runs it there). [U-ENERGY] The
+program-load test prices the one load law over a census (its helper is that unit's, imported where it is used)."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import pytest
 
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.absolute.step_choice import carry_energy, price_step
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_terms
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks, resolve_platform_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
@@ -91,10 +93,26 @@ def test_a_host_sourced_payload_prices_on_e_dma_per_byte():
 
 
 def test_a_program_load_prices_on_e_dma_per_byte_and_the_commit():
-    terms, _ = _priced(dict(BASE, carry_in_bytes=0, carry_out_bytes=0, reprogrammed_bytes=1000))
+    """[U-ENERGY] A program load is the one load law over the program's census (two written passes of 500 B, so
+    1000 B rewritten per round): its transfer on ``e_dma_per_byte``, its commit by the write law (by cell where the
+    description declares a cell commit), its static leg over its own wall, no store refusal and no link term."""
+    from dataclasses import replace
+
+    from mimarsinan.deployment_record.cost.absolute.writes import price_write_inputs
+    from unit.deployment_record.load_census_fixtures import written_program
+
+    loads = written_program((500,), (500,), granularity="cell")
+    pricing = price_absolute(_q(**dict(BASE, carry_in_bytes=0, carry_out_bytes=0)), PHYSICS, loads=loads)
+    terms = {t.name: t.band for t in pricing.terms}
+    no_dma = replace(PHYSICS, constants={k: v for k, v in PHYSICS.constants.items() if k != "e_dma_per_byte"})
+    commit = price_write_inputs(WriteInputs.of(loads.period.writes), no_dma, lifetime=False).energy
     for corner in CORNERS:
-        load = 1000 * (_k("e_dma_per_byte", corner) + _k("e_program_per_byte", corner))
-        assert getattr(terms["energy_programming_mj"], corner) == pytest.approx(load * 1e3, rel=1e-9), corner
+        dynamic = getattr(terms["energy_programming_mj"], corner) - getattr(terms["energy_static_programming_mj"],
+                                                                            corner)
+        assert dynamic - getattr(commit, corner) == pytest.approx(1000 * _k("e_dma_per_byte", corner) * 1e3,
+                                                                  rel=1e-9), corner
+    assert not any(k in terms for k in ("energy_host_link_mj", "latency_host_link_s"))
+    assert not any("backing_store" in r.reason for r in pricing.refusals)
 
 
 def test_store_traffic_is_never_refused_by_the_stores_name_and_nothing_prices_a_link():
@@ -110,5 +128,5 @@ def test_the_step_choice_prices_on_the_chips_rows():
     for corner in CORNERS:
         carry = 300 * _k("e_dma_per_byte", corner) + 200 * _k("e_readout_per_byte", corner)
         assert getattr(carry_energy(census, PHYSICS), corner) == pytest.approx(carry * 1e3, rel=1e-9), corner
-    step = price_step(census, PHYSICS, _policy("host"))
+    step = price_step(census, PHYSICS, _policy("host"), static=NO_STATIC)
     assert step.write == price_write_terms(census, PHYSICS, _policy("host")).energy

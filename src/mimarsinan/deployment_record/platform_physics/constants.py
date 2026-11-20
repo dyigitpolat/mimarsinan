@@ -6,11 +6,13 @@ its rows as profile constants, so a judge above the converter would close an ini
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Tuple
 
 from mimarsinan.chip_simulation.sanafe.presets import PRESETS
 from mimarsinan.deployment_record.platform_physics import vocabulary
+from mimarsinan.deployment_record.platform_physics.hosts.rows import declaration_statement
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwargs
 from mimarsinan.deployment_record.units import DIMENSIONS, to_canonical, unit_for
@@ -133,6 +135,12 @@ class PhysicsConstantValue:
     derivation: str = ""
     note: str = ""
     overridden: bool = False
+    #: [U-HOST] The host a host row describes (``'<description> <mode>'``, ``hosts.admission``); empty on every other
+    #: row, and serialized only when set (a physics without host rows keeps its bytes).
+    host: str = ""
+    #: [U-HOST2] A host row's declared derivation from its description's rows (``hosts.derivation``'s one form, as
+    #: its judged JSON text), sealed with the row so a sealed physics is judged alike; serialized only when set.
+    derived_from: str = ""
 
     def __post_init__(self) -> None:
         spec = spec_for(self.key)
@@ -157,10 +165,11 @@ class PhysicsConstantValue:
 
     @property
     def basis(self) -> str:
-        """The written basis carried into every Band and CostTerm built from this value."""
+        """The written basis carried into every Band and CostTerm built from this value; [U-HOST3] a derived host
+        row's states its declaration first (``hosts.rows.declaration_statement``: its rows and factors)."""
         detail = self.citation or self.derivation or self.note
         marker = " (operator override)" if self.overridden else ""
-        return f"{self.evidence_kind}{marker}: {detail}"
+        return f"{self.evidence_kind}{marker}: {declaration_statement(self.derived_from)}{detail}"
 
     @property
     def band(self) -> Band:
@@ -184,11 +193,16 @@ class PhysicsConstantValue:
             "derivation": self.derivation,
             "note": self.note,
             "overridden": self.overridden,
+            **({"host": self.host} if self.host else {}),
+            **({"derived_from": json.loads(self.derived_from)} if self.derived_from else {}),
         }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "PhysicsConstantValue":
-        return cls(**strict_kwargs(cls, data))
+        kwargs = strict_kwargs(cls, data)
+        if isinstance(kwargs.get("derived_from"), Mapping):  # [U-HOST2] the sealed declaration, as its JSON text
+            kwargs["derived_from"] = json.dumps(kwargs["derived_from"], sort_keys=True)
+        return cls(**kwargs)
 
 
 SANAFE_PRESET_REF = "sanafe_preset"

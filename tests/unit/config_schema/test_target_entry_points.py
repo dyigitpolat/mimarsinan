@@ -67,6 +67,12 @@ def _document(name):
     float assembly where the bundle's signed weight grid has no nonzero level under weight quantization (key
     amendment K1 refuses that by name, ``TestAWeightGridWithoutALevel``)."""
     doc = _load(os.path.join(_FIXTURES, FIXTURE_FOR[target_bundles()[name].values.get("core_semantics", "spiking")]))
+    # [U-CHIPKEYS] a description states its neuron law's deployment-parameter keys too: the fixture's give way (its
+    # whole neuron law where the bundle states a spiking family; an equal core semantics stays, as before)
+    owned = set(target_bundles()[name].values)
+    if "spiking_family" in owned:
+        owned |= {k for k, e in REGISTRY.items() if e.group == "spiking" and k != "core_semantics"}
+    doc[DP] = {k: v for k, v in doc[DP].items() if k == "core_semantics" or k not in owned}
     doc[PC] = {**{k: v for k, v in doc[PC].items() if k not in GEOMETRY_KEYS and k not in _owned(name)},
                "target": name}
     bits = target_bundles()[name].values.get("weight_bits")
@@ -272,7 +278,8 @@ class TestTargetCells:
         bundle = target_bundles()[doc[PC]["target"]]
         derived = {k for k, e in REGISTRY.items() if e.section == PC and set(e.derived_from) & set(bundle.values)}
         assert not (set(bundle.values) | derived) & set(doc[PC])
-        assert not (set(bundle.values) - {"core_semantics"}) & set(doc[DP])  # an equal semantics may be declared
+        # [composed head, merge rule 23] an equal key of the cell's kind may be declared (rule 8's CELL_KIND_KEYS)
+        assert not (set(bundle.values) - set(_generator().CELL_KIND_KEYS)) & set(doc[DP])
         assert validate_deployment_config(copy.deepcopy(doc)) == []
         assert resolve_draft(copy.deepcopy(doc)).errors == []
         pcfg = build_platform_constraints_resolved(_merged(doc))
@@ -303,6 +310,25 @@ class TestTargetCells:
                  or (REGISTRY[key].applied_when is not None and not REGISTRY[key].applied_when.evaluate(flat))]
         assert [item for item in named if item.endswith(" not applied")] == inert
 
+    @pytest.mark.parametrize("name", sorted(n for n, b in target_bundles().items()
+                                            if b.values.get("core_semantics") == "spiking"))
+    def test_a_target_row_whose_law_departs_names_it_or_refuses(self, name):
+        """[U-CHIPKEYS] the class swept to the generator: a target row authors no deployment key its bundle sets, in
+        either section; one equal to the bundle's is dropped, one the row's overrides name departs there, any other
+        departure refuses by name (a lif row's subtractive reset against a chip that states its reset law)."""
+        gen = _generator()
+        bundle = target_bundles()[name].values
+        row = {"n": 99, "mode": "lifs", "quant": "wq", "s": 4, "vehicle": "simplemlp", "target": name}
+        mode = gen.MODES["lifs"]
+        departs = sorted(k for k in ("spiking_family", "spiking_variant", "firing_mode", "thresholding_mode")
+                         if k in bundle and bundle[k] != mode[k])
+        if departs:
+            with pytest.raises(ValueError, match=rf"{departs[0]}=.* departs from target='{name}'"):
+                gen._deployment(0, row, gen.VEHICLES, "MNIST")
+            row["target_overrides"] = {k: {"value": mode[k], "note": "a departure"} for k in departs}
+        dp = gen._deployment(0, row, gen.VEHICLES, "MNIST")
+        assert not (set(bundle) - set(gen.CELL_KIND_KEYS)) & set(dp)  # [composed head, merge rule 23]
+
     @pytest.mark.parametrize("name", sorted(target_bundles()))
     def test_a_target_row_authors_no_permission_key(self, name):
         """The generator's permission defaults describe the study grid: a row of any target authors no permission
@@ -328,8 +354,9 @@ class TestRecordIdentity:
         loaded = DeploymentRecord.from_dict(json.loads(json.dumps(record.to_dict())))
         platform = loaded.identity.platform
         assert platform["target"] == "odin" and platform["target_claim_class"] == "quarantined"
-        assert platform["target_faithfulness_class"] == (
-            "approximate: per-cycle soma law; unbounded membrane for the 8-bit saturating one")
+        # [U-CHIPKEYS] ODIN states its RTL's soma law: the description is exact
+        # [U-CHIPKEYS2] the label states the configuration the exact class rests on
+        assert platform["target_faithfulness_class"] == 'exact, given "leakage and SDSP learning off by the deployment"'
 
 
 class TestRunFlatConfigReadsLikeConsumers:

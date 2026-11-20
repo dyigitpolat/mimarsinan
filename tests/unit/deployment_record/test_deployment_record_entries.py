@@ -311,7 +311,7 @@ class _FakeSimulationRunner:
 
     def run(self):
         assert self.stage_timer is not None  # the step opts in
-        with self.stage_timer.time_compute_stage(1, "avg_pool"):
+        with self.stage_timer.time_compute_stage(1, "avg_pool", len(self.test_data)):  # [U-HOST] the traversal
             pass
         self.nevresim_total_spikes = 12345.0
         return 0.5
@@ -355,6 +355,7 @@ class TestSimulationStepEntry:
         assert wall["stage_index"] == 1
         assert wall["name"] == "avg_pool"
         assert wall["invocations"] == 1
+        assert wall["samples_per_call"] == 7  # [U-HOST] the samples the call carried
         assert wall["wall_s_total"] >= 0.0
         # The pre-existing probe print survives byte-identically.
         assert "Simulation accuracy:  0.5" in capsys.readouterr().out

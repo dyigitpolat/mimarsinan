@@ -53,6 +53,7 @@ from mimarsinan.models.spiking.serial.refusals import (
     SaturatingMembraneRefusalError,
     refuse_saturating_membrane,
 )
+from spiking_points import point_of_mode
 
 _LIF = {"spiking_family": "lif", "spiking_variant": "streamed"}
 _SYNC_FIRE = {**_LIF, "membrane_bits": 16, "membrane_signed": True}
@@ -202,7 +203,7 @@ class TestCellIdentityDiscriminatesTheSignedRegister:
     def test_the_cell_key_carries_it_and_round_trips(self):
         law = SomaLaw.resolve(_SYNC_FIRE)
         cell = CertificationCell.from_mode_policy(
-            policy_for_spiking_mode("lif", soma_law=law), backend="hcm")
+            policy_for_spiking_mode(point_of_mode("lif", soma_law=law)), backend="hcm")
         assert cell.cell_key == "lif@hcm#ssat16"
         assert CertificationCell.from_key(cell.cell_key) == cell
 

@@ -54,7 +54,7 @@ def make_record_from_snapshot(snapshot: dict):
             s_global=s_global_from_sanafe(snapshot),
             depth=depth_from_sanafe(snapshot),
             per_segment=segment_timings_from_sanafe(snapshot),
-            host_ops_s=None,
+            host_ops_s_raw_total=None,
         ),
     )
 

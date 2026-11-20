@@ -20,7 +20,7 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     present_source_scales,
 )
 from mimarsinan.mapping.support.batch_free_value import deployed_payload
-from mimarsinan.mapping.support.gauge_channels import align_gauge, gauge_channels
+from mimarsinan.mapping.support.gauge_channels import align_gauge, gauge_axis, gauge_channels, gauge_view
 from mimarsinan.mapping.support.compute_modules import (
     ComputeAdapter,
     ScaleNormalizingWrapper,
@@ -129,10 +129,27 @@ class ComputeOpMapper(Mapper):
         vector = self._policy_source_scale(deps, out_scales)
         return None if vector is None else align_gauge(vector, gauge_channels(self))
 
+    def _fan_in_gauges(self, deps, out_scales) -> list:
+        """[U-TGAUGE3] The sources' gauges as the op reads them: where they differ in length (a layout's gauge per element
+        beside a producer's per channel), each per-channel gauge laid over its operand's recorded sample along its own
+        channel axis, so every operand's element is at its producer's gauge before the fan-in aligns them (the
+        alignment spreads a shorter vector channel-major, a guess for a channels-last operand)."""
+        present = present_source_scales(deps, out_scales)
+        lengths = {int(torch.as_tensor(v).numel()) for v in present}
+        shapes = self.input_shapes
+        if len(lengths) <= 1 or shapes is None or len(shapes) != len(deps) or any(s is None for s in shapes):
+            return present
+        laid = []
+        for dep, shape in zip(deps, shapes):
+            if dep not in out_scales or shape is None:
+                continue
+            vector, like = out_scales[dep], torch.zeros((1, *tuple(int(d) for d in shape)))
+            view = gauge_view(vector, like, gauge_axis(dep))
+            laid.append(vector if view is None else view.expand_as(like).reshape(-1).to(torch.as_tensor(vector).dtype))
+        return laid
+
     def _policy_source_scale(self, deps, out_scales):
-        vector = apply_compute_op_scale_policy(
-            self, present_source_scales(deps, out_scales)
-        )
+        vector = apply_compute_op_scale_policy(self, self._fan_in_gauges(deps, out_scales))
         if vector is None or getattr(self, "boundary_traffic_scale", None) is None:
             return vector
         # The observed-traffic lift must present ONE scale to both walks — the

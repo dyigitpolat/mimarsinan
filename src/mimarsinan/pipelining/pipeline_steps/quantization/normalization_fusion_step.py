@@ -1,6 +1,7 @@
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.pipeline_step import METRIC_CARRIED, METRIC_MEASURED
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.models.perceptron_mixer.membrane_lattice import integer_program_read
 from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
 
 
@@ -14,7 +15,9 @@ class NormalizationFusionStep(TrainerPipelineStep):
 
     def validate(self):
         if self.trainer is not None:
-            return self.trainer.test()
+            # [U-POST G2] the published read of the fused integer program, in the plane its step metric reads.
+            with integer_program_read(self.trainer.model):
+                return self.trainer.test()
         return self.pipeline.get_target_metric()
 
     def validate_metric_kind(self) -> str:

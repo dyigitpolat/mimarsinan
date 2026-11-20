@@ -124,3 +124,16 @@ constraint — not this profile — is what must say so.
   geometry, more cores, or weights wider than 3 bits refuses `chip_area_mm2` by name (E190).
 - **`endurance_cycles` = 1e16** (published, ielmini2018inmemory p.7): ODIN's synapses are SRAM, so its lifetime is
   priced on the embedded-SRAM row, at **`pulses_per_write` = 1** (derived): one SRAM write is one write cycle.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T1 (digital spiking cores); an anchor: its own published core scaled by the census's cells, converters or bits (rho), its size and word width flagged.
+- **Outside part (`outside: type`).** the type table's core-grid share (gamma, flagged); an area_global_fixed beside it is refused by name ('the outside part is stated twice').
+- **Node.** 28 nm.
+- **Anchor (core).** core_mm2 `v('T1-OD-01')`; n_pub `s('T1-OD-01', 'scope', 'whole single-core processor', 1)`; its own share: own_memory_share.
+- **Organization.** 256 x 256, 3 weight bits per cell, 4 stored bits per cell, 128 bits per neuron; term weights {'bits': 1.0}. Citations: rows, cols: T1-OD-01 scope (256 neurons, 64k synapses); stored_bits_per_cell: T1-OD-01 scope (64k 4-bit synapses); bits_per_neuron: frenkel2018a p03.raw.txt:266 'in 4kB and 32kB high-density single-port foundry SRAMs' / 256 neurons; weight_bits_per_cell: CO profiles/odin.json validity.geometry.cell_bits.
+- **Dropped.** area_global_fixed 0.
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

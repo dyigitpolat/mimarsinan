@@ -89,6 +89,25 @@ CLASSIFIED = {
     # U-X (W49): the host condition's status (established, outside_scope, not_checked), derived by the replay and
     # never a declared value, upper-cased in its display line.
     ("certification/host_condition.py", "HostConditionCertificate.summary"): (OTHER, {"upper": 1}),
+    # [U-CHIPKEYS] a chip description's statement text (a source, location, quote or note), judged non-empty at load.
+    # [U-CHIPKEYS2] moved to the reading rule (readings._filled), which also strips a reads span and lower-cases a
+    # number word of a quote; a realization's pricing_absent reason and a faithfulness' given settings, judged
+    # non-empty. None reads a declared registry value.
+    ("mapping/platform/descriptions/readings.py", "_filled"): (OTHER, {"strip": 1}),
+    ("mapping/platform/descriptions/readings.py", "number_tokens"): (OTHER, {"lower": 1}),
+    ("mapping/platform/descriptions/readings.py", "read_spans"): (OTHER, {"strip": 1}),
+    ("mapping/platform/descriptions/realizations.py", "judged"): (OTHER, {"strip": 1}),
+    # [U-CHIPKEYS3] a description's stated pricing absence and an assumed field's reason, judged non-empty at load.
+    ("mapping/platform/descriptions/departures.py", "pricing_absence"): (OTHER, {"strip": 1}),
+    # [U-CHIPKEYS4] the faithfulness judge moved from target_bundles (a given setting, judged non-empty), and the
+    # realization record's three texts (design, session, result), each judged non-empty by its form at load.
+    ("mapping/platform/descriptions/departures.py", "judged_faithfulness"): (OTHER, {"strip": 1}),
+    ("mapping/platform/descriptions/realizations.py", "<module>"): (OTHER, {"strip": 3}),
+    ("mapping/platform/descriptions/readings.py", "assumed_field_errors"): (OTHER, {"strip": 1}),
+    # [U-CHIPKEYS6] the label grammar's word judge: a description's typed text and the templates' words, each in its
+    # compatibility form casefolded to read a clause's words in any case (never a declared value).
+    ("mapping/platform/descriptions/label_clauses.py", "words"): (OTHER, {"casefold": 1}),
+    ("mapping/platform/descriptions/label_clauses.py", "templates"): (OTHER, {"casefold": 1}),
     ("chip_simulation/coverage_ci.py", "assert_axes_screening_sound"): (OTHER, {"strip": 1}),
     ("chip_simulation/coverage_reporting.py", "FlagMetadata.is_unowned"): (OTHER, {"strip": 1}),
     ("chip_simulation/coverage_rows.py", "classify_validity_tier"): (OTHER, {"upper": 1}),

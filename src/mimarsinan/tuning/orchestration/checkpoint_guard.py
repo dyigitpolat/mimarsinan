@@ -12,6 +12,7 @@ from mimarsinan.tuning.learning_rate_explorer import (
     clone_state_for_trainer,
     restore_state_for_trainer,
 )
+from mimarsinan.tuning.model_snapshot import ModelState, restore_model_state, snapshot_model_state
 
 
 def _to_pinned_host(src: "torch.Tensor") -> "torch.Tensor":
@@ -74,7 +75,7 @@ class CheckpointGuard:
                 torch.cuda.synchronize()
         else:
             state = {k: v.detach().clone() for k, v in items.items()}
-        return Handle(state, self.scope, self.location)
+        return Handle(snapshot_model_state(model, state), self.scope, self.location)
 
     def restore(self, handle: Handle) -> None:
         if handle.scope == "full" and handle.location == "device":
@@ -89,11 +90,12 @@ class CheckpointGuard:
                 and str(device) != "cpu"
                 and torch.cuda.is_available()
             )
-            state = {k: v.to(device, non_blocking=non_blocking) for k, v in state.items()}
+            state = ModelState({k: v.to(device, non_blocking=non_blocking) for k, v in state.items()},
+                               getattr(handle.state, "records", None))
             if non_blocking:
                 torch.cuda.synchronize()
         # ``strict=False``: tunable scope intentionally omits frozen params.
-        self.trainer.model.load_state_dict(state, strict=False)
+        restore_model_state(self.trainer.model, state, strict=False)
 
     @contextlib.contextmanager
     def bracket(self):

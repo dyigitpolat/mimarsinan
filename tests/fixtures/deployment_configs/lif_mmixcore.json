@@ -51,6 +51,7 @@
     "allow_scheduling": false,
     "spiking_family": "lif",
     "spiking_variant": "synchronized",
+    "lif_window_firing": "fire_while_integrating",
     "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
     "thresholding_mode": "<",

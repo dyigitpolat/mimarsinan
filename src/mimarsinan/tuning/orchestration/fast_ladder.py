@@ -8,12 +8,13 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe, clip_norm_of
+from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe, clear_step_gradients, clip_norm_of
 from mimarsinan.models.nn.layers import freeze_batchnorm_running_stats
 from mimarsinan.tuning.orchestration.fast_lr_schedule import (
     build_fast_lr_schedule,
     scale_fast_lr,
 )
+from mimarsinan.tuning.model_snapshot import restore_model_state, snapshot_model_state
 from mimarsinan.tuning.orchestration.mbh_gate import gated_fast_rate_attempt
 from mimarsinan.tuning.orchestration.mbh_ledger import (
     capture_rung_nonzero_grad_fraction,
@@ -204,7 +205,7 @@ class FastLadderMixin(_FastLadderHost):
             )
             probe_interval = max(1, int(keep_best_interval))
             best = float(keep_best_probe())
-            best_state = copy.deepcopy(self.model.state_dict())
+            best_state = snapshot_model_state(self.model)
         # [WS-A A1] retention retries preserve LR x steps (halved LR, doubled
         # steps) and HOLD the schedule (cosine past T_max would raise the LR).
         retry_scale = max(1, int(getattr(self, "_fast_retry_step_scale", 1)))
@@ -218,7 +219,7 @@ class FastLadderMixin(_FastLadderHost):
             if getattr(self, "_fast_freeze_batchnorm", False):
                 freeze_batchnorm_running_stats(self.model)
             loss = self._fast_loss(x, y)
-            optimizer.zero_grad()
+            clear_step_gradients(optimizer, self.model, step=f"{type(self).__name__}'s fast ladder rung")
             loss.backward()
             if step_index == 0:
                 # A5 reach gauge on the rung's FIRST backward (ledger-flag-gated).
@@ -238,9 +239,9 @@ class FastLadderMixin(_FastLadderHost):
                 acc = float(keep_best_probe())
                 if best is None or acc > best:
                     best = acc
-                    best_state = copy.deepcopy(self.model.state_dict())
+                    best_state = snapshot_model_state(self.model)
         if best_state is not None:
-            self.model.load_state_dict(best_state)
+            restore_model_state(self.model, best_state)
 
     def _continue_to_full_rate(self):
         """The gated fixed ladder never trains destructive intermediate rates:

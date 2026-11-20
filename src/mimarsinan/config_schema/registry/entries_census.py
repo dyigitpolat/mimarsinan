@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from mimarsinan.chip_simulation.window_firing import derived_census_samples
 from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
     FieldType as T,
-    frozen_default as _frozen,
 )
 
 ENTRIES = (
@@ -20,8 +20,10 @@ ENTRIES = (
            "deployed program on the Hard Core Mapping executor, one sample at a time, and each sample's "
            "synaptic events (per core, the recorded input spikes times the used columns) are counted; the "
            "record seals their mean per inference as the energy fragment's synaptic_events, which prices the "
-           "record's spike-dependent energy. 0 or absent runs no census.",
+           "record's spike-dependent energy. 0 runs no census. Absent, a run that integrates then emits (which no "
+           "external backend executes) takes SANA-FE's sample count, and every other run takes 0.",
        relevant=R.when("spiking_mode", in_=("lif", "ttfs_cycle_based")),
-       provenance="consumer frozen default", derived_default=_frozen(0),
-       empty_means="no event census: the record's energy fragment is SANA-FE's or absent, byte for byte"),
+       provenance="derivation rule", derived_default=derived_census_samples,
+       empty_means="the executor of record's census where no external backend executes the point (integrate then "
+                   "emit), else none: the record's energy fragment is SANA-FE's or absent, byte for byte"),
 )

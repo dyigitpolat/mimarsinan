@@ -20,6 +20,11 @@ from mimarsinan.mapping.mappers.scale_propagation import (
 from mimarsinan.mapping.mappers.slot_unfold import SerialSlotUnfold
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.pruning.committed_masks import commit_layer_pruning
+from mimarsinan.transformations.perceptron.position_forward import (
+    add_position_offsets,
+    conv_positions,
+    reads_positions,
+)
 
 
 class Conv2DPerceptronMapper(Mapper):
@@ -159,22 +164,25 @@ class Conv2DPerceptronMapper(Mapper):
         # F.conv2d reads raw weights without calling layer.__call__, so the
         # pruning pre-hooks never fire here; commit the masks directly.
         commit_layer_pruning(self.perceptron.layer)
-        w = self.perceptron.layer.weight.view(
-            self.out_channels, self.in_channels, self.kernel_size[0], self.kernel_size[1]
-        )
-        # Read the LIVE additive term, never the construction-time ``self.bias``
-        # flag: Normalization Fusion replaces a bias-free layer with a
-        # bias-carrying one holding the folded BN bias, and gating on the stale
-        # flag silently dropped it from the forward (measured -0.44 accuracy on
-        # the bias-free CIFAR ResNet-20 at the fusion step).
-        b = self.perceptron.layer.bias
+        if reads_positions(self.perceptron):  # [U-PFOLD] each output position at its patch fold's row
+            y = conv_positions(self.perceptron, x, self.kernel_size, self.stride, self.padding, self.dilation)
+        else:
+            w = self.perceptron.layer.weight.view(
+                self.out_channels, self.in_channels, self.kernel_size[0], self.kernel_size[1]
+            )
+            # Read the LIVE additive term, never the construction-time ``self.bias``
+            # flag: Normalization Fusion replaces a bias-free layer with a
+            # bias-carrying one holding the folded BN bias, and gating on the stale
+            # flag silently dropped it from the forward (measured -0.44 accuracy on
+            # the bias-free CIFAR ResNet-20 at the fusion step).
+            b = self.perceptron.layer.bias
 
-        y = F.conv2d(
-            x, w, b,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation
-        )
+            y = F.conv2d(
+                x, w, b,
+                stride=self.stride,
+                padding=self.padding,
+                dilation=self.dilation
+            )
 
         if self.use_batchnorm or not isinstance(self.perceptron.normalization, nn.Identity):
             b_sz, c_sz, h_sz, w_sz = y.shape
@@ -182,6 +190,7 @@ class Conv2DPerceptronMapper(Mapper):
             y = self.perceptron.normalization(y)
             y = y.view(b_sz, c_sz, h_sz, w_sz)
 
+        y = add_position_offsets(self.perceptron, y)
         y = self.perceptron.scaler(y)
         y = self.perceptron.activation(y)
         if self.training:

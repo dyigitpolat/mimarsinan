@@ -13,7 +13,11 @@ What the program itself sends across the boundary (the segment I/O, host-sourced
 either store. Where the physics prices the host-chip link and the chip states no store, store traffic refuses by name;
 a host-owned store without the link refuses its store traffic by name; a physics without the link and without a
 declaration prices as it always has. The per-load programming terms follow the store too, and the residency step
-choice prices its write and carry energy on the declared store."""
+choice prices its write and carry energy on the declared store.
+
+[U-ENERGY] A program load is priced by the one load law over the plane's load census (``load_census_fixtures``): a
+view that states no pass structure refuses each load figure by that name (``steady``), and the programming terms are
+read on a census."""
 
 from __future__ import annotations
 
@@ -23,13 +27,16 @@ from mimarsinan.deployment_record.cost import host_terms as HT
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.absolute.context import PricingContext
 from mimarsinan.deployment_record.cost.absolute.step_choice import StepChoiceError, carry_energy, price_step
-from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_terms
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
+from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_inputs, price_write_terms
 from mimarsinan.deployment_record.platform_physics.hosts import store as ST
 from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks, resolve_platform_physics
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.support.period_census import PassBoundaryCensus, PassCensus, PassPeriodCensus
+
+from unit.deployment_record.load_census_fixtures import steady, written_program
 
 CORNERS = ("low", "nominal", "high")
 HOST = "jetson_orin_nano_8gb"
@@ -56,8 +63,8 @@ def _q(**values):
     return Quantities({key: QuantityValue(float(value), "static") for key, value in values.items()})
 
 
-def _priced(physics, writes=None, **values):
-    pricing = price_absolute(_q(**values), physics, writes=writes)
+def _priced(physics, writes=None, loads=None, **values):
+    pricing = price_absolute(_q(**values), physics, writes=writes, loads=loads)
     return {t.name: t for t in pricing.terms}, {r.name: r.reason for r in pricing.refusals}
 
 
@@ -88,7 +95,7 @@ class TestAChipOwnedStore:
 
     def test_the_link_and_host_memory_carry_the_programs_own_bytes_only(self):
         terms, refused = _priced(CHIP_STORE, **self.VALUES)
-        assert not refused
+        assert not steady(refused)  # [composition: U-AREA] the area rule prices the area without the cells census
         for corner in CORNERS:
             assert _c(terms["energy_host_link_mj"], corner) == pytest.approx(
                 60 * _k(CHIP_STORE, "e_link_per_byte", corner) * 1e3, rel=1e-12)
@@ -121,7 +128,7 @@ class TestAHostOwnedStore:
 
     def test_the_link_and_host_memory_carry_the_store_traffic_too(self):
         terms, refused = _priced(HOST_STORE, **self.VALUES)
-        assert not refused
+        assert not steady(refused)  # [composition: U-AREA] the area rule prices the area without the cells census
         for corner in CORNERS:
             assert _c(terms["energy_host_link_mj"], corner) == pytest.approx(
                 560 * _k(HOST_STORE, "e_link_per_byte", corner) * 1e3, rel=1e-12)
@@ -158,14 +165,14 @@ class TestNoStoreDeclared:
 
     def test_without_store_traffic_it_prices_as_before(self):
         terms, refused = _priced(NO_STORE, **dict(BASE, carry_in_bytes=0, carry_out_bytes=0, **SEGMENT))
-        assert not refused
+        assert not steady(refused)  # [composition: U-AREA] the area rule prices the area without the cells census
         for corner in CORNERS:
             assert _c(terms["energy_host_link_mj"], corner) == pytest.approx(
                 60 * _k(NO_STORE, "e_link_per_byte", corner) * 1e3, rel=1e-12)
 
     def test_without_the_host_link_nothing_changes(self):
         terms, refused = _priced(CHIP_ONLY, **dict(BASE, **CARRY))
-        assert not refused and "carry_inject: e_dma_per_byte" in terms["energy_dynamic_mj"].source
+        assert not steady(refused) and "carry_inject: e_dma_per_byte" in terms["energy_dynamic_mj"].source
         assert not {"energy_host_link_mj", "latency_host_link_s"} & set(terms)
 
 
@@ -175,7 +182,7 @@ def test_a_host_owned_store_without_the_host_link_refuses_its_store_traffic_by_n
     assert "e2e_latency_s" not in terms and "host-chip link" in refused["e2e_latency_s"]
     assert "energy_per_inference_mj" not in terms
     terms, refused = _priced(physics, **dict(BASE, carry_in_bytes=0, carry_out_bytes=0))
-    assert not refused and "e2e_latency_s" in terms
+    assert not steady(refused) and "e2e_latency_s" in terms
 
 
 class TestTheWriteLaw:
@@ -232,22 +239,34 @@ class TestTheWriteLaw:
 
 
 class TestTheProgrammingTerms:
-    VALUES = dict(BASE, carry_in_bytes=0, carry_out_bytes=0, reprogrammed_bytes=1000, **NO_SEGMENT)
+    """[U-ENERGY] The reprogramming per round is the one load law over the program's period census (two written
+    passes of 500 B, rewritten each round: 1000 B), its write energy the write law's at K = 1, serial."""
+
+    VALUES = dict(BASE, carry_in_bytes=0, carry_out_bytes=0, **NO_SEGMENT)
+
+    def _loads(self):
+        return written_program((500,), (500,))
 
     def test_a_chip_owned_store_loads_the_program_over_the_chips_channel(self):
-        terms, _ = _priced(CHIP_STORE, **self.VALUES)
-        chip, _ = _priced(CHIP_ONLY, **self.VALUES)
+        terms, _ = _priced(CHIP_STORE, loads=self._loads(), **self.VALUES)
+        chip, _ = _priced(CHIP_ONLY, loads=self._loads(), **self.VALUES)
         for name in ("energy_programming_mj", "latency_programming_s"):
             for corner in CORNERS:
                 assert _c(terms[name], corner) == pytest.approx(_c(chip[name], corner), rel=1e-12), name
+        assert "e_link_per_byte" not in terms["energy_programming_mj"].source
 
     def test_a_host_owned_store_loads_it_over_the_link(self):
-        terms, _ = _priced(HOST_STORE, **self.VALUES)
+        loads = self._loads()
+        terms, _ = _priced(HOST_STORE, loads=loads, **self.VALUES)
+        law = price_write_inputs(WriteInputs.of(loads.period.writes), HOST_STORE, lifetime=False).energy
         for corner in CORNERS:
-            energy = 1000 * (_k(HOST_STORE, "e_link_per_byte", corner) + _k(HOST_STORE, "e_host_mem_per_byte", corner)
-                             + _k(HOST_STORE, "e_program_per_byte", corner)) * 1e3
-            assert _c(terms["energy_programming_mj"], corner) == pytest.approx(energy, rel=1e-12)
-            time = 1000 * max(_k(HOST_STORE, "t_program_per_byte", corner), _stage(HOST_STORE, corner))
+            transfer = 1000 * (_k(HOST_STORE, "e_link_per_byte", corner)
+                               + _k(HOST_STORE, "e_host_mem_per_byte", corner)) * 1e3
+            dynamic = _c(terms["energy_programming_mj"], corner) - _c(terms["energy_static_programming_mj"], corner)
+            assert dynamic == pytest.approx(getattr(law, corner) + transfer, rel=1e-12)
+            # each written pass streams at the slower stage and pays one transfer (the write law's wall)
+            time = 1000 * max(_k(HOST_STORE, "t_program_per_byte", corner), _stage(HOST_STORE, corner)) \
+                + 2 * _k(HOST_STORE, "t_link_transfer", corner)
             assert _c(terms["latency_programming_s"], corner) == pytest.approx(time, rel=1e-12)
         assert "e_dma_per_byte" not in terms["energy_programming_mj"].source
 
@@ -267,13 +286,13 @@ class TestTheStepChoice:
 
     def test_the_write_transfer_of_a_host_owned_store_is_the_link_and_host_memory(self):
         policy = WritePolicy(batch_k=4)
-        step = price_step(_census(), HOST_STORE, policy)
+        step = price_step(_census(), HOST_STORE, policy, static=NO_STATIC)
         law = price_write_terms(_census(), HOST_STORE, policy).energy
         for corner in CORNERS:
             per_byte = _k(HOST_STORE, "e_link_per_byte", corner) + _k(HOST_STORE, "e_host_mem_per_byte", corner)
             assert getattr(step.write, corner) == pytest.approx(getattr(law, corner) + 100 * per_byte * 1e3,
                                                                 rel=1e-12)
-        chip = price_step(_census(), CHIP_STORE, policy)
+        chip = price_step(_census(), CHIP_STORE, policy, static=NO_STATIC)
         assert chip.write == price_write_terms(_census(), CHIP_STORE, policy).energy
 
 

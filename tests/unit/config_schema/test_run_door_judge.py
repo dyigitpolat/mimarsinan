@@ -361,8 +361,8 @@ class TestEveryPresentSchemaAtTheRunDoor:
             build_platform_constraints_resolved(_flat(document))
 
     @pytest.mark.parametrize("key,value,consumer_reads", [
-        # spiking_semantics.lif_execution_synchronized reads every discipline but 'synchronized' as streaming.
-        ("lif_execution_discipline", "synchronised", "streaming"),
+        # [U-LIF2] the window firing's vocabulary is the axis's two values, judged at the run door by name.
+        ("lif_window_firing", "synchronised", "a refusal by name"),
         # torch_mapping/encoding_layers.mark_encoding_layers refuses any placement but subsume or offload.
         ("encoding_layer_placement", "Offload", "a ValueError at the mapping step"),
         # DeploymentPlan reads the pruning switch through bool(): the string 'false' is true.
@@ -476,7 +476,7 @@ SCOUTED_MISREADS = [
 #: the simulator; ``review_3/probes/misplaced_derived_*.jsonl``, identical on the base).
 MISPLACED = [
     ("platform_constraints", "lr", -1.0),
-    ("platform_constraints", "lif_execution_discipline", "synchronised"),
+    ("platform_constraints", "lif_window_firing", "synchronised"),
     ("platform_constraints", "encoding_layer_placement", "Offload"),
     ("platform_constraints", "weight_quantization", "false"),
     ("platform_constraints", "enable_nevresim_simulation", "false"),
@@ -833,7 +833,7 @@ AUDITED_LEGAL_SETS = {
     "input_data_scale": "FLOAT >= 0",
     "kd_ce_alpha": "FLOAT in [0, 1]",
     "kd_temperature": "FLOAT > 0",
-    "lif_execution_discipline": "ENUM streaming | synchronized",
+    "lif_window_firing": "ENUM fire_while_integrating | integrate_then_emit",
     "loihi_parity_sample_index": "INT >= 0",
     "lr": "FLOAT in [0, 1]",
     "lr_range_max": "FLOAT > 0",
@@ -889,9 +889,14 @@ AUDITED_LEGAL_SETS = {
     "tuning_batch_size": "INT >= 1",
     "tuning_budget_scale": "FLOAT >= 0",
     "tuning_step_cap_epochs": "FLOAT >= 0",
+    "weight_scale_granularity": "ENUM per_perceptron | per_neuron",  # U-PCH
     "value_parity_samples": "INT >= 0",
     "weight_bits": "INT in [1, 32]",
     "wq_endpoint_recovery_steps": "INT >= 0",
+    # [U-POST G1] audited against its one consumer, pipelining/pipeline_steps/quantization/
+    # host_normalization_recalibration.py: the training batches the host normalizations are re-estimated over at the
+    # end of Weight Quantization; 0 runs none.
+    "wq_host_normalization_batches": "INT >= 0",
     "write_ports": "INT >= 1",
     "weight_scale_rule": "ENUM integer | fractional",  # Wave 2 WI-5b
     # [U-H] the FPGA backend's keys, each the set its consumer accepts and runs: the soma point (SomaLaw.resolve; the
@@ -1316,6 +1321,10 @@ class TestTheClosedRunPath:
         bundled = _load("sync_simplemlp.json")
         owned = set(target_bundles()["odin"].values) | {"max_axons", "max_neurons", "has_bias"}
         bundled["platform_constraints"] = {k: v for k, v in bundled["platform_constraints"].items() if k not in owned}
+        # [U-CHIPKEYS] ODIN states its neuron law's deployment keys too: the fixture's whole neuron law gives way
+        law = {k for k, e in REGISTRY.items() if e.group == "spiking" and k != "core_semantics"}
+        bundled["deployment_parameters"] = {k: v for k, v in bundled["deployment_parameters"].items()
+                                            if k not in owned | law}
         bundled["platform_constraints"].update(target="odin", target_claim_class="quarantined")
         assert any("not declarable" in m for m in validate_deployment_config(bundled))
         assert _merged_or_refusal(bundled)["target_claim_class"] == "quarantined"

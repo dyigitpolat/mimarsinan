@@ -30,6 +30,7 @@ from mimarsinan.certification.randomized.runner import (
     COUNTEREXAMPLE,
     EQUAL,
     OUTCOMES,
+    REFERENCE_ERROR,
     REFUSED,
     REFUSED_UNNAMED,
     compare,
@@ -235,13 +236,29 @@ class TestTheNetworkRelation:
                          else network.CONDITIONAL)
 
     @pytest.mark.parametrize("seed", range(8))
-    def test_every_verdict_records_the_relation_and_its_claim(self, seed):
+    def test_every_verdict_records_the_relation_and_its_claim(self, seed, monkeypatch):
+        """[U-TGAUGE6] A draw whose run reads the window is built through the mapping's window pass, as Soft Core
+        Mapping builds it (``x3a_window``), so every verdict records the relation and its claim. Relay-free, seed 6's
+        identity program holds a live edge at a latency gap other than one and is refused by name before any relation
+        (``test_a_relay_free_gapped_draw_is_refused_at_its_identity_program``)."""
+        from unit.certification.x3a_window import map_through_the_window, reads_the_window
+
+        if reads_the_window(instance_for(seed, ON).semantics):
+            map_through_the_window(monkeypatch)
         verdict = run_instance(seed, "on")
+        assert verdict.outcome != REFERENCE_ERROR, verdict.to_dict()
         assert verdict.network_claim == network.claim(verdict.semantics)
         compared = verdict.network_claim != network.NOT_CLAIMED
         assert (verdict.network_windows > 0) == compared
         assert 0 <= verdict.network_mismatches <= verdict.network_windows
         assert len(verdict.weight_ranges) >= 2 and 0.0 <= verdict.input_dependent <= 1.0
+
+    def test_a_relay_free_gapped_draw_is_refused_at_its_identity_program(self):
+        """[U-TGAUGE5] The screen builds its identity program without relays where no window pass is armed: seed 6 (a
+        per-cycle cascade holding a live edge at a latency gap other than one) is refused by name there."""
+        verdict = run_instance(6, "on")
+        assert verdict.outcome == REFERENCE_ERROR and verdict.detail.startswith("UnbalancedFanInError"), \
+            verdict.to_dict()
 
     def test_cascaded_ttfs_is_outside_the_relation(self):
         instance = _eye(CASCADED_TTFS, 5, (5,), theta=3, weights=((1,),))

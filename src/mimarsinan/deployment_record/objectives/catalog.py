@@ -124,7 +124,7 @@ _RECORD_AXES = (
     objective(
         "mj_per_sample", "min", "mJ/sample", "measured",
         energy_field("mj_per_sample"),
-        "SANA-FE measured energy per inference sample.",
+        "Measured energy per inference sample, the record's energy fragment as measured (no static power is added).",
     ),
     objective(
         "latency_steps", "min", "timesteps", "measured",
@@ -134,7 +134,7 @@ _RECORD_AXES = (
     objective(
         "host_op_wall_s", "min", "s", "measured",
         host_op_wall_backing(),
-        "Measured wall time spent in host ComputeOp stages.",
+        "Measured host ComputeOp wall per inference on the development machine (a diagnostic, never a price).",
     ),
     objective(
         "total_spikes", "min", "spikes", "measured",
@@ -174,17 +174,17 @@ _RECORD_AXES = (
     objective(
         "programming_energy_mj", "min", "mJ", "modeled",
         cost_term("energy", "modeled_programming_mj"),
-        "Modeled energy of moving the programming payload (banded).",
+        "Modeled energy of moving the programming payload (banded; dynamic only, no static power).",
     ),
     objective(
         "sync_barrier_energy_mj", "min", "mJ", "modeled",
         cost_term("energy", "modeled_sync_mj"),
-        "Modeled energy of the schedule's sync barriers (banded).",
+        "Modeled energy of the schedule's sync barriers (banded; dynamic only, no static power).",
     ),
     objective(
         "throughput_samples_per_s", "max", "samples/s", "modeled",
         cost_term("throughput", "samples_per_s"),
-        "Steady-state samples per second from the cost model's latency total.",
+        "Steady-state samples per second from the measured cost model's chip-side latency total.",
     ),
 )
 

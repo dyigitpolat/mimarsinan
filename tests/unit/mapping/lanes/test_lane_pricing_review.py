@@ -27,6 +27,7 @@ from mimarsinan.mapping.lanes.install import LANE_REPORT
 from mimarsinan.mapping.lanes.output_stage import planned_lane_ops
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from unit.chip_simulation.value_run.integer_programs import lenet5, mlp, residual_block_net
+from unit.deployment_record.printed_names import split_names
 from unit.mapping.lanes.lane_programs import build_lane_program, cores, lane_platform
 from unit.mapping.lanes.test_lane_reduction import transition_net
 
@@ -252,7 +253,12 @@ class TestChipOnlyEnergyNamesItsUnpriced:
         stage = {"label": "executed", "classes": ["E", "L", "P"], "lane_block": BLOCK, "lanes_per_core": 4,
                  "deployed": {"lane_ops": {"add": 1}, "host_ops": 0, "host_round_trips": 0, "host_barriers": 0,
                               "host_bytes": 0}, "notes": []}
-        assert "(unpriced: e_noc_value_per_byte_hop(noc_value))" in output_stage_note(stage, pricing)
+        # [U-ENERGY classes 1 and 2] the note prints the chip-only term's whole unpriced list: the undeclared row, and
+        # the static rows this description does not declare, named over e2e_latency_s
+        note = output_stage_note(stage, pricing)
+        listed = note.partition("(unpriced: ")[2]
+        assert listed.startswith("e_noc_value_per_byte_hop(noc_value), ") and listed.endswith(")")
+        assert "e_noc_value_per_byte_hop(noc_value)" in split_names(listed[:-1])
 
 
     def test_a_lane_block_point_whose_headline_refuses_refuses_its_chip_only_term_by_name(self):
@@ -277,8 +283,9 @@ class TestChipOnlyEnergyNamesItsUnpriced:
 
         rows = {k: {"nominal": v, "unit": u, "note": "test lane row"}
                 for k, v, u in (("area_per_lane", 1.0, "um^2"), ("e_lane_op", 1.0, "pJ"), ("t_lane_op", 1.0, "ns"))}
-        declared = {"e_mac": {"nominal": 0.1, "unit": "pJ", "note": "test compute energy"},
-                    "host_compute_rate": {"nominal": 1e9, "unit": "1", "note": "test host rate"}, **rows}
+        # [U-HOST] no host declared (a host row is admitted only from an identified host description): host MACs
+        # refuse the headline for host_macs_per_s, as the test needs
+        declared = {"e_mac": {"nominal": 0.1, "unit": "pJ", "note": "test compute energy"}, **rows}
         physics = resolve_platform_physics("", declared, lane_block=BLOCK)
         values = {"synaptic_events": 1e6, "cells_used": 1e6, "macs": 1e6, "lane_ops": 1e5, "lanes_per_tile": 4.0,
                   "tiles": 10.0, "host_macs": 1e6, "compute_op_count": 1}

@@ -407,7 +407,8 @@ class TestConversionRecipe:
     """The plan exposes the ConversionPolicy SSOT recipe for its resolved mode."""
 
     def test_recipe_is_derived_for_the_plans_mode(self):
-        plan = _resolve(spiking_mode="lif")
+        # [U-LIF2 W16] Loihi executes firing while integrating only, so the document declares it.
+        plan = _resolve(spiking_mode="lif", lif_window_firing="fire_while_integrating")
         recipe = plan.conversion_recipe
         assert recipe.driver == "fast"
         assert recipe.special_case == "bn_freeze"
@@ -531,9 +532,6 @@ class TestNoStrayDeploymentFlagReadsAnywhere:
         # FOLDS spiking_mode from the authored axes — it reads the raw key
         # for idempotence, legacy-dict bridging, and contradiction checks.
         "chip_simulation/activation_semantics.py",
-        # ── codegen: the C++ comparator/exec policy (FiringStrategyFactory SSOT
-        #    side); reads its own ``simulation_config`` codegen param ──
-        "code_generation/generate_main.py",
         # ── config_schema: DEFINES / DERIVES / DISPLAYS / VALIDATES the keys ──
         "config_schema/",
         # ── coverage/ledger projection: this is the AUDIT bridge that maps raw

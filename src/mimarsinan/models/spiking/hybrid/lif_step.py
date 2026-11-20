@@ -8,12 +8,15 @@ import torch
 
 from mimarsinan.chip_simulation.recording.spike_recorder import SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.mapping.latency.cycle_windows import (
+    NOT_ARMED, carried_window_gaps, core_window_gaps, require_cycle_windows)
+from mimarsinan.mapping.packing.pass_timing import carried_nodes, replay_delays
 from mimarsinan.models.spiking.hybrid.executors.carry_record import (
     record_reference_carry, require_carry_capable)
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
-from mimarsinan.models.spiking.hybrid.executors import (
-    run_neural_segment_counts, run_neural_segment_packed, runs_synchronized_counts)
+from mimarsinan.models.spiking.hybrid.executors import integrates_then_emits, run_neural_segment_packed
+from mimarsinan.models.spiking.hybrid.executors.gated_reference import run_integrate_then_emit
 from mimarsinan.models.spiking.hybrid.executors.reference_loop import (
     accumulate_output_spans, allocate_record_rasters, allocate_record_tensors,
     append_core_spike_counts, build_cycle_activity_plan, fill_core_inputs)
@@ -79,6 +82,17 @@ class HybridLifStepMixin(HybridFlowHost):
             ),
             soma_law=self.soma_law,
         )
+        # [U-LIF2 W9] integrate then emit runs on its executor of record, the gated cycle-level executor (its closed
+        # form only by name); a raster it owes a later pass or a recorder is refused, as before.
+        gated = integrates_then_emits(self)
+        if output_train is not None:
+            # capable= must describe the EXECUTED path: integrate then emit records no raster; the packed executor
+            # AND the reference loop below (single-spike latch included, [U1 W3]) both do.
+            require_carry_capable(stage, packed=not gated)
+        if gated:
+            return run_integrate_then_emit(
+                self, input_spike_train, seg=seg, stage=stage, T=T, batch_size=batch_size, device=device,
+                policy=policy, recorder_seg=recorder_seg, readout_corrections=readout_corrections)
         neuron_states = [
             policy.make_state(
                 batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
@@ -104,17 +118,18 @@ class HybridLifStepMixin(HybridFlowHost):
         latency_gated = policy.latency_gated
         single_spike = getattr(policy, "single_spike_io", False)
 
-        synchronized_path = runs_synchronized_counts(self, recording=recording)
-        if output_train is not None:
-            # capable= must describe the EXECUTED path: the synchronized early-
-            # return records no raster; the packed executor AND the reference
-            # loop below (single-spike latch included, [U1 W3]) both do.
-            require_carry_capable(stage, packed=not synchronized_path)
-
-        if synchronized_path:
-            return run_neural_segment_counts(
-                self, input_spike_train, seg=seg, T=T,
-                batch_size=batch_size, device=device, soma_law=self.soma_law)
+        # [U-TGAUGE5] the window rule at the per-cycle executors below (packed and reference loop), once per segment
+        # cache fill: each core reads its producer cores' buffers of the previous cycle, and a pass an earlier pass's
+        # carried slice at its delivery delay (a level unit reads counts: no carried slice), so a stage reading a live
+        # producer of its fused segment at a latency gap other than one is refused by name before a cycle folds.
+        # [composed head, w-3] It sits after U-LIF2's integrate-then-emit dispatch above: the gate by depth integrates
+        # every arrival from the stage's start, so no window rule applies there.
+        if not seg.get("windows_read"):
+            carried = carried_nodes(self.hybrid_mapping.stages, stage)
+            delays = {k: d for k, d in replay_delays(stage).items() if int(stage.input_map[k].node_id) in carried}
+            require_cycle_windows(core_window_gaps(mapping) + carried_window_gaps(mapping, stage.input_map, delays),
+                                  where=f"stage {stage.name!r}", cause=NOT_ARMED)
+            seg["windows_read"] = True
 
         # [cert-plan W1] stage-flat executor: same policy physics, batched
         # charge layout; recording/single-spike paths keep the per-core

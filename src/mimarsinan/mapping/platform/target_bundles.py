@@ -3,33 +3,46 @@
 A bundle is data, ``targets/<name>.json``: a geometry (a registered ``IMCPlatform`` by name, or declared with
 its provenance and claim class), the core fields its cores take beside the geometry's (``core_fields``: the cores'
 write path), registry keys judged by the value schema at load (the chip's permissions and input width among them),
-and a faithfulness class (exact; approximate or refused, with what departs named). This module loads and reads the
-bundles; ``target_expansion`` writes a declared target's keys at every config entry point.
+and a faithfulness class (exact; approximate or refused, with what departs named), its computation statements and
+produced realizations ([U-CHIPKEYS] ``descriptions``). This module loads and reads the bundles;
+``target_expansion`` writes a declared target's keys at every config entry point. [U-CHIPKEYS3] A description
+states its pricing (a profile, or ``pricing_absent`` with why, read at the run door: ``departures``). [U-CHIPKEYS4]
+Where it states none, its label names the pricing a run resolves (``departures.run_faithfulness``), never its file.
+[U-CHIPKEYS5/6] One grammar (``descriptions.label_clauses``) writes the label, typed texts as quoted fields.
 """
 
 from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.config_schema.registry import REGISTRY, Category
+from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.config_schema.registry.build import declared_paths, effective_class
-from mimarsinan.config_schema.registry.decision_classes import COMPOSITE, FUNCTION_BEARING, class_of_path
 from mimarsinan.config_schema.registry.entries_write import CORE_TYPE_SCHEMA
 from mimarsinan.config_schema.registry.value_schema import entry_value_errors, value_errors
+from mimarsinan.mapping.platform.descriptions import computation_keys, label_clauses, realizations
+from mimarsinan.mapping.platform.descriptions.computation_keys import (  # moved: re-exported
+    function_bearing_differences as function_bearing_differences)
+from mimarsinan.mapping.platform.descriptions.departures import (  # moved: re-exported
+    PricingAbsentError as PricingAbsentError, absolute_pricing_refusal as absolute_pricing_refusal,
+    declared_departures as declared_departures, declared_pricing_refusal as declared_pricing_refusal,
+    judged_faithfulness as judged_faithfulness, pricing_absence as pricing_absence,
+    pricing_departures as pricing_departures, run_faithfulness as run_faithfulness, run_pricing as run_pricing,
+    states_pricing as states_pricing, target_departures as target_departures)
 from mimarsinan.mapping.platform.imc_platforms import IMCPlatform, get_imc_platform, imc_platform_names
 from mimarsinan.mapping.platform.weight_cells import CELLS_PER_WEIGHT, WEIGHT_CELL_ROWS, weight_capacity
 
 DP, PC = "deployment_parameters", "platform_constraints"
 _TARGETS_DIRNAME = "targets"
-_BUNDLE_FIELDS = frozenset({"name", "display_name", "geometry", "keys", "core_fields", "faithfulness", "notes"})
+_BUNDLE_FIELDS = frozenset({"name", "display_name", "geometry", "keys", "core_fields", "faithfulness", "notes",
+                            "computation", "realizations", "pricing_absent"})
 _GEOMETRY_FIELDS = frozenset({"name", "cores", "weight_bits", "provenance", "claim_class"})
-_FAITHFULNESS_FIELDS = frozenset({"class", "named", "note"})
+_FAITHFULNESS_FIELDS = frozenset({"class", "named", "given", "note"})
 FAITHFULNESS_KINDS = ("exact", "approximate", "refused")
 #: Keys no bundle sets: the physics override block is composed whole from named blocks (merge_override_blocks).
 UNBUNDLED_KEYS = ("platform_physics_overrides",)
@@ -39,30 +52,48 @@ class TargetBundleError(ToolchainRefusal, ValueError):
     """A bundle file the loader refuses: an unknown or undeclarable key, an illegal value, a reused name."""
 
 
+class ChipKeyUnstatedError(TargetBundleError):
+    """A bundle that neither states a key that changes the computation from its source nor names it unstated."""
+
+
 class UnknownTargetError(ToolchainRefusal, ValueError):
     """``target`` names no bundle; the message lists the known names."""
 
 
 @dataclass(frozen=True)
 class Faithfulness:
-    """How closely a declaration follows the published target: a kind and the named departures."""
+    """How closely a declaration follows the published target: a kind, the named departures, and [U-CHIPKEYS2] the
+    configuration the class rests on (``given``: the chip's settings a deployment holds for the class to hold)."""
 
     kind: str
     named: Tuple[str, ...] = ()
+    given: Tuple[str, ...] = ()
+    #: [U-CHIPKEYS4] The head of ``named`` that names the pricing a run resolves (a description stating none).
+    pricing: Tuple[str, ...] = ()
 
     def with_declared(self, keys: Iterable[str]) -> "Faithfulness":
         """The class once ``keys`` are overridden: an exact bundle becomes approximate, each key named."""
-        return self.with_departures(f"{key} declared" for key in sorted(keys))
+        return self.with_departures(label_clauses.clause("declared", key=key) for key in sorted(keys))
 
     def with_departures(self, departures: Iterable[str]) -> "Faithfulness":
         """The class once a deployment departs from the bundle in ``departures``: an exact bundle becomes
-        approximate, each departure named after the bundle's own."""
+        approximate, each departure named after the bundle's own; the configuration it rests on is kept."""
         if not (named := tuple(departures)):
             return self
-        return Faithfulness("approximate" if self.kind == "exact" else self.kind, self.named + named)
+        return replace(self, kind="approximate" if self.kind == "exact" else self.kind, named=self.named + named)
+
+    def with_pricing(self, pricing: Iterable[str]) -> "Faithfulness":
+        """[U-CHIPKEYS4] The class with ``pricing`` named in place of the pricing it names (first); a pricing named is
+        a departure (an exact class becomes approximate), and the rest is kept."""
+        pricing = tuple(pricing)
+        kind = "approximate" if self.kind == "exact" and pricing else self.kind
+        return replace(self, kind=kind, named=pricing + self.named[len(self.pricing):], pricing=pricing)
 
     def label(self) -> str:
-        return self.kind if not self.named else f"{self.kind}: {'; '.join(self.named)}"
+        """``<kind>[, given "<setting>" and given "<setting>"][: <departure>; <departure>]`` ([U-CHIPKEYS6] each given
+        setting a quoted field, as each typed departure is in ``named``)."""
+        given = " and ".join(label_clauses.field(label_clauses.GIVEN, setting) for setting in self.given)
+        return f"{self.kind}{', ' + given if given else ''}" + (f": {'; '.join(self.named)}" if self.named else "")
 
 
 @dataclass(frozen=True)
@@ -77,11 +108,20 @@ class TargetBundle:
     claim_class: str
     faithfulness: Faithfulness
     values_json: str
+    computation_json: str = "{}"
+    realizations_json: str = "{}"
+    #: [U-CHIPKEYS3] The stated pricing absence (why no physics profile prices this description), "" where none.
+    pricing_absent: str = ""
 
     @property
     def values(self) -> Dict[str, Any]:
         """``{key: value}`` of every key the bundle sets, in bundle order: a fresh copy at each read."""
         return json.loads(self.values_json)
+
+    @property
+    def statements(self) -> Dict[str, Dict[str, Any]]:
+        """[U-CHIPKEYS] ``{key path: statement}``: each computation key stated from its source or named unstated."""
+        return json.loads(self.computation_json)
 
 
 def _refuse(source: str, message: str) -> TargetBundleError:
@@ -120,25 +160,11 @@ def _geometry(source: str, spec: Any) -> Tuple[str, str, Dict[str, Any]]:
 
 def _bundle_key_errors(key: str, value: Any) -> List[str]:
     """Why a bundle may not set ``key`` to ``value``: the registry's value schema and declarability."""
-    entry = REGISTRY.get(key)
-    if entry is None:
-        return [f"{key} is not a registry key"]
-    if key in UNBUNDLED_KEYS:
+    if REGISTRY.get(key) is not None and key in UNBUNDLED_KEYS:
         return [f"{key} is declared through its named override blocks, never by a bundle"]
-    if entry.category is Category.RUNTIME or (entry.category is Category.DERIVED and not entry.declarable):
-        return [f"{key} is not declarable"]
-    if entry.decision_class == COMPOSITE or entry.section not in (DP, PC):
-        return [f"{key} cannot be set by a bundle (a composite or top-level key)"]
-    return entry_value_errors(entry, value)
-
-
-def _faithfulness(source: str, spec: Any) -> Faithfulness:
-    data = _closed(source, "faithfulness", spec, _FAITHFULNESS_FIELDS, ("class",))
-    kind, named = data["class"], tuple(data.get("named", ()))  # the note is read by people only
-    if kind not in FAITHFULNESS_KINDS or (kind == "exact") != (not named):
-        raise _refuse(source, f"faithfulness {kind!r} {list(named)}: one of {FAITHFULNESS_KINDS}, "
-                              "exact with nothing named, approximate or refused with what departs named")
-    return Faithfulness(kind, named)
+    if (reason := computation_keys.unsettable_reason(key)) is not None:  # [U-CHIPKEYS] one rule, the sweep's too
+        return [reason]
+    return entry_value_errors(REGISTRY[key], value)
 
 
 def _with_core_fields(source: str, cores: List[Dict[str, Any]], fields: Any) -> List[Dict[str, Any]]:
@@ -169,8 +195,23 @@ def load_bundle(path: Path) -> TargetBundle:
     except ValueError as exc:
         raise _refuse(source, f"not JSON: {exc}") from None
     data = _closed(source, "the bundle", data, _BUNDLE_FIELDS, ("name", "geometry", "keys", "faithfulness"))
-    if data["name"] != path.stem:
-        raise _refuse(source, f"name {data['name']!r} differs from the file name {path.stem!r}")
+    if data["name"] != path.stem or not realizations.NAME.fullmatch(str(data["name"])):  # [U-CHIPKEYS3] one pattern
+        raise _refuse(source, f"name {data['name']!r} differs from the file name {path.stem!r} or is not letters, "
+                              "digits and underscores")
+    if (shown := label_clauses.text_error("display_name", data.get("display_name"))) is not None:
+        raise _refuse(source, shown)  # [U-CHIPKEYS5] printed beside the label: no clause the label derives
+    geometry, claim_class, values = bundle_values(source, data)
+    statements = judged_statements(source, data.get("computation"), values)
+    absent = pricing_absence(source, data.get("pricing_absent"), values)  # [U-CHIPKEYS4] its pricing, then the label's
+    faith = judged_faithfulness(source, data["faithfulness"], computation_keys.departures(statements),
+                                pricing_departures(states_pricing(values, absent), run_pricing(values)))
+    return TargetBundle(data["name"], geometry, claim_class, faith, json.dumps(values), json.dumps(statements),
+                        json.dumps(realizations.judged(source, data, geometry, values)), absent)
+
+
+def bundle_values(source: str, data: Mapping[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
+    """``(geometry, claim class, values)`` of a bundle's data: its geometry's cores with the core fields and its keys,
+    each judged; the computation statements are judged on these values."""
     geometry, claim_class, values = _geometry(source, data["geometry"])
     values["cores"] = _with_core_fields(source, values["cores"], data.get("core_fields", {}))
     if not isinstance(data["keys"], Mapping):
@@ -181,8 +222,17 @@ def load_bundle(path: Path) -> TargetBundle:
         values[key] = copy.deepcopy(value)
     if errors := [m for key in ("cores", "weight_bits") for m in _bundle_key_errors(key, values[key])]:
         raise _refuse(source, "; ".join(errors))
-    return TargetBundle(data["name"], geometry, claim_class, _faithfulness(source, data["faithfulness"]),
-                        json.dumps(values))
+    return geometry, claim_class, values
+
+
+def judged_statements(source: str, block: Any, values: Mapping[str, Any]) -> Dict[str, Any]:
+    """[U-CHIPKEYS] The one loader rule (``computation_keys``): a key with no statement refuses by name."""
+    unstated, errors, statements = computation_keys.statement_errors(block, values)
+    if unstated or errors:
+        raise (ChipKeyUnstatedError if unstated else TargetBundleError)(f"target bundle {source}: " + (
+            f"computation keys neither stated nor named unstated with a note: {'; '.join(unstated)}" if unstated
+            else "; ".join(errors)))
+    return statements
 
 
 _CACHE: Dict[Path, Mapping[str, TargetBundle]] = {}
@@ -209,9 +259,15 @@ def target_bundles() -> Mapping[str, TargetBundle]:
 
 
 def get_target_bundle(name: Any, bundles: Optional[Mapping[str, TargetBundle]] = None) -> TargetBundle:
-    if name not in (known := target_bundles() if bundles is None else bundles):
-        raise UnknownTargetError(f"target={name!r} names no target bundle; the known targets are {sorted(known)}")
-    return known[name]
+    """The bundle ``name`` selects: a bundle, or a declared realization of one (``<bundle>@<realization>``)."""
+    if (found := realizations.lookup(known := target_bundles() if bundles is None else bundles, name)) is None:
+        raise UnknownTargetError(f"target={name!r} names no target bundle; the known targets are {target_names(known)}")
+    return found
+
+
+def target_names(bundles: Optional[Mapping[str, TargetBundle]] = None) -> List[str]:
+    """Every name a ``target`` takes: each bundle's, then each declared realization's (``<bundle>@<name>``)."""
+    return realizations.names(target_bundles() if bundles is None else bundles)
 
 
 _BLOCKS: Dict[int, Tuple[Mapping[str, TargetBundle], Dict[str, Tuple[Tuple[str, int, int], ...]]]] = {}
@@ -220,14 +276,15 @@ _BLOCKS: Dict[int, Tuple[Mapping[str, TargetBundle], Dict[str, Tuple[Tuple[str, 
 def technology_blocks(bundles: Optional[Mapping[str, TargetBundle]] = None
                       ) -> Dict[str, Tuple[Tuple[str, int, int], ...]]:
     """[U-CR C-3] Per technology (the physics profile a chip description binds), the weight-cell block each chip
-    description binding it states on its cores: ``(description, cells_per_weight, weight_cell_rows)``. A technology
-    whose descriptions store one weight per cell is absent (``weight_cells.technology_block_errors`` reads it)."""
+    description binding it states on its cores: ``(description, cells_per_weight, weight_cell_rows)``, every target
+    name read through the one lookup ([U-CHIPKEYS2]: a realization binds its own profile or none). A technology whose
+    descriptions store one weight per cell is absent (``weight_cells.technology_block_errors`` reads it)."""
     known = target_bundles() if bundles is None else bundles
     if (cached := _BLOCKS.get(id(known))) is not None and cached[0] is known:
         return dict(cached[1])
     out: Dict[str, List[Tuple[str, int, int]]] = {}
-    for name, bundle in sorted(known.items()):
-        values = bundle.values
+    for name in target_names(known):  # [U-CHIPKEYS2] every name a target takes, read through the one lookup
+        values = get_target_bundle(name, known).values
         stated = {(int(c[CELLS_PER_WEIGHT]), int(c[WEIGHT_CELL_ROWS])) for c in values["cores"]
                   if int(c.get(CELLS_PER_WEIGHT, 1)) > 1}  # a count above 1 states its rows (the loader's rule)
         if (profile := values.get("platform_physics_profile")) is not None:
@@ -240,60 +297,3 @@ def technology_blocks(bundles: Optional[Mapping[str, TargetBundle]] = None
 def target_decision_class(name: str) -> str:
     """The decision class of ``target: <name>``: the join over every key path the bundle sets."""
     return effective_class(declared_paths(get_target_bundle(name).values))
-
-
-def _path_value(values: Mapping[str, Any], path: str) -> Any:
-    key, *fields = path.split(".")
-    value = values.get(key)
-    for name in fields:
-        value = (tuple(item.get(name) if isinstance(item, Mapping) else None for item in value)
-                 if isinstance(value, list) else value.get(name) if isinstance(value, Mapping) else None)
-    return value
-
-
-def function_bearing_differences(first: TargetBundle, second: TargetBundle) -> Tuple[str, ...]:
-    """The function-bearing key paths whose values differ between two bundles (absent meanings included)."""
-    paths = set(declared_paths(first.values)) | set(declared_paths(second.values))
-    return tuple(path for path in sorted(paths)
-                 if class_of_path(REGISTRY, path) == FUNCTION_BEARING
-                 and _path_value(first.values, path) != _path_value(second.values, path))
-
-
-def target_departures(platform: Mapping[str, Any]) -> Tuple[Dict[str, Any], ...]:
-    """Each overridden bundle key of a resolved platform beside the bundle's value: key, bundle, declared, note."""
-    if platform.get("target") is None:
-        return ()
-    values = get_target_bundle(platform["target"]).values  # a fresh copy: the rows share nothing with the cache
-    return tuple({"key": key, "bundle": values.get(key), "declared": copy.deepcopy(entry["value"]),
-                  "note": entry["note"]}
-                 for key, entry in sorted((platform.get("target_overrides") or {}).items()))
-
-
-def _same(first: Any, second: Any) -> bool:
-    return json.dumps(first, sort_keys=True, default=repr) == json.dumps(second, sort_keys=True, default=repr)
-
-
-def declared_departures(name: str, declared: Optional[Mapping[str, Any]] = None,
-                        core_fields: Optional[Mapping[str, Any]] = None) -> Tuple[Dict[str, Any], ...]:
-    """[U-C C-5] Each key a declaration beside ``target=<name>`` sets to another value than the bundle's, and each core
-    field it sets to another value than the bundle's cores carry (``cores.<field>``): key, bundle, declared. A key the
-    bundle does not set departs from nothing (the declaration completes the chip description)."""
-    values = get_target_bundle(name).values
-    out = [{"key": key, "bundle": values[key], "declared": copy.deepcopy(value)}
-           for key, value in sorted((declared or {}).items()) if key in values and not _same(values[key], value)]
-    cores = values.get("cores") or []
-    for field, value in sorted((core_fields or {}).items()):
-        stated = [core[field] for core in cores if field in core]
-        if stated and not all(_same(v, value) for v in stated):
-            out.append({"key": f"cores.{field}", "bundle": stated[0], "declared": copy.deepcopy(value)})
-    return tuple(out)
-
-
-def absolute_pricing_refusal(platform: Mapping[str, Any]) -> Optional[Tuple[str, str]]:
-    """``(name, reason)`` of the absolute-pricing refusal for a resolved platform whose target declares no
-    physics (the pricer builds its own refusal record from the pair); None otherwise."""
-    name = platform.get("target")
-    if name is None or platform.get("platform_physics_resolved") is not None:
-        return None
-    return ("absolute_pricing", f"target={name!r} declares no physics profile ("
-            f"{get_target_bundle(name).faithfulness.label()}): no area, energy or latency is priced")

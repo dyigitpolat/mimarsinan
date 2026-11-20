@@ -101,6 +101,9 @@ class JointArchHwProblem(
     spiking_mode: str = "lif"
     ttfs_cycle_schedule: str = "cascaded"
     per_hop_retiming: bool = False
+    #: [U-LIF2 W11] The run's resolved lif_window_firing (None away from the synchronized LIF variant), so the
+    #: candidate and the twin price the stage cycles the run executes.
+    window_firing: Optional[str] = None
     #: [H2] The run's pass-boundary transfer discipline (VERBATIM/COLLAPSE),
     #: resolved by the deployment's own rule; None leaves carry unpriced.
     pass_transfer: Optional[str] = None

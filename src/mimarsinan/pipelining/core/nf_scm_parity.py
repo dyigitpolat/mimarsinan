@@ -18,6 +18,7 @@ from mimarsinan.chip_simulation.deployed_host import (
     place_on_host,
     spiking_host_arithmetic,
 )
+from mimarsinan.chip_simulation.hybrid_run.output_decode import executor_output_values
 from mimarsinan.common.env import nf_scm_parity_debug_enabled
 from mimarsinan.mapping.support.host_kernel_evaluation import forward_of, twin_as_program
 from mimarsinan.models.nn.lif_kernels import measurement_plane
@@ -201,6 +202,7 @@ def _build_cascaded_identity_executor(pipeline, model, ir_graph):
         thresholding_mode=contract.thresholding_mode,
         spiking_mode=contract.spiking_mode,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
+        spiking_point=contract.spiking_point(),
     ).eval()
 
 
@@ -229,6 +231,7 @@ def _build_streamed_identity_executor(pipeline, model, ir_graph):
         lif_membrane_init=contract.lif_membrane_init,
         membrane_integer_lattice=bool(plan.weight_quantization),
         soma_law=contract.soma_law(),
+        spiking_point=contract.spiking_point(),
     ).eval()
 
 
@@ -355,7 +358,8 @@ def assert_cascaded_nf_scm_agreement_or_raise(
 
     Healthy agreement is ~1.0 (driver==executor bit-exact once bias references stay
     live); a wrong-NF-dynamics regression craters it. Returns the measured agreement.
-    [U-HDA] Both twins evaluate on the deployed host.
+    [U-HDA] Both twins evaluate on the deployed host. [U-TGAUGE2] Both are read in the value domain: the executor's
+    count-scaled final read decoded by its program's output gauge (``executor_output_values``), as the NF decodes its own.
     """
     with _on_deployed_host("Soft Core Mapping cascaded NF↔SCM decision agreement (the NF and identity twins)",
                            pipeline, model, ir_graph) as device:
@@ -371,7 +375,7 @@ def _cascaded_nf_scm_agreement(pipeline, model, ir_graph, samples: torch.Tensor,
         executor = executor.to(device)
     with torch.no_grad():
         nf_pred = twin_as_program(ir_graph, forward_of, model, samples).argmax(dim=1)
-        scm_pred = executor(samples).argmax(dim=1)
+        scm_pred = executor_output_values(executor, executor(samples)).argmax(dim=1)
     agreement = float((nf_pred == scm_pred).double().mean())
     if agreement < float(min_agreement):
         raise NfScmParityError(
@@ -439,6 +443,8 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
     (outside it float32 dust decided them: the C5 T-LIF first core, SCM = NF + 1), so the plane is the NF's read.
     [U-HDA] Both twins evaluate on the deployed host; the model, the flow and the program's host modules are handed
     back where they were. [U-LMP] The arithmetic line's ``host_arithmetic`` event goes to the step's ``reporter``.
+    [U-TGAUGE2] Both twins' classes are the value domain's: the flow's count-scaled final read is decoded by its
+    program's output gauge (``executor_output_values``), the one decode the NF walk applies to its own output.
     """
     program = getattr(flow, "hybrid_mapping", None)
     arithmetic = spiking_host_arithmetic(
@@ -461,7 +467,7 @@ def _torch_vs_deployed_sim(model, flow, samples: torch.Tensor, *, min_agreement:
     program = getattr(flow, "hybrid_mapping", None)
     with torch.no_grad(), measurement_plane():
         torch_pred = twin_as_program(program, forward_of, model, samples).argmax(dim=1)
-        sim_pred = flow(samples).argmax(dim=1)
+        sim_pred = executor_output_values(flow, flow(samples)).argmax(dim=1)
     agreement = float((torch_pred == sim_pred).double().mean())
     if labels is not None:
         flips = (torch_pred != sim_pred).nonzero(as_tuple=True)[0]

@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.chip_simulation.hybrid_run.output_decode import decode_held, program_output_gauge
 from mimarsinan.models.nn.activations.autograd import TTFSInputGridQuantizer
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.spiking.training.prefix_genuine_forward import (
@@ -67,7 +68,8 @@ class _Rung2TeacherFlow(nn.Module):
     """Frozen KD teacher evaluating the identity-mapped contract semantics.
 
     Wraps an identity-mapped ``SpikingHybridCoreFlow``; count-scaled logits (÷T) are
-    restored to the value domain via per-output node scales.
+    restored to the value domain via per-output node scales ([U-TGAUGE2] the program's output gauge, through the one
+    decode every reader of an output as a value uses).
     """
 
     def __init__(self, flow, simulation_length: int, output_scales):
@@ -83,7 +85,7 @@ class _Rung2TeacherFlow(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         logits = self.flow(x) / float(self.simulation_length)
-        return logits * self._output_scales.to(logits.device, logits.dtype)
+        return decode_held(logits, self._output_scales.to(logits.device, logits.dtype))
 
 
 class _ContractCalibration:
@@ -479,11 +481,8 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             spiking_mode=str(cfg.get("spiking_mode", "ttfs_cycle_based")),
             ttfs_cycle_schedule="synchronized",
         )
-        mapping = flow.hybrid_mapping
-        output_scales = [
-            float(mapping.node_activation_scales.get(int(src.node_id), 1.0))
-            for src in mapping.output_sources.flatten()
-        ]
+        # [U-TGAUGE2] each output at the gauge its producer's state holds it at, under the timing family's convention
+        output_scales = program_output_gauge(flow.hybrid_mapping, timing=True)
         return _Rung2TeacherFlow(flow, self._T, output_scales)
 
     def _map_teacher_to_ir(self):

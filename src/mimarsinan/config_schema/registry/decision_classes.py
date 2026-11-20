@@ -129,6 +129,7 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
     "quantizer_state": (_FB, "the declared readout ranges and entry grids move every grid they name"),
     "weight_scale_rule": (_FB, "a fractional scale moves the weight codes and the law's multiplier"),
     "bias_resolution": (_FB, "a bias held at the law's resolution moves the law's B and the float bias"),
+    "weight_scale_granularity": (_FB, "a scale per output neuron moves every weight code, threshold and lattice"),
     "onchip_arithmetic": (_FB, "join of its fields: lanes move rounding (one per lane) and host-op placement"),
     "layer_core_types": (_FB, "each layer's core type sets its weight grid and the cores it packs onto"),
     "write_overlap": (_CO, "join of its fields: exposed write time only"),
@@ -273,3 +274,12 @@ def declared_paths_in(entries: Mapping[str, Any], values: Mapping[str, Any]) -> 
         }
         paths |= leaves or {key}
     return tuple(sorted(paths))
+
+
+def _path_value(values: Mapping[str, Any], path: str) -> Any:
+    key, *fields = path.split(".")
+    value = values.get(key)
+    for name in fields:
+        value = (tuple(item.get(name) if isinstance(item, Mapping) else None for item in value)
+                 if isinstance(value, list) else value.get(name) if isinstance(value, Mapping) else None)
+    return value

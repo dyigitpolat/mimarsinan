@@ -17,7 +17,6 @@ and `pipelining` modules consume the results when emitting IR and hard cores.
 | `quantization_bounds.py` | `quantization_bounds(bits)` -> `(q_min, q_max)` for signed symmetric quantization; shared by SCM mapping, chip quantize, and tuners. |
 | `quantization_verify.py` | `assert_integer_scaled_matrix`: shared integer-quantization checks (returns failure messages) for perceptron and IR verification paths. |
 | `transformation_utils.py` | `transform_np_array`: applies a torch-tensor transform to a numpy array (numpy/torch bridge helper). |
-| `weight_clipping.py` | `SoftTensorClipping` / `clip_core_weights` / `get_clipped_w_b`: soft weight clipping (clamp to mean of top/bottom fraction) for training stability. |
 | `weight_quantization.py` | `TensorQuantization`: symmetric N-bit quantization (`quantize`, `scaled_quantize`) for torch tensors and numpy arrays. |
 | `parameter_transforms/` | `SequentialTransform`: composable chains of parameter transforms applied in sequence. |
 | `perceptron/` | `PerceptronTransformer` plus the bias canonicalization suite (`bias_saturation.py`: provable constant-OFF saturation clip + empirical shift math feeding the saturation-aware NAPQ scale; `bias_canonicalization.py`: the guarded, decision-VERIFIED QAT-entry pass — empirical saturation shifts + nuisance-channel removal, bit-exact restore on any calibration decision flip) and the input-shift record (`input_shift.py`, U-WQB: the shift a negative-boundary bake `B - W s` compensated, a non-persistent `input_shift` buffer beside the bake's `_neg_shift_baked`, written by `mapping.support.negative_shift.apply_negative_shift_bias` for every caller; `compensate_projected_weights` moves the bias by `-(W_after - W_before) s` at every weight projection, so the bias compensates the weights the chip holds and not the float ones; Weight Quantization refuses by name a bake without its record, `UnrecordedShiftBakeError`). `PerceptronTransformer`: computes effective weights/biases by fusing normalization, `per_input_scales`, and (possibly per-channel) `activation_scale`; applies transforms in effective-parameter space — every effective→raw write re-commits the layer's prune masks and fails loud on non-finite results. |
@@ -72,3 +71,44 @@ verified channel removal is unchanged.
 - `prune_perceptron_chain`, `kept_output_channels`, `ChannelPruningResult` — structured magnitude channel pruning.
 - `generate_seed_masks`, `install_seed_masks`, `structured_seed_masks_from_keep`, `LayerSeedMasks`, `SeedContext`, `PRUNE_CRITERIA`, `DEFAULT_PRUNE_CRITERION` — criterion-agnostic seed generators for the IR pruning cascade.
 - `ActivationScalePolicy`, `make_activation_scale_policy`, `DEFAULT_ACTIVATION_SCALE_POLICY` — activation-scale calibration policies.
+
+## The Fold per Core Position
+
+[U-PFOLD] `perceptron/position_fold.py` is the one reader of a perceptron's fold in its two forms: per input
+(`(in_features,)`, today's form and bytes) or, where one fold per input cannot hold every element at its producer's
+gauge, one row per core position (`(positions, in_features)`: a linear's leading positions, a convolution's output
+positions, `fold_slot_source` naming each slot's element). `PerceptronTransformer()` is the per-input reader and
+refuses a per-position perceptron by name (`PositionFoldError`); `PerceptronTransformer(positions=True)` is the reader
+in both forms (each weight row's effective weight, each position's effective bias, a projection per weight row), the
+form Weight Quantization's projection, Quantization Verification and the row-drive reader take. The module also holds
+the walks' per-element fold (`input_fold_view`), a shift's slots (`shift_rows`) and the refusal kept where positions
+would share one core (`assert_one_fold_per_core`). A projection holds each weight row's projected raw weight
+(`position_weight`: a linear one per position, a convolution one per distinct patch fold) beside the raw weight, the
+latent every re-projection starts from (`apply_weight_projection`; the transform trainer carries the rows,
+`copy_position_state`; Normalization Fusion scales them, `fuse_output_scale`). `perceptron/position_bias.py` writes a
+bias corrected from the effective weight per position (the shift bake, its compensation, the affine fold: the shared
+bias takes row 0's, `position_bias` each position's offset, none where all are equal) and runs a bias transform on
+every position's total; `perceptron/position_forward.py` is the network function over the projected rows and the
+offsets (forward the projected row, backward the latent, the transform trainer's surrogate). The bias saturation
+bound is the minimum over positions, the canonicalization's scans the maximum.
+
+[U-PFOLD r2] The reader declares, for every view it hands out, which axis holds the output neuron (`OutputAxes`:
+`PER_INPUT`, a weight `(out, in, ...)` and a bias `(out,)`; `PER_POSITION`, weight rows `(rows, out, in)` and bias
+rows `(positions, out)`; a perceptron's views by `output_axes(perceptron, positions)`), and a bias transform of the
+reader in both forms receives the bias view it declares. Every reader that works per output neuron (the bounds and
+scans, the bias writers, the network function, the mappers' banks, the twins, the advisories) takes the axis from it
+(`along_outputs`, `output_rows`, `outputs_first`, `position_bias.weight_charges`), never from a literal index.
+
+[U-PFOLD r3] Outside the one reader, a reader of the rows of a fold per position or of their count takes them by
+`position_folds(perceptron)` (each core position's fold row, `rows[index]` of `position_rows`, on the weight's device):
+the event-serial twin's position count, the mappers' bank key and assertion, the saturation bound's input divisor. Every
+other site that names the stamp is the one writer, the per-input reader, or a reviewed presence, save or restore site
+or a read of values that are the same in either form, each listed with its read in the closure test
+(`tests/unit/transformations/test_fold_stamp_closure.py`, a scan of the source's syntax trees).
+
+[U-RSHIFT] `perceptron/input_shift.py` holds the record of a received shift (`input_shift`: one value, one per input, or
+one per element of the input; `_neg_shift_baked` marks only that a record exists) and the refusal of a bake with no
+record; the correction and its compensation at a projection are `mapping/support/received_shift.py`'s (Weight
+Quantization calls `compensate_projected_weights`). `perceptron/position_bias.py`: `held_per_position` is the stamp
+writer's rule for a perceptron whose positions hold their own bias; the affine fold's per-position form is the one
+writer's.

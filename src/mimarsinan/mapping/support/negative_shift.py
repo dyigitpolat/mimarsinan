@@ -1,12 +1,12 @@
-"""Negative-boundary shift machinery: residual bakes, stamps, and IR/hybrid transfer."""
+"""Negative-boundary shift machinery: the policy's shifts and stamps (each reader corrected for the field it receives,
+``received_shift``), and their IR/hybrid transfer."""
 
 from __future__ import annotations
 
 import numpy as np
 import torch
 
-from mimarsinan.transformations.perceptron.input_shift import record_input_shift
-from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.mapping.support.received_shift import bake_received_shift, correct_for_received_shift, every_axon_shift
 
 def negative_shifts_from_min(min_by_node: dict[int, np.ndarray]) -> dict[int, np.ndarray]:
     """Per-node positive shift ``s = max(0, −min F(x))``; drops all-zero nodes."""
@@ -19,21 +19,11 @@ def negative_shifts_from_min(min_by_node: dict[int, np.ndarray]) -> dict[int, np
 
 
 def apply_negative_shift_bias(perceptron, shift) -> None:
-    """Idempotently bake ``B' = B − W·s`` (``s`` per-axon or scalar) into ``perceptron``, and record ``s``
-    (``input_shift``) so every later weight projection re-derives the compensation on the weights it installs."""
-    if getattr(perceptron, "_neg_shift_baked", False):
-        return
-    effective_weight = PerceptronTransformer().get_effective_weight(perceptron)
-    s = torch.as_tensor(
-        shift, dtype=effective_weight.dtype, device=effective_weight.device,
-    )
-    correction = (effective_weight * s).sum(dim=-1)
-    PerceptronTransformer().apply_effective_bias_transform(
-        perceptron, lambda b, c=correction: b - c,
-    )
-    perceptron._neg_shift_baked = True
-    record_input_shift(perceptron, s)
-
+    """[U-RSHIFT, kept for its importers] ``B' = B - W s`` with ``s`` (one value, or one per input) on every axon of
+    ``perceptron``, through the one writer (``received_shift``) as one source: a second call writes nothing, and the
+    record (``input_shift``) lets every later weight projection re-derive the compensation on the weights it installs.
+    The pipeline's bakes carry each reader's received field instead (``bake_received_shift``)."""
+    correct_for_received_shift(perceptron, every_axon_shift(perceptron, shift))
 
 
 def _is_perceptron(node) -> bool:
@@ -60,48 +50,33 @@ def _assert_baked_encoder_feeds_no_compute_op(node, consumers, compute_op_type) 
         frontier.extend(consumers.get(id(c), []))
 
 
-def _bake_consumer_perceptrons(producer, shift, consumers, compute_op_type) -> bool:
-    """Bake the negative-shift bias into each consuming perceptron, aligning the per-channel
-    shift through intervening (linear) structural nodes. Fails loud on a ComputeOp consumer
-    — BEFORE any bake, so an aborted mixed set cannot leave a baked-unstamped model."""
-    plan: list = []
-    frontier = [(c, shift) for c in consumers.get(id(producer), [])]
+def _admitted_readers(producer, consumers, compute_op_type) -> bool:
+    """Whether a shift of ``producer`` reaches a perceptron that reads it, through structural nodes only (today's
+    admission). Refuses by name a ComputeOp consumer, and a subsumed encoder whose host value feeds a ComputeOp, before
+    any bake, so an aborted set leaves no model baked and unstamped. The correction is the one writer's."""
+    found = False
+    frontier = list(consumers.get(id(producer), []))
     while frontier:
-        consumer, sh = frontier.pop()
+        consumer = frontier.pop()
         if _is_perceptron(consumer):
             _assert_baked_encoder_feeds_no_compute_op(consumer, consumers, compute_op_type)
-            plan.append((consumer.perceptron, sh.reshape(-1)))
+            found = True
         elif isinstance(consumer, compute_op_type):
             raise NotImplementedError(
                 "negative-shift: a ComputeOp output feeding another ComputeOp is "
                 "unsupported (no consuming perceptron bias to compensate the shift; "
                 "negative_value_shift=off subsume-forward handles this topology)."
             )
-        elif sh.numel() == 1:
-            # A scalar shift is axis-invariant: structural reshapes cannot
-            # change it, so it passes through without a forward.
-            for c in consumers.get(id(consumer), []):
-                frontier.append((c, sh))
         else:
-            try:
-                aligned = consumer.forward(sh.unsqueeze(0)).squeeze(0)
-            except Exception as exc:  # pragma: no cover - fail loud with context
-                raise NotImplementedError(
-                    f"negative-shift: cannot align shift through "
-                    f"{type(consumer).__name__}: {exc}"
-                ) from exc
-            for c in consumers.get(id(consumer), []):
-                frontier.append((c, aligned))
-    for perceptron, sh in plan:
-        apply_negative_shift_bias(perceptron, sh)
-    return bool(plan)
+            frontier.extend(consumers.get(id(consumer), []))
+    return found
 
 
 
 def apply_negative_value_shifts(model, minima: dict) -> dict:
     """The ON mechanism: derive positive shifts from the calibrated per-ComputeOp
-    ``minima``, bake the consuming perceptron(s) (``B − W·s``), and tag each shifted
-    ``ComputeOpMapper`` with ``_negative_shift``. Returns ``{ComputeOpMapper: shift_np}``
+    ``minima``, correct every reader for the field it receives from all of them at once
+    (``bake_received_shift``), and tag each shifted ``ComputeOpMapper`` with ``_negative_shift``. Returns ``{ComputeOpMapper: shift_np}``
     (empty when no boundary goes negative). Calibration belongs to the policy caller."""
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 
@@ -116,7 +91,7 @@ def apply_negative_value_shifts(model, minima: dict) -> dict:
         for dep in deps_map.get(node, []):
             consumers.setdefault(id(dep), []).append(node)
 
-    out: dict = {}
+    planned: dict = {}
     for compute_op, mins in minima.items():
         s = torch.clamp(-mins, min=0.0)
         if not bool((s > 0).any()):
@@ -128,7 +103,7 @@ def apply_negative_value_shifts(model, minima: dict) -> dict:
         prev = getattr(compute_op, "_negative_shift", None)
         if prev is not None:
             # Drift verifier: a re-calibration of the value-preserved walk
-            # must reproduce the stamp (the once-flag skips the re-bake).
+            # must reproduce the stamp (a reader that compensates it writes nothing).
             if not torch.allclose(
                 torch.as_tensor(prev, dtype=s.dtype), s, atol=1e-4,
             ):
@@ -137,9 +112,16 @@ def apply_negative_value_shifts(model, minima: dict) -> dict:
                     "different from the existing stamp (weights changed after "
                     "the bake?)."
                 )
-        if _bake_consumer_perceptrons(compute_op, s, consumers, ComputeOpMapper):
-            compute_op._negative_shift = s.detach().cpu().numpy()
-            out[compute_op] = compute_op._negative_shift
+        if _admitted_readers(compute_op, consumers, ComputeOpMapper):
+            planned[compute_op] = s
+    # [U-RSHIFT] every source of this call in one field (sources compose); a source is stamped exactly when its
+    # readers compensate it.
+    if planned:
+        bake_received_shift(mapper_repr, planned)
+    out: dict = {}
+    for compute_op, s in planned.items():
+        compute_op._negative_shift = s.detach().cpu().numpy()
+        out[compute_op] = compute_op._negative_shift
     return out
 
 

@@ -21,13 +21,14 @@ from mimarsinan.common.refusal.toolchain_refusal import ToolchainRefusal
 from mimarsinan.mapping.map_model_to_ir import mapper_phase_keys
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.packing.phase_channels import element_channels
-from mimarsinan.mapping.support.gauge_channels import gauge_axis, gauge_view
+from mimarsinan.mapping.support.gauge_channels import wire_gauge
 from mimarsinan.mapping.support.value_domain import MIXED, value_domain_map
 from mimarsinan.models.nn.lif_kernels import in_measurement_plane
 from mimarsinan.spiking.count_grid import CountGridModule, CountGridOperandError, count_grid_applies
 from mimarsinan.spiking.cycle_trains import CycleTrain, encode_train, map_cycles, map_train, scale_train
 from mimarsinan.spiking.segment_partition import is_encoding_perceptron, perceptron_of
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import holds_positions, input_fold_view
 
 __all__ = [
     "MIXED",
@@ -77,9 +78,11 @@ def gather_currency(node, deps, dep_values, flags: dict, boundary_scales: dict, 
             mask, scale = recorded[dep]
         else:
             mask = torch.full_like(value, 1.0 if flags.get(dep) else 0.0)
-            gauge = None if flags.get(dep) else gauge_view((source_gauges or {}).get(dep), value, gauge_axis(dep))
-            scale = (torch.full_like(value, float(boundary_scales.get(dep, 1.0))) if gauge is None
-                     else gauge.to(device=value.device, dtype=value.dtype).expand_as(value).clone())
+            held = float(boundary_scales.get(dep, 1.0))
+            if not flags.get(dep):  # [U-TGAUGE4] a wire source at the gauge the source walk places it at
+                held = wire_gauge(dep, (source_gauges or {}).get(dep), held, value)
+            scale = (held.to(device=value.device, dtype=value.dtype).expand_as(value).clone()
+                     if isinstance(held, torch.Tensor) else torch.full_like(value, float(held)))
         masks.append(mask)
         scales.append(scale)
     if len(deps) == 1:
@@ -110,6 +113,8 @@ def mixed_events(value: torch.Tensor, currency, simulation_length: int, *, train
 def consumer_fold(perceptron, like: torch.Tensor | CycleTrain):
     """The fold a deployed core applies to its input spikes (``per_input_scales``, viewed as the weight's input axis):
     a neural consumer of a MIXED gather reads its spikes at this currency, as the deployed core does."""
+    if holds_positions(perceptron):  # [U-PFOLD] each element at the fold of the position that reads it
+        return input_fold_view(perceptron, like)
     fold = PerceptronTransformer().input_scale(perceptron)
     return fold.to(device=like.device, dtype=like.dtype) if isinstance(fold, torch.Tensor) else float(fold)
 
@@ -164,7 +169,8 @@ def count_grid_forwards(driver, simulation_length: int) -> dict:
 def currency_readers(driver, flags: dict) -> set:
     """The MIXED nodes whose per-element currency some reader reads: a neural consumer, a MIXED layout node that is
     itself read so, or a MIXED layout node inside a neural segment (it encodes each source by that source's own rule,
-    whoever reads it). A host op reads a gather's buffers as they are stored and needs none."""
+    whoever reads it), and the walk's output (decoded to the value domain element by element, U-TGAUGE). A host op
+    reads a gather's buffers as they are stored and needs none."""
     consumers: dict = {}
     for node in driver._exec:
         for dep in driver._deps.get(node, []):
@@ -172,7 +178,9 @@ def currency_readers(driver, flags: dict) -> set:
     produces = driver._produces
     read: set = set()
     for node in reversed(driver._exec):
-        if flags.get(node) == MIXED and any(
+        if flags.get(node) == MIXED and node is driver._output:
+            read.add(node)
+        elif flags.get(node) == MIXED and any(
             perceptron_of(c) is not None or c in read or (flags.get(c) == MIXED and produces.get(c, False))
             for c in consumers.get(node, [])
         ):

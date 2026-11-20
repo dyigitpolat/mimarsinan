@@ -15,6 +15,7 @@ from mimarsinan.deployment_record.platform_physics.profile import (
 from mimarsinan.deployment_record.quantities.from_candidate import CandidateQuantityContext
 from mimarsinan.deployment_record.study import compare_platforms
 
+from unit.deployment_record.area_rule._physics import rule_price
 from unit.deployment_record.g3_fixtures import quantities
 
 
@@ -31,32 +32,47 @@ def _chip(axons, neurons, count):
 
 
 class TestShippedProfiles:
-    def test_loihi_on_a_256_by_256_core_refuses_the_area_by_name(self):
+    """[U-AREA] A shipped description with an ``area_rule`` block prices its chip area by the rule: off its anchor's
+    geometry, word width or size it is priced and the departure named (rulings R3, M1), where R5 refused the
+    per-core footprint by name outside its validity (E190). The footprint's validity still judges a physics without
+    a block (TestTheRule) and every energy aggregate (TestThePerEventAggregate)."""
+
+    def test_loihi_on_a_256_by_256_core_prices_off_its_geometry_by_name(self):
+        """R5: refused ('area_per_core_total lies outside its validity ... 128 x 1024')."""
         term, reason = _area(get_platform_physics("loihi"), _chip(256, 256, 16), cores=16)
-        assert term is None
-        assert "area_per_core_total lies outside its validity" in reason and "128 x 1024" in reason
+        assert reason is None
+        want = rule_price("loihi", ((16, 256, 256),), 8)
+        assert term.value == pytest.approx(want.nominal) and "off geometry: 256 x 256" in term.source
+        assert "128 x 1024" in term.source
 
     def test_truenorth_at_its_own_core_is_unchanged(self):
+        """A census that states no core geometry is read at the description's own core: the same price."""
         truenorth = get_platform_physics("truenorth")
         judged, reason = _area(truenorth, _chip(256, 256, 20), cores=20)
         unjudged, _ = _area(truenorth, None, cores=20)
         assert reason is None
-        assert judged.to_dict() == unjudged.to_dict()
+        assert (judged.band.low, judged.value, judged.band.high) == (unjudged.band.low, unjudged.value,
+                                                                      unjudged.band.high)
 
-    def test_the_ex_j_fixture_refuses(self):
-        """115 cores priced at 0.46875 mm^2 each on a searched geometry: refused, never 53.9 mm^2."""
+    def test_the_ex_j_fixture_prices_by_the_rule_never_by_the_footprint(self):
+        """115 cores on a searched 256 x 512 geometry: never 115 x 0.46875 = 53.9 mm^2 (R5 refused it by name);
+        the anchor scales its own published core off its geometry, named."""
         term, reason = _area(get_platform_physics("loihi"), _chip(256, 512, 115), cores=115)
-        assert term is None and reason
+        assert reason is None and term.value != pytest.approx(115 * 0.46875)
+        assert term.value == pytest.approx(rule_price("loihi", ((115, 256, 512),), 8).nominal)
+        assert "off geometry" in term.source
 
-    def test_wider_weights_than_the_cell_refuse(self):
+    def test_wider_weights_than_the_cell_take_more_cells_by_name(self):
+        """R5: refused ('3-bit cells'); the rule: a w-bit weight takes ceil(w / cell bits) cells, named."""
         term, reason = _area(get_platform_physics("odin"), _chip(256, 256, 1), cores=1, bits=8)
-        assert term is None and "3-bit cells" in reason
+        assert reason is None and "off word width: 8-bit weights over 3-bit cells take 3 cells" in term.source
         term, reason = _area(get_platform_physics("odin"), _chip(256, 256, 1), cores=1, bits=3)
-        assert reason is None and term is not None
+        assert reason is None and "anchor identity" in term.source
 
-    def test_a_chip_beyond_the_core_count_refuses(self):
+    def test_a_chip_beyond_the_published_core_count_is_priced_and_flagged(self):
+        """R5: refused ('chips of 1-1 cores'); ruling R3: priced and flagged, never refused."""
         term, reason = _area(get_platform_physics("odin"), _chip(256, 256, 2), cores=2, bits=3)
-        assert term is None and "chips of 1-1 cores" in reason
+        assert reason is None and "beyond the published chip" in term.source
 
     def test_decomposed_constants_price_at_any_geometry(self):
         physics = get_platform_physics("generic_estimated_22nm")
@@ -122,20 +138,24 @@ class TestTheRule:
 
 
 def test_the_candidate_view_judges_its_own_declared_cores():
-    """A searched candidate off TrueNorth's core: the live view refuses the area by name."""
+    """A searched candidate off TrueNorth's core: the live view prices the area by the rule at its own declared cores
+    and names the departure (R5 refused it by name: 'area_per_core_total lies outside')."""
     context = CandidateQuantityContext(cores_physical=64, host_macs=0, weight_bits=4,
                                        core_geometry=_chip(160, 160, 64))
     view = CandidateStaticView(layout=None, chip_param_capacity=None, total_params=None,
                                host_side_segment_count=None, physics=get_platform_physics("truenorth"),
                                quantity_context=context)
-    notes = view.cost_report().notes
-    assert any(n.startswith("refused chip_area_mm2: area_per_core_total lies outside") for n in notes)
+    area = next(t for t in view.cost_report().area if t.name == "chip_area_mm2")
+    assert "off geometry: 160 x 160" in area.source
+    assert area.value == pytest.approx(rule_price("truenorth", ((64, 160, 160),), 4).nominal)
 
 
 def test_the_cross_platform_study_judges_the_stated_geometry():
+    """The stated geometry prices by the rule, named (R5: 'lies outside its validity'); a census of cores alone is
+    read at the description's own core."""
     census = quantities(cores_physical=4, host_macs=0, weight_bits=4)
     table = compare_platforms(census, ["truenorth"], geometry=_chip(160, 160, 4))
-    assert "lies outside its validity" in table.rows[0].unavailable["chip_area_mm2"]
+    assert table.rows[0].values["chip_area_mm2"] == pytest.approx(rule_price("truenorth", ((4, 160, 160),), 4).nominal)
     assert "chip_area_mm2" in compare_platforms(census, ["truenorth"]).rows[0].values
 
 
@@ -170,59 +190,65 @@ class TestAnOmittedGeometry:
                    cells_physical=16 * 256 * 256, host_macs=0)
 
     def test_the_census_geometry_is_judged_when_the_caller_states_none(self):
+        """[U-AREA] The census's cores (16 averaging 256 x 256) are read off Loihi's 128 x 1024 core by the rule, named
+        (R5 refused by name: 'lies outside its validity ... 256 x 256')."""
         pricing = price_absolute(quantities(**self._CENSUS), get_platform_physics("loihi"))
-        reason = {r.name: r.reason for r in pricing.refusals}["chip_area_mm2"]
-        assert "lies outside its validity" in reason and "256 x 256" in reason
+        area = {t.name: t for t in pricing.terms}["chip_area_mm2"]
+        assert "off geometry: 256 x 256" in area.source and "a pooled census" in area.source
 
     def test_unjudged_names_the_choice_at_the_call_site(self):
         pricing = price_absolute(quantities(**self._CENSUS), get_platform_physics("loihi"), geometry=UNJUDGED)
         assert "chip_area_mm2" in {t.name for t in pricing.terms}
 
     def test_the_cross_platform_study_judges_the_census_geometry(self):
+        """Under CENSUS_PROVED the census proves only its cell count: refused by name (R5's reason was the
+        footprint's validity; the rule's is the mean core its band's edges would rest on)."""
         row = compare_platforms(quantities(**self._CENSUS), ["loihi"]).rows[0]
-        assert "lies outside its validity" in row.unavailable["chip_area_mm2"]
+        assert "pass the declared core types" in row.unavailable["chip_area_mm2"]
 
 
 class TestACensusThatPoolsCoreTypes:
-    """A census proves one core type only when its cells equal cores x mean axons x mean neurons;
-    a pooled census names no core, so every aggregate with a validity point refuses by name."""
+    """A census proves one core type only when its cells equal cores x mean axons x mean neurons; a pooled census
+    names no core, so every aggregate with a validity point refuses by name. [U-AREA] A description with an
+    ``area_rule`` block prices a pooled census by the rule, its terms linear in the census's totals (cells, neurons),
+    so it equals its declared core types' price, and names the pool (the band's edges read at its mean core);
+    under CENSUS_PROVED it refuses by name. R5 refused each of these chips' area by name."""
 
     def test_two_core_types_never_read_as_their_average(self):
-        """2 x 384 x 384 + 2 x 128 x 128 is not 4 x 256 x 256: TrueNorth's area refuses, as it does declared."""
+        """2 x 384 x 384 + 2 x 128 x 128 is not 4 x 256 x 256: the rule reads the census's totals, never one
+        average core, so the pooled price equals the declared types' (R5: 'several core types', refused)."""
         census = quantities(cores_physical=4, axons_physical=2 * 384 + 2 * 128, neurons_physical=2 * 384 + 2 * 128,
                             cells_physical=2 * 384 * 384 + 2 * 128 * 128, host_macs=0, weight_bits=8)
-        derived = {r.name: r.reason for r in price_absolute(census, get_platform_physics("truenorth")).refusals}
-        assert "several core types" in derived["chip_area_mm2"]
-        assert "327680" in derived["chip_area_mm2"] and "262144" in derived["chip_area_mm2"]
+        pooled = {t.name: t for t in price_absolute(census, get_platform_physics("truenorth")).terms}["chip_area_mm2"]
         declared = price_absolute(census, get_platform_physics("truenorth"),
                                   geometry=geometry_of([{"max_axons": 384, "max_neurons": 384, "count": 2},
                                                         {"max_axons": 128, "max_neurons": 128, "count": 2}]))
-        assert "chip_area_mm2" in {r.name for r in declared.refusals}
+        area = {t.name: t for t in declared.terms}["chip_area_mm2"]
+        assert pooled.value == pytest.approx(area.value) and "a pooled census" in pooled.source
+        assert area.value == pytest.approx(rule_price("truenorth", ((2, 384, 384), (2, 128, 128)), 8).nominal)
 
     def test_the_t0_41_chip_names_no_core_it_lacks(self):
         census = quantities(cores_physical=120, axons_physical=60 * 784 + 60 * 512,
                             neurons_physical=60 * 512 + 60 * 256,
                             cells_physical=60 * 784 * 512 + 60 * 512 * 256, host_macs=0, weight_bits=8)
-        reason = {r.name: r.reason for r in price_absolute(census, get_platform_physics("loihi")).refusals}[
-            "chip_area_mm2"]
-        assert "several core types" in reason and "648" not in reason
+        area = {t.name: t for t in price_absolute(census, get_platform_physics("loihi")).terms}["chip_area_mm2"]
+        assert "a pooled census" in area.source and "648" not in area.source
+        assert area.value == pytest.approx(rule_price("loihi", ((60, 784, 512), (60, 512, 256)), 8).nominal)
 
     def test_a_census_of_fractional_cores_pools_types(self):
         census = quantities(cores_physical=3, axons_physical=784 + 512 + 512, neurons_physical=3 * 256,
                             cells_physical=784 * 256 + 2 * 512 * 256, host_macs=0)
-        reason = {r.name: r.reason for r in price_absolute(census, get_platform_physics("truenorth")).refusals}[
-            "chip_area_mm2"]
-        assert "several core types" in reason
+        area = {t.name: t for t in price_absolute(census, get_platform_physics("truenorth")).terms}["chip_area_mm2"]
+        assert "a pooled census" in area.source
 
     def test_axons_that_are_not_whole_per_core_pool_types_even_where_the_cells_agree(self):
         """16 x 192 + 100 x 384 + 192 x 192: 78336 cells = 3 x floor(308 / 3) x 256, so only the whole-core
-        guard sees that these three cores are no 102 x 256 type."""
+        guard sees that these three cores are no 102 x 256 type; the rule reads the pool's totals, named."""
         census = quantities(cores_physical=3, axons_physical=16 + 100 + 192, neurons_physical=192 + 384 + 192,
                             cells_physical=16 * 192 + 100 * 384 + 192 * 192, host_macs=0)
         assert 16 * 192 + 100 * 384 + 192 * 192 == 3 * (308 // 3) * 256
-        reason = {r.name: r.reason for r in price_absolute(census, get_platform_physics("truenorth")).refusals}[
-            "chip_area_mm2"]
-        assert "several core types" in reason and "not whole per core" in reason
+        area = {t.name: t for t in price_absolute(census, get_platform_physics("truenorth")).terms}["chip_area_mm2"]
+        assert "a pooled census" in area.source and "weight bits not stated" in area.source
 
     def test_a_census_without_its_cells_proves_no_one_type(self):
         census = quantities(cores_physical=4, axons_physical=4 * 256, neurons_physical=4 * 256, host_macs=0)
@@ -241,18 +267,20 @@ class TestACensusThatPoolsCoreTypes:
         row = compare_platforms(census, ["truenorth"]).rows[0]
         assert "chip_area_mm2" not in row.values
         reason = row.unavailable["chip_area_mm2"]
-        assert "does not prove one core type" in reason and "cell count" in reason
+        # [U-AREA] the rule's named refusal under CENSUS_PROVED (R5: 'does not prove one core type ... cell count')
+        assert "CENSUS_PROVED" in reason and "mean core" in reason
         assert "pass the declared core types" in reason
         truenorth = get_platform_physics("truenorth")
         stated = {t.name: t for t in price_absolute(census, truenorth).terms}["chip_area_mm2"]
-        assert "judged at the census's mean core: 2 cores averaging 256 x 256" in stated.source
+        assert "a pooled census" in stated.source and "read at its mean core" in stated.source
         strict = price_absolute(census, truenorth, geometry=CENSUS_PROVED)
         assert "chip_area_mm2" in {r.name for r in strict.refusals}
         declared = price_absolute(census, truenorth, geometry=geometry_of(
             [{"max_axons": 384, "max_neurons": 256, "count": 1}, {"max_axons": 128, "max_neurons": 256, "count": 1}]))
-        assert "chip_area_mm2" in {r.name for r in declared.refusals}
+        area = {t.name: t for t in declared.terms}["chip_area_mm2"]  # R5: refused (off its point)
+        assert area.value == pytest.approx(stated.value) and "a pooled census" not in area.source
         unjudged = {t.name: t for t in price_absolute(census, truenorth, geometry=UNJUDGED).terms}["chip_area_mm2"]
-        assert unjudged.value == stated.value and "mean core" not in unjudged.source
+        assert unjudged.value == stated.value
 
     def test_a_census_of_one_type_shape_on_many_cores_states_its_mean_core_basis(self):
         census = quantities(cores_physical=20, axons_physical=20 * 256, neurons_physical=20 * 256,
@@ -274,8 +302,9 @@ class TestACensusThatPoolsCoreTypes:
                          host_macs=0, weight_bits=4)
         area = {t.name: t for t in price_absolute(at, truenorth, geometry=CENSUS_PROVED).terms}["chip_area_mm2"]
         assert "mean core" not in area.source
-        reason = {r.name: r.reason for r in price_absolute(off, truenorth).refusals}["chip_area_mm2"]
-        assert "384 x 256" in reason and "no scaling rule" in reason
+        # [U-AREA] off the anchor's core the rule prices, named (R5: '384 x 256 ... no scaling rule', refused)
+        off_area = {t.name: t for t in price_absolute(off, truenorth).terms}["chip_area_mm2"]
+        assert "off geometry: 384 x 256" in off_area.source
 
 
 class TestACellScalingRuleReadsTheCensusCells:

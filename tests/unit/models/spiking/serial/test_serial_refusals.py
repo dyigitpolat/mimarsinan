@@ -42,20 +42,28 @@ def _sample():
     return torch.rand(2, 8) * 0.9
 
 
-def test_the_synchronized_count_executor_refuses_per_event():
+@pytest.mark.parametrize("closed_form,named", [(False, "gated integrate-then-emit executor"),
+                                                (True, "synchronized count executor")])
+def test_the_synchronized_count_executor_refuses_per_event(closed_form, named):
+    """[U-LIF2 W9] Integrate then emit's executor of record (the gated cycle-level executor) and its closed form,
+    reached by its name, each refuse by its own name."""
     _, hybrid = build_chain()
     flow = build_flow(hybrid, law=PER_EVENT_UNBOUNDED, packed=True)
     flow.lif_execution_synchronized = True
-    with pytest.raises(CycleAtomicRefusalError, match="synchronized count executor"):
+    flow.window_count_closed_form = closed_form
+    with pytest.raises(CycleAtomicRefusalError, match=named):
         with torch.no_grad():
             flow(_sample())
 
 
-def test_the_synchronized_count_executor_refuses_a_saturating_membrane():
+@pytest.mark.parametrize("closed_form,named", [(False, "gated integrate-then-emit executor.*clamps"),
+                                                (True, "linear accumulator")])
+def test_the_synchronized_count_executor_refuses_a_saturating_membrane(closed_form, named):
     _, hybrid = build_chain()
     flow = build_flow(hybrid, law=_SATURATING_PER_CYCLE, packed=True)
     flow.lif_execution_synchronized = True
-    with pytest.raises(SaturatingMembraneRefusalError, match="linear accumulator"):
+    flow.window_count_closed_form = closed_form
+    with pytest.raises(SaturatingMembraneRefusalError, match=named):
         with torch.no_grad():
             flow(_sample())
 

@@ -134,7 +134,10 @@ class TestWriteEnergy:
         band = _terms(price_write_terms(_census(cells=1), get_platform_physics("neurram"),
                                         WritePolicy(batch_k=1)))["energy_write_mj"]
         assert band.nominal == pytest.approx(PER_WEIGHT_PJ[1] / 2 * 1e-9, rel=1e-12)
-        assert band.basis == "e_write_per_cell x runtime_written_cells x write_verify_iterations"
+        # [U-ENERGY, the class swept S-1] the description declares no per-core program charge over the cores the census
+        # programs: named, never priced, never dropped
+        assert band.basis == ("e_write_per_cell x runtime_written_cells x write_verify_iterations; unpriced: "
+                              "e_core_program(core_program)")
 
 
 class TestWriteTime:

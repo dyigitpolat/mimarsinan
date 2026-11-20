@@ -49,8 +49,6 @@ part.
 
 | constant | nominal | basis (see the profile JSON for the full rationale) |
 |---|---|---|
-| `area_per_cell` | 0.09 um^2 | A 6T SRAM bitcell holding one weight bit. |
-| `area_per_cell_per_weight_bit` | 0.09 um^2 | Digital SRAM storage scales linearly with precision — one bitcell per weight bit — so this equals area_per_cell by construction. |
 | `e_mac` | 0.08 pJ | An 8-bit multiply-accumulate. |
 | `e_neuron_update` | 2.0 pJ | One membrane update: read state, accumulate, compare, write back. |
 | `e_leak_per_neuron_step` | 0.2 pJ | A leak decrement is a fraction of a full update: one read-modify-write of the same register without the synaptic accumulation, taken as ~10% of e_neuron_update. |
@@ -59,17 +57,14 @@ part.
 | `t_hop` | 4.0 ns | Latency of one inter-tile link traversal, bracketing the published digital points (TrueNorth 4 ns, Loihi 4. |
 | `t_array_read` | 3.0 ns | One 256-row array read. |
 | `t_cycle` | 1000.0 ns | The timestep period. |
-| `area_per_neuron_logic` | 9.0 um^2 | Per-neuron update logic, excluding state storage. |
-| `area_per_state_bit` | 0.09 um^2 | One bit of membrane state in SRAM — the same bitcell as area_per_cell, so it carries the same anchor, band and expected error. |
 | `membrane_bits` | 24.0 bit | A 24-bit signed accumulator, matching Loihi's independently characterized width and comfortably above TrueNorth's 20 bits. |
-| `area_per_router` | 4000.0 um^2 | One 5-port mesh router. |
-| `area_per_tile_fixed` | 8000.0 um^2 | Per-tile overhead that is neither array, neuron logic nor router: schedulers, controllers, local buffers. |
-| `area_global_fixed` | 10.0 mm^2 | Whole-chip area scaling with neither cores nor tiles: pads, PLLs, host interface. |
 | `e_dma_per_byte` | 0.16 pJ | Moving one byte of programming payload onto the chip. |
 | `e_program_per_byte` | 0.547723 pJ | Committing one byte into the SRAM weight store, once it has arrived: Horowitz-scale SRAM access (~1.25 pJ/B read at 45 nm, ~0.61 pJ/B scaled to 22 nm) times a 1–3x write ratio, banded 0.1–3.0 pJ/B. |
 | `e_core_program` | 512.0 pJ | The payload-independent per-core setup of a program load: the 256-neuron core-state sweep (256 x e_neuron_update) banded [0.5x, 2x] on the anchor's own corners. |
 | `e_readout_per_byte` | 0.16 pJ | Moving one byte of pass-boundary emissions off the chip. Same off-chip band as the inbound direction, restated so the readout is charged explicitly rather than by omission. |
 | `bytes_per_connectivity_entry` | 8.0 B | Wire size of one connectivity (axon source span) entry. |
+| `e_local_mem_read_per_byte` | 0.61 pJ | One byte read from a core-local activation SRAM of 8 to 32 KB (a core's input buffer and the registers that stage a row's inputs into its array), at the Horowitz scale `e_program_per_byte` reads: ~1.25 pJ/B at 45 nm, 0.61 pJ/B at 22 nm, banded 0.15 to 2.5 pJ/B (a wide access to the unscaled 32 KB figure). ESTIMATED: no source states a core-local memory of this projection; expected error a factor of ~4. |
+| `e_local_mem_write_per_byte` | 1.056551 pJ | One byte written into the same core-local SRAM (a core's output buffer): the read band times this profile's own stated write-to-read ratio of 1 to 3, corner by corner (0.15 to 7.5 pJ/B, the nominal at the ratio's log-space centre, 0.61 x √3). ESTIMATED from the read band and that ratio, never from a comparison; expected error a factor of ~5. |
 | `t_program_per_byte` | 80.0 ns | Wall time to move one programming byte. This profile is a DONOR: the targets that publish no interface rate (Loihi, ODIN, ISAAC) scale this band by `validity.technology_node_nm` to derive their own. |
 | `e_sync_barrier` | 1000.0 pJ | Energy of one chip-wide synchronization barrier. |
 | `t_sync_barrier` | 465.0 ns | Wall time of one chip-wide barrier. |
@@ -84,7 +79,7 @@ part.
 
 ## What this profile does not declare
 
-The whole `host` group (`p_host`, `host_compute_rate`, `host_macs_per_s`): those are
+The whole `host` group (`p_host`, `host_macs_per_s`, `t_host_op_overhead`, the link rows; `host_compute_rate` withdrawn [U-HOST]: no profile declares a host row; a host row is admitted only from an identified host description (hosts/<name>.json) as the run's host block, and a measured host wall prices nothing): those are
 facts about the *deployment host machine*, not about a chip, so no chip profile can
 state them. Until they are supplied as overrides, energy and end-to-end latency
 cannot price the host side of the NeuralOps/ComputeOps boundary — which matters,
@@ -106,3 +101,15 @@ because unpriced host work makes moving a layer host-side look free.
 - **`e_noc_value_per_byte_hop` = 0.5 / 1.0 / 4.0 pJ** (estimated): one value byte over one inter-tile link,
   Horowitz-scale on-chip wire energy (about 0.1 - 0.2 pJ per bit per mm, a 1 mm link) plus the router, banded on
   this profile's own `e_inter_tile_hop` envelope because a value byte and a spike flit cross the same link.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T2_digital (digital in-memory compute); a type rule: the type table's terms, with no anchor of its own.
+- **Outside part (`outside: type`).** the type table's core-grid share (gamma, flagged); an area_global_fixed beside it is refused by name ('the outside part is stated twice').
+- **Node.** 22 nm (S-SRAM-22 (the push-rule 6T at 22 nm)).
+- **Reading as the low edge.** the T1 reading with 24 bits per neuron (R2: the digital spiking reading is the band's low edge).
+- **Dropped.** area_per_cell, area_per_cell_per_weight_bit, area_per_neuron_logic, area_per_state_bit, area_per_router, area_per_tile_fixed, area_global_fixed (estimated constants).
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

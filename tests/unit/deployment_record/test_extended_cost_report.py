@@ -25,6 +25,7 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
 
+from unit.deployment_record.area_rule._physics import rule_price
 from unit.deployment_record.record_fixtures import make_full_record, make_identity
 
 
@@ -54,9 +55,10 @@ def test_the_records_own_physics_prices_it():
     assert pricing is not None
     names = {term.name for term in pricing.terms}
     assert "chip_area_mm2" in names
-    # 20 declared cores x 0.0936 mm2 + 46.6 mm2 global.
+    # [U-AREA] 20 declared cores below the published 4,096: the anchor's proportional nominal (ruling R3; R5: 20 declared
+    # cores x 0.0936 mm2 + 46.6 mm2 global).
     area = next(t for t in pricing.terms if t.name == "chip_area_mm2")
-    assert area.value == pytest.approx(20 * 0.0936 + 46.6)
+    assert area.value == pytest.approx(rule_price("truenorth", ((20, 256, 256),)).nominal)
 
 
 def test_extension_appends_and_never_rewrites_the_measured_plane():

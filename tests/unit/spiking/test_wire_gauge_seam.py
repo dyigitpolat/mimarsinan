@@ -121,7 +121,7 @@ def test_the_lif_retention_metric_equals_the_scm_metric_on_the_c5_form():
 
 def test_the_aq_d_hat_reads_the_deployed_composition():
     shape, flow, perceptrons, thetas = _unarmed_c5_form()
-    cfg = _exact_config()
+    cfg = _exact_config(lif_window_firing="fire_while_integrating")  # [U-LIF2 W16] the windowed reference fires per cycle
     install_lif_entry_input_quantizers(flow, cfg)
     program = _scm_program(flow, perceptrons, shape, thetas)
     x = samples(program, 32, 0)
@@ -136,7 +136,7 @@ def test_the_d_hat_re_derives_a_stamped_clone_at_its_current_thetas():
     """The exact-QAT ladder trains theta after the install seam: the D-hat measures what Soft Core Mapping would deploy
     from the CURRENT thetas, not the install-time stamps."""
     shape, flow, perceptrons, thetas = _unarmed_c5_form()
-    cfg = _exact_config()
+    cfg = _exact_config(lif_window_firing="fire_while_integrating")  # [U-LIF2 W16] the windowed reference fires per cycle
     install_lif_entry_input_quantizers(flow, cfg)
     with torch.no_grad():
         perceptrons[1].activation_scale.mul_(1.3)

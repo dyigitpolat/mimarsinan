@@ -18,6 +18,7 @@ from mimarsinan.models.nn.activations.autograd import LeakyGradReLU
 from mimarsinan.models.nn.activations.lif import LIFActivation
 from mimarsinan.models.nn.activations.ttfs_cycle import TTFSCycleActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+from mimarsinan.models.nn.lif_kernels import NeuronLattice
 
 OffFloorPredicate = Callable[[nn.Module], bool]
 
@@ -56,6 +57,8 @@ def _lif_membrane_stays_below_threshold(node: nn.Module) -> bool:
     if_node = getattr(node, "if_node")
     lattice = getattr(if_node, "lattice_scale", None)
     start = float(node.__dict__.get("membrane_init", 0.0))
+    if isinstance(lattice, NeuronLattice):  # [U-PCH] the coarsest neuron's half quantum
+        lattice = float(lattice.scales.min())
     reach = start + (0.5 / float(lattice) if lattice else 0.0)
     return reach < float(getattr(if_node, "v_threshold"))
 

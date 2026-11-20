@@ -9,15 +9,17 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_wq_two_scale_projection
 
 from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
-from mimarsinan.chip_simulation.soma_law import SomaLaw
-from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
+from mimarsinan.chip_simulation.spiking_semantics import is_lif, lif_per_hop_retiming_enabled, requires_ttfs_firing
 from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.latency.cycle_windows import (
+    RELAY_KEY, DeadReads, ir_window_gaps, mapping_cause, require_cycle_windows, silence_dead_segment_reads,
+)
 from mimarsinan.mapping.latency.depth_balancing import (
     assert_relays_alive,
     insert_depth_balancing_relays,
 )
 from mimarsinan.mapping.latency.ir import IRLatency
-from mimarsinan.mapping.export.chip_quantize import ParameterGrids, quantize_ir_graph
+from mimarsinan.mapping.export.chip_quantize import ParameterGrids, bias_register_census, quantize_ir_graph
 from mimarsinan.mapping.export.law_solver import install_readout_laws
 from mimarsinan.mapping.ir.dynamic_bank import validate_bindings
 from mimarsinan.mapping.lanes.install import lanes_report
@@ -205,7 +207,7 @@ class SoftCoreMappingStep(PipelineStep):
         )
         # [E1 open item 1] the model as the declared mapping finds it, for the second mapping without core limits.
         reference_source = _reference_source(model)
-        ir_graph, relay_cores_inserted, max_latency = self._derive_ir(
+        ir_graph, window_record, max_latency = self._derive_ir(
             model, ir_mapping, plan, platform_constraints, bits, phase=_phase, report=True,
         )
 
@@ -234,7 +236,7 @@ class SoftCoreMappingStep(PipelineStep):
         if lanes_report(ir_graph) is not None:  # [WI-5e] fused lanes moved the cores' depths
             max_latency = IRLatency(ir_graph).calculate()
         self._emit_deployment_record_scm(
-            ir_graph, relay_cores_inserted, int(max_latency), output_stage_of_program(ir_graph, platform_constraints),
+            ir_graph, window_record, int(max_latency), output_stage_of_program(ir_graph, platform_constraints),
         )
         if compute_ops:
             print(f"[SoftCoreMappingStep] Model contains {len(compute_ops)} non-neural operations:")
@@ -415,7 +417,7 @@ class SoftCoreMappingStep(PipelineStep):
 
     def _derive_ir(self, model, ir_mapping, plan, platform_constraints, bits, *, phase, report: bool):
         """The IR of ``model`` at ``ir_mapping``'s geometry through every post-mapping pass, in their order:
-        ``(ir_graph, relay cores inserted, IR max latency)``. ``report`` off runs the passes without their records,
+        ``(ir_graph, the window pass's record, IR max latency)``. ``report`` off runs the passes without their records,
         reporter events and prints (the second mapping, ``_derive_unbounded_ir``)."""
         with phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(model.get_mapper_repr())
@@ -428,7 +430,7 @@ class SoftCoreMappingStep(PipelineStep):
         if bool(self.pipeline.config.get("negative_value_shift", True)):
             transfer_negative_shifts_to_ir(model, ir_graph)
 
-        relays_enabled, relay_cores_inserted = self._apply_depth_balancing_relays(
+        relays_enabled, window_record = self._apply_depth_balancing_relays(
             ir_graph, plan,
         )
 
@@ -439,6 +441,10 @@ class SoftCoreMappingStep(PipelineStep):
             platform_constraints, register_bias=resolve_wq_two_scale_projection(self.pipeline.config))
         with phase("weight_quantization"):
             quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q, grids=grids)
+        saturated = bias_register_census(ir_graph)  # [U-BRANGE2] never silent: the codes a bias register saturated
+        if report and saturated:
+            print(f"[SoftCoreMappingStep] on-chip bias registers saturate {sum(saturated.values())} code(s) on "
+                  f"{len(saturated)} core(s): {sorted(saturated.items())[:8]}")
         if relays_enabled:
             # [C5/V9] the strict-'<' exact-theta dead-relay lattice guard, on
             # the QUANTIZED graph (threshold = scale after integerization).
@@ -467,7 +473,8 @@ class SoftCoreMappingStep(PipelineStep):
         if stamped and report:
             print(f"[SoftCoreMappingStep] host_kernel_evaluation=per_sample: {stamped} host op(s) evaluated one "
                   f"sample at a time by every executor")
-        return ir_graph, relay_cores_inserted, max_latency
+        self._require_cycle_windows(ir_graph, plan, relays_enabled)
+        return ir_graph, window_record, max_latency
 
     def _derive_unbounded_ir(self, reference_source, unbounded, plan, platform_constraints, bits) -> dict:
         """[E1 open item 1] The same network's IR at unbounded geometry, for the static check's ``ir-tiling``: the
@@ -493,12 +500,14 @@ class SoftCoreMappingStep(PipelineStep):
         return {"ir": ir_graph, "note": "built"}
 
     def _emit_deployment_record_scm(
-        self, ir_graph, relay_cores_inserted: int, ir_max_latency: int, output_stage=None,
+        self, ir_graph, window_record: dict, ir_max_latency: int, output_stage=None,
     ) -> None:
         """Persist the SCM deployment-record fragment: the weight-reuse plan
-        (an unconditional pure IR read, provenance "planned@scm"), the
-        formerly-dropped relay count, the IR latency census, and [W08] the
-        output stage of a chip declaring ``onchip_arithmetic``."""
+        (an unconditional pure IR read, provenance "planned@scm"), the window
+        pass's record (the relay count; [U-TGAUGE6] the dead reads turned off
+        and the cores removed, only where there are any), the IR latency
+        census, and [W08] the output stage of a chip declaring
+        ``onchip_arithmetic``."""
         reuse_plan = weight_reuse_plan_from_graph(ir_graph)
         self.add_entry("deployment_record_scm", {
             "reuse_plan": {
@@ -506,7 +515,7 @@ class SoftCoreMappingStep(PipelineStep):
                 "reuse_passes": int(reuse_plan.reuse_passes),
                 "params_reloaded": int(reuse_plan.params_reloaded),
             },
-            "relay_cores_inserted": int(relay_cores_inserted),
+            **{key: int(value) for key, value in window_record.items()},
             "ir_max_latency": int(ir_max_latency),
             **({} if output_stage is None else {"output_stage": output_stage.to_dict()}),
         }, "basic")
@@ -522,17 +531,22 @@ class SoftCoreMappingStep(PipelineStep):
             model.get_perceptrons(), where="SoftCoreMappingStep pre-IR-mapping",
         )
 
-    def _apply_depth_balancing_relays(self, ir_graph, plan) -> tuple[bool, int]:
-        """[C5] pre-quantize relay insertion for unequal-depth intra-segment
-        fan-in (gated OFF by default; the pass is a no-op on gap-free graphs).
-        Returns ``(enabled, relays_inserted)`` — enabled arms the post-quantize
-        guard; the count feeds the deployment-record SCM fragment."""
-        enabled = (
-            is_lif(plan.spiking_mode)
-            and bool(self.pipeline.config.get("lif_depth_balancing_relays", False))
-        )
+    def _apply_depth_balancing_relays(self, ir_graph, plan) -> tuple[bool, dict]:
+        """[C5, U-TGAUGE5] the window rule's pre-quantize pass for every per-cycle cascade (the plan's mode policy's
+        ``runs_per_cycle_cascade``, the one predicate the hybrid flow dispatches on): dead in-segment reads off with
+        the cores they leave unread, then the depth-balancing relays where the recipe arms them (a declared false
+        switches them off). A no-op on gap-free graphs without dead reads. Returns ``(enabled, record)``: enabled arms
+        the post-quantize guard; the record (``relay_cores_inserted``, and ``DeadReads.record`` where a read was
+        turned off) feeds the deployment-record SCM fragment."""
+        cascade = plan.mode_policy().runs_per_cycle_cascade
+        # one edge set for the relays, ChipLatency and the assertion
+        dead = silence_dead_segment_reads(ir_graph) if cascade else DeadReads(0, 0)
+        if dead.reads:
+            print(f"[SoftCoreMappingStep] dead in-segment reads: {dead.reads} turned off, {dead.cores} core(s) "
+                  f"left unread removed.")
+        enabled = cascade and bool(self.pipeline.config.get(RELAY_KEY, False))
         if not enabled:
-            return False, 0
+            return False, {"relay_cores_inserted": 0, **dead.record()}
         from mimarsinan.transformations.quantization_bounds import (
             quantization_bounds,
         )
@@ -550,7 +564,19 @@ class SoftCoreMappingStep(PipelineStep):
                 f"[SoftCoreMappingStep] depth-balancing relays: {inserted} "
                 f"identity relay core(s) inserted (unequal-depth fan-in, V6)."
             )
-        return True, int(inserted)
+        return True, {"relay_cores_inserted": int(inserted), **dead.record()}
+
+    def _require_cycle_windows(self, ir_graph, plan, relays_enabled: bool) -> None:
+        """[U-TGAUGE5] The window rule on the final IR, the last pass that can move an edge: in a per-cycle cascade
+        every live in-segment edge holds a latency gap of one after the alignment, over the units the hybrid build
+        executes (whole segments, or one level each under per-hop re-timing); else a refusal by name with its cause
+        (declared off, not armed, or the relays left it)."""
+        if not plan.mode_policy().runs_per_cycle_cascade:
+            return
+        config = self.pipeline.config
+        require_cycle_windows(ir_window_gaps(ir_graph, per_hop=lif_per_hop_retiming_enabled(config)),
+                              where="SoftCoreMappingStep",
+                              cause=mapping_cause(config.get(RELAY_KEY), armed=relays_enabled))
 
     def _run_onchip_validity_gate(self, model, ir_graph) -> None:
         """Authoritative tiered validity gate on the mapped IR graph, over BOTH the
@@ -784,11 +810,10 @@ class SoftCoreMappingStep(PipelineStep):
         ensure_negative_boundary_policy(
             model,
             self.trainer,
-            spiking_mode=str(DeploymentPlan.of(self.pipeline).spiking_mode),
+            point=DeploymentPlan.of(self.pipeline).require_spiking_point(),
             simulation_steps=int(self.pipeline.config["simulation_steps"]),
             device=self.pipeline.config["device"],
             shift_enabled=bool(self.pipeline.config.get("negative_value_shift", True)),
-            soma_law=SomaLaw.resolve(self.pipeline.config),
         )
 
     def bring_back_bias(self, fused_linear_layer):

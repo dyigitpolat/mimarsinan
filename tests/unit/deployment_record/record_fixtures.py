@@ -6,10 +6,12 @@ from dataclasses import dataclass, replace
 from typing import AbstractSet, Optional, Tuple
 
 from mimarsinan.deployment_record.schema import (
+    DEPLOYMENT_RECORD_FORMAT_VERSION,
     AccuracyReadRecord,
     AccuracyRecord,
     AdaptationRecord,
     AdaptationSummaryRecord,
+    DEPLOYMENT_RECORD_FORMAT_VERSION,
     Band,
     BankRecord,
     BoundaryTrafficRecord,
@@ -65,7 +67,7 @@ def make_provenance(kind: str = "measured", step: str = "Hard Core Mapping") -> 
 
 def make_identity() -> RecordIdentity:
     return RecordIdentity(
-        format_version=1,
+        format_version=DEPLOYMENT_RECORD_FORMAT_VERSION,  # [U-HOST2] the record format the toolchain seals
         run_dir="run_0001",
         cell_key="lif_streamed@sanafe",
         mode="lif_streamed",
@@ -309,7 +311,7 @@ def make_timing(*, with_per_segment: bool = True) -> TimingRecord:
             programming_s=ModeledValue(value=1e-3, band=make_band()),
             compute_steps=64,
             compute_sim_time_s=3e-3 if with_per_segment else None,
-            host_ops_s=None,
+            host_ops_s_raw_total=None,
             host_ops_s_per_pass=None,
             sync_s=ModeledValue(value=1e-3, band=make_band()),
             note="sim_time_s already includes NoC hop latency; no term double-counts it",
@@ -408,6 +410,34 @@ def make_full_record() -> DeploymentRecord:
         provenance={g: make_provenance() for g in groups},
         adaptation_ledger=make_adaptation_summary(),
     )
+
+
+def with_partition(record: DeploymentRecord, host_macs: int = 0) -> DeploymentRecord:
+    """[U-HOST2] The record with its partition census (the on-chip/host split, test counts). The fixture's one host
+    op is a max pool, so by default it holds no host MACs: dispatch only, which the measured plane prices nowhere and
+    names unpriced beside its chip-side total (host MACs, or no census at all, withhold that total by the absolute
+    plane's refusal: ``hosts.host_work``)."""
+    from mimarsinan.deployment_record.schema.utilization import ComputePartitionRecord
+
+    partition = ComputePartitionRecord(onchip_params=1000, host_params=0, total_params=1000, onchip_macs=10000,
+                                       host_macs=host_macs, total_macs=10000 + host_macs)
+    return replace(record, utilization=replace(record.utilization, partition=partition))
+
+
+def make_rewritten_record() -> DeploymentRecord:
+    """[U-ENERGY] The full record with its second segment rewritten too: two written passes, so its period census
+    rewrites every core of both each round (``make_full_record``'s lone written pass stays loaded across rounds and
+    its period census rewrites nothing). [m-r3-2, the figures restated] Every fixture segment states 24 connectivity
+    entries, the one-core segment too, whose core states 12 (the wave-zero records' bytes are pinned by their digests,
+    so the totals stay); a load's census reads the cores, so the unit's figures are the cores': 36 entries on the
+    first load, 24 and 12 on the two segments here."""
+    record = make_full_record()
+    stages = tuple(replace(stage, programming="reprogram", params_programmed=PARAMS_PROGRAMMED_TOTAL,
+                           params_unique=PARAMS_PROGRAMMED_TOTAL, params_bytes=PARAMS_PROGRAMMED_TOTAL)
+                   if isinstance(stage, SegmentRecord) and stage.programming == "resident" else stage
+                   for stage in record.schedule.stages)
+    return replace(record, schedule=replace(record.schedule, stages=stages, reprogram_passes=2, reuse_passes=0,
+                                            params_reloaded=2 * PARAMS_PROGRAMMED_TOTAL))
 
 
 def segment_with(**overrides) -> SegmentRecord:

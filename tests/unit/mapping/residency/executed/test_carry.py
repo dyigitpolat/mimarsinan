@@ -74,8 +74,10 @@ def test_per_cut_the_carried_wires_are_the_plans_live_set(count, plan):
         assert record.carried_bytes == sum(carried_wire_bytes(w, V.T, transfer) for _, w, _, _ in spans)
 
 
-def _skip_ir():
-    """enc -> L1 -> L2, and L3 reads concat(L1, L2): a skip whose consumer sits two levels after its producer."""
+def _skip_ir(semantics=None):
+    """enc -> L1 -> L2, and L3 reads concat(L1, L2): a skip whose consumer sits two levels after its producer.
+    [U-TGAUGE5] For a run whose executor reads the window (``runs.per_cycle``) the IR carries the depth-balancing
+    relays as Soft Core Mapping builds it."""
     torch.manual_seed(5)
     enc = V._lif(V.IN, V.IN)
     enc.is_encoding_layer = True
@@ -87,7 +89,12 @@ def _skip_ir():
     rep = ModelRepresentation(PerceptronMapper(l3, V._lif(4, 8)))
     mark_encoding_layers(rep)
     rep.assign_perceptron_indices()
-    return IRMapping(q_max=127.0, firing_mode="Default", max_axons=V.MAX_AXONS, max_neurons=V.MAX_NEURONS).map(rep)
+    ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=V.MAX_AXONS, max_neurons=V.MAX_NEURONS).map(rep)
+    if semantics is not None and R.per_cycle(semantics):
+        from mimarsinan.mapping.latency.depth_balancing import balance_cycle_windows
+
+        balance_cycle_windows(ir, cascade=True, armed=True, thresholding_mode="<=")
+    return ir
 
 
 class TestTheKeyExecutesASkewedCutExactly:
@@ -100,7 +107,7 @@ class TestTheKeyExecutesASkewedCutExactly:
     @pytest.mark.parametrize("plan", [{"step": "stateless"}, {"step": "floor"}])
     @pytest.mark.parametrize("semantics", R.ALL_RUNS, ids=R.RUN_IDS)
     def test_the_skip_cut_runs_equal_to_the_identity_run(self, plan, semantics):
-        ir = _skip_ir()
+        ir = _skip_ir(semantics)
         mapping = V.build(ir, 2, plan, retimed_level_stages=R.retimed(semantics))
         assert carried_outputs_by_stage(mapping.stages)
         R.assert_runs_equal_to_the_identity_run(ir, 2, semantics, mapping=mapping)
@@ -114,6 +121,8 @@ class TestTheKeyExecutesASkewedCutExactly:
     @pytest.mark.parametrize("count", [2, 3])
     @pytest.mark.parametrize("plan", [{"step": "floor"}, {"step": "stateless"}])
     def test_skew3_plans_alike_on_both_planes_and_runs_exact(self, count, plan):
+        """[U-TGAUGE5] The planes plan the relay-free vehicle alike (the shape-only plane holds no relay cores); each
+        per-cycle run reads the vehicle as the mapping builds it (its relays armed) and runs exact under the key."""
         rep = V.branchy_repr("skew3")
         specs, census, program = V.layout_plane(rep)
         ir = V.ir_of(rep)
@@ -122,7 +131,9 @@ class TestTheKeyExecutesASkewedCutExactly:
             V.fragments(specs, census, count, plan, program=program), specs)
         assert [tuple(p) for p in V.shape_only(specs, census, program, count, plan).pass_members()]
         for semantics in (R.STREAMED_LIF, R.CASCADED_TTFS):
-            R.assert_runs_equal_to_the_identity_run(ir, count, semantics, mapping=built)
+            mapped = R.mapped(rep, semantics)
+            budget = R.planned_budget(mapped, count, plan)
+            R.assert_runs_equal_to_the_identity_run(mapped, budget, semantics, mapping=V.build(mapped, budget, plan))
 
 
 class TestAPassThatMixesCarriedRastersWithAHostInput:
@@ -137,3 +148,12 @@ class TestAPassThatMixesCarriedRastersWithAHostInput:
         mapping = V.build(ir, 6, plan, retimed_level_stages=R.retimed(semantics))
         assert len(V.neural_passes(mapping)) > 3 and carried_outputs_by_stage(mapping.stages)
         R.assert_runs_equal_to_the_identity_run(ir, 6, semantics, mapping=mapping)
+
+
+class TestTheWindowRule:
+    """[U-TGAUGE5] This file's refusal test: the relay-free skip cut (L3 reads L1 two levels on) run by a per-cycle
+    executor is refused by name, never read a step off."""
+
+    @pytest.mark.parametrize("semantics", [R.STREAMED_LIF, R.CASCADED_TTFS], ids=["streamed_lif", "cascaded_ttfs"])
+    def test_the_relay_free_skip_cut_is_refused_by_name(self, semantics):
+        R.assert_refused_at_the_executor(V.build(_skip_ir(), 2, {"step": "floor"}), semantics)

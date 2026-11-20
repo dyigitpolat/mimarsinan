@@ -8,9 +8,12 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
+import numpy as np
+
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.latency.chip import PINNED_LATENCIES, ChipLatency
 from mimarsinan.mapping.latency.core_graph import alap_latencies
+from mimarsinan.mapping.latency.upstream import CoreReads, core_reads
 
 #: A ``HybridStage`` (``hybrid_types`` imports the packers, which import this module).
 HybridStage = Any
@@ -22,10 +25,6 @@ REPLAY_DELAYS = "replay_delays"
 
 class PassTimingError(ToolchainRefusal, ValueError):
     """A pass whose fused-segment timing cannot be projected onto its own program, refused by name."""
-
-
-def _special(source) -> bool:
-    return bool(getattr(source, "is_off_", False) or getattr(source, "is_always_on_", False))
 
 
 def _slice_index(stage: HybridStage) -> List[int]:
@@ -48,6 +47,13 @@ class _Placed:
         rows = list(getattr(hcm, "soft_core_placements_per_hard_core", []) or [])
         self.placements = [rows[h] if h < len(rows) else [] for h in range(len(self.cores))]
         self._tables: Dict[Tuple[int, str], List[int]] = {}
+        self.reads: List[Optional[CoreReads]] = [None] * len(self.cores)  # [U-LIVE] per core, read once
+
+    def read(self, h: int, carried: Any = None) -> CoreReads:
+        """Core ``h``'s axons under the one liveness predicate (``upstream.core_reads``, ``carried`` as there)."""
+        if self.reads[h] is None:
+            self.reads[h] = core_reads(self.cores[h], carried=carried)
+        return self.reads[h]  # type: ignore[return-value]
 
     def nodes(self, h: int) -> Set[int]:
         return {int(p["ir_node_id"]) for p in self.placements[h]}
@@ -75,20 +81,19 @@ def _segment_graph(passes: Sequence[HybridStage]) -> Tuple[Dict[int, Set[int]], 
     produced: Set[int] = set()
     reads: Dict[int, Set[int]] = defaultdict(set)
     for stage, pl in zip(passes, placed):
-        slice_of = _slice_index(stage)
-        for h, core in enumerate(pl.cores):
+        slice_of, before = _slice_index(stage), frozenset(produced)
+        node_of = (lambda neuron, stage=stage, slice_of=slice_of: int(stage.input_map[slice_of[neuron]].node_id))
+        for h in range(len(pl.cores)):
             for n in pl.nodes(h):
                 reads.setdefault(n, set())
-            for a, src in enumerate(core.axon_sources):
-                if _special(src):
-                    continue
-                consumer = pl.node_at(h, a, axis="axon")
-                if getattr(src, "is_input_", False):
-                    node = int(stage.input_map[slice_of[int(src.neuron_)]].node_id)
-                    if node in produced:
-                        reads[consumer].add(node)
-                    continue
-                reads[consumer].add(pl.node_at(int(src.core_), int(src.neuron_), axis="neuron"))
+            # [U-LIVE] the live axons only: a core read, or a carried slice of an earlier pass (a fused-segment read)
+            mine = pl.read(h, carried=lambda neuron, before=before: node_of(neuron) in before)
+            for a in np.flatnonzero(mine.live):
+                consumer = pl.node_at(h, int(a), axis="axon")
+                if mine.stage_input[a]:
+                    reads[consumer].add(node_of(int(mine.neuron[a])))
+                else:
+                    reads[consumer].add(pl.node_at(int(mine.core[a]), int(mine.neuron[a]), axis="neuron"))
         produced |= {int(s.node_id) for s in stage.output_map}
     return reads, placed, produced
 
@@ -112,9 +117,15 @@ def _core_latencies(pl: _Placed, fused: Dict[int, int], label: str) -> List[int]
     return out
 
 
+def _reads_of(pl: Any, h: int) -> CoreReads:
+    """Core ``h``'s axons: the placed view's own, or read here (every stage input carried; the caller keeps its own)."""
+    read = getattr(pl, "read", None)
+    return read(h) if callable(read) else core_reads(pl.cores[h], carried=lambda _neuron: True)  # type: ignore[return-value]
+
+
 def _own_latencies(pl: _Placed) -> Tuple[List[int], List[List[int]]]:
-    sources = [sorted({int(s.core_) for s in core.axon_sources if not _special(s) and not getattr(s, "is_input_", False)})
-               for core in pl.cores]
+    reads = [pl.read(h) for h in range(len(pl.cores))]  # [U-LIVE] each core's live core sources
+    sources = [sorted({int(c) for c in r.core[r.live & ~r.stage_input]}) for r in reads]
     return alap_latencies(sources), sources
 
 
@@ -131,14 +142,13 @@ def _delay(stage: HybridStage, pl: _Placed, fused: Dict[int, int], produced: Set
     """One input slice per (carried producer, delivery delay), the delay recorded where it is not zero."""
     pinned, slice_of = _core_latencies(pl, fused, stage.name), _slice_index(stage)
     uses: Dict[Tuple[int, int], List[Tuple[int, int]]] = defaultdict(list)
-    for h, core in enumerate(pl.cores):
-        for a, src in enumerate(core.axon_sources):
-            if not getattr(src, "is_input_", False) or _special(src):
-                continue
-            k = slice_of[int(src.neuron_)]
+    for h in range(len(pl.cores)):
+        mine = _reads_of(pl, h)  # [U-LIVE] a dead axon of a carried slice is delivered nothing, so it sets no delay
+        for a in np.flatnonzero(mine.live & mine.stage_input):
+            k = slice_of[int(mine.neuron[a])]
             node = int(stage.input_map[k].node_id)
             if node in produced:
-                uses[(k, pinned[h] - 1 - fused[node])].append((h, a))
+                uses[(k, pinned[h] - 1 - fused[node])].append((h, int(a)))
     if any(d > 0 for _, d in uses):
         raise PassTimingError(
             f"pass projection: {stage.name} reads a carried producer {max(d for _, d in uses)} cycles early; the "
@@ -282,6 +292,7 @@ def late_stage_input_readers(stage: HybridStage, nodes: Optional[Set[int]] = Non
     rows = {k for k, s in enumerate(stage.input_map) if nodes is None or int(s.node_id) in nodes}
     hcm = stage.hard_core_mapping
     executed = executed_core_latencies(hcm)
-    return [(h, latency) for h, (core, latency) in enumerate(zip(hcm.cores, executed)) if latency > 0
-            and any(getattr(src, "is_input_", False) and not _special(src) and slice_of[int(src.neuron_)] in rows
-                    for src in core.axon_sources)]
+    reads = [core_reads(core, carried=lambda _neuron: True) if latency > 0 else None  # [U-LIVE] live reads only
+             for core, latency in zip(hcm.cores, executed)]
+    return [(h, latency) for h, (r, latency) in enumerate(zip(reads, executed)) if r is not None
+            and any(slice_of[int(r.neuron[a])] in rows for a in np.flatnonzero(r.live & r.stage_input))]

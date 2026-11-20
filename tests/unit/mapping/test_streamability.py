@@ -5,6 +5,7 @@ import pytest
 import torch.nn as nn
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
 from mimarsinan.mapping.verification.streamed import (
     NotStreamableError,
     streamed_span_report_ir,
@@ -121,6 +122,7 @@ class TestStaticModelReport:
         model = LeNet5((1, 28, 28), 10)
         report = streamed_span_report_model(
             model, (1, 28, 28), 10, encoding_placement="subsume",
+            conversion=DeployedConversion(),  # the streamed (spiking) contract, stated
         )
         assert report.segments >= 2
         assert "features_5" in report.interior_host_ops
@@ -132,6 +134,7 @@ class TestStaticModelReport:
         model = LeNet5((1, 28, 28), 10)
         report = streamed_span_report_model(
             model, (1, 28, 28), 10, encoding_placement="offload",
+            conversion=DeployedConversion(),  # the streamed (spiking) contract, stated
         )
         assert "features_2" in report.interior_host_ops
         assert "features_5" in report.interior_host_ops

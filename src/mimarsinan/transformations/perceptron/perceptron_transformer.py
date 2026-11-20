@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from mimarsinan.common.env import degenerate_routing_debug_enabled
 from mimarsinan.models.perceptron_mixer.perceptron import layer_bias_or_zeros
+from mimarsinan.transformations.perceptron import position_bias, position_fold
 from mimarsinan.transformations.pruning.committed_masks import (
     commit_perceptron_pruning,
 )
@@ -20,9 +21,12 @@ routes the delta through the normalization affine instead of dividing by u."""
 
 
 class PerceptronTransformer:
-    def __init__(self):
+    def __init__(self, positions: bool = False):
+        """[U-PFOLD] ``positions``: the reader in both forms (``position_fold``: each weight row's weight, each
+        position's bias, a projection per row); else the per-input reader, refusing a fold per position by name."""
         self._pending_finite: list = []
         self._defer_finite = False
+        self.positions = positions
 
     @contextlib.contextmanager
     def deferred_finite_checks(self, perceptron):
@@ -83,6 +87,7 @@ class PerceptronTransformer:
 
     def input_scale(self, perceptron):
         """Return broadcastable input scale: per-channel tensor or scalar 1.0."""
+        position_fold.refuse_per_input_read(perceptron, "input scale")
         pis = getattr(perceptron, 'per_input_scales', None)
         if pis is not None:
             device = perceptron.layer.weight.data.device
@@ -106,6 +111,8 @@ class PerceptronTransformer:
         return a
 
     def get_effective_weight(self, perceptron):
+        if self.positions and position_fold.holds_positions(perceptron):
+            return position_fold.effective_weight_rows(perceptron)[0]
         scale = self.input_scale(perceptron)
         act = self._activation_scale_for_weight(perceptron)
         if isinstance(perceptron.normalization, nn.Identity):
@@ -115,6 +122,13 @@ class PerceptronTransformer:
             return scale * (perceptron.layer.weight.data * u.unsqueeze(-1)) / act
         
     def get_effective_bias(self, perceptron):
+        if self.positions and position_fold.holds_positions(perceptron):
+            return position_fold.effective_bias_rows(perceptron, self.shared_effective_bias(perceptron))
+        if position_fold.bias_offsets(perceptron) is not None:
+            position_fold.refuse_per_input_read(perceptron, "effective bias")
+        return self.shared_effective_bias(perceptron)
+
+    def shared_effective_bias(self, perceptron):
         # Device/dtype-following by construction: a bias-free layer's structural
         # zero is materialized from the layer's own weight, so it can never be a
         # CPU float32 tensor meeting CUDA normalization stats (W0.7 mapping crash).
@@ -127,6 +141,8 @@ class PerceptronTransformer:
             return ((layer_bias - mean) * u + beta) / perceptron.activation_scale
         
     def apply_effective_weight_transform(self, perceptron, weight_transform):
+        if self.positions and position_fold.holds_positions(perceptron):
+            return position_fold.apply_weight_projection(perceptron, weight_transform)
         effective_weight = self.get_effective_weight(perceptron)
         scale = self.input_scale(perceptron)
         act = self._activation_scale_for_weight(perceptron)
@@ -176,7 +192,15 @@ class PerceptronTransformer:
         )
 
     def apply_effective_bias_transform(self, perceptron, bias_transform):
-        effective_bias = self.get_effective_bias(perceptron)
+        """[U-PFOLD] ``bias_transform`` runs on the bias view this reader declares (``position_fold.output_axes``)."""
+        if position_fold.output_axes(perceptron, self.positions).bias == position_fold.PER_INPUT.bias:
+            self.write_shared_bias(perceptron, bias_transform)
+            return
+        position_bias.apply_bias_transform(perceptron, bias_transform, lambda f: self.write_shared_bias(perceptron, f),
+                                           self.shared_effective_bias(perceptron))
+
+    def write_shared_bias(self, perceptron, bias_transform):
+        effective_bias = self.shared_effective_bias(perceptron)
         target = bias_transform(effective_bias)
         act = perceptron.activation_scale
 

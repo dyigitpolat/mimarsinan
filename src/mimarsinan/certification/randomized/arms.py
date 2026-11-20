@@ -14,6 +14,7 @@ from mimarsinan.certification.randomized.instance import (
     VALUE, WINDOWED_LIF, Instance,
 )
 import mimarsinan.chip_simulation.ttfs.ttfs_segment as ttfs_segment
+from mimarsinan.chip_simulation import stage_wiring
 from mimarsinan.chip_simulation.value_run import value_execution
 from mimarsinan.mapping.ir import legacy_convert
 from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC, dtype_name
@@ -175,10 +176,9 @@ def _latency_order(_sources, latencies):
 
 @contextlib.contextmanager
 def _latency_order_walks() -> Iterator[None]:
-    """R6 off: the value walk, the synchronized LIF count walk and the TTFS segment walk order a segment's cores by
-    stored latency (the base tree's walks) instead of in dependency order."""
-    with _patched(value_execution, "dependency_order", _latency_order), \
-            _patched(sync_counts, "dependency_order", _latency_order), \
+    """R6 off: the value, count and TTFS walks and the gated executor's one leveling walk by stored latency."""
+    with _patched(value_execution, "dependency_order", _latency_order), _patched(sync_counts, "dependency_order",
+            _latency_order), _patched(stage_wiring, "dependency_order", _latency_order), \
             _patched(ttfs_segment, "dependency_order", lambda seg: _latency_order(None, seg.latencies)):
         yield
 

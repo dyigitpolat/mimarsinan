@@ -20,6 +20,7 @@ from mimarsinan.chip_simulation.spiking_mode_policy import (
     policy_for_spiking_mode,
 )
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
+from spiking_points import point_of_mode
 
 
 def _contract(mode, schedule="cascaded"):
@@ -51,20 +52,20 @@ class TestSelection:
 
     @pytest.mark.parametrize("mode,schedule,cls", CASES)
     def test_policy_for_spiking_mode(self, mode, schedule, cls):
-        assert isinstance(policy_for_spiking_mode(mode, schedule), cls)
+        assert isinstance(policy_for_spiking_mode(point_of_mode(mode, schedule)), cls)
 
     def test_unknown_mode_is_rejected(self):
         # The SSOT no longer silently falls back to LIF for an unknown mode — that
         # was exactly how the removed 'rate' mis-deployed. It now fails loud.
         with pytest.raises(ValueError, match="unknown spiking_mode"):
-            policy_for_spiking_mode("frobnicate")
+            policy_for_spiking_mode(point_of_mode("frobnicate"))
 
     def test_removed_rate_is_rejected_with_hint(self):
         with pytest.raises(ValueError, match="rate.*removed.*use 'lif'"):
-            policy_for_spiking_mode("rate")
+            policy_for_spiking_mode(point_of_mode("rate"))
 
     def test_none_mode_is_lif(self):
-        assert isinstance(policy_for_spiking_mode(None), LifModePolicy)
+        assert isinstance(policy_for_spiking_mode(point_of_mode(None)), LifModePolicy)
 
     def test_from_contract_matches_factory(self):
         for mode, schedule, cls in self.CASES:
@@ -89,7 +90,7 @@ class TestTrainingForwardKind:
 
     @pytest.mark.parametrize("mode,schedule,kind", CASES)
     def test_policy(self, mode, schedule, kind):
-        assert policy_for_spiking_mode(mode, schedule).training_forward_kind() == kind
+        assert policy_for_spiking_mode(point_of_mode(mode, schedule)).training_forward_kind() == kind
 
     @pytest.mark.parametrize("mode,schedule,kind", CASES)
     def test_contract_delegates_to_policy(self, mode, schedule, kind):
@@ -109,7 +110,7 @@ class TestDecodeMode:
 
     @pytest.mark.parametrize("mode,schedule,decode", CASES)
     def test_decode_mode(self, mode, schedule, decode):
-        assert policy_for_spiking_mode(mode, schedule).decode_mode() == decode
+        assert policy_for_spiking_mode(point_of_mode(mode, schedule)).decode_mode() == decode
 
 
 # ── SANA-FE soma name + log_potential (was build.py:104-113 / 184-218) ────────
@@ -126,15 +127,15 @@ class TestSomaName:
 
     @pytest.mark.parametrize("mode,schedule,name", CASES)
     def test_soma_hw_name(self, mode, schedule, name):
-        assert policy_for_spiking_mode(mode, schedule).soma_hw_name() == name
+        assert policy_for_spiking_mode(point_of_mode(mode, schedule)).soma_hw_name() == name
 
     @pytest.mark.parametrize("mode,schedule,name", CASES)
     def test_matches_legacy_helper(self, mode, schedule, name):
         from mimarsinan.chip_simulation.sanafe.neuron_model import (
-            soma_hw_name_for_spiking_mode,
+            soma_hw_name_for_point,
         )
 
-        assert soma_hw_name_for_spiking_mode(mode, schedule) == name
+        assert soma_hw_name_for_point(point_of_mode(mode, schedule)) == name
 
 
 class TestLogPotential:
@@ -148,7 +149,7 @@ class TestLogPotential:
 
     @pytest.mark.parametrize("mode,schedule,expected", CASES)
     def test_log_potential(self, mode, schedule, expected):
-        assert policy_for_spiking_mode(mode, schedule).log_potential is expected
+        assert policy_for_spiking_mode(point_of_mode(mode, schedule)).log_potential is expected
 
 
 # ── SANA-FE soma model attributes (was the 5-way build chain) ─────────────────
@@ -159,7 +160,7 @@ class TestSomaModelAttributes:
     def test_lif_routes_to_lif_attrs(self):
         from mimarsinan.chip_simulation.sanafe.neuron_model import lif_model_attributes
 
-        got = policy_for_spiking_mode("lif").soma_model_attributes(
+        got = policy_for_spiking_mode(point_of_mode("lif")).soma_model_attributes(
             threshold=1.5, hardware_bias=0.25, active_start=2, active_length=4,
             firing_mode="Novena",
         )
@@ -175,7 +176,7 @@ class TestSomaModelAttributes:
             ttfs_continuous_model_attributes,
         )
 
-        got = policy_for_spiking_mode("ttfs").soma_model_attributes(
+        got = policy_for_spiking_mode(point_of_mode("ttfs")).soma_model_attributes(
             threshold=2.0, hardware_bias=None, active_start=1, active_length=1,
         )
         want = ttfs_continuous_model_attributes(
@@ -188,7 +189,7 @@ class TestSomaModelAttributes:
             ttfs_quantized_model_attributes,
         )
 
-        got = policy_for_spiking_mode("ttfs_quantized").soma_model_attributes(
+        got = policy_for_spiking_mode(point_of_mode("ttfs_quantized")).soma_model_attributes(
             threshold=2.0, hardware_bias=0.1, active_start=0, active_length=8,
         )
         want = ttfs_quantized_model_attributes(
@@ -202,7 +203,7 @@ class TestSomaModelAttributes:
         )
 
         got = policy_for_spiking_mode(
-            "ttfs_cycle_based", "synchronized"
+            point_of_mode("ttfs_cycle_based", "synchronized")
         ).soma_model_attributes(
             threshold=1.0, hardware_bias=0.5, active_start=8, active_length=4,
         )
@@ -217,7 +218,7 @@ class TestSomaModelAttributes:
         )
 
         got = policy_for_spiking_mode(
-            "ttfs_cycle_based", "cascaded"
+            point_of_mode("ttfs_cycle_based", "cascaded")
         ).soma_model_attributes(
             threshold=1.0, hardware_bias=0.5, active_start=3, active_length=4,
         )
@@ -235,14 +236,17 @@ class TestCalibrationForward:
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
         bound = policy_for_spiking_mode(
-            "lif", soma_law=DEFAULT_SOMA_LAW).calibration_forward()
+            point_of_mode("lif", soma_law=DEFAULT_SOMA_LAW)).calibration_forward()
         assert bound.func is chip_aligned_segment_forward
         assert bound.keywords == {"soma_law": DEFAULT_SOMA_LAW}
 
     def test_lif_without_a_point_refuses_to_hand_out_a_twin(self):
-        """The calibration walk IS the deployed twin: no point, no forward."""
-        with pytest.raises(ValueError, match="resolved soma point"):
-            policy_for_spiking_mode("lif").calibration_forward()
+        """The calibration walk IS the deployed twin: no point, no forward. [U-LIF2 W4] A policy is now built from
+        a resolved point only, so a pointless policy is refused at construction."""
+        with pytest.raises(TypeError):
+            policy_for_spiking_mode()  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            LifModePolicy("lif", None)  # type: ignore[call-arg]
 
     def test_analytical_modes_share_one_forward(self):
         from mimarsinan.mapping.support.bias_compensation import (
@@ -251,7 +255,7 @@ class TestCalibrationForward:
 
         for mode in ("ttfs", "ttfs_quantized"):
             assert (
-                policy_for_spiking_mode(mode).calibration_forward()
+                policy_for_spiking_mode(point_of_mode(mode)).calibration_forward()
                 is _analytical_segment_calibration_forward
             )
 
@@ -262,13 +266,13 @@ class TestCalibrationForward:
 
         for schedule in ("cascaded", "synchronized"):
             assert (
-                policy_for_spiking_mode("ttfs_cycle_based", schedule).calibration_forward()
+                policy_for_spiking_mode(point_of_mode("ttfs_cycle_based", schedule)).calibration_forward()
                 is _ttfs_segment_calibration_forward
             )
 
     def test_legacy_entry_point_matches_policy(self):
         from mimarsinan.mapping.support.bias_compensation import (
-            calibration_forward_for_mode,
+            calibration_forward_for_point,
         )
 
         def identity(forward):
@@ -280,19 +284,19 @@ class TestCalibrationForward:
 
         for mode in ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
             assert identity(
-                calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW)
+                calibration_forward_for_point(point_of_mode(mode))
             ) == identity(
                 policy_for_spiking_mode(
-                    mode, soma_law=DEFAULT_SOMA_LAW).calibration_forward()
+                    point_of_mode(mode, soma_law=DEFAULT_SOMA_LAW)).calibration_forward()
             )
 
     def test_unsupported_mode_still_fails_loud(self):
         from mimarsinan.mapping.support.bias_compensation import (
-            calibration_forward_for_mode,
+            calibration_forward_for_point,
         )
 
-        with pytest.raises(NotImplementedError, match="bogus"):
-            calibration_forward_for_mode("bogus", soma_law=DEFAULT_SOMA_LAW)
+        with pytest.raises(ValueError, match="bogus"):  # [U-LIF2 r2] refused by name at the resolution
+            calibration_forward_for_point(point_of_mode("bogus"))
 
 
 # ── valid_backends ───────────────────────────────────────────────────────────
@@ -301,15 +305,15 @@ class TestValidBackends:
     ALL = ("hcm", "nevresim", "unified", "hybrid", "sanafe", "lava", "loihi", "training")
 
     def test_lif_valid_everywhere(self):
-        assert policy_for_spiking_mode("lif").valid_backends(self.ALL) == self.ALL
+        assert policy_for_spiking_mode(point_of_mode("lif")).valid_backends(self.ALL) == self.ALL
 
     def test_ttfs_excludes_lif_only_backends(self):
-        got = policy_for_spiking_mode("ttfs").valid_backends(self.ALL)
+        got = policy_for_spiking_mode(point_of_mode("ttfs")).valid_backends(self.ALL)
         assert "loihi" not in got and "lava" not in got and "training" not in got
         assert "sanafe" in got and "nevresim" in got
 
     def test_ttfs_cycle_excludes_lif_only_backends(self):
-        got = policy_for_spiking_mode("ttfs_cycle_based", "cascaded").valid_backends(
+        got = policy_for_spiking_mode(point_of_mode("ttfs_cycle_based", "cascaded")).valid_backends(
             self.ALL
         )
         assert set(got) == {"hcm", "nevresim", "unified", "hybrid", "sanafe"}
@@ -337,18 +341,18 @@ class TestConversionHealthCalibration:
 
     @pytest.mark.parametrize("mode,schedule,expected", CASES)
     def test_does_conversion_health_calibration(self, mode, schedule, expected):
-        policy = policy_for_spiking_mode(mode, schedule)
+        policy = policy_for_spiking_mode(point_of_mode(mode, schedule))
         assert policy.does_conversion_health_calibration is expected
 
     def test_only_cascade_policy_opts_in(self):
         # The cascade policy is the sole opt-in; everything else inherits the
         # inert base default.
-        assert TtfsCascadeModePolicy("ttfs_cycle_based", "cascaded") \
+        assert TtfsCascadeModePolicy(point_of_mode("ttfs_cycle_based", "cascaded")) \
             .does_conversion_health_calibration is True
         for policy in (
-            LifModePolicy("lif"),
-            TtfsAnalyticalModePolicy("ttfs"),
-            TtfsSyncCycleModePolicy("ttfs_cycle_based", "synchronized"),
+            LifModePolicy(point_of_mode("lif")),
+            TtfsAnalyticalModePolicy(point_of_mode("ttfs")),
+            TtfsSyncCycleModePolicy(point_of_mode("ttfs_cycle_based", "synchronized")),
         ):
             assert policy.does_conversion_health_calibration is False
 
@@ -357,11 +361,11 @@ class TestConversionHealthCalibration:
 
 class TestRequiresTtfsFiring:
     def test_lif_does_not_require_ttfs(self):
-        assert policy_for_spiking_mode("lif").requires_ttfs_firing is False
+        assert policy_for_spiking_mode(point_of_mode("lif")).requires_ttfs_firing is False
 
     def test_ttfs_family_requires_ttfs(self):
         for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
-            assert policy_for_spiking_mode(mode).requires_ttfs_firing is True
+            assert policy_for_spiking_mode(point_of_mode(mode)).requires_ttfs_firing is True
 
 
 # ── backend capability: the policy is the SSOT (spiking_semantics is internals) ─
@@ -376,13 +380,13 @@ class TestBackendCapability:
         from mimarsinan.chip_simulation.spiking_semantics import supports_spiking_mode
 
         assert (
-            policy_for_spiking_mode(mode).supports_backend(backend)
+            policy_for_spiking_mode(point_of_mode(mode)).supports_backend(backend)
             is supports_spiking_mode(backend, mode)
         )
 
     def test_supports_backend_consistent_with_valid_backends(self):
         for mode in self.MODES:
-            policy = policy_for_spiking_mode(mode)
+            policy = policy_for_spiking_mode(point_of_mode(mode))
             assert policy.valid_backends(self.ALL) == tuple(
                 b for b in self.ALL if policy.supports_backend(b)
             )
@@ -390,7 +394,7 @@ class TestBackendCapability:
     def test_require_backend_supported_passes_for_supported(self):
         # lif is valid on every backend → no raise.
         for backend in self.ALL:
-            policy_for_spiking_mode("lif").require_backend_supported(
+            policy_for_spiking_mode(point_of_mode("lif")).require_backend_supported(
                 backend=backend, context="ctx"
             )
 
@@ -401,7 +405,7 @@ class TestBackendCapability:
 
         # Byte-identical error to the function the call-sites used to call.
         with pytest.raises(ValueError) as policy_exc:
-            policy_for_spiking_mode("ttfs").require_backend_supported(
+            policy_for_spiking_mode(point_of_mode("ttfs")).require_backend_supported(
                 backend="loihi", context="ctx"
             )
         with pytest.raises(ValueError) as legacy_exc:
@@ -411,6 +415,6 @@ class TestBackendCapability:
     def test_require_backend_supported_schedule_irrelevant(self):
         # Schedule never changes backend capability (only the mode does).
         for schedule in ("cascaded", "synchronized"):
-            policy = policy_for_spiking_mode("ttfs_cycle_based", schedule)
+            policy = policy_for_spiking_mode(point_of_mode("ttfs_cycle_based", schedule))
             assert policy.supports_backend("lava") is False
             assert policy.supports_backend("nevresim") is True

@@ -35,7 +35,9 @@ EXPECTED_GEOMETRY = {
     "xformer_pe_like": (128, 128, 1728, 8),
     "admm_crossbar_128x64": (128, 64, 2048, 8),
     "recom_64x64_256": (64, 64, 256, 8),
-    "prime_mat_256x256": (256, 256, 128, 4),
+    # [U-CHIPKEYS2] the composed weight one synapse represents (an 8-bit magnitude in two 4-bit cells, its sign by the
+    # crossbar pair): 9 bits; the extraction card transcribed one cell's precision, 4 (imc_platforms_literature)
+    "prime_mat_256x256": (256, 256, 128, 9),
     "ibm_analog_ai_512x512x34": (512, 512, 34, 8),
     "loihi_dense_equiv_128x1024": (128, 1024, 128, 8),
     "dynap_se_64x256x4": (64, 256, 4, 2),
@@ -120,7 +122,8 @@ class TestLiteraturePlatformsArePinned:
         """HERMES-64 is a second, multi-core entry: the single-core JSSC 2022 entry keeps its geometry,
         weight width, class and provenance."""
         core = get_imc_platform("hermes_core_like")
-        assert core.cores == ({"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": False},)
+        # [U-CHIPKEYS] the LDPU's affine offset holds the bias on chip (khaddamaljameh2022hermescorea Section III-C)
+        assert core.cores == ({"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": True},)
         assert core.weight_bits == 8 and core.claim_eligibility == "quarantined"
         assert core.provenance.startswith("khaddamaljameh2022hermescorea: ")
 

@@ -1,0 +1,36 @@
+{
+ "golden_tests_r3.json": {
+  "source": "FT/uarea/r3/out/golden_tests_r3.json",
+  "sha256": "c6c396d2458284e22ae9f414e5c5fbce993355469fb7e8db48f5e3e6b9e26b0c",
+  "copy": "byte copy",
+  "sha256_written": "c6c396d2458284e22ae9f414e5c5fbce993355469fb7e8db48f5e3e6b9e26b0c"
+ },
+ "golden_build_moves.json": {
+  "from": [
+   "FT/uarea/r3/out/sweep_r3.json d3a9e9dd9288d731dcdf22efe67694b2054eebbdab15eb3a0dd4353360789464",
+   "FT/uarea/r3/out/golden_tests_r3.json c6c396d2458284e22ae9f414e5c5fbce993355469fb7e8db48f5e3e6b9e26b0c",
+   "FT/uarea/r3/out/print_vs_unit.json 0412d840805b32bdfa01e1621cad75a75b1bad592ffe945182f5ccf455057f28",
+   "FT/uarea/r3/out/parity_r3.json 52f6a1d4d2f45ad19754c3ea508e0facf933f6199527d0e7fdf512111fa1932c"
+  ],
+  "script": "UB/scripts/w6_golden.py 12f35603439cec8298a0f773091f8dabd05e212dd0ed2d56fea5097af23a9896",
+  "sha256_written": "5c7f25ea4e08c0788516c84300c072874f4ac575ef3fe301813d28e567c437d4"
+ },
+ "regime_rows.json": {
+  "from": "FT/uarea/r3/out/sweep_r3.json d3a9e9dd9288d731dcdf22efe67694b2054eebbdab15eb3a0dd4353360789464",
+  "script": "UB/scripts/w6_golden.py 12f35603439cec8298a0f773091f8dabd05e212dd0ed2d56fea5097af23a9896",
+  "sha256_written": "8c4defe51ba39d728812c84878eb8c0e2a7e27a8511d092a5f254d607b51bb77"
+ },
+ "declarations_build.json": {
+  "from": "FT/uarea/r3/out/declarations_r3.json b48d3eeca1030f39a458a390d4b2bf7e6bc5a96447b05c9c5e87a12399e88858",
+  "script": "UB/scripts/w6_golden.py 12f35603439cec8298a0f773091f8dabd05e212dd0ed2d56fea5097af23a9896",
+  "sha256_written": "d1c126eb8d0c14d01c5ad3d82c99fee9405fd23a2a17ed8c66c5012191fae53d",
+  "part2": "UB/scripts/w4_profiles.py: part 1's file (245de2c9) plus isaac_like's published_size (build part 2: ruling R3's size flags for a complete-terms description)",
+  "sha256_part1": "245de2c9c14954578322871dfa8cc129fa505f7a8b43f0ceed77567e4493f1fa"
+ },
+ "parity_build1.json": {
+  "from": "the build's tree: R5 e5f6bb37 + UB/uarea.patch f42ddbe4 (applied digest 9d4ca82c96358a8e3eba03283a2bbb293e07ce54d13c206d5fceb90decee6419)",
+  "script": "UB2/scripts/c01_parity_capture.py 3890f692745da1b819eca0f00f937de526bd4f3f1f04c53c919a0d920edcbfd4",
+  "what": "every parity row of the held-out estimate in every mode (held_out, strict, in_sample), the stacks, the SRAM array fact, the strict form (ii) and the stats, as the first build gives them (the fix round's MA-3 equivalence test)",
+  "sha256_written": "d89b1a7f3222dd74390f0a4f13737876f49c6dcc2f88d6b82e0eecf15737cbe1"
+ }
+}

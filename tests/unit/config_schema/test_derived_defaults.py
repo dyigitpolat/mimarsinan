@@ -168,6 +168,8 @@ class TestTheConcreteProspectiveValue:
             "eval_subsample_target",
             # no target bundle declared, so no bundle label
             "target_claim_class", "target_faithfulness_class",
+            # [U-LIF2] the window firing does not apply away from the synchronized LIF variant
+            "lif_window_firing",
         }, sorted(uncomputable)
 
     def test_the_derived_value_is_never_the_empty_means_prose(self):

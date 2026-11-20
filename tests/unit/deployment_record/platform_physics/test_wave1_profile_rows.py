@@ -11,6 +11,8 @@ from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityVal
 from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensus
 
+from unit.deployment_record.load_census_fixtures import LOAD_TERMS
+
 #: (profile, constant, evidence kind, note markers): the evidence-class mapping of plan §7.1.
 NEW_ROWS = (
     ("generic_estimated_22nm", "endurance_cycles", "published", ()),
@@ -26,7 +28,7 @@ NEW_ROWS = (
     ("hermes_64", "e_mac", "published", ()),
     ("hermes_64", "t_cycle", "published", ()),
     ("hermes_64", "area_per_core_total", "published", ()),
-    ("hermes_64", "area_global_fixed", "derived", ()),
+    # [U-AREA] hermes_64's area_global_fixed (the derived die remainder) is dropped: its outside part is gamma
     ("hermes_64", "t_write_per_unit", "derived", ("per core iteration", "selected diagonal")),
     ("hermes_64", "write_verify_iterations", "published", ()),
     ("hermes_64", "endurance_cycles", "published", ("review", "Ge2Sb2Te5")),
@@ -117,8 +119,10 @@ class TestTheMacroCycleTime:
         """The cycle time does not lift the external-component gate: no absolute term without the backing store."""
         pricing = price_absolute(_quantities(cores_physical=1, synaptic_events=10, host_macs=0, latency_steps=7),
                                  get_platform_physics("sram_cim_macro"))
-        # [U-CR C-2, declared pin amendment] the gate's refusal, then each headline it suppresses by name
-        assert pricing.terms == () and [r.name for r in pricing.refusals] == ["absolute_pricing", *ABSOLUTE_TERM_NAMES]
+        # [U-CR C-2, declared pin amendment] the gate's refusal, then each headline it suppresses by name, then
+        # [U-ENERGY] each load figure of the one load law (refused by the law's own reason: no load census given)
+        assert pricing.terms == () and [r.name for r in pricing.refusals] == [
+            "absolute_pricing", *ABSOLUTE_TERM_NAMES, *LOAD_TERMS]
 
 
 class TestThePageSourcedProfiles:
@@ -135,7 +139,9 @@ class TestThePageSourcedProfiles:
         latency census, never the constant."""
         pricing = price_absolute(_quantities(cores_physical=1, synaptic_events=10, host_macs=0), _macro_with_store())
         refused = {r.name: r.reason for r in pricing.refusals}
-        assert "area_per_core_total" in refused["chip_area_mm2"]
+        # [U-AREA] the macro's area_rule block prices its chip area (R5 refused it: no area_per_core_total)
+        area = {t.name: t for t in pricing.terms}["chip_area_mm2"]
+        assert "area_rule T2_digital anchor (macro)" in area.source
         assert refused["e2e_latency_s"] == "t_cycle is declared but the latency_steps census is absent"
 
     def test_neurram_prices_its_write_energy_from_the_derived_band(self):
@@ -151,11 +157,14 @@ class TestThePageSourcedProfiles:
         assert "lifetime_inferences" in {t.name for t in pricing.terms}
         assert "energy_write_mj" in {r.name for r in pricing.refusals}
 
-    def test_hermes_prices_area_only_at_its_own_core(self):
+    def test_hermes_prices_its_own_core_and_off_its_word_by_name(self):
+        """[U-AREA] Its own point is the anchor's identity, the published die (R5: 64 x 1.392 + 54.912 = 144 mm2);
+        8-bit weights over its 4-bit cells take two cells each, priced and named (R5 refused the area by name)."""
         values = _quantities(cores_physical=64, synaptic_events=10, host_macs=0, weight_bits=4)
         hermes = get_platform_physics("hermes_64")
         own = price_absolute(values, hermes, geometry=(CoreGeometry(256, 256, 64),))
         assert {t.name: t for t in own.terms}["chip_area_mm2"].value == pytest.approx(64 * 1.392 + 54.912)
         wide = price_absolute(_quantities(cores_physical=64, synaptic_events=10, host_macs=0, weight_bits=8),
                               hermes, geometry=(CoreGeometry(256, 256, 64),))
-        assert "chip_area_mm2" in {r.name for r in wide.refusals}
+        area = {t.name: t for t in wide.terms}["chip_area_mm2"]
+        assert "off word width: 8-bit weights over 4-bit cells take 2 cells" in area.source

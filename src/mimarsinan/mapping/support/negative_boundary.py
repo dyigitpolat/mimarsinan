@@ -10,7 +10,7 @@ import torch
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
-    calibration_forward_for_mode,
+    calibration_forward_for_point,
 )
 from mimarsinan.mapping.support.value_domain import node_absorbs_negative_values
 from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
@@ -273,11 +273,10 @@ def ensure_negative_boundary_policy(
     model,
     trainer,
     *,
-    spiking_mode: str,
+    point,
     simulation_steps: int,
     device,
     shift_enabled: bool,
-    soma_law,
     n_batches: int = 2,
 ) -> NegativeBoundaryResult | None:
     """Calibrate + apply the policy from the trainer's validation cache.
@@ -285,7 +284,7 @@ def ensure_negative_boundary_policy(
     Callable at the AQ install seam (so the exact-QAT trains through the
     shifted boundary) AND at SCM: a later call walks the already-shifted NF,
     records non-negative minima, and stamps nothing new — the SCM invocation
-    degrades to the drift verifier.
+    degrades to the drift verifier. ``point``: the run's resolved point [U-LIF2 r2].
     """
     batches = [x for x, _ in trainer.iter_validation_batches(n_batches)]
     if not batches:
@@ -296,5 +295,5 @@ def ensure_negative_boundary_policy(
         calibration_x,
         int(simulation_steps),
         shift_enabled=shift_enabled,
-        forward_fn=calibration_forward_for_mode(spiking_mode, soma_law=soma_law),
+        forward_fn=calibration_forward_for_point(point),
     )

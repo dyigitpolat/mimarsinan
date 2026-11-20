@@ -5,11 +5,15 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Set
 
+from mimarsinan.common.refusal.format_version import exact_version
 from mimarsinan.deployment_record.platform_physics.area_components import (
     FIXED, fixed_area_declaration, resolve_area_declarations,
 )
+from mimarsinan.deployment_record.platform_physics.area_rule.declaration import (  # [U-AREA] the block and its judge
+    AREA_RULE, AreaRuleBlock, converter_area_stated, judge_beside, judge_block)
+from mimarsinan.deployment_record.platform_physics.area_rule.registry import load_registry
 from mimarsinan.deployment_record.platform_physics.constants import (  # [U-E3] the one constant judge
     constant_from_declaration, spec_for,
 )
@@ -20,6 +24,8 @@ from mimarsinan.deployment_record.platform_physics.converter import ConverterTab
 from mimarsinan.deployment_record.platform_physics.hosts.description import (
     ENERGY_PLANE_FIELD, HOST_IDENTITY_FIELD, SYSTEM, energy_plane_refusal, require_one_host,
 )
+from mimarsinan.deployment_record.platform_physics.hosts.admission import admit_host_rows, refuse_named, value_refusal
+from mimarsinan.deployment_record.platform_physics.hosts.derivation import DERIVATION_FIELD, canonical
 from mimarsinan.deployment_record.platform_physics.hosts.link_ends import LINK_ENDS_FIELD, judged_link_ends
 from mimarsinan.deployment_record.platform_physics.hosts.rows import HOST
 from mimarsinan.deployment_record.platform_physics.hosts.store import (
@@ -47,15 +53,20 @@ COMBINE_RULES = ("replace", "slower")
 #: [consts fix round] The closed field set of an override declaration; a field outside it refuses by name. [U-J]
 #: ``host``: the host a host row describes (``hosts.description``), one host per deployment. [U-J2]
 #: ``energy_plane``: whose energy a host energy row is (``hosts.description.ENERGY_PLANES``). [U-J5 L-2] ``link_ends``:
-#: the ends of the host-chip link a link row counts at each corner (``hosts.link_ends``).
+#: the ends of the host-chip link a link row counts at each corner (``hosts.link_ends``). [U-HOST2] ``derived_from``:
+#: a row's declared derivation from its host description's rows (``hosts.derivation``).
 OVERRIDE_FIELDS = frozenset({"nominal", "low", "high", "unit", "evidence_kind", "citation", "derivation", "note",
-                             "combine", HOST_IDENTITY_FIELD, ENERGY_PLANE_FIELD, LINK_ENDS_FIELD})
+                             "combine", HOST_IDENTITY_FIELD, ENERGY_PLANE_FIELD, LINK_ENDS_FIELD, DERIVATION_FIELD})
 #: Evidence classes weaker than a shown derivation: a composition (arithmetic) cannot strengthen such a stage.
 _BELOW_DERIVED = frozenset({"estimated"})
+#: [U-HOST2] A host row is its description's row or a declared derivation of its rows: its combination with another
+#: stage is declared in its derivation (``hosts.derivation``), never by the loader's combine.
+_HOST_COMBINE = ("a host row composes with no other stage through the loader's combine: its combination is declared "
+                 "in its derivation (hosts.derivation's 'combine' over the description's rows)")
 
 def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
     """Build a profile from its JSON body, refusing anything the vocabulary rejects."""
-    version = int(data.get("format_version", -1))
+    version = exact_version(data.get("format_version", -1), f"physics profile {data.get('name')!r}")  # [U-HOST3]
     if version != PHYSICS_FORMAT_VERSION:
         raise ValueError(
             f"physics profile format_version {version} != {PHYSICS_FORMAT_VERSION}; "
@@ -66,6 +77,7 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
     declared, chip = resolve_area_declarations(data.get("constants") or {}, data.get("chip_components") or (),
                                                validity.technology_node_nm)
     constants = {key: constant_from_declaration(key, value) for key, value in declared.items()}
+    admit_host_rows(constants, f"profile {data['name']!r}")  # [U-HOST] a profile declares no host row of its own
     conversion_model = dict(data.get("conversion_model") or {})
     # Validate the dataflow HERE: an undescribable one must fail at declaration,
     # not as a conversion count nobody can defend at pricing time.
@@ -75,6 +87,11 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         if declared := [key for key in component.constants if key in constants]:
             raise ValueError(f"{data['name']}: external component {component.name!r} names {declared}, which the "
                              "profile declares itself; an external component's constants come from beside it")
+    converter = None if data.get("converter") is None else _converter(data["converter"])
+    block = None if data.get(AREA_RULE) is None else AreaRuleBlock.from_dict(data[AREA_RULE])
+    if block is not None:  # [U-AREA] judged after the area declarations, beside the profile's own rows
+        judge_block(block, load_registry(), fixed_stated={"profile": _nominal(constants.get(FIXED))},
+                    converter_table=converter_area_stated(constants, converter), validity=validity.geometry)
     return with_carry_buffer(PlatformPhysics(
         name=str(data["name"]),
         display_name=str(data["display_name"]),
@@ -83,12 +100,17 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         constants=constants,
         conversion_model=conversion_model,
         external_components=external,
-        converter=None if data.get("converter") is None else _converter(data["converter"]),
+        converter=converter,
         chip_components=chip,
         backing_store=(None if data.get(STORE_FIELD) is None
                        else store_from_declaration(data[STORE_FIELD], str(data["name"]))),
         transfer_rows=transfer_rows_from_declaration(data.get(TRANSFER_FIELD), str(data["name"])),  # [U-J5 L-1]
+        area_rule=block,
     ), data.get("carry_buffer"))
+
+
+def _nominal(value: Optional[PhysicsConstantValue]) -> Optional[float]:
+    return None if value is None else value.nominal
 
 
 def with_carry_buffer(physics: PlatformPhysics, declaration: Optional[Mapping[str, Any]]) -> PlatformPhysics:
@@ -135,7 +157,10 @@ def apply_overrides(
     their host (``HOST_IDENTITY_FIELD``) replace the profile's host rows whole, and host rows of two hosts refuse by
     name (``hosts.description.require_one_host``). [U-J3] A ``backing_store`` entry restates where the chip's store
     lives (``hosts.store``), a declared departure: a host-owned store drops the chip's memory PHYs and re-derives its
-    ``area_global_fixed``, and a host attach row on a chip-owned store refuses by name.
+    ``area_global_fixed``, and a host attach row on a chip-owned store refuses by name. [U-HOST2] Every declared row
+    naming a host, and every host row, is judged on its value before any composition (its description's own row or a
+    declared derivation of its rows, ``hosts.admission``), and every host row of the result again, else refused by
+    name; a host row's combination is declared in its derivation, never by ``combine``.
     """
     if not overrides:
         return physics
@@ -146,6 +171,8 @@ def apply_overrides(
     # [U-J2] an override replaces its row whole, its stated energy plane with it
     system = {key for key in physics.system_energy_rows if key not in replaced and key not in overrides}
     ends = {key: value for key, value in physics.link_ends.items() if key not in replaced and key not in overrides}
+    refused: Dict[str, str] = {}
+    named: Set[str] = set()
     for key, raw in overrides.items():
         spec = spec_for(key)
         existing = physics.constants.get(key)
@@ -156,6 +183,7 @@ def apply_overrides(
                              f"{sorted(OVERRIDE_FIELDS)})")
         combine = str(data.pop("combine", "replace"))
         host = data.pop(HOST_IDENTITY_FIELD, None)
+        derived = data.pop(DERIVATION_FIELD, None)
         if (plane := data.pop(ENERGY_PLANE_FIELD, None)) is not None:
             if why := energy_plane_refusal(key, plane):
                 raise ValueError(why)
@@ -180,9 +208,30 @@ def apply_overrides(
             derivation=str(data.get("derivation", "")),
             note=(f"[host {host}] " if host else "") + str(data.get("note", "")),
             overridden=True,
+            host=str(host) if host else "",
+            derived_from="" if derived is None else canonical(key, derived),
         )
+        if host or spec.group == HOST:  # [U-HOST2] a row naming a host is judged on its declared value, before any
+            named |= {str(host)} if host else set()  # composition, so no combine relabels what it declares
+            why = [r for r in (value_refusal(key, value, key in system, ends.get(key)),
+                               _HOST_COMBINE if spec.group == HOST and combine != "replace" else None) if r]
+            if why:
+                refused[key] = "; ".join(why)
+                continue
+            if spec.group != HOST:  # a chip row fed over the host's link is the chip's row once composed
+                value = replace(value, host="", derived_from="")
         constants[key] = _slower(value, existing) if combine == "slower" and existing is not None else value
+    refuse_named(refused, f"{physics.name}: the run's declared rows", named)
     constants.update(constants_of_store)
+    if physics.area_rule is not None:  # [U-AREA] an override or a store restatement beside the block (M2, N-6)
+        own = physics.constants.get(FIXED)
+        judge_beside(physics.area_rule, converter_table="area_per_adc" in overrides, fixed_stated={
+            "profile": None if own is None or own.overridden or FIXED in overrides else own.nominal,
+            "override": _nominal(constants.get(FIXED)) if FIXED in overrides else None,
+            "store": _nominal(constants_of_store.get(FIXED))})
+    origin = admit_host_rows(constants, f"{physics.name} with the run's overrides", system, ends, named,  # [U-HOST2]
+                             judged=[key for key in overrides if spec_for(key).group == HOST],
+                             origin=physics.host_origin)  # [U-HOST3] kept rows by the origin they were judged under
     return PlatformPhysics(
         name=physics.name,
         display_name=physics.display_name,
@@ -198,6 +247,8 @@ def apply_overrides(
         backing_store=store,
         transfer_rows=physics.transfer_rows,
         link_ends=ends,
+        area_rule=physics.area_rule,
+        host_origin=origin,
     )
 
 

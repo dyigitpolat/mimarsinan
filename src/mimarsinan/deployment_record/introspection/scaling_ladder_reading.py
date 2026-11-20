@@ -23,15 +23,14 @@ Corner lists are corner-aligned (low, nominal, high of the priced bands), not re
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from mimarsinan.deployment_record.cost.absolute.writes import ENERGY_WRITE, LATENCY_WRITE, WriteInputs, price_write_inputs
+from mimarsinan.deployment_record.cost.absolute.walls.loads import LOAD_ENERGY
+from mimarsinan.deployment_record.cost.absolute.writes import LATENCY_WRITE
 from mimarsinan.deployment_record.cost.host_terms import HOST_DECOMPOSITION
 from mimarsinan.deployment_record.introspection.scaling_ladder_law import layer_pipelined, write_law_absence
-from mimarsinan.deployment_record.quantities import write_technology as wt
 from mimarsinan.deployment_record.quantities.write_law import (
-    PlaneWrites, WritePolicy, plane_write_census, write_policy_of, write_quantities,
+    WritePolicy, plane_write_census, write_quantities,
 )
 
 TIME_PER_INFERENCE = "time per inference (batch period / K)"
@@ -196,34 +195,14 @@ def period_writes(passes: Any, platform: Mapping[str, Any], bits: Any) -> Tuple[
     return written, int(values["period_rewrite_bytes"].value), (None if wear is None else wear.value, source)
 
 
-#: [consts] The write law's terms of a tile-write census that the ladder's axes read (energy, then time).
-TILE_WRITE_TERMS = (ENERGY_WRITE, LATENCY_WRITE)
-
-
-def tile_writes(passes: Any, platform: Mapping[str, Any], bits: Any, physics: Any, *,
-                load: bool) -> Tuple[Dict[str, Any], Dict[str, str]]:
-    """[consts] (terms, refusals by name) of the write law (``price_write_inputs``, the pricer of every per-inference
-    write term) on the priced program's static tiles at K = 1, serial: ``load`` its deployment load, every core of
-    every pass written once (``period_census(every_core=True)``; Pi's numerator, law.md §2.1), else its own period
-    census (M's period writes). Producer writes are per inference, not tile writes, and are left out. One source for
-    what writing a tile costs: a write-verify wall, a cell commit energy and the per-core e_core_program enter
-    wherever the law prices them, and where the law refuses, so does the term, by the law's reason."""
-    if passes is None:
-        reason = "the candidate plane states no pass structure, so it has no tile-write census"
-        return {}, {name: reason for name in TILE_WRITE_TERMS}
-    rows = tuple(replace(row, producer_cells=0, producer_cores=frozenset(), producer_core_cells=None)
-                 for row in passes.rows)
-    program = replace(passes, rows=rows, operands_unstated=None)
-    policy = write_policy_of({**platform, "inference_batch_K": 1})
-    assert policy is not None
-    policy = replace(policy, overlap_mode="serial", producer_write_source=None, payload_bits=None)
-    census, reason = plane_write_census(program, platform, weight_bits=bits, timesteps=None, every_core=load,
-                                        label="candidate tiles, load" if load else "candidate tiles, period")
-    split = None if census is None or policy.core_technologies is None else wt.split_by_technology(
-        program, census, policy, weight_bits=int(bits))
-    pricing = price_write_inputs(WriteInputs.of(PlaneWrites(policy, census, reason, split)), physics)
-    return ({t.name: t.band for t in pricing.terms if t.band is not None and t.name in TILE_WRITE_TERMS},
-            {r.name: r.reason for r in pricing.refusals if r.name in TILE_WRITE_TERMS})
+def load_column(program: Mapping[str, Any], refused: Mapping[str, str], *, wall: str,
+                energy: str) -> Tuple[Dict[str, Any], Dict[str, str]]:
+    """[U-ENERGY] A ladder column (once: the first load; period: the reprogramming per round) read off the program
+    pricing's load terms, so Pi's numerator, M's period writes and ``price_absolute``'s load terms are one result (the
+    one load law, ``cost/absolute/walls/loads.py``); a refused load is the column's refusal by the law's reason."""
+    pairs = ((LOAD_ENERGY, energy), (LATENCY_WRITE, wall))
+    return ({name: program[src] for name, src in pairs if src in program},
+            {name: refused[src] for name, src in pairs if src in refused})
 
 
 def _triple(band: Any) -> Optional[List[float]]:
@@ -248,8 +227,8 @@ def _write_time_per_period(priced: Any, axes: Mapping[str, Any], k: Optional[int
                                           "time of one period)")
     period = (axes.get("time") or {}).get("terms", {}).get("period")
     if period is not None:
-        return list(period), ("the write law's serial write time of the period census at K = 1 (tile_writes); its "
-                              "exposed write time at K is refused or undeclared")
+        return list(period), ("the write law's serial write time of the period census at K = 1 (the one load law); "
+                              "its exposed write time at K is refused or undeclared")
     return None, "no write time is priced"
 
 
@@ -264,7 +243,7 @@ def _time_per_inference(priced: Any, axes: Mapping[str, Any], k: Optional[int]) 
     tpi = [steady.low, steady.nominal, steady.high]
     if period is not None and k:
         tpi = [a + b / k for a, b in zip(tpi, period)]
-    return tpi, ("steady-state e2e_latency_s plus the period's serial write time / K (tile_writes: the writes "
+    return tpi, ("steady-state e2e_latency_s plus the period's serial write time / K (the one load law: the writes "
                  "amortized over the batch)")
 
 

@@ -4,6 +4,7 @@ import json
 import os
 
 import pytest
+from spiking_points import settled_window_firing, declaring_fire_while_integrating
 from fastapi.testclient import TestClient
 
 from mimarsinan.chip_simulation.activation_semantics import axes_from_legacy
@@ -113,6 +114,9 @@ class TestPipelinePreviewHonesty:
         draft = client.get("/api/config/starter").json()
         draft["deployment_parameters"]["spiking_family"] = family
         draft["deployment_parameters"]["spiking_variant"] = variant
+        # [U-LIF2 W16] the windowed preview declares firing during the window (its simulators fire per cycle)
+        draft["deployment_parameters"] = settled_window_firing(
+            declaring_fire_while_integrating(draft["deployment_parameters"]))
         body = client.post("/api/config/resolve", json=draft).json()
         assert body["ok"] is True, body["errors"]
         return body["pipeline"]["steps"], body["derived"]
@@ -657,6 +661,7 @@ class TestRound6DerivedValuesAreConcrete:
     def _resolve(self, client, **dp):
         body = _t0_01()
         body["deployment_parameters"].update(dp)
+        body["deployment_parameters"] = settled_window_firing(body["deployment_parameters"])  # [U-LIF2 W16]
         return client.post("/api/config/resolve", json=body).json()
 
     def test_every_sourced_key_is_served(self, client):

@@ -161,6 +161,7 @@ class TestRegistryEntries:
                                                                 "reduction_core_banks",  # U-L2
                                                                 "quantizer_state", "weight_scale_rule",
                                                                 "bias_resolution",
+                                                                "weight_scale_granularity",  # U-PCH
                                                                 "onchip_arithmetic",  # Wave 2 WI-5e, W08
                                                                 "layer_core_types"}  # Wave 2 WI-5g
 

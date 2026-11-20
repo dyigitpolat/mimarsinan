@@ -17,7 +17,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING, SPIKING_PACKAGING
+from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING, SPIKING_PACKAGING, DeployedConversion
 from mimarsinan.pipelining.cache.load_store_strategies import (
     TorchModelLoadStoreStrategy,
     UncertifiedCachedFlowError,
@@ -98,10 +98,11 @@ class TestStamp:
         calls = []
         monkeypatch.setattr(torch_mapping_step, "convert_torch_model", lambda *a, **k: calls.append(k))
         for packaging in (MVM_PACKAGING, SPIKING_PACKAGING):
-            torch_mapping_step.convert_pipeline_model(_MLP().eval(), config, packaging)
+            torch_mapping_step.convert_pipeline_model(_MLP().eval(), config, DeployedConversion(packaging=packaging))
         assert [k["value_program_stage"] for k in calls] == [True, False]
         monkeypatch.undo()
-        flow = torch_mapping_step.convert_pipeline_model(_MLP().eval(), config, MVM_PACKAGING)
+        flow = torch_mapping_step.convert_pipeline_model(
+            _MLP().eval(), config, DeployedConversion(packaging=MVM_PACKAGING))
         assert flow.conversion_certificate_problem() is None
 
     def test_the_stamp_is_deterministic_and_survives_pickling(self):

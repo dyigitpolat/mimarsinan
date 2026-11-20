@@ -17,9 +17,9 @@ from mimarsinan.models.nn.activations.lif import LIFActivation
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.segment_partition import perceptron_of
-from mimarsinan.transformations.perceptron.perceptron_transformer import (
-    PerceptronTransformer,
-)
+from mimarsinan.mapping.support import received_shift as rs
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_bias import holds_positions, scale_input_columns
 
 # LS gains beyond this window mean the channel statistics are degenerate at the
 # coarse grid; the lab estimator clamps rather than trusting them (§4 C4).
@@ -54,21 +54,22 @@ def fit_channel_affine(
     return a, c
 
 
-def fold_affine_into_consumer(
-    consumer, a: torch.Tensor, c: torch.Tensor,
-) -> None:
-    """Fold the producer-output affine ``r -> a*r + c`` into the consumer:
-    ``W~[:, j] *= a_j``, ``b~ += W~ @ c`` in the effective (wire) domain —
-    the negative-shift fold family."""
-    transformer = PerceptronTransformer()
-    effective_weight = transformer.get_effective_weight(consumer)
-    c_in = c.to(effective_weight.dtype).to(effective_weight.device)
-    correction = (effective_weight * c_in).sum(dim=-1)
-    transformer.apply_effective_bias_transform(consumer, lambda b: b + correction)
-    a_in = a.reshape(1, -1)
-    transformer.apply_effective_weight_transform(
-        consumer, lambda w: w * a_in.to(w.dtype).to(w.device),
-    )
+def fold_affine_into_consumer(consumer, a: torch.Tensor, c: torch.Tensor, *, received=None) -> None:
+    """Fold the affine ``r -> a*r + c`` into the consumer (effective domain): ``b~ += W~ @ c`` as it receives ``c``
+    (``received``, else on every axon), the one writer at sign +1, nothing recorded; then ``W~[:, j] *= a_j``."""
+    rs.correct_for_received_shift(consumer, received or rs.every_axon_shift(consumer, c, None), sign=1.0, record=False)
+    if holds_positions(consumer):
+        scale_input_columns(consumer, a)
+    else:
+        PerceptronTransformer().apply_effective_weight_transform(consumer, lambda w: w * a.reshape(1, -1).to(w))
+
+
+def fold_affine_into_consumers(mapper_repr, producer, consumers, a: torch.Tensor, c: torch.Tensor) -> None:
+    """[U-RSHIFT] The fold as each consumer receives ``c`` along the producer's channel axis (a padding slot none)."""
+    received = {id(n.perceptron): rs.received_for(n, f, o) for n, f, o in rs.received_shifts(
+        mapper_repr, {producer: c.reshape(-1)}, readers=consumers).values()}
+    for consumer in consumers:
+        fold_affine_into_consumer(consumer, a, c, received=received.get(id(consumer)))
 
 
 def fold_affine_into_readout(perceptron, a: torch.Tensor, c: torch.Tensor) -> None:
@@ -291,8 +292,7 @@ def apply_lif_affine_fold(
             fold_affine_into_readout(producer, a, c)
             report["readout_folds"] += 1
         else:
-            for consumer in consumers:
-                fold_affine_into_consumer(consumer, a, c)
+            fold_affine_into_consumers(mapper_repr, node, consumers, a, c)
             report["consumer_folds"] += 1
         setattr(producer, AFFINE_FOLD_FLAG, True)
         report["folded"] += 1

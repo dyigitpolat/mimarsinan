@@ -39,6 +39,7 @@ from mimarsinan.tuning.orchestration.tuning_budget import (
     tuning_budget_from_pipeline,
 )
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
+from spiking_points import point_of_mode
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _CONFIG_PATHS = sorted(
@@ -198,7 +199,7 @@ def build_global_surface() -> dict:
     """Mode-indexed recipe knobs + the frozen tuning policy (workload-silent SSOTs)."""
     recipes = {}
     for mode, schedule in _RECIPE_MODES:
-        recipe = ConversionPolicy.derive(mode, schedule)
+        recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
         recipes[f"{mode}|{schedule or 'none'}"] = {
             "driver": recipe.driver,
             "knobs": dict(recipe.knobs),

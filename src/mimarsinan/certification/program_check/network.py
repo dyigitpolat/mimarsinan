@@ -19,6 +19,7 @@ from mimarsinan.certification.program_check.timing import IdentityTiming
 from mimarsinan.mapping.export.law_solver import solve_ir_laws
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
 from mimarsinan.mapping.packing.softcore.compaction import _ir_keep_indices
+from mimarsinan.mapping.support.value_layouts import neuron_entries
 
 #: The executors' staircase kernels take the integer charge (closure fix MJ4, sign-off P1 items 1 to 3:
 #: ``models/spiking/wire_semantics.lif_window_count`` and the synchronized TTFS lattice ladder), so H8-staircase
@@ -88,7 +89,9 @@ def check_identity_network(ir_graph: Any, result: ConditionResult) -> None:
     for core in masked:
         rows, cols = keep[int(core.id)]
         matrix = np.asarray(core.get_core_matrix(ir_graph))
-        bias = np.zeros(matrix.shape[1]) if core.hardware_bias is None else np.asarray(core.hardware_bias)
+        width = int(matrix.shape[1])  # [U-PCH3] each column's bias by the node's declared layout (one entry: all)
+        held = neuron_entries(core, "hardware_bias", np.arange(width), width=width)
+        bias = np.zeros(width) if held is None else np.asarray(held)
         for c in sorted(set(range(matrix.shape[1])) - set(cols)):
             (dead if not np.any(matrix[:, c] != 0) and bias[c] == 0 else live_dropped).add((int(core.id), c))
     hosts = {int(n.id) for n in getattr(ir_graph, "nodes", ()) if not isinstance(n, NeuralCore)}

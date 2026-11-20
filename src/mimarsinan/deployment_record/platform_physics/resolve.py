@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.platform_physics.lane_blocks import TargetNode, lane_block_rows
@@ -17,6 +17,8 @@ from mimarsinan.deployment_record.platform_physics.registry import get_platform_
 
 #: The profile an operator gets when they declare constants for a target we ship none for.
 CUSTOM_PROFILE_NAME = "custom"
+#: [U-CHIPKEYS4] The two declarations a run's physics resolves from: a profile, or the constants of a custom one.
+PHYSICS_KEYS = ("platform_physics_profile", "platform_physics_overrides")
 
 _CUSTOM = PlatformPhysics(
     name=CUSTOM_PROFILE_NAME,
@@ -41,9 +43,9 @@ def resolve_platform_physics(
     framework defaults wearing a vendor's name. A declared ``lane_block`` (W08) adds
     the lane rows the physics lacks; it never makes a chip priceable on its own.
     """
-    overrides = overrides or {}
-    if not profile_name and not overrides:
+    if priced_under(profile_name, overrides) is None:  # [U-CHIPKEYS4] the one reading the faithfulness label takes
         return None
+    overrides = overrides or {}
     base = get_platform_physics(profile_name) if profile_name else _CUSTOM
     physics = apply_overrides(base, overrides)
     validity = physics.validity
@@ -54,6 +56,18 @@ def resolve_platform_physics(
     constants = dict(physics.constants)
     constants.update({key: constant_from_declaration(key, data) for key, data in rows.items()})
     return replace(physics, constants=constants)
+
+
+def physics_declarations(config: Mapping[str, Any]) -> Tuple[str, Mapping[str, Any]]:
+    """[U-CHIPKEYS4] A run's profile name and constants as the resolver reads them from its flat declarations ("" and
+    {} where none): the resolver's and the faithfulness label's one reading (``priced_under``)."""
+    return str(config.get(PHYSICS_KEYS[0], "") or ""), config.get(PHYSICS_KEYS[1]) or {}
+
+
+def priced_under(profile_name: Optional[str], overrides: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """[U-CHIPKEYS4] The physics a run is priced under: its profile, the custom profile for declared constants alone,
+    None for neither (``resolve_platform_physics`` prices by it; a description's faithfulness label names it)."""
+    return str(profile_name) if profile_name else CUSTOM_PROFILE_NAME if overrides else None
 
 
 class OverrideBlockConflictError(ToolchainRefusal, ValueError):

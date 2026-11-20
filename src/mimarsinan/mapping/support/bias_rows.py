@@ -79,8 +79,9 @@ def bias_register_span(max_abs_code: float, q_max: float) -> int:
     return max(1, int(math.ceil(float(max_abs_code) / float(q_max) - _RATIO_TOL)))
 
 
-def _as_float(value: Any) -> float:
-    return float(value.item() if hasattr(value, "item") else value)
+def _as_array(value: Any) -> np.ndarray:
+    """A scale as float64: 0-d for one grid per perceptron, one entry per neuron for a per-neuron grid [U-PCH]."""
+    return np.asarray(value.detach().cpu() if hasattr(value, "detach") else value, dtype=np.float64)
 
 
 def bias_rows_from_scales(
@@ -97,15 +98,16 @@ def bias_rows_from_scales(
     """
     if bias_scale is None:
         return 1
-    bs = _as_float(bias_scale)
-    if bs <= 0.0:
+    bs = _as_array(bias_scale)
+    if np.all(bs <= 0.0):
         return 1
-    ratio = _as_float(parameter_scale) / bs
-    rows = round(ratio)
-    if rows < 1 or abs(ratio - rows) > _RATIO_TOL:
+    # [U-PCH] per-neuron grids give one ratio per neuron; the rows are every neuron's, so one k for all
+    ratio = _as_array(parameter_scale) / bs
+    rows = round(float(np.max(ratio)))
+    if rows < 1 or float(np.max(np.abs(ratio - rows))) > _RATIO_TOL:
         raise ValueError(
             f"bias-row splitting: {name or '<unnamed>'} carries "
-            f"parameter_scale/bias_scale = {ratio!r}, which is not a positive "
+            f"parameter_scale/bias_scale = {ratio.tolist()!r}, which is not a positive "
             f"integer row count; the WQ two-scale projection must snap the "
             f"bias grid to an integer multiple of the weight grid."
         )

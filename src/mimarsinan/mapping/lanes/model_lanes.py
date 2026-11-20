@@ -9,8 +9,14 @@ import torch
 
 from mimarsinan.mapping.lanes.declaration import lanes_executed
 from mimarsinan.mapping.lanes.plan import LanePlan, plan_lanes
-from mimarsinan.mapping.support.tensor_stats import safe_quantile
-from mimarsinan.models.nn.activations.lane_quantization import LaneAddModule, LanePoolModule, LaneReduceModule
+from mimarsinan.mapping.support.range_rule import RangeSite, least_squares_ranges
+from mimarsinan.models.nn.activations.integer_law import grid_levels
+from mimarsinan.models.nn.activations.lane_quantization import (
+    LaneAddModule,
+    LanePoolModule,
+    LaneReduceModule,
+    unsigned_levels,
+)
 from mimarsinan.models.nn.activations.readout_quantizer import ReadoutQuantizer
 
 
@@ -74,24 +80,23 @@ def _lane_value(quantizer: ReadoutQuantizer, value: torch.Tensor) -> torch.Tenso
     return torch.relu(value) if quantizer.lane_unsigned and quantizer.lane_offset == 0.0 else value.abs()
 
 
-def measure_lane_ranges(model, quantizers: Sequence[ReadoutQuantizer], batches: Iterable[torch.Tensor],
-                        quantile: float) -> List[float]:
-    """The largest per-batch quantile of each lane's last value (``measure_seam_quantiles`` at the lane's end)."""
-    maxima = {id(q): 0.0 for q in quantizers}
-    handles = []
-    for quantizer in quantizers:
-        def hook(module, args, q=quantizer):
-            value = safe_quantile(_lane_value(q, args[0].detach()), quantile).item()
-            maxima[id(q)] = max(maxima[id(q)], value)
-        handles.append(_seam(quantizer).register_forward_pre_hook(hook))
-    try:
-        with torch.no_grad():
-            for x in batches:
-                model(x)
-    finally:
-        for handle in handles:
-            handle.remove()
-    return [maxima[id(q)] for q in quantizers]
+def lane_site(quantizer: ReadoutQuantizer) -> RangeSite:
+    """[U-BRANGE F-4] The range site of a lane's (or a plain readout's) last value: the lane's own grid, unsigned
+    (``2^b - 1`` levels) where the lane clamps, else the signed grid of its bits."""
+    levels = unsigned_levels(quantizer.activation_bits) if quantizer.lane_unsigned else grid_levels(
+        quantizer.activation_bits)
+    return RangeSite(_seam(quantizer), levels, lambda value, q=quantizer: _lane_value(q, value))
+
+
+def lane_censuses(model, quantizers: Sequence[ReadoutQuantizer], batches: Iterable[torch.Tensor]):
+    """Each lane's census at its last value by the boundary rule (``range_rule.least_squares_ranges``: the least
+    squared error of the lane's own grid over the whole interval up to the calibration maximum)."""
+    return least_squares_ranges(model, [lane_site(q) for q in quantizers], batches)
+
+
+def measure_lane_ranges(model, quantizers: Sequence[ReadoutQuantizer], batches: Iterable[torch.Tensor]) -> List[float]:
+    """Each lane's range at its last value by the boundary rule (:func:`lane_censuses`)."""
+    return [census.scale for census in lane_censuses(model, quantizers, batches)]
 
 
 def lane_clipping_census(model, named: Sequence[Tuple[str, ReadoutQuantizer]],

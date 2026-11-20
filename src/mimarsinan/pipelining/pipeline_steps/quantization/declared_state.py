@@ -1,4 +1,10 @@
-"""The declared quantizer state at Boundary Quantization and Readout Law (WI-5a, WI-5d): one hook per step."""
+"""The declared quantizer state at Boundary Quantization and Readout Law (WI-5a, WI-5d): one hook per step.
+
+[U-BRANGE2 (d)] Every grid site the toolchain calibrates has a key in the map (an entry, a perceptron's readout, its
+consumer groups by their readers, a lane, an operand bank's entry and readout), and the map carries the checkpoint's
+trained-grid inventory (``trained``), whose unplaced grids are refused by name at load: a grid a checkpoint was trained
+under is declared, never recalibrated. Each hook runs after its step's calibration, so a declared site's grid replaces
+the calibrated one."""
 
 from __future__ import annotations
 
@@ -15,18 +21,22 @@ from mimarsinan.mapping.support.quantizer_state import (
     load_quantizer_state,
     perceptron_fx_names,
 )
+from mimarsinan.mapping.support.quantizer_state_banks import (
+    declare_bank_entry_grids,
+    declare_bank_readout_ranges,
+    declare_group_ranges,
+)
 
 
 def declare_entry_state(model, entries: list, quantizers: list, config: Mapping[str, Any]) -> int:
-    """After calibration: the declared entry grids replace the calibrated ones (0 when undeclared). On a lane chip
-    (WI-5e) the DAC reads unsigned 2^b codes."""
+    """After calibration: the declared entry grids (and operand bank entries) replace the calibrated ones (0 when
+    undeclared). On a lane chip (WI-5e) the DAC reads unsigned 2^b codes."""
     state = load_quantizer_state(config.get("quantizer_state"))
     if state is None:
         return 0
-    return declare_boundary_grids(model, entries, quantizers, state,
-                                  unsigned_dac=lanes_executed(config) is not None)
-
-
+    unsigned = lanes_executed(config) is not None
+    return (declare_boundary_grids(model, entries, quantizers, state, unsigned_dac=unsigned)
+            + declare_bank_entry_grids(model, entries, quantizers, state, unsigned_dac=unsigned))
 def declare_readout_state(model, perceptrons: list, quantizers: list, platform: Mapping[str, Any],
                           pools: Sequence[Tuple[str, Any]] = ()) -> Dict[str, int]:
     """After calibration: the declared readout ranges (with a lane program's offsets and pool lane ranges, WI-5e),
@@ -36,6 +46,10 @@ def declare_readout_state(model, perceptrons: list, quantizers: list, platform: 
     state = load_quantizer_state(platform.get("quantizer_state"))
     if state is not None:
         report["declared_ranges"] = declare_readout_ranges(model, perceptrons, quantizers, state)
+        if state.bank_readout_ranges:
+            report["declared_bank_ranges"] = declare_bank_readout_ranges(model, perceptrons, quantizers, state)
+        if state.group_ranges:
+            report["declared_groups"] = declare_group_ranges(model, perceptrons, quantizers, state)
         if state.readout_offsets or state.lane_ranges:
             if lanes_executed(platform) is None:
                 raise QuantizerStateError("quantizer_state declares readout offsets or lane ranges, which are lane "

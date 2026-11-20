@@ -29,6 +29,7 @@ from typing import Dict, List, Tuple
 import pytest
 
 from mimarsinan.deployment_record.cost.absolute.step_choice import cheapest_step, price_step
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.platform_physics import profile_from_dict
 from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
@@ -122,7 +123,7 @@ def check_row(row: dict, solutions: Dict[Tuple[str, int], dict], ties: List[tupl
         policy = WritePolicy(batch_k=int(price["K"]))
         for arm, candidates in (("residency", steps), ("stateless", [stateless])):
             ra = price[arm]
-            index = cheapest_step(candidates, physics, policy)
+            index = cheapest_step(candidates, physics, policy, static=NO_STATIC)
             facts = [_facts(c) for c in candidates]
             ra_facts = (ra["W"], int(ra["carry_bytes"]), ra["Q"])
             assert ra_facts in facts, (member["label"], C, price, arm)
@@ -135,7 +136,7 @@ def check_row(row: dict, solutions: Dict[Tuple[str, int], dict], ties: List[tupl
                 assert facts[index] == ra_facts == (0, 0, 1)
             for census in {facts[index]: candidates[index], ra_facts: candidates[facts.index(ra_facts)]}.values():
                 W, carry, _Q = _facts(census)
-                priced = price_step(census, physics, policy)
+                priced = price_step(census, physics, policy, static=NO_STATIC)
                 assert priced.write.nominal == _exact(price["e_byte"], W * TB, price["K"], 1000)
                 assert priced.carry.nominal == _exact(price["c_byte"], carry, 1, 1000)
             assert ra["prog"] == _exact(price["e_byte"], ra["W"] * TB, price["K"])

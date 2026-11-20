@@ -4,6 +4,7 @@ import contextlib
 
 import torch
 
+from mimarsinan.models.perceptron_mixer.perceptron import placed_on_cores
 from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
     NormalizationAwarePerceptronQuantization,
 )
@@ -27,7 +28,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     def __init__(
         self, pipeline, model, quantization_bits, target_accuracy, lr,
         adaptation_manager, two_scale_projection=False, fractional_scale=False, float_bias=False,
-        bias_rows_floor=None, register_bias=False, endpoint_forward=None,
+        bias_rows_floor=None, register_bias=False, endpoint_forward=None, per_neuron=False,
     ):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits
@@ -45,6 +46,8 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
         )
         # The two-scale bias route the step names: an on-chip register (the weight lattice) or bias rows.
         self.register_bias = bool(register_bias)
+        # [U-PCH] One grid per output neuron (the step resolved the chip's per-neuron threshold registers).
+        self.per_neuron = bool(per_neuron)
         # [U-ADC] The context the endpoint recovery runs in (``tuner -> context manager``, the step's readout-aware
         # loop), else None: the recovery runs as it always has.
         self.endpoint_forward = endpoint_forward
@@ -64,6 +67,10 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
 
     def _get_new_perceptron_transform(self, rate):
         def transform(perceptron):
+            # [U-POST G3] The projection applies to the perceptrons the placement maps to cores: a host-placed one
+            # (a subsumed encoder) keeps its float weights; under offload the encoder maps to cores and is projected.
+            if not placed_on_cores(perceptron):
+                return
             NormalizationAwarePerceptronQuantization(
                 self.quantization_bits,
                 self.pipeline.config["device"],
@@ -74,6 +81,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
                 # A tuner built without __init__ (a test of the projection) declares no split and no route.
                 bias_rows_floor=getattr(self, "bias_rows_floor", None),
                 register_bias=getattr(self, "register_bias", False),
+                per_neuron=getattr(self, "per_neuron", False),
             ).transform(perceptron)
         return transform
 

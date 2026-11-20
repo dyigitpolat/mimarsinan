@@ -179,6 +179,7 @@ def _prepare_step(monkeypatch, *,
         data_provider_factory=MockDataProviderFactory(input_shape=(1, 8, 8), size=4),
     )
     pipeline.config["spiking_mode"] = "lif"
+    pipeline.config["lif_window_firing"] = "fire_while_integrating"  # [U-LIF2 W16] the backend fires while integrating
     pipeline.config["simulation_steps"] = 4
     pipeline.config["thresholding_mode"] = "<"
     pipeline.config["sanafe_sample_count"] = sample_count
@@ -256,6 +257,7 @@ def test_step_ttfs_uses_ttfs_reference_path(monkeypatch):
         SanafeRunRecord, "to_ttfs_hardware_subset", _fake_ttfs_subset, raising=False,
     )
     pipeline.config["spiking_mode"] = "ttfs_quantized"
+    pipeline.config.pop("lif_window_firing")  # a TTFS document declares no window firing
     pipeline.config["firing_mode"] = "TTFS"
     pipeline.config["spike_generation_mode"] = "TTFS"
     step.run()

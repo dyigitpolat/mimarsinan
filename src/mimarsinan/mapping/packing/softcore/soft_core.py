@@ -11,12 +11,16 @@ from mimarsinan.mapping.packing.softcore.matrix_placement import (
     materialize_compacted,
     materialize_signed,
 )
+from mimarsinan.mapping.support.value_layouts import layouts
 
 if TYPE_CHECKING:
     from mimarsinan.mapping.ir.core_law import CoreLaw
 
 
 class SoftCore:
+    #: [U-LIVE r2] The values a soft core holds per neuron column (``mapping.support.value_layouts``): every site that
+    #: drops, selects or reorders its neurons carries them (``compaction.take_neuron_columns``).
+    VALUE_LAYOUTS = layouts(PER_NEURON=("threshold", "hardware_bias", "readout_law"))
     #: Declared-only: set only when the platform declares a readout law (pickles stay unchanged otherwise).
     readout_law: "CoreLaw"
     #: Declared-only: one sign per physical row of a per-axon core's descriptor (``sign_split``), else absent.
@@ -51,7 +55,7 @@ class SoftCore:
         self.input_activation_scale = input_activation_scale
         self.activation_scale = activation_scale
         self.parameter_scale = parameter_scale
-        self.threshold = 1.0
+        self.threshold: float | np.ndarray = 1.0  # [U-PCH] one register, or one per neuron
 
         # Pack-time: share hardcore only when residency_class_id matches; None → unique group.
         self.residency_class_id = residency_class_id

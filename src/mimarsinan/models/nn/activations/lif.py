@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.models.nn.activations.bias_mode import validate_bias_mode
+from mimarsinan.models.nn.lif_kernels import NeuronLattice, membrane_lattice_scale, window_count_forward
 
 if TYPE_CHECKING:
     from spikingjelly.activation_based.surrogate import SurrogateFunctionBase
@@ -108,9 +109,9 @@ def _make_lattice_if_node_class():
     class _LatticeIFNode(neuron.IFNode):
         # Snaps only inside measurement_plane(): snapped training corrupted
         # surrogates; snapped telemetry steered keep-best (n8b/n8d).
-        lattice_scale: "float | None" = None
+        lattice_scale: "float | NeuronLattice | None" = None
 
-        def _snapped_scale(self) -> "float | None":
+        def _snapped_scale(self) -> "float | NeuronLattice | None":
             scale = self.lattice_scale
             return scale if scale is not None and in_measurement_plane() else None
 
@@ -120,7 +121,7 @@ def _make_lattice_if_node_class():
                 return super().single_step_forward(x)
             self.v_float_to_tensor(x)
             self.neuronal_charge(x)
-            snap_membrane_to_lattice(self.v, float(scale))
+            snap_membrane_to_lattice(self.v, scale)
             spike = self.neuronal_fire()
             self.neuronal_reset(spike)
             return spike
@@ -153,8 +154,9 @@ class LIFActivation(nn.Module):
     """Multi-timestep integrate-and-fire activation with surrogate gradient."""
 
     _VALID_THRESHOLDING_MODES = ("<", "<=")
-    # [ODIN P2] the armed event-serial fold; None is every historical instance.
-    _serial_fold = None
+    _serial_fold = None  # [ODIN P2] the armed event-serial fold; None is every historical instance.
+    channel_axis = -1  # [U-PFOLD] its perceptron's output channel axis (``Perceptron`` stamps it)
+    _window_count_mode = False  # [U-LIF2 W10] the walk's count branch (``lif_kernels.window_counts``)
 
     def __init__(
         self,
@@ -232,10 +234,7 @@ class LIFActivation(nn.Module):
         return "LIF"
 
     def extra_repr(self) -> str:
-        return (
-            f"T={self.T}, thresholding_mode={self.thresholding_mode!r}, "
-            f"membrane_init={self.membrane_init}"
-        )
+        return f"T={self.T}, thresholding_mode={self.thresholding_mode!r}, membrane_init={self.membrane_init}"
 
     def set_cycle_accurate(self, mode: bool) -> None:
         """Toggle single-step (cycle-accurate) vs multi-step (rate) forward."""
@@ -245,17 +244,18 @@ class LIFActivation(nn.Module):
         self.if_node.step_mode = "s" if mode else "m"
         functional.reset_net(self.if_node)
 
-    def set_membrane_lattice(self, theta_int: "float | None") -> None:
+    def set_membrane_lattice(self, theta_int) -> None:
         """Arm (or clear) the integer-chip membrane lattice: normalized
         membranes snap to the 1/(2*theta_int) grid between charge and fire
-        so float noise never decides a tie (nevresim parity)."""
-        self.if_node.lattice_scale = (
-            2.0 * float(theta_int) if theta_int else None
-        )
+        so float noise never decides a tie (nevresim parity); a per-neuron
+        ``NeuronLattice`` [U-PCH] arms one grid per neuron."""
+        self.if_node.lattice_scale = membrane_lattice_scale(theta_int)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self._cycle_accurate_mode:
             return self._forward_single_step(x)
+        if self._window_count_mode:
+            return window_count_forward(self, x)
         spikes, safe_scale = self._spikes_and_scale(x)
         rate = spikes.mean(dim=0)
         return rate * safe_scale
@@ -273,7 +273,9 @@ class LIFActivation(nn.Module):
         """``activation_scale`` floored away from zero, on ``x``'s device/dtype."""
         scale = self.activation_scale
         if isinstance(scale, torch.Tensor):
-            return scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
+            safe = scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
+            axis = int(getattr(self, "channel_axis", -1)) % max(x.dim(), 1)  # [U-PFOLD, S-12] its perceptron's axis
+            return safe.reshape(-1, *[1] * (x.dim() - 1 - axis)) if safe.numel() > 1 and axis != x.dim() - 1 else safe
         return max(float(scale), 1e-12)
 
     def _forward_single_step(self, x: torch.Tensor) -> torch.Tensor:

@@ -1,6 +1,6 @@
 {
   "name": "truenorth",
-  "display_name": "IBM TrueNorth (28 nm, Merolla 2014): 4096 cores of 256 x 256 on a 64 x 64 mesh",
+  "display_name": "IBM TrueNorth (28 nm, Merolla 2014), 4096 cores of 256 x 256 on a 64 x 64 mesh",
   "geometry": "truenorth_like",
   "keys": {
     "core_semantics": "spiking",
@@ -9,14 +9,124 @@
     "tile_grid_rows": 64,
     "tile_grid_cols": 64,
     "allow_coalescing": false,
-    "allow_neuron_splitting": false
+    "allow_neuron_splitting": false,
+    "spiking_family": "lif",
+    "firing_granularity": "per_cycle",
+    "membrane_bits": 20,
+    "membrane_signed": true,
+    "thresholding_mode": "<="
   },
   "faithfulness": {
     "class": "approximate",
-    "named": [
-      "1-bit weights for the axon-type weight law"
-    ],
-    "note": "TrueNorth weighs a binary synapse by one of four per-neuron axon-type weights; the registered geometry declares 1-bit weights (scout_chip.md section 5.2), so a weight-quantized program on the bundle is not TrueNorth's weight law. A signed 1-bit grid has no nonzero level (q_max 0), so both doors refuse weight quantization on the bundle by name (weight_bits' applied schema, key amendment K1), and a float deployment applies no weight grid, while its payload sizes, pricing and record read weight_bits=1 (a 1-bit cell, which pricing a float run states as a boundary owned by G3), which its label names ('weight grid not applied', key amendment K2). The floorplan is the profile's 4096 cores on a 64 x 64 mesh, one core per tile (truenorth.json validity)."
+    "named": [],
+    "note": "TrueNorth weighs a binary synapse by one of four per-neuron axon-type weights. The registered geometry declares 1-bit weights (scout_chip.md section 5.2), so a weight-quantized program on the bundle is not the weight law of TrueNorth. A signed 1-bit grid has no nonzero level (q_max 0), so both doors refuse weight quantization on the bundle by name (the applied schema of weight_bits, key amendment K1), and a float deployment applies no weight grid, while its payload sizes, pricing and record read weight_bits=1 (a 1-bit cell, which pricing a float run states as a boundary owned by G3), which its label names (key amendment K2). The floorplan is the 4096 cores of the profile on a 64 x 64 mesh, one core per tile (truenorth.json validity)."
   },
-  "notes": "allow_coalescing and allow_neuron_splitting are false: merolla2014a describes the core as \"a self-contained neural network with 256 input lines (axons) and 256 outputs (neurons)\" (the registered geometry's provenance), so a neuron integrates its own core's 256 axons only, with no inter-core partial sum (coalescing) and no core split across cores that share its inputs (neuron splitting). A deployment that needs either declares it through target_overrides with a note, and its faithfulness names it."
+  "notes": "allow_coalescing and allow_neuron_splitting are false: merolla2014a describes the core as \"a self-contained neural network with 256 input lines (axons) and 256 outputs (neurons)\" (the registered geometry's provenance), so a neuron integrates its own core's 256 axons only, with no inter-core partial sum (coalescing) and no core split across cores that share its inputs (neuron splitting). A deployment that needs either declares it through target_overrides with a note, and its faithfulness names it.",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "spiking",
+        "source": "merolla2014a",
+        "location": "Abstract, PDF p.2",
+        "quote": "To demonstrate, we built a 5.4 billion transistor chip with 4, 096 neurosynaptic cores interconnected via an intra-chip network that integrates one million programmable spiking neurons and 256 million configurable synapses.",
+        "reads": "integrates one million programmable spiking neurons"
+      }
+    },
+    "weight_bits": {
+      "departs": {
+        "computation": "binary synapse times a 9-bit signed integer of its neuron for the type of the axon",
+        "source": "merolla2014a",
+        "location": "Supplementary Text S1 'Neurosynaptic Core Operation', PDF p.18, and S8 'Computational Efficiency', PDF p.22",
+        "quote": "On a core, each axon i is assigned one of four types Gi 2 {0, 1, 2, 3} and each neuron j can individually assign a programmable signed integer SjGi for axon type Gi . Synaptic weight from axon i to neuron j is a product of two terms: wi,j ⇥ SjGi , where wi,j 2 {0, 1}. ... Specifically, a synaptic operation constitutes adding a 9 bit signed integer SjGi to the membrane potential",
+        "reads": "Synaptic weight from axon i to neuron j is a product of two terms",
+        "assumed": 1,
+        "reason": "The toolchain's weight grid is one symmetric signed integer per synapse. A binary synapse scaled by a per-neuron integer chosen by the axon's type is a factored weight law the grid cannot hold, so the registered geometry's 1-bit weights are assumed in its place (scout_chip.md section 5.2).",
+        "note": "A synapse is a binary connection w_ij in {0, 1} times a 9-bit signed integer S_jG of its axon's type (Supplementary, 'Neurosynaptic core'): the toolchain's weight grid cannot hold the axon-type law; the registered geometry's 1-bit weights are the description's assumption, and the faithfulness names the departure.",
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "A synapse is one binary crossbar point (w_ij in {0, 1}); the source states no count."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "The crossbar point is binary (w_ij in {0, 1}), a bit the source does not state as a number; the weight one synapse represents is w_ij times its neuron's 9-bit signed integer for the axon's type."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The source states a leak, not a bias: \"the neuron j updates its membrane potential, Vj (t), from its previous value, Vj (t 1), by subtracting its leak\" (Table S2 caption). A signed per-neuron leak each time step is a per-neuron constant each cycle, which the description assumes as the on-chip bias.",
+        "assumed": true
+      }
+    },
+    "spiking_family": {
+      "stated": {
+        "value": "lif",
+        "source": "merolla2014a",
+        "location": "Table S2 caption, PDF p.39",
+        "quote": "Table S2: Simplified Neuron Update Equations. TrueNorth’s neuron is an extension of the integrate-and-fire neuron with several operational modes and integrated pseudorandomness",
+        "reads": "an extension of the integrate-and-fire neuron"
+      }
+    },
+    "spiking_variant": {
+      "unstated": {
+        "note": "A core updates all of its neurons at discrete time steps, and a spike reaches its target axon after a programmed delay of 1 to 15 time steps (Supplementary, 'Neurosynaptic core'): both of the toolchain's LIF variants schedule onto that; the deployment declares one."
+      }
+    },
+    "simulation_steps": {
+      "unstated": {
+        "note": "The source states no window; the deployment declares it."
+      }
+    },
+    "target_tq": {
+      "unstated": {
+        "note": "The source states no level count; the deployment declares it."
+      }
+    },
+    "firing_granularity": {
+      "stated": {
+        "value": "per_cycle",
+        "source": "merolla2014a",
+        "location": "Supplementary, 'Neurosynaptic core', PDF p.19",
+        "quote": "After synaptic events are evaluated, a leak is applied (Lk ), the membrane potential is compared to a threshold (Thr ) and if there is a spike, it is injected into the Router (Spk ) with its predefined route (Fig. S2).",
+        "reads": "After synaptic events are evaluated, a leak is applied (Lk ), the membrane potential is compared to a threshold"
+      }
+    },
+    "firing_mode": {
+      "unstated": {
+        "note": "The neuron resets to a programmable value R_j (Table S2), one of several operational modes of the full model (ref. 20): the deployment declares the reset law."
+      }
+    },
+    "membrane_bits": {
+      "stated": {
+        "value": 20,
+        "source": "merolla2014a",
+        "location": "Supplementary, 'Characterization', PDF p.22",
+        "quote": "Specifically, a synaptic operation constitutes adding a 9 bit signed integer SjGi to the membrane potential, which is a 20 bit signed integer, when axon Ai (t) = 1 and synaptic connection wi,j = 1.",
+        "reads": "the membrane potential, which is a 20 bit signed integer",
+        "note": "A fixed-width register: the toolchain's membrane_bits declares it saturating; the source states no overflow rule beyond the width."
+      }
+    },
+    "membrane_signed": {
+      "stated": {
+        "value": true,
+        "source": "merolla2014a",
+        "location": "Supplementary, 'Characterization', PDF p.22",
+        "quote": "Specifically, a synaptic operation constitutes adding a 9 bit signed integer SjGi to the membrane potential, which is a 20 bit signed integer, when axon Ai (t) = 1 and synaptic connection wi,j = 1.",
+        "reads": "the membrane potential, which is a 20 bit signed integer"
+      }
+    },
+    "thresholding_mode": {
+      "stated": {
+        "value": "<=",
+        "source": "merolla2014a",
+        "location": "Table S2 caption, PDF p.39",
+        "quote": "If the membrane potential, Vj (t), equals or exceeds the threshold, ↵j , the neuron emits a spike and resets to Rj .",
+        "reads": "equals or exceeds the threshold"
+      }
+    }
+  }
 }

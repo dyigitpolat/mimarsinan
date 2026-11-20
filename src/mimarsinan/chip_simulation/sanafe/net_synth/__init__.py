@@ -7,6 +7,7 @@ from mimarsinan.chip_simulation.sanafe.net_synth.spike_trains import (
     set_input_spike_trains,
     set_ttfs_input_spike_trains,
 )
+from mimarsinan.chip_simulation.sanafe.net_synth.timing_lattice import stamp_timing_lattice
 
 __all__ = [
     "_sanafe",
@@ -15,4 +16,5 @@ __all__ = [
     "set_always_on_spike_trains",
     "set_input_spike_trains",
     "set_ttfs_input_spike_trains",
+    "stamp_timing_lattice",
 ]

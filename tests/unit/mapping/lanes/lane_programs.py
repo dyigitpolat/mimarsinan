@@ -15,7 +15,7 @@ from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.export.law_solver import install_readout_laws
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
 from mimarsinan.mapping.ir_mapping_class import IRMapping
-from mimarsinan.mapping.lanes.model_lanes import install_planned_lanes, lane_absorbed, measure_lane_ranges
+from mimarsinan.mapping.lanes.model_lanes import install_planned_lanes, lane_absorbed
 from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
 from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.support.boundary_grids import install_boundary_grids
@@ -30,7 +30,11 @@ from mimarsinan.pipelining.pipeline_steps.quantization.declared_state import (
     declare_entry_state,
     declare_readout_state,
 )
-from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import install_readout_quantizers
+from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import (
+    ReadoutLawStep,
+    calibrate_readout_quantizers,
+    install_readout_quantizers,
+)
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import segment_entry_perceptrons
 from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
@@ -81,10 +85,21 @@ def build_lane_program(model: nn.Module, input_shape: tuple, *, num_classes: int
     grids = install_boundary_quantizers(entries, bits)
     calibrate_boundary_scales(flow, entries, grids, batches)
     quantizers = install_readout_quantizers(perceptrons, bits)
-    lanes = install_planned_lanes(flow, platform, bits) or []
-    every = quantizers + [q for _, q in lanes]
-    for quantizer, value in zip(every, measure_lane_ranges(flow, every, batches, 0.999)):
-        quantizer.calibrate(max(value, 1e-3))
+    planned = install_planned_lanes(flow, platform, bits)
+    # [U-BRANGE2 stage 1b] Readout Law's own calibration, branched as its process branches (the stage verify's M-3 and
+    # m-5): without executed lanes the readouts' calibration, else the lanes path (each lane at its end); read-together
+    # grids pooled, no floor
+    absorbed = lane_absorbed(flow, platform)
+    fixed = platform["readout_law"].get("range_value")
+    if planned is None:
+        calibrate_readout_quantizers(flow, perceptrons, quantizers, batches, platform=platform, absorbed=absorbed)
+    else:
+        every = quantizers + [q for _, q in planned]
+        ranges = [float(fixed)] * len(every) if fixed is not None else ReadoutLawStep._calibrated(
+            flow, perceptrons, every, batches, planned, absorbed)
+        for quantizer, value in zip(every, ranges):
+            quantizer.calibrate(value)
+    lanes = planned or []
     if state_hook is not None:
         state_hook(flow, entries, grids, perceptrons, quantizers, lanes)
     declare_entry_state(flow, entries, grids, platform)

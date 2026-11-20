@@ -135,6 +135,9 @@ class PricedProgram:
     endurance: Optional[float] = None
     terms: Mapping[str, Mapping[str, Band]] = field(default_factory=dict)
     refusals: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    #: [V-M1] What each column's energy cost holds of the chip's static power (``host_split.static_legs``): a ratio of
+    #: two costs is printed only over like legs.
+    static_legs: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
     wall_s: float = 0.0
     #: [CL5] The write law priced at the point's declared batch (``inference_batch_K``): its terms, refusals,
     #: admissibility verdicts and the headlines at that batch; empty when no batch is declared.

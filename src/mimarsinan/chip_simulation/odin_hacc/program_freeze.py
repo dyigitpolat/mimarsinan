@@ -23,6 +23,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     store_neural_segment_output,
 )
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+from mimarsinan.chip_simulation.hybrid_run.output_decode import program_output_gauge
 from mimarsinan.chip_simulation.odin_fpga.records import BACKEND_NAME
 from mimarsinan.chip_simulation.odin_fpga.runner import (
     RAW_INPUT_NODE_ID,
@@ -36,7 +37,7 @@ from mimarsinan.chip_simulation.odin_fpga.segment import (
 )
 from mimarsinan.chip_simulation.odin_hacc.pass_build import used_neurons
 from mimarsinan.chip_simulation.recording.records import RunRecord
-from mimarsinan.chip_simulation.soma_capability import require_soma_law_supported
+from mimarsinan.chip_simulation.point_capability import require_backend_executes
 from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales,
     decode_segment_output,
@@ -74,8 +75,8 @@ class ProgramFreezer:
         self.membrane_init = int(membrane_init)
         self.weight_sign_granularity = str(weight_sign_granularity)
         self.soma_law = contract.soma_law()
-        require_soma_law_supported(
-            self.soma_law, backend=BACKEND_NAME, context="ProgramFreezer")
+        # [U-LIF2 W5] the whole resolved point as a guard: the device's executors are the ODIN row's.
+        require_backend_executes(contract.spiking_point(), backend=BACKEND_NAME, context="ProgramFreezer")
         self.wire_divisors = boundary_normalization_scales(mapping)
         self.node_shifts = getattr(mapping, "node_output_shifts", None)
         self._require_one_neural_stage()
@@ -201,6 +202,14 @@ def readout_core_of(program: Any, segment_mapping: Any, *, classes: int) -> int:
             f"argmax over EVERY used neuron of that core, so a wider one would "
             f"score features rather than classes. Map the classifier onto its "
             f"own core, or deploy a vehicle whose last hop IS the readout")
+    gauge = program_output_gauge(program)
+    if float(np.ptp(gauge)) > 0.0:
+        # [U-TGAUGE2] classes are the value domain's (each count at its gauge); the board ranks raw counts, which rank
+        # as the classes only where every class output sits at one gauge.
+        raise OdinHaccExportRefusal(
+            f"the readout core {core}'s class outputs sit at gauges {float(gauge.min()):.6g} to "
+            f"{float(gauge.max()):.6g}; the board ranks their counts, which rank as the classes only at one gauge. "
+            f"Deploy the readout core at one threshold")
     return int(core)
 
 

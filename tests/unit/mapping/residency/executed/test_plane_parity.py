@@ -98,14 +98,19 @@ class TestTheRulesTheShapeOnlyPlaneNowApplies:
 
     @pytest.mark.parametrize("kind", ["skip", "skew3"])
     def test_a_skewed_carry_plans_alike_on_both_planes_and_runs_exact(self, kind):
+        """[U-TGAUGE5] The planes plan the relay-free vehicle alike; each run reads it as the mapping builds it for
+        that run (``runs.mapped``: the relays where the executor reads the window)."""
         rep = V.branchy_repr(kind)
         specs, census, program = V.layout_plane(rep)
         ir = V.ir_of(rep)
         plan = {"step": "floor"}
         assert _shape_only(specs, census, program, 2, plan) == _builder(ir, 2, plan)
         for semantics in R.ALL_RUNS:
+            mapped = R.mapped(rep, semantics)
+            budget = R.planned_budget(mapped, 2, plan, retimed_level_stages=R.retimed(semantics))
             R.assert_runs_equal_to_the_identity_run(
-                ir, 2, semantics, mapping=V.build(ir, 2, plan, retimed_level_stages=R.retimed(semantics)))
+                mapped, budget, semantics,
+                mapping=V.build(mapped, budget, plan, retimed_level_stages=R.retimed(semantics)))
 
     def test_wide_branches_mixing_carried_and_host_input_plan_alike_and_run_exact(self):
         rep = V.branchy_repr("wide_branches")
@@ -231,3 +236,12 @@ class TestTheProgramGraphReadsTheWireCensus:
         with pytest.raises(ResidencyPlanError, match="depth segments") as caught:
             V.shape_only(moved, census, program, 500, {"step": "floor"})
         assert isinstance(caught.value, ToolchainRefusal)
+
+
+class TestTheWindowRule:
+    """[U-TGAUGE5] This file's refusal test: the relay-free skewed carry, planned alike on both planes, is refused by
+    name by a per-cycle executor."""
+
+    def test_the_relay_free_skewed_carry_is_refused_by_name(self):
+        ir = V.ir_of(V.branchy_repr("skew3"))
+        R.assert_refused_at_the_executor(V.build(ir, 2, {"step": "floor"}), R.STREAMED_LIF)

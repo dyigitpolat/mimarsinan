@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from mimarsinan.chip_simulation.window_firing import (
+    WINDOW_FIRING_KEY,
+    WINDOW_FIRINGS,
+    derived_window_firing,
+    legal_window_firings,
+)
+from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
@@ -11,21 +18,25 @@ from mimarsinan.config_schema.registry.types import (
 
 
 ENTRIES = (
-    _E("lif_execution_discipline", domain="event", group="spiking", owner="LifSegmentPolicy",
-       type=T.ENUM, options=("streaming", "synchronized"),
-       category=Category.DERIVED, derivation="derived", exposure="derived",
-       hidden=True, declarable=False,
-       label="LIF Execution Discipline (internal)",
-       effect="Executor evaluation form inside the windowed-lif semantics",
-       doc="synchronized = two-window integrate-then-emit: the emitted count "
-           "is exactly the strict staircase (genuine == analytic) [calculus 16]. "
-           "RETIRED as a document key: the temporal discipline is the "
-           "spiking_variant axis; this internal executor form stays "
-           "derivation-owned (streaming tick loop).",
-       derived_from=("spiking_family", "spiking_variant"),
-       why=lambda cfg: "streaming — the deployed cycle-accurate tick loop",
-       provenance="consumer frozen default",
-       derived_default=_frozen("streaming")),
+    # [U-LIF2 W1] The firing discipline of a synchronized LIF hop: the options are the axis's values, the declared set
+    # and the default are the entry's data (window_firing_axis), and the legal set is the joint table at the resolved
+    # point within the declared set, so the declared set gates which value a document may hold.
+    _E(WINDOW_FIRING_KEY, domain="event", group="spiking", owner="SpikingPoint",
+       type=T.ENUM, options=WINDOW_FIRINGS, category=Category.ADVANCED, exposure="user",
+       label="LIF Window Firing",
+       effect="How a synchronized LIF hop fires inside its window",
+       doc="The firing discipline of a synchronized LIF hop (spiking_variant='synchronized'). "
+           "fire_while_integrating: a neuron integrates and may fire on every cycle of its window "
+           "(windowed LIF). integrate_then_emit: it integrates the whole "
+           "window with firing switched off, then emits the window's count on T input-free cycles "
+           "(synchronized LIF, calculus 16.3); a zero reset emits at most one spike there, so the joint "
+           "table refuses it under firing_mode='Novena'. A document may hold a value the toolchain declares; "
+           "a backend whose capability row lacks the resolved value is derived off by name.",
+       relevant=R.all_of(R.when("spiking_family", in_=("lif",)),
+                         R.when("spiking_variant", in_=("synchronized",))),
+       provenance="derivation rule", derived_default=derived_window_firing,
+       legal_values=legal_window_firings,
+       empty_means="the declared default of the toolchain's declared values"),
     _E("spike_phase_dither", domain="event", group="spiking", owner="spike_trains",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
        label="Spike Phase Dither",

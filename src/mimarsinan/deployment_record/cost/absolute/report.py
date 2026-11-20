@@ -16,11 +16,13 @@ from mimarsinan.deployment_record.cost.output_stage import output_stage_note
 from mimarsinan.deployment_record.cost.absolute.validity import UNJUDGED, declared_geometry
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
+from mimarsinan.deployment_record.cost.segments import programming_refusal
 from mimarsinan.deployment_record.cost.terms import CostTerm, DeploymentCostReport
 from mimarsinan.deployment_record.platform_physics.converter import declared_adc_bits
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.compute_technology import compute_split
 from mimarsinan.deployment_record.quantities.from_record import from_record
+from mimarsinan.deployment_record.quantities.planes.loads import record_load_inputs
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.quantities.write_law import record_write_census
 from mimarsinan.deployment_record.schema import DeploymentRecord
@@ -105,7 +107,7 @@ def candidate_cost_report(
     writes: Optional[WriteInputs] = None, geometry: Optional[Tuple[Any, ...]] = None,
     refusal: Optional[Tuple[str, str]] = None,
     output_stage: Optional[Mapping[str, Any]] = None,
-    compute: Optional[Any] = None, readout_bits: Optional[int] = None,
+    compute: Optional[Any] = None, readout_bits: Optional[int] = None, loads: Optional[Any] = None,
 ) -> DeploymentCostReport:
     """A candidate's report: priced terms only — no segments, no measured plane. A candidate that
     declares no complete core geometry prices the aggregates as declared (``UNJUDGED``); one on a
@@ -118,7 +120,7 @@ def candidate_cost_report(
     else:
         pricing = price_absolute(quantities, physics, writes=writes,
                                  geometry=UNJUDGED if geometry is None else geometry, compute=compute,
-                                 readout_bits=readout_bits)
+                                 readout_bits=readout_bits, loads=loads)
     groups = _grouped(pricing)
     stage = () if output_stage is None else (output_stage_note(output_stage, pricing),)
     return DeploymentCostReport(
@@ -153,7 +155,7 @@ def absolute_pricing_for_record(
     geometry = record_geometry(record)
     return price_absolute(from_record(record), physics, writes=record_write_inputs(record),
                           compute=record_compute_split(record), readout_bits=record_readout_bits(record),
-                          geometry=UNJUDGED if geometry is None else geometry)
+                          geometry=UNJUDGED if geometry is None else geometry, loads=record_load_inputs(record))
 
 
 def record_readout_bits(record: Any) -> Optional[int]:
@@ -195,11 +197,12 @@ def emit_physics_report(record: DeploymentRecord, run_dir: str) -> Optional[str]
         record.energy is not None
         and record.timing.latency.compute_sim_time_s is not None
     )
+    refused = programming_refusal(record) if costable else ""  # [U-ENERGY ruling (d)] named, never raised
     base = (
         DeploymentCostModel().evaluate(record)
-        if costable
-        else DeploymentCostReport(segments=(), energy=(), latency=(), area=(),
-                                  throughput=(), notes=())
+        if costable and not refused
+        else DeploymentCostReport(segments=(), energy=(), latency=(), area=(), throughput=(),
+                                  notes=(f"refused measured_cost_model: {refused}",) if refused else ())
     )
     report = report_with_absolute_terms(base, pricing)
     if record.output_stage is not None:  # [W08] printed beside the priced point

@@ -27,12 +27,17 @@ from unit.mapping.residency.executed import vehicles as V
 T = V.T
 
 
-def integer_ir(rep, *, coalescing: bool = False, bits: int = 8):
+def integer_ir(rep, *, coalescing: bool = False, bits: int = 8, relays: bool = False):
     """The vehicle's IR on the integer lattice: every untrained perceptron takes the mapping-time grid scale
     ``floor(q_max / max |W|)`` over all its cores (``chip_quantize._matrix_scale``'s fallback, one grid per perceptron
-    since E1), then the IR latency pass."""
+    since E1), then the IR latency pass. [U-TGAUGE5] ``relays``: the mapping's window pass before quantization, as
+    Soft Core Mapping builds a per-cycle cascade (the relays the LIF recipe arms)."""
     ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=V.MAX_AXONS, max_neurons=V.MAX_NEURONS,
                    allow_coalescing=coalescing).map(rep)
+    if relays:
+        from mimarsinan.mapping.latency.depth_balancing import balance_cycle_windows
+
+        balance_cycle_windows(ir, cascade=True, armed=True, thresholding_mode="<=")
     for node in ir.get_neural_cores():
         node.parameter_scale = torch.tensor(0.0)
     for bank in ir.weight_banks.values():
@@ -55,10 +60,17 @@ def run(program, ir, declaration: CheckDeclaration, **kwargs):
     return check_deployment(program, ir_graph=ir, declaration=declaration, **kwargs)
 
 
-def streamed_multipass(seed: int = 0, count: int = 3):
-    """A U1 program with pins and delivery delays (seed 0 at C 3: pass 0 pinned, pass 1 delayed slices)."""
-    ir = integer_ir(V.random_rep(seed))
-    return V.build(ir, count, None), ir
+def streamed_multipass(seed: int = 0, count: int = 3, *, relays: bool = False):
+    """A U1 program with pins and delivery delays (seed 0 at C 3: pass 0 pinned, pass 1 delayed slices). [U-TGAUGE5]
+    Those exist only where the fused segment reads a producer at a latency gap other than one, which a per-cycle
+    executor refuses by name; ``relays`` builds it as the mapping does (every delay zero), at the smallest budget from
+    ``count`` the relayed vehicle plans at."""
+    ir = integer_ir(V.random_rep(seed), relays=relays)
+    if not relays:
+        return V.build(ir, count, None), ir
+    from unit.mapping.residency.executed import runs as R
+
+    return V.build(ir, R.planned_budget(ir, count, None), None), ir
 
 
 def windowed_multipass(seed: int = 0, count: int = 3):

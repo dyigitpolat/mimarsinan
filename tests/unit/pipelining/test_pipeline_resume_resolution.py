@@ -244,13 +244,17 @@ QUARANTINED = (
 
 def _stock_session(tmp_path, *, quarantine):
     wd = tmp_path / "odin_narrowconv_lifs_wq_s16_nobias_phased_deployment_run"
+    config = {k: v for k, v in json.loads(CARD_CONFIG.read_text()).items() if not k.startswith("_")}
+    # [U-LIF2 r5] the stock run holds its saved document, as every run directory with entries does (entries beside no
+    # point and no saved document are refused by name)
+    (wd / "_RUN_CONFIG").mkdir(parents=True)
+    (wd / "_RUN_CONFIG" / "config.json").write_text(json.dumps(config))
     cache = PipelineCache()
     for key in LINEAGE_KEYS:
         cache.add(key, 0.0)
     cache.store(str(wd))
     for key in QUARANTINED if quarantine else ():
         PipelineCache.quarantine_entry(str(wd), key)
-    config = {k: v for k, v in json.loads(CARD_CONFIG.read_text()).items() if not k.startswith("_")}
     config.update(start_step=EXPORT, stop_step=None, _working_directory=str(wd))
     config["deployment_parameters"]["enable_nevresim_simulation"] = False
     return PipelineSession.from_config(

@@ -13,6 +13,7 @@ nothing here (and nothing in JS) may hardcode a per-mode ladder.
 import itertools
 
 import pytest
+from spiking_points import declaring_fire_while_integrating
 
 from mimarsinan.chip_simulation.activation_semantics import axes_from_legacy
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategy, FiringMode
@@ -190,9 +191,11 @@ class TestTheLegalValueSets:
         # A windowed hop collapses counts, so the per-event soma law is not
         # declarable there and the field LOCKS.
         assert sorted(k for k, v in windowed.items() if len(v) == 1) == [
-            "firing_granularity", "pipelined_multiplexing", "position_multiplexing", "reduction_core_banks",
-            "s_allocation",
+            "firing_granularity", "pipelined_multiplexing", "position_multiplexing",
+            "reduction_core_banks", "s_allocation",
         ]
+        # [U-LIF2 option A] both firing forms are declared values of the window: the field does not lock
+        assert windowed["lif_window_firing"] == ["fire_while_integrating", "integrate_then_emit"]
         assert sorted(k for k, v in ttfs.items() if len(v) == 1) == [
             "firing_granularity", "firing_mode", "membrane_arithmetic",
             "s_allocation", "spike_generation_mode",
@@ -275,10 +278,11 @@ class TestTheFullLegalityMatrix:
             legal_spike_generation_modes(spiking_mode),
             legal_thresholding_modes(spiking_mode),
         ):
-            resolution = resolve_draft(_document(
+            # [U-LIF2 W16] a zero reset admits firing while integrating only, so the document declares it
+            resolution = resolve_draft(_document(**declaring_fire_while_integrating(dict(
                 **_axes(spiking_mode), firing_mode=firing,
                 spike_generation_mode=spike_gen, thresholding_mode=thresholding,
-            ))
+            ))))
             assert resolution.errors == [], (spiking_mode, firing, spike_gen)
 
 

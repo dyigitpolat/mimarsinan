@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Protocol, Tuple
 
+from mimarsinan.deployment_record.quantities.planes.local_memory import candidate_local_memory
+from mimarsinan.deployment_record.quantities.planes.states import (
+    CANDIDATE_UNPRODUCED, VALUE_DOMAIN_ZEROS, declared_zeros, plane_view)
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import BUFFER_CAPACITY, ONCHIP_CARRY
 from mimarsinan.deployment_record.quantities.write_law import summed_cells, write_quantities
@@ -53,6 +56,8 @@ class CandidateQuantityContext:
     """
 
     timesteps: Optional[int] = None
+    #: [U-LIF2 W12] The cycles a neuron runs per window (``stage_timesteps.neuron_cycles_per_window``); None reads S.
+    neuron_cycles_per_window: Optional[int] = None
     #: [E1] Σ over the program's EXECUTION stages of their executed windows,
     #: computed upstream through ``chip_simulation.stage_timesteps`` — the same
     #: rule the runner sizes its simulation with. ``None`` when the candidate
@@ -144,6 +149,11 @@ class CandidateQuantityContext:
     #: ``schedule_census``, through the programming census); None without one, and the layout statistics answer.
     pass_count: Optional[int] = None
     sync_count: Optional[int] = None
+    #: [U-ENERGY class 3] Outputs (used columns) and used rows per evaluation over the evaluated cores.
+    output_neurons: Optional[int] = None
+    local_mem_read_elements: Optional[int] = None
+    #: [U-ENERGY] The plane's two load censuses (``planes.loads.LoadInputs``) for the one load law.
+    loads: Optional[Any] = None
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
@@ -217,6 +227,8 @@ def from_candidate(
     _put(values, BUFFER_CAPACITY, context.carry_buffer_capacity_bytes)
 
     _put(values, "timesteps", context.timesteps)
+    _put(values, "neuron_cycles_per_window", context.timesteps if context.neuron_cycles_per_window is None
+         else context.neuron_cycles_per_window)
     _put(values, "weight_bits", context.weight_bits)
     _put(values, "tiles", context.tiles)
     _put(values, "cores_physical", context.cores_physical)
@@ -276,8 +288,12 @@ def from_candidate(
             value=float(sum(context.pass_core_events)), provenance=values["synaptic_events"].provenance)
     values.update(dict(context.lane_quantities))
     values.update(dict(context.host_link_quantities))
-    held = {**dict(getattr(context.value_rule, "withheld", ()) or ()), **dict(context.lane_withheld),
-            **dict(context.host_link_withheld),
+    if context.value_rule is not None and "noc_total_packets" not in values:  # [U-ENERGY class 2] values, no spikes
+        values.update({key: QuantityValue(0.0, "static") for key in VALUE_DOMAIN_ZEROS})
+    held = {**candidate_local_memory(values, context), **dict(getattr(context.value_rule, "withheld", ()) or ()),
+            **dict(context.lane_withheld), **dict(context.host_link_withheld),
             **dict(withheld or {}), **writes_held,
             **({ONCHIP_CARRY: context.carry_onchip_refusal} if context.carry_onchip_refusal else {})}
-    return Quantities(values, withheld={key: reason for key, reason in held.items() if key not in values})
+    zeros = declared_zeros(context.output_stage is not None, context.carry_buffer_capacity_bytes is not None,
+                           context.value_rule is not None)
+    return plane_view(values, held, CANDIDATE_UNPRODUCED, zeros)  # [U-ENERGY class 2] the four states

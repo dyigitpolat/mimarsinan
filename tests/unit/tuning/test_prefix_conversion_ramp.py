@@ -32,6 +32,7 @@ from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
     TTFSCycleAdaptationTuner,
     _SegmentSpikeForward,
 )
+from spiking_points import point_of_mode
 
 
 class _ThreeSegTorch(nn.Module):
@@ -90,7 +91,7 @@ def _make_tuner(tmp_path, *, model=None, **extra):
 
 class TestRecipeGating:
     def test_cascaded_recipe_carries_the_prefix_knob(self):
-        recipe = ConversionPolicy.derive("ttfs_cycle_based", "cascaded")
+        recipe = ConversionPolicy.derive(point_of_mode("ttfs_cycle_based", "cascaded"))
         assert recipe.knobs.get("ttfs_prefix_ramp") is True
 
     @pytest.mark.parametrize("mode,schedule", [
@@ -99,7 +100,7 @@ class TestRecipeGating:
         ("lif", None),
     ])
     def test_other_modes_do_not(self, mode, schedule):
-        recipe = ConversionPolicy.derive(mode, schedule)
+        recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
         assert "ttfs_prefix_ramp" not in recipe.knobs
 
     def test_plan_resolves_prefix_ramp(self):
@@ -365,11 +366,11 @@ class TestHopFrontierArming:
     """[5v B2] the frontier below segments arms on single-segment deep chains."""
 
     def test_recipe_carries_the_hop_prefix_knob(self):
-        recipe = ConversionPolicy.derive("ttfs_cycle_based", "cascaded")
+        recipe = ConversionPolicy.derive(point_of_mode("ttfs_cycle_based", "cascaded"))
         assert recipe.knobs.get("ttfs_hop_prefix_ramp") is True
 
     def test_synchronized_never_carries_it(self):
-        recipe = ConversionPolicy.derive("ttfs_cycle_based", "synchronized")
+        recipe = ConversionPolicy.derive(point_of_mode("ttfs_cycle_based", "synchronized"))
         assert "ttfs_hop_prefix_ramp" not in recipe.knobs
 
     def test_deep_single_segment_walks_the_hop_frontier(self, tmp_path):

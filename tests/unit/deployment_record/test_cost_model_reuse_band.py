@@ -9,6 +9,10 @@ each modeled DMA/sync band here is compared — exactly, no tolerance — agains
   ``params_bytes`` is already a byte count, so the weight-width coefficient
   must NOT be applied again — pinned by the discriminating test below),
 * the sync energy goes through the barrier channel on ``schedule.sync_count``.
+
+[U-ENERGY ruling (d)] Each segment programs what the record's period census writes in it,
+so the payload parity reads the record whose census rewrites both segments each round
+(``make_rewritten_record``): the full record's lone written pass programs nothing.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from mimarsinan.chip_simulation.weight_reuse_cost_model import (
     phase_cost_band,
 )
 from mimarsinan.deployment_record.cost import DeploymentCostModel, find_term
-from unit.deployment_record.record_fixtures import make_full_record
+from unit.deployment_record.record_fixtures import make_full_record, make_rewritten_record
 
 MODEL = DeploymentCostModel()
 
@@ -62,11 +66,17 @@ def record():
     return make_full_record()
 
 
+@pytest.fixture
+def rewritten():
+    return make_rewritten_record()
+
+
 def band_corners(band):
     return {"low": band.low, "nominal": band.nominal, "high": band.high}
 
 
-def test_segment_payload_energy_equals_phase_cost_band_on_the_same_bytes(record):
+def test_segment_payload_energy_equals_phase_cost_band_on_the_same_bytes(rewritten):
+    record = rewritten
     for cost in MODEL.segment_initialization(record):
         payload = band_corners(cost.term("payload_bytes").band)
         energy = band_corners(cost.term("payload_energy_mj").band)
@@ -76,7 +86,8 @@ def test_segment_payload_energy_equals_phase_cost_band_on_the_same_bytes(record)
             )
 
 
-def test_total_programming_energy_equals_the_direct_call_per_segment(record):
+def test_total_programming_energy_equals_the_direct_call_per_segment(rewritten):
+    record = rewritten
     modeled = band_corners(
         find_term(MODEL.energy(record), "modeled_programming_mj").band
     )
@@ -95,8 +106,9 @@ def test_sync_energy_equals_phase_cost_band_on_the_sync_census(record):
         assert value == barrier_channel_mj(record.schedule.sync_count, corner)
 
 
-def test_the_weight_width_is_not_applied_to_an_already_byte_sized_payload(record):
+def test_the_weight_width_is_not_applied_to_an_already_byte_sized_payload(rewritten):
     """params_bytes is bytes: the param channel would re-apply bytes_per_param."""
+    record = rewritten
     cost = MODEL.segment_initialization(record)[0]
     payload = band_corners(cost.term("payload_bytes").band)
     energy = band_corners(cost.term("payload_energy_mj").band)

@@ -9,7 +9,9 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
 )
 from mimarsinan.config_schema.registry.value_schema import ValueSchema
-from mimarsinan.mapping.support.grid_declarations import BIAS_RESOLUTIONS, WEIGHT_SCALE_RULES
+from mimarsinan.mapping.support.grid_declarations import (
+    BIAS_RESOLUTIONS, WEIGHT_SCALE_GRANULARITIES, WEIGHT_SCALE_GRANULARITY_KEY, WEIGHT_SCALE_RULES,
+)
 
 QUANTIZER_STATE_SCHEMA = ValueSchema(
     kind=T.JSON,
@@ -48,4 +50,13 @@ ENTRIES = (
            "law: the bias stays real through Weight Quantization and the readout law rounds it into B at "
            "2^-s output steps (float on the float path); needs an on-chip bias.",
        passthrough=True, empty_means="weight_grid — the bias on the weight grid, byte for byte"),
+    _E(WEIGHT_SCALE_GRANULARITY_KEY, domain="event", section="platform_constraints", group="hardware",
+       owner="mapping/support/neuron_thresholds", type=T.ENUM, options=WEIGHT_SCALE_GRANULARITIES,
+       category=Category.ADVANCED, exposure="user", label="Weight Scale Granularity",
+       effect="The weight grid's scale: one per perceptron, or one per output neuron (its own threshold register)",
+       doc="per_perceptron: one scale per perceptron, the integer threshold register its cores share; per_neuron: "
+           "each output neuron on its own scale s_c = max(1, floor(q_max / max_j |w_cj|)) with threshold theta_c = "
+           "s_c and a membrane lattice per neuron, for a chip whose cores hold a threshold register per neuron "
+           "(core_value_granularity threshold per_neuron); refused by name on a chip with one register per core.",
+       passthrough=True, empty_means="per_perceptron, one scale per perceptron, byte for byte"),
 )

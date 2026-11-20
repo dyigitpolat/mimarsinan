@@ -14,6 +14,8 @@ from mimarsinan.deployment_record.quantities.from_level import LevelView
 def price_level(view: LevelView, physics: PlatformPhysics) -> AbsolutePricing:
     """Every term the physics backs for the level on its chip, judged at the chip's declared core type; where the
     chip declares ``inference_batch_K`` the period census's write energy, exposed write time and lifetime join the
-    headlines, as on the record and candidate planes."""
+    headlines, as on the record and candidate planes. [U-ENERGY] The level's passes are its load censuses: the
+    deployment's first load and the reprogramming per round are priced by the one load law, as on the other planes."""
     writes = None if view.writes is None else WriteInputs.of(view.writes)
-    return price_absolute(view.quantities, physics, writes=writes, geometry=declared_geometry(view.chip["cores"]))
+    return price_absolute(view.quantities, physics, writes=writes, geometry=declared_geometry(view.chip["cores"]),
+                          loads=view.loads)

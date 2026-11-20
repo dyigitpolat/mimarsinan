@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from mimarsinan.certification.record_certificates import certify_run_records
 from mimarsinan.chip_simulation.deployed_host import on_deployed_host
+from mimarsinan.chip_simulation.hybrid_run.stage_timing import RAW_TOTAL_FIELD, RAW_TOTAL_LABEL, host_wall
 from mimarsinan.chip_simulation.odin_fpga.transports.factory import build_transport
 from mimarsinan.chip_simulation.odin_fpga.records import (
     BACKEND_NAME,
@@ -194,13 +195,14 @@ def _timing_fragment(deployed: List[OdinFpgaRunRecord], walls: Dict[str, float]
                 timing.program_bytes, timing.program_wall_s,
                 link=basis_is_link(timing.program_basis)))
             per_segment.append(row)
+    # [U-HOST] the one per-inference host wall over every deployed run (one sample each), the raw sum a diagnostic
+    host = host_wall(row for run in deployed for row in run.compute_stage_walls)
     fragment = {
         "per_segment": per_segment,
         "programming_s": walls["programming_s"],
         "execution_s": walls["execution_s"],
-        "host_ops_s": float(sum(
-            row["wall_s_total"] for run in deployed
-            for row in run.compute_stage_walls)),
+        "host_ops_s": host.required(), RAW_TOTAL_FIELD: host.raw_total_s,
+        "host_wall_definition": host.definition, "host_ops_s_raw_total_label": RAW_TOTAL_LABEL,
         "note": (
             "measured on the declared transport; programming_s is the per-pass "
             "reprogramming cost, never folded into execution_s. The fabric "

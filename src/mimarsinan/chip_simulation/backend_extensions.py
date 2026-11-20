@@ -1,14 +1,15 @@
 """[W15, W33] The execution extensions a backend must implement to run a plan: function-bearing contract fields the
 reference executor (the HCM) honours beyond the semantics, the window, the comparator, the firing mode and the
 encoder. Each is declared by its registry key, which the decision-class registry classes function-bearing
-(``test_backend_extensions``). A backend declares the extensions it implements; an enabled backend that does not
-implement one a plan declares refuses the plan by name at assembly instead of running another function (measured:
-under phase dither and under a membrane guard, 15 of 16 programs differed on nevresim, SANA-FE and Lava,
-``RA/11_wave2/exact/review_soundness.md`` M3)."""
+(``test_backend_extensions``). A backend declares the extensions it implements (``IMPLEMENTED_EXTENSIONS``), read by
+the one capability judgment (``point_capability``) with its capability row: [U-LIF2 W3] a backend that does not
+implement one a plan declares is derived off where the run is resolved, and the assembly check refuses it by name as
+a guard, instead of running another function (measured: under phase dither and under a membrane guard, 15 of 16
+programs differed on nevresim, SANA-FE and Lava, ``RA/11_wave2/exact/review_soundness.md`` M3)."""
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping, Tuple
+from typing import Any, Callable, FrozenSet, Mapping, Tuple
 
 from mimarsinan.chip_simulation.spiking_semantics import lif_config, lif_membrane_init, spike_phase_dither_enabled
 from mimarsinan.common.refusal import ToolchainRefusal
@@ -22,6 +23,18 @@ EXECUTION_EXTENSIONS: Mapping[str, Callable[[Mapping[str, Any]], bool]] = {
 }
 
 
+#: [U-LIF2 W3] The extensions each backend implements, the column the one capability judgment reads beside the backend's
+#: capability row (``point_capability``): the torch executors run both as the HCM does; every other name implements none.
+_TORCH_EXECUTORS = ("hcm", "unified", "hybrid", "training")
+IMPLEMENTED_EXTENSIONS: Mapping[str, FrozenSet[str]] = {
+    name: frozenset(EXECUTION_EXTENSIONS) for name in _TORCH_EXECUTORS}
+
+
+def implemented_extensions(backend: str) -> FrozenSet[str]:
+    """The execution extensions ``backend`` implements (none for a name no row declares)."""
+    return IMPLEMENTED_EXTENSIONS.get(backend, frozenset())
+
+
 class BackendExtensionRefusal(ToolchainRefusal, ValueError):
     """An enabled backend asked to run an execution extension it does not implement, refused by name."""
 
@@ -29,13 +42,3 @@ class BackendExtensionRefusal(ToolchainRefusal, ValueError):
 def declared_extensions(config: Mapping[str, Any]) -> Tuple[str, ...]:
     """The execution extensions ``config`` declares, by registry key, sorted."""
     return tuple(sorted(key for key, declared in EXECUTION_EXTENSIONS.items() if declared(config)))
-
-
-def require_extensions(backend: str, implements, config: Mapping[str, Any], *, context: str) -> None:
-    """Refuse by name a plan that declares an extension ``backend`` does not implement."""
-    missing = [key for key in declared_extensions(config) if key not in implements]
-    if missing:
-        raise BackendExtensionRefusal(
-            f"{context}: backend {backend!r} does not implement the declared execution extension(s) {missing} "
-            f"(the HCM does): it would run another function. Disable the backend (its enable_* key) or the "
-            f"extension")

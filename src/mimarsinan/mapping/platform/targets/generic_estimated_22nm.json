@@ -1,6 +1,6 @@
 {
   "name": "generic_estimated_22nm",
-  "display_name": "Generic 22 nm digital SRAM IMC (all estimated, not a real chip): 256 x 256 cores",
+  "display_name": "Generic 22 nm digital SRAM IMC (all estimated, not a real chip), 256 x 256 cores",
   "geometry": {
     "name": "generic_22nm_256x256",
     "cores": [
@@ -36,7 +36,75 @@
       "output-stage lanes estimated",
       "one ADC on the fused accumulator (per-array ADC not built, W47)"
     ],
-    "note": "Every constant of the profile is an estimate and the geometry is an assumption of the profile: the bundle exercises the estimated-evidence path and is never cited as a chip."
+    "note": "Every constant of the profile is an estimate and the geometry is an assumption of the profile, so the bundle exercises the estimated-evidence path and is never cited as a chip."
   },
-  "notes": "allow_coalescing and allow_neuron_splitting are true, an assumption of the estimated point like its geometry: the profile describes no real chip, and its digital cores are assumed to add partial sums and split outputs across cores, as the framework's study grid declares (every tier-0 cell of that grid declares both); a study that assumes otherwise declares either through target_overrides with a note. onchip_arithmetic declares the lane subset L, E and P (on by default for value-domain chips, owner 2026-10-15; the off ablation declares classes [] through target_overrides with a note): ReLU as the law's clamp, a fused add and a requantizing average pool run on chip when the program is on the integer path (readout_law); a float value program keeps its host ops. The lane block is ng45_os_lane (an output-stage lane synthesized at 45 nm and 1.1 V, arith_toggle.md section 6, estimated; the resolver scales its area by node^2 and its energy by node x V^2 to this target's node, naming the factor in each row), one lane per 64 output columns, so 4 lanes per core (256 output columns per core). The certified function applies one ADC to each column's fused accumulator, while the cost model prices one conversion per array: the two are identical where adc_bits reaches an array's accumulator width, and below it the checked accuracy is not the priced chip's (per-array ADC, W47, not built)."
+  "notes": "allow_coalescing and allow_neuron_splitting are true, an assumption of the estimated point like its geometry: the profile describes no real chip, and its digital cores are assumed to add partial sums and split outputs across cores, as the framework's study grid declares (every tier-0 cell of that grid declares both); a study that assumes otherwise declares either through target_overrides with a note. onchip_arithmetic declares the lane subset L, E and P (on by default for value-domain chips, owner 2026-10-15; the off ablation declares classes [] through target_overrides with a note): ReLU as the law's clamp, a fused add and a requantizing average pool run on chip when the program is on the integer path (readout_law); a float value program keeps its host ops. The lane block is ng45_os_lane (an output-stage lane synthesized at 45 nm and 1.1 V, arith_toggle.md section 6, estimated; the resolver scales its area by node^2 and its energy by node x V^2 to this target's node, naming the factor in each row), one lane per 64 output columns, so 4 lanes per core (256 output columns per core). The certified function applies one ADC to each column's fused accumulator, while the cost model prices one conversion per array: the two are identical where adc_bits reaches an array's accumulator width, and below it the checked accuracy is not the priced chip's (per-array ADC, W47, not built).",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "generic_estimated_22nm profile",
+        "location": "profiles/generic_estimated_22nm.md, the e_mac row",
+        "quote": "| `e_mac` | 0.08 pJ | An 8-bit multiply-accumulate. |",
+        "reads": "An 8-bit multiply-accumulate"
+      }
+    },
+    "weight_bits": {
+      "stated": {
+        "value": 8,
+        "source": "generic_estimated_22nm profile (json)",
+        "location": "profiles/generic_estimated_22nm.json, validity.array_size_assumed",
+        "quote": "\"array_size_assumed\":\"256 x 256 digital SRAM crossbar cores, 8-bit weights\"",
+        "reads": "8-bit weights",
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The profile states 8-bit weights on 8-bit cells and no count of cells per weight."
+            }
+          },
+          "cell_bits": {
+            "stated": {
+              "value": 8,
+              "source": "generic_estimated_22nm profile (json)",
+              "location": "profiles/generic_estimated_22nm.json, validity.geometry",
+              "quote": "\"cell_bits\":8",
+              "reads": "\"cell_bits\":8"
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The profile describes no real chip and states no bias; the deployment declares it (absent, a core type takes the platform's has_bias; every route (b) row declares on-chip bias)."
+      }
+    },
+    "activation_bits": {
+      "unstated": {
+        "note": "The profile states no activation grid; the program declares its own."
+      }
+    },
+    "readout_law": {
+      "unstated": {
+        "note": "The profile assumes a digital array with no analog-to-digital conversion in the datapath (its area_per_adc row) and states no accumulator width: the deployment declares the identity converter at its accumulators' width (route (b): 32 bits)."
+      }
+    },
+    "onchip_arithmetic": {
+      "unstated": {
+        "note": "The profile describes no real chip: the lanes L, E and P are the owner's ruling of 2026-10-15 (on by default for value-domain chips) on the estimated ng45_os_lane block (arith_toggle.md sec. 6).",
+        "assumed": {
+          "classes": [
+            "L",
+            "E",
+            "P"
+          ]
+        }
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The profile prices static weight cores; a deployment that places operand products declares an operand core type."
+      }
+    }
+  }
 }

@@ -1,13 +1,123 @@
 {
   "name": "hermes_core_like",
-  "display_name": "IBM HERMES core (14 nm PCM, Khaddam-Aljameh 2022): one core of 256 x 256",
+  "display_name": "IBM HERMES core (14 nm PCM, Khaddam-Aljameh 2022), one core of 256 x 256",
   "geometry": "hermes_core_like",
-  "keys": {},
+  "keys": {
+    "core_semantics": "mvm",
+    "activation_bits": 8,
+    "readout_law": {
+      "adc_bits": 13,
+      "mult_bits": 11,
+      "output_law": "requantize",
+      "range": "calibrated"
+    },
+    "onchip_arithmetic": {
+      "classes": [
+        "L",
+        "E"
+      ]
+    }
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
+  },
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "khaddamaljameh2022hermescorea",
+        "location": "Section II, PDF p.2",
+        "quote": "A single PCM core is capable of performing a fully parallel analog MVM with 256 8-bit digital inputs at O(1)-complexity.",
+        "reads": "performing a fully parallel analog MVM"
+      }
+    },
+    "weight_bits": {
+      "unstated": {
+        "note": "The core holds analog weights on four PCM devices per unit cell (Section II) and states no integer weight precision (its 64-core successor measures 3 to 4 bits, gallo2022a p.5); the registered geometry's 8 bits are the description's assumption.",
+        "assumed": 8,
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The 8T4R unit cell holds two PCM devices per polarity (Section II); the source states the devices per polarity, not one count per weight."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "The cell holds an analog conductance: the source states no cell precision in bits."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The core's source states the LDPU's \"scaling and offset factors\" and an inference-required affine scaling (Section III-C), never a bias; the 64-core chip built from these cores programs the bias into the LDPU's affine scale registers (gallo2022a, Section 'ResNet-9 on CIFAR-10'), so the on-chip bias is assumed from the chip that uses the core.",
+        "assumed": true
+      }
+    },
+    "activation_bits": {
+      "stated": {
+        "value": 8,
+        "source": "khaddamaljameh2022hermescorea",
+        "location": "Section II, PDF p.2",
+        "quote": "A single PCM core is capable of performing a fully parallel analog MVM with 256 8-bit digital inputs at O(1)-complexity.",
+        "reads": "256 8-bit digital inputs"
+      }
+    },
+    "readout_law": {
+      "stated": {
+        "value": {
+          "adc_bits": 13,
+          "mult_bits": 11,
+          "output_law": "requantize",
+          "range": "calibrated"
+        },
+        "source": "khaddamaljameh2022hermescorea",
+        "location": "Section III-C (LDPU), PDF p.5",
+        "quote": "This is done after the left and right blocks of 128 ADCs pass their raw 12-bit positive (ADC P ) and 12-bit negative (ADC N ) output data via two separate 24-bit tri-state buses to the LDPU [see Fig. 6(a)]. Therein, the 2 × 12 bit data pass through the convert-and-scale blocks [see Fig. 6(b)] that each contains two FP16 multiply–add units. ... The INT8 outputs of the LDPU can be transferred to other cores.",
+        "reads": {
+          "adc_bits": "raw 12-bit positive (ADC P ) and 12-bit negative (ADC N ) output data",
+          "mult_bits": "two FP16 multiply–add units",
+          "output_law": "The INT8 outputs"
+        },
+        "derivation": [
+          {
+            "field": "adc_bits",
+            "rule": "sign_and_magnitude",
+            "reads": 12
+          },
+          {
+            "field": "mult_bits",
+            "rule": "ieee_significand",
+            "reads": 16
+          }
+        ],
+        "assumed_fields": {
+          "range": "the ADC range is the core's current limit with per-column gain equalization; the toolchain's converter form calibrates it from data (W34's point form)"
+        },
+        "note": "Two 12-bit unsigned magnitudes, one per polarity, are the symmetric signed grid of 13 bits; FP16 scaling has an 11-bit significand; the LDPU writes INT8 (requantize). The FP16 rounding of the ADC integer itself is not modeled."
+      }
+    },
+    "onchip_arithmetic": {
+      "stated": {
+        "value": {
+          "classes": [
+            "L",
+            "E"
+          ]
+        },
+        "source": "khaddamaljameh2022hermescorea",
+        "location": "Section III-C and Fig. 6 caption, PDF p.5 and p.6",
+        "quote": "Moreover, the LDPU supports the combination of results from layers split across multiple crossbars and can also perform residual input additions that are needed for executing ResNets. ... The LDPU can furthermore apply the ReLu activation function and combine results from different HERMES cores.",
+        "reads": "can also perform residual input additions that are needed for executing ResNets. ... The LDPU can furthermore apply the ReLu activation function",
+        "note": "ReLU (L) and the residual addition (E) run in the LDPU; pooling is not stated. No lane block is declared (no physics profile ships for this description)."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The PCM unit cells are programmed by iterative write-verify (Section II); the description declares no run-time writable matrix."
+      }
+    }
   }
 }

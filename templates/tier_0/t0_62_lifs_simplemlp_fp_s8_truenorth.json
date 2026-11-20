@@ -12,6 +12,10 @@
       "allow_coalescing": {
         "value": true,
         "note": "the MLP's 784-input layer exceeds one TrueNorth core's 256 axons, and a TrueNorth neuron integrates its own core's axons only: the cell declares coalescing, a departure from the chip"
+      },
+      "thresholding_mode": {
+        "value": "<",
+        "note": "the tier-0 cell fires above the threshold (strict '<'), a departure from TrueNorth's threshold at equality ('equals or exceeds the threshold', merolla2014a Table S2, the truenorth description's statement)"
       }
     }
   },
@@ -35,7 +39,6 @@
     "spiking_variant": "streamed",
     "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
-    "thresholding_mode": "<",
     "encoding_layer_placement": "subsume",
     "weight_quantization": false,
     "endpoint_floor_steps": 17200,

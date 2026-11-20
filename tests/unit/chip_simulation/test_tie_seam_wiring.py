@@ -50,6 +50,13 @@ class _RecordingFlow:
         self.lif_execution_synchronized = None
         self.called_in_plane = None
 
+    def spiking_point(self):
+        """[U-LIF2 W9] The point its contract carries (the K8 step judges it, never forces it)."""
+        from mimarsinan.chip_simulation.spiking_point import stated_point
+
+        return stated_point({"spiking_family": "lif", "spiking_variant": "synchronized"},
+                            window_firing="fire_while_integrating")
+
     def __call__(self, samples):
         self.called_in_plane = in_measurement_plane()
 

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Tuple
+from dataclasses import replace
+from typing import Any, Optional, Tuple
 
+from mimarsinan.deployment_record.cost.absolute.report import declared_physics_of
 from mimarsinan.deployment_record.cost.terms import CostTerm, find_term_or_none
 from mimarsinan.deployment_record.fidelity import (
     AxisComparison,
@@ -18,6 +20,7 @@ from mimarsinan.deployment_record.objectives.probes import full_candidate_probe
 from mimarsinan.deployment_record.objectives.catalog import OBJECTIVES
 from mimarsinan.deployment_record.objectives.spec import ObjectiveSpecV2, RecordView
 from mimarsinan.deployment_record.objectives.views import DeploymentRecordView
+from mimarsinan.deployment_record.platform_physics.area_rule.declaration import AREA_RULE_AXES, block_digest
 from mimarsinan.deployment_record.schema import DeploymentRecord
 
 #: Which report group each priced axis' term lives in, so a predicted BAND can be
@@ -156,7 +159,7 @@ def fidelity_report_for_record(
         measured = _value(spec, measured_view)
         if predicted is None and measured is None:
             continue
-        axes.append(compare_axis(
+        axis = compare_axis(
             key=spec.key,
             unit=spec.unit,
             direction=spec.direction,
@@ -164,7 +167,11 @@ def fidelity_report_for_record(
             measured=measured,
             predicted_band=_predicted_band(spec, candidate),
             basis=_axis_basis(spec, predicted, measured, candidate),
-        ))
+        )
+        if spec.key in AREA_RULE_AXES and (why := chip_area_comparability(
+                getattr(candidate, "physics", None), declared_physics_of(record))) is not None:
+            axis = replace(axis, in_band=None, relative_error=None, basis="; ".join(b for b in (why, axis.basis) if b))
+        axes.append(axis)
     declared = record.identity.platform.get("activity_factor")
     return FidelityReport(
         cell_key=record.identity.cell_key,
@@ -196,12 +203,30 @@ GATED_AXES = {
 }
 
 
+#: [U-AREA] The axes the area rule prices (``area_rule.declaration.AREA_RULE_AXES``, stated once): compared only where
+#: both sides' physics carry the same ``area_rule`` block (its digest, or none on both sides); across the block an axis
+#: is reported by name and neither passed nor failed.
+NOT_COMPARABLE = "not comparable: the area rules differ"
+
+
+def chip_area_comparability(candidate: Any, sealed: Any) -> Optional[str]:
+    """None where the two physics price chip area under the same area rule, else the named reason."""
+    digests = [block_digest(getattr(physics, "area_rule", None)) for physics in (candidate, sealed)]
+    if digests[0] == digests[1]:
+        return None
+    named = [digest if digest == "none" else f"block {digest}" for digest in digests]
+    return f"{NOT_COMPARABLE} ({named[0]} against {named[1]})"
+
+
 def enforce_fidelity_gates(report: FidelityReport) -> None:
-    """Raise on any gated axis whose two answers disagree past its tolerance."""
+    """Raise on any gated axis whose two answers disagree past its tolerance; [U-AREA] an axis priced under two
+    area rules (``NOT_COMPARABLE``) is neither passed nor failed."""
     failures = []
     for axis in report.axes:
         tolerance = GATED_AXES.get(axis.key)
         if tolerance is None or axis.predicted is None or axis.measured is None:
+            continue
+        if axis.basis.startswith(NOT_COMPARABLE):
             continue
         reference = max(abs(axis.measured), 1e-12)
         if abs(axis.predicted - axis.measured) / reference > tolerance:

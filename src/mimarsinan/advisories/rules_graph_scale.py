@@ -16,9 +16,9 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
     resolve_wq_two_scale_projection,
 )
 from mimarsinan.spiking.segment_forward import perceptron_of
-from mimarsinan.transformations.perceptron.perceptron_transformer import (
-    PerceptronTransformer,
-)
+from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import (
+    effective_parameters, holds_positions, output_axes, output_rows)
 
 ADV_SCALE_SPREAD = "ADV-SCALE-SPREAD"
 ADV_NORMFREE_CHAIN = "ADV-NORMFREE-CHAIN"
@@ -86,8 +86,13 @@ def _live_spread(magnitudes: list) -> float | None:
 
 
 def _weight_channel_norms(perceptron) -> list:
-    weight = PerceptronTransformer().get_effective_weight(perceptron)
-    return weight.reshape(weight.shape[0], -1).norm(dim=1).tolist()
+    """Per output channel, on the axis the reader declares; [U-PFOLD] over a fold per position the largest of every
+    position's norm over its fan-in (the last axis, so the output axis stays where it is)."""
+    weight, _bias = effective_parameters(perceptron, PerceptronTransformer())
+    axis = output_axes(perceptron, True).weight
+    if holds_positions(perceptron):
+        return output_rows(weight.norm(dim=-1), axis).amax(dim=1).tolist()
+    return output_rows(weight, axis).norm(dim=1).tolist()
 
 
 def rule_scale_spread(model_repr, plan: Any, channel_stats) -> list[Advisory]:
@@ -178,8 +183,7 @@ def rule_bias_grid_dominance(model_repr, plan: Any, channel_stats) -> list[Advis
     transformer = PerceptronTransformer()
     worst: tuple | None = None
     for perceptron in model_repr.get_perceptrons():
-        weight = transformer.get_effective_weight(perceptron)
-        bias = transformer.get_effective_bias(perceptron)
+        weight, bias = effective_parameters(perceptron, transformer)  # [U-PFOLD] every position's
         w_max = float(weight.abs().max()) if weight.numel() else 0.0
         b_max = float(bias.abs().max()) if bias.numel() else 0.0
         if w_max <= 0.0 or b_max / w_max <= ratio_limit:

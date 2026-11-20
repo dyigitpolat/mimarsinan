@@ -15,6 +15,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.mappers.structural import InputMapper
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
@@ -72,7 +73,7 @@ def test_hcm_nevresim_cascaded_ttfs_parity_both_bias_modes(hw_bias):
         driver = NevresimDriver(
             d_in, seg, tmp, float,
             spike_generation_mode="TTFS", firing_mode="TTFS",
-            thresholding_mode="<=", spiking_mode="ttfs_cycle_based", verbose=False,
+            thresholding_mode="<=", point=point_of_mode("ttfs_cycle_based"), verbose=False,
         )
         raw = driver.predict_spiking_raw(input_data, T, latency)
     nev_out = np.rint(np.asarray(raw)[0]).astype(np.int64)

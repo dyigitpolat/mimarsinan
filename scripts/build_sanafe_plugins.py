@@ -24,6 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_SRC = REPO_ROOT / "src" / "mimarsinan" / "chip_simulation" / "sanafe" / "plugins"
 PLUGIN_BUILD = REPO_ROOT / "build" / "mimarsinan_sanafe_plugins"
 SANAFE_SRC_VAR = "MIMARSINAN_SANAFE_SRC"
+NEVRESIM_ROOT_VAR = "MIMARSINAN_NEVRESIM_ROOT"
 
 PLUGIN_NAMES = (
     "mimarsinan_dendrite",
@@ -45,6 +46,19 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True, cwd=str(REPO_ROOT))
 
 
+def configure_command(build_dir: Path, sanafe_src: str | None = None, source_dir: Path = PLUGIN_SRC) -> list[str]:
+    """The plugins' CMake configuration: the one the build runs and the closure census reads its sources from."""
+    configure = ["cmake", "-S", str(source_dir), "-B", str(build_dir)]
+    override = sanafe_src or os.environ.get(SANAFE_SRC_VAR, "").strip()
+    if override:
+        configure.append(f"-DSANAFE_SRC={Path(override).expanduser().resolve()}")
+    # The timing somas share nevresim's one timing decision: build against the nevresim tree the toolchain compiles.
+    nevresim = os.environ.get(NEVRESIM_ROOT_VAR, "").strip()
+    if nevresim:
+        configure.append(f"-DNEVRESIM_INCLUDE={Path(nevresim).expanduser().resolve() / 'include'}")
+    return configure
+
+
 def build(sanafe_src: str | None = None, clean: bool = True) -> list[Path]:
     if shutil.which("cmake") is None:
         raise RuntimeError(
@@ -55,11 +69,7 @@ def build(sanafe_src: str | None = None, clean: bool = True) -> list[Path]:
         shutil.rmtree(PLUGIN_BUILD)
     PLUGIN_BUILD.mkdir(parents=True, exist_ok=True)
 
-    configure = ["cmake", "-S", str(PLUGIN_SRC), "-B", str(PLUGIN_BUILD)]
-    override = sanafe_src or os.environ.get(SANAFE_SRC_VAR, "").strip()
-    if override:
-        configure.append(f"-DSANAFE_SRC={Path(override).expanduser().resolve()}")
-    _run(configure)
+    _run(configure_command(PLUGIN_BUILD, sanafe_src))
     _run(["cmake", "--build", str(PLUGIN_BUILD), "--parallel"])
 
     built = expected_libraries()

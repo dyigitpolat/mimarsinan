@@ -93,7 +93,9 @@ def rule_streamed_structural_contract(plan: Any) -> list[Advisory]:
         mandate_violation=False,
         suggested_levers=(
             "re-architect pooling as strided convolution to earn end-to-end streaming",
-            "spiking_variant=synchronized (the windowed semantics, count re-encode at every layer)",
+            "spiking_variant=synchronized (the windowed semantics, count re-encode at every layer; its lif_window_firing "
+            "sets the hop's latency: T + 1 cycles a re-timed hop firing while integrating, 2T + 1 integrating then "
+            "emitting)",
         ),
     )]
 

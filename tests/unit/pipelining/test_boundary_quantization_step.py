@@ -11,7 +11,6 @@ from mimarsinan.models.nn.activations.value_quantizer import (
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
-    MIN_BOUNDARY_SCALE,
     BoundaryQuantizationStep,
     calibrate_boundary_scales,
     install_boundary_quantizers,
@@ -81,7 +80,7 @@ class TestCalibration:
             hidden = first(batch)  # pre-install == post-install (inert) input
         quantizers = install_boundary_quantizers([first, second], 8)
         calibrate_boundary_scales(
-            model, [first, second], quantizers, [batch], quantile=1.0
+            model, [first, second], quantizers, [batch]
         )
         assert quantizers[0].grid.scale == float(batch.abs().max())
         assert abs(quantizers[1].grid.scale - float(hidden.abs().max())) < 1e-6
@@ -99,7 +98,7 @@ class TestCalibration:
 
         batch = torch.randn(32, 4)
         calibrate_boundary_scales(
-            FunctionalMapper(), [p], [q], [batch], quantile=1.0
+            FunctionalMapper(), [p], [q], [batch]
         )
         assert q.grid.scale == float(batch.abs().max())
 
@@ -107,24 +106,24 @@ class TestCalibration:
         p = _perceptron(3, 3)
         (q,) = install_boundary_quantizers([p], 8)
         small, large = torch.full((2, 3), 0.5), torch.full((2, 3), 2.0)
-        calibrate_boundary_scales(p, [p], [q], [small, large], quantile=1.0)
+        calibrate_boundary_scales(p, [p], [q], [small, large])
         assert q.grid.scale == 2.0
 
     def test_unreached_entry_fails_loud(self):
         reached, dead = _perceptron(seed=3), _perceptron(seed=4)
         quantizers = install_boundary_quantizers([reached, dead], 8)
-        with pytest.raises(RuntimeError, match="never reached"):
+        with pytest.raises(RuntimeError, match="every magnitude"):
             calibrate_boundary_scales(
                 reached, [reached, dead], quantizers, [torch.randn(4, 4)]
             )
 
-    def test_tiny_maxima_floor_at_min_scale(self):
+    def test_tiny_maxima_take_the_rule_s_range_with_no_floor(self):
         p = _perceptron()
         (q,) = install_boundary_quantizers([p], 8)
         calibrate_boundary_scales(
-            p, [p], [q], [torch.full((2, 4), 1e-7)], quantile=1.0
+            p, [p], [q], [torch.full((2, 4), 1e-7)]
         )
-        assert abs(q.grid.scale - MIN_BOUNDARY_SCALE) < 1e-9
+        assert q.grid.scale == pytest.approx(1e-7, rel=1e-6)  # [U-BRANGE2] the constant seam's least error, no floor
 
     def test_hooks_are_removed_after_calibration(self):
         p = _perceptron()
@@ -138,7 +137,7 @@ class TestQuantizedForward:
         p = _perceptron()
         (q,) = install_boundary_quantizers([p], 8)
         x = torch.randn(5, 4)
-        calibrate_boundary_scales(p, [p], [q], [x], quantile=1.0)
+        calibrate_boundary_scales(p, [p], [q], [x])
         scale = q.scale.detach().clone()
         with torch.no_grad():
             got = p(x)

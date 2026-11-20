@@ -34,6 +34,7 @@ _FRAGMENT_TYPES: Dict[str, type] = {
     "adaptation_ledger": AdaptationSummaryRecord,
     "output_stage": dict,
     "device_samples": tuple,
+    "boundary_ranges": dict,
 }
 
 _ALWAYS_REQUIRED = (
@@ -130,6 +131,7 @@ class DeploymentRecordBuilder:
             adaptation_ledger=self._fragments.get("adaptation_ledger"),
             output_stage=self._fragments.get("output_stage"),
             device_samples=self._fragments.get("device_samples"),
+            boundary_ranges=self._fragments.get("boundary_ranges"),
         ))
 
     def _require(self, group: str, reason: str) -> Any:

@@ -82,9 +82,13 @@ class LIFCountStaircaseDecorator:
     """[lif_exact_qat] the deployed LIF count staircase ``θ·clamp(F(T·z/θ),0,T)/T``
     under staircase-STE with the in-loop LSQ theta gradient; strict/inclusive per
     ``thresholding_mode``. The LIF exact-QAT AQ activation — replaces the
-    T-anneal + one-shot-fold proxy (lif_exact_qat_program.md §6.1)."""
+    T-anneal + one-shot-fold proxy (lif_exact_qat_program.md §6.1). [U-LIF P1] a
+    ``charge_bound`` floors the theta it reads: no in-loop move is read below it."""
 
-    def __init__(self, simulation_steps, activation_scale, thresholding_mode="<="):
+    # Decorators pickled before the bound existed read none.
+    charge_bound = None
+
+    def __init__(self, simulation_steps, activation_scale, thresholding_mode="<=", charge_bound=None):
         if thresholding_mode not in ("<", "<="):
             raise ValueError(
                 f"LIFCountStaircaseDecorator thresholding_mode must be '<' or "
@@ -93,12 +97,15 @@ class LIFCountStaircaseDecorator:
         self.simulation_steps = int(simulation_steps)
         self.activation_scale = activation_scale
         self.thresholding_mode = str(thresholding_mode)
+        self.charge_bound = charge_bound
 
     def input_transform(self, x):
         return x
 
     def output_transform(self, x):
         scale = _exact_qat_theta(self.activation_scale, x)
+        if self.charge_bound is not None:
+            scale = torch.maximum(scale, self.charge_bound.to(device=scale.device, dtype=scale.dtype))
         return LIFCountStaircaseFunction.apply(
             x, scale, self.simulation_steps, self.thresholding_mode == "<",
         )

@@ -36,7 +36,6 @@ from mimarsinan.certification.randomized.arms import (
 from mimarsinan.certification.randomized.attribution import (
     _producer_at_or_after_consumer,
     attribute,
-    counterexample_tags,
 )
 from mimarsinan.certification.randomized.cost_draws import platform_constraints
 from mimarsinan.certification.randomized.generator import DEFAULT_SPACE
@@ -56,6 +55,7 @@ from mimarsinan.certification.randomized.runner import (
     EQUAL,
     REFERENCE_ERROR,
     REFUSED,
+    REFUSED_UNNAMED,
     RUN_ERROR,
     Verdict,
     _run,
@@ -70,6 +70,7 @@ from mimarsinan.mapping.export.law_solver import IntegerLawRangeError
 from mimarsinan.models.spiking.hybrid.executors import sync_counts
 from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
 from mimarsinan.mapping.packing.pass_timing import PassTimingError
+from mimarsinan.mapping.latency.depth_balancing import UnbalancedFanInError
 
 #: Off arm -> a seed where it changes outputs (found by the screen; pinned so the witness is reproducible). CL1
 #: re-pins: H8 at 210 (seed 1 became a value instance the readout law refuses on the identity program, the H8
@@ -83,7 +84,12 @@ from mimarsinan.mapping.packing.pass_timing import PassTimingError
 #: slice by where the relabelled IR's node ids lay it out (class position_dependent_encode). CL1: seed 6's drawn
 #: residency plan is refused by name, so the witness moves to 7, the screen's first R4 counterexample; E1 keeps it.
 R4_SEED = 7
-OFF_WITNESSES = {"H1-theta": 0, "H5-collapse": 32, "H8": 90, "H5-skew": 1, "R6": 16, "H0": 0, "R4": R4_SEED}
+OFF_WITNESSES = {"H1-theta": 0, "H5-collapse": 32, "H8": 90, "R6": 16, "H0": 0, "R4": R4_SEED}
+#: [U-TGAUGE5] Off arm -> its base witness's seed, where the window rule now refuses the program by name: H5-skew's
+#: pins and delivery delays matter only where a fused segment reads a producer at a latency gap other than one, and the
+#: screen's relay-free draws of a per-cycle cascade that hold one are refused at their identity program by the
+#: per-cycle executor (0 counterexamples on seeds 0-119 of the window rule's tree, 29 on U-TGAUGE4's).
+WINDOW_WITNESSES = {"H5-skew": 1}
 #: The base's synchronized-LIF walk witness: the identity program walked a consumer before its producer while the
 #: multi-pass deployment walked in dependency order. Retired at CL1 (fixed by the dependency-ordered count walk).
 WALK_WITNESS = (ON_SCHEDULED, 67)
@@ -103,7 +109,32 @@ class TestCodeLevelWitnesses:
 
     def test_every_switching_arm_has_a_witness(self):
         switching = {a for a, arm in ARMS.items() if arm.hypothesis and arm.exercisable and arm.changes_a_field}
-        assert switching == set(OFF_WITNESSES)
+        assert switching == set(OFF_WITNESSES) | set(WINDOW_WITNESSES)
+
+    @pytest.mark.parametrize("arm", sorted(WINDOW_WITNESSES))
+    def test_the_window_rule_refuses_the_witness_by_name(self, arm):
+        """This file's refusal test: the base witness (a counterexample on U-TGAUGE4's tree) and its paired control
+        are both refused by name at their identity program, a per-cycle cascade holding a live edge at another gap."""
+        for verdict in (run_instance(WINDOW_WITNESSES[arm], arm), run_instance(WINDOW_WITNESSES[arm], arm,
+                                                                                 control=True)):
+            assert verdict.outcome == REFERENCE_ERROR, verdict.to_dict()
+            assert verdict.detail.startswith("UnbalancedFanInError"), verdict.detail
+
+    @pytest.mark.parametrize("arm", sorted(WINDOW_WITNESSES))
+    def test_through_the_window_pass_the_arm_changes_no_output(self, arm, monkeypatch):
+        """[U-TGAUGE6] The screen's references and deployments built through the mapping's window pass, as Soft Core
+        Mapping builds them (``x3a_window``): every live in-pass edge holds a latency gap of one and every carried read
+        a delivery delay of zero, so the pass projection pins and delays nothing and switching both off changes no
+        output. No draw of the arm is a counterexample, none fails unnamed and none is refused at its identity program
+        (U-TGAUGE6's probe: 0 counterexamples on seeds 0-239, 126 equal, 113 refused by name, 1 vacuous). The arm's
+        witness stays the relay-free refusal above."""
+        from unit.certification.x3a_window import map_through_the_window
+
+        map_through_the_window(monkeypatch)
+        outcomes = [run_instance(seed, arm) for seed in range(40)]
+        assert not [v.to_dict() for v in outcomes if v.outcome in (COUNTEREXAMPLE, REFERENCE_ERROR, RUN_ERROR,
+                                                                   REFUSED_UNNAMED)]
+        assert sum(v.outcome == EQUAL for v in outcomes) >= 15
 
 
 class TestTheH8DepartureOnTheTtfsFloatPath:
@@ -192,13 +223,16 @@ class TestRetiredWitnesses:
     def test_the_latency_off_arm_is_refused_by_name_at_the_pass_projection(self):
         """Retired off arm: H1-latency is asserted at run time. With the packing predicate's latency clause off
         the deployment co-locates soft cores the fused segment runs at two latencies, and G5's pass projection
-        refuses it by name (``pass_timing._core_latencies``); the paired control packs them apart, equal."""
+        refuses it by name (``pass_timing._core_latencies``); the paired control packs them apart, equal. [U-LIVE] The
+        draw is seed 5: at seed 262 the two co-located soft cores' latencies differed only through a dead wired read,
+        which the one liveness predicate counts for no rule, so the pass projection admits them and the value walk
+        refuses the hard cores' wired cycle by name instead."""
         arm = ARMS["H1-latency"]
         assert not arm.exercisable and arm.changes_a_field
-        off = run_instance(262, "H1-latency")
+        off = run_instance(5, "H1-latency")
         assert off.outcome == REFUSED and off.detail.startswith("PassTimingError"), off.to_dict()
         assert "one hard core starts at one latency" in off.detail
-        assert run_instance(262, "H1-latency", control=True).outcome == EQUAL
+        assert run_instance(5, "H1-latency", control=True).outcome == EQUAL
 
     def test_the_windowed_transfer_changes_no_output_on_the_integrated_tree(self):
         """Retired off arm: a windowed run's pass transfer forced verbatim is inert, since every carried wire of
@@ -238,6 +272,25 @@ def _rebuild_chain(T: int, theta: int = 3) -> Instance:
                     network=Network(1, (l1, l2), ("L1", "L2")), inputs=tuple((k,) for k in range(T + 1)))
 
 
+def _closed_form_nodes(mapping, instance: Instance, arm):
+    """The X3a run of a synchronized LIF program on the closed form of integrate then emit, asked for by its name
+    (``window_count_closed_form``), per node as ``executors.run_nodes`` captures it."""
+    from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+
+    run = ex.RUNS[SYNCHRONIZED_LIF]
+    flow = SpikingHybridCoreFlow((instance.network.input_width,), mapping, simulation_length=instance.timesteps,
+                                 thresholding_mode="<=", pass_transfer=run.transfer, phase_dither=arm.phase_dither,
+                                 spike_mode=arm.encoder, lif_execution_synchronized=True, **run.flow)
+    flow.window_count_closed_form = True  # [U-LIF2 W14] the semantics' flow states its value by its point now
+    nodes = {}
+    flow.stage_count_recorder = lambda stage, counts: nodes.update({
+        int(sl.node_id): counts[:, sl.offset:sl.offset + sl.size].detach().cpu().double() for sl in stage.output_map})
+    torch.manual_seed(instance.seed)
+    with torch.no_grad():
+        nodes[-1] = flow(ex.input_tensor(instance)).detach().cpu().double()
+    return nodes
+
+
 def _base_count_rebuild(total, theta, T, *, compare_mode="<="):
     """The base tree's synchronized count: the staircase of the window charge rebuilt as ``stair * T / theta``."""
     stair = lif_count_staircase(total / float(T), theta, T, compare_mode=compare_mode)
@@ -268,13 +321,19 @@ class TestTheCountRebuild:
         assert (windows, mismatches) == (28, 0), first
 
     def test_the_base_rebuild_makes_the_pass_cut_change_outputs(self, monkeypatch):
+        """[U-LIF2 W9] The base rebuild is a defect of the closed form: switched into it, the closed form (asked for
+        by its name) leaves the lattice and the cut changes its outputs, while the executor of record (the gated
+        cycle-level executor, which emits each count spike by spike and rebuilds none) runs the cut chain equal."""
         monkeypatch.setattr(sync_counts, "lif_window_count", _base_count_rebuild)
-        instance, arm, constraints, ref, ir, mapping = self._cut_chain()
-        l1 = ex.per_neuron(ref.ir, ref.nodes)[ref.perceptron_of["L1"]][:, 0].tolist()
-        assert (l1[5], l1[10]) == (4.999999999999999, 9.999999999999998), l1
+        instance, arm, _constraints, ref, ir, mapping = self._cut_chain()
         windows, mismatches, first = compare(ref.ir, ref.nodes, ir, _run(mapping, instance, arm))
+        assert (windows, mismatches) == (28, 0), first
+        closed_ref, closed_dep = _closed_form_nodes(ref.mapping, instance, arm), _closed_form_nodes(
+            mapping, instance, arm)
+        l1 = ex.per_neuron(ref.ir, closed_ref)[ref.perceptron_of["L1"]][:, 0].tolist()
+        assert (l1[5], l1[10]) == (4.999999999999999, 9.999999999999998), l1
+        windows, mismatches, first = compare(ref.ir, closed_ref, ir, closed_dep)
         assert (windows, mismatches) == (28, 2), first  # L2 at counts 5 and 10
-        assert counterexample_tags(instance, constraints, 0, arm) == ("layer:counts", "count_rebuild")
 
     @pytest.mark.parametrize("T", [*range(1, 9), 9, 11, 13, 32, 64])
     def test_every_count_is_its_integer_inside_and_beyond_the_declared_window_range(self, T):
@@ -320,7 +379,9 @@ class TestLatentDefects:
         latency 1 while the identity program runs Y at 0; V then reads Y one cycle late (3 spikes, not 4).
         Latent as shipped (the runtime classes never co-locate layers); live under value-keyed classes.
         CL1: G5's executed-latency assertion refuses it by name; with that refusal switched off the core runs
-        at the latest resident's latency and the base's counterexample returns (the assertion is load-bearing)."""
+        at the latest resident's latency and the base's counterexample returned (the assertion is load-bearing).
+        [U-TGAUGE5] That run now reads V's producer at an executed latency gap other than one, which the per-cycle
+        executor refuses by name: the window rule is a second guard of the class."""
         instance, arm = _coresident_alap(), ARMS[ON_VALUES]
         declaration = {"cores": [{"max_axons": 8, "max_neurons": 2, "count": 5}], "allow_coalescing": False,
                        "allow_neuron_splitting": False, "allow_scheduling": False, "max_schedule_passes": 1,
@@ -332,5 +393,5 @@ class TestLatentDefects:
                 deployment(instance, constraints, 0, arm, relabel=False)
             with one_latency_unrefused():
                 ir, mapping = deployment(instance, constraints, 0, arm, relabel=False)
-                windows, mismatches, first = compare(ref_ir, ref_nodes, ir, _run(mapping, instance, arm))
-        assert (windows, mismatches) == (12, 2), first
+                with pytest.raises(UnbalancedFanInError, match="no mapping armed"):
+                    _run(mapping, instance, arm)

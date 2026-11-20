@@ -33,6 +33,7 @@ from mimarsinan.deployment_record.platform_physics.registry import (
     profile_description_path,
 )
 from mimarsinan.deployment_record.quantities.from_record import from_record
+from mimarsinan.deployment_record.quantities.planes.loads import record_load_inputs
 from mimarsinan.deployment_record.quantities.spec import QUANTITY_SPECS
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.units import unit_for
@@ -284,10 +285,16 @@ class TestNonPerturbation:
 
 
 class TestTheProgrammingTermsAppear:
-    """The term-presence pin: a scheduled vehicle's program load now prices."""
+    """The term-presence pin: a scheduled vehicle's program load now prices.
+
+    [U-ENERGY] Every program load is the one load law over the record's load census (``record_load_inputs``): the
+    deployment's first load writes every core once (``latency_load_s``, ``energy_load_mj``, with its static leg
+    ``energy_static_load_mj``); the fixture's period census keeps its lone written pass loaded, so its reprogramming per
+    round is 0."""
 
     def _priced(self, physics):
-        return price_absolute(from_record(make_full_record()), physics)
+        record = make_full_record()
+        return price_absolute(from_record(record), physics, loads=record_load_inputs(record))
 
     def _terms(self, physics):
         return {term.name: term for term in self._priced(physics).terms}
@@ -302,50 +309,58 @@ class TestTheProgrammingTermsAppear:
 
     def test_loihi_now_prices_the_program_load_it_used_to_refuse(self):
         terms = self._terms(_physics("loihi"))
-        assert "energy_programming_mj" in terms
-        assert "latency_programming_s" in terms
-        assert "e_program_per_byte" in terms["energy_programming_mj"].source
-        assert "e_core_program" in terms["energy_programming_mj"].source
-        assert "t_program_per_byte" in terms["latency_programming_s"].source
+        assert "energy_load_mj" in terms
+        assert "latency_load_s" in terms
+        assert "e_program_per_byte" in terms["energy_load_mj"].source
+        assert "e_core_program" in terms["energy_load_mj"].source
 
     def test_the_terms_are_the_declared_constants_times_the_sealed_census(self):
-        quantities = from_record(make_full_record())
-        payload_bytes = quantities.get("reprogrammed_bytes").value
-        cores = quantities.get("reprogrammed_cores").value
+        """The first load writes every sealed core once: its payload bytes (each core's sealed params_bytes) and its
+        cores, on the declared rows (Loihi declares no entry width, so the entries are named, not priced); the static
+        leg is the chip's static power over the load's own wall."""
+        record = make_full_record()
+        cores = [core for segment in record.schedule.segments() for core in segment.cores]
+        payload_bytes = sum(core.params_bytes for core in cores)
         physics = _physics("loihi")
         terms = self._terms(physics)
         expected = (physics.band("e_program_per_byte").nominal * payload_bytes
-                    + physics.band("e_core_program").nominal * cores) * 1e3
-        assert terms["energy_programming_mj"].value == pytest.approx(expected, rel=1e-9)
-        assert terms["latency_programming_s"].value == pytest.approx(
+                    + physics.band("e_core_program").nominal * len(cores)) * 1e3
+        assert terms["energy_load_mj"].value - terms["energy_static_load_mj"].value == pytest.approx(
+            expected, rel=1e-9)
+        assert terms["latency_load_s"].value == pytest.approx(
             physics.band("t_program_per_byte").nominal * payload_bytes, rel=1e-9)
 
     def test_without_them_the_terms_were_absent_by_name(self):
-        terms = self._terms(self._without_programming("loihi"))
-        assert "energy_programming_mj" not in terms
-        assert "latency_programming_s" not in terms
+        """Without a write time and a commit energy the law refuses the load's wall and energy, each by its own
+        reason (never absent)."""
+        pricing = self._priced(self._without_programming("loihi"))
+        terms, refusals = {t.name for t in pricing.terms}, {r.name: r.reason for r in pricing.refusals}
+        assert not {"energy_load_mj", "latency_load_s"} & terms
+        assert "declares no write time" in refusals["latency_load_s"]
+        assert "declares no commit energy" in refusals["energy_load_mj"]
 
     def test_an_undeclared_row_of_a_positive_payload_is_named(self):
         """Targeted pass, named change (i): the per-load term names every component of its own sum it
         cannot price, as the per-inference terms do. Loihi prices the commit but declares no DMA row."""
-        source = self._terms(_physics("loihi"))["energy_programming_mj"].source
-        assert source.endswith("; unpriced: e_dma_per_byte(dma)")
-        generic = self._terms(_physics("generic_estimated_22nm"))["energy_programming_mj"].source
+        source = self._terms(_physics("loihi"))["energy_load_mj"].source
+        assert "unpriced: e_dma_per_byte(write transfer)" in source
+        generic = self._terms(_physics("generic_estimated_22nm"))["energy_load_mj"].source
         assert "unpriced" not in generic
 
     def test_an_undeclared_core_program_row_of_reprogrammed_cores_is_named(self):
         physics = _physics("loihi")
         without = replace(physics, constants={k: v for k, v in physics.constants.items() if k != "e_core_program"})
-        source = self._terms(without)["energy_programming_mj"].source
-        assert "e_core_program(core_program)" in source.split("; unpriced: ")[1]
+        source = self._terms(without)["energy_load_mj"].source
+        assert "e_core_program(" in source.split("; unpriced: ", 1)[1]
 
     def test_nothing_but_the_program_load_moved(self):
         """The new constants price a per-LOAD overhead. Every per-inference term
-        must be identical to what the profile priced before they existed."""
+        must be identical to what the profile priced before they existed. [U-ENERGY] Without them the first load's
+        wall and energy are refused by name; the fixture's reprogramming per round is 0 either way (its lone written
+        pass stays loaded)."""
         before = self._terms(self._without_programming("loihi"))
         after = self._terms(_physics("loihi"))
-        assert set(after) - set(before) == {"energy_programming_mj",
-                                            "latency_programming_s"}
+        assert set(after) - set(before) == {"energy_load_mj", "latency_load_s", "energy_static_load_mj"}
         for name, term in before.items():
             assert after[name].value == term.value, name
             assert after[name].source == term.source, name

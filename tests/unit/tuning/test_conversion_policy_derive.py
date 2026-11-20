@@ -18,6 +18,7 @@ from mimarsinan.tuning.orchestration.conversion_policy import (
     ConversionPolicy,
     ConversionRecipe,
 )
+from spiking_points import point_of_mode
 
 # WQ demotion knobs ride EVERY mode's recipe (mode-independent, theory 5g-v).
 _WQ_KNOBS = {
@@ -106,6 +107,8 @@ _MODE_KNOBS = {
         # [5u generalized] the WQ-scoped well-conditioned endpoint floor.
         "wq_endpoint_target_floor": 0.98,
         "wq_endpoint_recovery_steps": 16000,
+        # [U-TGAUGE5] a per-cycle cascade: the depth-balancing relays, derived from the mode policy's one predicate.
+        "lif_depth_balancing_relays": True,
     },
     # synchronized rides the ttfs_quantized ladder shape but TRAINS the exact
     # deployed composition (ceil kernel + grid snap) as the QAT endpoint (T6);
@@ -197,14 +200,14 @@ _CELLS = list(_EXPECTED_KNOBS.keys())
 class TestDeriveDriver:
     @pytest.mark.parametrize("mode,schedule", _CELLS)
     def test_every_proven_recipe_rides_the_fast_ladder(self, mode, schedule):
-        recipe = ConversionPolicy.derive(mode, schedule)
+        recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
         assert isinstance(recipe, ConversionRecipe)
         assert recipe.driver == OPTIMIZATION_DRIVER_FAST
 
     def test_cascaded_is_never_the_controller(self):
         # The controller path collapses on the deep cascade (→ chance); the fast
         # ladder is the only proven survivor. The SSOT can NEVER yield controller here.
-        recipe = ConversionPolicy.derive("ttfs_cycle_based", "cascaded")
+        recipe = ConversionPolicy.derive(point_of_mode("ttfs_cycle_based", "cascaded"))
         assert recipe.driver != OPTIMIZATION_DRIVER_CONTROLLER
         assert recipe.driver == OPTIMIZATION_DRIVER_FAST
 
@@ -212,12 +215,12 @@ class TestDeriveDriver:
 class TestDeriveKnobs:
     @pytest.mark.parametrize("mode,schedule", _CELLS)
     def test_proven_knob_set_is_exact(self, mode, schedule):
-        recipe = ConversionPolicy.derive(mode, schedule)
+        recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
         assert dict(recipe.knobs) == _EXPECTED_KNOBS[(mode, schedule)]
 
     def test_cascaded_default_schedule_is_the_cascaded_recipe(self):
         # ttfs_cycle_based with no schedule normalizes to cascaded.
-        assert dict(ConversionPolicy.derive("ttfs_cycle_based").knobs) == _EXPECTED_KNOBS[
+        assert dict(ConversionPolicy.derive(point_of_mode("ttfs_cycle_based")).knobs) == _EXPECTED_KNOBS[
             ("ttfs_cycle_based", "cascaded")
         ]
 
@@ -225,7 +228,7 @@ class TestDeriveKnobs:
         # The analytical TTFS column rides the plain fast ladder; beyond the
         # mode-independent WQ demotion it carries ONLY the [5u] endpoint floor
         # (lossless ⇒ preservation would otherwise stagnate at the envelope).
-        knobs = dict(ConversionPolicy.derive("ttfs").knobs)
+        knobs = dict(ConversionPolicy.derive(point_of_mode("ttfs")).knobs)
         assert knobs == {
             **_WQ_KNOBS,
             "endpoint_target_floor": 0.98,
@@ -241,7 +244,7 @@ class TestDeriveKnobs:
         # -0.52pp; lossless_refinement_ledger.md §2C, G5). ttfsq/analytic
         # stay on the shared grid for byte-identity.
         for mode, schedule in _CELLS:
-            recipe = ConversionPolicy.derive(mode, schedule)
+            recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
             expected = mode in ("ttfs_cycle_based", "lif")
             assert ("wq_two_scale_projection" in recipe.knobs) is expected, (
                 f"{mode}/{schedule}"
@@ -254,7 +257,7 @@ class TestDeriveKnobs:
         # lossy modes (cascaded) must NOT get the floor: their endpoint gap is
         # real, and the high-water target is already the honest anchor.
         for mode, schedule in _CELLS:
-            recipe = ConversionPolicy.derive(mode, schedule)
+            recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
             expected = mode == "ttfs"
             assert ("endpoint_target_floor" in recipe.knobs) is expected, (
                 f"{mode}/{schedule}"
@@ -264,41 +267,41 @@ class TestDeriveKnobs:
 class TestDeriveSimEnables:
     @pytest.mark.parametrize("mode,schedule", _CELLS)
     def test_sim_enable_set_is_capability_derived(self, mode, schedule):
-        recipe = ConversionPolicy.derive(mode, schedule)
+        recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
         assert dict(recipe.sim_enables) == _EXPECTED_SIM_ENABLES[(mode, schedule)]
 
     def test_loihi_only_for_the_lif_family(self):
         # loihi caps are LIF-only; a non-LIF mode + loihi RAISES at assembly, so the
         # policy must keep loihi off for every TTFS mode.
         for mode, schedule in _CELLS:
-            recipe = ConversionPolicy.derive(mode, schedule)
+            recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
             expected = mode == "lif"
             assert recipe.sim_enables["enable_loihi_simulation"] is expected
 
     def test_nevresim_off_only_for_synchronized(self):
         # nevresim has no synchronized-window backend; every other mode runs on it.
         for mode, schedule in _CELLS:
-            recipe = ConversionPolicy.derive(mode, schedule)
+            recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
             expected = not (mode == "ttfs_cycle_based" and schedule == "synchronized")
             assert recipe.sim_enables["enable_nevresim_simulation"] is expected
 
     def test_sanafe_on_for_every_mode(self):
         for mode, schedule in _CELLS:
-            recipe = ConversionPolicy.derive(mode, schedule)
+            recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
             assert recipe.sim_enables["enable_sanafe_simulation"] is True
 
 
 class TestDeriveSpecialCases:
     @pytest.mark.parametrize("mode,schedule", _CELLS)
     def test_special_case_marker_matches(self, mode, schedule):
-        recipe = ConversionPolicy.derive(mode, schedule)
+        recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
         assert recipe.special_case == _EXPECTED_SPECIAL_CASE[(mode, schedule)]
 
     @pytest.mark.parametrize("mode,schedule", _CELLS)
     def test_special_cases_carry_a_rationale(self, mode, schedule):
         # Each divergence from the generic flow is studyable: a non-empty rationale
         # citing the finding. The generic (ttfs) row needs no rationale.
-        recipe = ConversionPolicy.derive(mode, schedule)
+        recipe = ConversionPolicy.derive(point_of_mode(mode, schedule))
         if recipe.special_case is None:
             continue_ok = True
             assert continue_ok
@@ -306,7 +309,7 @@ class TestDeriveSpecialCases:
             assert recipe.rationale, f"{mode}/{schedule} special case must cite a finding"
 
     def test_lossless_reference_marks_the_floor_as_its_special_case(self):
-        recipe = ConversionPolicy.derive("ttfs")
+        recipe = ConversionPolicy.derive(point_of_mode("ttfs"))
         assert recipe.special_case == "endpoint_target_floor"
         assert recipe.rationale, "the [5u] divergence must cite its finding"
 
@@ -316,15 +319,15 @@ class TestRemovedModeRejected:
         # 'rate' (naive analytical LIF, collapses at SCM) was removed; deriving it
         # must fail loud and point at its replacement, not silently fall through.
         with pytest.raises(ValueError, match="rate.*removed.*use 'lif'"):
-            ConversionPolicy.derive("rate")
+            ConversionPolicy.derive(point_of_mode("rate"))
 
     def test_unknown_mode_is_rejected(self):
         with pytest.raises(ValueError, match="unknown spiking_mode"):
-            ConversionPolicy.derive("bogus")
+            ConversionPolicy.derive(point_of_mode("bogus"))
 
 
 class TestRecipeIsFrozen:
     def test_derived_recipe_is_immutable(self):
-        recipe = ConversionPolicy.derive("lif")
+        recipe = ConversionPolicy.derive(point_of_mode("lif"))
         with pytest.raises(Exception):
             recipe.driver = OPTIMIZATION_DRIVER_CONTROLLER  # type: ignore[misc]

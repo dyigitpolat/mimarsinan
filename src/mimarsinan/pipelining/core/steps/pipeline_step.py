@@ -1,4 +1,5 @@
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.models.perceptron_mixer.membrane_lattice import integer_program_read
 
 METRIC_MEASURED = "measured"
 METRIC_CARRIED = "carried"
@@ -69,15 +70,18 @@ class PipelineStep:
         """The definitive test read under the universal eval-sample cap: at/below
         the cap the dataset evaluates in full (byte-identical); larger datasets use
         a seeded subsample (matching the deployed-sim subset via ``plan.seed``) so
-        an ImageNet-scale read is not a full-set pass every step."""
-        if not hasattr(trainer, "test_on_subsample"):
-            return trainer.test()
-        plan = DeploymentPlan.of(self.pipeline)
-        if not plan.eval_max_samples:
-            return trainer.test()
-        return trainer.test_on_subsample(
-            max_samples=plan.eval_max_samples, seed=plan.seed,
-        )
+        an ImageNet-scale read is not a full-set pass every step. [U-POST G2] An
+        integer program reads in the measurement plane, its derived lattices armed
+        (``integer_program_read``); any other model reads as it is."""
+        with integer_program_read(getattr(trainer, "model", None)):
+            if not hasattr(trainer, "test_on_subsample"):
+                return trainer.test()
+            plan = DeploymentPlan.of(self.pipeline)
+            if not plan.eval_max_samples:
+                return trainer.test()
+            return trainer.test_on_subsample(
+                max_samples=plan.eval_max_samples, seed=plan.seed,
+            )
 
     def pipeline_metric_kind(self) -> str:
         """How ``pipeline_metric()`` resolves, without measuring: ``measured``

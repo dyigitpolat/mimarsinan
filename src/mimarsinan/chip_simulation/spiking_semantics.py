@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import FrozenSet
+
+from mimarsinan.chip_simulation.window_firing_axis import FIRE_WHILE_INTEGRATING, INTEGRATE_THEN_EMIT
 
 ANALYTICAL_TTFS_MODES: FrozenSet[str] = frozenset({"ttfs", "ttfs_quantized"})
 TTFS_MODES: FrozenSet[str] = ANALYTICAL_TTFS_MODES
@@ -63,13 +65,6 @@ def is_cycle_based(spiking_mode: str) -> bool:
 def is_lif(spiking_mode: str) -> bool:
     """Mode is the plain rate-coded LIF deployment family."""
     return _norm(spiking_mode) in LIF_MODES
-
-
-def lif_execution_synchronized(config) -> bool:
-    """[calculus §16] two-window integrate-then-emit discipline: the emitted
-    count is a function of input counts alone, so genuine ≡ analytic staircase
-    BY CONSTRUCTION (level-crossing noise eliminated, not compensated)."""
-    return str(config.get("lif_execution_discipline", "streaming")) == "synchronized"
 
 
 def lif_membrane_init(config) -> float:
@@ -228,9 +223,9 @@ def is_novena_firing_mode(firing_mode) -> bool:
 
 @dataclass(frozen=True)
 class BackendSpikingCapabilities:
-    """What one backend can execute: the four mode columns, then the soma-law
-    axes. The new columns default False so every declared entry keeps its
-    positional shape and every backend refuses a law nothing executes yet."""
+    """What one backend can execute: the four mode columns, the soma-law axes, then [U-LIF2 W3] the window firings of a
+    synchronized LIF hop it executes. The columns default to nothing, so every backend refuses what no row declares
+    (an undeclared name declares no window firing and refuses both values by name)."""
 
     lif: bool
     ttfs: bool
@@ -239,38 +234,45 @@ class BackendSpikingCapabilities:
     per_event_firing: bool = False
     saturating_membrane: bool = False
     signed_membrane: bool = False
+    window_firings: FrozenSet[str] = frozenset()
 
 
+#: [U-LIF2 W3] Every row fires while integrating; [W9, W10] the hybrid flows and the training walk also emit gated.
+_PER_CYCLE, _GATED = frozenset({FIRE_WHILE_INTEGRATING}), frozenset({FIRE_WHILE_INTEGRATING, INTEGRATE_THEN_EMIT})
 #: Every mode and every soma-law column; the ODIN fabrics' row: LIF only (no TTFS executor on the crossbar).
-_EVERY_COLUMN = BackendSpikingCapabilities(True, True, True, True, True, True, True)
-_ODIN_ROW = BackendSpikingCapabilities(True, False, False, False, True, True, True)
+_EVERY_COLUMN = BackendSpikingCapabilities(True, True, True, True, True, True, True, window_firings=_PER_CYCLE)
+_ODIN_ROW = BackendSpikingCapabilities(True, False, False, False, True, True, True, window_firings=_PER_CYCLE)
+_LIF_ONLY = BackendSpikingCapabilities(True, False, False, False, window_firings=_PER_CYCLE)
 
 _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
     # [ODIN P2/P3] the torch executors (models/spiking/serial) and nevresim's integration policies implement the
     # event-serial fold on the saturating unsigned membrane (nevresim where its tree carries them, which its driver
     # probes: nevresim/integration_policy_read); every other backend refuses the point by name.
-    "hcm": _EVERY_COLUMN,
+    "hcm": replace(_EVERY_COLUMN, window_firings=_GATED),
     "nevresim": _EVERY_COLUMN,
-    "unified": _EVERY_COLUMN,
-    "hybrid": _EVERY_COLUMN,
+    "unified": replace(_EVERY_COLUMN, window_firings=_GATED),
+    "hybrid": replace(_EVERY_COLUMN, window_firings=_GATED),
     # [ODIN P6, P7a, P8] the RTL cosimulation instrument (not a BACKEND_REGISTRY backend: the stock per-event core and
     # every generated variant, the sync-fire core's two's-complement membrane included), the physical backend, and
     # the HACC export, which freezes a bundle FOR that device and so can never admit a law the device refuses.
     "odin_rtl": _ODIN_ROW,
     "odin_fpga": _ODIN_ROW,
     "odin_hacc": _ODIN_ROW,
-    "sanafe": BackendSpikingCapabilities(True, True, True, True),
-    "lava": BackendSpikingCapabilities(True, False, False, False),
-    "loihi": BackendSpikingCapabilities(True, False, False, False),
+    "sanafe": BackendSpikingCapabilities(True, True, True, True, window_firings=_PER_CYCLE),
+    "lava": _LIF_ONLY,
+    "loihi": _LIF_ONLY,
     # The NF twin executes the SAME fold as a parity instrument under eval, but no gradient is defined for a count
-    # fold, so training refuses the point rather than claim an executor it lacks.
-    "training": BackendSpikingCapabilities(True, False, False, False),
+    # fold, so training refuses the point rather than claim an executor it lacks. [U-LIF2 W10] The walk's count branch
+    # (``lif_window_count`` of each hop's window charge) is its integrate-then-emit executor.
+    "training": replace(_LIF_ONLY, window_firings=_GATED),
+    # The soft-core mapping's torch twin of the deployed program (the parity contracts' reference beside the HCM).
+    "scm": replace(_LIF_ONLY, window_firings=_GATED),
 }
 
 
 def backend_capabilities(backend: str) -> BackendSpikingCapabilities:
     key = str(backend or "").lower()
-    return _BACKEND_CAPS.get(key, BackendSpikingCapabilities(True, False, False, False))
+    return _BACKEND_CAPS.get(key, replace(_LIF_ONLY, window_firings=frozenset()))
 
 
 def supports_spiking_mode(backend: str, spiking_mode: str) -> bool:

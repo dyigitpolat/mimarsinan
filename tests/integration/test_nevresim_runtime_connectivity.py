@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.profiling.synthetic_mapping import build_synthetic_mapping
 from mimarsinan.common.build_utils import find_cpp20_compiler
@@ -53,7 +54,7 @@ def _run_parity_for_mode(
                 float,
                 spike_generation_mode=spike_generation_mode,
                 firing_mode=firing_mode,
-                spiking_mode=spiking_mode,
+                point=point_of_mode(spiking_mode),
                 threshold_type=threshold_type,
                 connectivity_mode=mode,
                 verbose=False,

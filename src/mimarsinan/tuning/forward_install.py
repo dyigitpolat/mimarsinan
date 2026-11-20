@@ -68,7 +68,11 @@ class ChipAlignedNFForward(LazyExecutorForward):
 
     def _run(self, x):
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
+        from mimarsinan.spiking.wire_gauge_seam import walk_wire_gauge
 
+        # [U-POST2] The walk reads the gauge of the model's current thetas (derived, never cached: re-derived when the
+        # thetas or a slot changed since its last derivation, as after a restore; otherwise already current).
+        walk_wire_gauge(self.model)
         return chip_aligned_segment_forward(
             self.model, x, self.T, retime=getattr(self, "retime", False),
             phase_dither=getattr(self, "phase_dither", False),

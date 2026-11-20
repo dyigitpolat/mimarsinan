@@ -28,6 +28,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import execute_compute_op_torch
 from mimarsinan.mapping.ir import ComputeOp, IRSource
@@ -267,6 +268,7 @@ def test_the_nevresim_runner_equals_the_nf_across_the_encoding_skip(theta_enc):
     runner = object.__new__(SimulationRunner)
     with tempfile.TemporaryDirectory() as work:
         vars(runner).update(
+            spiking_point=point_of_mode("lif"),  # [U-LIF2 r2] the run's point
             spike_generation_mode="Uniform", firing_mode="Default", spiking_mode="lif", pass_transfer=VERBATIM,
             thresholding_mode="<=", nevresim_connectivity_mode=default_nevresim_connectivity_mode(),
             simulation_step_timeout_s=600.0, membrane_readout=False, membrane_half_step_charge=False,

@@ -642,18 +642,51 @@ def scm_window_counts(program: Program, x: torch.Tensor, semantics: str):
     return out, {pi: np.stack([s[pi] for s in per]).astype(np.float64) for pi in per[0]}
 
 
-def count_mismatches(nf: Dict[int, np.ndarray], scm: Dict[int, np.ndarray]) -> Dict[int, int]:
-    """Per core perceptron, the window counts that differ (rows compared as sorted multisets, the gate's convention)."""
+def kept_neurons(program: Program, widths: Dict[int, int]) -> Dict[int, np.ndarray]:
+    """[U-LIVE r2] Per core perceptron, the NF neurons (of its record's ``widths``) the deployed program holds, by the
+    program's own kept-column rule (``derive_deployed_neuron_survival``: IR pruning's and the soft cores' compaction of
+    every core of an executed perceptron, keyed by column and channel, projected through ``record_layouts``; the NF and
+    SCM parity gate's own projection). A removed core's neurons and a neuron marked unread are then held by neither
+    side; a core per position reads its own position's neurons."""
+    from mimarsinan.mapping.pruning.deployed_neuron_survival import derive_deployed_neuron_survival, record_layouts
+
+    survival, layouts = derive_deployed_neuron_survival(program.ir), record_layouts(program.perceptrons)
+    index = {pi: np.arange(int(w), dtype=np.float64)[None, :] for pi, w in widths.items()}
+    return {pi: v[0].astype(np.int64) for pi, v in survival.project(index, layouts).items()}
+
+
+def count_mismatches(nf: Dict[int, np.ndarray], scm: Dict[int, np.ndarray],
+                     kept: Dict[int, np.ndarray] | None = None) -> Dict[int, int]:
+    """Per core perceptron, the window counts that differ (rows compared as sorted multisets, the gate's convention):
+    [U-LIVE r2] the NF's counts at the neurons the deployed program holds (``kept_neurons``) against the deployed
+    counts."""
     assert scm and set(scm) <= set(nf), (sorted(nf), sorted(scm))
-    return {pi: int((np.sort(nf[pi], 1) != np.sort(scm[pi], 1)).sum()) for pi in sorted(scm)}
+    kept = kept or {}
+    return {pi: int((np.sort(nf[pi][:, kept[pi]] if pi in kept else nf[pi], 1) != np.sort(scm[pi], 1)).sum())
+            for pi in sorted(scm)}
+
+
+def _nf_output_gauge(program: Program, like: torch.Tensor) -> torch.Tensor:
+    """The gauge the NF walk decodes its output node at (U-TGAUGE: a forward returns its output in the value domain),
+    read by the walk's own decode on ones."""
+    driver = SegmentForwardDriver(program.repr_, T, LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW))
+    driver.policy.prepare(driver)
+    try:
+        return driver.policy.decode_output(driver, driver._output, torch.ones_like(like)).double()
+    finally:
+        driver.policy.finalize(driver)
 
 
 def output_counts(program: Program, nf_out: torch.Tensor, scm_out: torch.Tensor, n: int):
     """Both twins' outputs in the deployed flow's units: a core's output on its count grid (the NF holds count / T times
-    theta), a host op's output times T (the flow's readout convention)."""
+    theta), a host op's output in its wire units times T (the flow's readout convention; the NF holds its value, the
+    wire value times the gauge the walk decodes it at)."""
     out_node = program.repr_.output_layer_mapper
     perceptron = getattr(out_node, "perceptron", None)
-    factor = T / float(perceptron.activation_scale) if perceptron is not None else float(T)
+    if perceptron is not None:
+        factor = T / float(perceptron.activation_scale)
+    else:
+        factor = float(T) / _nf_output_gauge(program, nf_out)
     return (nf_out.double() * factor).reshape(n, -1), scm_out.double().reshape(n, -1)
 
 
@@ -662,6 +695,6 @@ def compare(program: Program, semantics: str, n: int = 32, seed: int = 0):
     x = samples(program, n, seed)
     nf_out, nf = nf_window_counts(program, x, semantics)
     scm_out, scm = scm_window_counts(program, x, semantics)
-    mism = count_mismatches(nf, scm)
+    mism = count_mismatches(nf, scm, kept_neurons(program, {pi: int(v.shape[1]) for pi, v in nf.items()}))
     ref, dep = output_counts(program, nf_out, scm_out, n)
     return mism, int(sum(c.size for c in scm.values())), float((ref - dep).abs().max())

@@ -30,6 +30,9 @@ from mimarsinan.mapping.packing.hybrid_build_pool import (
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline
+from mimarsinan.mapping.latency.depth_balancing import UnbalancedFanInError
+
+from unit.certification.x3a_window import map_through_the_window
 
 def _per_axon(max_axons, max_neurons, count, *, has_bias=False):
     return {"max_axons": max_axons, "max_neurons": max_neurons, "count": count, "has_bias": has_bias,
@@ -96,10 +99,23 @@ class TestLifFlows:
     @pytest.mark.parametrize("synchronized", [False, True])
     @pytest.mark.parametrize("arm,seed", LIF_CASES)
     def test_every_node_of_a_per_axon_deployment_equals_the_identity_program(self, arm, seed, firing,
-                                                                              synchronized):
+                                                                              synchronized, monkeypatch):
+        """[U-TGAUGE5] The streamed run reads the window: its draw is mapped through the mapping's window pass (the
+        relays the LIF recipe arms); the relay-free streamed draw is refused by name (``TestTheWindowRule``)."""
+        if not synchronized:
+            map_through_the_window(monkeypatch)
         instance, identity, deployed = _x3a_programs(arm, seed)
         assert instance.semantics in ("streamed_lif", "synchronized_lif")
         assert _split_rows(deployed) > 0
+        if synchronized and firing == "Novena":
+            # [U-LIF2, p-11(b)] the count executor's closed form is the integrate-then-emit count of a subtractive
+            # reset (a zero-reset emission window emits one spike at most), so it refuses a zero reset by name.
+            from mimarsinan.models.spiking.serial.refusals import ZeroResetWindowCountError
+
+            for mapping in (identity, deployed):
+                with pytest.raises(ZeroResetWindowCountError, match="firing_mode='Novena'"):
+                    _node_counts(mapping, instance, firing=firing, synchronized=synchronized)
+            return
         want = _node_counts(identity, instance, firing=firing, synchronized=synchronized)
         got = _node_counts(deployed, instance, firing=firing, synchronized=synchronized)
         assert want.keys() == got.keys()
@@ -318,3 +334,13 @@ def test_a_split_mapping_runs_on_nevresim_as_the_identity_program(arm_id, seed, 
     windows, mismatches, first = runner.compare(ref_ir, nev_ref, ir, nev_dep)
     assert windows > 0 and mismatches == 0, first
     assert runner.compare(ref_ir, ref_nodes, ref_ir, nev_ref)[1] == 0
+
+
+class TestTheWindowRule:
+    """[U-TGAUGE5] This file's refusal test: the relay-free streamed draw of seed 3 holds a live edge at a latency gap
+    other than one, so the streamed LIF executor refuses its identity program by name."""
+
+    def test_the_relay_free_streamed_draw_is_refused_by_name(self):
+        instance, identity, _deployed = _x3a_programs(ON_SIGN_SPLIT, 3)
+        with pytest.raises(UnbalancedFanInError, match="no mapping armed"):
+            _node_counts(identity, instance, firing="Default", synchronized=False)

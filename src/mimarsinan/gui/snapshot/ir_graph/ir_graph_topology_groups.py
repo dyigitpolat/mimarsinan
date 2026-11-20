@@ -7,6 +7,7 @@ from collections import defaultdict
 
 logger = logging.getLogger("mimarsinan.gui")
 
+from mimarsinan.mapping.support.neuron_thresholds import report_registers
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     LIVENESS_BIAS_ONLY,
     LIVENESS_DEAD_LEGACY,
@@ -126,7 +127,7 @@ def _build_layer_groups(
 
         cores = [m for m in members if m["type"] == "neural_core"]
         ops = [m for m in members if m["type"] == "compute_op"]
-        thresholds = [c["threshold"] for c in cores if "threshold" in c]
+        thresholds = [t for c in cores for t in report_registers(c.get("threshold"))]  # [U-PCH2] every register
         lats = [c["latency"] for c in cores if c.get("latency") is not None]
         axons = [c["axons"] for c in cores if "axons" in c]
         neurons = [c["neurons"] for c in cores if "neurons" in c]

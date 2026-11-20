@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.chip_simulation.spiking_point import recorded_window_firing
+from mimarsinan.chip_simulation.window_firing_axis import FIRE_WHILE_INTEGRATING
 
 _VALID_SYNC = ("cascaded", "synchronized")
 _DEPTH_IN_RUN_ID = re.compile(r"_d(\d+)_")
@@ -18,11 +20,17 @@ def firing_axis(spiking_mode: Any, cfg: Mapping[str, Any]) -> str:
 
     Every pre-axes configuration produces the exact same string it always did;
     a per-event or saturating point occupies its OWN coverage cell, so a run is
-    never counted as coverage of a cell it did not exercise.
+    never counted as coverage of a cell it did not exercise. [U-LIF2 f-1] So
+    does a window firing other than firing while integrating (what every
+    historical cell ran), composed as the certification cell's variant; a row
+    that states none states the historical firing (``recorded_window_firing``).
     """
     mode = str(spiking_mode)
-    tag = SomaLaw.resolve(cfg).point_tag()
-    return mode if tag is None else f"{mode}+{tag}"
+    parts = [tag for tag in (SomaLaw.resolve(cfg).point_tag(),) if tag]
+    window_firing = recorded_window_firing(cfg)
+    if window_firing not in (None, FIRE_WHILE_INTEGRATING):
+        parts.append(str(window_firing))
+    return f"{mode}+{'-'.join(parts)}" if parts else mode
 
 
 def _truthy(value: Any) -> bool:

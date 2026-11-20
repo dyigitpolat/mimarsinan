@@ -96,12 +96,18 @@ wire-census adjacency) under the run's transfer discipline (`pass_transfer`,
 resolved by the deployment's `run_pass_transfer` and handed down by the search
 step) — a sealed structure with nothing crossing claims KNOWN ZEROS (a
 single-pass program is the best carry, never an unknown), while a missing
-census, discipline or layout keeps the quantities absent.
+census, discipline or layout keeps the quantities absent. [U-LIF2 W11, W12] The
+problem holds the run's resolved `window_firing` (`firing_semantics_kwargs`,
+the search and its fidelity twin alike): a stage that integrates then emits is
+priced (D + 1) T + D from its wiring depth (`execution_stage_depths` over the
+wire census; refused by name without it), and the candidate's neuron terms read
+`neuron_cycles_per_window` (2T under integrate then emit).
 Model construction lives in `joint/model_build.py` (`build_raw_model`,
 `convert_to_mapper_repr`), which the hook delegates to. [M10] Both build and
 convert under the problem's `DeployedConversion` (the run plan's packaging
 contract and `decompose_leaf_modules`, resolved by the factories' one helper
-`deployed_conversion_of`), so the program a candidate is priced as is the
+`deployed_conversion_of`; both live in `mapping/platform/packaging_contract.py`,
+and the on-chip constraint and census estimate under the same object), so the program a candidate is priced as is the
 program the pipeline deploys (a value-domain LeNet-5: 983 softcores, where the
 spiking default built 198); `core_semantics`, which selects that contract, is
 not a searchable option axis (`REFUSED_OPTION_AXES`). [P] `build_raw_model`

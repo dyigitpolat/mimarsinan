@@ -21,6 +21,7 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
 
+from unit.deployment_record.area_rule._physics import rule_price
 from unit.deployment_record.record_fixtures import (
     make_full_record,
     make_identity,
@@ -104,7 +105,7 @@ class TestCandidateCompleteness:
         view = _candidate()
         assert OBJECTIVES.get("chip_area_mm2").available(view)
         assert OBJECTIVES.get("chip_area_mm2").value(view) == pytest.approx(
-            20 * 0.0936 + 46.6
+            rule_price("truenorth", ((20, 256, 256),)).nominal  # [U-AREA] R5: 20 x 0.0936 + 46.6
         )
 
     def test_a_candidate_prices_energy_from_the_declared_activity(self):
@@ -127,7 +128,7 @@ class TestRecordCompleteness:
         view = _record_view()
         assert OBJECTIVES.get("chip_area_mm2").available(view)
         assert OBJECTIVES.get("chip_area_mm2").value(view) == pytest.approx(
-            20 * 0.0936 + 46.6
+            rule_price("truenorth", ((20, 256, 256),)).nominal  # [U-AREA] R5: 20 x 0.0936 + 46.6
         )
 
     def test_a_sealed_record_without_physics_answers_none_of_them(self):

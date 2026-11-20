@@ -1,9 +1,9 @@
-"""Packaging-contract SSOT: what a target's cores accept and what package boundaries mean."""
+"""Packaging-contract SSOT: what a target's cores accept and what package boundaries mean, and the run's conversion."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import FrozenSet
+from typing import Any, FrozenSet, Mapping
 
 PACKAGE_KIND_PERCEPTRON = "perceptron"  # MM (+BN) + activation, event I/O
 PACKAGE_KIND_AFFINE = "affine"          # MM (+BN) only, value I/O
@@ -90,3 +90,22 @@ def packaging_contract_for(plan) -> PackagingContract:
         MVM_PACKAGING,
         boundary=replace(MVM_PACKAGING.boundary, io_quantization=BOUNDARY_IO_GRID),
     )
+
+
+@dataclass(frozen=True)
+class DeployedConversion:
+    """How the deployment converts the run's native model: the plan's packaging contract and its leaf decomposition.
+
+    The ONE object every conversion of a run's native model reads: the Torch Mapping step's conversion, the static
+    on-chip estimators that twin it (the Model Building gate and its span report) and the search route's candidates
+    (sign-off M10), so a static reading measures the program the pipeline deploys, never another contract's."""
+
+    packaging: PackagingContract = SPIKING_PACKAGING
+    decompose_leaf_modules: bool = False
+
+
+def deployed_conversion_of(plan, config: Mapping[str, Any]) -> DeployedConversion:
+    """The run's conversion, resolved once from its plan (``packaging_contract_for``) and its config's leaf
+    decomposition (absent: false)."""
+    return DeployedConversion(packaging=packaging_contract_for(plan),
+                              decompose_leaf_modules=bool(config.get("decompose_leaf_modules", False)))

@@ -88,10 +88,9 @@ def test_sync_flow_is_deterministic_and_flag_off_is_streaming():
 
 def test_per_neuron_counts_match_nf_walk_on_all_cores():
     """[§16/PR38] the spike-level (per-neuron window-count) parity claim:
-    every core's emitted counts equal the NF sync walk's decoded counts."""
-    from mimarsinan.models.spiking.hybrid.executors.sync_counts import (
-        run_neural_segment_counts,
-    )
+    every core's emitted counts equal the NF sync walk's decoded counts.
+    [U-LIF2 W9] read off the executor of record, the gated cycle-level executor."""
+    import mimarsinan.models.spiking.hybrid.executors.gated_reference as dispatch
 
     repr_, hybrid = _tiny()
     x = torch.rand(3, 8) * 0.9
@@ -101,9 +100,7 @@ def test_per_neuron_counts_match_nf_walk_on_all_cores():
         driver(x, node_value_recorder=rec_nf)
     flow = _flow(hybrid, synchronized=True)
     calls: list = []
-    orig = run_neural_segment_counts
-
-    import mimarsinan.models.spiking.hybrid.lif_step as ls
+    orig = dispatch.run_neural_segment_gated
 
     def spy(f, train, **kw):
         rec: dict = {}
@@ -111,12 +108,12 @@ def test_per_neuron_counts_match_nf_walk_on_all_cores():
         calls.append(rec)
         return out
 
-    ls.run_neural_segment_counts = spy
+    dispatch.run_neural_segment_gated = spy
     try:
         with torch.no_grad():
             flow(x)
     finally:
-        ls.run_neural_segment_counts = orig
+        dispatch.run_neural_segment_gated = orig
 
     perceptrons = list(repr_.get_perceptrons())
     nf_counts = []

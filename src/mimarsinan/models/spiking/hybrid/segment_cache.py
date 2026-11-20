@@ -7,6 +7,7 @@ import torch
 
 from mimarsinan.mapping.packing.executed_reads import bank_read
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
+from mimarsinan.mapping.support.neuron_thresholds import threshold_tensor
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.models.spiking.signal_spans import SpanFillPlan
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
@@ -29,9 +30,10 @@ def segment_entry_nbytes(entry: dict) -> int:
     # [F4] the packed-cycle executor memoises its PackedStage into THIS entry
     # (``seg["packed"]``); each bucket holds a DENSE stack of the per-core
     # weight views. Uncounted, the budget under-reports by exactly the bytes
-    # that make large stages expensive.
-    packed = entry.get("packed")
-    if packed is not None:
+    # that make large stages expensive. [U-LIF2 W9] The gated executor's own layout (``seg["packed_gated"]``) too.
+    for packed in (entry.get("packed"), entry.get("packed_gated")):
+        if packed is None:
+            continue
         tensors.append(getattr(packed, "theta_flat", None))
         for bucket in getattr(packed, "buckets", []) or []:
             tensors += [
@@ -123,8 +125,10 @@ def build_segment_tensors(mapping, device: torch.device) -> dict:
                 )
             )
 
+    # [U-PCH] one register (a 0-d tensor, as before) or one threshold per used neuron
     thresholds = [
-        torch.tensor(float(core.threshold), dtype=COMPUTE_DTYPE, device=device)
+        threshold_tensor(core.threshold, used_neurons(core, min_one=True), dtype=COMPUTE_DTYPE, device=device,
+                         width=int(core.neurons_per_core))
         for core in cores
     ]
 

@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from integration.parity_harness import build_toy_hybrid_mapping
 from mimarsinan.chip_simulation.simulation_runner.hybrid import SimulationHybridMixin
 from mimarsinan.common.build_utils import find_cpp20_compiler
@@ -66,6 +67,7 @@ class _HybridSmokeRunner(SimulationHybridMixin):
         self.firing_mode = "Default"
         self.thresholding_mode = "<="
         self.spiking_mode = "lif"
+        self.spiking_point = point_of_mode("lif")  # [U-LIF2 r2] the run's point
         self.pass_transfer = "collapse"
         self.simulation_length = 4
         self.nevresim_connectivity_mode = "runtime"

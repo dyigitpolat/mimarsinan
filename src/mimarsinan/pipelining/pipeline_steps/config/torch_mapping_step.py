@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from mimarsinan.advisories import evaluate_graph_advisories, surface_advisories
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.diagnostics import phase_profiler, reset_cuda_peak_stats
-from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion, deployed_conversion_of
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
@@ -17,9 +17,14 @@ from mimarsinan.torch_mapping.converter import convert_torch_model
 import torch
 
 
-def convert_pipeline_model(native_model, config, packaging):
-    """The pipeline's conversion: it runs every probe stage the packaging requires (stage 2 for value targets);
-    ``decompose_leaf_modules`` (absent: false) decomposes the attention and recurrent leaves."""
+def convert_pipeline_model(native_model, config, conversion: DeployedConversion):
+    """The pipeline's conversion under the run's ``conversion`` (``deployed_conversion_of``): its packaging contract,
+    with every probe stage the packaging requires (stage 2 for value targets), and its leaf decomposition (the
+    attention and recurrent leaves). The static on-chip gate reads the same object."""
+    if not isinstance(conversion, DeployedConversion):
+        raise TypeError(
+            f"the pipeline's conversion takes a DeployedConversion, got {type(conversion).__name__}"
+        )
     return convert_torch_model(
         native_model,
         input_shape=tuple(config["input_shape"]),
@@ -27,9 +32,9 @@ def convert_pipeline_model(native_model, config, packaging):
         device=config["device"],
         Tq=config["target_tq"],
         encoding_layer_placement=str(config.get("encoding_layer_placement", "subsume")),
-        packaging=packaging,
-        value_program_stage=packaging.is_value_domain,
-        decompose_leaf_modules=bool(config.get("decompose_leaf_modules", False)),
+        packaging=conversion.packaging,
+        value_program_stage=conversion.packaging.is_value_domain,
+        decompose_leaf_modules=conversion.decompose_leaf_modules,
     )
 
 
@@ -57,7 +62,7 @@ class TorchMappingStep(TrainerPipelineStep):
         with phase_profiler(tag, "convert_torch_model"):
             flow = convert_pipeline_model(
                 native_model, self.pipeline.config,
-                packaging_contract_for(DeploymentPlan.of(self.pipeline)),
+                deployed_conversion_of(DeploymentPlan.of(self.pipeline), self.pipeline.config),
             )
 
         adaptation_manager = create_adaptation_manager_for_model(

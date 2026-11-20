@@ -3,7 +3,7 @@
 import pytest
 import json
 
-from mimarsinan.deployment_record.schema.record import RecordIdentity
+from mimarsinan.deployment_record.schema.record import DEPLOYMENT_RECORD_FORMAT_VERSION, RecordIdentity
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
@@ -11,7 +11,7 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
 
 def _identity(config):
     return RecordIdentity(
-        format_version=1,
+        format_version=DEPLOYMENT_RECORD_FORMAT_VERSION,
         run_dir="/tmp/run",
         cell_key="t0_test",
         mode="lif",

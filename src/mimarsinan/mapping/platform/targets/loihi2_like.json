@@ -1,14 +1,93 @@
 {
   "name": "loihi2_like",
-  "display_name": "Intel Loihi 2 (Intel 4, Intel technology brief 2021): 128 cores, dense equivalent 128 x 1024",
+  "display_name": "Intel Loihi 2 (Intel 4, Intel technology brief 2021), 128 cores, dense equivalent 128 x 1024",
   "geometry": "loihi2_like",
-  "keys": {},
+  "keys": {
+    "core_semantics": "spiking"
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class (curve-only), and no physics profile ships for this target (the brief states no per-event energy or step time), so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class (curve-only). The description states no pricing (the brief states no per-event energy or step time), so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
   },
-  "notes": "A vendor technology brief (Intel Corporation, 'Taking Neuromorphic Computing to the Next Level with Loihi 2', 2021, footer code 0921/SBAI/KC/PDF; not peer reviewed). The registered geometry is the dense equivalent of the per-core synaptic memory at 8-bit weights, the loihi bundle's rule: \"Up to 128 KB synaptic memory\" over 1024 of the stated \"Up to 8192 neurons\" (Figure 1, p.5) gives 128 axons, on \"Max # Neuron Cores/Chip 128\" (Table 2, p.7). Fan-in and weight precision are not stated, and the brief credits Loihi 2's capacity to compression and flexible partitioning (\"192 KB, flexible allocation\", Table 2), which a dense core cannot represent: curve-only. The chip's permissions, were a physics form declared: a core implements \"a group of spiking neurons, including all synapses connecting to the neurons\" (p.5), so no inter-core partial sum (no coalescing), and Table 2 lists \"Core fan-out list compression and sharing\" (p.7), so a source reaches several cores (neuron splitting)."
+  "notes": "A vendor technology brief (Intel Corporation, 'Taking Neuromorphic Computing to the Next Level with Loihi 2', 2021, footer code 0921/SBAI/KC/PDF; not peer reviewed). The registered geometry is the dense equivalent of the per-core synaptic memory at 8-bit weights, the loihi bundle's rule: \"Up to 128 KB synaptic memory\" over 1024 of the stated \"Up to 8192 neurons\" (Figure 1, p.5) gives 128 axons, on \"Max # Neuron Cores/Chip 128\" (Table 2, p.7). Fan-in and weight precision are not stated, and the brief credits Loihi 2's capacity to compression and flexible partitioning (\"192 KB, flexible allocation\", Table 2), which a dense core cannot represent: curve-only. The chip's permissions, were a physics form declared: a core implements \"a group of spiking neurons, including all synapses connecting to the neurons\" (p.5), so no inter-core partial sum (no coalescing), and Table 2 lists \"Core fan-out list compression and sharing\" (p.7), so a source reaches several cores (neuron splitting).",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "spiking",
+        "source": "intel2021loihi2",
+        "location": "'Base Architecture', p.5 (the bundle's transcription)",
+        "quote": "a group of spiking neurons, including all synapses connecting to the neurons",
+        "reads": "a group of spiking neurons"
+      }
+    },
+    "weight_bits": {
+      "unstated": {
+        "note": "The brief states no weight precision (the bundle's notes); the dense equivalent's 8-bit weights are the description's assumption.",
+        "assumed": 8,
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The brief states no weight storage. The source states no count of cells per weight."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "The brief states no weight storage."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The brief states programmable neuron models and no bias circuit; the registered geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "spiking_family": {
+      "unstated": {
+        "note": "The brief states programmable neuron models (microcode), no fixed law; the deployment declares the family."
+      }
+    },
+    "spiking_variant": {
+      "unstated": {
+        "note": "The brief states no time-step discipline; the deployment declares the variant."
+      }
+    },
+    "simulation_steps": {
+      "unstated": {
+        "note": "The brief states no window."
+      }
+    },
+    "target_tq": {
+      "unstated": {
+        "note": "The brief states graded spikes, no level count of the toolchain's form."
+      }
+    },
+    "firing_granularity": {
+      "unstated": {
+        "note": "The brief states no compare rule."
+      }
+    },
+    "firing_mode": {
+      "unstated": {
+        "note": "The brief states no reset law."
+      }
+    },
+    "membrane_bits": {
+      "unstated": {
+        "note": "The brief states no membrane width."
+      }
+    },
+    "membrane_signed": {
+      "unstated": {
+        "note": "The brief states no membrane register."
+      }
+    },
+    "thresholding_mode": {
+      "unstated": {
+        "note": "The brief states no compare rule."
+      }
+    }
+  }
 }

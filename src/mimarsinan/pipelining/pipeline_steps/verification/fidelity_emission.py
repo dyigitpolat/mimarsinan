@@ -25,8 +25,8 @@ from mimarsinan.deployment_record.objectives import (
 from mimarsinan.deployment_record.platform_physics.resolve import (
     resolve_platform_physics,
 )
+from mimarsinan.mapping.platform.packaging_contract import deployed_conversion_of
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
-    deployed_conversion_of,
     firing_semantics_kwargs,
     make_platform_resolver,
 )

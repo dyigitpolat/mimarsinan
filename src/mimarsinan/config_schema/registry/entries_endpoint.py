@@ -53,6 +53,15 @@ ENTRIES = (
            "for families that pass by the floor climb).", bounds=(0, None),
        provenance="ConversionPolicy recipe", derived_default=_frozen(0),
        empty_means="the ConversionPolicy recipe cap for the mode"),
+    _E("wq_host_normalization_batches", group="tuning",
+       owner="pipelining/pipeline_steps/quantization/host_normalization_recalibration",
+       type=T.INT, category=Category.ADVANCED, unit="batches", label="WQ Host Normalization Batches",
+       doc="[U-POST G1] Training-split batches over which every host normalization (a BatchNorm outside the "
+           "projected perceptrons) has its running statistics re-estimated at the end of Weight Quantization, "
+           "through the model's own forward with no optimizer; kept only if the calibration read does not fall. "
+           "0 runs none.", bounds=(0, None),
+       provenance="consumer frozen default", derived_default=_frozen(60),
+       empty_means="60 (the documented default)"),
     _E("readout_aware_training", domain="value", group="tuning",
        owner="pipelining/pipeline_steps/quantization/readout_aware_training", type=T.BOOL,
        category=Category.ADVANCED, exposure="user", label="Readout-aware Training",

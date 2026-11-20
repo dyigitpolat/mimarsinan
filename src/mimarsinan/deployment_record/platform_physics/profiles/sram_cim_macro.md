@@ -58,3 +58,16 @@ operating point of the energy rows (8-bit MACs at 20 MHz). A partly used core re
 n neurons), so the constant is an upper bound per step there; pipeline fill and the activation-buffer load are not
 stated and not counted. The 4 bits of an input are multiplied in one cycle (four gates per bit line, the LSB and MSB
 2-bit halves accumulated by two adder trees in parallel, p.2), so an 8-bit input is two such cycles.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T2_digital (digital in-memory compute); an anchor: its own published core scaled by the census's cells, converters or bits (rho), its size and word width flagged.
+- **Outside part (`outside: type`).** the type table's core-grid share (gamma, flagged); an area_global_fixed beside it is refused by name ('the outside part is stated twice').
+- **Node.** 16 nm.
+- **Anchor (macro).** core_mm2 `v('T2-JI-02')`; n_pub `s('T2-JI-02', 'scope', 'whole 128 kB macro', 1)`; its own share: published_split `r('types/t2_digital:s')`.
+- **Organization.** 128 x 1024, 8 weight bits per cell, 8 stored bits per cell, 0 bits per neuron; term weights {'bits': 1.0}. Citations: rows, cols: CO profiles/sram_cim_macro.json validity.geometry (128 x 1024); stored_bits_per_cell: T2-JI-01 quote (128KB over 128 x 1024 cells); weight_bits_per_cell: CO profiles/sram_cim_macro.json validity.geometry.cell_bits.
+- **Cell kind.** `cim_logic_rule_6t_digital`.
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

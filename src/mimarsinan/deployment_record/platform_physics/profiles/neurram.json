@@ -96,5 +96,47 @@
       "citation": "wan2021edge p.2-3",
       "note": "4-bit weights (the neurram_like geometry)."
     }
+  },
+  "area_rule": {
+    "type": "T3",
+    "terms": "type_rule",
+    "outside": "own_die",
+    "node": {
+      "node_nm": 130
+    },
+    "anchor": {
+      "scope": "die",
+      "die_mm2": "v('T3-NR-01', 0) * v('T3-NR-01', 1)",
+      "n_pub": "v('T3-NR-04')",
+      "own_share": {
+        "basis": "published_split",
+        "expression": "(v('T3-NR-02', key='RRAMs') + v('T3-NR-02', key='neurons')) / 100 / r('types/t3:gamma')"
+      }
+    },
+    "organization": {
+      "rows": 256,
+      "cols": 256,
+      "weight_bits_per_cell": 4,
+      "terms": "cells_converters",
+      "term_weights": {
+        "cells": 12.0,
+        "converters": 28.0
+      },
+      "columns_per_converter": 1,
+      "cells_per_weight": 2,
+      "citation": {
+        "rows, cols": "T3-NR-04 scope (each core 256 x 256 RRAM cells)",
+        "columns_per_converter": "T3-NR-04 scope (256 CMOS neurons per core)",
+        "term_weights": "T3-NR-02 (RRAMs 12%, neurons 28% of the chip)",
+        "weight_bits_per_cell": "CO profiles/neurram.json validity.geometry.cell_bits",
+        "cells_per_weight": "TXT-wan2021edge-p06-15 (each weight is encoded by the differential conductance of 2 RRAM cells; T3-NR-04 scope: a signed weight is a differential pair; review N-2)"
+      }
+    },
+    "cell_kind": "rram_1t1r",
+    "converter": {
+      "kind": "neuron_integrating",
+      "per_core": 256,
+      "own_unit": "T3-NR-03"
+    }
   }
 }

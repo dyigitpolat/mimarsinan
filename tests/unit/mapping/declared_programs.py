@@ -19,13 +19,15 @@ from mimarsinan.models.nn.activations.integer_law import grid_levels
 from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
     calibrate_boundary_scales,
     install_boundary_quantizers,
-    measure_seam_quantiles,
 )
 from mimarsinan.pipelining.pipeline_steps.quantization.declared_state import (
     declare_entry_state,
     declare_readout_state,
 )
-from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import install_readout_quantizers
+from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import (
+    calibrate_readout_quantizers,
+    install_readout_quantizers,
+)
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import segment_entry_perceptrons
 from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
@@ -75,9 +77,11 @@ def build_declared_program(model: nn.Module, input_shape: tuple, *, num_classes:
     grids = install_boundary_quantizers(entries, activation_bits)
     calibrate_boundary_scales(flow, entries, grids, batches)
     quantizers = install_readout_quantizers(perceptrons, activation_bits) if readout_law else []
-    measured = measure_seam_quantiles(flow, quantizers, batches) if readout_law else []
-    for quantizer, value in zip(quantizers, measured):
-        quantizer.calibrate(max(value, 1e-3))
+    # [U-BRANGE2 stage 1b] Readout Law's own calibration (the rule at every readout, read-together grids pooled, no
+    # floor), the stage verify's m-5; the declared ranges below are read from it
+    measured = calibrate_readout_quantizers(
+        flow, perceptrons, quantizers, batches,
+        platform={"activation_bits": activation_bits, "readout_law": {"range": "calibrated"}}) if readout_law else []
     fx_of = {id(p): name for name, p in perceptron_fx_names(flow.get_mapper_repr()).items()}
     document: dict = {}
     for perceptron, grid in zip(entries, grids):
@@ -88,7 +92,7 @@ def build_declared_program(model: nn.Module, input_shape: tuple, *, num_classes:
         document.setdefault(fx_of[id(perceptron)], {})["entry"] = entry
     if declare_ranges:
         for perceptron, value in zip(perceptrons[:-1], measured):
-            document.setdefault(fx_of[id(perceptron)], {})["readout_range"] = max(float(value), 1e-3) * 0.9
+            document.setdefault(fx_of[id(perceptron)], {})["readout_range"] = float(value) * 0.9
     declaration = write_state(state_path, document)
     platform = declared_platform(declaration, activation_bits=activation_bits, readout_law=readout_law,
                                  **platform_kwargs)

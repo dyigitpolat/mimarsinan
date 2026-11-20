@@ -16,7 +16,6 @@ from mimarsinan.advisories.rules_graph_scale import (
     rule_normfree_chain,
     rule_scale_spread,
 )
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
 from mimarsinan.spiking.segment_forward import (
     SegmentForwardDriver,
@@ -125,7 +124,10 @@ def _unequal_depth_joins(model_repr) -> list:
 
 
 def rule_fanin_depth_imbalance(model_repr, plan: Any, channel_stats) -> list[Advisory]:
-    if not is_lif(plan.spiking_mode):
+    """[U-TGAUGE5] The early mapper-graph notice of the window rule, for every per-cycle cascade (the plan's mode
+    policy's one predicate) whose relays are off: it flags every unequal-depth join, including one the latency
+    alignment alone closes, so it stays tentative; the mapping's assertion is the refusal."""
+    if not plan.mode_policy().runs_per_cycle_cascade:
         return []
     if bool(plan.config.get("lif_depth_balancing_relays", False)):
         return []
@@ -146,7 +148,11 @@ def rule_fanin_depth_imbalance(model_repr, plan: Any, channel_stats) -> list[Adv
             "(mapping/latency/depth_balancing.py, knob "
             "lif_depth_balancing_relays), which this deployment has "
             "disabled; the mapping-time analysis there is the IR-level twin "
-            "of this mapper-graph check. Memo: "
+            "of this mapper-graph check. Every per-cycle cascade (the LIF "
+            "family and the cascaded timing schedule) reads so, and Soft Core "
+            "Mapping refuses the program by name (UnbalancedFanInError) where "
+            "a live in-segment edge keeps a latency gap other than one after "
+            "the alignment. Memo: "
             "docs/research/findings/lif_deployment_exactness.md (V6/C5)."
         ),
         tentative=True,

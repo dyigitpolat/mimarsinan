@@ -6,6 +6,7 @@ import torch
 
 from mimarsinan.certification.spike_certificate import certify_spike_counts
 from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.chip_simulation.window_firing_axis import FIRE_WHILE_INTEGRATING, INTEGRATE_THEN_EMIT
 from mimarsinan.spiking.segment_forward import (
     LifSegmentPolicy,
     SegmentForwardDriver,
@@ -123,21 +124,39 @@ def flow_perceptron_counts(
     """One flow run under ``discipline`` with the ``stage_count_recorder`` seam
     attached; returns assembled per-perceptron counts + the coverage report.
     The flow's own discipline is restored."""
-    if discipline not in ("synchronized", "streaming"):
-        raise ValueError(f"unknown certificate discipline {discipline!r}")
+    _require_discipline(discipline)
     assembler = PerceptronCountAssembler(ir_graph)
     flow.stage_count_recorder = (
         lambda stage, counts: assembler.capture_stage(stage.output_map, counts)
     )
-    prev_sync = getattr(flow, "lif_execution_synchronized", False)
-    flow.lif_execution_synchronized = discipline == "synchronized"
+    prev = _set_discipline(flow, discipline)
     try:
         with torch.no_grad():
             flow(samples)
     finally:
         flow.stage_count_recorder = None
-        flow.lif_execution_synchronized = prev_sync
+        flow.lif_execution_synchronized, flow.window_count_closed_form = prev
     return assembler.assemble(), assembler.last_report
+
+
+#: [U-LIF2 W14] A certificate cell's disciplines: the run's window firings, each run by its executor of record (the
+#: gated cycle-level executor for integrate then emit), the historical ``streaming`` (firing while integrating), and the
+#: analytic gauge ``synchronized``: the closed form of integrate then emit asked for by its name, never a gate.
+_DISCIPLINES = {"streaming": (False, False), FIRE_WHILE_INTEGRATING: (False, False),
+                INTEGRATE_THEN_EMIT: (True, False), "synchronized": (True, True)}
+
+
+def _require_discipline(discipline: str) -> None:
+    if discipline not in _DISCIPLINES:
+        raise ValueError(f"unknown certificate discipline {discipline!r}")
+
+
+def _set_discipline(flow, discipline: str) -> tuple:
+    """Run ``flow`` under ``discipline`` (``_DISCIPLINES``: its two-window flag and the closed form's name), returning
+    what to restore."""
+    prev = (getattr(flow, "lif_execution_synchronized", False), getattr(flow, "window_count_closed_form", False))
+    flow.lif_execution_synchronized, flow.window_count_closed_form = _DISCIPLINES[discipline]
+    return prev
 
 
 def certify_flow_counts(
@@ -169,8 +188,7 @@ def flow_node_counts(
     straight from the stage output maps — no provenance placement. The twin
     cell's currency: both twin programs share one IR, so node ids and widths
     match by construction (IR pruning cannot desynchronize them)."""
-    if discipline not in ("synchronized", "streaming"):
-        raise ValueError(f"unknown certificate discipline {discipline!r}")
+    _require_discipline(discipline)
     captured: dict[int, torch.Tensor] = {}
 
     def _record(stage, counts):
@@ -180,14 +198,13 @@ def flow_node_counts(
             )
 
     flow.stage_count_recorder = _record
-    prev_sync = getattr(flow, "lif_execution_synchronized", False)
-    flow.lif_execution_synchronized = discipline == "synchronized"
+    prev = _set_discipline(flow, discipline)
     try:
         with torch.no_grad():
             flow(samples)
     finally:
         flow.stage_count_recorder = None
-        flow.lif_execution_synchronized = prev_sync
+        flow.lif_execution_synchronized, flow.window_count_closed_form = prev
     return captured
 
 

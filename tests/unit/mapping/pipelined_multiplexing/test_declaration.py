@@ -88,10 +88,17 @@ class TestTheLegalSet:
                  "lif_depth_balancing_relays": False}
         assert tuple(REGISTRY[KEY].legal_values(state)) == (False,)
 
-    @pytest.mark.parametrize("variant", ["analytical", "quantized", "synchronized", "cascaded"])
+    @pytest.mark.parametrize("variant", ["analytical", "quantized", "synchronized"])
     def test_every_ttfs_variant_admits_both(self, variant):
         state = {**MUX, "spiking_family": "ttfs", "spiking_variant": variant}
         assert tuple(REGISTRY[KEY].legal_values(state)) == (False, True)
+
+    def test_the_cascaded_variant_admits_both_only_with_its_relays_declared_off(self):
+        """[U-TGAUGE5] Its recipe arms the depth-balancing relays (a per-cycle cascade), which position multiplexing
+        refuses."""
+        state = {**MUX, "spiking_family": "ttfs", "spiking_variant": "cascaded"}
+        assert tuple(REGISTRY[KEY].legal_values(state)) == (False,)
+        assert tuple(REGISTRY[KEY].legal_values({**state, "lif_depth_balancing_relays": False})) == (False, True)
 
     def test_where_position_multiplexing_admits_only_false_so_does_it(self):
         assert tuple(REGISTRY[KEY].legal_values({**MUX, "core_semantics": "mvm", "pruning": True})) == (False,)

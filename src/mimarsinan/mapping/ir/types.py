@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextvars
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, Tuple
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, Mapping, Tuple
 
 import numpy as np
 import torch
@@ -19,6 +19,7 @@ from mimarsinan.mapping.ir.source import (
 )
 from mimarsinan.mapping.support.device_placement import preserved_module_placement
 from mimarsinan.mapping.support.host_kernel_evaluation import evaluate_host_kernel
+from mimarsinan.mapping.support.value_layouts import ValueLayout, layouts
 from mimarsinan.models.nn.activations.value_quantizer import BoundaryGrid
 
 if TYPE_CHECKING:
@@ -71,8 +72,15 @@ class IRNode(ABC):
 @dataclass
 class NeuralCore(IRNode):
     """Crossbar neural core: owned core_matrix or shared WeightBank reference."""
+    #: [U-PCH3] What each per-node value's entries index (``mapping.support.value_layouts``); a neural node's entries
+    #: in the program's boundary maps (``support.activation_scales``) are its activation scale's.
+    VALUE_LAYOUTS: ClassVar[Mapping[str, ValueLayout]] = layouts(
+        PER_NEURON=("threshold", "hardware_bias", "readout_law", "pruned_row_magnitude", "lane_outputs",
+                    "lane_reduced_instances", "lane_operand_rows"), WHOLE=("boundary_grid", "latency", "weight_bits"),
+        PER_CHANNEL=("activation_scale", "parameter_scale", "bias_scale", "node_activation_scales",
+                     "node_input_activation_scales", "node_buffer_scales"), PER_INPUT_ROW=("input_activation_scale",))
     core_matrix: np.ndarray | None = None
-    threshold: float = 1.0
+    threshold: float | np.ndarray = 1.0  # [U-PCH] one register, or one per neuron column (per-neuron registers)
     activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
@@ -140,7 +148,6 @@ class NeuralCore(IRNode):
             return bank.core_matrix
         start, end = self.weight_row_slice
         return bank.column_slice(int(start), int(end))
-
 
     def resolve_pre_pruning_heatmap(
         self, graph: "IRGraph | None" = None

@@ -20,17 +20,16 @@ from mimarsinan.chip_simulation.backend import BACKEND_REGISTRY
 from mimarsinan.chip_simulation.certification import CertificationCell
 from mimarsinan.deployment_record.schema import (
     DEPLOYMENT_RECORD_FORMAT_VERSION,
-    ComputeOpRecord,
     EnergyRecord,
     LatencyDecomposition,
     Provenance,
     RecordIdentity,
-    ScheduleRecord,
     SegmentTimingRecord,
     TimingRecord,
 )
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_walls import (
-    host_ops_wall_s as host_ops_wall_s, host_ops_wall_s_per_pass as host_ops_wall_s_per_pass,
+    fold_compute_walls as fold_compute_walls, host_ops_wall_s as host_ops_wall_s,
+    host_ops_wall_s_per_pass as host_ops_wall_s_per_pass,
 )
 from mimarsinan.pipelining.core.spike_count_gate import certificate_gate_armed
 from mimarsinan.pipelining.pipeline_steps.verification.odin.sample_split import device_sample_entries
@@ -138,9 +137,10 @@ def config_digest(config: Mapping[str, Any]) -> str:
 
 
 def _workload_key(pipeline: Any) -> str:
-    """The workload identity: the registered data-provider name."""
+    """The workload identity: the registered provider id the run's factory serves (the session checks it against
+    the declared ``data_provider_name``), else the factory's class name."""
     factory = pipeline.data_provider_factory
-    name = getattr(factory, "_name", None)
+    name = getattr(factory, "provider_name", None) or getattr(factory, "_name", None)
     if name:
         return str(name)
     return type(factory).__name__
@@ -173,57 +173,8 @@ def identity_from_pipeline(
             "scm_degradation_tolerance": plan.scm_degradation_tolerance,
             "degradation_budget_total": float(plan.degradation_budget_total),
         },
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(), window_firing=plan.window_firing,
     )
-
-
-def fold_compute_walls(
-    schedule: ScheduleRecord, walls: Sequence[Mapping[str, Any]]
-) -> ScheduleRecord:
-    """Fold measured ``StageTimer`` walls onto the schedule's ComputeOps.
-
-    Matched by stage NAME: the timer enumerates execution units (level stages
-    included), so its indices need not equal the program's stage indices. A
-    wall that matches no ComputeOp, or an ambiguous (duplicated) name, raises.
-    """
-    if not walls:
-        return schedule
-    totals: dict[str, float] = {}
-    counts: dict[str, int] = {}
-    for row in walls:
-        name = str(row["name"])
-        totals[name] = totals.get(name, 0.0) + float(row["wall_s_total"])
-        counts[name] = counts.get(name, 0) + int(row.get("invocations", 0) or 0)
-    compute_names = [
-        stage.name
-        for stage in schedule.stages
-        if isinstance(stage, ComputeOpRecord)
-    ]
-    unknown = sorted(set(totals) - set(compute_names))
-    if unknown:
-        raise ValueError(
-            f"timed host-op walls {unknown} match no ComputeOp stage in the "
-            f"schedule (stages: {sorted(set(compute_names))})"
-        )
-    ambiguous = sorted(
-        name for name in totals if compute_names.count(name) > 1
-    )
-    if ambiguous:
-        raise ValueError(
-            f"timed host-op walls {ambiguous} match multiple ComputeOp stages; "
-            f"the name-keyed fold would be ambiguous"
-        )
-    stages = tuple(
-        replace(
-            stage,
-            wall_s_total=totals[stage.name],
-            invocations=counts.get(stage.name) or None,
-        )
-        if isinstance(stage, ComputeOpRecord) and stage.name in totals
-        else stage
-        for stage in schedule.stages
-    )
-    return replace(schedule, stages=stages)
 
 
 def timing_record(
@@ -231,10 +182,12 @@ def timing_record(
     s_global: int,
     depth: int,
     per_segment: Sequence[SegmentTimingRecord],
-    host_ops_s: Optional[float],
+    host_ops_s_raw_total: Optional[float],
     host_ops_s_per_pass: Optional[float] = None,
+    unsimulated_steps: Optional[int] = None,
 ) -> TimingRecord:
-    """The timing fragment: static part always, measured parts when present."""
+    """The timing fragment: static part always, measured parts when present. [U-LIF2 W11] With no simulator timing,
+    ``unsimulated_steps`` (the program's own stage cycles, ``stage_timesteps.sealed_program_steps``) are the steps."""
     segments = tuple(per_segment)
     compute_sim_time_s = (
         float(sum(seg.sim_time_s for seg in segments)) if segments else None
@@ -246,10 +199,11 @@ def timing_record(
         latency=LatencyDecomposition(
             programming_s=None,
             compute_steps=int(
-                sum(seg.timesteps_executed for seg in segments)
+                sum(seg.timesteps_executed for seg in segments) if segments or unsimulated_steps is None
+                else unsimulated_steps
             ),
             compute_sim_time_s=compute_sim_time_s,
-            host_ops_s=host_ops_s,
+            host_ops_s_raw_total=host_ops_s_raw_total,
             host_ops_s_per_pass=host_ops_s_per_pass,
             sync_s=None,
             note=LATENCY_NOTE,
@@ -285,3 +239,7 @@ def cross_check_sealed_sources(schedule, scm, mapping) -> None:
             f"deployment record: schedule carries {len(schedule.segments())} "
             f"neural segments but the mapping has {neural_stages} neural stages "
             f"— the cached fragments drifted")
+
+
+def _prov(kind: str, producer: str, step: str, detail: str = "") -> Provenance:
+    return Provenance(kind=kind, producer=producer, step=step, detail=detail)

@@ -196,44 +196,33 @@ def test_the_edge_host_never_reads_a_measured_wall_of_another_machine():
         assert _c(terms["latency_host_s"].band, corner) == pytest.approx(expected, rel=1e-12), corner
 
 
-class TestAServerBlockKeepsTheMeasuredWallsRule:
-    """[targeted M1] Only a host that describes its own whole model (a host description's block: compute, active and
-    idle power, memory, the link) prices its own time beside a measured wall. A server's measured calibration block
-    (CL0's: rate, dispatch, power, no ``host_compute_rate``) on a profile that relates no machine to the deployment
-    host keeps the measured wall's rule as before: host MACs refuse by name for ``host_compute_rate``, and a
-    dispatch-only record prices no host time."""
+class TestAServerBlockIsRefusedByName:
+    """[U-HOST] Only an identified host description's rows price the host. A server's measured calibration block
+    (CL0's form: rate and dispatch measured on the development machine, a declared power band, no host named) is
+    refused by name where it is loaded, on every profile, so it never keeps a measured wall's rule."""
 
     @staticmethod
     def _server_block():
-        from mimarsinan.deployment_record.platform_physics.host_calibration import calibration_overrides, host_block
+        from mimarsinan.deployment_record.platform_physics.host_calibration import calibration_diagnostic
 
         p_host = {"p_host": {"low": 5.0, "nominal": 37.4, "high": 280.0, "unit": "W", "evidence_kind": "published",
                              "citation": "a band over two hosts (test)"}}
-        measured = calibration_overrides(macs_per_s=1e9, op_overhead_s=(1e-5, 2e-5, 4e-5), p_host_w=None,
-                                         identity="the experiment server (test)", declared=p_host)
-        return merge_override_blocks({"host": host_block({"platform_physics_overrides": measured})})
+        measured = calibration_diagnostic(macs_per_s=1e9, op_overhead_s=(1e-5, 2e-5, 4e-5), p_host_w=None,
+                                          identity="the experiment server (test)", declared=p_host)
+        return merge_override_blocks({"host": measured})
 
-    RECORD = dict(BASE, compute_op_count=3, host_ops_s=0.002)
+    @pytest.mark.parametrize("profile", ["neurram", "hermes_64", "generic_estimated_22nm"])
+    def test_the_server_block_refuses_by_name_on_every_profile(self, profile):
+        from mimarsinan.deployment_record.platform_physics.hosts.admission import HostRowAdmissionError
 
-    @pytest.mark.parametrize("profile", ["neurram", "hermes_64"])
-    def test_host_macs_on_a_profile_without_the_relation_refuse_by_name(self, profile):
-        server = resolve_platform_physics(profile, self._server_block())
-        assert not server.has("host_compute_rate")
-        terms, refused = _terms(server, **dict(self.RECORD, host_macs=1_000_000))
-        assert "latency_host_s" not in terms
-        assert "pricing it needs host_compute_rate" in refused["energy_per_inference_mj"]
+        with pytest.raises(HostRowAdmissionError, match="identified host description") as refused:
+            resolve_platform_physics(profile, self._server_block())
+        assert all(key in str(refused.value) for key in ("host_macs_per_s", "t_host_op_overhead", "p_host"))
 
-    @pytest.mark.parametrize("profile", ["neurram", "hermes_64"])
-    def test_a_dispatch_only_record_prices_no_host_time(self, profile):
-        server = resolve_platform_physics(profile, self._server_block())
-        terms, _ = _terms(server, **dict(self.RECORD, host_macs=0))
-        assert "latency_host_s" not in terms
-
-    def test_the_edge_host_describes_its_own_host_and_the_server_block_does_not(self):
+    def test_the_edge_host_describes_its_own_host_and_a_chip_alone_does_not(self):
         from mimarsinan.deployment_record.platform_physics.hosts.description import describes_host
 
         assert describes_host(EDGE) and not describes_host(CHIP)
-        assert not describes_host(resolve_platform_physics("neurram", self._server_block()))
 
 
 def test_without_the_edge_rows_nothing_moves():

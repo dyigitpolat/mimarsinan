@@ -13,6 +13,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.ir import NeuralCore, ComputeOp
@@ -82,7 +83,7 @@ def _build_with_lif(T, *, shift: bool):
     negative-value shift applied (pre-mapping bake + tag + HCM propagation)."""
     from mimarsinan.mapping.support.bias_compensation import (
         apply_negative_value_shifts,
-        calibration_forward_for_mode,
+        calibration_forward_for_point,
         transfer_negative_shifts_to_ir,
         propagate_negative_shifts_to_hybrid,
     )
@@ -100,7 +101,7 @@ def _build_with_lif(T, *, shift: bool):
             flow,
             calibrated_compute_op_minima(
                 flow, torch.rand(16, 8), T,
-                forward_fn=calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW),
+                forward_fn=calibration_forward_for_point(point_of_mode("lif")),
             ),
         )
     repr_.assign_perceptron_indices()

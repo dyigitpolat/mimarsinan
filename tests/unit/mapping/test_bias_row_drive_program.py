@@ -134,7 +134,8 @@ def test_the_law_bias_term_carries_the_drive(monkeypatch, extra):
         if not on.any():
             continue
         c = matrix[on, :].sum(axis=0)
-        drive = float(boundary_grid_of(by_index[int(node.perceptron_index)].input_activation).value_range[1])
+        drive = _stamp(node)  # [U-BRANGE2] the core's stamped drive (its perceptron's least-error code)
+        assert drive == _stamp(by_index[int(node.perceptron_index)])
         law = node.readout_law
         step = np.asarray(law.output_step, dtype=np.float64)
         exact = np.ldexp(c * drive / (float(node.threshold) * step), np.asarray(law.shift))
@@ -208,7 +209,7 @@ def _joined_flow():
     return flow
 
 
-def test_a_core_fed_reader_drives_its_row_at_the_top_code_of_the_solver_assigned_grid(monkeypatch):
+def test_a_core_fed_reader_drives_its_row_at_a_code_of_the_solver_assigned_grid(monkeypatch):
     """[m-5] ``d`` reads core ``a`` alone, but the law solver joins ``a`` with ``b`` (read together by ``c``), so the
     grid ``d``'s cores read spans ``b``'s range 5: its row is driven at that grid's top code value (the widest direct
     producer, ``a``'s 2, is not a code of it), equal to the assigned grid's ``input_step x input_levels``; the program
@@ -226,10 +227,11 @@ def test_a_core_fed_reader_drives_its_row_at_the_top_code_of_the_solver_assigned
         drive = _stamp(names[name])
         cores = [n for n in ir.nodes if isinstance(n, NeuralCore) and n.perceptron_index == index[id(names[name])]]
         assert cores
-        for core in cores:
+        for core in cores:  # [U-BRANGE2] a code of the union's grid (b's range 5), no longer its top
             grid = grids[int(core.id)]
-            assert drive == grid.input_step * grid.input_levels
-        assert drive == pytest.approx(RANGES["b"], rel=1e-12)
+            code = round(drive / grid.input_step)
+            assert 1 <= code <= grid.input_levels and code * grid.input_step == drive
+            assert grid.input_step * grid.input_levels == pytest.approx(RANGES["b"], rel=1e-12)
     _exact(flow, ir, _inputs())
 
 
@@ -238,7 +240,8 @@ def test_a_row_drive_off_its_assigned_grid_is_refused_by_name(monkeypatch):
     name at the law hook, never solved at a drive the reader's DAC does not produce."""
     def tamper(flow):
         perceptron = flow.get_perceptrons()[0]
-        perceptron.__dict__["bias_row_drive"] = 2.0 * float(perceptron.__dict__.get("bias_row_drive", 1.0))
+        # [U-BRANGE2] off every code of the grid (twice a least-error code can be another code of it)
+        perceptron.__dict__["bias_row_drive"] = (1.0 + 1e-3) * float(perceptron.__dict__.get("bias_row_drive", 1.0))
 
     with pytest.raises(ToolchainRefusal) as caught:
         _program(monkeypatch, tamper=tamper)

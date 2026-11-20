@@ -1,13 +1,73 @@
 {
   "name": "ibm_analog_ai_512x512x34",
-  "display_name": "IBM analog AI chip (Ambrogio 2023): 34 tiles of 512 x 512",
+  "display_name": "IBM analog AI chip (Ambrogio 2023), 34 tiles of 512 x 512",
   "geometry": "ibm_analog_ai_512x512x34",
-  "keys": {},
+  "keys": {
+    "core_semantics": "mvm",
+    "activation_bits": 8
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
+  },
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "ambrogio2023an",
+        "location": "Fig. 1 caption (d), PDF p.2",
+        "quote": "After MAC, the charge on the peripheral capacitors is converted into durations4 and sent either to other tiles, leading to new MACs, or to the OLP, where durations are reconverted into 8-bit representations for off-chip data-processing.",
+        "reads": "After MAC, the charge on the peripheral capacitors"
+      }
+    },
+    "weight_bits": {
+      "unstated": {
+        "note": "Each weight is the conductance of two or four PCM devices (Fig. 1 caption g, h): the source states no integer weight precision; the registered geometry's 8 bits are the description's assumption.",
+        "assumed": 8,
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The \"4-PCM-per-weight configuration, where each of the four PCM devices contributes equally to the read current\" (ambrogio2023an Section 'Chip architecture', PDF p.3) holds analog conductances in parallel, not bit slices of a word, so no slice of the weight is read. The description's cores state no cells_per_weight."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "The cell holds an analog conductance: the source states no cell precision in bits."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The source maps most of each network's weight and bias parameters on chip (Methods) and states no per-column bias circuit; the registered geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "activation_bits": {
+      "stated": {
+        "value": 8,
+        "source": "ambrogio2023an",
+        "location": "Fig. 1 caption (d), PDF p.2",
+        "quote": "Each ILP converts 512 8-bit inputs into 512 element vectors of pulse-modulated durations, which are then routed to the analog tiles for integration using a fully parallel 2D mesh that allows multi-casting to multiple tiles.",
+        "reads": "Each ILP converts 512 8-bit inputs",
+        "note": "The chip's host boundary carries 8-bit unsigned codes (UINT8 at the ILP and OLP)."
+      }
+    },
+    "readout_law": {
+      "unstated": {
+        "note": "Between tiles the activations travel as analog pulse durations, not converted; the OLP reconverts durations into 8-bit codes at the chip's edge (a ramp-based conversion, Fig. 1 caption d): no per-core converter of the toolchain's form; the deployment declares one."
+      }
+    },
+    "onchip_arithmetic": {
+      "unstated": {
+        "note": "The source states that activation functions such as ReLU could be implemented on chip with proper enable timings (Methods), while its RNNT runs compute the activation functions off-chip on a host (Methods): no class is stated as the chip's; the deployment declares its classes."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The PCM tiles are programmed with a parallel row-wise algorithm (Fig. 1 caption f); the description declares no run-time writable matrix."
+      }
+    }
   }
 }

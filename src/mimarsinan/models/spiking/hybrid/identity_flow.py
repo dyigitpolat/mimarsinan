@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_identity_hybrid_mapping,
@@ -31,8 +32,12 @@ def build_identity_spiking_flow(
     lif_membrane_init: float = 0.0,
     membrane_integer_lattice: bool = False,
     soma_law: SomaLaw = DEFAULT_SOMA_LAW,
+    spiking_point: SpikingPoint | None = None,
 ) -> SpikingHybridCoreFlow:
     """Run an IRGraph through the hybrid executor on a 1:1 identity mapping.
+
+    [U-LIF2 r2] ``spiking_point``: the run's point the caller holds (the contract's); the flow carries it, and its
+    two-window discipline is that point's.
 
     Latencies are computed only when the graph has none preset.
     """
@@ -59,4 +64,6 @@ def build_identity_spiking_flow(
         lif_membrane_init=lif_membrane_init,
         membrane_integer_lattice=membrane_integer_lattice,
         soma_law=soma_law,
+        lif_execution_synchronized=spiking_point is not None and spiking_point.integrates_then_emits,
+        spiking_point=spiking_point,
     )

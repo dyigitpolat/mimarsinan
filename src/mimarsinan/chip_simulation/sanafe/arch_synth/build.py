@@ -17,6 +17,7 @@ from mimarsinan.chip_simulation.sanafe.arch_synth.spec import (
     ArchSpec,
     _thresholding_mode_to_soma_attr,
 )
+from mimarsinan.chip_simulation.timing_decision import require_arch_timing_somas
 from mimarsinan.chip_simulation.sanafe.presets import (
     AXON_IN_NAME,
     AXON_OUT_NAME,
@@ -189,6 +190,7 @@ def build_architecture(
             raise FileNotFoundError(
                 f"SANA-FE custom arch YAML not found: {custom_arch_path}"
             )
+        require_arch_timing_somas(custom_arch_path)  # its timing somas, read for the decision's version
         arch = sanafe.load_arch(custom_arch_path)
         loaded_cores = sum(len(tile.cores) for tile in arch.tiles)
         # packed_cores is the mapping's real need; total_cores counts floorplan

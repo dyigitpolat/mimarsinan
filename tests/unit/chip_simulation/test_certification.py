@@ -30,6 +30,7 @@ from mimarsinan.chip_simulation.certification import (
     load_floor_book,
     save_floor_book,
 )
+from spiking_points import point_of_mode
 
 
 # --------------------------------------------------------------------------- #
@@ -86,7 +87,7 @@ class TestCertificationCell:
             policy_for_spiking_mode,
         )
 
-        policy = policy_for_spiking_mode("ttfs_cycle_based", "cascaded")
+        policy = policy_for_spiking_mode(point_of_mode("ttfs_cycle_based", "cascaded"))
         cell = CertificationCell.from_mode_policy(policy, backend="nevresim")
         assert cell.cell_key == "ttfs_cycle_based/cascaded@nevresim"
 

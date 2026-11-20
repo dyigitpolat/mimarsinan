@@ -16,6 +16,7 @@ import os
 from dataclasses import replace
 
 import pytest
+from spiking_points import declaring_fire_while_integrating
 
 from conftest import MockPipeline, default_config
 from mimarsinan.deployment_record.schema import (
@@ -68,7 +69,7 @@ class TestTheSeal:
 
 
 def _record_step(tmp_path, *, hacc: bool, fpga: bool, with_reads: bool = True):
-    config = default_config()
+    config = declaring_fire_while_integrating(default_config())  # [U-LIF2 W16] the ODIN devices fire per cycle
     config.update(enable_sanafe_simulation=False, enable_nevresim_simulation=False, spike_count_parity_samples=0,
                   enable_odin_hacc_export=hacc, enable_odin_fpga_simulation=fpga)
     pipeline = MockPipeline(config=config, working_directory=str(tmp_path / "run"))

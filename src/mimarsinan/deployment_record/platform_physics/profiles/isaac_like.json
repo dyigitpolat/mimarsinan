@@ -196,13 +196,6 @@
       "citation": "shafiee2016isaac Table I HyperTransport row + Section VII, p.7",
       "note": "'The HT is a constant overhead of 10 W, representing half of DaDianNao chip power, but only 16% of ISAAC chip power.' Explicitly CONSTANT, not activity-proportional, which is exactly why it is modelled as static power rather than as a per-byte transport energy."
     },
-    "host_compute_rate": {
-      "nominal": 1.0,
-      "unit": "fraction",
-      "evidence_kind": "derived",
-      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
-      "note": "The derate a MEASURED host wall is divided by. Identity by definition: this framework measures its host ComputeOp walls end-to-end on the deployment host (StageTimer), and derating a measurement would invent headroom. [H5] Declared here after the loihi precedent because its absence refused the record-plane e2e/energy headlines BY NAME on runs whose host wall was in fact measured."
-    },
     "endurance_cycles": {
       "low": 10000000000.0,
       "nominal": 31622776601.683792,
@@ -307,6 +300,17 @@
       "place": "chip_buffer",
       "citation": "shafiee2016isaac Table I eDRAM-buffer row, p.8",
       "note": "[U-J5] The row's own derivation prices a byte read from the tile's eDRAM buffer (20.7 mW x 100 ns per tile-cycle over 1024 B), the on-chip cost every byte entering the tile pays, and its note keeps the off-chip HyperTransport figure out of it (isaac_like.md, Programming constants: 'it prices moving a byte through the tile's eDRAM buffer'). So it is a chip-internal buffer row, never a backing-store row: a byte that crosses the host-chip link pays it too."
+    }
+  },
+  "area_rule": {
+    "type": "T3",
+    "terms": "complete",
+    "outside": "declared_parts",
+    "note": "Table I's rows stay its own declared terms; the HyperTransport links are its chip components (area_global_fixed 22.88 mm2)",
+    "published_size": {
+      "n_pub": "s('T3-IS-18', 'quantity', '168 Tile Total', 168) * s('T3-IS-16', 'scope', 'number 12', 12) * s('T3-IS-12', 'scope', 'number 8', 8)",
+      "unit": "arrays (the census's cores: one 128 x 128 array each)",
+      "citation": "T3-IS-18 (Table I row '168 Tile Total'), T3-IS-16 (row 'IMA Total', number 12 per tile), T3-IS-12 (row 'Memristor array', number 8 per IMA): ruling R3's size flags (build part 2)"
     }
   }
 }

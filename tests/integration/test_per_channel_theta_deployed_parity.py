@@ -17,6 +17,7 @@ import torch.nn as nn
 
 from integration._split_reassembly import hcm_per_perceptron_counts
 
+from mimarsinan.chip_simulation.hybrid_run.output_decode import executor_output_values
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
@@ -32,6 +33,7 @@ from mimarsinan.pipelining.core.nf_scm_parity import (
 )
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.spiking.per_channel_theta import eligible_per_channel_perceptrons
+from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.spiking.scale_aware_boundaries import (
     calibrate_scale_aware_boundaries,
     propagate_boundary_input_scales,
@@ -121,14 +123,27 @@ def _samples(n=16):
     return torch.rand(n, *INPUT_SHAPE)
 
 
+class _HeldRead(LifSegmentPolicy):
+    """The twin's walk with its output decode the identity: its output node as the walk holds it (the wire value)."""
+
+    def decode_output(self, driver, node, value):
+        return value
+
+
 def test_scalar_theta_twin_and_deployed_stay_bit_consistent():
-    """Byte-identical scalar contract: no wrap arms, deployed == T * twin exactly."""
+    """Scalar contract, bit-exact where the decode is the identity: no wrap arms, and the deployed read equals T times the
+    twin's held output (its wire value, the walk's decode the identity) to the bit. [U-TGAUGE2] Both read in the value
+    domain through the one decode (each held value times its gauge): equal to float rounding, the classes equal."""
     flow, flow_hcm, _, _ = _build(promote=False)
     x = _samples()
     with torch.no_grad():
         twin = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
+        held = SegmentForwardDriver(flow.get_mapper_repr(), T, _HeldRead(soma_law=DEFAULT_SOMA_LAW))(x)
         deployed = flow_hcm(x)
-    assert float((deployed - twin * T).abs().max()) == 0.0
+    assert float((deployed.double() - T * held.double()).abs().max()) == 0.0
+    values = executor_output_values(flow_hcm, deployed)
+    torch.testing.assert_close(values.double(), twin.double(), rtol=1e-6, atol=1e-6)
+    assert bool((values.argmax(1) == twin.argmax(1)).all())
 
 
 def test_promoted_unequal_theta_passes_the_deployed_parity_gate():
@@ -152,7 +167,8 @@ def test_promoted_unequal_theta_passes_the_deployed_parity_gate():
 
 def test_promoted_unequal_theta_twin_and_deployed_logits_match():
     """The seam pin: the twin must run the emitted ScaleNormalizingWrapper
-    composition at wire-domain host value nodes, so deployed == T * twin."""
+    composition at wire-domain host value nodes, so the deployed read decoded into the value domain (U-TGAUGE2: the
+    program's output gauge, the one decode) equals the twin's output."""
     flow, flow_hcm, _, _ = _build(promote=True)
 
     wrapped = [
@@ -170,7 +186,7 @@ def test_promoted_unequal_theta_twin_and_deployed_logits_match():
         twin = chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
         deployed = flow_hcm(x)
     torch.testing.assert_close(
-        deployed.to(torch.float32), (twin * T).to(torch.float32),
+        executor_output_values(flow_hcm, deployed).to(torch.float32), twin.to(torch.float32),
         atol=1e-4, rtol=1e-4,
     )
 

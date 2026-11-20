@@ -29,6 +29,8 @@ from mimarsinan.certification.program_check.view import ProgramView
 from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
 from mimarsinan.mapping.packing.residency_tiles import core_type_tiles
+from mimarsinan.mapping.support.neuron_thresholds import threshold_key
+from mimarsinan.mapping.support.value_layouts import placement_value
 from mimarsinan.mapping.support.period_census import SCHEDULE_RESIDENT_CORES
 from mimarsinan.mapping.support.residency_rules import declared_pool, dominance_matching
 from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_CORE_ORDINALS, SCHEDULE_DARK_CORES, SCHEDULE_WAVEFRONT
@@ -40,9 +42,9 @@ def _region(core, axons: int, neurons: int, blocks=()) -> Optional[Tuple[np.ndar
     grid = np.asarray(core.get_core_matrix())
     if grid.shape[0] < axons or grid.shape[1] < neurons:
         return None
-    bias = getattr(core, "hardware_bias", None)
-    return (static_part(grid[:axons, :neurons], blocks), (None if bias is None else np.asarray(bias)[:neurons]),
-            core.threshold)
+    bias = placement_value(core, "hardware_bias", 0, neurons)  # [U-PCH3] by the core's declared layouts
+    return (static_part(grid[:axons, :neurons], blocks), (None if bias is None else np.asarray(bias)),
+            threshold_key(placement_value(core, "threshold", 0, neurons), neurons))  # each used neuron's register
 
 
 def _resident_units(delta: ProgramView, h10: ConditionResult) -> int:
@@ -89,7 +91,7 @@ def _resident_units(delta: ProgramView, h10: ConditionResult) -> int:
             same = mine is not None and theirs is not None and np.array_equal(mine[0], theirs[0]) and (
                 (mine[1] is None and theirs[1] is None) or (mine[1] is not None and theirs[1] is not None
                                                             and np.array_equal(mine[1], theirs[1]))) and \
-                float(mine[2] or 0) == float(theirs[2] or 0)
+                mine[2] == theirs[2]
             if not same:
                 h10.add(Violation("H10", "resident_content", f"{where} core {h}", f"executes weights, bias or "
                                   f"threshold other than what pass {head.index} wrote at that ordinal"))

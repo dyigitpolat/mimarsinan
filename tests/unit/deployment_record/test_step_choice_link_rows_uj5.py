@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from mimarsinan.deployment_record.cost.absolute.step_choice import carry_energy, cheapest_step, price_step
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.platform_physics.hosts import store as ST
 from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks, resolve_platform_physics
@@ -54,11 +55,11 @@ def _named(basis):
 @pytest.mark.parametrize("drop", [("e_link_per_byte",), ("e_host_mem_per_byte",)])
 class TestOneLinkEnergyRowDeclared:
     def test_the_host_sourced_payload_names_the_missing_row_on_a_chip_owned_store(self, drop):
-        write = price_step(_census(payload=0, carry=(0, 0)), _physics(ST.CHIP, drop), _policy()).write
+        write = price_step(_census(payload=0, carry=(0, 0)), _physics(ST.CHIP, drop), _policy(), static=NO_STATIC).write
         assert f"{drop[0]}(the host-sourced payload bytes per inference" in _named(write.basis), write.basis
 
     def test_a_host_owned_stores_write_transfer_and_payload_name_it(self, drop):
-        write = price_step(_census(), _physics(ST.HOST, drop), _policy()).write
+        write = price_step(_census(), _physics(ST.HOST, drop), _policy(), static=NO_STATIC).write
         named = _named(write.basis)
         assert f"{drop[0]}(the period's payload bytes / K" in named, write.basis
         assert f"{drop[0]}(the host-sourced payload bytes per inference" in named, write.basis
@@ -71,22 +72,29 @@ class TestOneLinkEnergyRowDeclared:
         """The step's price is the declared row's alone, as before: the name is text only."""
         physics, census = _physics(ST.HOST, drop), _census()
         kept = [key for key in LINK_ENERGY if key not in drop][0]
-        step, alone = price_step(census, physics, _policy()), price_step(census, physics, _policy("on_chip"))
+        step = price_step(census, physics, _policy(), static=NO_STATIC)
+        alone = price_step(census, physics, _policy("on_chip"), static=NO_STATIC)
         for corner in CORNERS:
             assert getattr(step.write, corner) - getattr(alone.write, corner) == pytest.approx(
                 10 * getattr(physics.band(kept), corner) * 1e3, rel=1e-9), corner
             assert getattr(step.carry, corner) == pytest.approx(500 * getattr(physics.band(kept), corner) * 1e3,
                                                                 rel=1e-9), corner
-        assert cheapest_step([census, census], physics, _policy()) == 0
+        assert cheapest_step([census, census], physics, _policy(), static=NO_STATIC) == 0
 
 
 @pytest.mark.parametrize("store", [ST.CHIP, ST.HOST])
 def test_both_rows_declared_name_nothing(store):
-    step = price_step(_census(), _physics(store), _policy())
-    assert UNPRICED not in step.write.basis and UNPRICED not in step.carry.basis, (step.write.basis, step.carry.basis)
+    """No link row is named. [U-ENERGY c-2] The write law names the one thing this census leaves out: it states no
+    connectivity entries per core, and the description declares their width."""
+    step = price_step(_census(), _physics(store), _policy(), static=NO_STATIC)
+    assert UNPRICED not in step.carry.basis, step.carry.basis
+    named = _named(step.write.basis)  # the step joins its parts' bases with " + " after the law's named part
+    assert not any(f"{row}(" in named for row in LINK_ENERGY), step.write.basis
+    assert named.startswith("bytes_per_connectivity_entry(connectivity; not produced on this plane: the census "
+                            "states no connectivity entries per core) + "), step.write.basis
 
 
 def test_neither_row_declared_still_refuses_by_name():
     with pytest.raises(Exception) as caught:
-        price_step(_census(payload=0, carry=(0, 0)), _physics(ST.CHIP, LINK_ENERGY), _policy())
+        price_step(_census(payload=0, carry=(0, 0)), _physics(ST.CHIP, LINK_ENERGY), _policy(), static=NO_STATIC)
     assert "declares neither e_link_per_byte nor e_host_mem_per_byte" in str(caught.value)

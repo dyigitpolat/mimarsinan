@@ -20,6 +20,11 @@ from mimarsinan.mapping.mappers.scale_propagation import (
 from mimarsinan.mapping.mappers.slot_unfold import SerialSlotUnfold
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.pruning.committed_masks import commit_layer_pruning
+from mimarsinan.transformations.perceptron.position_forward import (
+    add_position_offsets,
+    conv_positions,
+    reads_positions,
+)
 
 
 class Conv1DPerceptronMapper(Mapper):
@@ -136,24 +141,29 @@ class Conv1DPerceptronMapper(Mapper):
         # F.conv1d reads raw weights without calling layer.__call__, so the
         # pruning pre-hooks never fire here; commit the masks directly.
         commit_layer_pruning(self.perceptron.layer)
-        w = self.perceptron.layer.weight.view(
-            self.out_channels, self.in_channels, self.kernel_size
-        )
-        # Live additive term, not the construction-time ``self.bias`` flag: see
-        # Conv2DPerceptronMapper._forward_impl (Normalization Fusion installs a
-        # bias on a previously bias-free layer).
-        b = self.perceptron.layer.bias
+        if reads_positions(self.perceptron):  # [U-PFOLD] each output position at its patch fold's row
+            y = conv_positions(self.perceptron, x, (self.kernel_size,), (self.stride,), (self.padding,),
+                               (self.dilation,))
+        else:
+            w = self.perceptron.layer.weight.view(
+                self.out_channels, self.in_channels, self.kernel_size
+            )
+            # Live additive term, not the construction-time ``self.bias`` flag: see
+            # Conv2DPerceptronMapper._forward_impl (Normalization Fusion installs a
+            # bias on a previously bias-free layer).
+            b = self.perceptron.layer.bias
 
-        y = F.conv1d(
-            x, w, b,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation
-        )
+            y = F.conv1d(
+                x, w, b,
+                stride=self.stride,
+                padding=self.padding,
+                dilation=self.dilation
+            )
 
         if self.use_batchnorm or not isinstance(self.perceptron.normalization, nn.Identity):
             y = self.perceptron.normalization(y)
 
+        y = add_position_offsets(self.perceptron, y)
         y = self.perceptron.scaler(y)
         y = self.perceptron.activation(y)
         if self.training:

@@ -26,6 +26,7 @@ main_cpp_template = \
 #include "simulator/compute_policy/ttfs_analytical_compute.hpp"
 #include "simulator/compute_policy/ttfs_quantized_compute.hpp"
 #include "simulator/compute_policy/fire_policy/default_fire.hpp"
+#include "simulator/recording/output_format.hpp"
 
 #include <cstdlib>
 
@@ -37,6 +38,7 @@ void test_main(int start, int end)
     using threshold_t = {9};
 
     {8}
+    nevresim::set_output_format<exec>(std::cout);
 
     load_weights<weight_t, threshold_t>(
         chip, "{0}/weights/chip_weights.txt");

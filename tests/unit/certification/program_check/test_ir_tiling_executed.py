@@ -48,9 +48,11 @@ def _established(case) -> None:
 @pytest.mark.parametrize("semantics", TIMED)
 def test_a_tiling_that_splits_a_producers_consumers_moves_its_executed_latency(semantics):
     """Witness A2 at ``max_neurons`` 2: every IR neuron keeps its fan-in and IR latency attribute, but the tile read
-    only by E runs at 0 where the unbounded P runs at 1, so E reads it a cycle earlier: the outputs differ."""
+    only by E runs at 0 where the unbounded P runs at 1, so E reads it a cycle earlier: the outputs differed.
+    [U-TGAUGE5] The unbounded P is raised for D, so E reads it at a latency gap of 0: the per-cycle executor refuses
+    the identity program by name (this file's refusal test), and the check still names the departure."""
     case = V.case(V.consumer_split(semantics), max_neurons=2)
-    assert case.mismatches > 0
+    assert case.refused is not None and "no mapping armed" in case.refused, case.refused
     _failed(case, "executed_latency")
 
 
@@ -65,30 +67,36 @@ def test_per_tile_dead_row_masks_that_move_an_executed_latency():
     """M1: the dead-row rule on both IRs (N-identity holds): the tile holding c0 no longer lists b0, so ChipLatency
     runs it one cycle earlier than the unbounded C."""
     case = V.case(V.two_depth("streamed_lif"), max_neurons=1, mutate=lambda ir, u: V.dead_row_masks(ir, u))
-    assert case.mismatches > 0
+    assert case.refused is not None  # [U-TGAUGE5] a0 read at two depths: the window rule refuses the identity run
     assert case.report.results["N-identity"].status == ESTABLISHED
     _failed(case, "executed_latency")
 
 
 def test_an_identity_builder_whose_timing_departs_from_the_core_graph(monkeypatch):
     """The predicate derives each IR's identity timing from its core graph and holds the derivation to the identity
-    program the check builds: an identity builder whose ChipLatency skips the shift alignment departs from it."""
+    program the check builds: an identity builder whose ChipLatency skips the shift alignment departs from it.
+    [U-LIVE] At two neurons a core no tile holds a row dead in its own columns; at one neuron a core C's tiles do, and
+    the one liveness predicate runs each where its live reads put it (the departure the dead-row masks test names)."""
     from mimarsinan.mapping.latency.chip import ChipLatency
 
-    assert V.case(V.two_depth("streamed_lif"), max_neurons=1).report.results["ir-tiling"].status == ESTABLISHED
+    assert V.case(V.two_depth("streamed_lif"), max_neurons=2).report.results["ir-tiling"].status == ESTABLISHED
     monkeypatch.setattr(ChipLatency, "_align_shiftable_cores", lambda self, current: current)
-    _failed(V.case(V.two_depth("streamed_lif"), max_neurons=1), "timing_derivation")
+    _failed(V.case(V.two_depth("streamed_lif"), max_neurons=2), "timing_derivation")
 
 
 # ── the compaction the identity builder applies (soundness MJ1) ─────────────────────────────────────────────────
 
 @pytest.mark.parametrize("semantics", ("streamed_lif", "windowed_lif", "synchronized_lif"))
 def test_a_tile_whose_compaction_drops_a_live_row(semantics):
-    """M2: one tile of C drops its live a0 row at compaction, the unbounded C keeps it."""
+    """M2: one tile of C drops its live a0 row at compaction, the unbounded C keeps it. [U-TGAUGE5] Under the
+    streamed run (a per-cycle cascade) a0 is read at two depths, which the window rule refuses by name."""
     vehicle = V.two_depth(semantics)
     c = vehicle[1]().perceptron_of["C"]
     case = V.case(vehicle, max_neurons=1, mutate=lambda ir, u: V.drop_live_row(ir, c))
-    assert case.mismatches > 0
+    if semantics in TIMED:
+        assert case.refused is not None, case.refused
+    else:
+        assert case.mismatches > 0
     _failed(case, "fan_in")
 
 

@@ -59,8 +59,10 @@ def test_the_judged_chip_block_states_the_resolved_class_and_each_core_type_s_de
     platform = driver.declared_platform({}, ROW, None, 1)
     block = driver.chip_block({}, ROW, 12, resolved=platform)
     assert block["faithfulness"]["class"] == platform["target_faithfulness_class"]
+    # [U-CHIPKEYS] the build's lane-free program departs from NeuRRAM's stated ReLU in its neuron (on-chip class L)
     assert block["faithfulness"]["named"] == [
         "activation_bits declared (static core type, bundle neurram)",
+        "onchip_arithmetic declared (static core type, bundle neurram)",
         "activation_bits declared (operand core type, bundle sram_cim_macro)"]
     assert block["weight_bits"] == int(platform["weight_bits"])
 

@@ -13,6 +13,7 @@ from dataclasses import replace
 from typing import Any, List, Optional, Tuple
 
 from mimarsinan.chip_simulation.cost_extraction import save_cost_record
+from mimarsinan.chip_simulation.stage_timesteps import sealed_program_steps
 from mimarsinan.deployment_record.build.builder import DeploymentRecordBuilder
 from mimarsinan.deployment_record.build.from_simulators import (
     depth_from_sanafe,
@@ -30,25 +31,22 @@ from mimarsinan.deployment_record.schema import (
     BoundaryTrafficRecord,
     CertificateRecord,
     PlacementRecord,
-    Provenance,
     ScheduleRecord,
     TrafficRecord,
     UtilizationRecord,
     save_deployment_record,
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-from mimarsinan.pipelining.core.steps.pipeline_step import (
-    METRIC_CARRIED,
-    PipelineStep,
+from mimarsinan.pipelining.core.steps.pipeline_step import METRIC_CARRIED, PipelineStep
+from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
+    BOUNDARY_REPORT,
+    BoundaryQuantizationStep,
 )
-from mimarsinan.pipelining.pipeline_steps.verification.fidelity_emission import (
-    emit_run_fidelity,
-)
-from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_adaptation import (
-    attach_adaptation_fragments,
-)
+from mimarsinan.pipelining.pipeline_steps.verification.fidelity_emission import emit_run_fidelity
+from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_adaptation import attach_adaptation_fragments
 from mimarsinan.pipelining.pipeline_steps.verification.odin import sample_split
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_assembly import (
+    _prov,
     cross_check_sealed_sources,
     energy_with_event_census,
     floorplan_derivation,
@@ -63,10 +61,6 @@ from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_assembl
 )
 
 STEP_NAME = "Deployment Record"
-
-
-def _prov(kind: str, producer: str, step: str, detail: str = "") -> Provenance:
-    return Provenance(kind=kind, producer=producer, step=step, detail=detail)
 
 
 class DeploymentRecordStep(PipelineStep):
@@ -93,6 +87,7 @@ class DeploymentRecordStep(PipelineStep):
         if plan.event_census_samples > 0:  # [U-S] the opt-in census, sealed as energy.synaptic_events
             requires.append("event_census")
         requires += sample_split.device_sample_entries(plan)  # [U-HV] each ODIN step's sample read
+        requires += [BOUNDARY_REPORT] if BoundaryQuantizationStep.applies_to(plan) else []  # [U-BRANGE F-2] its census
         super().__init__(requires, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
         self.metric = None
 
@@ -162,8 +157,10 @@ class DeploymentRecordStep(PipelineStep):
             s_global=s_global,
             depth=depth,
             per_segment=per_segment,
-            host_ops_s=host_ops_wall_s(schedule),
+            host_ops_s_raw_total=host_ops_wall_s(schedule),
             host_ops_s_per_pass=host_ops_wall_s_per_pass(schedule),
+            unsimulated_steps=None if per_segment else sealed_program_steps(
+                schedule.segments(), s_global, plan.window_firing),
         )
         traffic: Optional[TrafficRecord] = None
         if boundaries is not None or noc is not None:
@@ -245,6 +242,9 @@ class DeploymentRecordStep(PipelineStep):
             params_programmed=int(hcm["weight_programming"]["params_programmed"]),
         )
         sample_split.attach_device_samples(builder, self, plan, STEP_NAME)  # [U-HV] the ODIN steps' sample reads
+        if BOUNDARY_REPORT in self.requires:  # [U-BRANGE F-2] the boundary range rule and its clamp census
+            builder.attach("boundary_ranges", dict(self.get_entry(BOUNDARY_REPORT)),
+                           _prov("measured", "the boundary range rule and its clamp census", "Boundary Quantization"))
 
         record = builder.seal(view, resolved_step_names(self.pipeline))
         path = save_deployment_record(record, self.pipeline.working_directory)
@@ -297,3 +297,4 @@ class DeploymentRecordStep(PipelineStep):
             return None
         return tuple(
             BoundaryTrafficRecord.from_dict(b) for b in boundaries)
+

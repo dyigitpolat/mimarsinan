@@ -6,10 +6,12 @@ from typing import Any
 
 import torch
 
-from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
+from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer, LIF_EXACT_QAT_THETA_FLOOR
 
 _LIF_EXACT_QAT_ATTR = "_mbh_lif_exact_qat"
 _LIF_ENTRY_SNAP_ATTR = "_lif_entry_input_quantizer_installed"
+#: [U-LIF P1] the per-cycle charge a perceptron's theta was installed to carry at one spike per cycle.
+_LIF_CHARGE_BOUND_ATTR = "lif_per_cycle_charge_bound"
 
 # The rate ladders whose decorators the LIF spiking node subsumes (see
 # ``AdaptationManager.update_activation``) — behaviorally inert in LIF mode,
@@ -117,8 +119,8 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
     genuine forward — the A2 square's deploy side, so the QAT is measured and
     gated on what actually ships."""
     # Lazy: chip_simulation/spiking pull import cycles at init (house pattern).
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
     from mimarsinan.chip_simulation.spiking_semantics import (
-        lif_execution_synchronized,
         lif_membrane_init,
         lif_per_hop_retiming_enabled,
         spike_phase_dither_enabled,
@@ -139,6 +141,7 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
     thresholding = str(pipeline_config.get("thresholding_mode", "<="))
     firing = str(pipeline_config.get("firing_mode", "Default"))
     device = next(clone.parameters()).device
+    pin_lif_theta_floors(clone)  # [U-LIF P1] the swap reads the theta the quantized network reads
     for perceptron in clone.get_perceptrons():
         perceptron.activation = LIFActivation(
             T=T,
@@ -149,7 +152,7 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
         ).to(device)
     retime = lif_per_hop_retiming_enabled(pipeline_config)
     dither = spike_phase_dither_enabled(pipeline_config)
-    sync = lif_execution_synchronized(pipeline_config)
+    sync = resolve_spiking_point(pipeline_config).integrates_then_emits
     soma_law = SomaLaw.resolve(pipeline_config)
 
     def _deployed_forward(x):
@@ -159,6 +162,45 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
         )
 
     return _deployed_forward
+
+
+def record_lif_charge_bounds(model) -> int:
+    """[U-LIF P1] Record each in-loop theta as its floor: the threshold the calibration quantile of its per-cycle charge
+    set (the Activation Analysis step's), so no tuner move lets a neuron's charge outrun its emission at one spike per
+    cycle. Host-side encoders fire no cycles and are skipped; idempotent (the first install's bound is kept)."""
+    recorded = 0
+    for perceptron in model.get_perceptrons():
+        theta = perceptron.activation_scale
+        if getattr(perceptron, "is_encoding_layer", False) or not torch.is_tensor(theta):
+            continue
+        if lif_charge_bound(perceptron) is None:
+            setattr(perceptron, _LIF_CHARGE_BOUND_ATTR, theta.detach().clone())
+            recorded += 1
+    return recorded
+
+
+def lif_charge_bound(perceptron):
+    """The perceptron's recorded per-cycle charge bound (a theta-shaped tensor), or None."""
+    return getattr(perceptron, _LIF_CHARGE_BOUND_ATTR, None)
+
+
+def pin_lif_theta_floors(model, floor: float = LIF_EXACT_QAT_THETA_FLOOR) -> int:
+    """Pin every theta at its floor (the kernel's positivity floor and the perceptron's per-cycle charge bound) in
+    place, so the nodes built from it run the theta the quantized network read. Returns the perceptrons pinned."""
+    pinned = 0
+    for perceptron in model.get_perceptrons():
+        theta = perceptron.activation_scale
+        if not torch.is_tensor(theta):
+            continue
+        low = theta.detach().clamp(min=floor)
+        bound = lif_charge_bound(perceptron)
+        if bound is not None:
+            low = torch.maximum(low, bound.to(device=low.device, dtype=low.dtype))
+        if not torch.equal(low, theta.detach()):
+            with torch.no_grad():
+                theta.copy_(low)
+            pinned += 1
+    return pinned
 
 
 def install_lif_input_quantizer(perceptron, simulation_steps: int) -> bool:
@@ -178,14 +220,14 @@ def install_lif_input_quantizer(perceptron, simulation_steps: int) -> bool:
 def deployed_negative_boundary_seam(model, trainer: Any, pipeline_config):
     """[U-SC2 A-2] The negative-value boundary policy the gauge seam applies, bound to the calibration batch Soft Core
     Mapping reads (two validation batches) and the run's switches (``negative_value_shift``, the input data scale, the
-    resolved soma point Soft Core Mapping's LIF calibration walk carries).
+    resolved point Soft Core Mapping's calibration walk is built from, [U-LIF2 r2] the run's record).
 
     ``trainer`` is a trainer or a zero-argument factory of one, called only when the graph has a boundary the policy
     could lift. None (nothing read, nothing changed) without a trainer or such a boundary, or on a signed boundary
     contract: the policy guards the unsigned [0, 1] encode clamp, as Soft Core Mapping decides. The calibration read
     preserves the run's random state and the trainer's validation cursor."""
     # Lazy: pipelining (the plan) and the seam module import back into tuning at init (house pattern).
-    from mimarsinan.chip_simulation.soma_law import SomaLaw
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
     from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
     from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -200,6 +242,22 @@ def deployed_negative_boundary_seam(model, trainer: Any, pipeline_config):
         return None
     if not negative_boundary_candidates(model):
         return None
+    calibration_x = read_calibration_batch(model, trainer)
+    if calibration_x is None:
+        return None
+    return NegativeBoundarySeam(
+        calibration_x=calibration_x,
+        simulation_steps=int(pipeline_config["simulation_steps"]),
+        input_data_scale=float(ResolvedWorkloadProfile.from_config(pipeline_config).input_data_scale),
+        point=resolve_spiking_point(pipeline_config),
+        shift_enabled=bool(pipeline_config.get("negative_value_shift", True)),
+    )
+
+
+def read_calibration_batch(model, trainer: Any):
+    """The calibration batch Soft Core Mapping reads (two validation batches) on the model's device, or None when the
+    trainer serves none. ``trainer`` is a trainer or a zero-argument factory of one; the read preserves the run's random
+    state and the trainer's validation cursor."""
     with torch.random.fork_rng(devices=[]):
         source: Any = trainer() if callable(trainer) and not hasattr(trainer, "iter_validation_batches") else trainer
         cursor = getattr(source, "_gpu_val_cursor", None)
@@ -208,66 +266,17 @@ def deployed_negative_boundary_seam(model, trainer: Any, pipeline_config):
             source._gpu_val_cursor = cursor
     if not batches:
         return None
-    device = next(model.parameters()).device
-    return NegativeBoundarySeam(
-        calibration_x=torch.cat(batches, dim=0).to(device),
-        simulation_steps=int(pipeline_config["simulation_steps"]),
-        input_data_scale=float(ResolvedWorkloadProfile.from_config(pipeline_config).input_data_scale),
-        soma_law=SomaLaw.resolve(pipeline_config),
-        shift_enabled=bool(pipeline_config.get("negative_value_shift", True)),
-    )
+    return torch.cat(batches, dim=0).to(next(model.parameters()).device)
 
 
 def install_lif_entry_input_quantizers(model, pipeline_config, *, trainer=None) -> int:
-    """Install the deployed entry round at the AQ install seam so the exact-QAT
-    ladder trains through it (§4.3). Placement decides the carriers: under
-    ``subsume`` the encoders themselves (they deploy host-side with the
-    quantizer riding along; their consumers read grid-aligned staircase
-    outputs, so the boundary round is idempotent there); under ``offload`` the
-    encoding marks are cleared and every SEGMENT-ENTRY core reads a host float
-    through the wire-encode round — unmodeled, it read 36 pts under NF on the
-    offloaded ViT. Idempotent; returns installs (0 when the arm is off)."""
+    """[U-LIF D1, D2] Install the deployed host-to-chip entry encode at the AQ install seam so the exact-QAT ladder
+    trains through it (§4.3): on every segment entry a host value feeds, whatever the placement, at a gauge covering the
+    calibration quantile of its entry values; a host-side (subsumed) encoder takes no input grid. Idempotent; returns
+    installs (0 when the arm is off). The mechanism: ``lif_entry_encode``."""
     if not lif_exact_qat_active(pipeline_config):
         return 0
-    # Lazy: torch_mapping/spiking pull chip_simulation (import cycle at init).
-    from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
-    from mimarsinan.spiking.wire_gauge_seam import establish_deployed_wire_gauge
-    from mimarsinan.torch_mapping.encoding_layers import (
-        encoder_deploys_as_staircase_hop,
-    )
+    # Lazy: the entry-encode module pulls spiking and torch_mapping (the chip_simulation<->tuning init cycle).
+    from mimarsinan.tuning.orchestration.lif_entry_encode import install_deployed_entry_encode
 
-    placement = str(pipeline_config.get("encoding_layer_placement", "subsume"))
-    if encoder_deploys_as_staircase_hop(placement):
-        targets = [
-            p for p in model.get_perceptrons()
-            if getattr(p, "is_encoding_layer", False)
-        ]
-    else:
-        from mimarsinan.torch_mapping.encoding_layers import (
-            segment_entry_perceptrons,
-        )
-
-        targets = segment_entry_perceptrons(model.get_mapper_repr())
-    installed = 0
-    for perceptron in targets:
-        if install_lif_input_quantizer(
-            perceptron, int(pipeline_config["simulation_steps"])
-        ):
-            installed += 1
-    # [U-SC S-1] the first stage that walks the deployed composition (the D-hat
-    # gauge reads it from the first rung): establish the gauge on EVERY
-    # wire-currency graph, whatever the placement, so the exact-QAT trains and
-    # measures the SAME armed composition every later seam (WQ / SCM) re-derives.
-    # The scales the quantizers read are written in place, so they follow.
-    if getattr(model, "get_mapper_repr", lambda: None)() is not None:
-        # [U-SC2 A-2] with the negative-value boundary policy, so the D-hat reads the boundary SCM deploys; decided
-        # after the entry carriers above exist (review M1): an entry carrying the trained quantizer is the QAT's own
-        # clamp, outside the policy's scope as at Soft Core Mapping, and its lift under offload is the opt-in's.
-        establish_deployed_wire_gauge(
-            model,
-            input_data_scale=ResolvedWorkloadProfile.from_config(
-                pipeline_config
-            ).input_data_scale,
-            negative_boundary=deployed_negative_boundary_seam(model, trainer, pipeline_config),
-        )
-    return installed
+    return install_deployed_entry_encode(model, pipeline_config, trainer=trainer)

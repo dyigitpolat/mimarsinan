@@ -143,7 +143,6 @@ class TestPackedProgramMatchesIdentity:
 def _aq_armed_flow_and_ir(model, input_shape, bits=8):
     """Mirror the AQ pipeline: convert -> fuse -> install+calibrate -> IR-map."""
     from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
-        MIN_BOUNDARY_SCALE,
         calibrate_boundary_scales,
         install_boundary_quantizers,
     )
@@ -164,7 +163,7 @@ def _aq_armed_flow_and_ir(model, input_shape, bits=8):
     )
     # Calibration must land REAL ranges: a floor scale means an entry seam
     # was never exercised (the conv functional-path regression).
-    assert all(q.grid.scale > MIN_BOUNDARY_SCALE for q in quantizers)
+    assert all(q.grid.scale > 0.0 for q in quantizers)  # [U-BRANGE2] no floor: every scale the rule's, positive
     repr_ = flow.get_mapper_repr()
     repr_.assign_perceptron_indices()
     ir = IRMapping(

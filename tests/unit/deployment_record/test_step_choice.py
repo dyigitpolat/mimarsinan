@@ -15,6 +15,7 @@ from mimarsinan.deployment_record.cost.absolute.step_choice import (
     cheapest_step,
     price_step,
 )
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.platform_physics import profile_from_dict
 from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.support.period_census import PassBoundaryCensus, PassCensus, PassPeriodCensus
@@ -42,18 +43,18 @@ TECH = _physics(e_program_per_byte=3.0, e_dma_per_byte=0.0, e_readout_per_byte=2
 class TestThePrice:
     def test_writes_and_carry_are_the_per_byte_constants_times_the_census(self):
         census = _census([100, 60], carry=[(0, 7)])
-        price = price_step(census, TECH, WritePolicy(batch_k=16))
+        price = price_step(census, TECH, WritePolicy(batch_k=16), static=NO_STATIC)
         assert price.write.nominal == float(Fraction(3) * 160 * 1000 / 16)
         assert price.carry.nominal == float(Fraction(2) * 7 * 1000)       # readout only: inject is priced at 0
         assert price.nominal == price.write.nominal + price.carry.nominal
 
     def test_a_resident_census_prices_zero(self):
-        price = price_step(_census([0]), TECH, WritePolicy(batch_k=1))
+        price = price_step(_census([0]), TECH, WritePolicy(batch_k=1), static=NO_STATIC)
         assert (price.write.nominal, price.carry.nominal) == (0.0, 0.0)
 
     def test_a_target_without_a_commit_energy_refuses_by_name(self):
         with pytest.raises(StepChoiceError) as info:
-            price_step(_census([10, 10]), _physics(e_readout_per_byte=1.0), WritePolicy(batch_k=1))
+            price_step(_census([10, 10]), _physics(e_readout_per_byte=1.0), WritePolicy(batch_k=1), static=NO_STATIC)
         assert isinstance(info.value, ToolchainRefusal) and "commit energy" in str(info.value)
 
     def test_carried_bytes_without_their_constants_refuse_by_name(self):
@@ -69,14 +70,14 @@ class TestTheChoice:
     def test_the_least_writes_plus_carry_wins(self):
         steps = [_census([100, 100], carry=[(0, 1)]), _census([60, 60], carry=[(0, 40)]), _census([80, 80])]
         # K = 1: writes (600, 360, 480) x 1e3 plus carry (2, 80, 0) x 1e3: the middle step
-        assert cheapest_step(steps, TECH, WritePolicy(batch_k=1)) == 1
+        assert cheapest_step(steps, TECH, WritePolicy(batch_k=1), static=NO_STATIC) == 1
         # K = 64: writes shrink by 64, carry does not: the least carry wins
-        assert cheapest_step(steps, TECH, WritePolicy(batch_k=64)) == 2
-        assert cheapest_step(steps[:2], TECH, WritePolicy(batch_k=64)) == 0
+        assert cheapest_step(steps, TECH, WritePolicy(batch_k=64), static=NO_STATIC) == 2
+        assert cheapest_step(steps[:2], TECH, WritePolicy(batch_k=64), static=NO_STATIC) == 0
 
     def test_ties_go_to_the_first_step(self):
         steps = [_census([50]), _census([50]), _census([10, 40])]
-        assert cheapest_step(steps, TECH, WritePolicy(batch_k=1)) == 0
+        assert cheapest_step(steps, TECH, WritePolicy(batch_k=1), static=NO_STATIC) == 0
 
     def test_steps_of_equal_exact_price_tie_although_their_float_prices_differ(self):
         """An E85 fixture witness (R18 R-P (4, 4, 4, 2) at C 174, K 1, the COMPASS reference row, c_byte = e_byte / 2):
@@ -87,10 +88,10 @@ class TestTheChoice:
         first = _census([150 * tb, 151 * tb], carry=[(0, 393216 // 2)])
         later = _census([151 * tb, 152 * tb], carry=[(0, 360448 // 2)])
         exact = [Fraction(e) * 301 * tb + Fraction(e) / 2 * 393216, Fraction(e) * 303 * tb + Fraction(e) / 2 * 360448]
-        prices = [price_step(c, tech, WritePolicy(batch_k=1)).nominal for c in (first, later)]
+        prices = [price_step(c, tech, WritePolicy(batch_k=1), static=NO_STATIC).nominal for c in (first, later)]
         assert exact[0] == exact[1] and prices[0] != prices[1]
-        assert cheapest_step([first, later], tech, WritePolicy(batch_k=1)) == 0
-        assert cheapest_step([later, first], tech, WritePolicy(batch_k=1)) == 0
+        assert cheapest_step([first, later], tech, WritePolicy(batch_k=1), static=NO_STATIC) == 0
+        assert cheapest_step([later, first], tech, WritePolicy(batch_k=1), static=NO_STATIC) == 0
 
     def test_a_corner_selects_the_band_end(self):
         physics = profile_from_dict({
@@ -104,9 +105,9 @@ class TestTheChoice:
         })
         steps = [_census([100], carry=()), _census([20, 20], carry=[(0, 10)])]
         # writes 100 vs 40; carry 0 vs 10 x (0.1 | 1 | 10)
-        assert cheapest_step(steps, physics, WritePolicy(batch_k=1), corner="low") == 1
-        assert cheapest_step(steps, physics, WritePolicy(batch_k=1), corner="high") == 0
+        assert cheapest_step(steps, physics, WritePolicy(batch_k=1), corner="low", static=NO_STATIC) == 1
+        assert cheapest_step(steps, physics, WritePolicy(batch_k=1), corner="high", static=NO_STATIC) == 0
 
     def test_no_step_refuses_by_name(self):
         with pytest.raises(StepChoiceError):
-            cheapest_step([], TECH, WritePolicy(batch_k=1))
+            cheapest_step([], TECH, WritePolicy(batch_k=1), static=NO_STATIC)

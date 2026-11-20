@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from mimarsinan.deployment_record.platform_physics import vocabulary
+from mimarsinan.deployment_record.platform_physics.constants import spec_for
 from mimarsinan.deployment_record.platform_physics.hosts.description import (
     HOST_IDENTITY_FIELD, REQUIRED_HOST_ROWS, HostBlockMixError, HostDescriptionError, HostModeError,
     HostModeIncompleteError, host_description, host_description_block, host_descriptions, select_mode,
@@ -164,11 +165,13 @@ class TestTheHostBlock:
                                ("host_macs_per_s", RATE)):
             assert rows[key][1] == vocabulary.HOST and rows[key][2] == dimension, key
 
-    def test_an_identified_host_replaces_the_profiles_host_rows_whole(self):
+    def test_an_identified_host_brings_the_host_rows_whole(self):
+        """[U-HOST] No profile declares a host row (the bare profiles' host_compute_rate rows are withdrawn): the
+        identified host's block brings every host row, and the chip's own rows stay."""
         shipped = resolve_platform_physics("study_compass", None)
-        assert shipped.has("host_compute_rate")
+        assert not any(spec_for(key).group == vocabulary.HOST for key in shipped.constants)
         edge = resolve_platform_physics("study_compass", merge_override_blocks({"host": host_description_block(NAME)}))
-        assert not edge.has("host_compute_rate")
+        assert not edge.has("host_compute_rate") and set(REQUIRED_HOST_ROWS) <= set(edge.constants)
         assert edge.band("p_host_idle").nominal == pytest.approx(5.685)
         assert edge.has("e_dma_per_byte")  # the chip's own rows stay
 
@@ -209,14 +212,16 @@ class TestOneHostPerDeployment:
         with pytest.raises(HostBlockMixError, match="another_host"):
             resolve_platform_physics("study_compass", mixed)
 
-    def test_the_server_host_alone_stays_a_resolvable_sensitivity(self):
+    def test_the_server_host_alone_refuses_by_name(self):
+        """[U-HOST] The server host is no longer a resolvable sensitivity: its rows name no identified host
+        description (measured on the development machine), so they are refused by name where they are loaded."""
         server = {"t_host_op_overhead": dict(SERVER_ROW),
                   "host_macs_per_s": {"nominal": 22.0, "unit": "G/s", "evidence_kind": "measured", "note": "n"},
                   "p_host": {"low": 4.98, "nominal": 37.34, "high": 280.0, "unit": "W", "evidence_kind": "published",
                              "citation": "a band over two hosts"}}
-        physics = resolve_platform_physics("study_compass", merge_override_blocks({"host": server}))
-        assert physics.has("host_compute_rate") and physics.band("p_host").nominal == pytest.approx(37.34)
-        assert not physics.has("p_host_idle")
+        with pytest.raises(HostBlockMixError, match="identified host description") as refused:
+            resolve_platform_physics("study_compass", merge_override_blocks({"host": server}))
+        assert all(key in str(refused.value) for key in server)
 
 
 #: [targeted M3] The rows whose source departs from the owner's rule (constants from published documentation or
@@ -256,16 +261,15 @@ class TestTheDeparturesAreNamed:
         for word in ("preprint", "Super", SUPER_15W_CPU_MHZ, SUPER_DEFAULT, "k2026pagoda", "departure"):
             assert word in prose, word
 
-    def test_a_departure_naming_no_row_refuses_by_name(self, tmp_path, monkeypatch):
-        import mimarsinan.deployment_record.platform_physics.hosts.description as described
+    def test_a_departure_naming_no_row_refuses_by_name(self, tmp_path):
+        """[U-HOST2] The edited copy enters through the registry's contract, whose judge refuses it by name."""
+        from unit.deployment_record.registered_hosts import registered_copy
 
-        data = json.loads((HOSTS / f"{NAME}.json").read_text())
-        data["departures"]["no_such_row"] = "a departure of a row the description does not declare"
-        (tmp_path / f"{NAME}.json").write_text(json.dumps(data))
-        (tmp_path / data["description_file"]).write_text((HOSTS / data["description_file"]).read_text())
-        monkeypatch.setattr(described, "_DIR", tmp_path)
+        def edit(data):
+            data["departures"]["no_such_row"] = "a departure of a row the description does not declare"
         with pytest.raises(HostDescriptionError, match="no_such_row"):
-            host_description(NAME)
+            with registered_copy(tmp_path, NAME, edit):
+                pass
 
 
 def test_the_description_file_is_valid_json_with_one_format():

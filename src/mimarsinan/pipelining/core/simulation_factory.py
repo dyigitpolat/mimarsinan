@@ -11,6 +11,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.deployed_host import borrowed_host_placement, deployed_host_device, held_on
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
+from mimarsinan.chip_simulation.hybrid_run.output_decode import DeployedValueReadout, executor_output_values
 from mimarsinan.chip_simulation.membrane_export import deployed_membrane_readout_enabled
 from mimarsinan.chip_simulation.recording.spike_recorder import compare_records, format_first_diff
 from mimarsinan.chip_simulation.spiking_semantics import (
@@ -136,6 +137,7 @@ def build_spiking_hybrid_flow(
         membrane_integer_lattice=bool(plan.weight_quantization),
         pass_transfer=run_pass_transfer(cfg),
         soma_law=contract.soma_law(),
+        spiking_point=contract.spiking_point(),
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)
@@ -215,17 +217,17 @@ def run_membrane_readout_diagnostic(
     with torch.no_grad(), borrowed_host_placement(model, hybrid_mapping):
         counts_logits = counts_flow(x)
         membrane_logits = diagnostic_flow(x)
-    delta = membrane_logits - counts_logits
+    delta = membrane_logits - counts_logits  # the correction, in count units (m_T / theta per output)
+    # [U-TGAUGE2] the two reads' classes in one unit, the value domain's (the program's output gauge decodes both)
+    counts_classes = executor_output_values(counts_flow, counts_logits).argmax(dim=1)
+    membrane_classes = executor_output_values(diagnostic_flow, membrane_logits).argmax(dim=1)
     deployed_decode = deployed_membrane_decode_enabled(pipeline)
     stats: dict[str, Any] = {
         "eligible_nodes": len(final_only_output_nodes(hybrid_mapping)),
         "samples": int(x.shape[0]),
         "engaged": bool(delta.abs().max().item() > 0.0),
         "deployed_decode": deployed_decode,
-        "pred_flips": int(
-            (membrane_logits.argmax(dim=1) != counts_logits.argmax(dim=1))
-            .sum().item()
-        ),
+        "pred_flips": int((membrane_classes != counts_classes).sum().item()),
         "max_abs_correction": float(delta.abs().max().item()),
     }
     gate_state = (
@@ -458,7 +460,9 @@ def _run_spiking_census(
     if announce_census:
         announce(pipeline, arithmetic)
     with borrowed_placement(arithmetic, model, hybrid_mapping):
-        flow = build_deployed_metric_flow(pipeline, hybrid_mapping, model=model, device=arithmetic.device)
+        # [U-TGAUGE2] the census reads the deployed readout: the flow's final read decoded into the value domain
+        flow = DeployedValueReadout(build_deployed_metric_flow(pipeline, hybrid_mapping, model=model,
+                                                               device=arithmetic.device))
         return float(run_hcm_spiking_test(
             pipeline, flow, device=arithmetic.device, max_batch_cap=max_batch_cap, retry_on_oom=retry_on_oom,
         ))

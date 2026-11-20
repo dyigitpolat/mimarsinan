@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import signal
@@ -156,20 +155,17 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
             current_step = sn
         steps.append(persisted_step_view(sn, sd, status=status))
 
-    config = (info or {}).get("config_summary")
-    config_path = os.path.join(managed.working_dir, "_RUN_CONFIG", "config.json")
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, encoding="utf-8") as f:
-                config = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            pass
+    from mimarsinan.config_schema.display_view import build_pipeline_config_view, load_saved_config_from_run_dir
+
+    saved = load_saved_config_from_run_dir(managed.working_dir)
+    config = saved if saved is not None else (info or {}).get("config_summary")
 
     config_view = None
     if config:
         with best_effort(f"build config_view for run {run_id}", logger=logger):
-            from mimarsinan.config_schema.display_view import build_config_display_view
-            config_view = build_config_display_view(config, saved_config=config)
+            # [U-LIF2 r3] the saved document at the point its run resolved; a summary alone as a document
+            config_view = build_pipeline_config_view(config, saved_config=None if saved is not None else config,
+                                                     working_dir=managed.working_dir)
     groups = semantic_groups_from_config_view(config_view)
     for s in steps:
         s["semantic_group"] = groups.get(s["name"])

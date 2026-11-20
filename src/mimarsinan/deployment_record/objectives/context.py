@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Any, Mapping, Optional
 
 import mimarsinan.mapping.platform.target_bundles as target_bundles
+from mimarsinan.chip_simulation.stage_timesteps import neuron_cycles_per_window
 from mimarsinan.deployment_record.cost.absolute.validity import declared_geometry
 from mimarsinan.deployment_record.cost.compute_time import busiest_core_events, prices_per_event
 from mimarsinan.deployment_record.objectives.host_link import host_link_context
@@ -28,6 +29,7 @@ from mimarsinan.deployment_record.quantities.value_domain import (
 )
 from mimarsinan.deployment_record.platform_physics.converter import declared_adc_bits
 from mimarsinan.deployment_record.quantities.compute_technology import compute_split
+from mimarsinan.deployment_record.quantities.planes.loads import CANDIDATE_NO_ENTRIES, load_inputs
 from mimarsinan.deployment_record.quantities.write_law import plane_writes
 from mimarsinan.mapping.platform.weight_cells import cell_factors
 
@@ -47,6 +49,7 @@ def candidate_context_from_platform(
     lane_ops: Optional[Mapping[str, int]] = None,
     lane_walked: bool = False,
     host_boundary: Optional[Any] = None,
+    window_firing: Optional[str] = None,
 ) -> CandidateQuantityContext:
     """The declarations a candidate's platform carries, as quantity context.
 
@@ -63,6 +66,7 @@ def candidate_context_from_platform(
     (``mapping.lanes.output_stage.planned_lane_ops``; absent without a model). ``lane_walked``: the layout walk
     applied the lane plan (``lanes.shape_walk``), so the lane work is the walk's fusion count and the stage says so.
     [U-J] ``host_boundary``: the walk's host-chip boundary census, sized where the physics prices the link.
+    [U-LIF2 W12] ``window_firing``: the run's resolved value, which sets the neuron cycles per window.
     """
     carry, carry_refusal = onchip_carry(carry, pcfg)  # [U-F4] each carried value held as the chip declares it
     context = _spiking_rule_context(
@@ -73,12 +77,17 @@ def candidate_context_from_platform(
     context = replace(context, core_geometry=declared_geometry(list(pcfg.get("cores") or ())),
                       writes=plane_writes(passes, pcfg, weight_bits=pcfg.get("weight_bits"),
                                           timesteps=context.timesteps, label="candidate", carry=carry),
+                      loads=load_inputs(passes, pcfg, weight_bits=pcfg.get("weight_bits"), label="candidate",
+                                        entries_absent=CANDIDATE_NO_ENTRIES),  # [U-ENERGY] built when priced
                       pricing_refusal=target_bundles.absolute_pricing_refusal(pcfg),
                       compute=compute_split(pcfg, passes), readout_bits=declared_adc_bits(pcfg))
     context = _lane_context(context, pcfg, lane_ops, lane_walked)
     context = replace(context, carry_onchip_bytes=None if carry is None else carry.get(ONCHIP_CENSUS),
                       carry_onchip_refusal=carry_refusal, carry_buffer_capacity_bytes=declared_buffer_bytes(pcfg))
     context = host_link_context(context, pcfg, host_boundary, passes)
+    if context.timesteps is not None:
+        context = replace(context, neuron_cycles_per_window=int(neuron_cycles_per_window(  # [U-LIF2 r6] no arrivals:
+            context.timesteps, window_firing)))  # the plane states no per-core wiring and no neurons_used to price
     if not names_value_domain(pcfg):
         return _event_census(context, pcfg, passes)
     refuse_spiking_activity(pcfg)
@@ -91,7 +100,7 @@ def candidate_context_from_platform(
         withheld=tuple(sorted(withheld.items())),
     )
     return _event_census(replace(
-        context, timesteps=1, activity_factor=None, carried_raster_bytes=None,
+        context, timesteps=1, neuron_cycles_per_window=1, activity_factor=None, carried_raster_bytes=None,
         latency_steps=rule.latency_steps, mac_events=rule.mac_events, carry_out_bytes=rule.carry_out_bytes,
         carry_in_bytes=rule.carry_in_bytes, value_bits=value_bits(pcfg), value_rule=rule,
         carry_onchip_bytes=sized.get(ONCHIP_CARRY),
@@ -211,6 +220,8 @@ def _spiking_rule_context(
             None if programming is None or programming.reprogrammed_bytes is None
             else int(programming.reprogrammed_bytes)
         ),
+        output_neurons=getattr(programming, "output_neurons", None),  # [U-ENERGY] class 3's census
+        local_mem_read_elements=getattr(programming, "local_mem_read_elements", None),
         reprogram_passes=(
             None if programming is None else int(programming.reprogram_passes)
         ),

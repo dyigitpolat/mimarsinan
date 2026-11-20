@@ -40,10 +40,13 @@ class LatencyDecomposition:
     programming_s: Optional[ModeledValue]
     compute_steps: int
     compute_sim_time_s: Optional[float]
-    # host_ops_s is the raw measured total over the whole run; _per_pass is the
-    # same measurement on the per-sample axis compute_sim_time_s lives on (a
-    # sample-0 census), so the two are only ever summed after normalization.
-    host_ops_s: Optional[float]
+    # [U-HOST] Both are the development machine's measured host wall, diagnostics that no priced term reads (a priced
+    # host is an identified host description's rows). [U-HOST2] host_ops_s_raw_total is the raw total over the whole
+    # run (stage_timing.RAW_TOTAL_LABEL), named apart from the per-inference host_ops_s quantity (format version 2;
+    # version 1 sealed it as host_ops_s, record.VERSION_1_RULE); host_ops_s_per_pass is the one per-inference host
+    # wall (stage_timing.host_wall, its PER_INFERENCE_DEFINITION) as sealed. A reader takes the wall through host_wall
+    # on the schedule, never these.
+    host_ops_s_raw_total: Optional[float]
     host_ops_s_per_pass: Optional[float]
     sync_s: Optional[ModeledValue]
     note: str

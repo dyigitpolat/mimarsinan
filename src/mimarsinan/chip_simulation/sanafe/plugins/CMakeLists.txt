@@ -57,12 +57,28 @@ if(NOT EXISTS "${SANAFE_SRC}/pipeline.hpp")
         "-DSANAFE_SRC=/path/to/sana_fe/src.")
 endif()
 
+# The timing somas decide through the one timing decision they share with
+# nevresim's quantized neuron (simulator/compute_policy/timing_decision.hpp).
+# Unset means the nevresim checkout beside this source tree; the build script
+# passes the toolchain's own nevresim root (``MIMARSINAN_NEVRESIM_ROOT``).
+if(NOT DEFINED NEVRESIM_INCLUDE)
+    get_filename_component(NEVRESIM_INCLUDE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../nevresim/include" ABSOLUTE)
+endif()
+
+if(NOT EXISTS "${NEVRESIM_INCLUDE}/simulator/compute_policy/timing_decision.hpp")
+    message(FATAL_ERROR
+        "NEVRESIM_INCLUDE (${NEVRESIM_INCLUDE}) holds no "
+        "simulator/compute_policy/timing_decision.hpp: point it at the "
+        "nevresim include tree the toolchain compiles against.")
+endif()
+
 add_compile_options(-Wall -Wextra -fPIC)
 
 foreach(plugin_target IN ITEMS mimarsinan_dendrite mimarsinan_soma
         mimarsinan_ttfs_continuous_soma mimarsinan_ttfs_quantized_soma
         mimarsinan_ttfs_cycle_soma mimarsinan_ttfs_cascade_soma)
     add_library(${plugin_target} SHARED "${plugin_target}.cpp")
-    target_include_directories(${plugin_target} PRIVATE "${SANAFE_SRC}")
+    target_include_directories(${plugin_target} PRIVATE "${SANAFE_SRC}" "${NEVRESIM_INCLUDE}")
     target_link_libraries(${plugin_target} PRIVATE ${CMAKE_DL_LIBS})
 endforeach()

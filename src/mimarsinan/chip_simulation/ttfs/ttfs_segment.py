@@ -1,5 +1,5 @@
 import heapq
-from typing import List, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -162,8 +162,10 @@ def _run_ttfs_segment_ordered(
     simulation_length: int = 1,
     spiking_mode: str,
     comparator_half_step: bool = False,
+    lattice_out: Optional[List[Optional[Tuple[np.ndarray, np.ndarray]]]] = None,
 ) -> tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
-    """Execute TTFS cores in dependency order; propagate activations between cores."""
+    """Execute TTFS cores in dependency order; propagate activations between cores. ``lattice_out`` (one slot per
+    core) receives each core's lattice record ``(on_lattice, m)`` of this execution, the decision's own integers."""
     from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
 
     batch = input_activations.shape[0]
@@ -196,6 +198,8 @@ def _run_ttfs_segment_ordered(
             # other neuron's float membrane as a fixed function of its own terms (``float_membrane``): float dust and
             # the summation order never decide a staircase tie (t0_15; the per-axon split; co-residency; R1).
             lattice = lattice_membrane(seg, ci, input_signals[ci], s)
+            if lattice_out is not None:
+                lattice_out[ci] = lattice
             if lattice is not None and bool(lattice[0].all()):
                 v = lattice[1] / (2 * s)
             else:
@@ -252,14 +256,17 @@ def run_ttfs_segment(
     simulation_length: int,
     spiking_mode: str,
     comparator_half_step: bool = False,
+    lattice_out: Optional[List[Optional[Tuple[np.ndarray, np.ndarray]]]] = None,
 ) -> tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
-    """One execution returning ``(out, per-core buffers, per-core membrane V)``."""
+    """One execution returning ``(out, per-core buffers, per-core membrane V)``; ``lattice_out`` as
+    ``_run_ttfs_segment_ordered``."""
     return _run_ttfs_segment_ordered(
         seg,
         input_activations,
         simulation_length=simulation_length,
         spiking_mode=spiking_mode,
         comparator_half_step=comparator_half_step,
+        lattice_out=lattice_out,
     )
 
 

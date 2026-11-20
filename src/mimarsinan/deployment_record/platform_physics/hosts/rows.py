@@ -1,9 +1,14 @@
 """The HOST group of the physics vocabulary: the deployment host on the other side of the NeuralOps/ComputeOps
 boundary, and its link to the chip. Rows as ``vocabulary.ROWS`` states them: ``(key, group, dimension,
-display_unit, multiplicand, doc)``. [U-J] The edge host's rows: its idle power, its memory and the host-chip link."""
+display_unit, multiplicand, doc)``. [U-J] The edge host's rows: its idle power, its memory and the host-chip link.
+[U-HOST] Every row here is admitted only from an identified host description (``hosts.admission``), else refused by
+name: a host row prices a machine the toolchain does not run on, from its published data, never a measurement.
+[U-HOST2] Admitted means the description's own row or a declared derivation of its rows, judged on the value; [U-HOST3]
+judged against the description held under the digest it was sealed under, and printed with its declaration."""
 
 from __future__ import annotations
 
+import json
 from typing import Tuple
 
 from mimarsinan.deployment_record.units import DIMENSIONLESS, ENERGY, POWER, RATE, TIME
@@ -13,21 +18,21 @@ HOST = "host"
 _CROSSING = "carry_in_bytes | carry_out_bytes | segment_in_bytes | segment_out_bytes"
 
 HOST_ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
-    ("p_host", HOST, POWER, "W", "host_ops_s",
-     "Power drawn by the host while it executes ComputeOps. Without it, moving work "
+    ("p_host", HOST, POWER, "W", "latency_host_s",
+     "Power drawn by the host while it executes ComputeOps (over the priced host time). Without it, moving work "
      "host-side is free and `subsume` wins every comparison by disappearing."),
-    ("host_compute_rate", HOST, DIMENSIONLESS, "fraction", "host_ops_s",
-     "Speed of the deployment host relative to the machine that measured host_ops_s; "
-     "1.0 means the measuring machine is the deployment host."),
+    ("host_compute_rate", HOST, DIMENSIONLESS, "fraction", "declared, not multiplied",
+     "Speed of the deployment host relative to the development machine. [U-HOST] No priced term reads it: the "
+     "development machine's measured wall is a diagnostic (stage_timing.host_wall), never a host price."),
     ("t_host_op_overhead", HOST, TIME, "us", "compute_op_count",
      "Per-invocation wall of one host ComputeOp through the deployment's own "
      "dispatch path (segment I/O, tensor conversion) — the dominant host cost "
-     "at small op sizes; measured by scripts/calibrate_host.py through the "
-     "same StageTimer that produces the record's host_ops_s."),
+     "at small op sizes; [U-HOST] the deployment host's, from its description's published data "
+     "(scripts/calibrate_host.py measures the development machine: a diagnostic, never this row)."),
     ("host_macs_per_s", HOST, RATE, "G/s", "host_macs",
-     "Sustained forward-MAC throughput of the deployment host, for pricing host time "
-     "STATICALLY (host_macs / host_macs_per_s) when no measured wall exists — the "
-     "candidate-time host model of owner decision 3. A DIVIDING constant: corners "
+     "Sustained forward-MAC throughput of the deployment host, pricing host time "
+     "STATICALLY (host_macs / host_macs_per_s) on every plane ([U-HOST] a measured wall prices nothing) — the "
+     "host model of owner decision 3. A DIVIDING constant: corners "
      "flip so the band stays monotone."),
     # [U-J] The host idles while it waits; its memory and its link to the chip move every crossing byte.
     ("p_host_idle", HOST, POWER, "W", "e2e_latency_s",
@@ -59,3 +64,17 @@ HOST_ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Fixed latency of one host-chip transfer (a DMA's setup and round trip): every boundary a program crosses, "
      "in each direction, is one transfer."),
 )
+
+
+def declaration_statement(text: str) -> str:
+    """[U-HOST3] What a sealed ``derived_from`` declaration (``hosts.derivation``'s one form, as its JSON text) states,
+    as a derived row's printed basis opens with it: ``'derived_from: the <combine> of <factor> x <row> and ...; '``
+    (empty without a declaration; a text outside the form is printed as it stands, and the admission rule refuses it)."""
+    if not text:
+        return ""
+    try:
+        data = json.loads(text)
+        terms = " and ".join(f"{float(factor)!r} x {row}" for row, factor in sorted(dict(data["of"]).items()))
+        return f"derived_from: the {data.get('combine', 'sum')} of {terms}; "
+    except (ValueError, TypeError, KeyError):  # no JSON, no "of", or a non-mapping where one is read
+        return f"derived_from: {text}; "

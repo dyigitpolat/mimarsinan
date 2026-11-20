@@ -61,11 +61,12 @@ class TestFragmentShape:
 class TestAdditiveDiscipline:
     def test_the_field_is_last_and_defaults_to_none(self):
         # Later additive fields follow it (Wave 2 W08's ``output_stage``, U-C C-5's ``declared_departures``, U-HV's
-        # ``device_samples``), each defaulting to None.
+        # ``device_samples``, U-BRANGE's ``boundary_ranges``), each defaulting to None.
         fields = dataclasses.fields(DeploymentRecord)
         names = [f.name for f in fields]
         trailing = fields[names.index(FIELD):]
-        assert [f.name for f in trailing] == [FIELD, "output_stage", "declared_departures", "device_samples"]
+        assert [f.name for f in trailing] == [FIELD, "output_stage", "declared_departures", "device_samples",
+                                              "boundary_ranges"]
         assert all(f.default is None for f in trailing)
 
     def test_a_record_without_the_fragment_still_seals_and_round_trips(self):
@@ -84,8 +85,10 @@ class TestAdditiveDiscipline:
         assert loaded.schedule == make_full_record().schedule
 
     def test_the_format_version_did_not_move(self):
-        assert DEPLOYMENT_RECORD_FORMAT_VERSION == 1
-        assert make_full_record().to_dict()["format_version"] == 1
+        """The fragment moved no version; [composed head] format 3: U-HOST2's named host wall and U-LIF2 W7's window
+        firing and depth."""
+        assert DEPLOYMENT_RECORD_FORMAT_VERSION == 3
+        assert make_full_record().to_dict()["format_version"] == 3
 
     def test_a_record_carrying_the_fragment_round_trips_on_disk(self, tmp_path):
         record = make_full_record()

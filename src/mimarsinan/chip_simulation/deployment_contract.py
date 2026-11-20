@@ -8,6 +8,7 @@ from typing import Any
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.deployed_host import deployed_host_device
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_point import HISTORICAL_WINDOW_FIRING, SpikingPoint, stated_point
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.soma_axes import (
     PER_CYCLE_FIRING,
@@ -21,7 +22,6 @@ from mimarsinan.mapping.support.schedule.pass_cut import transfer_for
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
-    lif_execution_synchronized,
     lif_membrane_init,
     spike_phase_dither_enabled,
     ttfs_cycle_schedule,
@@ -75,7 +75,6 @@ class SpikingDeploymentContract:
     # and the window-start membrane guard (normalized threshold units).
     spike_phase_dither: bool = False
     lif_membrane_init: float = 0.0
-    lif_execution_synchronized: bool = False
     # [P3] end-to-end event-streamed LIF: no boundary normalization between
     # encode and readout; NF↔SCM holds EXACTLY (atol=0), single-program only.
     lif_streamed: bool = False
@@ -125,13 +124,34 @@ class SpikingDeploymentContract:
             comparator_half_step=bool(cfg.get("comparator_half_step", False)),
             spike_phase_dither=spike_phase_dither_enabled(cfg),
             lif_membrane_init=lif_membrane_init(cfg),
-            lif_execution_synchronized=lif_execution_synchronized(cfg),
             lif_streamed=is_streamed_lif(cfg),
             firing_granularity=resolved_firing_granularity(cfg),
             membrane_arithmetic=resolved_membrane_arithmetic(cfg),
             membrane_bits=resolved_membrane_bits(cfg),
             host_compute_device=_host_evaluator(cfg.get("device")),
         )
+
+    def spiking_point(self, *, core: Any = None) -> SpikingPoint:
+        """[U-LIF2 W5, r2] The resolved point this deployment executes: the config's (carried by the behavior), else the
+        point the contract's own fields state (a contract built directly, or pickled before the point existed): its
+        soma law and execution extensions, and the historical window firing, never the declared default."""
+        del core
+        point = getattr(self.behavior, "point", None)
+        if point is not None:
+            return point
+        view = {"spiking_mode": self.spiking_mode, "ttfs_cycle_schedule": self.ttfs_cycle_schedule,
+                "firing_mode": self.firing_mode, "thresholding_mode": self.thresholding_mode,
+                "firing_granularity": self.firing_granularity, "membrane_arithmetic": self.membrane_arithmetic,
+                "membrane_bits": self.membrane_bits, "spike_phase_dither": self.spike_phase_dither,
+                "lif_membrane_init": self.lif_membrane_init}
+        if self.lif_streamed:
+            view.update(spiking_family="lif", spiking_variant="streamed")
+        return stated_point(view, window_firing=HISTORICAL_WINDOW_FIRING)
+
+    @property
+    def lif_execution_synchronized(self) -> bool:
+        """The executors' two-window flag: the point integrates its window, then emits its count."""
+        return self.spiking_point().integrates_then_emits
 
     def soma_law(self, *, core: Any = None) -> SomaLaw:
         """The resolved per-neuron firing law this deployment executes."""
@@ -178,10 +198,7 @@ class SpikingDeploymentContract:
 
     def mode_policy(self, *, core: Any = None):
         """The behavior-carrying ``SpikingModePolicy`` for this (firing × sync × point)."""
-        return policy_for_spiking_mode(
-            self.spiking_mode, self.ttfs_cycle_schedule,
-            soma_law=self.soma_law(core=core),
-        )
+        return policy_for_spiking_mode(self.spiking_point(core=core))
 
     def boundary_config(
         self, *, cycle_accurate: bool, core: Any = None

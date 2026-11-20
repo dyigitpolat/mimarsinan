@@ -91,20 +91,16 @@ class CalibrationPipeline:
     def resolve(
         cls, config, *, synchronized: bool, distmatch_driven: bool,
     ) -> "CalibrationPipeline":
-        """Back-compat alias mapping the ``synchronized`` boolean to the
-        cascaded/inert policy, then delegating to :meth:`for_mode`."""
+        """The calibration of the config's resolved point, delegating to :meth:`for_mode` ([U-LIF2 r2] the record its
+        caller holds, never a mode named here). ``synchronized`` is the resolver protocol's argument
+        (``TtfsAdaptationPlan``), which the point already carries, as the contract's resolver reads it."""
         # Lazy: chip_simulation has a fragile import cycle; a top-level import breaks
         # when this module loads before chip_simulation finishes initializing.
-        from mimarsinan.chip_simulation.spiking_mode_policy import (
-            TtfsCascadeModePolicy,
-            TtfsSyncCycleModePolicy,
-        )
+        from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+        from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
 
-        policy = (
-            TtfsSyncCycleModePolicy("ttfs_cycle_based", "synchronized")
-            if synchronized
-            else TtfsCascadeModePolicy("ttfs_cycle_based", "cascaded")
-        )
+        del synchronized
+        policy = policy_for_spiking_mode(resolve_spiking_point(config))
         return cls.for_mode(
             config, mode_policy=policy, distmatch_driven=distmatch_driven,
         )

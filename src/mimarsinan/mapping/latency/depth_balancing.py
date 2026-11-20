@@ -6,9 +6,13 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from mimarsinan.mapping.latency.cycle_windows import UnbalancedFanInError, silence_dead_segment_reads
+from mimarsinan.mapping.latency.upstream import ir_live_reads
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.layout.segmentation import NeuralSegment, partition_ir_graph
+from mimarsinan.mapping.support.neuron_thresholds import node_neuron_channels
+from mimarsinan.mapping.support.value_layouts import neuron_entries, one_entry
 
 # Sub-1/T identity margin: the strict "<" comparator never fires on an
 # exact-theta charge, so a relay's identity weight must exceed theta; the
@@ -18,10 +22,6 @@ RELAY_MARKER = "_depth_relay"
 
 DEFAULT_RELAY_Q_MAX = 127
 """Integer-lattice margin base when no chip grid is supplied (8-bit q_max)."""
-
-
-class UnbalancedFanInError(ValueError):
-    """A live intra-segment edge spans a latency gap > 1 (head-drop + stale re-read)."""
 
 
 class DeadRelayError(ValueError):
@@ -49,13 +49,8 @@ def relay_weight(thresholding_mode: str, q_max: int = DEFAULT_RELAY_Q_MAX) -> fl
 
 
 def _live_axon_flags(node: NeuralCore, ir_graph: IRGraph) -> list[bool]:
-    """Per-axon liveness (any nonzero weight in the axon's row); conservative
-    all-live when the matrix rows cannot be aligned to the sources."""
-    sources = list(node.input_sources.flatten())
-    matrix = node.get_core_matrix(ir_graph)
-    if matrix is None or matrix.shape[0] != len(sources):
-        return [True] * len(sources)
-    return [bool(np.any(np.abs(matrix[i, :]) > 0.0)) for i in range(len(sources))]
+    """[U-LIVE] Per-axon liveness: the one predicate of every scheduling rule (``upstream.ir_live_reads``)."""
+    return ir_live_reads(node, ir_graph).tolist()
 
 
 def _segment_depths(seg: NeuralSegment, ir_graph: IRGraph) -> dict[int, int]:
@@ -143,11 +138,17 @@ def assert_relays_alive(ir_graph: IRGraph, *, thresholding_mode: str) -> None:
             )
 
 
-def _relay_activation_scale(producer: NeuralCore, channels: list[int]):
+def _relay_activation_scale(producer: NeuralCore, columns: list[int]):
+    """[U-PCH3] The relayed columns' activation scales, one per relay column, read by the producer's declared layout
+    (its perceptron's per-channel vector at the columns' channels; one held entry as it is)."""
     scale = torch.as_tensor(producer.activation_scale).detach().clone()
-    if scale.dim() >= 1 and scale.numel() > 1:
-        return scale.reshape(-1)[channels].clone()
-    return scale
+    if one_entry(scale):
+        return scale
+    width = int(producer.get_output_count())
+    keyed = producer.perceptron_index is not None and producer.perceptron_output_slice is not None
+    entries = neuron_entries(producer, "activation_scale", np.asarray(columns, dtype=np.int64), width=width,
+                             channels=node_neuron_channels(producer, width) if keyed else None)
+    return torch.as_tensor(entries, dtype=scale.dtype)
 
 
 def _build_relay_chain(
@@ -253,3 +254,23 @@ def insert_depth_balancing_relays(
     assert_relays_alive(ir_graph, thresholding_mode=thresholding_mode)
     assert_intra_segment_gap1(ir_graph)
     return inserted
+
+
+def balance_cycle_windows(
+    ir_graph: IRGraph, *, cascade: bool, armed: bool, thresholding_mode: str | None = None,
+    q_max: int = DEFAULT_RELAY_Q_MAX,
+) -> int:
+    """[U-TGAUGE5] The window rule's mapping pass before quantization, in Soft Core Mapping's order, for a program
+    built outside it: for a per-cycle cascade (``cascade``, the plan's ``mode_policy().runs_per_cycle_cascade``) every
+    dead in-segment read is turned off with the cores it leaves unread (one edge set for the relays, ``ChipLatency``
+    and the assertion), then the relays run where they are ``armed`` (the recipe of every per-cycle cascade arms them;
+    a declared ``false`` switches them off), at the comparator ``thresholding_mode`` and the weight grid ``q_max``.
+    Returns the relay cores inserted; a plan that is not a per-cycle cascade is left byte for byte."""
+    if not cascade:
+        return 0
+    silence_dead_segment_reads(ir_graph)
+    if not armed:
+        return 0
+    if thresholding_mode is None:
+        raise ValueError("balance_cycle_windows: armed relays need the deployment's thresholding_mode")
+    return insert_depth_balancing_relays(ir_graph, thresholding_mode=thresholding_mode, q_max=q_max)

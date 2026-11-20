@@ -30,6 +30,7 @@ from mimarsinan.mapping.export.odin.exporter import export_odin
 from mimarsinan.mapping.export.odin.program import STAGE_INJECT
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 
 
 def used_neurons(core: Any) -> int:
@@ -56,7 +57,7 @@ def pass_mapping(core: Any) -> HardCoreMapping:
         has_bias_capability=False)
     replica.core_matrix = values
     replica.axon_sources = sources
-    replica.threshold = float(core.threshold)
+    replica.threshold = core_threshold(core, "the ODIN pass build")
     # The replica's UNUSED tail is the original's: a pass rewrites who drives a
     # slot, never how many slots the mapper actually filled, and the exporter's
     # fan-in gate is defined on the filled ones.

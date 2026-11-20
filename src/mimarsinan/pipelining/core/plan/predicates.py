@@ -59,24 +59,41 @@ class PlanPredicates:
             from mimarsinan.chip_simulation.mvm_core_policy import MvmCorePolicy
 
             return MvmCorePolicy()
-        from mimarsinan.chip_simulation.soma_law import SomaLaw
         from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
-        return policy_for_spiking_mode(
-            self.spiking_mode, self.ttfs_cycle_schedule,
-            soma_law=SomaLaw.resolve(self.config),
-        )
+        return policy_for_spiking_mode(self.require_spiking_point())
+
+    @property
+    def spiking_point(self):
+        """[U-LIF2] The plan's resolved spiking point, or ``None`` for a value-domain plan (decided here, once)."""
+        return None if self.is_mvm else self.require_spiking_point()
+
+    @property
+    def window_firing(self):
+        """[U-LIF2 W7] The run's resolved lif_window_firing (``None`` for the value domain or away from the
+        synchronized LIF variant): what the sealed record's identity states."""
+        point = self.spiking_point
+        return None if point is None else point.window_firing
+
+    def require_spiking_point(self):
+        """[U-LIF2 W5] The plan's resolved spiking point (the one resolution of its config, the record every
+        capability judgment reads); a value-domain plan has none."""
+        if self.is_mvm:
+            raise RuntimeError("a value-domain (core_semantics='mvm') plan has no spiking point")
+        from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
+
+        return resolve_spiking_point(self.config)
 
     @property
     def conversion_recipe(self):
-        """The recipe SSOT for this plan: the mvm recipe, else ``(spiking_mode, schedule)``."""
+        """The recipe SSOT for this plan: the mvm recipe, else the recipe of its resolved point."""
         if self.is_mvm:
             from mimarsinan.tuning.orchestration.mvm_conversion import derive_mvm_recipe
 
             return derive_mvm_recipe()
         from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
-        return ConversionPolicy.derive(self.spiking_mode, self.ttfs_cycle_schedule)
+        return ConversionPolicy.derive(self.require_spiking_point())
 
     @property
     def is_fast_driver(self) -> bool:

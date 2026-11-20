@@ -143,7 +143,9 @@ def accumulate_membrane_correction(
             core = int(sp.src_core)
             s0 = int(sp.src_start) + (lo - d0)
             memb = neuron_states[core]["memb"][:, s0 : s0 + (hi - lo)]
-            correction[:, lo:hi] += memb / thresholds[core] - half_step_charge
+            theta = thresholds[core]  # [U-PCH] one register, or the span's neurons' own
+            theta = theta[s0 : s0 + (hi - lo)] if theta.dim() else theta
+            correction[:, lo:hi] += memb / theta - half_step_charge
 
 
 def apply_membrane_corrections_numpy(

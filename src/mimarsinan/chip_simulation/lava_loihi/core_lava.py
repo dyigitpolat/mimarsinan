@@ -10,6 +10,7 @@ import torch.multiprocessing as torch_mp
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.lava_loihi.timing import _LAVA_DTYPE
+from mimarsinan.mapping.support.neuron_thresholds import register_and_neurons
 
 _SUBTRACTIVE_LIF_CLS = None
 _LAVA_ACTOR_START_METHOD = "fork"
@@ -146,11 +147,14 @@ class LavaCoreMixin:
 
         src = lava.source(data=data)
         dense = lava.dense(weights=weights.astype(_LAVA_DTYPE))
+        # [U-PCH] one register, or the used neurons' own thresholds (the process's per-neuron override)
+        register, per_neuron = register_and_neurons(threshold)
         lif = lava.subtractive_lif(
             shape=(n_out,),
             du=1,
             dv=0,
-            vth=float(threshold),
+            vth=register,
+            vth_per_neuron=None if per_neuron is None else per_neuron[:n_out],
             bias_mant=bias_mant,
             reset_interval=T,
             reset_offset=reset_offset,

@@ -155,3 +155,18 @@ class FrozenStatsMaxValueScaler(nn.Module):
 
     def forward(self, x):
         return x / self.max_value
+
+
+def declare_channel_axis(state: dict, names) -> None:
+    """[U-PFOLD, S-12] A perceptron's declared output channel axis (``state``, its ``__dict__``) stamped on every module
+    under its named activation slots whose class declares ``channel_axis`` (the spiking activations, which divide a
+    per-channel scale along it). A state being reconstructed (no modules yet) is left: its activations carry their
+    own."""
+    axis, modules = state.get("output_channel_axis"), state.get("_modules")
+    if axis is None or modules is None:
+        return
+    for name in names:
+        module = modules.get(name)
+        for m in () if module is None else module.modules():
+            if hasattr(type(m), "channel_axis"):
+                m.channel_axis = int(axis)

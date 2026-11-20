@@ -11,6 +11,7 @@ from mimarsinan.model_training.training_recipe import (
     TrainingRecipe,
     build_optimizer,
     build_scheduler,
+    clear_step_gradients,
     clip_norm_of,
 )
 from mimarsinan.model_training import basic_trainer_subsample
@@ -125,12 +126,13 @@ class BasicTrainer:
 
     def _get_optimizer_and_scheduler(self, lr, epochs):
         if self.recipe is not None and epochs > 0:
-            optimizer = build_optimizer(self.model, lr, self.recipe)
+            optimizer = build_optimizer(
+                self._recipe_optimization_model(), lr, self.recipe, only=self._params_to_optimize())
             scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=epochs)
             return optimizer, scheduler, GradScaler("cuda")
 
         optimizer = torch.optim.Adam(
-            self.model.parameters(), lr = lr, betas = (self.beta1, self.beta2), weight_decay=5e-5)
+            self._params_to_optimize(), lr = lr, betas = (self.beta1, self.beta2), weight_decay=5e-5)
 
         if epochs > 0:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -146,8 +148,8 @@ class BasicTrainer:
         return bool(getattr(self, "tuning_recipe_recovery", False)) and self.recipe is not None
 
     def _recipe_optimization_model(self):
-        """Model whose params the recipe optimizer groups. Defaults to ``self.model``;
-        ``WeightTransformTrainer`` overrides to its aux model."""
+        """Model whose params the recipe optimizer groups (by name: weight decay, layer-wise decay). Defaults to
+        ``self.model``; the transform trainers override to their aux model."""
         return self.model
 
     def _require_recipe(self) -> TrainingRecipe:
@@ -162,7 +164,8 @@ class BasicTrainer:
     def _build_recipe_step_optimizer(self, lr):
         """Recipe-driven step optimizer (honors optimizer family, weight-decay,
         momentum/betas). The supplied ``lr`` is the schedule's peak."""
-        return build_optimizer(self._recipe_optimization_model(), lr, self._require_recipe())
+        return build_optimizer(
+            self._recipe_optimization_model(), lr, self._require_recipe(), only=self._params_to_optimize())
 
     def _build_recipe_step_scheduler(self, optimizer, total_steps: int):
         """Warmup + cosine recipe schedule over the recovery budget; the optimizer
@@ -181,7 +184,7 @@ class BasicTrainer:
         adam_kwargs: dict[str, Any] = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
         if torch.device(self.device).type == "cuda":
             adam_kwargs["fused"] = True
-        optimizer = torch.optim.Adam(self.model.parameters(), **adam_kwargs)
+        optimizer = torch.optim.Adam(self._params_to_optimize(), **adam_kwargs)
         if constant_lr or total_steps <= 0:
             warmup_iters = max(1, int(total_steps * 0.05)) if total_steps > 0 else 1
             scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -205,7 +208,7 @@ class BasicTrainer:
         adam_kwargs: dict[str, Any] = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
         if torch.device(self.device).type == "cuda":
             adam_kwargs["fused"] = True
-        return torch.optim.Adam(self.model.parameters(), **adam_kwargs)
+        return torch.optim.Adam(self._params_to_optimize(), **adam_kwargs)
 
     def _scheduler_and_scaler_for_optimizer(
         self, optimizer, lr, total_steps: int, *, constant_lr: bool = False
@@ -238,10 +241,19 @@ class BasicTrainer:
         return loss
     
     def _params_to_optimize(self):
+        """[U-TGAUGE T1-C] The parameters this trainer trains: exactly the ones its update writes to the deployed model.
+        Every optimizer it builds groups these and its gradient clip reads these, so a parameter the update never
+        writes is neither stepped nor counted in the clip norm. A plain trainer's update is the optimizer step on the
+        model itself: every model parameter."""
         return self.model.parameters()
 
+    def _update_writes(self):
+        """[U-TGAUGE3] The parameters of ``self.model`` whose gradients this trainer's update consumes (the step rule's
+        ``writes``): a plain trainer's update steps them itself."""
+        return self._params_to_optimize()
+
     def _optimize(self, x, y, optimizer, scaler):
-        optimizer.zero_grad()
+        clear_step_gradients(optimizer, self.model, writes=self._update_writes(), step=f"{type(self).__name__}'s step")
         loss = self._backward_pass_on_loss(x, y, scaler)
         clip = clip_norm_of(None if self.recipe is None else self.recipe.grad_clip_norm)
         if clip is not None:

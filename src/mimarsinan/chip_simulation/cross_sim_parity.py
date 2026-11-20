@@ -8,7 +8,8 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
-from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.point_capability import backend_refusal_reason
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 from mimarsinan.pipelining.core.nf_scm_parity import compare_normalized_records
 
 __all__ = [
@@ -64,23 +65,21 @@ class CrossSimOutcome:
         }
 
 
-def derive_applicability(
-    backend: str, spiking_mode: str, *, soma_law: Optional[Any] = None
-) -> Tuple[bool, Optional[str]]:
-    """Whether ``backend`` can run ``spiking_mode`` (and, when the caller holds
-    one, the resolved soma point), derived from the capability registry (never executed).
+def derive_applicability(backend: str, point: SpikingPoint) -> Tuple[bool, Optional[str]]:
+    """Whether ``backend`` executes the run's resolved point (its mode, soma law, window firing and declared execution
+    extensions: the one judgment, ``point_capability``), derived from the capability registry (never executed).
+    [U-LIF2 r2] The point is the run's record, never one built from a mode.
 
     Returns ``(applicable, reason)`` — ``(True, None)`` when supported, else ``(False, <why>)``.
     """
-    policy = policy_for_spiking_mode(spiking_mode, soma_law=soma_law)
-    if policy.supports_backend(backend):
+    refused = backend_refusal_reason(backend, point)
+    if refused is None:
         return True, None
-    point = "" if soma_law is None or soma_law.point_tag() is None else (
-        f", soma point {soma_law.point_tag()!r}"
-    )
+    tag = point.soma_law.point_tag()
+    soma = "" if tag is None else f", soma point {tag!r}"
     reason = (
-        f"backend {backend!r} cannot run spiking_mode={spiking_mode!r}{point} "
-        f"(unsupported in the capability registry) — screened INAPPLICABLE, "
+        f"backend {backend!r} cannot run spiking_mode={point.spiking_mode!r}{soma} "
+        f"(unsupported in the capability registry: {refused}) — screened INAPPLICABLE, "
         f"not executed"
     )
     return False, reason
@@ -106,7 +105,7 @@ def screen_cell_pair(
     cell: str,
     backend_a: str,
     backend_b: str,
-    spiking_mode: str,
+    point: SpikingPoint,
     nf_record: Optional[Dict[int, np.ndarray]],
     scm_record: Optional[Dict[int, np.ndarray]],
     tolerance: float,
@@ -114,11 +113,11 @@ def screen_cell_pair(
 ) -> CrossSimOutcome:
     """Screen one (cell, backend-pair) into a 3-state outcome.
 
-    Applicability is checked FIRST: if either backend cannot run the mode → INAPPLICABLE
-    (records not consulted). Otherwise AGREE iff ``max_abs_diff <= tolerance``, else DISAGREE.
+    Applicability is checked FIRST, on the run's resolved point: if either backend does not execute it →
+    INAPPLICABLE (records not consulted). Otherwise AGREE iff ``max_abs_diff <= tolerance``, else DISAGREE.
     """
-    applicable_a, reason_a = derive_applicability(backend_a, spiking_mode)
-    applicable_b, reason_b = derive_applicability(backend_b, spiking_mode)
+    applicable_a, reason_a = derive_applicability(backend_a, point)
+    applicable_b, reason_b = derive_applicability(backend_b, point)
     if not applicable_a or not applicable_b:
         reason = reason_a if not applicable_a else reason_b
         return CrossSimOutcome(
@@ -133,7 +132,7 @@ def screen_cell_pair(
     if nf_record is None or scm_record is None:
         raise CrossSimParityError(
             f"cell {cell!r} pair ({backend_a!r}, {backend_b!r}) is applicable for "
-            f"spiking_mode={spiking_mode!r} but no records were provided to compare "
+            f"spiking_mode={point.spiking_mode!r} but no records were provided to compare "
             f"— an applicable pair must be RUN and measured, not skipped"
         )
 

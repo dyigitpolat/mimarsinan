@@ -16,18 +16,18 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
 )
 from mimarsinan.search.problems.joint import JointArchHwProblem
 
+from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block, host_descriptions
+
 PRICED = ["chip_area_mm2", "energy_per_inference_mj"]
 
 #: The candidate model keeps host-side work (flatten/softmax), so the absolute
 #: latency/energy headliners honestly require declared host rates — without
 #: them the refusal chain names host_macs_per_s (owner decision: host pricing
 #: is declared, never defaulted).
-_HOST_RATES = {
-    "host_macs_per_s": {"nominal": 10.0, "unit": "G/s",
-                        "evidence_kind": "estimated", "note": "test host rate"},
-    "p_host": {"nominal": 20.0, "unit": "W",
-               "evidence_kind": "estimated", "note": "test host power"},
-}
+#: [U-HOST2] The first read host description's own rate and power rows, as its block declares them (a host row is
+#: admitted only as its description's row or a declared derivation of its rows).
+_HOST_RATES = {key: row for key, row in host_description_block(host_descriptions()[0]).items()
+               if key in ("host_macs_per_s", "p_host")}
 
 
 def _physics_cfg(**extra):

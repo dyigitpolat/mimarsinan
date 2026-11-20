@@ -34,11 +34,13 @@ from unit.deployment_record.record_fixtures import make_full_record, make_identi
 TARGETS_DIR = Path(mimarsinan.__file__).parent / "mapping" / "platform" / "targets"
 #: bundle -> (geometry, profile, claim class, faithfulness label)
 CL2_PHYSICS = {
-    "hermes_64": ("hermes_64", "hermes_64", "headline-eligible", "approximate: analog MVM error not modeled"),
+    # [U-CHIPKEYS] the stated converter law (a 12-bit ADC per polarity, FP16 scaling, INT8 out) names the FP16 rounding
+    "hermes_64": ("hermes_64", "hermes_64", "headline-eligible", 'approximate: named "analog MVM error not modeled"; '
+                  'named "the FP16 rounding of the LDPU on the ADC result before its affine scaling not modeled"'),
     # [U-C C-2] NeuRRAM's MVM energy is now primary (wan2022a Extended Data Table 1), so the label drops it
-    "neurram": ("neurram_like", "neurram", "headline-eligible", "approximate: analog MVM error not modeled"),
+    "neurram": ("neurram_like", "neurram", "headline-eligible", 'approximate: named "analog MVM error not modeled"'),
     "sram_cim_macro": ("dimc_macro_128x1024", "sram_cim_macro", "quarantined",
-                       "approximate: array write energy derived from the read energy"),
+                       'approximate: named "array write energy derived from the read energy"'),
 }
 #: bundle -> (allow_coalescing, allow_neuron_splitting, the page each permission rests on)
 PERMISSIONS = {
@@ -203,14 +205,17 @@ class TestValidityPerBundle:
         area = {t.name: t for t in pricing.terms}["chip_area_mm2"]
         assert area.value == pytest.approx(64 * 1.392 + 54.912) == pytest.approx(144.0)
 
-    def test_a_core_count_override_outside_the_validity_refuses_the_area_by_name(self):
+    def test_a_core_count_override_beyond_the_published_chip_is_priced_and_flagged(self):
+        """[U-AREA] Ruling R3: a chip beyond its published size is priced by the area rule and flagged, never refused
+        (R5 refused the area by name: 'on chips of 1-64 cores; this chip declares 65')."""
         cores = [{"max_axons": 256, "max_neurons": 256, "count": 65, "has_bias": False}]
         pcfg = _pcfg("hermes_64", target_overrides={"cores": {"value": cores, "note": "one core more"}})
         assert pcfg["target_faithfulness_class"].endswith("; cores declared")
         pricing = price_absolute(quantities(cores_physical=65, host_macs=0), _physics_of(pcfg),
                                  geometry=declared_geometry(pcfg["cores"]))
-        assert "chip_area_mm2" not in {t.name for t in pricing.terms}
-        assert "on chips of 1-64 cores; this chip declares 65" in _refusals(pricing)["chip_area_mm2"]
+        area = {t.name: t for t in pricing.terms}["chip_area_mm2"]
+        assert "beyond the published chip" in area.source
+        assert "beyond_published" in {f.kind for f in pricing.flags}
 
 
 def _two_pass_census():

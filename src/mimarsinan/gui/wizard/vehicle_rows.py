@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from mimarsinan.chip_simulation.activation_semantics import (
-    resolve_activation_semantics,
-)
+from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
 from mimarsinan.config_schema.registry import (
     Category,
     FieldType,
@@ -43,11 +41,11 @@ def vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
             })
         return rows
     try:
-        semantics = resolve_activation_semantics(effective)
-        mode = semantics.legacy_spiking_mode
-        schedule = semantics.legacy_ttfs_cycle_schedule
-        recipe = ConversionPolicy.derive(
-            mode, schedule, spiking_variant=semantics.variant)
+        # [U-LIF2 W5] the rows read the one resolved point, as the run's recipe does.
+        point = resolve_spiking_point(effective)
+        mode = point.spiking_mode
+        schedule = point.ttfs_cycle_schedule
+        recipe = ConversionPolicy.derive(point)
         sim_enables = dict(recipe.sim_enables)
         opt_in = set(recipe.sim_opt_in)
     except ValueError:
@@ -79,7 +77,7 @@ def vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
             why = None
             if entry.why is not None:
                 why = entry.why({
-                    "spiking_mode": mode, "ttfs_cycle_schedule": schedule, key: on,
+                    **effective, "spiking_mode": mode, "ttfs_cycle_schedule": schedule, key: on,
                 })
             row.update(supported=supported, on=on, why=why)
         rows.append(row)

@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
+from mimarsinan.common.refusal.format_version import is_version
 from mimarsinan.deployment_record.platform_physics.constants import constant_from_declaration, spec_for
 from mimarsinan.deployment_record.units import AREA, to_canonical, unit_for
 
@@ -134,7 +135,8 @@ def load_component(name: str) -> AreaComponent:
     if name == "node_scaling" or not path.is_file():
         raise AreaComponentError(f"area component {name!r} is not shipped; known: {list(component_names())}")
     data = json.loads(path.read_text(encoding="utf-8"))
-    if set(data) - _FIELDS or data.get("format_version") != AREA_COMPONENT_FORMAT_VERSION or data.get("name") != name:
+    if set(data) - _FIELDS or not is_version(data.get("format_version"), AREA_COMPONENT_FORMAT_VERSION) \
+            or data.get("name") != name:  # [U-HOST3] the version rule's one reading
         raise AreaComponentError(f"area component {path.name}: fields {sorted(data)}, format_version "
                                  f"{data.get('format_version')!r}, name {data.get('name')!r}")
     if data.get("kind") not in KINDS or data.get("per") not in PER or data.get("scaling") not in scaling_rules():

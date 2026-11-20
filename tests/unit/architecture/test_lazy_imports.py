@@ -14,7 +14,6 @@ ALLOWLIST = {
     # [H3b] torch only when actually measuring: the physics package stays
     # importable without the training stack.
     "deployment_record/platform_physics/host_calibration.py",
-    "chip_simulation/cost_extraction.py",
     "chip_simulation/deployment_contract.py",
     "chip_simulation/deployment_faithfulness.py",
     "chip_simulation/firing_strategy.py",
@@ -77,7 +76,6 @@ ALLOWLIST = {
     "mapping/packing/hybrid_build_scheduled.py",
     "mapping/packing/hybrid_segment.py",
     "mapping/packing/neural_segment_packing.py",
-    "mapping/packing/softcore/compaction.py",
     "mapping/packing/softcore/hard_core.py",
     "mapping/packing/softcore/hard_core_mapping.py",
     "mapping/packing/softcore/soft_core.py",

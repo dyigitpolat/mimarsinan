@@ -24,6 +24,7 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.tuning.orchestration.blend_ramp import KDClassificationLoss
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 from mimarsinan.tuning.orchestration.lif_exact_qat import lif_exact_qat_kd_active
+from spiking_points import point_of_mode
 
 
 def _lif_cfg(*, kd=True, steps=8):
@@ -54,7 +55,7 @@ class TestRegistryAndRecipe:
             ("lif", None), ("ttfs", None), ("ttfs_quantized", None),
             ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized"),
         ]:
-            assert "lif_exact_qat_kd" not in ConversionPolicy.derive(mode, schedule).knobs
+            assert "lif_exact_qat_kd" not in ConversionPolicy.derive(point_of_mode(mode, schedule)).knobs
 
 
 class TestDerivation:
@@ -74,8 +75,8 @@ class TestDerivation:
     def test_explicit_kd_on_novena_fails_loud(self):
         # The recipe-default exact arm downgrades on Novena; an explicit KD arm
         # that now has no exact arm to ride is a contradiction.
-        dp = {"spiking_mode": "lif", "weight_quantization": True,
-              "firing_mode": "Novena", "lif_exact_qat_kd": True}
+        dp = {"spiking_mode": "lif", "weight_quantization": True,  # zero reset: fire while integrating only
+              "firing_mode": "Novena", "lif_exact_qat_kd": True, "lif_window_firing": "fire_while_integrating"}
         with pytest.raises(ValueError, match="lif_exact_qat"):
             derive_deployment_parameters(dp)
 

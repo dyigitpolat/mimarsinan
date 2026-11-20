@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
 
 from mimarsinan.chip_simulation.activation_semantics import fold_spiking_axes
+from mimarsinan.chip_simulation.spiking_point import fold_spiking_point
 from mimarsinan.chip_simulation.core_semantics import (
     is_mvm_core_semantics,
     resolve_core_semantics,
@@ -95,12 +96,15 @@ def derive_deployment_parameters(
     ``explicit_keys`` names the keys the source DOCUMENT declared (so merged
     defaults don't masquerade as declarations); ``None`` = every present key."""
     mvm = is_mvm_core_semantics(resolve_core_semantics(dp))
+    point = None
     if not mvm:
         # Fold the authored (family, variant) axes into their legacy twins
         # BEFORE anything reads spiking_mode/ttfs_cycle_schedule, then the
-        # soma axes so the recipe fold's sim_enables see a resolved point.
+        # soma axes, then [U-LIF2 W2] the one resolution of the point (its
+        # window firing written here), so the recipe's enables read it whole.
         fold_spiking_axes(dp)
         fold_soma_axes(dp)
+        point = fold_spiking_point(dp)
     mvm_aq = mvm and bool(dp.get("activation_bits"))
     spiking_mode = str(dp.get("spiking_mode", "lif"))
     pipeline_mode = str(dp.get("pipeline_mode", ""))
@@ -110,10 +114,10 @@ def derive_deployment_parameters(
                  else f"spiking_mode={spiking_mode!r}")
     aq_rule = _MVM_AQ_RULE if mvm else _AQ_RULE
 
-    if mvm:
+    if point is None:
         fold_mvm_recipe(dp, explicit_keys)
     else:
-        fold_conversion_recipe(dp, spiking_mode, explicit_keys)
+        fold_conversion_recipe(dp, point, explicit_keys)
     _fold_mirror_training_recipe(
         dp, set(dp) if explicit_keys is None else set(explicit_keys)
     )
@@ -198,6 +202,7 @@ def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
     if not is_mvm_core_semantics(resolve_core_semantics(dp)):
         fold_spiking_axes(dp)
         fold_soma_axes(dp)
+        fold_spiking_point(dp)
         # Recipe-owned mapping arm: the windowed-lif exact-QAT pairing writes
         # True before this runs; inert False for every other mode — always
         # resolved, never a knob (RETIRED as a document key).

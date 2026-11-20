@@ -36,6 +36,7 @@ from pathlib import Path
 
 import pytest
 
+from spiking_points import point_of_mode
 from integration.parity_harness import ensure_nevresim_path
 from mimarsinan.certification.program_check.report import ESTABLISHED_ON_PROGRAM
 from mimarsinan.deployment_record.schema.record import DEPLOYMENT_RECORD_FILENAME, load_deployment_record
@@ -344,6 +345,7 @@ def _nevresim_final_counts(mapping, xs, *, transfer: str):
 
     runner = object.__new__(SimulationRunner)
     vars(runner).update(
+        spiking_point=point_of_mode("lif"),  # [U-LIF2 r2] the run's point
         spike_generation_mode="Uniform", firing_mode="Default", thresholding_mode="<=", spiking_mode="lif",
         nevresim_connectivity_mode=default_nevresim_connectivity_mode(), pass_transfer=transfer,
         simulation_step_timeout_s=600.0, membrane_readout=False, membrane_half_step_charge=False, weight_type=float,

@@ -7,38 +7,26 @@ REFUSED with a written reason, never approximated silently.
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Mapping, Optional, Tuple
 
 from mimarsinan.deployment_record.cost.absolute.context import (
-    ABSOLUTE_PRICING as ABSOLUTE_PRICING,
-    AbsolutePricing,
-    PricingContext,
-    PricingRefusal,
-    external_refusals as external_refusals,
-)
+    ABSOLUTE_PRICING as ABSOLUTE_PRICING, AbsolutePricing, PricingContext, PricingRefusal,
+    external_refusals as external_refusals)
 from mimarsinan.deployment_record.cost.absolute.energy import ENERGY_HEADLINE, price_energy
 from mimarsinan.deployment_record.cost.absolute.formulas import (
-    AREA_COMPONENTS,
-    BUFFER_CAPACITY,
-    CHIP_AREA_ADDERS,
-    LATENCY_COMPONENTS,
-    add_bands,
-    carry_buffer_refusals,
-    invert_band,
-    programming_payload_bytes,
-    scale_band,
-)
+    AREA_COMPONENTS, BUFFER_CAPACITY, CHIP_AREA_ADDERS, LATENCY_COMPONENTS, add_bands, carry_buffer_refusals,
+    invert_band, scale_band)
+from mimarsinan.deployment_record.cost.absolute.walls.loads import load_refusals, price_loads
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import static_sum
 from mimarsinan.deployment_record.cost.absolute.validity import (
-    aggregate_scales,
-    footprint_cores,
-    judged_geometry,
-    mean_core_note,
-)
+    aggregate_scales, footprint_cores, judged_geometry, mean_core_note)
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, WritePricing, price_write_inputs
-from mimarsinan.deployment_record.cost.compute_time import CORE_PROGRAM, compute_time
+from mimarsinan.deployment_record.cost.compute_time import compute_time
 from mimarsinan.deployment_record.cost.host_terms import (
-    LATENCY_LINK, host_link_time, price_system_energy, slower_port, store_refusal, write_link_bytes)
+    LATENCY_LINK, host_link_time, price_system_energy, store_refusal, write_link_bytes)
+from mimarsinan.deployment_record.cost.terms import PricingFlag
 from mimarsinan.deployment_record.platform_physics.area_components import fixed_area_refusal
+from mimarsinan.deployment_record.platform_physics.area_rule.pricing import rule_area
 from mimarsinan.deployment_record.platform_physics.converter import resolve as resolve_converter
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
@@ -50,6 +38,11 @@ AREA_HEADLINE = "chip_area_mm2"
 LATENCY_HEADLINE = "e2e_latency_s"
 THROUGHPUT_HEADLINE = "throughput_inferences_s"
 GATED_HEADLINES = (AREA_HEADLINE, ENERGY_HEADLINE, LATENCY_HEADLINE, THROUGHPUT_HEADLINE)
+#: [U-ENERGY] The priced times that are summands of ``e2e_latency_s``, each with the label its source gives it: the
+#: static leg over e2e covers them, so none takes a leg of its own (the runtime ratchet reads this table).
+E2E_SUMMANDS: Tuple[Tuple[str, str], ...] = (("latency_host_s", "host: "), (LATENCY_LINK, "host link: "),
+                                              ("latency_write_exposed_s", "writes: "))
+_E2E_LABEL = dict(E2E_SUMMANDS)
 
 
 def _state_area_band(ctx: PricingContext) -> Optional[Band]:
@@ -84,19 +77,29 @@ def _aggregate_footprint(ctx: PricingContext) -> Optional[Tuple[Band, bool]]:
                       "area_per_core_total x cores_physical, scaled by core cells (declared scaling rule)"), True
 
 
-def price_area(ctx: PricingContext) -> None:
-    """Chip area: the published per-core footprint if there is one, else components."""
+def price_area(ctx: PricingContext, readout_bits: Optional[int] = None) -> Tuple[PricingFlag, ...]:
+    """Chip area, with the flags it names: [U-AREA] a description's ``area_rule`` block prices its core grid and outside
+    part by the rule (``area_rule.pricing``, its kinds at ``readout_bits``); else the published per-core footprint if
+    there is one, else components; the adders and, for declared parts, R5's outside part on every path."""
     components: List[Band] = []
     evidence: List[str] = []
     unpriced: List[str] = []
-    if ctx.priced("area_per_core_total"):
+    rule = rule_area(ctx.physics, ctx.quantities, ctx.geometry, readout_bits)
+    flags = () if rule is None else tuple(PricingFlag(AREA_HEADLINE, f.kind, f.reason, f.value) for f in rule.flags)
+    if rule is not None and rule.refusal is not None:
+        ctx.refuse(AREA_HEADLINE, rule.refusal)
+        return flags
+    if rule is not None and rule.band is not None:
+        components.append(Band(*rule.band, rule.basis))
+        evidence.append(rule.basis)
+    elif ctx.priced("area_per_core_total"):
         if not ctx.quantities.has("cores_physical"):
             ctx.refuse(AREA_HEADLINE, "area_per_core_total is declared but the "
                                       "cores_physical census is absent")
-            return
+            return flags
         footprint = _aggregate_footprint(ctx)
         if footprint is None:
-            return
+            return flags
         band, scaled = footprint
         components.append(band)
         evidence.append(f"cores: area_per_core_total [{ctx.physics.band('area_per_core_total').basis}]"
@@ -107,11 +110,11 @@ def price_area(ctx: PricingContext) -> None:
         blocked = [ctx.blocked[c] for c, _f, _l in AREA_COMPONENTS if c in ctx.blocked]
         if blocked:  # [E-5] a converter the run's resolution leaves unstated
             ctx.refuse(AREA_HEADLINE, blocked[0])
-            return
+            return flags
         if not bands:
             ctx.refuse(AREA_HEADLINE, "area_per_cell is declared but the "
                                       "cells_physical census is absent")
-            return
+            return flags
         state = _state_area_band(ctx)
         if state is not None:
             bands.append(state)
@@ -122,52 +125,28 @@ def price_area(ctx: PricingContext) -> None:
         ctx.refuse(AREA_HEADLINE, "no compute-area source is declared: the target "
                                   "declares neither area_per_core_total nor "
                                   "area_per_cell")
-        return
+        return flags
     # Beside the footprint on either path, and named unpriced where a census shows the work.
     bands, notes, missing = ctx.component_bands(CHIP_AREA_ADDERS, _M2_TO_MM2)
     blocked = [ctx.blocked[c] for c, _f, _l in CHIP_AREA_ADDERS if c in ctx.blocked]
     if blocked:  # [U-F4] a declared component whose area the target never stated
         ctx.refuse(AREA_HEADLINE, blocked[0])
-        return
+        return flags
     components.extend(bands)
     evidence.extend(notes)
     unpriced.extend(missing)
-    if refused := fixed_area_refusal(ctx.physics):  # [U-A] the chip components' sum, else a sourced scalar
-        ctx.refuse(AREA_HEADLINE, refused)
-        return
-    value = ctx.physics.band("area_global_fixed")
-    components.append(scale_band(value, _M2_TO_MM2, "area_global_fixed"))
-    evidence.append(f"global: area_global_fixed [{value.basis}]")
-    source = "; ".join(evidence)
+    if rule is None or rule.declared_parts:  # [U-A] the outside part beside the grid: R5's, for declared parts
+        if refused := fixed_area_refusal(ctx.physics):  # [U-A] the chip components' sum, else a sourced scalar
+            ctx.refuse(AREA_HEADLINE, refused)
+            return flags
+        value = ctx.physics.band("area_global_fixed")
+        components.append(scale_band(value, _M2_TO_MM2, "area_global_fixed"))
+        evidence.append(f"global: area_global_fixed [{value.basis}]")
+    source = "; ".join(evidence) + (rule.basis if rule is not None and rule.band is None else "")
     if unpriced:
         source += f"; unpriced: {', '.join(unpriced)}"
     ctx.term(AREA_HEADLINE, "mm^2", add_bands(components, source), source)
-
-
-def _programming_latency(ctx: PricingContext) -> None:
-    """The per-program-load wall — an overhead term, never the steady-state headline. [U-C2 G-1] Its payload bytes at
-    ``t_program_per_byte`` and its reprogrammed cores at ``t_core_program`` (the time twin of ``e_core_program``: a
-    whole-image interface's wall per core), each where declared and its census exists; a part whose census the view
-    withholds is named unpriced with the reason, as the per-load energy term names it, and [targeted M1] where that
-    part is the term's only declared part the term is refused by name with the reason, never dropped silently."""
-    parts: List[Band] = []
-    payload = programming_payload_bytes(ctx.quantities, ctx.physics) if ctx.priced("t_program_per_byte") else None
-    if payload is not None:
-        value = slower_port(ctx.physics, ctx.physics.band("t_program_per_byte"))  # [U-J3] on the declared store
-        parts.append(scale_band(value, payload[0], f"t_program_per_byte [{value.basis}] x {payload[1]}"))
-    held = ctx.quantities.withheld_reason("reprogrammed_cores")
-    if ctx.priced(CORE_PROGRAM) and ctx.quantities.has("reprogrammed_cores"):
-        core = ctx.physics.band(CORE_PROGRAM)
-        parts.append(scale_band(core, ctx.quantities.get("reprogrammed_cores").value,
-                                f"{CORE_PROGRAM} [{core.basis}] x reprogrammed_cores"))
-    if not parts and ctx.priced(CORE_PROGRAM) and held:
-        ctx.refuse("latency_programming_s",
-                   f"{CORE_PROGRAM} is declared but its multiplicand reprogrammed_cores is withheld: {held}")
-        return
-    if parts:
-        band = parts[0] if len(parts) == 1 else add_bands(parts, " + ".join(p.basis for p in parts))
-        unpriced = f"; unpriced: {CORE_PROGRAM}(core_program; {held})" if ctx.priced(CORE_PROGRAM) and held else ""
-        ctx.term("latency_programming_s", "s", band, band.basis + unpriced)
+    return flags
 
 
 def _host_unpriced(host) -> List[str]:
@@ -186,7 +165,6 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
     compute = compute_time(ctx.physics, ctx.quantities, ctx.priced)  # [U-C2 G-2] per timestep or per event
     if compute.band is None:
         ctx.refuse(LATENCY_HEADLINE, compute.refusal or "the compute time is not priced")
-        _programming_latency(ctx)
         return None
     components = [compute.band]
     evidence = [compute.evidence]
@@ -198,34 +176,31 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
     host = ctx.host_time()
     if host.unpriceable:
         ctx.refuse(LATENCY_HEADLINE, ctx.host_refusal(host))
-        _programming_latency(ctx)
         return None
     chip_side = list(components)  # [U-J2] every part but the host's own time: the wait it idles over
     if host.band is not None:
         ctx.term("latency_host_s", "s", host.band, host.band.basis)
         components.append(host.band)
-        evidence.append("host: " + host.band.basis)
+        evidence.append(_E2E_LABEL["latency_host_s"] + host.band.basis)
     unpriced.extend(_host_unpriced(host))
     link, link_unpriced = host_link_time(ctx)  # [U-J] the host-chip link: every crossing byte, every transfer
     if refused := store_refusal(ctx):  # [U-J3] store traffic with no store to price it on, refused by name
         ctx.refuse(LATENCY_HEADLINE, refused)
-        _programming_latency(ctx)
         return None
     if link is not None:
         ctx.term(LATENCY_LINK, "s", link, link.basis)
         components.append(link)
         chip_side.append(link)
-        evidence.append("host link: " + link.basis)
+        evidence.append(_E2E_LABEL[LATENCY_LINK] + link.basis)
     unpriced.extend(link_unpriced)
     if writes is not None:
         if writes.exposed is None:
             reason = next(r.reason for r in writes.refusals if r.name == "latency_write_exposed_s")
             ctx.refuse(LATENCY_HEADLINE, f"the exposed write time is refused: {reason}")
-            _programming_latency(ctx)
             return None
         components.append(writes.exposed)
         chip_side.append(writes.exposed)
-        evidence.append("writes: " + writes.exposed.basis)
+        evidence.append(_E2E_LABEL["latency_write_exposed_s"] + writes.exposed.basis)
 
     source = "; ".join(evidence) + (
         "; steady-state per sample: resident weights, programming amortized in "
@@ -236,7 +211,6 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
     band = add_bands(components, source)
     ctx.term(LATENCY_HEADLINE, "s", band, source)
     ctx.host_wait = add_bands(chip_side, "e2e_latency_s less the host's own time: the chip, the link, exposed writes")
-    _programming_latency(ctx)
     return band
 
 
@@ -250,10 +224,21 @@ def price_throughput(ctx: PricingContext, e2e: Optional[Band]) -> None:
     ctx.term(THROUGHPUT_HEADLINE, "inferences/s", invert_band(e2e, source), source)
 
 
+def resolved_physics(quantities: Quantities, physics: PlatformPhysics,
+                     readout_bits: Optional[int]) -> Tuple[PlatformPhysics, Mapping[str, str], Mapping[str, str]]:
+    """(the physics a pricing reads, the converter's refused constants, the carry buffer's unstated ones): the
+    converter at the run's bits and the carry buffer's table at the view's declared capacity, one rule for every
+    pricer that reads the description (``price_absolute``, the measured model's static leg)."""
+    physics, converter_refused = resolve_converter(physics, readout_bits)
+    physics, buffer_unstated = physics.at_carry_buffer(
+        int(quantities.get(BUFFER_CAPACITY).value) if quantities.has(BUFFER_CAPACITY) else None)
+    return physics, converter_refused, buffer_unstated
+
+
 def price_absolute(
     quantities: Quantities, physics: PlatformPhysics, *,
     writes: Optional[WriteInputs] = None, geometry: Any = None, compute: Any = None,
-    readout_bits: Optional[int] = None,
+    readout_bits: Optional[int] = None, loads: Optional[Any] = None,
 ) -> AbsolutePricing:
     """Every absolute term the declared physics can honestly back, plus refusals.
 
@@ -273,27 +258,33 @@ def price_absolute(
     headline whose converter work exists. A profile without a converter, or no declared bits, is unchanged. [U-G] A
     declared carry buffer (``carry_buffer_capacity_bytes``) prices a profile's carry-buffer table at that capacity
     (``PlatformPhysics.at_carry_buffer``); a buffer constant its table leaves unstated there refuses, by name, each
-    headline whose buffer work exists. A profile without the table, or no declared buffer, is unchanged."""
+    headline whose buffer work exists. A profile without the table, or no declared buffer, is unchanged.
+    [U-ENERGY] ``loads`` (``quantities.planes.loads.LoadInputs``: the plane's every-core and period census) is priced by
+    the one load law (``walls.loads``): the deployment's first load and the reprogramming per round, each with the
+    chip's static power over its own wall; without it every load figure refuses by name. The chip's one static sum is
+    computed once here, on the resolved physics, and returned (``AbsolutePricing.static_power``)."""
     if refusals := external_refusals(physics):
         reason = f"{ABSOLUTE_PRICING}: " + "; ".join(r.reason for r in refusals)
         named = tuple(PricingRefusal(h, reason) for h in GATED_HEADLINES) + (
             () if writes is None else tuple(price_write_inputs(writes, physics).refusals))
-        return AbsolutePricing(terms=(), refusals=refusals + named)
-    physics, converter_refused = resolve_converter(physics, readout_bits)
-    physics, buffer_unstated = physics.at_carry_buffer(
-        int(quantities.get(BUFFER_CAPACITY).value) if quantities.has(BUFFER_CAPACITY) else None)
+        gated = tuple(PricingRefusal(name, why) for name, why in load_refusals(loads, physics))  # the law's own gate
+        return AbsolutePricing(terms=(), refusals=refusals + named + gated)
+    physics, converter_refused, buffer_unstated = resolved_physics(quantities, physics, readout_bits)
     ctx = PricingContext.create(quantities, physics, judged_geometry(geometry, quantities), refused_constants={
         **converter_refused, **carry_buffer_refusals(quantities, physics, unstated=buffer_unstated)})
+    ctx.static = static_sum(ctx.quantities, ctx.physics, ctx.priced, ctx.refused_constants)  # [U-ENERGY] once
     priced_writes = None if writes is None else price_write_inputs(writes, physics)
     ctx.write_link_bytes = None if writes is None else write_link_bytes(writes)  # [U-J] priced by an edge host only
-    price_area(ctx)
+    flags = price_area(ctx, readout_bits)  # [U-AREA] the area rule's flags, computed at read
     e2e = price_latency(ctx, priced_writes)
     price_energy(ctx, e2e, priced_writes, compute)
     price_system_energy(ctx)  # [U-J2] the whole-system line beside the headline, where the host states one
     price_throughput(ctx, e2e)
+    price_loads(ctx, loads)  # [U-ENERGY] the first load and the reprogramming per round, one law
     terms, refusals = list(ctx.terms), list(ctx.refusals)
     if priced_writes is not None:
         terms += priced_writes.terms
         refusals += priced_writes.refusals
-    return AbsolutePricing(terms=tuple(terms), refusals=tuple(refusals),
-                           verdicts=() if priced_writes is None else tuple(priced_writes.verdicts))
+    return AbsolutePricing(terms=tuple(terms), refusals=tuple(refusals), flags=flags,
+                           verdicts=() if priced_writes is None else tuple(priced_writes.verdicts),
+                           static_power=ctx.static)

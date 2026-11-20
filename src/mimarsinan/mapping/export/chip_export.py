@@ -11,6 +11,7 @@ from mimarsinan.code_generation.cpp_chip_model import (
     Neuron,
     SpikeSource,
 )
+from mimarsinan.mapping.support.neuron_thresholds import threshold_of_neuron
 
 
 def to_numpy(tensor_or_array):
@@ -41,7 +42,8 @@ def generate_core_weights(
         if (bias_tensor is not None) and (idx < outs):
             bias = bias_tensor[idx]
 
-        neurons.append(Neuron(neuron_ws, thresh, bias))
+        # [U-PCH] nevresim holds a threshold per neuron: one register is every neuron's, per-neuron ones their own
+        neurons.append(Neuron(neuron_ws, threshold_of_neuron(thresh, idx), bias))
 
     return Core(neurons, latency)
 

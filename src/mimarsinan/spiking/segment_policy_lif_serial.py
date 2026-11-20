@@ -17,10 +17,8 @@ from mimarsinan.models.nn.activations.lif_serial import (
 from mimarsinan.models.nn.lif_kernels import in_measurement_plane
 from mimarsinan.models.spiking.serial import SerialFoldUnsupportedError
 from mimarsinan.spiking.cycle_trains import CycleStack, CycleTrain, encode_train, streams
-from mimarsinan.spiking.segment_policy_lif_fold import CycleFoldSlot, cycle_fold_applies
-from mimarsinan.transformations.perceptron.perceptron_transformer import (
-    PerceptronTransformer,
-)
+from mimarsinan.spiking.segment_policy_lif_fold import CycleFoldSlot, cycle_fold_applies, twin_parameters
+from mimarsinan.transformations.perceptron.position_fold import ROW_AXIS, holds_positions, position_folds
 
 
 def run_streamed_lif_cycles(
@@ -133,15 +131,14 @@ def _arm_serial_slot(
             f"{soma_law.thresholding_mode!r}: the comparator is part of the "
             f"point and the twins must share it exactly."
         )
-    transformer = PerceptronTransformer()
-    weight = transformer.get_effective_weight(perceptron).detach()
+    weight, bias = twin_parameters(perceptron)  # [U-PFOLD] each core its own position's over a fold per position
     slot = SerialFoldSlot(
         soma_law=soma_law,
         weight=weight,
-        bias=transformer.get_effective_bias(perceptron).detach(),
+        bias=bias,
         theta=serial_fold_theta(lif),
         membrane_init=float(getattr(lif, "membrane_init", 0.0)),
-        unfold=_slot_unfold(node, dep_events[0], int(weight.shape[1])),
+        unfold=_slot_unfold(node, dep_events[0], int(weight.shape[-1])),
         integer_lattice=serial_fold_integer_lattice(lif),
     )
     return slot
@@ -152,7 +149,7 @@ def _arm_cycle_fold(soma_law: SomaLaw, node, perceptron, lif, dep_events) -> Opt
     or the mapper's unfold does not tile the hop's input (the twin keeps its own arithmetic)."""
     if not cycle_fold_applies(soma_law, lif, dep_events):
         return None
-    n_slots = int(PerceptronTransformer().get_effective_weight(perceptron).shape[1])
+    n_slots = int(perceptron.layer.weight.shape[1])
     try:
         unfold = _slot_unfold(node, dep_events[0], n_slots)
     except (SerialFoldUnsupportedError, ValueError):
@@ -162,4 +159,6 @@ def _arm_cycle_fold(soma_law: SomaLaw, node, perceptron, lif, dep_events) -> Opt
         cells *= int(d)
     if int(unfold.n_slots) != n_slots or int(unfold.source_size) != cells:
         return None
+    if holds_positions(perceptron) and int(position_folds(perceptron).shape[ROW_AXIS]) != int(unfold.n_cores):
+        return None  # [U-PFOLD] no core per position in the unfold: the twin keeps its own arithmetic
     return CycleFoldSlot(perceptron=perceptron, lif=lif, unfold=unfold)

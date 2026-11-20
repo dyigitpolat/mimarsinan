@@ -21,6 +21,7 @@ import torch
 
 from integration.parity_harness import ensure_nevresim_ready, have_cxx_compiler
 
+from spiking_points import point_of_mode
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.latency.chip import ChipLatency
@@ -104,7 +105,7 @@ def _make_driver(segment, tmp, connectivity_mode="runtime"):
         spike_generation_mode="Uniform",
         firing_mode="Default",
         thresholding_mode="<=",
-        spiking_mode="lif",
+        point=point_of_mode("lif"),
         connectivity_mode=connectivity_mode,
         verbose=False,
     )

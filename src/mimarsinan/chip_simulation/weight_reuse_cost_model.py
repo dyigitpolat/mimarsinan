@@ -146,7 +146,8 @@ def phase_cost_band(
     activation_bytes_moved: int,
     coefficient_band: CoefficientBand = DEFAULT_COEFFICIENT_BAND,
 ) -> CostBand:
-    """Evaluate the per-phase model across the band ⇒ a low/nominal/high cost RANGE (the model is monotone)."""
+    """Evaluate the per-phase model across the band ⇒ a low/nominal/high cost RANGE (the model is monotone): [m-4]
+    dynamic only, no static power, since the model prices no chip time to carry a static leg over."""
     def total(coeffs: DmaCostCoefficients) -> PhaseCostBreakdown:
         return phase_cost_model(
             reprogram_passes=reprogram_passes,

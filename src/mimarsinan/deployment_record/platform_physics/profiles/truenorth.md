@@ -128,7 +128,7 @@ area breakdown — both show a labelled core floorplan image with no block areas
 latency is architecturally non-deterministic in an asynchronous design. Absence disables
 exactly the objectives that need those constants, which is the intended behaviour.
 
-`p_host` and `host_compute_rate` are absent for a different reason: they are facts about
+`p_host` and `host_compute_rate` (withdrawn [U-HOST]: no profile declares a host row; a host row is admitted only from an identified host description (hosts/<name>.json) as the run's host block, and a measured host wall prices nothing) are absent for a different reason: they are facts about
 the **deployment host machine**, not about the chip. A chip profile cannot know them, so
 they are expected to arrive through `platform_physics_overrides`. Until they do, absolute
 energy and end-to-end latency cannot price the host side of the NeuralOps/ComputeOps
@@ -162,3 +162,17 @@ a reference would inherit the preset's provenance, and the preset does not have 
   signed 9-bit integers, one per axon type, while the crossbar bit selects the connection (merolla2014a), so
   weights up to 9 bits lie inside. The published per-core footprint `area_per_core_total` holds at that core:
   another geometry refuses `chip_area_mm2` by name (E190); TrueNorth's own core prices exactly as before.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T1 (digital spiking cores); an anchor: its own published core scaled by the census's cells, converters or bits (rho), its size and word width flagged.
+- **Outside part (`outside: own_die`).** the published die's core-grid share (gamma of its own die); an area_global_fixed beside it is refused by name ('the outside part is stated twice').
+- **Node.** 28 nm.
+- **Anchor (die).** core_mm2 `v('T1-TN-01')`; die_mm2 `v('T1-TN-02')`; n_pub `s('T1-TN-02', 'scope', '4096 cores (64 x 64)', 4096)`; its own share: own_memory_share.
+- **Logic held per core (review N-13).** one time-multiplexed neuron per core (T1-TN-06) with its scheduler, token controller and router (T1-TN-01) (T1-TN-01, T1-TN-06): off its geometry the held-logic form is the nominal.
+- **Organization.** 256 x 256, 9 weight bits per cell, 1 stored bits per cell, 152 bits per neuron; term weights {'bits': 1.0}. Citations: rows, cols: T1-TN-01 scope (256 axons x 256 neurons); stored_bits_per_cell: T1-TN-08 quote (synapse states 65,536 bits = 256 x 256 x 1); bits_per_neuron: T1-TN-08 quote ((31,232 + 6,656 + 1,024) bits / 256 neurons); weight_bits_per_cell: CO profiles/truenorth.json validity.geometry.cell_bits.
+- **Dropped.** area_global_fixed 46.6 mm2 (derived die remainder): the outside part is gamma.
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

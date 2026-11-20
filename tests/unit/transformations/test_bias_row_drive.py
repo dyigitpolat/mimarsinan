@@ -174,22 +174,24 @@ def test_a_bias_dominating_in_raw_units_no_longer_sets_the_shared_grid(monkeypat
 
 
 def test_the_projected_bias_is_a_row_code_at_the_drive(monkeypatch):
-    """The projected bias of layer 0 is ``c x_fs / s`` with integer ``c`` inside the row's ``±q_max``, within half a
-    drive step ``x_fs / (2 s)`` of the float bias (one weight step at the full-scale input)."""
+    """The projected bias of layer 0 is ``c d / s`` with integer ``c`` inside the row's ``±q_max`` at its stamped drive
+    ``d`` ([U-BRANGE2] the drive site's least-error code, no longer the top ``x_fs``), within half a drive step
+    ``d / (2 s)`` of the float bias."""
     flow = _flow()
     b_float = PT.get_effective_bias(flow.get_perceptrons()[0]).detach().clone()
     _wq(monkeypatch, flow, _value_config())
     p = flow.get_perceptrons()[0]
-    s = float(p.parameter_scale)
-    row = PT.get_effective_bias(p) * s / X_FS
+    s, drive = float(p.parameter_scale), _stamp(p)
+    row = PT.get_effective_bias(p) * s / drive
     torch.testing.assert_close(row, torch.round(row), atol=1e-4, rtol=0)
     assert float(torch.round(row).abs().max()) <= Q_MAX
-    assert float((PT.get_effective_bias(p) - b_float).abs().max()) <= X_FS / (2 * s) * (1 + 1e-5)
+    assert float((PT.get_effective_bias(p) - b_float).abs().max()) <= drive / (2 * s) * (1 + 1e-5)
 
 
-def test_the_drive_is_the_largest_code_of_the_reader_entry_grid(monkeypatch):
-    """Every perceptron reading an armed entry grid carries that grid's top code value as its row drive (``levels``
-    steps), so a crossbar row driven by the reader's own input DAC realizes it."""
+def test_the_drive_is_a_code_of_the_reader_entry_grid(monkeypatch):
+    """Every perceptron reading an armed entry grid carries a code value of that grid as its row drive ([U-BRANGE2] the
+    drive site's least-error code, at most the top), so a crossbar row driven by the reader's own input DAC realizes
+    it."""
     from mimarsinan.transformations.perceptron.bias_drive import bias_row_drive  # absent without the unit
 
     flow = _flow()
@@ -197,8 +199,9 @@ def test_the_drive_is_the_largest_code_of_the_reader_entry_grid(monkeypatch):
     for perceptron in flow.get_perceptrons():
         grid = boundary_grid_of(perceptron.input_activation)
         drive = bias_row_drive(perceptron)
-        assert drive == _entry_full_scale(perceptron)
-        assert drive / grid.step == pytest.approx(grid.levels, abs=1e-9)
+        code = round(drive / grid.step)
+        assert 1 <= code <= grid.levels and drive <= _entry_full_scale(perceptron)
+        assert drive / grid.step == pytest.approx(code, abs=1e-9)
 
 
 def test_the_codes_are_invariant_under_a_function_preserving_input_rescaling(monkeypatch):
@@ -254,14 +257,11 @@ def test_every_bias_on_the_drive_route_is_coded_on_the_drive_lattice(monkeypatch
     6) and the largest bias error grows from 0.0012 to 0.0067: a boundary of the rule, stated with this denominator."""
     flow = _flow()
     p2 = flow.get_perceptrons()[1]
-    b_float = PT.get_effective_bias(p2).detach().clone()
     _wq(monkeypatch, flow, _value_config())
-    s = float(p2.parameter_scale)
-    row = PT.get_effective_bias(p2) * s / X_FS_2
+    s, drive = float(p2.parameter_scale), _stamp(p2)  # [U-BRANGE2] the stamped drive, a code at most the top X_FS_2
+    row = PT.get_effective_bias(p2) * s / drive
     torch.testing.assert_close(row, torch.round(row), atol=1e-4, rtol=0)
-    raw_codes = torch.round(b_float * s)
-    moved = int((torch.round(row) * X_FS_2 != raw_codes).sum())
-    assert moved == 3, f"{moved} of 4 bias codes moved to the drive lattice"
+    assert drive <= X_FS_2
 
 
 def test_a_reader_full_scale_below_one_drives_its_row_at_that_full_scale(monkeypatch):
@@ -363,6 +363,40 @@ def test_the_route_predicate_needs_a_readout_law_on_value_domain_cores_with_the_
         assert not bias_row_drive_route(declared), config.id
 
 
+def test_a_law_resolution_bias_without_an_on_chip_register_is_refused_by_name_before_the_route_is_read():
+    """[U-BRANGE2 stage 1c, the delta verify's n-4 for X36] The route reads the law-resolution bias from the step's own
+    grids; where that bias has no on-chip register, ``projection_grids`` refuses the declaration by name before the
+    predicate is read, so wherever the route reads ``law_bias`` true the on-chip register excludes the route already."""
+    from mimarsinan.common.refusal import ToolchainRefusal
+    from mimarsinan.pipelining.pipeline_steps.quantization.bias_row_drive_route import bias_row_drive_route
+
+    with pytest.raises(ToolchainRefusal, match="bias_resolution='law' needs an on-chip bias"):
+        bias_row_drive_route(_value_config(bias_resolution="law"))
+
+
+def test_the_register_route_needs_an_on_chip_register():
+    """[U-BRANGE2 stage 1c, the delta verify's n-4 for X37] The register route (``resolve_wq_two_scale_projection``)
+    is true only with an on-chip bias register: declared on cores without one it resolves false, so the route reads it
+    only where the on-chip register excludes the route already."""
+    from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_wq_two_scale_projection
+    from mimarsinan.pipelining.pipeline_steps.quantization.bias_row_drive_route import bias_row_drive_route
+
+    assert resolve_wq_two_scale_projection(_value_config(has_bias=True, wq_two_scale_projection=True))
+    assert not resolve_wq_two_scale_projection(_value_config(wq_two_scale_projection=True))
+    assert bias_row_drive_route(_value_config(wq_two_scale_projection=True))
+
+
+def test_a_readout_law_on_event_domain_cores_is_refused_by_name_before_the_route_is_read():
+    """[U-BRANGE2 stage 1c, the delta verify's n-4 for X38] A readout law is value-domain configuration: on
+    event-domain (spiking) cores the run's door refuses it by name before the route's predicate is read, so wherever
+    the route reads a readout law its cores are value-domain."""
+    from mimarsinan.common.refusal import ToolchainRefusal
+    from mimarsinan.pipelining.pipeline_steps.quantization.bias_row_drive_route import bias_row_drive_route
+
+    with pytest.raises(ToolchainRefusal, match="readout_law is value-domain configuration"):
+        bias_row_drive_route(_value_config(core_semantics="spiking"))
+
+
 # ---------------------------------------------------------------------------
 # G-4: bias-row splitting, verification, the canonicalization rung, the stamp's travel
 # ---------------------------------------------------------------------------
@@ -377,7 +411,7 @@ def test_bias_row_splitting_counts_rows_at_the_drive(monkeypatch):
     p = flow.get_perceptrons()[0]
     rows = float(p.parameter_scale) / float(p.bias_scale)
     assert rows == pytest.approx(1.0, abs=1e-6), f"{rows} rows"
-    row = PT.get_effective_bias(p) * float(p.bias_scale) / X_FS
+    row = PT.get_effective_bias(p) * float(p.bias_scale) / _stamp(p)  # [U-BRANGE2] at the stamped drive
     torch.testing.assert_close(row, torch.round(row), atol=1e-4, rtol=0)
 
 
@@ -416,7 +450,7 @@ def test_the_drive_stamp_travels_with_the_model_through_fusion_copies_and_the_st
     keys = sorted(flow.state_dict())
     _wq(monkeypatch, flow, _value_config())
     drives = [_stamp(p) for p in flow.get_perceptrons()]
-    assert drives == [_entry_full_scale(p) for p in flow.get_perceptrons()] and min(drives) > 1.0
+    assert all(d != 1.0 for d in drives)  # [U-BRANGE2] every perceptron stamped (its least-error code)
     buffer = io.BytesIO()
     torch.save(flow, buffer)
     buffer.seek(0)

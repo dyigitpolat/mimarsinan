@@ -25,6 +25,7 @@ from mimarsinan.mapping.pruning.ir_pruning_compact import (
     _reset_post_compaction_masks,
     _validate_outputs_remain,
 )
+from mimarsinan.mapping.support.neuron_thresholds import refuse_per_neuron_cores
 from mimarsinan.mapping.pruning.liveness_transfer import (
     DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
     DEFAULT_ELIMINATION_CONSTANT_FOLDING,
@@ -67,6 +68,7 @@ def prune_ir_graph(
 
     graph = ir_graph
     assert_unified_ir_for_pruning(graph)
+    refuse_per_neuron_cores(graph, "IR pruning")  # [U-PCH] its folds and liveness read one threshold per core
 
     exempt_rows, exempt_cols = _boundary_policy_exemptions(graph)
     seed_per_node, seed_per_bank = _collect_initial_seeds(

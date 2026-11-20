@@ -1,12 +1,12 @@
-"""[H3b] Calibrate THIS host's compute rate into declarable physics overrides.
+"""[H3b] Calibrate THIS machine's compute rate and dispatch wall: [U-HOST] a labelled diagnostic, never a host block.
 
 Usage: PYTHONPATH=src env/bin/python scripts/calibrate_host.py [out.json] [--declared rows.json]
-Writes generated/host_calibration.json by default. The artifact's
-``platform_physics_overrides`` block is the named ``host`` block of
-``merge_override_blocks`` (read it with ``host_calibration.load_host_block``).
-``--declared`` adds host rows the calibration cannot measure (``p_host`` where
-RAPL is unreadable), each a physics-constant declaration with its own evidence;
-a row both measured and declared refuses by name.
+Writes generated/host_calibration.json by default. The artifact's ``diagnostic`` holds the development machine's
+measured host rows under its label (``host_calibration.DIAGNOSTIC_LABEL``): they price nothing (host metrics are
+priced from an identified host description's published rows, ``hosts/<name>.json``; ``host_calibration.host_block``
+refuses a calibration artifact by name). ``--declared`` adds host rows the calibration cannot measure (``p_host``
+where RAPL is unreadable), each a physics-constant declaration with its own evidence; a row both measured and
+declared refuses by name.
 """
 
 import argparse
@@ -33,14 +33,15 @@ def main() -> int:
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(artifact, fh, indent=2)
         fh.write("\n")
-    block = artifact["platform_physics_overrides"]
+    rows = artifact["diagnostic"]["rows"]
+    print(artifact["diagnostic"]["label"])
     print(f"machine: {artifact['machine']} ({artifact['threads']} torch thread(s), "
           f"CPUs {artifact['cpu_affinity']})")
     print(f"host_macs_per_s: {artifact['host_macs_per_s']:.3e} ({artifact['host_macs_per_s']/1e9:.2f} G/s)")
-    dispatch = block["t_host_op_overhead"]
+    dispatch = rows["t_host_op_overhead"]
     print(f"t_host_op_overhead: {dispatch['low']:.2f} / {dispatch['nominal']:.2f} / {dispatch['high']:.2f} us "
           f"(p10 / median / p90)")
-    power = block.get("p_host")
+    power = rows.get("p_host")
     if power is None:
         print(f"p_host: absent ({artifact['p_host_basis']})")
     else:

@@ -23,6 +23,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from spiking_points import declaring_fire_while_integrating
 import torch
 import torch.nn as nn
 
@@ -80,14 +81,14 @@ def _compute_only_mapping(op_id=42):
 
 
 def _contract(device):
-    return SpikingDeploymentContract.from_pipeline_config({
+    return SpikingDeploymentContract.from_pipeline_config(declaring_fire_while_integrating({
         "simulation_steps": 4,
         "spiking_mode": "lif",
         "firing_mode": "Default",
         "thresholding_mode": "<",
         "spike_generation_mode": "Uniform",
         "device": device,
-    })
+    }))
 
 
 def _seg_io_slice(node_id, offset, size):

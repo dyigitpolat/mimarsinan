@@ -2,9 +2,11 @@ from mimarsinan.mapping.export.chip_export import hard_cores_to_chip
 from mimarsinan.common.file_utils import *
 from mimarsinan.common.env import nevresim_root
 from mimarsinan.code_generation.generate_main import *
+from mimarsinan.code_generation.cpp_chip_model_types import _python_to_cpp_type_name
 from mimarsinan.chip_simulation.nevresim.compile_nevresim import *
 from mimarsinan.chip_simulation.nevresim.execute_nevresim import *
 from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
+from mimarsinan.chip_simulation.hybrid_run.output_decode import decode_held
 from mimarsinan.chip_simulation.nevresim.compile_cache import (
     NevresimCompileCache,
     cache_key,
@@ -19,18 +21,12 @@ from mimarsinan.chip_simulation.nevresim.connectivity import (
 
 from mimarsinan.chip_simulation.nevresim import instrumented_builds
 from mimarsinan.chip_simulation.nevresim.integration_policy_read import require_integration_policy
-from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
-from mimarsinan.common.env import nevresim_root
+from mimarsinan.chip_simulation.point_capability import require_backend_executes
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 
 import numpy as np
 import shutil
-
-
-def _python_to_cpp_type_name(py_type) -> str:
-    """Map a Python numeric type to its C++ template-argument string."""
-    if py_type is float:
-        return "double"
-    return py_type.__name__
+from mimarsinan.chip_simulation.timing_decision import timing_program_in_range
 
 
 def resolve_nevresim_path() -> str:
@@ -50,23 +46,25 @@ class NevresimDriver:
         # spike_generation_mode="Stochastic" handed a bypassing caller RANDOM
         # input spikes, and "<=" is the ttfs family's comparator.
         spike_generation_mode, thresholding_mode,
-        firing_mode="Default", spiking_mode="lif",
+        firing_mode="Default",
+        # [U-LIF2 r2] The run's resolved point this chip runs (the runner's record, never a mode): its mode and soma law,
+        # and the policy the emitted program is generated from.
+        point: SpikingPoint,
         threshold_type=None, verbose=True,
         connectivity_mode: ConnectivityMode | None = None,
         compile_cache_dir: str | None = None,
         simulation_step_timeout_s: float | None = None,
-        # The resolved soma point this chip runs. The default IS today's law,
-        # so every historical construction emits and caches byte-identically.
-        soma_law: SomaLaw = DEFAULT_SOMA_LAW,
     ):
+        require_backend_executes(point, backend="nevresim", context="NevresimDriver")  # [U-LIF2 r3, n-5] as every runner
         assert NevresimDriver.nevresim_path is not None, "nevresim path is not set."
 
-        self.soma_law = soma_law
+        self.point = point
+        self.soma_law = point.soma_law
         self.simulation_step_timeout_s = simulation_step_timeout_s
         self.spike_generation_mode = spike_generation_mode
         self.firing_mode = firing_mode
         self.thresholding_mode = thresholding_mode
-        self.spiking_mode = spiking_mode
+        self.spiking_mode = point.spiking_mode
         self.weight_type = weight_type
         self.threshold_type = threshold_type if threshold_type is not None else weight_type
         self.connectivity_mode = (
@@ -79,9 +77,8 @@ class NevresimDriver:
 
         self.chip = hard_cores_to_chip(
             input_buffer_size,
-            hard_core_mapping,
-            hard_core_mapping.axons_per_core,
-            hard_core_mapping.neurons_per_core,
+            timing_program_in_range(hard_core_mapping, self.spiking_mode),  # [U-CSOMA] refused by name beyond 64 bits
+            hard_core_mapping.axons_per_core, hard_core_mapping.neurons_per_core,
             leak=0,
             weight_type=self.weight_type,
             threshold_type=self.threshold_type)
@@ -102,15 +99,16 @@ class NevresimDriver:
             threshold_cpp=tt_cpp,
         )
 
-    def _simulator_output_to_predictions(self, simulator_output, number_of_classes):
+    def _simulator_output_to_predictions(self, simulator_output, number_of_classes, output_gauge=None):
         """Returns ``(predictions, total_spikes)`` — the total-output-spikes
         figure is a measured read (deployment_record_schema.md §4), returned
-        alongside the existing print instead of being dropped."""
+        alongside the existing print instead of being dropped. [U-TGAUGE2] Classes at the program's ``output_gauge``."""
         total_spikes = sum(simulator_output)
         print("  Total spikes: {}".format(total_spikes))
 
         prediction_count = int(len(simulator_output) / number_of_classes)
         output_array = np.array(simulator_output).reshape((prediction_count, number_of_classes))
+        output_array = decode_held(output_array, output_gauge)  # None: the counts' own ranking
 
         predictions = np.zeros(prediction_count, dtype=int)
         for i in range(prediction_count):
@@ -124,10 +122,8 @@ class NevresimDriver:
         wt_cpp = _python_to_cpp_type_name(self.weight_type)
         tt_cpp = _python_to_cpp_type_name(self.threshold_type)
         cfg = get_config(
-            self.spike_generation_mode, self.firing_mode,
-            wt_cpp, self.spiking_mode, threshold_type=tt_cpp,
-            thresholding_mode=self.thresholding_mode,
-            soma_law=self.soma_law,
+            self.spike_generation_mode, self.firing_mode, wt_cpp,
+            point=self.point, threshold_type=tt_cpp, thresholding_mode=self.thresholding_mode,
         )
         # [U-H] a non-default integration policy is emitted only for a tree that carries it.
         require_integration_policy(cfg["integration_policy"], NevresimDriver.nevresim_path or nevresim_root())
@@ -139,7 +135,7 @@ class NevresimDriver:
         else:
             generate_main_function(
                 self.generated_files_path, max_input_count, self.chip.output_size,
-                simulation_length, latency, main_cpp_template, cfg, verbose=verbose,
+                simulation_length, latency, main_cpp_template, simulation_config=cfg, verbose=verbose,
             )
 
     def _compile_cache_key(self, simulation_length: int, latency: int) -> str:
@@ -232,11 +228,12 @@ class NevresimDriver:
         )
         return raw.reshape(-1).tolist(), max_input_count
 
-    def predict_spiking(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=0):
-        """Returns ``(predictions, total_spikes)``."""
+    def predict_spiking(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=0,
+                        output_gauge=None):
+        """Returns ``(predictions, total_spikes)``; ``output_gauge``: the program's, per output (U-TGAUGE2)."""
         simulator_output, _ = self._run_simulator(
             input_loader, simulation_length, latency, max_input_count, num_proc)
-        return self._simulator_output_to_predictions(simulator_output, self.chip.output_size)
+        return self._simulator_output_to_predictions(simulator_output, self.chip.output_size, output_gauge)
 
     def predict_spiking_raw(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=0):
         """Run simulation and return raw spike counts as (num_samples, num_outputs)."""
@@ -296,3 +293,4 @@ class NevresimDriver:
         num_outputs = self.chip.output_size
         prediction_count = int(len(simulator_output) / num_outputs)
         return np.array(simulator_output).reshape((prediction_count, num_outputs))
+

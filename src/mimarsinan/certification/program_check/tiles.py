@@ -18,10 +18,13 @@ from mimarsinan.certification.program_check.reads import training_module
 from mimarsinan.certification.program_check.report import ConditionResult, Violation
 from mimarsinan.certification.program_check.unit_forms.lanes import compare_laws
 from mimarsinan.certification.program_check.unit_forms.operands import payload_terms
+from mimarsinan.mapping.latency.upstream import charged_rows
 from mimarsinan.certification.program_check.view import (
     OFF, Canonical, Placed, ProgramView, canonical, decode, first_difference, restrict, same,
 )
 from mimarsinan.mapping.platform.core_residency import CORE_SINGLETON_PROPERTIES
+from mimarsinan.mapping.support.neuron_thresholds import threshold_bound, thresholds_integral
+from mimarsinan.mapping.support.value_layouts import placement_value
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 
 #: Singletons every executor reads from the hard core whatever the target declares (one register per core).
@@ -66,16 +69,15 @@ def _source(value: int) -> str:
 
 def _block(cv, lo: int, hi: int) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """The executed weights (the bank block on the HCM's bank fast path) and hardware bias of columns ``[lo, hi)``."""
-    bias = getattr(cv.core, "hardware_bias", None)
-    return cv.weights()[:cv.used_axons, lo:hi], (None if bias is None else np.asarray(bias)[lo:hi])
+    bias = placement_value(cv.core, "hardware_bias", lo, hi)
+    return cv.weights()[:cv.used_axons, lo:hi], (None if bias is None else np.asarray(bias))
 
 
 def _facts(cv, block_all, bias_all, row_levels, include_bias: bool) -> CoreFacts:
     named = cv.codes != OFF
     # [N2] a bound bank's rows read the payload (cleared in ``block_all``): live reads, at the payload's width.
     extra, top, coded, payload_rows = payload_terms(cv.blocks, cv.bindings or {}, row_levels, named, cv.used_neurons)
-    read = np.any(block_all != 0, axis=1) | payload_rows
-    live = read & named
+    live = (charged_rows(block_all, np.shape(block_all)[0]) | payload_rows) & named  # [U-LIVE] the predicate's test
     used = np.asarray(block_all, dtype=np.float64)[named]
     levels = row_levels[named][:, None]
     # A row whose input range is undeclared (NaN) taints the bound only where it carries a weight.
@@ -85,7 +87,7 @@ def _facts(cv, block_all, bias_all, row_levels, include_bias: bool) -> CoreFacts
     bias = None if bias_all is None else np.asarray(bias_all[:cv.used_neurons], dtype=np.float64)
     if include_bias and bias is not None and bias.size:
         mags = mags + np.abs(bias)
-    theta = float(getattr(cv.core, "threshold", 1.0) or 0.0)
+    theta = threshold_bound(getattr(cv.core, "threshold", 1.0))  # [U-PCH] the largest of per-neuron registers
     weighted = row_levels[live]
     law = getattr(cv.core, "readout_law", None)
     return CoreFacts(live=live, magnitude=float(np.max(mags, initial=0.0)), theta=theta, placed=bool(cv.placements),
@@ -95,7 +97,7 @@ def _facts(cv, block_all, bias_all, row_levels, include_bias: bool) -> CoreFacts
                      # [E6] a law core's executor reads the law's integer bias, never its hardware bias (a bias at
                      # the law's resolution is real-valued, WI-5g's declared grids).
                      integral_bias=law is not None or bias is None or bool(np.array_equal(bias, np.round(bias))),
-                     integral_threshold=theta == round(theta),
+                     integral_threshold=thresholds_integral(getattr(cv.core, "threshold", 1.0)),
                      nonnegative=bool((used >= 0).all()) and (bias is None or bool((bias >= 0).all())))
 
 
@@ -174,10 +176,12 @@ def sweep(delta: ProgramView, iota: ProgramView, results: Dict[str, ConditionRes
                 for name in _singletons(cv.core):
                     theta.checked += 1
                     prop = next(q for q in CORE_SINGLETON_PROPERTIES if q.name == name)
-                    if not prop.compare(getattr(cv.core, name, None), getattr(icore, name, None)):
+                    # [U-PCH3] each value by the core's declared layout: per neuron at the placement's columns, else whole
+                    mine_v, ident_v = (placement_value(cv.core, name, lo, hi), placement_value(
+                        icore, name, ip.neuron_offset + p.col0, ip.neuron_offset + p.col0 + p.cols))
+                    if not prop.compare(mine_v, ident_v):
                         theta.add(Violation("H1-theta", name, where,
-                                            f"the core stores {getattr(cv.core, name, None)!r}, the node's "
-                                            f"identity core {getattr(icore, name, None)!r}"))
+                                            f"the core stores {mine_v!r}, the node's identity core {ident_v!r}"))
                 carried, broken = compare_laws(cv.core, cv.codes, lo, hi, icore, icv.codes, ip.neuron_offset + p.col0,
                                                ip.neuron_offset + p.col0 + p.cols)
                 laws.checked += int(carried)

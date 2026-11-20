@@ -35,6 +35,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     sync_exact_qat_active,
 )
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
+from spiking_points import point_of_mode
 
 
 def _sync_cfg(tq=4, steps=4, *, exact=True):
@@ -80,7 +81,7 @@ class TestRecipeKnob:
     def test_synchronized_recipe_turns_exact_endpoint_on(self):
         from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
-        recipe = ConversionPolicy.derive("ttfs_cycle_based", "synchronized")
+        recipe = ConversionPolicy.derive(point_of_mode("ttfs_cycle_based", "synchronized"))
         assert recipe.knobs["sync_exact_qat"] is True
         assert recipe.special_case == "sync_exact_endpoint"
 
@@ -89,7 +90,7 @@ class TestRecipeKnob:
         # ttfs_quantized is an X4 follow-up.
         from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
-        assert "sync_exact_qat" not in ConversionPolicy.derive("ttfs_quantized").knobs
+        assert "sync_exact_qat" not in ConversionPolicy.derive(point_of_mode("ttfs_quantized")).knobs
 
 
 class TestKnobOffBitIdentity:

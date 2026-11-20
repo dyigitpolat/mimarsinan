@@ -14,6 +14,7 @@ from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _histogram
 from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import HeatmapScaleFamily
+from mimarsinan.mapping.support.neuron_thresholds import threshold_report
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     _group_consecutive_compute_stages,
     _make_per_core_connectivity_source,
@@ -121,7 +122,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     "display_axons": core.axons_per_core,
                     "display_neurons": core.neurons_per_core,
                     "utilization": utilization,
-                    "threshold": float(core.threshold) if core.threshold is not None else None,
+                    "threshold": threshold_report(core.threshold),  # [U-PCH] a list for per-neuron registers
                     "latency": core.latency,
                 }
                 with best_effort(f"register heatmap for hard core {ci}", logger=logger):

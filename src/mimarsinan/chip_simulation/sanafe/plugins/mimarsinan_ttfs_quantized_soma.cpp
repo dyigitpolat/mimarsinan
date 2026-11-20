@@ -1,8 +1,13 @@
 // TTFS quantized: nevresim NeuronCompute<TTFSQuantizedCompute<S>> cycle semantics.
+//
+// The fire step is the one timing decision (nevresim's timing_decision.hpp,
+// shared with nevresim's quantized neuron): a preset membrane the stage hands
+// with its lattice record (``lattice`` and ``preset_numerator``, the
+// executor's m over 2S) is decided in integers; any other preset by the
+// executor's closed form; a neuron without a preset by the threshold ramp.
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -11,6 +16,10 @@
 #include "mapped.hpp"
 #include "pipeline.hpp"
 
+#include "simulator/compute_policy/timing_decision.hpp"
+
+namespace timing = nevresim::timing;
+
 class MimarsinanTtfsQuantizedSoma : public sanafe::SomaUnit
 {
 public:
@@ -18,7 +27,8 @@ public:
     {
         register_attributes({
                 "threshold", "bias", "active_start", "active_length",
-                "simulation_length", "preset_membrane",
+                "simulation_length", "preset_membrane", "lattice",
+                "preset_numerator",
         });
     }
 
@@ -47,9 +57,14 @@ public:
 
         if (!initialized_[neuron_address])
         {
+            const double theta = threshold_[neuron_address];
             if (has_preset_[neuron_address])
             {
                 membrane_[neuron_address] = preset_membrane_[neuron_address];
+                fire_step_[neuron_address] = timing::fire_step(
+                        timing::preset_membrane(preset_membrane_[neuron_address],
+                                lattice_[neuron_address], preset_numerator_[neuron_address]),
+                        theta, s, false, timing::FloatPath::closed_form);
             }
             else
             {
@@ -58,17 +73,20 @@ public:
                 {
                     membrane_[neuron_address] += current_in.value();
                 }
+                timing::Membrane float_membrane;
+                float_membrane.v = membrane_[neuron_address];
+                fire_step_[neuron_address] = timing::fire_step(float_membrane,
+                        timing::floored_threshold(theta), s, false,
+                        timing::FloatPath::ramp);
             }
             initialized_[neuron_address] = true;
             steps_[neuron_address] = 0;
-            has_fired_[neuron_address] = false;
-            activation_[neuron_address] = 0.0;
-            fire_step_[neuron_address] = -1;
             emitted_fire_[neuron_address] = false;
-            if (has_preset_[neuron_address])
-            {
-                apply_quantized_activation_from_membrane(neuron_address, s);
-            }
+            // A preset neuron's activation is known at once; a ramping one's at its fire step.
+            has_fired_[neuron_address] = has_preset_[neuron_address]
+                    && timing::in_window(fire_step_[neuron_address]);
+            activation_[neuron_address] = has_fired_[neuron_address]
+                    ? timing::level(s, fire_step_[neuron_address]) : 0.0;
         }
 
         if (steps_[neuron_address] >= s)
@@ -79,35 +97,14 @@ public:
         }
 
         sanafe::NeuronStatus status = sanafe::updated;
-
-        if (has_preset_[neuron_address])
+        if (!emitted_fire_[neuron_address]
+                && timing::in_window(fire_step_[neuron_address])
+                && steps_[neuron_address] == fire_step_[neuron_address])
         {
-            if (has_fired_[neuron_address] && !emitted_fire_[neuron_address]
-                    && fire_step_[neuron_address] >= 0
-                    && steps_[neuron_address] == fire_step_[neuron_address])
-            {
-                status = sanafe::fired;
-                emitted_fire_[neuron_address] = true;
-            }
-        }
-        else
-        {
-            const double theta = std::max(threshold_[neuron_address], 1e-12);
-            if (!has_fired_[neuron_address]
-                    && membrane_[neuron_address] >= theta)
-            {
-                fire_step_[neuron_address] = steps_[neuron_address];
-                activation_[neuron_address] =
-                        static_cast<double>(s - steps_[neuron_address])
-                        / static_cast<double>(s);
-                has_fired_[neuron_address] = true;
-                if (!emitted_fire_[neuron_address])
-                {
-                    status = sanafe::fired;
-                    emitted_fire_[neuron_address] = true;
-                }
-            }
-            membrane_[neuron_address] += theta / static_cast<double>(s);
+            status = sanafe::fired;
+            emitted_fire_[neuron_address] = true;
+            has_fired_[neuron_address] = true;
+            activation_[neuron_address] = timing::level(s, fire_step_[neuron_address]);
         }
 
         ++steps_[neuron_address];
@@ -139,6 +136,8 @@ public:
         steps_.clear();
         preset_membrane_.clear();
         has_preset_.clear();
+        lattice_.clear();
+        preset_numerator_.clear();
         fire_step_.clear();
         emitted_fire_.clear();
         simulation_length_ = 0;
@@ -181,27 +180,14 @@ public:
             preset_membrane_[neuron_address] = static_cast<double>(param);
             has_preset_[neuron_address] = true;
         }
-    }
-
-    void apply_quantized_activation_from_membrane(std::size_t neuron_address, int s)
-    {
-        const double theta = std::max(threshold_[neuron_address], 1e-12);
-        const double v = membrane_[neuron_address];
-        const double k_fire_raw =
-                std::ceil(static_cast<double>(s) * (1.0 - v / theta));
-        if (k_fire_raw >= static_cast<double>(s))
+        else if (attribute_name == "lattice")
         {
-            activation_[neuron_address] = 0.0;
-            has_fired_[neuron_address] = false;
-            fire_step_[neuron_address] = -1;
-            return;
+            lattice_[neuron_address] = static_cast<bool>(param);
         }
-        const int k_fire = std::max(
-                0, std::min(static_cast<int>(k_fire_raw), s - 1));
-        fire_step_[neuron_address] = k_fire;
-        activation_[neuron_address] =
-                static_cast<double>(s - k_fire) / static_cast<double>(s);
-        has_fired_[neuron_address] = activation_[neuron_address] > 0.0;
+        else if (attribute_name == "preset_numerator")
+        {
+            preset_numerator_[neuron_address] = static_cast<double>(param);
+        }
     }
 
 private:
@@ -216,6 +202,8 @@ private:
     std::vector<int> steps_;
     std::vector<double> preset_membrane_;
     std::vector<bool> has_preset_;
+    std::vector<bool> lattice_;
+    std::vector<double> preset_numerator_;
     std::vector<int> fire_step_;
     std::vector<bool> emitted_fire_;
     int simulation_length_{0};
@@ -236,6 +224,8 @@ private:
             steps_.resize(new_size, 0);
             preset_membrane_.resize(new_size, 0.0);
             has_preset_.resize(new_size, false);
+            lattice_.resize(new_size, false);
+            preset_numerator_.resize(new_size, 0.0);
             fire_step_.resize(new_size, -1);
             emitted_fire_.resize(new_size, false);
         }
@@ -246,3 +236,6 @@ extern "C" sanafe::PipelineUnit *create_mimarsinan_ttfs_quantized_soma()
 {
     return static_cast<sanafe::PipelineUnit *>(new MimarsinanTtfsQuantizedSoma());
 }
+
+// The one timing decision's version, read by the toolchain before it stamps this soma (timing_decision.py).
+extern "C" int mimarsinan_timing_decision_abi() { return timing::abi; }

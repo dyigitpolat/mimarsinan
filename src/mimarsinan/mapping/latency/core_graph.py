@@ -113,8 +113,10 @@ def longest_paths(sources: Sequence[Sequence[int]]) -> List[int]:
 def alap_latencies(sources: Sequence[Sequence[int]]) -> List[int]:
     """Per core, the latency ``ChipLatency.calculate`` gives core ``i`` reading the stage cores ``sources[i]``.
 
-    Its invariant sweep leaves the longest path over cross-core sources (live weights never exceed it), and its shift
-    alignment raises every core of a feed-forward stage to its deepest consumer's latency minus one."""
+    ``sources[i]`` are core ``i``'s live sources under the one liveness predicate (``upstream.live_axons``: not off,
+    not a stage input or the always-on line, a nonzero weight row), the set ChipLatency's sweep, alignment and delays
+    read. Its invariant sweep leaves the longest path over them, and its shift alignment raises every core of a
+    feed-forward stage to its deepest consumer's latency minus one."""
     order = topological_order(sources)
     latency = [0] * len(sources)
     for index in order:

@@ -17,6 +17,9 @@ from mimarsinan.tuning.orchestration.tuning_policy import (
     effective_prefix_stage_lr,
 )
 
+#: [U-LIF2 r2] The calibration resolver reads the config's point: the cascaded TTFS cycle.
+_CASCADED_CYCLE = {"spiking_mode": "ttfs_cycle_based", "ttfs_cycle_schedule": "cascaded"}
+
 
 class _StubProvider:
     def __init__(self, train=57000, val=3000, bs=128):
@@ -111,14 +114,14 @@ class TestCalibrationProfileConsumers:
 
     def test_calibration_pipeline_defaults_unchanged(self):
         cal = CalibrationPipeline.resolve(
-            {}, synchronized=False, distmatch_driven=True
+            dict(_CASCADED_CYCLE), synchronized=False, distmatch_driven=True
         )
         assert cal.distmatch_bias_iters == 15
         assert cal.distmatch_cal_batches == 8
 
     def test_calibration_pipeline_reads_the_profile(self):
         cal = CalibrationPipeline.resolve(
-            {"calibration_set_policy": {
+            {**_CASCADED_CYCLE, "calibration_set_policy": {
                 "distmatch_bias_iters": 5, "distmatch_cal_batches": 2,
             }},
             synchronized=False, distmatch_driven=True,
@@ -129,6 +132,7 @@ class TestCalibrationProfileConsumers:
     def test_explicit_ttfs_key_beats_the_profile(self):
         cal = CalibrationPipeline.resolve(
             {
+                **_CASCADED_CYCLE,
                 "ttfs_distmatch_bias_iters": 7,
                 "calibration_set_policy": {"distmatch_bias_iters": 5},
             },

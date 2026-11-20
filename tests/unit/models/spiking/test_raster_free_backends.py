@@ -16,6 +16,7 @@ import pytest
 
 import mimarsinan.models.spiking.hybrid.carry as carry
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
+from spiking_points import point_of_mode
 from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, RASTER_FREE_BACKENDS, VERBATIM
 
 _STREAMED = {"spiking_family": "lif", "spiking_variant": "streamed"}
@@ -74,7 +75,9 @@ class TestTheDeviceRunnerRefusesACarriedRaster:
     def _runner(self, carried, transfer):
         from mimarsinan.chip_simulation.odin_fpga.runner import OdinFpgaRunner
 
-        contract = SimpleNamespace(soma_law=lambda: DEFAULT_SOMA_LAW, spiking_mode="lif")
+        # [U-LIF2 W5] the runner judges its contract's resolved point.
+        contract = SimpleNamespace(soma_law=lambda: DEFAULT_SOMA_LAW, spiking_mode="lif",
+                                   spiking_point=lambda: point_of_mode("lif", soma_law=DEFAULT_SOMA_LAW))
         return OdinFpgaRunner(_mapping(carried), 4, contract=contract, transport=SimpleNamespace(name="fake"),
                               weight_bits=4, effective_max_axons=127, max_neurons=256,
                               pass_transfer=transfer)

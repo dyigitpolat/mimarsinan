@@ -15,6 +15,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.recording.compare import Diff, compare_records, format_first_diff
 from mimarsinan.chip_simulation.recording.records import CoreSpikeCounts, RunRecord, SegmentSpikeRecord
@@ -61,6 +62,8 @@ _PLUGIN_CPP_SOURCES = (
     "mimarsinan_ttfs_cycle_soma.cpp",
     "mimarsinan_ttfs_cascade_soma.cpp",
 )
+#: Headers the plugins compile from outside their own folder (the timing somas' one timing decision).
+_PLUGIN_SHARED_HEADERS = (Path("nevresim/include/simulator/compute_policy/timing_decision.hpp"),)
 
 
 @dataclass
@@ -149,6 +152,7 @@ def sanafe_plugins_stale() -> bool:
     cmake_lists = src_dir / "CMakeLists.txt"
     source_mtimes = [
         *(path.stat().st_mtime for name in _PLUGIN_CPP_SOURCES if (path := src_dir / name).is_file()),
+        *(path.stat().st_mtime for rel in _PLUGIN_SHARED_HEADERS if (path := mimarsinan_root() / rel).is_file()),
         cmake_lists.stat().st_mtime,
     ]
     if not source_mtimes:
@@ -434,7 +438,7 @@ def run_nevresim_parity(
             spike_generation_mode=behavior.spike_generation_mode,
             firing_mode=behavior.firing_mode,
             thresholding_mode=behavior.thresholding_mode,
-            spiking_mode=behavior.spiking_mode,
+            point=point_of_mode(behavior.spiking_mode),
             connectivity_mode=connectivity_mode,
             verbose=False,
         )

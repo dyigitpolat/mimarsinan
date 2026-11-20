@@ -14,6 +14,7 @@ from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
 from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
 from mimarsinan.config_schema.registry import REGISTRY, FieldType
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+from spiking_points import point_of_mode
 
 KNOBS = (
     "lif_membrane_readout",
@@ -50,7 +51,7 @@ class TestRegistry:
 
 class TestRecipeFold:
     def test_lif_recipe_arms_the_exact_corrections(self):
-        knobs = ConversionPolicy.derive("lif").knobs
+        knobs = ConversionPolicy.derive(point_of_mode("lif")).knobs
         for key in RECIPE_ON:
             assert knobs.get(key) is True, key
 
@@ -58,14 +59,20 @@ class TestRecipeFold:
         # The knobs dict keeps both False: the affine fold stays off (A/B
         # harmful), and the retiming arm belongs to the exact-QAT pairing so
         # the pair can downgrade together (Novena, explicit opt-out).
-        knobs = ConversionPolicy.derive("lif").knobs
+        knobs = ConversionPolicy.derive(point_of_mode("lif")).knobs
         for key in RECIPE_OFF:
             assert knobs.get(key) is False, key
 
     def test_non_lif_recipes_never_arm_them(self):
-        for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
-            knobs = ConversionPolicy.derive(mode).knobs
+        """[U-TGAUGE5] but the depth-balancing relays, which the recipe of every per-cycle cascade arms (the cascaded
+        timing schedule's too), from the mode policy's one predicate."""
+        for mode, schedule in (("ttfs", None), ("ttfs_quantized", None), ("ttfs_cycle_based", "synchronized"),
+                               ("ttfs_cycle_based", "cascaded")):
+            knobs = ConversionPolicy.derive(point_of_mode(mode, schedule)).knobs
             for key in KNOBS:
+                if key == "lif_depth_balancing_relays":
+                    assert knobs.get(key, False) is (schedule == "cascaded"), (mode, schedule, key)
+                    continue
                 assert key not in knobs, (mode, key)
 
     def test_derivation_folds_recipe_on_for_lif(self):

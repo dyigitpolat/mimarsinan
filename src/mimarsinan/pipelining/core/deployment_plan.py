@@ -31,6 +31,7 @@ from mimarsinan.common.pretrained import (
     select_weight_set,
     selected_source,
 )
+from mimarsinan.chip_simulation.window_firing import derived_census_samples
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.mapping.support.bias_rows import BiasRowSplitting
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
@@ -57,6 +58,11 @@ def resolve_weight_source(config: dict[str, Any]) -> Any:
             raise preload_regime_error(config)
         return source
     return None
+
+
+def _declared_or(declared: Any, derived: int) -> int:
+    """[U-LIF2 W13] A declared count stands; absent, the registry's derived default (one function for both readers)."""
+    return derived if declared is None else int(declared)
 
 
 @dataclass(frozen=True)
@@ -183,7 +189,7 @@ class DeploymentPlan(PlanPredicates):
             enable_nevresim_simulation=bool(get("enable_nevresim_simulation", True)),
             enable_loihi_simulation=bool(get("enable_loihi_simulation", False)),
             enable_sanafe_simulation=bool(get("enable_sanafe_simulation", False)),
-            event_census_samples=int(get("event_census_samples", 0) or 0),
+            event_census_samples=_declared_or(get("event_census_samples"), derived_census_samples(config)),
             enable_odin_fpga_simulation=bool(
                 get("enable_odin_fpga_simulation", False)),
             enable_odin_hacc_export=bool(

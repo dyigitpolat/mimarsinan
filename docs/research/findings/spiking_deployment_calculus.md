@@ -1656,8 +1656,14 @@ remaining program is the VALUE ladder — where the measured ceiling is
 0.8477 with the funded swap.
 
 **Costs, stated honestly.** (1) Inference LATENCY becomes (D+1)·T cycles
-(ViT-12 @T=32: 416 vs ~44) — but pipelined THROUGHPUT is unchanged (one
-inference per T cycles); conversion wall-time IMPROVES ~S× because every
+(ViT-12 @T=32: 416 vs ~44). Pipelined throughput would be one inference per
+T cycles only with a count latch and pipelined passes, and neither holds on
+the declared cores: one membrane holds a window's charge through its
+emission window (a neuron is busy 2T cycles an inference), no executor
+declares a window-end count emission, and the residency rule refuses
+pipelined passes for the variant, so the toolchain prices throughput as one
+over the latency (the discipline is the registry axis lif_window_firing,
+U-LIF2); conversion wall-time IMPROVES ~S× because every
 genuine gauge/eval collapses to the analytic forward. (2) The membrane
 must hold the full-window signed accumulation (range ≤ Σ|w|·T/θ):
 a per-platform capability bit (Loihi-class membranes suffice; platforms

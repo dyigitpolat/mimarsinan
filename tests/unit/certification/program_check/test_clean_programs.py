@@ -126,12 +126,13 @@ def test_the_report_carries_both_theorems_and_the_walls():
 
 
 def test_memos_the_executors_filled_are_fresh():
-    """A program whose executors ran (every memo filled) is the same deployment: each memo equals its derivation."""
+    """A program whose executors ran (every memo filled) is the same deployment: each memo equals its derivation.
+    [U-TGAUGE5] The streamed run reads the window: the vehicle as the mapping builds it (its relays armed)."""
     import copy
 
     from unit.mapping.residency.executed import runs as R
 
-    program, ir = P.streamed_multipass()
+    program, ir = P.streamed_multipass(relays=True)
     ran = copy.deepcopy(program)
     with torch.no_grad():
         R.flow(ran, **R.STREAMED_LIF)(torch.rand(2, P.V.IN))

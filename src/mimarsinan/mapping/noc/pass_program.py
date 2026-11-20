@@ -37,6 +37,9 @@ class PassProgram:
     wavefront: bool = False
     dark_cores: Optional[FrozenSet[int]] = None
     core_ordinals: Optional[Tuple[int, ...]] = None
+    #: [U-ENERGY] Per core, its used (rows, columns): the census of outputs per evaluation and of local memory
+    #: traffic; empty where a caller states none (those counts are then not produced).
+    core_used: Tuple[Tuple[int, int], ...] = ()
 
     @property
     def cores(self) -> int:
@@ -84,4 +87,5 @@ def packed_pass_program(snapshots: Sequence[Any], *, resident: bool, core_types:
         core_tile_sign_rows=tuple(tuple(rows if s else 0 for rows, _ in e) for e, s in zip(extents, signed))
         if declared_cores else (),
         core_geometry=tuple((int(snap.axons_per_core), int(snap.neurons_per_core)) for snap in snapshots),
+        core_used=tuple((int(a), int(snap.used_neurons)) for a, snap in zip(used, snapshots)),
     ), tiles

@@ -5,11 +5,14 @@ from __future__ import annotations
 import torch
 
 from mimarsinan.chip_simulation.recording import spike_modes
+from mimarsinan.mapping.map_model_to_ir import as_gauge_like, own_gauge_of
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.perceptron_mixer.perceptron import effective_preactivation_bias
+from mimarsinan.transformations.perceptron.position_forward import position_bias_totals
 from mimarsinan.spiking.segment_boundary import normalize_ttfs_boundary_value
 from mimarsinan.spiking.segment_hop_frontier import run_segment_hop_hybrid
-from mimarsinan.spiking.segment_partition import is_encoding_perceptron, perceptron_of
+from mimarsinan.spiking.segment_partition import perceptron_of
+from mimarsinan.spiking.ttfs_cycle_reads import run_genuine_cycles
 
 
 def segment_series_roots(driver) -> list:
@@ -35,7 +38,7 @@ class TtfsSegmentPolicy:
 
     def prepare(self, driver):
         for p, mods in self._ttfs_perceptrons(driver._seg_of.keys()):
-            bias = effective_preactivation_bias(p)
+            bias = position_bias_totals(p, effective_preactivation_bias(p))  # [U-PFOLD] each position's own
             for m in mods:
                 m.set_cycle_accurate(True)
                 m.set_bias(bias)
@@ -67,15 +70,13 @@ class TtfsSegmentPolicy:
     def _ttfs_nodes(cls, nodes):
         return [m for _, mods in cls._ttfs_perceptrons(nodes) for m in mods]
 
-    def decode_scale(self, driver, node):
-        """activation_scale of the perceptron that produced this region node's spikes."""
+    def decode(self, driver, node, rate):
+        """[U-TGAUGE3] A perceptron's values from its decoded spike rate ``rate`` over its own window (the placement
+        rule): at its activation scale along its channel axis. [U-TGAUGE4] A region node is read by its producers
+        (``ttfs_cycle_reads``, ``region_read``)."""
         p = perceptron_of(node)
-        if p is not None:
-            return p.activation_scale
-        for d in driver._deps.get(node, []):
-            if driver._produces.get(d, False):
-                return self.decode_scale(driver, d)
-        return 1.0
+        assert p is not None, "a region node is read by its producers (ttfs_cycle_reads)"
+        return rate * as_gauge_like(own_gauge_of(p.activation_scale, node, tuple(rate.shape[1:])), rate)
 
     def consumer_wire_scale(self, driver, node):
         """``input_activation_scale`` of the perceptron this region node feeds into.
@@ -169,12 +170,15 @@ class TtfsSegmentPolicy:
         is window-relative (length ``T``); consumers read it at ``t - depth``. The
         forward is the exact hard encode; ``boundary_surrogate_temp`` adds an STE backward.
         """
-        v = normalize_ttfs_boundary_value(value, boundary_scale)
+        return self._single_spike_train(normalize_ttfs_boundary_value(value, boundary_scale), T)
+
+    def _single_spike_train(self, v, T: int) -> torch.Tensor:
+        """[U-TGAUGE4] The train of a wire rate ``v`` already normalized to [0, 1] (each element at its own gauge)."""
         latched = torch.stack(
             [spike_modes.to_spikes(v, c, simulation_length=T, spike_mode="TTFS")
              for c in range(T)],
             dim=0,
-        ).to(value.dtype)
+        ).to(v.dtype)
         train_hard = torch.cat([latched[:1], latched[1:] - latched[:-1]], dim=0)
 
         temp = self.boundary_surrogate_temp
@@ -205,87 +209,5 @@ class TtfsSegmentPolicy:
         return self._run_segment_genuine(driver, seg_nodes, values, x)
 
     def _run_segment_genuine(self, driver, seg_nodes, values, x):
-        T = driver.T
-        seg_set = set(seg_nodes)
-        ext = driver.external_consumed(seg_nodes)
-        depth = self.segment_depths(driver, seg_nodes)
-        zeros = self._segment_output_zeros(driver, seg_nodes, values, x)
-
-        boundary_trains: dict = {}
-        n_cycles = T + max(depth.values(), default=0)
-
-        def boundary_spikes(src, k, consumer):
-            scale = self.consumer_wire_scale(driver, consumer)
-            scale_key = (
-                float(scale.float().mean())
-                if isinstance(scale, torch.Tensor) else float(scale)
-            )
-            key = (src, scale_key)
-            train = boundary_trains.get(key)
-            if train is None:
-                train = self._boundary_single_spike_train(values[src], scale, T)
-                boundary_trains[key] = train
-            return train[k]
-
-        def read(src, out, perc_prev, t, consumer):
-            if src not in seg_set:
-                if is_encoding_perceptron(consumer):
-                    return values[src]
-                # Window-relative arrival, mirroring the executor's per-core input realignment.
-                return boundary_spikes(src, t - depth[consumer], consumer)
-            if perceptron_of(src) is not None:
-                return perc_prev.get(src, zeros[src])
-            return out[src]
-
-        watch = list(ext)
-        if self.node_value_recorder is not None:
-            ext_set = set(ext)
-            watch += [
-                n for n in seg_nodes
-                if perceptron_of(n) is not None and n not in ext_set
-            ]
-
-        accum: dict = {}
-        latched: dict = {}
-        perc_prev: dict = {}
-        for t in range(n_cycles):
-            out: dict = {}
-            for n in seg_nodes:
-                # Latency-gated: a core integrates only inside its window [depth, depth+T).
-                if t < depth[n] or t >= depth[n] + T:
-                    out[n] = zeros[n]
-                    continue
-                d = driver._deps.get(n, [])
-                if len(d) == 1:
-                    inp = read(d[0], out, perc_prev, t, n)
-                elif len(d) == 0:
-                    inp = x
-                else:
-                    inp = tuple(read(dep, out, perc_prev, t, n) for dep in d)
-                out[n] = n.forward(inp)
-            for n in seg_nodes:
-                if perceptron_of(n) is not None:
-                    perc_prev[n] = out[n]
-            for n in watch:
-                if depth[n] <= t < depth[n] + T:
-                    s = out[n]
-                    latched[n] = s if n not in latched else torch.maximum(latched[n], s)
-                    accum[n] = latched[n] if n not in accum else accum[n] + latched[n]
-
-        def _decode(n):
-            scale = self.decode_scale(driver, n)
-            sv = (scale.to(accum[n].device, accum[n].dtype)
-                  if isinstance(scale, torch.Tensor) else float(scale))
-            return (accum[n] / float(T)) * sv
-
-        for n in ext:
-            values[n] = _decode(n)
-        if self.node_value_recorder is not None:
-            for n in watch:
-                if perceptron_of(n) is not None:
-                    self.node_value_recorder[n] = (
-                        values[n] if n in ext else _decode(n)
-                    ).detach()
-        if driver._output in seg_set:
-            return values[driver._output]
-        return None
+        """[U-TGAUGE4] The deployed cycle loop, every element read by its producer (``ttfs_cycle_reads``)."""
+        return run_genuine_cycles(self, driver, seg_nodes, values, x)

@@ -13,11 +13,23 @@ from __future__ import annotations
 from mimarsinan.tuning.orchestration.ttfs_adaptation_plan import TtfsAdaptationPlan
 
 
+def _cycle_calibration(config, *, synchronized, distmatch_driven):
+    """[U-LIF2 r2] The calibration resolver reads its config's point: here the TTFS-cycle schedule the boolean
+    names, the point these flag tables were written against."""
+    from mimarsinan.tuning.orchestration.calibration_pipeline import CalibrationPipeline
+
+    cycle = {"spiking_mode": "ttfs_cycle_based",
+             "ttfs_cycle_schedule": "synchronized" if synchronized else "cascaded"}
+    return CalibrationPipeline.resolve({**cycle, **config}, synchronized=synchronized,
+                                       distmatch_driven=distmatch_driven)
+
+
 def _resolve(synchronized=False, optimization_driver=None, **flags):
     return TtfsAdaptationPlan.resolve(
         dict(flags),
         synchronized=synchronized,
         optimization_driver=optimization_driver,
+        calibration_resolver=_cycle_calibration,
     )
 
 

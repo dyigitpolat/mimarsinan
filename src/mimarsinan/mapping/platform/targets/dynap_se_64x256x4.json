@@ -1,13 +1,103 @@
 {
   "name": "dynap_se_64x256x4",
-  "display_name": "DYNAP-SE (Moradi 2017): 4 cores of 256 neurons x 64 words",
+  "display_name": "DYNAP-SE (Moradi 2017), 4 cores of 256 neurons x 64 words",
   "geometry": "dynap_se_64x256x4",
-  "keys": {},
+  "keys": {
+    "core_semantics": "spiking"
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
+  },
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "spiking",
+        "source": "moradi2017a",
+        "location": "Abstract, PDF p.1",
+        "quote": "Neuromorphic computing systems comprise networks of neurons that use asynchronous events for both computation and communication.",
+        "reads": "networks of neurons that use asynchronous events"
+      }
+    },
+    "weight_bits": {
+      "departs": {
+        "computation": "2-bit selector of one of 4 synapse circuits whose weights are globally shared biases",
+        "source": "moradi2017a",
+        "location": "Section IV 'A multi-core neuromorphic processor prototype', PDF p.8",
+        "quote": "the 2-bit SRAM memories are used to program the type of synapse circuits to use. Depending on the content of the SRAM a synapse can be programmed to exhibit one of 4 possible behaviors: fast excitatory, slow excitatory, subtractive inhibitory, or shunting inhibitory. Each synapse behavior is modeled by a dedicated DPI circuit, each with globally shared biases that set time constants and weight values.",
+        "reads": "the 2-bit SRAM memories are used to program the type of synapse circuits to use",
+        "assumed": 2,
+        "reason": "The toolchain's weight grid is one symmetric signed integer per synapse. A selector of an analog circuit whose weight is a bias shared across the chip holds no per-synapse integer, so the registered geometry's 2-bit weights (the cell's bits) are assumed in its place.",
+        "note": "Each synapse word holds a 2-bit SRAM cell that selects one of four synapse circuits of its neuron (Fig. 9 caption, PDF p.9), whose efficacies are analog biases shared per core: the source states no per-synapse integer weight. The registered geometry's 2-bit weights are the description's assumption.",
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "Each synapse word holds one 2-bit SRAM cell, the synapse type's selector: the weight is its neuron's synapse circuit, not a cell count."
+            }
+          },
+          "cell_bits": {
+            "stated": {
+              "value": 2,
+              "source": "moradi2017a",
+              "location": "Fig. 9 caption, PDF p.9",
+              "quote": "Each node comprises 64 mixed memory words, consisting of 10-bit CAM and 2-bit SRAM cells",
+              "reads": "2-bit SRAM cells",
+              "note": "The 2-bit cell selects one of four synapse circuits of its neuron, whose efficacies are analog: the cell's 2 bits are the description's assumed grid, a selector, not a per-synapse integer weight."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "A neuron's firing rate can be set by a constant DC current injection (Sec. V), a current the core's bias generators set for a population, not a per-neuron bias; the registered geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "spiking_family": {
+      "unstated": {
+        "note": "The neurons are analog adaptive-exponential integrate-and-fire circuits (AdExp-I&F, Sec. IV): no family of the toolchain is that law; a deployment declares one and departs from the chip."
+      }
+    },
+    "spiking_variant": {
+      "unstated": {
+        "note": "Asynchronous analog dynamics in continuous time: the source states no cycle discipline."
+      }
+    },
+    "simulation_steps": {
+      "unstated": {
+        "note": "Continuous-time neurons: no spike window is the chip's; the deployment declares it."
+      }
+    },
+    "target_tq": {
+      "unstated": {
+        "note": "Continuous-time neurons: no level count is the chip's; the deployment declares it."
+      }
+    },
+    "firing_granularity": {
+      "unstated": {
+        "note": "Continuous time: the analog neuron fires when its circuit crosses threshold; no cycle or event compare of the toolchain is stated."
+      }
+    },
+    "firing_mode": {
+      "unstated": {
+        "note": "The analog neuron's reset is set by its circuit biases; the source states no reset law in the toolchain's terms."
+      }
+    },
+    "membrane_bits": {
+      "unstated": {
+        "note": "An analog membrane (a capacitor voltage): no register width."
+      }
+    },
+    "membrane_signed": {
+      "unstated": {
+        "note": "An analog membrane: no register."
+      }
+    },
+    "thresholding_mode": {
+      "unstated": {
+        "note": "An analog comparator: no stated compare rule."
+      }
+    }
   }
 }

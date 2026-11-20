@@ -16,7 +16,7 @@ from unit.certification.program_check import programs as P
     ({"spiking_family": "lif", "spiking_variant": "streamed"}, "streamed_lif"),
     ({"spiking_family": "lif", "spiking_variant": "synchronized", "spiking_mode": "lif",
       "lif_per_hop_retiming": True}, "windowed_lif"),
-    ({"spiking_family": "lif", "spiking_variant": "synchronized", "lif_execution_discipline": "synchronized"},
+    ({"spiking_family": "lif", "spiking_variant": "synchronized", "lif_window_firing": "integrate_then_emit"},
      "synchronized_lif"),
     # Without per-hop re-timing (a Novena firing mode cannot arm it) the variant runs per-cycle segments.
     ({"spiking_family": "lif", "spiking_variant": "synchronized", "firing_mode": "Novena"}, "streamed_lif"),
@@ -27,7 +27,8 @@ from unit.certification.program_check import programs as P
     ({"core_semantics": "mvm"}, "value_float"),
     ({"core_semantics": "mvm", "readout_law": {"adc_bits": 32}}, "value_integer"),
 ])
-def test_the_semantics_a_resolved_config_executes(config, expected):
+def test_the_semantics_a_resolved_config_executes(config, expected, window_firing_declared):
+    window_firing_declared()  # [U-LIF2] both values declared, so the integrate_then_emit row resolves
     assert semantics_of_config(config) == expected
 
 

@@ -18,6 +18,7 @@ import json
 
 import pytest
 
+from mimarsinan.mapping.platform.target_expansion import door_read
 from mimarsinan.chip_simulation.certification import CertificationCell
 from mimarsinan.chip_simulation.cost_extraction import (
     COST_RECORD_FILENAME,
@@ -248,7 +249,7 @@ class TestExtractFromRun:
             snapshot=_single_segment_snapshot(),
             target_metric=0.974,
         )
-        record = extract_cost_record_from_run(run_dir)
+        record = extract_cost_record_from_run(run_dir, door=door_read)
         assert record is not None
         assert record.cell_key == "lif@sanafe"
         assert record.acc_deploy == pytest.approx(0.974)
@@ -265,7 +266,7 @@ class TestExtractFromRun:
             snapshot=_single_segment_snapshot(),
             target_metric=0.95,
         )
-        record = extract_cost_record_from_run(run_dir)
+        record = extract_cost_record_from_run(run_dir, door=door_read)
         assert record.cell_key == "ttfs_cycle_based/cascaded@sanafe"
 
     def test_run_without_sanafe_is_skipped(self, tmp_path):
@@ -275,7 +276,7 @@ class TestExtractFromRun:
         os.makedirs(os.path.join(run_dir, "_GUI_STATE"), exist_ok=True)
         with open(os.path.join(run_dir, "_GUI_STATE", "steps.json"), "w") as fh:
             json.dump({"steps": {"Simulation": {}}}, fh)
-        assert extract_cost_record_from_run(run_dir) is None
+        assert extract_cost_record_from_run(run_dir, door=door_read) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -363,7 +364,7 @@ class TestCostScatter:
             json.dump({"deployment_parameters": {"spiking_mode": "lif"}}, fh)
         empty = str(tmp_path / "empty")
         os.makedirs(empty, exist_ok=True)
-        scatter = CostScatter.from_runs([run_dir, empty])
+        scatter = CostScatter.from_runs([run_dir, empty], door=door_read)
         assert scatter.cell_keys() == ["lif@sanafe"]
 
 
@@ -446,7 +447,7 @@ class TestFtPassWall:
                 },
                 fh,
             )
-        record = extract_cost_record_from_run(run_dir)
+        record = extract_cost_record_from_run(run_dir, door=door_read)
         assert record.max_ft_pass_wall_s == pytest.approx(73.2)
         assert record.ft_pass_walls == (
             {"label": "recover", "wall_s": 30.0},
@@ -472,7 +473,7 @@ class TestFtPassWall:
             json.dump(steps, fh)
         with open(os.path.join(run_dir, "_RUN_CONFIG", "config.json"), "w") as fh:
             json.dump({"deployment_parameters": {"spiking_mode": "lif"}}, fh)
-        record = extract_cost_record_from_run(run_dir)
+        record = extract_cost_record_from_run(run_dir, door=door_read)
         assert record.max_ft_pass_wall_s == 0.0
         assert record.ft_pass_walls == ()
 

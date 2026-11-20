@@ -11,21 +11,14 @@ from mimarsinan.chip_simulation.nevresim_policy_types import (
     counts_on_the_wire,
     emits_integration_policy,
 )
-from mimarsinan.chip_simulation.soma_capability import (
-    require_soma_law_supported,
-    supports_soma_law,
-)
+from mimarsinan.chip_simulation.point_capability import backend_refusal_reason, require_backend_executes
 from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 from mimarsinan.chip_simulation.spiking_semantics import (
     forces_activation_quantization,
     is_analytical_ttfs,
-    is_synchronized_ttfs,
     is_ttfs_cycle_based,
-    require_known_spiking_mode,
-    require_spiking_mode_supported,
     requires_ttfs_firing,
-    supports_spiking_mode,
-    ttfs_cycle_schedule,
 )
 
 __all__ = [
@@ -111,31 +104,22 @@ class SpikingModePolicy:
     """Behavior carried per (firing × sync) deployment mode.
 
     Concrete subclasses override the firing-/schedule-derived behavior; the base
-    resolves only the shared capability gate. ``spiking_mode`` captures the
-    sub-variation (``ttfs`` vs ``ttfs_quantized``); ``schedule`` is the normalized
-    ``ttfs_cycle_schedule`` for the TTFS-cycle family (``None`` otherwise).
+    resolves only the shared capability gate. [U-LIF2 W4] Every policy is built
+    from the run's resolved point (``SpikingPoint``, the one required argument):
+    ``spiking_mode`` captures the sub-variation (``ttfs`` vs ``ttfs_quantized``);
+    ``schedule`` is the normalized ``ttfs_cycle_schedule`` for the TTFS-cycle
+    family (``None`` otherwise); ``soma_law`` is the point's resolved law.
     """
 
-    def __init__(
-        self,
-        spiking_mode: str,
-        schedule: Optional[str] = None,
-        *,
-        soma_law: Optional[SomaLaw] = None,
-    ) -> None:
-        self.spiking_mode = spiking_mode
-        self.schedule = schedule
-        # The resolved soma point, when the caller holds one. ``None`` is the
-        # pinned legacy surface: a raw mode-string query keeps its mode-keyed
-        # answer, and a lawless policy never refuses on the point.
-        self.soma_law = soma_law
+    def __init__(self, point: SpikingPoint) -> None:
+        self.point = point
+        self.spiking_mode = point.spiking_mode
+        self.schedule = point.policy_schedule
+        self.soma_law: Optional[SomaLaw] = point.soma_law
 
     @classmethod
     def from_contract(cls, contract: Any) -> "SpikingModePolicy":
-        return policy_for_spiking_mode(
-            contract.spiking_mode, contract.ttfs_cycle_schedule,
-            soma_law=contract.soma_law(),
-        )
+        return policy_for_spiking_mode(contract.spiking_point())
 
     def training_forward_kind(self) -> str:
         """NF algorithm the fine-tuners must train through for this deployment."""
@@ -148,6 +132,15 @@ class SpikingModePolicy:
     def decode_mode(self) -> str:
         """How a segment's output is decoded: ``count`` (rate) vs ``timing`` (TTFS)."""
         raise NotImplementedError
+
+    @property
+    def runs_per_cycle_cascade(self) -> bool:
+        """[U-TGAUGE5] Whether the deployed program is a per-cycle cascade: every core steps once per cycle from its
+        latency on and reads each producer core of its segment from that producer's buffer of the previous cycle.
+        These are the executors behind the ``count`` decode (the LIF family and the timing family's cascaded
+        schedule); the hybrid flow dispatches on this one property, the recipe arms the depth-balancing relays from it
+        and the mapping holds the window rule there (``mapping/latency/cycle_windows.py``)."""
+        return self.decode_mode() == "count"
 
     def nevresim_exec_policy(self, params: "NevresimExecParams") -> "ExecPolicySpec":
         """The nevresim ``(ComputePolicy, Execution)`` C++ types for this mode."""
@@ -194,18 +187,12 @@ class SpikingModePolicy:
         return requires_ttfs_firing(self.spiking_mode)
 
     def supports_backend(self, backend: str) -> bool:
-        """Whether ``backend``'s capabilities support this mode AND, when the
-        caller holds one, this resolved soma point."""
-        return supports_spiking_mode(backend, self.spiking_mode) and (
-            supports_soma_law(backend, self.soma_law)
-        )
+        """Whether ``backend`` executes this policy's whole resolved point (the one judgment, ``point_capability``)."""
+        return backend_refusal_reason(backend, self.point) is None
 
     def require_backend_supported(self, *, backend: str, context: str) -> None:
-        """Raise an actionable error if ``backend`` cannot run this mode or point."""
-        require_spiking_mode_supported(
-            self.spiking_mode, backend=backend, context=context
-        )
-        require_soma_law_supported(self.soma_law, backend=backend, context=context)
+        """Raise an actionable error naming the value of the point ``backend`` does not execute."""
+        require_backend_executes(self.point, backend=backend, context=context)
 
     def valid_backends(self, candidates) -> tuple[str, ...]:
         """Subset of ``candidates`` whose capabilities support this mode."""
@@ -258,15 +245,8 @@ class LifModePolicy(SpikingModePolicy):
         """The chip-aligned walk with THIS policy's point already bound."""
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
-        if self.soma_law is None:
-            raise ValueError(
-                "the LIF calibration forward IS the deployed twin, so it "
-                "needs the resolved soma point: query "
-                "policy_for_spiking_mode(mode, soma_law=...) with the "
-                "deployment's law instead of the bare mode string."
-            )
         return functools.partial(
-            chip_aligned_segment_forward, soma_law=self.soma_law)
+            chip_aligned_segment_forward, soma_law=self.point.soma_law)
 
     def decode_mode(self) -> str:
         return "count"
@@ -521,22 +501,19 @@ class TtfsCascadeModePolicy(_TtfsCycleModePolicy):
         return False
 
 
-def policy_for_spiking_mode(
-    spiking_mode: str, schedule=None, *, soma_law: Optional[SomaLaw] = None
-) -> SpikingModePolicy:
-    """SSOT dispatch resolving the ``(firing × sync)`` policy for ``(spiking_mode, schedule)``.
+def policy_for_spiking_mode(point: SpikingPoint) -> SpikingModePolicy:
+    """SSOT dispatch resolving the ``(firing × sync)`` policy of a resolved point.
 
-    Rejects modes outside ``ALL_SPIKING_MODES`` (incl. the removed ``rate``).
-    ``soma_law`` carries the resolved soma point when the caller holds one, so
-    the capability query answers on the POINT and not on the mode string alone.
+    [U-LIF2 W4] The point (``resolve_spiking_point``) is the one required
+    argument, so every capability query answers on the whole resolved point
+    (mode, soma law, window firing, execution extensions) and never on a mode
+    string alone; an unknown or removed mode is refused by the resolution.
     """
-    mode = require_known_spiking_mode(spiking_mode)
+    mode = point.spiking_mode
     if is_ttfs_cycle_based(mode):
-        if is_synchronized_ttfs(mode, schedule):
-            return TtfsSyncCycleModePolicy(
-                mode, ttfs_cycle_schedule(schedule), soma_law=soma_law)
-        return TtfsCascadeModePolicy(
-            mode, ttfs_cycle_schedule(schedule), soma_law=soma_law)
+        if point.is_synchronized_ttfs:
+            return TtfsSyncCycleModePolicy(point)
+        return TtfsCascadeModePolicy(point)
     if is_analytical_ttfs(mode):
-        return TtfsAnalyticalModePolicy(mode, soma_law=soma_law)
-    return LifModePolicy(mode, soma_law=soma_law)
+        return TtfsAnalyticalModePolicy(point)
+    return LifModePolicy(point)

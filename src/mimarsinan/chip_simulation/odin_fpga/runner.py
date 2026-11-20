@@ -24,7 +24,7 @@ from mimarsinan.chip_simulation.odin_fpga.records import (
 from mimarsinan.chip_simulation.odin_fpga.segment import COMPUTE_DTYPE, run_odin_segment
 from mimarsinan.chip_simulation.odin_fpga.transports.transport import DeviceSession
 from mimarsinan.chip_simulation.recording.records import RunRecord
-from mimarsinan.chip_simulation.soma_capability import require_soma_law_supported
+from mimarsinan.chip_simulation.point_capability import require_backend_executes
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.mapping.support.schedule.pass_cut import (
     RASTER_FREE_BACKENDS,
@@ -100,8 +100,8 @@ class OdinFpgaRunner:
                 f"{BACKEND_NAME}: spiking_mode={self.spiking_mode!r} is a TTFS "
                 f"family and the ODIN crossbar implements the event/rate LIF "
                 f"soma only — no timing-domain executor exists on this device")
-        require_soma_law_supported(
-            self.soma_law, backend=BACKEND_NAME, context="OdinFpgaRunner")
+        # [U-LIF2 W5] the whole resolved point as a guard: the soma law, the window firing, the extensions.
+        require_backend_executes(contract.spiking_point(), backend=BACKEND_NAME, context="OdinFpgaRunner")
         # [U-H] The device buffers no raster across a pass boundary, so under
         # the verbatim discipline (the release head's streamed rule) a program
         # that carries one is refused by name; one that carries none runs.
@@ -155,7 +155,7 @@ class OdinFpgaRunner:
             run_hybrid_stages(
                 self.mapping, state_buffer,
                 on_neural=_on_neural, on_compute=_on_compute,
-                stage_timer=stage_timer,
+                stage_timer=stage_timer, timed_samples=1,  # [U-HOST] run() is one sample (its contract)
             )
         return OdinFpgaRunRecord(
             transport=str(getattr(self.transport, "name", "unknown")),

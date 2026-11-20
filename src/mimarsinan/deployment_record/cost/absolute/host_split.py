@@ -21,8 +21,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Hashable, Iterable, Mapping, Optional, Tuple, TypeVar
 
+from mimarsinan.deployment_record.cost.absolute.context import AbsolutePricing
 from mimarsinan.deployment_record.cost.absolute.energy import ENERGY_HEADLINE
 from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import HEADLINE_WALL
 from mimarsinan.deployment_record.cost.host_terms import HOST_SIDE_QUANTITIES
 from mimarsinan.deployment_record.cost.terms import CostTerm
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
@@ -156,23 +158,52 @@ SHARE_VARIANTS: Mapping[str, Tuple[str, ...]] = {
 }
 
 
+def share_pricings(
+    quantities: Quantities, physics: PlatformPhysics, *, compute: Any = None, readout_bits: Optional[int] = None,
+    geometry: Any = None,
+) -> Dict[str, AbsolutePricing]:
+    """[U-SH] Each share variant of ``quantities`` (``SHARE_VARIANTS``) priced on ``physics`` with the plane's compute
+    split, readout bits and geometry, as its headline is priced, keyed by variant."""
+    out: Dict[str, AbsolutePricing] = {}
+    for name, drop in SHARE_VARIANTS.items():
+        values = {k: quantities.get(k) for k in quantities.keys() if k not in drop}
+        # [U-ENERGY class 2] a quantity the share leaves out is that share's zero; the view's states stay
+        values.update({k: QuantityValue(0.0, "static") for k in drop if quantities.has(k)})
+        values["host_macs"] = QuantityValue(value=0.0, provenance="static")
+        share = Quantities(values, withheld={k: r for k, r in quantities.withheld.items() if k not in drop},
+                           unproduced={k: r for k, r in quantities.unproduced.items() if k not in drop},
+                           known_zero=quantities.known_zero)
+        out[name] = price_absolute(share, physics, compute=compute, readout_bits=readout_bits, geometry=geometry)
+    return out
+
+
 def price_shares(
     quantities: Quantities, physics: PlatformPhysics, *, compute: Any = None, readout_bits: Optional[int] = None,
     geometry: Any = None,
 ) -> Tuple[Dict[str, Dict[str, Band]], Dict[str, Dict[str, str]]]:
-    """[U-SH] Each share variant of ``quantities`` (``SHARE_VARIANTS``) priced on ``physics`` with the plane's compute
-    split, readout bits and geometry, as its headline is priced: (the priced bands by term, the refusals by name),
-    each keyed by variant."""
-    terms: Dict[str, Dict[str, Band]] = {}
-    refusals: Dict[str, Dict[str, str]] = {}
-    for name, drop in SHARE_VARIANTS.items():
-        values = {k: quantities.get(k) for k in quantities.keys() if k not in drop}
-        values["host_macs"] = QuantityValue(value=0.0, provenance="static")
-        pricing = price_absolute(Quantities(values), physics, compute=compute, readout_bits=readout_bits,
-                                 geometry=geometry)
-        terms[name] = {t.name: t.band for t in pricing.terms if t.band is not None}
-        refusals[name] = {r.name: r.reason for r in pricing.refusals}
-    return terms, refusals
+    """[U-SH] ``share_pricings`` read as (the priced bands by term, the refusals by name), each keyed by variant."""
+    return columns_of(share_pricings(quantities, physics, compute=compute, readout_bits=readout_bits,
+                                     geometry=geometry))
+
+
+def columns_of(
+    pricings: Mapping[str, AbsolutePricing],
+) -> Tuple[Dict[str, Dict[str, Band]], Dict[str, Dict[str, str]]]:
+    """Pricings read as (the priced bands by term, the refusals by name), each keyed as given."""
+    return ({name: {t.name: t.band for t in p.terms if t.band is not None} for name, p in pricings.items()},
+            {name: {r.name: r.reason for r in p.refusals} for name, p in pricings.items()})
+
+
+def static_legs(program: AbsolutePricing, shared: Mapping[str, AbsolutePricing],
+                walls: Mapping[str, str]) -> Dict[str, Tuple[str, ...]]:
+    """[V-M1] What each cost's leg holds of the chip's static power (``StaticSum.legs_over``), keyed by column: the
+    program pricing's loads over their walls (``walls``: column to wall) and each share variant over the
+    per-inference wall. Two costs hold like legs where their entries are equal."""
+    out = {column: program.static_power.legs_over(wall) for column, wall in walls.items()
+           if program.static_power is not None}
+    out.update({name: p.static_power.legs_over(HEADLINE_WALL) for name, p in shared.items()
+                if p.static_power is not None})
+    return out
 
 
 #: [U-CR C-2] The reason a row prices no write law where it ran no pricing: its target declares no physics profile.
@@ -206,18 +237,43 @@ def share_absence(terms: Mapping[str, Any], refusals: Mapping[str, Mapping[str, 
         f"{sorted(named) or 'nothing'}")
 
 
-def shares(terms: Mapping[str, Mapping[str, Band]], refusals: Mapping[str, Mapping[str, str]], term: str,
+def pick(variant: Mapping[str, Band], term: Any, refused: Optional[Mapping[str, str]] = None) -> Optional[Band]:
+    """[U-ENERGY class 1] A variant's band of ``term``; a tuple of terms is one cost, its first part required and the
+    others (a static leg the chip may not declare) added where priced, corner by corner. [V-M1] A later part the
+    variant refuses by name (``refused``: a leg the one leg form refuses) makes the cost absent: None."""
+    if isinstance(term, str):
+        return variant.get(term)
+    head = variant.get(term[0])
+    if head is None or any(t in (refused or {}) for t in term[1:]):
+        return None
+    parts = [head] + [variant[t] for t in term[1:] if variant.get(t) is not None]
+    return parts[0] if len(parts) == 1 else Band(sum(p.low for p in parts), sum(p.nominal for p in parts),
+                                                 sum(p.high for p in parts), " + ".join(term))
+
+
+def _absence(terms: Mapping[str, Any], refusals: Mapping[str, Mapping[str, str]], term: Any, headline: str,
+             pricing: str) -> str:
+    """Why a cost is absent on ``pricing``: [V-M1] its refused leg's reason, else ``share_absence``'s."""
+    named = refusals.get(pricing) or {}
+    legs = [] if isinstance(term, str) else [named[t] for t in term[1:] if t in named]
+    return legs[0] if legs else share_absence(terms, refusals, term if isinstance(term, str) else term[0], headline,
+                                              pricing)
+
+
+def shares(terms: Mapping[str, Mapping[str, Band]], refusals: Mapping[str, Mapping[str, str]], term: Any,
            headline: str) -> Dict[str, Any]:
     """[U-SH] The one share rule of every plane, on the share pricings (``price_shares``): ``term``'s compute-only
     share and its boundary share (carry and sync: the no-host pricing less the compute-only, corner by corner), each
-    absent one named by ``share_absence`` on the pricing that lacks it: ``absent`` where the compute-only share is
-    (the boundary with it), ``boundary_absent`` where the boundary alone is."""
-    compute, no_host = (terms.get(name, {}).get(term) for name in SHARE_VARIANTS)
+    absent one named by ``share_absence`` on the pricing that lacks it (by its refused leg's reason where a leg is
+    refused): ``absent`` where the compute-only share is (the boundary with it), ``boundary_absent`` where the
+    boundary alone is."""
+    compute, no_host = (pick(terms.get(name, {}), term, refusals.get(name)) for name in SHARE_VARIANTS)
     if compute is None:
-        return {"compute_only": None, "boundary": None, "absent": share_absence(terms, refusals, term, headline)}
+        return {"compute_only": None, "boundary": None, "absent": _absence(terms, refusals, term, headline,
+                                                                           "compute_only")}
     if no_host is None:
         return {"compute_only": compute, "boundary": None, "absent": None,
-                "boundary_absent": share_absence(terms, refusals, term, headline, "no_host")}
+                "boundary_absent": _absence(terms, refusals, term, headline, "no_host")}
     return {"compute_only": compute, "boundary": sub_corners(no_host, compute, "boundary"), "absent": None}
 
 

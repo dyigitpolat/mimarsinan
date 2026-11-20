@@ -167,3 +167,14 @@ same thing in the physics layer.
   (power over bytes moved per unit time): 42 mW over 8 ports of 32-bit flits at the paper's conservative 1 GHz
   link (1.2 GHz for the low end). It assumes the router draws its published power with every port busy; it is
   a value-domain byte-hop, which the per-flit spiking hop above deliberately leaves undeclared.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T3 (resistive (RRAM) in-memory compute); complete declared terms: the constants above price the chip on R5's own path, unchanged.
+- **Outside part (`outside: declared_parts`).** gamma 1: the chip components' sum or a sourced area_global_fixed, as declared (R5's fixed-area refusal kept where neither is stated).
+- **Published size.** `s('T3-IS-18', 'quantity', '168 Tile Total', 168) * s('T3-IS-16', 'scope', 'number 12', 12) * s('T3-IS-12', 'scope', 'number 8', 8)` arrays (the census's cores: one 128 x 128 array each) (T3-IS-18 (Table I row '168 Tile Total'), T3-IS-16 (row 'IMA Total', number 12 per tile), T3-IS-12 (row 'Memristor array', number 8 per IMA): ruling R3's size flags (build part 2)); a chip of another size is priced and flagged beyond or below it (ruling R3).
+- **Note.** Table I's rows stay its own declared terms; the HyperTransport links are its chip components (area_global_fixed 22.88 mm2).
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

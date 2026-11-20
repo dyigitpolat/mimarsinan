@@ -19,6 +19,7 @@ from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensus
 
 from unit.deployment_record.g3_fixtures import constant, quantities
+from unit.deployment_record.load_census_fixtures import gated_loads
 
 _STORE = {"name": "backing store", "constants": ["e_dma_per_byte", "t_program_per_byte"],
           "note": "the weights the part does not hold come from a store it does not contain"}
@@ -89,9 +90,10 @@ class TestPricing:
         assert refusal.reason.startswith("part is read only with its backing store declared: e_dma_per_byte, "
                                          "t_program_per_byte undeclared")
         assert "merge_override_blocks" in refusal.reason
-        # [U-CR C-2, declared pin amendment] the gate also refuses each headline it suppresses, by the gate's reason
+        # [U-CR C-2, declared pin amendment] the gate also refuses each headline it suppresses, by the gate's reason;
+        # [U-ENERGY] then each load figure of the one load law, by the law's own reason (no load census given)
         assert [(r.name, r.reason) for r in suppressed] == [
-            (headline, "absolute_pricing: " + refusal.reason) for headline in ABSOLUTE_TERM_NAMES]
+            (headline, "absolute_pricing: " + refusal.reason) for headline in ABSOLUTE_TERM_NAMES] + gated_loads()
 
     def test_a_declared_component_prices_as_a_profile_without_one(self):
         plain = price_absolute(quantities(synaptic_events=10, host_macs=0),
@@ -155,7 +157,9 @@ class TestOneWriteGateOnBothPlanes:
         executed, candidate = _executed(_macro(True)), _candidate(_macro(True))
         energy = _write_term(executed, ENERGY_WRITE)
         assert energy is not None and energy == _write_term(candidate, ENERGY_WRITE)
-        assert "e_dma_per_byte" in energy.basis and "unpriced" not in energy.basis
+        # [U-ENERGY, the class swept S-1] the macro declares no per-core program charge: named, nothing else
+        assert "e_dma_per_byte" in energy.basis
+        assert energy.basis.split("; unpriced: ")[1:] == ["e_core_program(core_program)"]
         assert _write_term(executed, LIFETIME_HOURS) == _write_term(candidate, LIFETIME_HOURS)
 
     def test_a_profile_without_components_prices_writes_as_before(self):

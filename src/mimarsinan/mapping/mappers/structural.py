@@ -57,6 +57,7 @@ class InputMapper(Mapper):
 
 class ReshapeMapper(Mapper):
     moves_elements_only = True
+    keeps_element_order = True
     def __init__(self, source_mapper, output_shape):
         super(ReshapeMapper, self).__init__(source_mapper)
         self.output_shape = output_shape

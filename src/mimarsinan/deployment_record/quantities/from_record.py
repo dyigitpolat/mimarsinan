@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
+from mimarsinan.chip_simulation.hybrid_run.stage_timing import host_wall
+from mimarsinan.chip_simulation.stage_timesteps import neuron_cycles_per_window
 from mimarsinan.deployment_record.quantities.lanes import lane_block_quantities
+from mimarsinan.deployment_record.quantities.planes.local_memory import record_local_memory
+from mimarsinan.deployment_record.quantities.planes.states import RECORD_UNPRODUCED, declared_zeros, plane_view
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import (
     BUFFER_CAPACITY,
@@ -151,8 +155,13 @@ def from_record(record: DeploymentRecord) -> Quantities:
     )
 
     values["timesteps"] = _measured(record.timing.s_global)
+    values["neuron_cycles_per_window"] = _measured(neuron_cycles_per_window(  # [U-LIF2 W12] the run's window firing
+        record.timing.s_global, getattr(record.identity, "window_firing", None), neurons=values["neurons_used"].value,
+        window_arrivals=sum(int(s.window_arrivals or 0) for s in segments)))  # [U-LIF2 r6] its arrivals priced
     values["latency_steps"] = _measured(record.timing.latency.compute_steps)
-    _put(values, "host_ops_s", record.timing.latency.host_ops_s)
+    # [U-HOST] the one per-inference host wall (a diagnostic of the development machine: no pricer reads it)
+    wall = host_wall(schedule.stages)
+    _put(values, "host_ops_s", wall.per_inference_s)
 
     if record.energy is not None:
         _put(values, "total_spikes", record.energy.total_spikes)  # absent on an event-census-only fragment
@@ -175,11 +184,13 @@ def from_record(record: DeploymentRecord) -> Quantities:
             sum(link.packet_count for link in noc.link_loads)
         )
 
-    withheld: Dict[str, str] = dict(typed_withheld)
+    withheld: Dict[str, str] = dict(typed_withheld, **({"host_ops_s": wall.refusal} if wall.refusal else {}))
     _lane_quantities(values, withheld, record)
-    if names_value_domain(platform):
+    value_domain = names_value_domain(platform)
+    if value_domain:
         refuse_spiking_activity(platform)
         withheld.update(apply_value_rule(values, record_value_facts(record)))
+    withheld.update(record_local_memory(values, platform, value_domain))  # [U-ENERGY class 3]
     writes = record_write_census(record)
     if writes is not None and writes.census is not None:  # [U-C4 targeted M2] each core type's cells
         quantities, held = summed_cells(writes, write_quantities(
@@ -187,7 +198,8 @@ def from_record(record: DeploymentRecord) -> Quantities:
             most_written=writes.census.most_written_core, producer_slots=writes.census.producer_slots))
         values.update(quantities)
         withheld.update(held)
-    return Quantities(values, withheld={**counts_withheld, **withheld})
+    zeros = declared_zeros(record.output_stage is not None, declared_buffer_bytes(platform) is not None, value_domain)
+    return plane_view(values, {**counts_withheld, **withheld}, RECORD_UNPRODUCED, zeros)  # [U-ENERGY class 2]
 
 
 _CORE_COUNTS = ("segment_cores", "reprogrammed_cores", "cores_allocated")

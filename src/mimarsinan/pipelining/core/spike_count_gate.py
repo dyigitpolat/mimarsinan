@@ -6,6 +6,7 @@ import gc
 
 import torch
 
+from mimarsinan.chip_simulation.window_firing_axis import FIRE_WHILE_INTEGRATING, INTEGRATE_THEN_EMIT
 from mimarsinan.certification.count_alignment import certify_twin_flow_counts
 from mimarsinan.certification.twin_schedule import twin_schedule_diagnostic
 from mimarsinan.chip_simulation.certification import CertificationCell
@@ -93,6 +94,12 @@ def _report_synchronized_gauge(pipeline, ir_graph, backend_flow, samples):
     )
 
 
+def _run_discipline(plan) -> str:
+    """[U-LIF2 W14] The certificate's discipline: the window firing the run resolved, and firing while integrating
+    off the synchronized LIF variant (every other LIF executes per cycle)."""
+    return plan.window_firing or FIRE_WHILE_INTEGRATING
+
+
 def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     """Certify deployed per-neuron window counts against the NF oracle; fatal.
 
@@ -138,15 +145,18 @@ def _certify_streaming_twin(pipeline, model, ir_graph, hybrid_mapping, n: int, p
     )
     # The FATAL cell is cycle-based LIF on BOTH sides [user law: deployed
     # semantics = per-cycle LIF, full stop]: the identity-IR twin run as a
-    # genuine streaming (fire-during-integrate) program — the torch-side
-    # cycle-based simulation of the deployed matrices — must match the packed
-    # program's streaming counts per neuron-window, atol=0. The analytic
-    # synchronized executor is a training/tuning-side surrogate and is never
-    # load-bearing here. The streaming-vs-sync delta stays a REPORT (the §16
+    # genuine cycle-level program — the torch-side cycle-based simulation of
+    # the deployed matrices — must match the packed program's counts per
+    # neuron-window, atol=0. [U-LIF2 W14] Both sides run the window firing the
+    # run resolved, each on its executor of record (the gated cycle-level
+    # executor for integrate then emit). The analytic closed form is a
+    # training/tuning-side surrogate and is never load-bearing here; the
+    # firing-while-integrating transient against it stays a REPORT (the §16
     # gauge diagnostic; the census accuracy is that cell's arbiter).
+    discipline = _run_discipline(plan)
     cert, detail, backend_counts = certify_twin_flow_counts(
         ir_graph, reference_flow, backend_flow, samples, backend="hcm",
-        discipline="streaming", reference_discipline="streaming",
+        discipline=discipline, reference_discipline=discipline,
     )
     print(f"[SpikeCountCertificate] streaming-twin: {cert.summary()}")
     print(f"[SpikeCountCertificate] streaming-twin: {detail}")
@@ -164,9 +174,8 @@ def _certify_streaming_twin(pipeline, model, ir_graph, hybrid_mapping, n: int, p
         stage_index_by_node=_stage_indices_by_node(hybrid_mapping),
     )
     del backend_counts
-    _report_synchronized_gauge(
-        pipeline, ir_graph, backend_flow, samples,
-    )
+    if discipline != INTEGRATE_THEN_EMIT:  # the transient is a firing-while-integrating diagnostic
+        _report_synchronized_gauge(pipeline, ir_graph, backend_flow, samples)
     cell = CertificationCell.from_mode_policy(plan.mode_policy(), backend="hcm")
     print(f"[SpikeCountCertificate] cell {cell.cell_key}: streaming-twin PASS "
           f"({cert.neuron_windows_compared} windows, {cert.samples} sample(s))")

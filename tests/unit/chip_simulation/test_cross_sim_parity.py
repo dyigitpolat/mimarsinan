@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.cross_sim_parity import (
     CrossSimOutcome,
     CrossSimParityError,
@@ -47,7 +48,7 @@ def test_validated_cell_agrees_with_zero_diff():
         cell="lif/identity@T8",
         backend_a="nevresim",
         backend_b="hcm",
-        spiking_mode="lif",
+        point=point_of_mode("lif"),
         nf_record=nf,
         scm_record=scm,
         tolerance=1e-9,
@@ -64,7 +65,7 @@ def test_within_tolerance_residual_is_agree():
         cell="lif/identity@T8",
         backend_a="nevresim",
         backend_b="hcm",
-        spiking_mode="lif",
+        point=point_of_mode("lif"),
         nf_record=nf,
         scm_record=scm,
         tolerance=1e-9,
@@ -78,7 +79,7 @@ def test_lava_ttfs_is_inapplicable_from_capabilities():
         cell="ttfs_cycle_based/cascaded/identity@T8",
         backend_a="nevresim",
         backend_b="lava",
-        spiking_mode="ttfs_cycle_based",
+        point=point_of_mode("ttfs_cycle_based"),
         nf_record=None,
         scm_record=None,
         tolerance=1e-9,
@@ -94,7 +95,7 @@ def test_loihi_ttfs_quantized_is_inapplicable():
         cell="ttfs_quantized/identity@T8",
         backend_a="hcm",
         backend_b="loihi",
-        spiking_mode="ttfs_quantized",
+        point=point_of_mode("ttfs_quantized"),
         nf_record=None,
         scm_record=None,
         tolerance=1e-9,
@@ -104,13 +105,13 @@ def test_loihi_ttfs_quantized_is_inapplicable():
 
 
 def test_lava_lif_is_applicable():
-    applicable, reason = derive_applicability("lava", "lif")
+    applicable, reason = derive_applicability("lava", point_of_mode("lif"))
     assert applicable is True
     assert reason is None
 
 
 def test_derive_applicability_names_the_unsupported_backend_and_mode():
-    applicable, reason = derive_applicability("lava", "ttfs")
+    applicable, reason = derive_applicability("lava", point_of_mode("ttfs"))
     assert applicable is False
     assert "lava" in reason and "ttfs" in reason
 
@@ -122,7 +123,7 @@ def test_perturbed_pair_disagrees_with_quantified_gap():
         cell="lif/identity@T8",
         backend_a="nevresim",
         backend_b="hcm",
-        spiking_mode="lif",
+        point=point_of_mode("lif"),
         nf_record=nf,
         scm_record=scm,
         tolerance=1e-9,
@@ -140,7 +141,7 @@ def test_disagree_without_a_reason_still_quantifies_but_flags_unreasoned():
         cell="lif/identity@T8",
         backend_a="nevresim",
         backend_b="hcm",
-        spiking_mode="lif",
+        point=point_of_mode("lif"),
         nf_record=nf,
         scm_record=scm,
         tolerance=1e-9,
@@ -154,13 +155,13 @@ def _good_outcomes():
     return [
         screen_cell_pair(
             cell="lif/identity@T8",
-            backend_a="nevresim", backend_b="hcm", spiking_mode="lif",
+            backend_a="nevresim", backend_b="hcm", point=point_of_mode("lif"),
             nf_record=_records([[0.1, 0.2]]), scm_record=_records([[0.1, 0.2]]),
             tolerance=1e-9,
         ),
         screen_cell_pair(
             cell="ttfs_cycle_based/cascaded/identity@T8",
-            backend_a="nevresim", backend_b="lava", spiking_mode="ttfs_cycle_based",
+            backend_a="nevresim", backend_b="lava", point=point_of_mode("ttfs_cycle_based"),
             nf_record=None, scm_record=None, tolerance=1e-9,
         ),
     ]
@@ -224,7 +225,7 @@ def test_soundness_raises_when_collapse_claimed_over_unreasoned_disagree():
     outcomes = [
         screen_cell_pair(
             cell="lif/identity@T8",
-            backend_a="nevresim", backend_b="hcm", spiking_mode="lif",
+            backend_a="nevresim", backend_b="hcm", point=point_of_mode("lif"),
             nf_record=_records([[0.1]]), scm_record=_records([[0.9]]),
             tolerance=1e-9,
         ),
@@ -240,7 +241,7 @@ def test_soundness_allows_reasoned_disagree_when_not_claiming_collapse():
     outcomes = [
         screen_cell_pair(
             cell="lif/identity@T8",
-            backend_a="nevresim", backend_b="hcm", spiking_mode="lif",
+            backend_a="nevresim", backend_b="hcm", point=point_of_mode("lif"),
             nf_record=_records([[0.1]]), scm_record=_records([[0.9]]),
             tolerance=1e-9, disagree_reason="known WQ tie-flip residual",
         ),

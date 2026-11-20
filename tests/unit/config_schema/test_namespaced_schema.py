@@ -51,7 +51,6 @@ DERIVED_NON_DEFAULT_KEYS = {
     # derivation-owned, retired as document keys.
     "spiking_mode",
     "ttfs_cycle_schedule",
-    "lif_execution_discipline",
     "lif_per_hop_retiming",
     "activation_quantization",
     "weight_quantization",

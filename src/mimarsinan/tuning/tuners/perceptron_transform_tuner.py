@@ -101,7 +101,7 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
             cache_key = (
                 (perceptron_key, name) if mask_cache is not None else None
             )
-            if len(param.shape) == 0:
+            if len(param.shape) == 0 or len(prev_param.shape) == 0:  # [U-PCH] a grid one per perceptron before
                 param.data.copy_(
                     self._mix_params(
                         prev_param.data,

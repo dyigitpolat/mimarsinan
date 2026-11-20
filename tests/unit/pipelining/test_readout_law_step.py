@@ -36,6 +36,7 @@ from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import (
     install_readout_quantizers,
 )
 from unit.chip_simulation.value_run.integer_programs import LAW, build_integer_program, mlp
+from unit.pipelining.range_rule_reference import RELATIVE, grid_error, least_error, signed_grid
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "tests" / "fixtures" / "integer_value" / "mvm_int_readout_lenet5.json"
@@ -112,8 +113,10 @@ class TestStep:
         pipeline, perceptrons, batch = _run_step(monkeypatch, {"readout_law": LAW, "activation_bits": 8})
         assert all(isinstance(p.scaler, ReadoutQuantizer) for p in perceptrons)
         first_output = perceptrons[0].layer(batch).detach().abs()
-        assert float(perceptrons[0].scaler.range) == pytest.approx(float(torch.quantile(first_output, 0.999)),
-                                                                    rel=1e-5)
+        # [U-BRANGE F-4] the boundary range rule: the least squared error of the readout's own 8-bit grid
+        chosen = float(perceptrons[0].scaler.range)
+        assert grid_error([first_output], chosen, signed_grid(8)) <= least_error([first_output], signed_grid(8)) * (
+            1 + RELATIVE)
         report = pipeline.entries["readout_law_report"]
         assert set(report["perceptrons"]) == {p.name for p in perceptrons}
         assert all(0.0 <= row["clipped_fraction"] < 0.01 for row in report["perceptrons"].values())
@@ -134,7 +137,7 @@ class TestStep:
 
     def test_a_perceptron_the_calibration_never_reaches_refuses_by_name(self, monkeypatch):
         unreached = Perceptron(2, 6, name="unreached")
-        with pytest.raises(ReadoutLawCalibrationError, match="never reached perceptron.*unreached"):
+        with pytest.raises(ReadoutLawCalibrationError, match="unreached.*every magnitude.*is 0"):
             _run_step(monkeypatch, {"readout_law": LAW, "activation_bits": 8}, unreached=[unreached])
         assert issubclass(ReadoutLawCalibrationError, ToolchainRefusal)
 

@@ -294,7 +294,9 @@ class TestRecordPricing:
         pricing = price_absolute(quantities, get_platform_physics("generic_estimated_22nm"))
         area = next((t for t in pricing.terms if t.name == "chip_area_mm2"), None)
         named = (area.source if area is not None else "") + " ".join(r.reason for r in pricing.refusals)
-        assert "area_per_cell_per_weight_bit" in named and "weight widths [2, 4]" in named
+        # [U-AREA] the generic's area_rule block (a type rule; its per-bit area constant dropped) names the withheld
+        # widths beside the area it prices at the description's cell (R5 named area_per_cell_per_weight_bit unpriced)
+        assert "weight bits withheld by the census" in named and "weight widths [2, 4]" in named
 
     def test_one_width_on_every_type_keeps_the_quantity(self):
         from mimarsinan.deployment_record.quantities.from_record import from_record

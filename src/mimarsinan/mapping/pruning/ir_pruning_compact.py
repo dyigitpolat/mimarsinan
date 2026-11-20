@@ -2,7 +2,8 @@ from __future__ import annotations
 from typing import Set
 import numpy as np
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.pruning.pruning_apply import compact_hardware_bias_columns, record_dropped_rows
+from mimarsinan.mapping.packing.softcore.compaction import take_neuron_columns
+from mimarsinan.mapping.pruning.pruning_apply import record_dropped_rows
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 def _validate_outputs_remain(graph: IRGraph) -> None:
     if not graph.output_sources.size:
@@ -21,7 +22,7 @@ def _compact_node(
     pruned_rows: Set[int],
     pruned_cols: Set[int],
 ) -> None:
-    """Drop pruned columns (and matching bias entries) then pruned rows.
+    """Drop pruned columns (with every value held per neuron) then pruned rows.
 
     Liveness upstream guarantees a surviving core is never fully dead, so neither
     ``keep_cols`` nor ``keep_row_idx`` is ever empty; the asserts fail loud otherwise.
@@ -40,13 +41,11 @@ def _compact_node(
             "indicates a missing call to compute_liveness + remove_nodes "
             "in the surrounding pipeline."
         )
+        take_neuron_columns(node, keep_cols)  # [U-LIVE r2] every value held per neuron, before the matrix is cut
         mat = mat[:, keep_cols]
         node.core_matrix = mat
-        node.hardware_bias = compact_hardware_bias_columns(
-            node.hardware_bias, keep_cols
-        )
 
-    record_dropped_rows(node, mat, sorted(r for r in pruned_rows if r < mat.shape[0]), keep_cols)
+    record_dropped_rows(node, mat, sorted(r for r in pruned_rows if r < mat.shape[0]))
     if pruned_rows:
         n_axons = mat.shape[0]
         keep_row_idx = np.fromiter(

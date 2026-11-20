@@ -2,9 +2,16 @@
 
 Every number here is recomputed from the SAME sources the model is allowed to
 use — the imported ``weight_reuse_cost_model`` coefficients and the SANA-FE
-per-event presets — with only the RECORD quantities (196/292/484 payload
-bytes, 3 cores, 1 barrier) written as literals: those are the model's own
-arithmetic and must not be free to drift.
+per-event presets — with only the RECORD quantities (10,096/10,192/10,384
+payload bytes on the first segment, 3 cores, 1 barrier) written as literals:
+those are the model's own arithmetic and must not be free to drift.
+
+[U-ENERGY ruling (d)] Each segment programs what the record's period census
+writes in it (one rule with every load): the full record's lone written pass
+stays loaded across rounds and programs nothing, so the payload figures are
+read on ``make_rewritten_record`` (both segments rewritten each round: the
+first segment's two cores of 5,000 B and their 24 entries, the second's core
+of 5,000 B and its 12 entries).
 """
 
 from __future__ import annotations
@@ -28,7 +35,7 @@ from mimarsinan.deployment_record.cost.coefficients import (
     SYNC_BARRIER_S,
 )
 from mimarsinan.deployment_record.schema import Band
-from unit.deployment_record.record_fixtures import make_full_record
+from unit.deployment_record.record_fixtures import make_full_record, make_rewritten_record, with_partition
 
 # The fixture record's own quantities (record_fixtures.make_schedule).
 REPROGRAM_CORES = 2
@@ -36,8 +43,10 @@ RESIDENT_CORES = 1
 TOTAL_CORES = REPROGRAM_CORES + RESIDENT_CORES
 SYNC_COUNT = 1
 COMPUTE_S = 3e-3
-# params_bytes=100 + connectivity_entries=24 x (4 / 8 / 16) bytes per entry.
-PAYLOAD_BYTES = (196.0, 292.0, 484.0)
+# [U-ENERGY ruling (d)] the rewritten record's first segment: its two cores' params_bytes (2 x 5,000) + their
+# connectivity_entries (2 x 12) x (4 / 8 / 16) bytes per entry; its second: one core's 5,000 + 12 entries.
+PAYLOAD_BYTES = (10096.0, 10192.0, 10384.0)
+SECOND_PAYLOAD_BYTES = (5048.0, 5096.0, 5192.0)
 CORNERS = ("low", "nominal", "high")
 
 MODEL = DeploymentCostModel()
@@ -79,7 +88,8 @@ CORE_INIT_TIME = preset_core_init("soma_access_latency_s", "soma_update_latency_
 
 @pytest.fixture
 def record():
-    return make_full_record()
+    # [U-HOST2] its partition census states its host op (a max pool) MAC-free: dispatch only, the total stands
+    return with_partition(make_full_record())
 
 
 @pytest.fixture
@@ -87,9 +97,21 @@ def report(record) -> DeploymentCostReport:
     return MODEL.evaluate(record)
 
 
+@pytest.fixture
+def rewritten():
+    return make_rewritten_record()
+
+
 def reprogram_cost(record):
     costs = MODEL.segment_initialization(record)
     assert [cost.programming for cost in costs] == ["reprogram", "resident"]
+    return costs[0]
+
+
+def rewritten_cost(record):
+    """[U-ENERGY ruling (d)] the first segment of the record whose period census rewrites both segments."""
+    costs = MODEL.segment_initialization(record)
+    assert [cost.programming for cost in costs] == ["reprogram", "reprogram"]
     return costs[0]
 
 
@@ -100,15 +122,15 @@ def resident_cost(record):
 # ── segment initialization ──────────────────────────────────────────────
 
 
-def test_segment_payload_bytes_are_exact_counts_at_a_modeled_width(record):
-    assert term_band(reprogram_cost(record).term("payload_bytes")) == PAYLOAD_BYTES
+def test_segment_payload_bytes_are_exact_counts_at_a_modeled_width(rewritten):
+    assert term_band(rewritten_cost(rewritten).term("payload_bytes")) == PAYLOAD_BYTES
 
 
-def test_segment_payload_energy_applies_the_imported_dma_band(record):
+def test_segment_payload_energy_applies_the_imported_dma_band(rewritten):
     expected = tuple(
         payload * e_dma for payload, e_dma in zip(PAYLOAD_BYTES, dma_corners())
     )
-    assert term_band(reprogram_cost(record).term("payload_energy_mj")) == expected
+    assert term_band(rewritten_cost(rewritten).term("payload_energy_mj")) == expected
 
 
 def test_segment_reset_is_core_count_times_the_preset_derived_constant(record):
@@ -122,14 +144,14 @@ def test_segment_reset_is_core_count_times_the_preset_derived_constant(record):
     )
 
 
-def test_segment_programming_time_divides_by_the_opposite_bandwidth_corner(record):
+def test_segment_programming_time_divides_by_the_opposite_bandwidth_corner(rewritten):
     bandwidth = band_values(PROGRAMMING_BANDWIDTH_BYTES_PER_S)
     expected = (
         PAYLOAD_BYTES[0] / bandwidth[2],
         PAYLOAD_BYTES[1] / bandwidth[1],
         PAYLOAD_BYTES[2] / bandwidth[0],
     )
-    assert term_band(reprogram_cost(record).term("programming_time_s")) == expected
+    assert term_band(rewritten_cost(rewritten).term("programming_time_s")) == expected
 
 
 def test_resident_segment_costs_exactly_the_reset_constant(record):
@@ -145,12 +167,12 @@ def test_resident_segment_costs_exactly_the_reset_constant(record):
     )
 
 
-def test_the_connectivity_byte_width_is_a_model_parameter(record):
+def test_the_connectivity_byte_width_is_a_model_parameter(rewritten):
     one_byte = DeploymentCostModel(
         bytes_per_connectivity_entry=Band(1.0, 1.0, 1.0, basis="test override")
     )
-    cost = one_byte.segment_initialization(record)[0]
-    assert term_band(cost.term("payload_bytes")) == (124.0, 124.0, 124.0)
+    cost = one_byte.segment_initialization(rewritten)[0]
+    assert term_band(cost.term("payload_bytes")) == (10024.0, 10024.0, 10024.0)
 
 
 # ── energy ──────────────────────────────────────────────────────────────
@@ -173,12 +195,14 @@ def test_energy_never_passes_a_record_modeled_term_through(record):
     assert "modeled_programming_mj" in names
 
 
-def test_energy_modeled_terms_are_the_record_quantities_times_the_bands(record):
+def test_energy_modeled_terms_are_the_record_quantities_times_the_bands(rewritten):
+    record = rewritten  # [U-ENERGY ruling (d)] both segments rewritten each round: each programs its payload
     terms = MODEL.energy(record)
     expected_payload = tuple(
-        payload * e_dma for payload, e_dma in zip(PAYLOAD_BYTES, dma_corners())
+        first * e_dma + second * e_dma
+        for first, second, e_dma in zip(PAYLOAD_BYTES, SECOND_PAYLOAD_BYTES, dma_corners())
     )
-    assert term_band(find_term(terms, "modeled_programming_mj")) == expected_payload
+    assert term_band(find_term(terms, "modeled_programming_mj")) == pytest.approx(expected_payload, rel=1e-12)
     assert term_band(find_term(terms, "modeled_core_init_mj")) == pytest.approx(
         tuple(TOTAL_CORES * value for value in CORE_INIT_ENERGY), rel=1e-12
     )
@@ -212,34 +236,29 @@ def test_latency_compute_is_measured_and_host_ops_appear_only_when_walled(record
     terms = MODEL.latency(record)
     compute = find_term(terms, "compute_s")
     assert (compute.value, compute.band, compute.kind) == (COMPUTE_S, None, "measured")
-    assert "host_ops_s" not in [term.name for term in terms]
+    assert "host_wall_diagnostic_s" not in [term.name for term in terms]
 
-    # A whole-run wall of 0.25 s over 5 traversals contributes 0.05 s to the
-    # PER-SAMPLE decomposition; the raw total never joins unscaled.
-    walled = replace(
-        record,
-        timing=replace(
-            record.timing,
-            latency=replace(
-                record.timing.latency, host_ops_s=0.25, host_ops_s_per_pass=0.05
-            ),
-        ),
-    )
-    host_ops = find_term(MODEL.latency(walled), "host_ops_s")
-    assert (host_ops.value, host_ops.band, host_ops.kind) == (0.05, None, "measured")
+    # [U-HOST] A whole-run wall of 0.25 s over 5 one-sample calls is 0.05 s per inference (the one host wall,
+    # stage_timing.host_wall), a labelled diagnostic beside the total: the total does not move.
+    stages = tuple(replace(s, wall_s_total=0.25, invocations=5, samples_per_call=1) if hasattr(s, "op_type") else s
+                   for s in record.schedule.stages)
+    walled = replace(record, schedule=replace(record.schedule, stages=stages))
+    host_ops = find_term(MODEL.latency(walled), "host_wall_diagnostic_s")
+    assert (host_ops.value, host_ops.band, host_ops.kind) == (pytest.approx(0.05), None, "measured")
     assert find_term(MODEL.latency(walled), "total_s").value == pytest.approx(
-        find_term(terms, "total_s").value + 0.05, rel=1e-12
+        find_term(terms, "total_s").value, rel=1e-12
     )
 
 
-def test_latency_modeled_terms_use_the_record_census(record):
+def test_latency_modeled_terms_use_the_record_census(rewritten):
+    record = rewritten  # [U-ENERGY ruling (d)] both segments rewritten each round: each programs its payload
     terms = MODEL.latency(record)
     bandwidth = band_values(PROGRAMMING_BANDWIDTH_BYTES_PER_S)
-    assert term_band(find_term(terms, "programming_s")) == (
-        PAYLOAD_BYTES[0] / bandwidth[2],
-        PAYLOAD_BYTES[1] / bandwidth[1],
-        PAYLOAD_BYTES[2] / bandwidth[0],
-    )
+    assert term_band(find_term(terms, "programming_s")) == pytest.approx((
+        (PAYLOAD_BYTES[0] + SECOND_PAYLOAD_BYTES[0]) / bandwidth[2],
+        (PAYLOAD_BYTES[1] + SECOND_PAYLOAD_BYTES[1]) / bandwidth[1],
+        (PAYLOAD_BYTES[2] + SECOND_PAYLOAD_BYTES[2]) / bandwidth[0],
+    ), rel=1e-12)
     assert term_band(find_term(terms, "core_init_s")) == pytest.approx(
         tuple(TOTAL_CORES * value for value in CORE_INIT_TIME), rel=1e-12
     )

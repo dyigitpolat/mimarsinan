@@ -49,34 +49,34 @@ class TestStageTimerUnit:
 
     def test_compute_wall_is_measured_and_exported_json_safe(self):
         timer = StageTimer(clock=_FakeClock(step=1.5))
-        with timer.time_compute_stage(3, "fc_head"):
+        with timer.time_compute_stage(3, "fc_head", 8):
             pass
         walls = timer.compute_stage_walls()
         json.dumps(walls)  # JSON basic entries by construction
         assert walls == [{
             "stage_index": 3, "name": "fc_head",
-            "wall_s_total": 1.5, "invocations": 1,
+            "wall_s_total": 1.5, "invocations": 1, "samples_per_call": 8,
         }]
 
     def test_same_key_accumulates_distinct_keys_do_not(self):
         timer = StageTimer(clock=_FakeClock(step=1.0))
-        with timer.time_compute_stage(1, "op_a"):
+        with timer.time_compute_stage(1, "op_a", 1):
             pass
-        with timer.time_compute_stage(1, "op_a"):
+        with timer.time_compute_stage(1, "op_a", 1):
             pass
-        with timer.time_compute_stage(2, "op_b"):
+        with timer.time_compute_stage(2, "op_b", 1):
             pass
         assert timer.compute_stage_walls() == [
             {"stage_index": 1, "name": "op_a",
-             "wall_s_total": 2.0, "invocations": 2},
+             "wall_s_total": 2.0, "invocations": 2, "samples_per_call": 1},
             {"stage_index": 2, "name": "op_b",
-             "wall_s_total": 1.0, "invocations": 1},
+             "wall_s_total": 1.0, "invocations": 1, "samples_per_call": 1},
         ]
 
     def test_wall_accumulates_even_when_the_op_raises(self):
         timer = StageTimer(clock=_FakeClock(step=1.0))
         with pytest.raises(RuntimeError):
-            with timer.time_compute_stage(0, "boom"):
+            with timer.time_compute_stage(0, "boom", 1):
                 raise RuntimeError("op failed")
         (row,) = timer.compute_stage_walls()
         assert row["wall_s_total"] == 1.0
@@ -96,7 +96,7 @@ class TestStageLoopWiring:
             mapping, {},
             on_neural=lambda ctx: None,
             on_compute=lambda ctx: None,
-            stage_timer=timer,
+            stage_timer=timer, timed_samples=4,  # [U-HOST] the traversal's count, stated by its runner
         )
         walls = timer.compute_stage_walls()
         # Only the ComputeOp stages appear, under their EXECUTION indices;
@@ -104,7 +104,7 @@ class TestStageLoopWiring:
         assert [(w["stage_index"], w["name"]) for w in walls] == [
             (1, "c1"), (3, "c2"),
         ]
-        assert all(w["wall_s_total"] == 1.0 for w in walls)
+        assert all(w["wall_s_total"] == 1.0 and w["samples_per_call"] == 4 for w in walls)
 
     def test_stage_timer_defaults_to_none(self):
         default = inspect.signature(run_hybrid_stages).parameters["stage_timer"]

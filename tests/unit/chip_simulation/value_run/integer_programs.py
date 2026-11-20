@@ -27,9 +27,11 @@ from mimarsinan.models.lenet5 import LeNet5
 from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
     calibrate_boundary_scales,
     install_boundary_quantizers,
-    measure_seam_quantiles,
 )
-from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import install_readout_quantizers
+from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import (
+    calibrate_readout_quantizers,
+    install_readout_quantizers,
+)
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import segment_entry_perceptrons
 from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
@@ -145,11 +147,13 @@ def build_integer_program(
     for quantizer, value in zip(grids, boundary_scales or ()):
         quantizer.calibrate(value)
     quantizers = install_readout_quantizers(perceptrons, activation_bits)
-    measured = measure_seam_quantiles(flow, quantizers, batches)
-    for quantizer, value in zip(quantizers, readout_ranges or [max(v, 1e-3) for v in measured]):
+    law_platform = {"readout_law": dict(readout_law or LAW), "activation_bits": activation_bits}
+    # [U-BRANGE2 stage 1b] Readout Law's own calibration (the rule at every readout, read-together grids pooled, no
+    # floor), so every program here is built at the step's readout ranges (the stage verify's m-5)
+    calibrate_readout_quantizers(flow, perceptrons, quantizers, batches, platform=law_platform)
+    for quantizer, value in zip(quantizers, readout_ranges or ()):
         quantizer.calibrate(value)
     q_max = quantization_bounds(weight_bits)[1]
-    law_platform = {"readout_law": dict(readout_law or LAW), "activation_bits": activation_bits}
     grids = None
     if weight_quantization_step:
         flow.get_mapper_repr().assign_perceptron_indices()

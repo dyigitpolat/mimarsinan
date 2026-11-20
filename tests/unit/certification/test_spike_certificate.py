@@ -70,10 +70,7 @@ def test_integration_nf_walk_vs_hcm_counts_on_the_tiny_fixture():
 
     sys.path.insert(0, "tests/unit/models")
     from test_hybrid_sync_counts import _tiny, _flow, T as _T
-    import mimarsinan.models.spiking.hybrid.lif_step as ls
-    from mimarsinan.models.spiking.hybrid.executors.sync_counts import (
-        run_neural_segment_counts,
-    )
+    import mimarsinan.models.spiking.hybrid.executors.gated_reference as dispatch
     from mimarsinan.spiking.segment_forward import (
         LifSegmentPolicy, SegmentForwardDriver,
     )
@@ -95,7 +92,7 @@ def test_integration_nf_walk_vs_hcm_counts_on_the_tiny_fixture():
 
     def backend(batch):
         calls = []
-        orig = run_neural_segment_counts
+        orig = dispatch.run_neural_segment_gated   # [U-LIF2 W9] the executor of record of integrate then emit
 
         def spy(f, train, **kw):
             r = {}
@@ -103,12 +100,12 @@ def test_integration_nf_walk_vs_hcm_counts_on_the_tiny_fixture():
             calls.append(r)
             return o
 
-        ls.run_neural_segment_counts = spy
+        dispatch.run_neural_segment_gated = spy
         try:
             with torch.no_grad():
                 _flow(hybrid, synchronized=True)(batch)
         finally:
-            ls.run_neural_segment_counts = orig
+            dispatch.run_neural_segment_gated = orig
         last = calls[-1]
         return {("hop", len(percs) - 1): torch.cat(
             [last[i] for i in sorted(last)], dim=1)}

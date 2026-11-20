@@ -26,25 +26,19 @@
       "axes": [
         {
           "axis": "e2e_latency_s",
-          "band": [
-            0.0013319999999999999,
-            0.0023399999999999996
-          ],
-          "error_pct": -22.772277227722785,
-          "predicted": 0.0023399999999999996,
+          "band": null,
+          "error_pct": null,
+          "predicted": null,
           "published": 0.00303,
-          "refusal": null
+          "refusal": "host work exists (host_macs > 0) and pricing it needs host_macs_per_s from an identified host description (hosts/<name>.json, the run's host block; a measured wall is a diagnostic, never a price) \u2014 without a host price, moving work host-side would look free (the subsume rig)"
         },
         {
           "axis": "throughput_inferences_s",
-          "band": [
-            427.3504273504274,
-            750.7507507507509
-          ],
-          "error_pct": 16.762411844379077,
-          "predicted": 427.3504273504274,
+          "band": null,
+          "error_pct": null,
+          "predicted": null,
           "published": 366.0,
-          "refusal": null
+          "refusal": "throughput is the inverse of e2e_latency_s, which is unavailable"
         }
       ],
       "citation": "frady2020neuromorphic Table 3 (GIST-960), Sec 5.4, Fig 8",
@@ -52,7 +46,7 @@
       "measurement_kind": "simulation",
       "name": "loihi_knn_query_latency",
       "overrides_applied": {},
-      "passed": true,
+      "passed": false,
       "profile": "loihi"
     },
     {
@@ -107,11 +101,11 @@
         {
           "axis": "chip_area_mm2",
           "band": [
-            429.98560000000003,
-            429.98560000000003
+            430.0,
+            430.0
           ],
-          "error_pct": -0.003348837209294521,
-          "predicted": 429.98560000000003,
+          "error_pct": 0.0,
+          "predicted": 430.0,
           "published": 430.0,
           "refusal": null
         }

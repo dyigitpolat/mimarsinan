@@ -138,13 +138,6 @@
       "citation": "merolla2014a p.4; akopyan2015truenorth Section III p.1540 and Section VII p.1551",
       "note": "The nominal 1 ms tick is the chip's defining real-time step ('a global 1 kHz clock'). The low corner is the fastest demonstrated operation, 21x real-time (1 ms / 21 = 47.6 us), which depends on activity, synaptic density and voltage; 5x real-time (200 us) was verified bit-exact against software. There is no faster-than-nominal guarantee, so the band is one-sided."
     },
-    "area_global_fixed": {
-      "nominal": 46.6,
-      "unit": "mm^2",
-      "evidence_kind": "derived",
-      "citation": "merolla2014a p.6; akopyan2015truenorth Fig. 1 caption p.1538",
-      "derivation": "Die is 4.3 cm^2 = 430 mm^2; the 4096 cores occupy 4096 x (240 x 390 um) = 383.4 mm^2. The balance, 430 - 383.4 = 46.6 mm^2 (10.8% of the die), is the periphery outside the core array: merge-split, I/O ring and pads."
-    },
     "p_static_per_core": {
       "nominal": 15.7301,
       "unit": "uW",
@@ -174,13 +167,50 @@
       "citation": "akopyan2015truenorth Fig. 17, p.1551",
       "derivation": "MARGINAL energy per synaptic event, by linear regression on the published 0.8 V sweep at 128 synapses/neuron: 68 mW @ 11.58 Hz, 71 mW @ 20.07 Hz, 94 mW @ 95.93 Hz. Event rate = 1048576 neurons x rate x 128. Fitting P = P_static + E x events on the two ENDPOINTS gives E = (94-68) mW / (1.28742e10 - 1.5541e9) events/s = 2.297 pJ; the held-out middle point then predicts 70.62 mW against a published 71 mW (-0.54%).",
       "note": "This is the WHOLE-CHIP marginal cost of one more synaptic event -- array read, neuron update and spike routing together -- which is why e_inter_tile_hop is deliberately not declared: adding it would charge routing twice. It is NOT the published 26 pJ/synaptic-event, which is whole-chip power divided by the event rate at one operating point and therefore already contains static power (see truenorth.md)."
-    },
-    "host_compute_rate": {
-      "nominal": 1.0,
-      "unit": "fraction",
-      "evidence_kind": "derived",
-      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
-      "note": "The derate a MEASURED host wall is divided by. Identity by definition: this framework measures its host ComputeOp walls end-to-end on the deployment host (StageTimer), and derating a measurement would invent headroom. [H5] Declared here after the loihi precedent because its absence refused the record-plane e2e/energy headlines BY NAME on runs whose host wall was in fact measured."
     }
+  },
+  "area_rule": {
+    "type": "T1",
+    "terms": "type_rule",
+    "outside": "own_die",
+    "node": {
+      "node_nm": 28
+    },
+    "anchor": {
+      "scope": "die",
+      "core_mm2": "v('T1-TN-01')",
+      "die_mm2": "v('T1-TN-02')",
+      "n_pub": "s('T1-TN-02', 'scope', '4096 cores (64 x 64)', 4096)",
+      "own_share": {
+        "basis": "own_memory_share"
+      },
+      "logic_held_per_core": {
+        "citation": [
+          "T1-TN-01",
+          "T1-TN-06"
+        ],
+        "statement": "one time-multiplexed neuron per core (T1-TN-06) with its scheduler, token controller and router (T1-TN-01)"
+      }
+    },
+    "organization": {
+      "rows": 256,
+      "cols": 256,
+      "weight_bits_per_cell": 9,
+      "terms": "bits",
+      "term_weights": {
+        "bits": 1.0
+      },
+      "stored_bits_per_cell": 1,
+      "bits_per_neuron": 152.0,
+      "citation": {
+        "rows, cols": "T1-TN-01 scope (256 axons x 256 neurons)",
+        "stored_bits_per_cell": "T1-TN-08 quote (synapse states 65,536 bits = 256 x 256 x 1)",
+        "bits_per_neuron": "T1-TN-08 quote ((31,232 + 6,656 + 1,024) bits / 256 neurons)",
+        "weight_bits_per_cell": "CO profiles/truenorth.json validity.geometry.cell_bits"
+      }
+    },
+    "drops": [
+      "area_global_fixed 46.6 mm2 (derived die remainder): the outside part is gamma"
+    ]
   }
 }

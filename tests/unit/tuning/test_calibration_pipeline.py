@@ -21,11 +21,18 @@ from mimarsinan.chip_simulation.spiking_mode_policy import (
     policy_for_spiking_mode,
 )
 from mimarsinan.tuning.orchestration.calibration_pipeline import CalibrationPipeline
+from spiking_points import point_of_mode
+
+
+def _cycle(synchronized):
+    """[U-LIF2 r2] The resolver reads the config's point: the TTFS-cycle schedule the boolean named."""
+    return {"spiking_mode": "ttfs_cycle_based",
+            "ttfs_cycle_schedule": "synchronized" if synchronized else "cascaded"}
 
 
 def _resolve(synchronized=False, distmatch_driven=False, **flags):
     return CalibrationPipeline.resolve(
-        dict(flags), synchronized=synchronized, distmatch_driven=distmatch_driven,
+        {**_cycle(synchronized), **flags}, synchronized=synchronized, distmatch_driven=distmatch_driven,
     )
 
 
@@ -150,7 +157,7 @@ _ALL_STEPS = dict(
 def _for_mode(mode, schedule=None, distmatch_driven=False, **flags):
     return CalibrationPipeline.for_mode(
         dict(flags),
-        mode_policy=policy_for_spiking_mode(mode, schedule),
+        mode_policy=policy_for_spiking_mode(point_of_mode(mode, schedule)),
         distmatch_driven=distmatch_driven,
     )
 
@@ -235,7 +242,7 @@ class TestResolveAliasMatchesForMode:
     def test_alias_equals_policy_keyed(self, synchronized, distmatch_driven, flags):
         schedule = "synchronized" if synchronized else "cascaded"
         via_alias = CalibrationPipeline.resolve(
-            dict(flags), synchronized=synchronized, distmatch_driven=distmatch_driven,
+            {**_cycle(synchronized), **flags}, synchronized=synchronized, distmatch_driven=distmatch_driven,
         )
         via_mode = _for_mode(
             "ttfs_cycle_based", schedule,
@@ -247,7 +254,7 @@ class TestResolveAliasMatchesForMode:
     def test_synchronized_boolean_maps_to_inert(self, synchronized):
         # The synchronized=True boolean key maps to the inert cell; cascaded does not.
         c = CalibrationPipeline.resolve(
-            dict(_ALL_STEPS), synchronized=synchronized, distmatch_driven=True,
+            {**_cycle(synchronized), **_ALL_STEPS}, synchronized=synchronized, distmatch_driven=True,
         )
         if synchronized:
             assert c == CalibrationPipeline.inert()

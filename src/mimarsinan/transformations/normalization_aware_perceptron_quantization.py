@@ -4,9 +4,12 @@ from mimarsinan.transformations.perceptron.bias_drive import bias_row_drive
 from mimarsinan.transformations.perceptron.bias_saturation import (
     clip_off_saturated_effective_bias,
 )
-from mimarsinan.transformations.perceptron.input_shift import compensate_projected_weights, recorded_input_shift
+from mimarsinan.transformations.perceptron.input_shift import recorded_input_shift
+from mimarsinan.transformations.perceptron.neuron_scales import is_per_neuron_scale, row_peaks, scale_view
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import output_axes
 from mimarsinan.transformations.quantization_bounds import layer_weight_bits
+from mimarsinan.models.perceptron_mixer.membrane_lattice import record_membrane_lattice_kind
 
 import torch
 
@@ -32,7 +35,9 @@ class NormalizationAwarePerceptronQuantization:
 
     Either way the quantized bias is an exact integer on the weight-grid lattice —
     the torch<->chip parity contract (``wq_cascade_crater_repair.md`` §4.3/§5) —
-    and the LIF membrane lattice is stamped at ``s_w``.
+    and the perceptron records the kind of membrane lattice it lives on (the
+    lattice itself, at ``s_w``, is derived from the persisted scale at every
+    arming: ``models.perceptron_mixer.membrane_lattice``).
 
     A perceptron whose bias compensates a recorded input shift (``input_shift``,
     the negative-boundary bake ``B - W s``) has the compensation re-derived on
@@ -50,10 +55,15 @@ class NormalizationAwarePerceptronQuantization:
     ``q_max / max`` instead of its integer floor (the law's multiplier carries
     it); ``float_bias`` derives the weight grid from ``max|w|`` alone and leaves
     the bias float (the readout law rounds it at its own resolution).
+
+    [U-PCH] ``per_neuron`` (a chip declaring a threshold register per neuron, ``weight_scale_granularity
+    per_neuron``) sizes each grid per output neuron: ``s_c`` from row ``c``'s peaks, ``theta_c = s_c``, a membrane
+    lattice per neuron; the bias rows a param-encoded bias takes are shared by the perceptron's neurons, so their
+    count is the largest neuron's.
     """
 
     def __init__(self, bits, device, rate=1.0, two_scale=False, fractional_scale=False, float_bias=False,
-                 bias_rows_floor=None, register_bias=False):
+                 bias_rows_floor=None, register_bias=False, per_neuron=False):
         self.device = device
         self.bits = bits
         self.q_min = -( 2 ** (bits - 1) )
@@ -68,14 +78,15 @@ class NormalizationAwarePerceptronQuantization:
         self.bias_rows_floor = None if bias_rows_floor is None else int(bias_rows_floor)
         # The two-scale bias route: an on-chip register (the weight lattice) or bias rows (the r-multiple grid).
         self.register_bias = bool(register_bias)
+        self.per_neuron = bool(per_neuron)
 
     def transform(self, perceptron):
         # [WI-5g] a perceptron on a core type of its own weight width quantizes on that width's grid.
         bits = layer_weight_bits(perceptron, self.bits)
         projection = self if bits == self.bits else NormalizationAwarePerceptronQuantization(
             bits, self.device, self.rate, two_scale=self.two_scale, fractional_scale=self.fractional_scale,
-            float_bias=self.float_bias, register_bias=self.register_bias)
-        transformer = PerceptronTransformer()
+            float_bias=self.float_bias, register_bias=self.register_bias, per_neuron=self.per_neuron)
+        transformer = PerceptronTransformer(positions=True)  # [U-PFOLD] a fold per position: each weight row projected
         with transformer.deferred_finite_checks(perceptron):
             projection._transform(perceptron, transformer)
 
@@ -84,6 +95,11 @@ class NormalizationAwarePerceptronQuantization:
         ``q_max / peak`` under a declared fractional rule."""
         quotient = self.q_max / torch.clamp(peak, min=1e-12)
         return quotient if self.fractional_scale else torch.clamp(torch.floor(quotient), min=1.0)
+
+    def _peak(self, t, axis):
+        """``max |t|``: over the whole tensor, or per output neuron on ``axis`` (``per_neuron``; [U-PFOLD r2] the axis
+        the reader declares for the view ``t``)."""
+        return row_peaks(t, axis) if self.per_neuron else torch.max(torch.abs(t))
 
     def _transform(self, perceptron, transformer):
         if self.float_bias:
@@ -94,6 +110,7 @@ class NormalizationAwarePerceptronQuantization:
         # a constant-OFF channel's outlier bias starves the shared weight grid
         # (the t01_19/t0_03 WQ-entry crater). Idempotent, function-preserving.
         clip_off_saturated_effective_bias(perceptron, transformer=transformer)
+        axes = output_axes(perceptron, transformer.positions)  # [U-PFOLD r2] each view's output axis, the reader's
         w = transformer.get_effective_weight(perceptron)
         b = transformer.get_effective_bias(perceptron)
         # The always-on row carries its drive (its reader's grid top on the integer value path, else 1.0): its
@@ -102,8 +119,8 @@ class NormalizationAwarePerceptronQuantization:
 
         # All-tensor scale chain: this runs per perceptron per optimizer step,
         # and a python max()/CPU-tensor bound forces a GPU sync per call.
-        w_max = torch.max(torch.abs(w))
-        b_max = torch.max(torch.abs(b))
+        w_max = self._peak(w, axes.weight)
+        b_max = self._peak(b, axes.bias)
         if drive != 1.0:
             b_max = b_max / drive
         if torch.is_tensor(b_max) and b_max.device != w_max.device:
@@ -131,19 +148,23 @@ class NormalizationAwarePerceptronQuantization:
 
         # set_parameter_scale re-declares the shared grid (bias_scale follows).
         perceptron.set_parameter_scale(scale)
-        self._stamp_membrane_lattice(perceptron, scale)
+        record_membrane_lattice_kind(perceptron)
 
         self._project_weights(perceptron, transformer, scale)
         # The row's code is round(b s / drive): the bias on the grid of step drive / s.
-        transformer.apply_effective_bias_transform(perceptron, self._quantize_param_fn(scale / drive if drive != 1.0
-                                                                                       else scale))
+        transformer.apply_effective_bias_transform(perceptron, self._quantize_param_fn(
+            scale / drive if drive != 1.0 else scale, output_axes(perceptron, transformer.positions).bias))
 
     def _project_weights(self, perceptron, transformer, scale) -> None:
         """The weight write on ``scale``'s grid; a recorded input shift's compensation follows the weights it
-        installs (``B' <- B' - (W~_after - W~_before) s``)."""
+        installs (``B' <- B' - (W~_after - W~_before) s``, through the received shift's one writer)."""
+        # mapping.support imports transformations at its own import: a module-scope import here is a cycle.
+        from mimarsinan.mapping.support.received_shift import compensate_projected_weights
+
         shifted = recorded_input_shift(perceptron) is not None
         before = transformer.get_effective_weight(perceptron).clone() if shifted else None
-        transformer.apply_effective_weight_transform(perceptron, self._quantize_param_fn(scale))
+        transformer.apply_effective_weight_transform(
+            perceptron, self._quantize_param_fn(scale, output_axes(perceptron, transformer.positions).weight))
         if before is not None:
             compensate_projected_weights(perceptron, transformer, before)
 
@@ -154,7 +175,8 @@ class NormalizationAwarePerceptronQuantization:
         projected = recorded_input_shift(perceptron) is not None
         if projected:
             self._project_weights(perceptron, transformer, weight_scale)
-            b_max = torch.max(torch.abs(transformer.get_effective_bias(perceptron))).to(w_max.device)
+            b_max = self._peak(transformer.get_effective_bias(perceptron),
+                               output_axes(perceptron, transformer.positions).bias).to(w_max.device)
             if drive != 1.0:
                 b_max = b_max / drive
         if self.register_bias and drive != 1.0:
@@ -173,60 +195,50 @@ class NormalizationAwarePerceptronQuantization:
         )
         if self.bias_rows_floor is not None:
             ratio = torch.clamp(ratio, min=float(self.bias_rows_floor))
+        if not self.register_bias and is_per_neuron_scale(ratio):
+            ratio = ratio.max()  # the always-on rows are every neuron's: as many as its largest neuron needs
+        axes = output_axes(perceptron, transformer.positions)  # [U-PFOLD r2] each view's output axis, the reader's
         if self.register_bias:
             # The register: round(b s_w) on the weight lattice within the span ±q_max r (never binding here).
-            bias_scale, bias_quantize = weight_scale, self._quantize_param_fn(weight_scale, span=ratio)
+            bias_scale, bias_quantize = weight_scale, self._quantize_param_fn(weight_scale, axes.bias, span=ratio)
         else:
             # The rows: an integer-ratio-snapped grid, so `bias * weight_scale = r * bias_int` exactly and each of
             # the r rows emits bias_int (the lattice the chip export emits and the NF<->SCM parity consumes). Rows
             # driven at `drive` hold the bias over the drive: `(bias / drive) * weight_scale = r * bias_int`.
             bias_scale = weight_scale / ratio
-            bias_quantize = self._quantize_param_fn(bias_scale / drive if drive != 1.0 else bias_scale)
+            bias_quantize = self._quantize_param_fn(bias_scale / drive if drive != 1.0 else bias_scale, axes.bias)
 
         perceptron.set_parameter_scale(weight_scale)
         perceptron.set_bias_scale(bias_scale)
-        self._stamp_membrane_lattice(perceptron, weight_scale)
+        record_membrane_lattice_kind(perceptron)
 
         if not projected:
             transformer.apply_effective_weight_transform(
-                perceptron, self._quantize_param_fn(weight_scale)
+                perceptron, self._quantize_param_fn(weight_scale, axes.weight)
             )
         transformer.apply_effective_bias_transform(perceptron, bias_quantize)
 
     def _transform_float_bias(self, perceptron, transformer):
-        weight_scale = self._grid_scale(torch.max(torch.abs(transformer.get_effective_weight(perceptron))))
+        weight_scale = self._grid_scale(self._peak(transformer.get_effective_weight(perceptron),
+                                                   output_axes(perceptron, transformer.positions).weight))
         perceptron.set_parameter_scale(weight_scale)
-        self._stamp_membrane_lattice(perceptron, weight_scale)
+        record_membrane_lattice_kind(perceptron)
         self._project_weights(perceptron, transformer, weight_scale)
 
-    @staticmethod
-    def _stamp_membrane_lattice(perceptron, scale) -> None:
-        """Arm the LIF activation's integer-chip membrane snap with the grid
-        theta (nevresim parity: ties must be decided by exact values)."""
-        # Lazy: transformations must not import the spiking package at module
-        # scope (spiking -> mapping.verification -> ... -> transformations).
-        from mimarsinan.spiking.lif_utils import (
-            membrane_lattice_theta,
-            unwrap_lif_activation,
-        )
-
-        lif = unwrap_lif_activation(getattr(perceptron, "activation", None))
-        if lif is not None:
-            lif.set_membrane_lattice(
-                membrane_lattice_theta(float(scale), perceptron, lif)
-            )
-
-    def _quantize_param_fn(self, scale, span=None):
+    def _quantize_param_fn(self, scale, axis, span=None):
         """Round onto ``scale``'s grid, clamped to the register (``±q_max``, or ``±q_max span`` codes), mixed at the
-        rate."""
+        rate; a per-neuron scale and span read each output neuron on its own (``scale_view``), on ``axis``, the output
+        axis the reader declares for the view the transform receives."""
         rate = float(self.rate)
         q_min = float(self.q_min) if span is None else self.q_min * span
         q_max = float(self.q_max) if span is None else self.q_max * span
 
         def quantize_param(param):
-            scaled = param * scale
-            quantized = torch.round(scaled).clamp_(min=q_min, max=q_max)
-            rescaled = quantized / scale
+            s = scale_view(scale, param, axis)
+            scaled = param * s
+            quantized = torch.round(scaled).clamp_(min=scale_view(q_min, param, axis),
+                                                   max=scale_view(q_max, param, axis))
+            rescaled = quantized / s
             if rate >= 1.0:
                 return rescaled
             if rate <= 0.0:

@@ -31,7 +31,8 @@ class JointConstrainMixin(JointHostContract):
         """The share of this candidate's parameters that would sit on chip cores.
 
         Measured through the deployment's OWN estimator, under the CANDIDATE's
-        placement — the NeuralOps/ComputeOps boundary the encoder lands on.
+        placement — the NeuralOps/ComputeOps boundary the encoder lands on — and
+        the run's conversion (``self.conversion``), the one its pipeline deploys.
         """
         placement = self.candidate_encoding_placement(configuration)
         model, _params = self._candidate_model(
@@ -45,6 +46,7 @@ class JointConstrainMixin(JointHostContract):
             int(self.num_classes),
             encoding_placement=placement,
             metric="params",
+            conversion=self.conversion,
         ).fraction
 
     def onchip_constraint(self, configuration: Dict) -> Optional[ConstraintReport]:

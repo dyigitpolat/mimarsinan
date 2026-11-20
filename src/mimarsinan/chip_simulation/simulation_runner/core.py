@@ -14,7 +14,6 @@ from mimarsinan.chip_simulation.membrane_export import (
 from mimarsinan.chip_simulation.subsample import compute_test_subsample_indices
 from mimarsinan.data_handling import batch_integrity
 from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
-from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.chip_simulation.simulation_runner.flat import SimulationFlatMixin
@@ -76,9 +75,9 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         # the deployed host's, where the census and the HCM reference run.
         self.host_compute_device = deployed_host_device(pipeline.config.get("device"))
         self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
-        # The resolved soma point every nevresim segment of this run executes:
-        # one law per run, resolved once, never re-read from raw keys.
-        self.soma_law = SomaLaw.resolve(pipeline.config)
+        # The resolved point every nevresim segment of this run executes (its soma law
+        # with it): [U-LIF2 r2] the plan's record, resolved once, never a mode's.
+        self.spiking_point = plan.require_spiking_point()
         self.spiking_mode = plan.spiking_mode
         self.nevresim_connectivity_mode = resolve_nevresim_connectivity_mode(pipeline.config)
         # ONE discipline per run (run_pass_transfer): verbatim only when the

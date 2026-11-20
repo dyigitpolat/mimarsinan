@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Iterable, Optional, Sequence
 
 import torch
 
@@ -95,12 +95,17 @@ def build_param_groups(
     model: torch.nn.Module,
     base_lr: float,
     recipe: TrainingRecipe,
+    *,
+    only=None,
 ) -> list[dict]:
     """Split model params into optimizer groups by weight-decay exclusion and layer-wise LR decay.
 
     Block depth is inferred from param names; params without a depth are treated as
     head (``base_lr``) unless they match stem/embedding keywords (deepest-decayed LR).
+    ``only``: the parameters a trainer trains (its update writes them to the deployed model, U-TGAUGE T1-C); every
+    other parameter of ``model`` is left out of the groups. ``None`` groups every parameter.
     """
+    trained = None if only is None else {id(p) for p in only}
     decay = recipe.weight_decay
     llrd = float(recipe.layer_wise_lr_decay)
     no_decay_keywords = tuple(recipe.no_decay_keywords)
@@ -112,7 +117,7 @@ def build_param_groups(
     groups: dict[tuple[float, bool], dict] = {}
 
     for name, param in model.named_parameters():
-        if not param.requires_grad:
+        if not param.requires_grad or (trained is not None and id(param) not in trained):
             continue
         no_decay = _is_no_decay(name, no_decay_keywords)
 
@@ -153,8 +158,10 @@ def build_optimizer(
     model: torch.nn.Module,
     base_lr: float,
     recipe: TrainingRecipe,
+    *,
+    only=None,
 ) -> torch.optim.Optimizer:
-    param_groups = build_param_groups(model, base_lr, recipe)
+    param_groups = build_param_groups(model, base_lr, recipe, only=only)
     name = recipe.optimizer.lower()
     if name == "adam":
         return torch.optim.Adam(param_groups, lr=base_lr, betas=_betas_pair(recipe))
@@ -198,3 +205,28 @@ def build_scheduler(
         optimizer, schedulers=[warmup, main], milestones=[warmup_steps]
     )
     return combined, warmup_steps
+
+
+class UnwrittenStepError(RuntimeError):
+    """A training step whose update writes none of the parameters its loss's backward reaches (U-TGAUGE2)."""
+
+
+def clear_step_gradients(optimizer: torch.optim.Optimizer, model: torch.nn.Module, *, step: str,
+                         writes: Optional[Iterable[torch.Tensor]] = None) -> None:
+    """[U-TGAUGE2, U-TGAUGE3] The step rule: before a step's backward through ``model``, every gradient it may write
+    starts at zero (every parameter of ``model``, the deployed one under a transform trainer, and the optimizer's own),
+    so no gradient of another step or step loop enters this one. ``writes``: the parameters of ``model`` whose
+    gradients the step's update consumes (a plain step: its optimizer's parameters, the default; a transform trainer:
+    the deployed parameters its transfer moves to the trained copies it steps). A step whose update consumes none of
+    the parameters its backward reaches would train nothing while the gradients pile up, so it refuses by name; what
+    decides is what the update writes, never which tensors the optimizer holds."""
+    params = list(model.parameters())
+    consumed = {id(p) for p in (writes if writes is not None else
+                                (p for group in optimizer.param_groups for p in group["params"]))}
+    if not any(p.requires_grad and id(p) in consumed for p in params):
+        raise UnwrittenStepError(
+            f"{step} differentiates {type(model).__name__} but its update holds none of the parameters that backward "
+            f"writes: the trainer writes through an update this step does not run, so the step would train nothing")
+    optimizer.zero_grad(set_to_none=True)
+    for p in params:
+        p.grad = None

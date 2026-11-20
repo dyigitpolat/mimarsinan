@@ -1,0 +1,110 @@
+{
+ "type": "T2_analog",
+ "what": "analog SRAM compute-in-memory macros",
+ "scaled_terms": "cells_converters",
+ "cell_family": "sram",
+ "eta": {
+  "value": 0.852395742223279,
+  "unit": "1",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T2-CR-01",
+   "T2-CR-02",
+   "T2-IM-01",
+   "T2-IM-02",
+   "T2-IM-04"
+  ],
+  "derivation": "CIM array efficiency: compute cells over the published array block",
+  "recompute": {
+   "aggregate": "geometric_mean",
+   "points": [
+    {
+     "label": "IMAGINE",
+     "expression": "s('T2-IM-01', 'scope', '1152 x 256 10T1C DP array', 1152 * 256) * v('T2-IM-04') / (v('T2-IM-02') / 100 * v('T2-IM-01', 0) * 1e6)"
+    },
+    {
+     "label": "CAP-RAM",
+     "expression": "s('T2-CR-01', 'scope', '512 x 128 6T array (8 kB)', 512 * 128) * r('cell_kinds:kinds.cim_amortized_6t_charge_domain.factor_of_logic_6t') * r('cell_kinds:kinds.sram_6t_logic_rule.factor_of_sigma') * sigma(65) / (v('T2-CR-02', key='8KB SRAM array') / 100 * v('T2-CR-01') * 1e6)"
+    }
+   ]
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "s": {
+  "value": 0.7478769952338419,
+  "unit": "1",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T2-CR-02",
+   "T2-IM-02",
+   "T2-IM-03"
+  ],
+  "derivation": "the array and converter share of an analog SRAM CIM macro, geometric mean",
+  "recompute": {
+   "aggregate": "geometric_mean",
+   "points": [
+    {
+     "label": "CAP-RAM",
+     "expression": "(v('T2-CR-02', key='8KB SRAM array') + v('T2-CR-02', key='ciSAR ADCs')) / 100"
+    },
+    {
+     "label": "IMAGINE",
+     "expression": "(v('T2-IM-02') + v('T2-IM-03')) / 100"
+    }
+   ]
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "gamma": {
+  "value": 0.8777264028620466,
+  "unit": "1",
+  "evidence_kind": "derived",
+  "citation": [],
+  "derivation": "no T2 die publishes its core-grid share: the T1 dies' (flagged)",
+  "recompute": {
+   "expression": "r('types/t1:gamma')"
+  },
+  "note": ""
+ },
+ "default_cell_factor": {
+  "value": 1.7063201879109393,
+  "unit": "1",
+  "evidence_kind": "fitted",
+  "citation": [],
+  "derivation": "the type's default compute cell over a logic-rule 6T: the geometric mean of the published analog kinds",
+  "recompute": {
+   "aggregate": "geometric_mean",
+   "points": [
+    {
+     "label": "amortized 6T",
+     "expression": "r('cell_kinds:kinds.cim_amortized_6t_charge_domain.factor_of_logic_6t')"
+    },
+    {
+     "label": "8T M-BC",
+     "expression": "r('cell_kinds:kinds.cim_8t_multiplying_bitcell_mom.factor_of_logic_6t')"
+    },
+    {
+     "label": "10T1C",
+     "expression": "r('cell_kinds:kinds.cim_10t1c_mom.factor_of_logic_6t')"
+    }
+   ]
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "default_cell_kind": null,
+ "default_converter_kind": "sar_dedicated",
+ "outside_parts": "types/t1",
+ "band": "bands:pooled"
+}

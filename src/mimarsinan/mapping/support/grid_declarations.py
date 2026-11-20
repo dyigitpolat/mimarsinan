@@ -17,6 +17,11 @@ BIAS_RESOLUTIONS = (BIAS_ON_WEIGHT_GRID, BIAS_AT_LAW)
 #: ``readout_law.output_law``: output cores requantize onto the activation grid, or write their exact integers.
 OUTPUT_LAW_REQUANTIZE, OUTPUT_LAW_IDENTITY = "requantize", "identity"
 OUTPUT_LAWS = (OUTPUT_LAW_REQUANTIZE, OUTPUT_LAW_IDENTITY)
+#: [U-PCH] ``weight_scale_granularity``: one weight scale per perceptron (absent), or one per output neuron with its
+#: own threshold register (``mapping/support/neuron_thresholds``, read on a chip that declares them).
+WEIGHT_SCALE_GRANULARITY_KEY = "weight_scale_granularity"
+WEIGHT_SCALE_PER_PERCEPTRON, WEIGHT_SCALE_PER_NEURON = "per_perceptron", "per_neuron"
+WEIGHT_SCALE_GRANULARITIES = (WEIGHT_SCALE_PER_PERCEPTRON, WEIGHT_SCALE_PER_NEURON)
 
 
 class GridDeclarationError(ToolchainRefusal, ValueError):

@@ -25,6 +25,16 @@ SYNC = "sync"
 GLOBAL = "global"
 AGGREGATE = "aggregate"
 
+#: [U-ENERGY class 1] Every chip time a static power is charged over: the inference, the deployment's first load, the
+#: reprogramming per round and the measured model's whole latency (one multiplicand alternative per wall).
+_WALLS = ("e2e_latency_s", "latency_load_s", "latency_programming_s", "total_s")
+
+
+def _over_walls(per: str = "") -> str:
+    """The multiplicand of a static row: ``per`` (a count) x each wall, as alternatives."""
+    return " | ".join(f"{per} x {wall}" if per else wall for wall in _WALLS)
+
+
 #: Declaration order is the wizard's panel order.
 GROUPS: Tuple[str, ...] = (
     ARRAY,
@@ -85,6 +95,13 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Silicon area of one row (axon) driver."),
     ("e_row_drive", PERIPHERY, ENERGY, "pJ", "boundary_events",
      "Energy to drive one row line for one activation."),
+    # [U-ENERGY class 3] Core-local memories, read and write apart.
+    ("e_local_mem_read_per_byte", PERIPHERY, ENERGY, "pJ", "local_mem_read_bytes",
+     "Energy of one byte read from a core's local activation memories (its input buffer and the registers that "
+     "stage a row's inputs into the array): every used row's input read into the array, per evaluation step."),
+    ("e_local_mem_write_per_byte", PERIPHERY, ENERGY, "pJ", "local_mem_write_bytes",
+     "Energy of one byte written into a core's local activation memories (its output buffer): every used column's "
+     "output written out, per evaluation step."),
     # --- neuron: soma state and update -----------------------------------------------
     ("area_per_neuron_logic", NEURON, AREA, "um^2", "neurons_physical",
      "Silicon area of one neuron's update logic, excluding its state storage."),
@@ -92,9 +109,9 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Silicon area of one bit of per-neuron state storage."),
     ("membrane_bits", NEURON, DIMENSIONLESS, "bit", "declared, not multiplied",
      "Width of one neuron's membrane/accumulator state register."),
-    ("e_neuron_update", NEURON, ENERGY, "pJ", "neurons_used x timesteps",
+    ("e_neuron_update", NEURON, ENERGY, "pJ", "neurons_used x neuron_cycles_per_window",
      "Energy of one neuron state update at one timestep."),
-    ("e_leak_per_neuron_step", NEURON, ENERGY, "pJ", "neurons_used x timesteps",
+    ("e_leak_per_neuron_step", NEURON, ENERGY, "pJ", "neurons_used x neuron_cycles_per_window",
      "Energy of one leak application per neuron per timestep, where leak is separable."),
     # --- compute: arithmetic lanes beside the array (on-chip capability levels) ---------
     ("area_per_lane", COMPUTE, AREA, "um^2", "lanes_per_tile x tiles",
@@ -144,7 +161,7 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "carry_buffer_bytes; a target that does not declare it (with its source) refuses the energy by name rather "
      "than borrowing another store's figure. [U-G] An SRAM's access energy depends on its size: a profile may state "
      "it over capacity (its carry_buffer table's rows), read at the declared capacity, refused by name elsewhere."),
-    ("p_carry_buffer_static_per_byte", PROGRAMMING, POWER, "nW", "carry_buffer_capacity_bytes x e2e_latency_s",
+    ("p_carry_buffer_static_per_byte", PROGRAMMING, POWER, "nW", _over_walls("carry_buffer_capacity_bytes"),
      "[U-F4] Static (leakage) power of one declared byte of the on-chip carry buffer while the chip is powered, "
      "priced on the capacity the chip declares (carry_buffer_bytes), filled or not; a target declaring the buffer "
      "without it (with its source) refuses the energy by name."),
@@ -217,10 +234,11 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Whole-chip area that scales with neither cores nor tiles (host link and memory PHYs, controller, PLLs, "
      "pads): [U-A] the sum of the chip's declared chip_components at its node (area_components), else a sourced "
      "scalar; refused by name where neither exists (an estimate prices only on a projection)."),
-    ("p_static_per_core", GLOBAL, POWER, "mW", "cores_physical x e2e_latency_s",
-     "Static (leakage) power of one core while powered."),
-    ("p_static_global", GLOBAL, POWER, "mW", "e2e_latency_s",
-     "Static (leakage) power of the whole chip outside its cores."),
+    ("p_static_per_core", GLOBAL, POWER, "mW", _over_walls("cores_physical"),
+     "Static (leakage) power of one core while powered: [U-ENERGY] over every priced chip time (the inference, "
+     "the deployment's first load, the reprogramming per round, the measured model's whole latency)."),
+    ("p_static_global", GLOBAL, POWER, "mW", _over_walls(),
+     "Static (leakage) power of the whole chip outside its cores, over every priced chip time (as p_static_per_core)."),
 ) + HOST_ROWS + (
     # --- aggregate: what a chip publishes when it publishes no decomposition ----------
     ("e_synaptic_event_total", AGGREGATE, ENERGY, "pJ", "synaptic_events",
@@ -251,6 +269,8 @@ SUPERSEDES: Mapping[str, Tuple[str, ...]] = {
         "e_mac",
         "e_adc_conversion",
         "e_row_drive",
+        "e_local_mem_read_per_byte",  # [U-ENERGY class 3] the whole-system figure holds a core's local memories
+        "e_local_mem_write_per_byte",
         "e_neuron_update",
         "e_leak_per_neuron_step",
         "e_intra_tile_packet",

@@ -66,6 +66,7 @@ def test_opt_in_surfaces_measured_walls_on_the_record(monkeypatch):
     assert wall["stage_index"] == 0
     assert wall["name"] == "host_op"
     assert wall["invocations"] == 1
+    assert wall["samples_per_call"] == 1  # [U-HOST] the runner states its traversal: run() is one sample
     assert wall["wall_s_total"] >= 0.0
 
 

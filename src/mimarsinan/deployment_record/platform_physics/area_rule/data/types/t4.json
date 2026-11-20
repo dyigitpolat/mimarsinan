@@ -1,0 +1,65 @@
+{
+ "type": "T4",
+ "what": "phase-change memory crossbars",
+ "scaled_terms": "cells_converters",
+ "cell_family": "phase_change",
+ "s": {
+  "value": 0.65625,
+  "unit": "1",
+  "evidence_kind": "derived",
+  "citation": [
+   "T4-HE-01",
+   "T4-HE-02",
+   "T4-HE-03"
+  ],
+  "derivation": "HERMES' split of its main components restated over its cores (rule C)",
+  "recompute": {
+   "expression": "(v('T4-HE-03', key='PCM array') + v('T4-HE-03', key='ADC')) / 100 * (s('T4-HE-01', 'scope', '64 cores', 64) * v('T4-HE-02') * 1e6 / (1 - v('T4-HE-03', key='GDPU') / 100)) / (s('T4-HE-01', 'scope', '64 cores', 64) * v('T4-HE-02') * 1e6)"
+  },
+  "note": "",
+  "fallback": "r('types/t3:s')"
+ },
+ "gamma": {
+  "value": 0.6186666666666666,
+  "unit": "1",
+  "evidence_kind": "derived",
+  "citation": [
+   "T4-HE-01",
+   "T4-HE-02"
+  ],
+  "derivation": "HERMES' own die",
+  "recompute": {
+   "expression": "s('T4-HE-01', 'scope', '64 cores', 64) * v('T4-HE-02') / v('T4-HE-01')"
+  },
+  "note": "",
+  "fallback": "r('types/t1:gamma')"
+ },
+ "default_cell_kind": "pcm_analog_unit_cell",
+ "default_converter_kind": "cco_time_based",
+ "outside_parts": {
+  "value": 54.91200000000001,
+  "unit": "mm^2",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T4-HE-01",
+   "T4-HE-02"
+  ],
+  "derivation": "the published outside part of the die the type's gamma reads (die less its core grid); the type rule's fixed-outside reading holds the largest (MA-3, T-28; the fix round's MA-1)",
+  "recompute": {
+   "aggregate": "max",
+   "points": [
+    {
+     "label": "HERMES",
+     "expression": "v('T4-HE-01') * (1 - s('T4-HE-01', 'scope', '64 cores', 64) * v('T4-HE-02') / v('T4-HE-01'))"
+    }
+   ],
+   "fallback": "r('types/t1:outside_parts')"
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "band": "bands:pooled"
+}

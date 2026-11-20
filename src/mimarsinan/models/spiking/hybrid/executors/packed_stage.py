@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional, Sequence
 
 import torch
 
@@ -40,8 +40,11 @@ def _index(values, device) -> "torch.Tensor | None":
     return torch.tensor(values, dtype=torch.long, device=device)
 
 
-def build_packed_stage(seg: dict, device: torch.device) -> PackedStage:
-    """Bucket the stage's stepable cores by (latency, axons, neurons)."""
+def build_packed_stage(
+    seg: dict, device: torch.device, starts: Optional[Sequence[Optional[int]]] = None,
+) -> PackedStage:
+    """Bucket the stage's stepable cores by (start, axons, neurons): a core's start is its latency (the per-cycle
+    executor's), or [U-LIF2 W9] the cycle ``starts`` gives it (the gated executor's phase of its level)."""
     cores = seg["cores"]
     axon_spans = seg["axon_spans"]
     core_params = seg["core_params"]
@@ -56,8 +59,9 @@ def build_packed_stage(seg: dict, device: torch.device) -> PackedStage:
 
     keyed: Dict[tuple, List[int]] = {}
     for i, c in enumerate(cores):
-        if c.latency is not None:
-            keyed.setdefault((int(c.latency), _n_ax(c), _n_out(c)), []).append(i)
+        start = c.latency if starts is None else starts[i]
+        if c.latency is not None and start is not None:
+            keyed.setdefault((int(start), _n_ax(c), _n_out(c)), []).append(i)
 
     drafts: List[dict] = []
     neuron_offset: Dict[int, int] = {}

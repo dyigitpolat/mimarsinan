@@ -9,16 +9,13 @@ from mimarsinan.deployment_record.cost.absolute.context import (
     PricingContext,
 )
 from mimarsinan.deployment_record.cost.absolute.formulas import (
-    BUFFER_STATIC,
     ENERGY_COMPONENTS,
-    programming_byte_energies,
     add_bands,
-    carry_buffer_static_watts,
     per_core_type_compute,
-    programming_payload_bytes,
     scale_band,
 )
-from mimarsinan.deployment_record.cost.host_terms import chip_store_table, host_side_energy, link_end
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import static_leg
+from mimarsinan.deployment_record.cost.host_terms import chip_store_table, host_side_energy
 from mimarsinan.deployment_record.cost.absolute.validity import (
     CensusCells,
     aggregate_scales,
@@ -75,33 +72,15 @@ def _compute_constant(ctx: PricingContext) -> Optional[str]:
     return None
 
 
-def _static_band(
-    ctx: PricingContext, e2e: Optional[Band]
-) -> Tuple[Optional[Band], bool]:
-    """(static energy over the priced latency, declared-but-unpriceable). [U-F4] A declared on-chip carry buffer
-    leaks beside the chip's own static power, on either path (no aggregate contains a component the run adds)."""
-    per_core = ctx.priced("p_static_per_core") and ctx.quantities.has("cores_physical")
-    global_ = ctx.priced("p_static_global")
-    buffer = carry_buffer_static_watts(ctx.quantities, ctx.physics)
-    if not per_core and not global_ and buffer is None:
-        return None, False
-    if e2e is None:
-        return None, True
-    watts: List[Band] = []
-    if per_core:
-        watts.append(scale_band(
-            ctx.physics.band("p_static_per_core"),
-            ctx.quantities.get("cores_physical").value,
-            "p_static_per_core x cores_physical"))
-    if global_:
-        watts.append(ctx.physics.band("p_static_global"))
-    if buffer is not None:
-        watts.append(buffer)
-    total = add_bands(watts, "static power")
-    basis = "static power x e2e_latency_s" + ("" if buffer is None else f" (with {buffer.basis})")
-    return Band(total.low * e2e.low * _J_TO_MJ,
-                total.nominal * e2e.nominal * _J_TO_MJ,
-                total.high * e2e.high * _J_TO_MJ, basis), False
+def _static_band(ctx: PricingContext, e2e: Optional[Band]) -> Tuple[Optional[Band], str]:
+    """(static energy over the priced latency, or why it is refused). [U-F4] A declared on-chip carry buffer leaks
+    beside the chip's own static power, on either path (no aggregate contains a component the run adds). [U-ENERGY
+    class 1, V-M1] The pricing's one static sum (``ctx.static``) over ``e2e_latency_s`` by the one leg form."""
+    leg = static_leg(ctx.static, e2e, "e2e_latency_s", ctx.refusal_reason("e2e_latency_s") or "")
+    if leg.band is None:
+        return None, leg.refused
+    return Band(leg.band.low, leg.band.nominal, leg.band.high,
+                leg.power_basis.replace("static power", "static power x e2e_latency_s", 1)), ""
 
 
 def _aggregate_outside(ctx: PricingContext, compute: str) -> Optional[str]:
@@ -148,49 +127,6 @@ def _host_band(ctx: PricingContext, e2e: Optional[Band]) -> Tuple[Optional[Band]
     return band, refused, unpriced
 
 
-def _programming_energy(ctx: PricingContext) -> None:
-    """Per program LOAD, amortized separately from the per-inference headline. Like the per-inference
-    terms it names every component of its own sum it cannot price: a row the target never declares
-    while its census is positive (a payload, reprogrammed cores)."""
-    components: List[Band] = []
-    evidence: List[str] = []
-    unpriced: List[str] = []
-    payload = programming_payload_bytes(ctx.quantities, ctx.physics)
-    if payload is not None:
-        payload_bytes, note = payload
-        for constant, label in programming_byte_energies(ctx.physics):  # [U-J3] the load's bytes, on its store
-            if not ctx.priced(constant):
-                if payload_bytes and not ctx.physics.has(constant):
-                    unpriced.append(f"{constant}({label})")
-                continue
-            value = ctx.physics.band(constant)
-            components.append(scale_band(value, payload_bytes * _J_TO_MJ, f"{constant} x {note}"))
-            evidence.append(f"{label}: {constant} [{value.basis}]{link_end(ctx.physics, constant)}")  # [U-J4]
-    # [E4] Only the PROGRAMMING overhead is amortized here. Core INIT is not:
-    # every pass resets its cores' neuron state, so it is paid per inference —
-    # which is where the latency plane has always charged t_core_init.
-    constant, quantity = "e_core_program", "reprogrammed_cores"
-    if ctx.priced(constant) and ctx.quantities.has(quantity):
-        value = ctx.physics.band(constant)
-        components.append(scale_band(
-            value, ctx.quantities.get(quantity).value * _J_TO_MJ,
-            f"{constant} x {quantity}"))
-        evidence.append(f"{constant} [{value.basis}]")
-    elif not ctx.physics.has(constant) and ctx.quantities.has(quantity) and ctx.quantities.get(quantity).value:
-        unpriced.append(f"{constant}(core_program)")
-    elif ctx.priced(constant) and (withheld := ctx.quantities.withheld_reason(quantity)) is not None:
-        unpriced.append(f"{constant}(core_program; {withheld})")  # [U-C C-6] the cores to charge are not determined
-        if not components:  # the declared per-core charge is the term's only part: refused by name, never silent
-            others = unpriced[:-1]
-            ctx.refuse("energy_programming_mj", f"{constant} is declared but its multiplicand {quantity} is withheld: "
-                       f"{withheld}" + (f"; also unpriced: {', '.join(others)}" if others else ""))
-    if components:
-        source = "; ".join(evidence) + (
-            "; per program load, amortized separately from the per-inference headline"
-        ) + (f"; unpriced: {', '.join(unpriced)}" if unpriced else "")
-        ctx.term("energy_programming_mj", "mJ", add_bands(components, source), source)
-
-
 def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any] = None,
                  split: Optional[Any] = None) -> None:
     """Energy per inference, or a refusal naming the missing constant or census. [E-6] A per-core-type MAC split
@@ -200,19 +136,16 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
         _refuse(ctx, "no compute-energy source is declared: the "
                      "target declares neither e_synaptic_event_total "
                      "nor e_mac")
-        _programming_energy(ctx)
         return
     outside = _aggregate_outside(ctx, compute)
     if outside is not None:
         _refuse(ctx, f"e_synaptic_event_total lies outside its validity: {outside}")
-        _programming_energy(ctx)
         return
     if not ctx.quantities.has("synaptic_events"):
         _refuse(ctx, f"{compute} is declared but the synaptic_events "
                      "census is absent (at candidate time it needs "
                      "the declared activity_factor; no record seals "
                      "an event census yet)")
-        _programming_energy(ctx)
         return
     if split is not None:
         per_type, evidence, reason = per_core_type_compute(
@@ -220,7 +153,6 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
         if per_type is None:
             ctx.refuse(ENERGY_DYNAMIC, reason or "per-core-type compute physics refused")
             _refuse(ctx, reason or "per-core-type compute physics refused")
-            _programming_energy(ctx)
             return
         components = list(per_type)
     else:
@@ -236,7 +168,6 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     if blocked:  # [E-5] a converter the run's resolution leaves unstated: no headline reads around it
         ctx.refuse(ENERGY_DYNAMIC, blocked[0])
         _refuse(ctx, blocked[0])
-        _programming_energy(ctx)
         return
     components.extend(bands)
     evidence.extend(notes)
@@ -252,16 +183,13 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     ctx.term(ENERGY_DYNAMIC, "mJ", add_bands(components, dynamic_source),
              dynamic_source)
 
-    if BUFFER_STATIC in ctx.refused_constants:  # [U-F4] the declared buffer leaks at a power the target never stated
-        _refuse(ctx, ctx.refused_constants[BUFFER_STATIC])
-        _programming_energy(ctx)
-        return
-    static, static_blocked = _static_band(ctx, e2e)
-    if static_blocked:
-        root = ctx.refusal_reason("e2e_latency_s") or "no reason was recorded"
-        _refuse(ctx, "static power is declared but the priced latency "
-                     f"it multiplies is unavailable, because {root}")
-        _programming_energy(ctx)
+    # [U-F4, V-M1] a refused part (the declared buffer's static row the target never stated) or a refused wall under
+    # a priced sum refuses the leg, and with it the headline, by the leg's reason
+    static, static_refused = _static_band(ctx, e2e)
+    unpriced.extend(ctx.static.unpriced_over("e2e_latency_s"))  # [U-ENERGY classes 1 and 2] never silent
+    if static_refused:
+        ctx.refuse("energy_static_mj", static_refused)
+        _refuse(ctx, static_refused)
         return
     if static is not None:
         ctx.term("energy_static_mj", "mJ", static, static.basis)
@@ -273,7 +201,6 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     if host_reason is not None:
         _chip_only(ctx, chip, chip_evidence, writes, chip_unpriced)
         ctx.refuse(ENERGY_HEADLINE, host_reason)
-        _programming_energy(ctx)
         return
     if host is not None:
         ctx.term("energy_host_mj", "mJ", host, host.basis)
@@ -284,7 +211,6 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
         if writes.energy is None:
             reason = next(r.reason for r in writes.refusals if r.name == "energy_write_mj")
             _refuse(ctx, f"the write energy is refused: {reason}")
-            _programming_energy(ctx)
             return
         components.append(writes.energy)
         evidence.append("writes: " + writes.energy.basis)
@@ -296,4 +222,3 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band], writes: Optional[Any]
     side = [] if writes is None else [writes.energy]  # [U-J2 targeted M1] the system line's chip side: no host
     ctx.energy_chip_side = add_bands(chip + side, "; ".join(chip_evidence + [f"writes: {b.basis}" for b in side]))
     ctx.term(ENERGY_HEADLINE, "mJ", add_bands(components, source), source)
-    _programming_energy(ctx)

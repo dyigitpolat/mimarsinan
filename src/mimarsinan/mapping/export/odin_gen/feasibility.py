@@ -16,6 +16,7 @@ from mimarsinan.mapping.export.odin.feasibility import (
     propagate_emission_bounds,
 )
 from mimarsinan.mapping.export.odin_gen.spec import CoreSpec, require_generatable
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 
 KEY_VARIANT_THETA = "odin_gen.theta_range"
 KEY_NO_SATURATION = "odin_gen.no_saturation"
@@ -155,7 +156,7 @@ def gate_variant_segment(
     thetas: Dict[int, int] = {}
     for core_index, core in enumerate(mapping.cores):
         theta = check_variant_theta(
-            core.threshold, spec=spec, core_index=core_index)
+            core_threshold(core, "the ODIN variant generator"), spec=spec, core_index=core_index)
         check_membrane_init(membrane_init, theta=theta, core_index=core_index)
         check_fan_in(
             int(core.axons_per_core) - int(core.available_axons or 0),

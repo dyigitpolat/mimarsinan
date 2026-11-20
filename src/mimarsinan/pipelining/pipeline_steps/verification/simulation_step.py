@@ -3,6 +3,7 @@ import torch
 
 from mimarsinan.certification.spike_certificate import certify_spike_counts
 from mimarsinan.chip_simulation.deployed_host import on_deployed_host
+from mimarsinan.chip_simulation.point_capability import require_backend_executes
 from mimarsinan.chip_simulation.hybrid_run.stage_timing import StageTimer
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 from mimarsinan.config_schema.registry import effective_value as _effective
@@ -49,12 +50,13 @@ def _certify_nevresim_counts(*, pipeline, mapping, captured, samples):
         samples = samples.to(host.device)
         flow_captured: list = []
         flow = build_spiking_hybrid_flow(pipeline, mapping, model=None)
+        # [U-LIF2 W9, the review's p-11(a)] the twin runs the point its contract carries, never forced to another
+        # window firing: nevresim executes the per-cycle chip program, so a point it does not execute is refused.
+        require_backend_executes(flow.spiking_point(), backend="nevresim",
+                                 context="the nevresim spike-count certificate (K8)")
         flow.stage_count_recorder = (
             lambda stage, counts: flow_captured.append(counts.detach().cpu())
         )
-        # nevresim executes the per-cycle chip program: the matching cell is
-        # streaming, regardless of the configured metric discipline.
-        flow.lif_execution_synchronized = False
         try:
             with measurement_plane(), torch.no_grad():
                 flow(samples)

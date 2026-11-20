@@ -1,13 +1,25 @@
 {
   "name": "hermes_64",
-  "display_name": "IBM HERMES Project Chip (14 nm PCM, Le Gallo 2023): 64 cores of 256 x 256",
+  "display_name": "IBM HERMES Project Chip (14 nm PCM, Le Gallo 2023), 64 cores of 256 x 256",
   "geometry": "hermes_64",
   "keys": {
     "core_semantics": "mvm",
     "activation_bits": 8,
     "platform_physics_profile": "hermes_64",
     "allow_coalescing": true,
-    "allow_neuron_splitting": true
+    "allow_neuron_splitting": true,
+    "readout_law": {
+      "adc_bits": 13,
+      "mult_bits": 11,
+      "output_law": "requantize",
+      "range": "calibrated"
+    },
+    "onchip_arithmetic": {
+      "classes": [
+        "L",
+        "E"
+      ]
+    }
   },
   "core_fields": {
     "write_granularity": "core"
@@ -15,9 +27,112 @@
   "faithfulness": {
     "class": "approximate",
     "named": [
-      "analog MVM error not modeled"
+      "analog MVM error not modeled",
+      "the FP16 rounding of the LDPU on the ADC result before its affine scaling not modeled"
     ],
-    "note": "The chip's MVM is analog: its measured error against the exact product (gallo2022a p.4-5) is not modeled, and a deployment on the bundle runs the toolchain's exact integer value law on HERMES-64's geometry, permissions and physics. The profile declares no link or NoC row, so the activation transport between cores is unpriced by name (in the paper's measurements it ran off chip through the test board's FPGA, p.5)."
+    "note": "The MVM of the chip is analog. Its measured error against the exact product (gallo2022a p.4-5) is not modeled, and a deployment on the bundle runs the exact integer value law of the toolchain on the geometry, permissions and physics of HERMES-64. The profile declares no link or NoC row, so the activation transport between cores is unpriced by name (in the measurements of the paper it ran off chip through the FPGA of the test board, p.5)."
   },
-  "notes": "allow_coalescing is true: \"In the current design, the links can transfer data across the LDPUs of multiple cores to realize fully on-chip intra-layer partial sum accumulation, and transfer data from the LDPU to the input of a GDPU.\" (gallo2022a, Section II, p.3). allow_neuron_splitting is true: \"The mapping of weights onto the chip is done by converting a weight matrix for each layer into 256x256 conductance sub-matrices, one for each core the layer is mapped onto. The weight matrix is split into the smallest possible amount of sub-matrices which have the same number of rows and columns, both less than 256.\" (gallo2022a, Methods, p.9): a layer's rows (partial sums) and its output columns span several cores. The bundle binds activation_bits 8: the chip's inputs are 8-bit pulse-width modulated (Extended Data Table I, p.24; Extended Data Table 1 of the published version: \"8 bit (1 ns/LSB)\"), the input width of its measured MVM; a run at another width declares it through target_overrides with a note. The cores are written one core per write step (core_fields write_granularity core), the hermes_64 profile's per-core setup and per-iteration step, with \"In practice, only 32 SLs are programmed in parallel due to area and power constraints.\" (gallo2022a, Methods, p.689) inside each step; whether the 64 cores program concurrently is not stated, so one core per step."
+  "notes": "allow_coalescing is true: \"In the current design, the links can transfer data across the LDPUs of multiple cores to realize fully on-chip intra-layer partial sum accumulation, and transfer data from the LDPU to the input of a GDPU.\" (gallo2022a, Section II, p.3). allow_neuron_splitting is true: \"The mapping of weights onto the chip is done by converting a weight matrix for each layer into 256x256 conductance sub-matrices, one for each core the layer is mapped onto. The weight matrix is split into the smallest possible amount of sub-matrices which have the same number of rows and columns, both less than 256.\" (gallo2022a, Methods, p.9): a layer's rows (partial sums) and its output columns span several cores. The bundle binds activation_bits 8: the chip's inputs are 8-bit pulse-width modulated (Extended Data Table I, p.24; Extended Data Table 1 of the published version: \"8 bit (1 ns/LSB)\"), the input width of its measured MVM; a run at another width declares it through target_overrides with a note. The cores are written one core per write step (core_fields write_granularity core), the hermes_64 profile's per-core setup and per-iteration step, with \"In practice, only 32 SLs are programmed in parallel due to area and power constraints.\" (gallo2022a, Methods, p.689) inside each step; whether the 64 cores program concurrently is not stated, so one core per step.",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "gallo2022a",
+        "location": "Abstract, PDF p.1",
+        "quote": "The chip can achieve a maximal throughput of 63.1 TOPS at an energy efficiency of 9.76 TOPS W−1 for 8-bit input/output matrix-vector multiplications.",
+        "reads": "8-bit input/output matrix-vector multiplications"
+      }
+    },
+    "weight_bits": {
+      "unstated": {
+        "note": "The source states the achieved weight precision as a range, not a grid: \"With TDP, a precision between 3-bit and 4-bit weights is achieved.\" (gallo2022a, Section 'MVM accuracy', PDF p.5). The description assumes the 4-bit grid, the range's upper end (the registered geometry's).",
+        "assumed": 4,
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "The four PCM devices of a weight (\"using only 4 PCM devices to encode a weight\", gallo2022a Introduction, PDF p.2) are two per polarity in each unit cell, equal in significance (Extended Data Fig. 2a): analog conductances in parallel, not bit slices of a word, so no slice of the weight is read. The description's cores state no cells_per_weight (the cost model's one cell per weight)."
+            }
+          },
+          "cell_bits": {
+            "unstated": {
+              "note": "The cell holds an analog conductance: the source states no cell precision in bits. Its achieved precision is stated as a weight precision (the grid's note)."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "stated": {
+        "value": true,
+        "source": "gallo2022a",
+        "location": "Section 'ResNet-9 on CIFAR-10', PDF p.5",
+        "quote": "For the last dense layer, the bias is programmed into the affine scale registers of the LDPU so that it gets added to the MVM result.",
+        "reads": "the bias is programmed into the affine scale registers of the LDPU",
+        "note": "The registered geometry declared bias rows (has_bias false, an extraction-card default); the source adds the bias on chip, so the geometry states it (imc_platforms_literature, U-CHIPKEYS)."
+      }
+    },
+    "activation_bits": {
+      "stated": {
+        "value": 8,
+        "source": "gallo2022a",
+        "location": "Abstract, PDF p.1",
+        "quote": "The chip can achieve a maximal throughput of 63.1 TOPS at an energy efficiency of 9.76 TOPS W−1 for 8-bit input/output matrix-vector multiplications.",
+        "reads": "8-bit input/output matrix-vector multiplications"
+      }
+    },
+    "readout_law": {
+      "stated": {
+        "value": {
+          "adc_bits": 13,
+          "mult_bits": 11,
+          "output_law": "requantize",
+          "range": "calibrated"
+        },
+        "source": "gallo2022a",
+        "location": "Section 'Chip architecture', LDPU paragraph, PDF p.3",
+        "quote": "The ADC delivers the final results as two 12-bit unsigned integers, one for the positive and one for the negative current. ... which first converts the 12-bit integers to half-precision floating-point format (FP16) and then employs two fused multiply-add (FMA) units to remove gain and offset errors. ... Finally, the output undergoes another optional ReLU operation before conversion into INT8",
+        "reads": {
+          "adc_bits": "two 12-bit unsigned integers",
+          "mult_bits": "half-precision floating-point format (FP16)",
+          "output_law": "before conversion into INT8"
+        },
+        "derivation": [
+          {
+            "field": "adc_bits",
+            "rule": "sign_and_magnitude",
+            "reads": 12
+          },
+          {
+            "field": "mult_bits",
+            "rule": "ieee_significand",
+            "reads": 16
+          }
+        ],
+        "assumed_fields": {
+          "range": "the ADC range is the core's current limit with per-column gain equalization; the toolchain's converter form calibrates it from data (W34's point form)"
+        },
+        "note": "Two 12-bit unsigned magnitudes, one per current polarity, are the symmetric signed grid of 13 bits; the LDPU scales in FP16, an 11-bit significand; every core writes INT8 (requantize). The FP16 rounding of the ADC integer itself is named in the faithfulness."
+      }
+    },
+    "onchip_arithmetic": {
+      "stated": {
+        "value": {
+          "classes": [
+            "L",
+            "E"
+          ]
+        },
+        "source": "gallo2022a",
+        "location": "Section 'Inference experiments', PDF p.5",
+        "quote": "For the three networks, all operations involved in the processing of weight layers, including the MVMs, activation functions, batch normalization, LSTM cell-state computation, data aggregation when a layer is split onto multiple cores or for residual connections, bias addition, and all the necessary intra- and inter-layer affine scaling, are implemented on-chip. Apart from the max-pooling in ResNet-9 and the character/image/word embedding in the LSTM networks, which are not supported by the chip, no other computation is performed in software in the network executions.",
+        "reads": "activation functions, batch normalization, LSTM cell-state computation, data aggregation when a layer is split onto multiple cores or for residual connections",
+        "note": "ReLU (L) and the residual addition (E) run in the LDPU; average pooling (P) is not stated, and max pooling is not supported on the chip. No lane block is declared: the LDPU's area and energy are inside the profile's measured MVM rows, so the lane terms are named unpriced."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The PCM unit cells are programmed by iterative write-verify (Methods); the description declares no run-time writable matrix."
+      }
+    }
+  }
 }

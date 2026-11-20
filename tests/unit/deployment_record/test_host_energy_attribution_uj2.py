@@ -43,6 +43,8 @@ from mimarsinan.deployment_record.platform_physics.resolve import merge_override
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.schema.provenance import Band
 
+from unit.deployment_record.registered_hosts import declared_rows, registered, registered_copy
+
 NAME = "jetson_orin_nano_8gb"
 HOSTS = Path(vocabulary.__file__).resolve().parent / "hosts"
 CORNERS = ("low", "nominal", "high")
@@ -98,13 +100,15 @@ def _work_power(physics):
             "high": _k(physics, "p_host", "high") - _k(physics, "p_host_idle", "low")}
 
 
-def _with_description(tmp_path, monkeypatch, edit):
-    """The shipped description with ``edit`` applied to its JSON, served from ``tmp_path``."""
-    data = json.loads((HOSTS / f"{NAME}.json").read_text())
-    edit(data)
-    (tmp_path / f"{NAME}.json").write_text(json.dumps(data))
-    (tmp_path / data["description_file"]).write_text((HOSTS / data["description_file"]).read_text())
-    monkeypatch.setattr(described, "_DIR", tmp_path)
+@pytest.fixture
+def with_description(tmp_path):
+    """[U-HOST2] The shipped description with ``edit`` applied to its JSON, as a test-only description registered
+    through the registry's contract under its own test name (returned); the description's judge runs at
+    registration, so a refused edit raises there by name. Taken out again when the test ends."""
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        yield lambda edit: stack.enter_context(registered_copy(tmp_path, NAME, edit))
 
 
 class TestTheDescriptionStatesTheAttribution:
@@ -126,24 +130,22 @@ class TestTheDescriptionStatesTheAttribution:
         chip = resolve_platform_physics("generic_estimated_22nm", None)
         assert chip.system_energy_rows == () and "system_energy_rows" not in chip.to_dict()
 
-    def test_an_energy_row_without_its_statement_refuses_by_name(self, tmp_path, monkeypatch):
-        _with_description(tmp_path, monkeypatch, lambda d: d["energy_attribution"]["rows"].pop("e_link_per_byte"))
+    def test_an_energy_row_without_its_statement_refuses_by_name(self, with_description):
         with pytest.raises(HostDescriptionError, match="e_link_per_byte"):
-            host_description(NAME)
+            with_description(lambda d: d["energy_attribution"]["rows"].pop("e_link_per_byte"))
 
     @pytest.mark.parametrize("row, plane", [("t_link_per_byte", "attributable"), ("no_such_row", "system"),
                                             ("p_host", "shared")])
-    def test_a_statement_of_no_energy_row_or_of_no_plane_refuses_by_name(self, tmp_path, monkeypatch, row, plane):
-        _with_description(tmp_path, monkeypatch, lambda d: d["energy_attribution"]["rows"].__setitem__(row, plane))
+    def test_a_statement_of_no_energy_row_or_of_no_plane_refuses_by_name(self, with_description, row, plane):
         with pytest.raises(HostDescriptionError, match=row if row != "p_host" else plane):
-            host_description(NAME)
+            with_description(lambda d: d["energy_attribution"]["rows"].__setitem__(row, plane))
 
-    def test_a_floor_above_the_power_it_lies_under_refuses_by_name(self, tmp_path, monkeypatch):
+    def test_a_floor_above_the_power_it_lies_under_refuses_by_name(self, with_description):
         def edit(data):
             data["modes"]["15W"]["constants"]["p_host_idle"]["high"] = 16.0  # above p_host's 15 W at the high corner
-        _with_description(tmp_path, monkeypatch, edit)
+        name = with_description(edit)
         with pytest.raises(HostDescriptionError, match="p_host.*p_host_idle.*high"):
-            host_description_block(NAME)
+            host_description_block(name)
 
     def test_an_override_stating_a_plane_on_a_row_that_is_not_a_host_energy_row_refuses_by_name(self):
         with pytest.raises(ValueError, match="t_cycle.*energy_plane"):
@@ -216,12 +218,11 @@ class TestTheHeadlineChargesTheHostsWorkOnly:
             assert _c(terms["energy_per_inference_mj"], corner) <= _c(terms["energy_system_mj"], corner), corner
             assert _c(terms["energy_host_mj"], corner) <= _c(terms["energy_host_system_mj"], corner), corner
 
-    def test_host_time_adds_to_the_latency_whatever_the_attribution(self, tmp_path, monkeypatch):
+    def test_host_time_adds_to_the_latency_whatever_the_attribution(self, with_description):
         attributed, _ = _priced(EDGE, **self.VALUES)
-        _with_description(tmp_path, monkeypatch,
-                          lambda d: d["energy_attribution"]["rows"].__setitem__("p_host_idle", "attributable"))
+        name = with_description(lambda d: d["energy_attribution"]["rows"].__setitem__("p_host_idle", "attributable"))
         whole = resolve_platform_physics("generic_estimated_22nm",
-                                         merge_override_blocks({"host": host_description_block(NAME)}))
+                                         merge_override_blocks({"host": host_description_block(name)}))
         terms, _ = _priced(whole, **self.VALUES)
         assert terms["e2e_latency_s"].band == attributed["e2e_latency_s"].band
         assert terms["latency_host_s"].band == attributed["latency_host_s"].band
@@ -256,11 +257,10 @@ class TestTheCrossingBytesBrokenOut:
 
 class TestTheStatementDecides:
     def test_a_host_stating_its_idle_draw_attributable_charges_it_in_the_headline_and_prints_no_system_line(
-            self, tmp_path, monkeypatch):
-        _with_description(tmp_path, monkeypatch,
-                          lambda d: d["energy_attribution"]["rows"].__setitem__("p_host_idle", "attributable"))
+            self, with_description):
+        name = with_description(lambda d: d["energy_attribution"]["rows"].__setitem__("p_host_idle", "attributable"))
         whole = resolve_platform_physics("generic_estimated_22nm",
-                                         merge_override_blocks({"host": host_description_block(NAME)}))
+                                         merge_override_blocks({"host": host_description_block(name)}))
         assert whole.system_energy_rows == ()
         terms, refused = _priced(whole, **TestTheHeadlineChargesTheHostsWorkOnly.VALUES)
         for corner in CORNERS:
@@ -270,13 +270,20 @@ class TestTheStatementDecides:
         assert not {"energy_system_mj", "energy_host_system_mj", "energy_host_floor_mj"} & set(terms)
         assert "energy_system_mj" not in refused
 
-    def test_a_server_block_states_no_plane_and_prices_its_work_as_before(self):
-        server = {"t_host_op_overhead": {"low": 13.37, "nominal": 13.48, "high": 13.64, "unit": "us",
-                                         "evidence_kind": "measured", "note": "a server's dispatch wall (test)"},
-                  "host_macs_per_s": {"nominal": 22.0, "unit": "G/s", "evidence_kind": "measured", "note": "n"},
-                  "p_host": {"low": 4.98, "nominal": 37.34, "high": 280.0, "unit": "W", "evidence_kind": "published",
-                             "citation": "a band over two hosts (test)"}}
-        physics = resolve_platform_physics("study_compass", merge_override_blocks({"host": server}))
+    def test_a_block_stating_no_plane_prices_its_work_as_before(self, tmp_path):
+        """[U-HOST2] A host whose description states its power attributable and declares no idle floor (the shape of
+        a server's block, declared as a test host's own description: a server's measured block is refused by name)
+        prices its work as before."""
+        rows = {
+            "t_host_op_overhead": {"low": 13.37, "nominal": 13.48, "high": 13.64, "unit": "us",
+                                   "evidence_kind": "estimated", "note": "a dispatch wall (test)"},
+            "host_macs_per_s": {"nominal": 22.0, "unit": "G/s", "evidence_kind": "estimated", "note": "n"},
+            "p_host": {"low": 4.98, "nominal": 37.34, "high": 280.0, "unit": "W", "evidence_kind": "published",
+                       "citation": "a band over two hosts (test)"}}
+        with registered(tmp_path, "test_server_shaped_host", rows):
+            server = declared_rows("test_server_shaped_host", rows)
+            server["p_host"].pop("energy_plane")  # attributable: the default where no system plane is stated
+            physics = resolve_platform_physics("study_compass", merge_override_blocks({"host": server}))
         terms, refused = _priced(physics, **dict(BASE, host_macs=1_000_000, compute_op_count=3))
         for corner in CORNERS:
             assert _c(terms["energy_host_mj"], corner) == pytest.approx(

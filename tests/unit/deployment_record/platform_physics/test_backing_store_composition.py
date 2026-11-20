@@ -27,6 +27,7 @@ from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.support.period_census import PassCensus, PassPeriodCensus
 
 from unit.deployment_record.g3_fixtures import constant
+from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block, host_descriptions
 
 #: A DDR4-like store: I/O energy per byte and a channel time per byte (test constants).
 _DDR4 = {"e_dma_per_byte": {"nominal": 162.5, "unit": "pJ", "evidence_kind": "published",
@@ -38,8 +39,9 @@ _DDR4 = {"e_dma_per_byte": {"nominal": 162.5, "unit": "pJ", "evidence_kind": "pu
 _SLOW = {"t_program_per_byte": {"low": 10.0, "nominal": 100.0, "high": 500.0, "unit": "ns",
                                 "evidence_kind": "published", "citation": "a slow serial store (test)",
                                 "combine": "slower"}}
-_HOST = {"p_host": constant(10.0, unit="W", note="host power (test)"),
-         "host_macs_per_s": constant(1.0, unit="G/s", note="host rate (test)")}
+#: [U-HOST2] A host's power and rate: the first read description's own rows, as its block declares them.
+_HOST = {key: row for key, row in host_description_block(host_descriptions()[0]).items()
+         if key in ("p_host", "host_macs_per_s")}
 #: The shipped chips that state no commit energy (``e_write_per_cell`` or ``e_program_per_byte``).
 #: [U-C3, B3] NeuRRAM declares its derived write energy per pulse; HERMES-64's is not determinable from its primaries.
 _NO_COMMIT_ENERGY = {"hermes_64"}

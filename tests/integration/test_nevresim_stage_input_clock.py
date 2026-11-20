@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 import torch
 
+from spiking_points import point_of_mode
 from integration.parity_harness import ensure_nevresim_ready
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.packing.pass_timing import REPLAY_DELAYS, carried_nodes, executed_core_latencies
@@ -26,9 +27,11 @@ from unit.mapping.residency.executed import vehicles as V
 #: semantics -> (HCM run, nevresim declaration)
 SEMANTICS = {
     "streamed_lif": (R.STREAMED_LIF, dict(spike_generation_mode="Uniform", firing_mode="Default", spiking_mode="lif",
-                                          pass_transfer=VERBATIM)),
+                                          pass_transfer=VERBATIM,
+                                          spiking_point=point_of_mode("lif", None, "streamed"))),
     "cascaded_ttfs": (R.CASCADED_TTFS, dict(spike_generation_mode="TTFS", firing_mode="TTFS",
-                                            spiking_mode="ttfs_cycle_based", pass_transfer=COLLAPSE)),
+                                            spiking_mode="ttfs_cycle_based", pass_transfer=COLLAPSE,
+                                            spiking_point=point_of_mode("ttfs_cycle_based", "cascaded"))),
 }
 
 

@@ -14,6 +14,7 @@ main_cpp_template_runtime = \
 #include "simulator/spike_generation/front_loaded_spike_generator.hpp"
 #include "simulator/spike_generation/uniform_spike_generator.hpp"
 #include "simulator/spike_generation/ttfs_spike_generator.hpp"
+#include "simulator/recording/output_format.hpp"
 #include "simulator/spike_generation/spike_train_spike_generator.hpp"
 #include "simulator/execution/spiking_execution.hpp"
 #include "simulator/execution/ttfs_execution.hpp"
@@ -48,6 +49,7 @@ void test_main_runtime(int start, int end)
     }}
 
     {8}
+    nevresim::set_output_format<exec>(std::cout);
 
     for (int idx = start; idx < end; ++idx)
     {{

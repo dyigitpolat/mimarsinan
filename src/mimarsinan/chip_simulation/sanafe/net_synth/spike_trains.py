@@ -10,6 +10,7 @@ from mimarsinan.chip_simulation.sanafe.neuron_model import (
     ttfs_quantized_model_attributes,
 )
 from mimarsinan.mapping.support.core_geometry import used_neurons as _used_neurons
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 
 
 def set_input_spike_trains(
@@ -99,7 +100,7 @@ def apply_ttfs_preset_membranes(
             preset = float(V[0, n_idx])
             if is_quantized:
                 attrs = ttfs_quantized_model_attributes(
-                    threshold=float(core.threshold),
+                    threshold=core_threshold(core, "SANA-FE's TTFS soma synthesis"),
                     hardware_bias=bias,
                     active_start=active_start,
                     active_length=active_length,
@@ -107,7 +108,7 @@ def apply_ttfs_preset_membranes(
                 )
             else:
                 attrs = ttfs_continuous_model_attributes(
-                    threshold=float(core.threshold),
+                    threshold=core_threshold(core, "SANA-FE's TTFS soma synthesis"),
                     hardware_bias=bias,
                     active_start=active_start,
                     active_length=active_length,

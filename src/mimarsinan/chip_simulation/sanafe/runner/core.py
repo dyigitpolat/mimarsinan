@@ -103,11 +103,13 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.T = int(simulation_length)
         self.arch_preset = arch_preset
         self.custom_arch_path = custom_arch_path
-        from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+        from mimarsinan.chip_simulation.point_capability import require_backend_executes
 
-        policy_for_spiking_mode(
-            self.spiking_mode, self.ttfs_cycle_schedule
-        ).require_backend_supported(backend="sanafe", context="SanafeRunner")
+        # [U-LIF2 W5, r2] the whole resolved point as a guard (the contract's, else the declared behavior's), the one the
+        # network build takes.
+        self.spiking_point = point = (contract.spiking_point() if contract is not None
+                                      else behavior.spiking_point(self.ttfs_cycle_schedule))
+        require_backend_executes(point, backend="sanafe", context="SanafeRunner")
         refuse_wavefront_backend(mapping.stages, "sanafe")  # [U-F4]
         self.log_potential_trace = log_potential_trace
         self.log_message_trace = log_message_trace
@@ -219,7 +221,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             state_buffer,
             on_neural=_on_neural,
             on_compute=_on_compute,
-            stage_timer=stage_timer,
+            stage_timer=stage_timer, timed_samples=1,  # [U-HOST] run() is one sample (its contract, checked above)
         )
 
         agg_e, max_sim_time, total_spikes, total_packets = segment_totals(segments)

@@ -23,6 +23,7 @@ from mimarsinan.chip_simulation.sanafe.noc_estimate import estimate_noc
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.mapping.noc.value_traffic import value_noc_wire_hops
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
+from mimarsinan.deployment_record.cost.segments import programming_refusal
 from mimarsinan.deployment_record.cost.terms import DeploymentCostReport
 from mimarsinan.deployment_record.objectives.spec import LayoutStatsView, RecordView
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
@@ -193,6 +194,7 @@ class CandidateStaticView:
                     output_stage=None if context is None else context.output_stage,
                     compute=None if context is None else context.compute,
                     readout_bits=None if context is None else context.readout_bits,
+                    loads=None if context is None else context.loads,  # [U-ENERGY] the one load law
                 )
                 if self.physics is not None or refusal is not None
                 else None
@@ -254,10 +256,12 @@ class DeploymentRecordView:
         return from_record(self.record)
 
     def costable(self) -> bool:
-        """The cost model's own preconditions: measured energy and compute latency."""
+        """The cost model's own preconditions: measured energy, compute latency and [U-ENERGY ruling (d)] a period
+        census its per-segment programming can price (``segments.programming_refusal``)."""
         return (
             self.record.energy is not None
             and self.record.timing.latency.compute_sim_time_s is not None
+            and not programming_refusal(self.record)
         )
 
     def cost_report(self) -> Optional[DeploymentCostReport]:

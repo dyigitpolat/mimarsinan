@@ -201,47 +201,70 @@ class TestProgrammingTerm:
 
     REASON = "the cores holding a static program are not determined (test)"
 
-    def _priced(self, values, drop=()):
+    #: [U-ENERGY] Every program load is the one load law over its census, which counts the programmed cores itself
+    #: (``write_law.programmed_cores``: an operand-only core holds no static program). A per-core row never meets a
+    #: withheld core count there: a view that states no pass structure hands the law no census, and each load figure
+    #: is refused by that name (never a silent absence, never a partial price).
+
+    def _priced(self, values, drop=(), loads=None):
         from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
         from mimarsinan.deployment_record.quantities.spec import Quantities
 
         chip = _physics(e_core_program=CORE)
         chip = replace(chip, constants={k: v for k, v in chip.constants.items() if k not in drop})
-        pricing = price_absolute(Quantities(values, withheld={"reprogrammed_cores": self.REASON}), chip)
-        return ({t.name: t for t in pricing.terms}.get("energy_programming_mj"),
-                {r.name: r.reason for r in pricing.refusals})
+        pricing = price_absolute(Quantities(values, withheld={"reprogrammed_cores": self.REASON}), chip, loads=loads)
+        return ({t.name: t for t in pricing.terms}, {r.name: r.reason for r in pricing.refusals}), chip
+
+    @staticmethod
+    def _loads():
+        """Two written passes, rewritten each round; pass 0's second core holds operand regions only."""
+        from mimarsinan.deployment_record.quantities.planes.loads import load_inputs
+
+        rows = (_row((100, 50), operand_only={1}), _row((60,)))
+        rows = tuple(replace(r, segment_index=i, core_extents=tuple((c, 1) for c in r.core_cells))
+                     for i, r in enumerate(rows))
+        platform = {"cores": [{"max_axons": 128, "max_neurons": 128, "count": 2, "write_granularity": "cell"}],
+                    "weight_bits": 8}
+        return load_inputs(ProgramPasses(rows=rows), platform, weight_bits=8, label="test")
 
     def test_beside_a_priced_payload_the_term_names_the_withheld_charge(self):
         from mimarsinan.deployment_record.quantities.spec import QuantityValue
+        from unit.deployment_record.load_census_fixtures import law_energy, steady
 
-        term, refusals = self._priced({"reprogrammed_bytes": QuantityValue(1000.0, "measured")})
-        assert term is not None and f"e_core_program(core_program; {self.REASON})" in term.source
-        assert "energy_programming_mj" not in refusals
+        (terms, refusals), _chip = self._priced({"reprogrammed_bytes": QuantityValue(1000.0, "measured")})
+        assert "energy_programming_mj" not in terms and not steady(refusals).get("energy_programming_mj")
+        loads = self._loads()
+        (terms, _), chip = self._priced({"reprogrammed_bytes": QuantityValue(1000.0, "measured")}, loads=loads)
+        charge = law_energy(loads.period, chip).nominal - law_energy(loads.period, chip, without=("e_core_program",))\
+            .nominal
+        assert charge == pytest.approx(2 * 512e-12 * 1e3, rel=1e-9)  # the two cores holding a static program
+        assert "e_core_program" in terms["energy_programming_mj"].source
 
     def test_as_the_only_component_the_term_refuses_by_name(self):
-        term, refusals = self._priced({})
-        assert term is None
-        reason = refusals["energy_programming_mj"]
-        assert "e_core_program" in reason and "reprogrammed_cores" in reason and self.REASON in reason
+        from unit.deployment_record.load_census_fixtures import steady
+
+        (terms, refusals), _chip = self._priced({})
+        assert "energy_programming_mj" not in terms
+        steady(refusals)  # each load figure refused by the law's named reason (never a silent absence)
 
     def test_a_payload_whose_byte_energies_are_undeclared_is_named_in_the_refusal(self):
         from mimarsinan.deployment_record.quantities.spec import QuantityValue
 
-        term, refusals = self._priced({"reprogrammed_bytes": QuantityValue(1000.0, "measured")},
-                                      drop=("e_dma_per_byte", "e_program_per_byte"))
-        assert term is None
-        reason = refusals["energy_programming_mj"]
-        assert self.REASON in reason and "e_dma_per_byte(dma)" in reason and "e_program_per_byte(commit)" in reason
+        (terms, _), _chip = self._priced({"reprogrammed_bytes": QuantityValue(1000.0, "measured")},
+                                         drop=("e_dma_per_byte", "e_program_per_byte"), loads=self._loads())
+        source = terms["energy_programming_mj"].source
+        assert "unpriced: e_dma_per_byte(write transfer)" in source, source  # the transfer, named by the law
 
     def test_a_counted_charge_prices_as_before(self):
-        from mimarsinan.deployment_record.cost.absolute.metrics import price_absolute
-        from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
+        from unit.deployment_record.load_census_fixtures import law_energy
 
-        pricing = price_absolute(Quantities({"reprogrammed_cores": QuantityValue(3.0, "measured")}),
-                                 _physics(e_core_program=CORE))
-        term = {t.name: t for t in pricing.terms}["energy_programming_mj"]
-        assert term.source.startswith("e_core_program [") and "unpriced" not in term.source
-        assert term.value == pytest.approx(3 * 512e-12 * 1e3, rel=1e-9)
+        loads = self._loads()
+        (terms, _), chip = self._priced({}, loads=loads)
+        for corner in ("low", "nominal", "high"):
+            charge = getattr(law_energy(loads.first, chip), corner) - getattr(
+                law_energy(loads.first, chip, without=("e_core_program",)), corner)
+            assert charge == pytest.approx(2 * 512e-12 * 1e3, rel=1e-9), corner
+        assert "e_core_program" in terms["energy_load_mj"].source
 
 
 class TestEmissionSite:

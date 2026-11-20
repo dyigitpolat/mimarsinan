@@ -2,26 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 
 import torch
 from torch.nn.parameter import UninitializedParameter
 
-from mimarsinan.mapping.platform.packaging_contract import SPIKING_PACKAGING, PackagingContract
+# The run's conversion lives beside the packaging contract (sign-off M10), where the static on-chip estimators read
+# it too without importing the search package.
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
 from mimarsinan.models.builders import build_model
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
 from .candidate_pruning import apply_declared_pruning
-
-
-@dataclass(frozen=True)
-class DeployedConversion:
-    """How the deployment builds and converts the run's model: the plan's packaging contract and its leaf
-    decomposition, so a candidate is priced on the program the pipeline deploys (sign-off M10)."""
-
-    packaging: PackagingContract = SPIKING_PACKAGING
-    decompose_leaf_modules: bool = False
 
 
 def build_raw_model(

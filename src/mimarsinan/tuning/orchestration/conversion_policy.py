@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, FrozenSet, Mapping, Optional
+from typing import TYPE_CHECKING, Any, FrozenSet, Mapping, Optional
 
 from mimarsinan.tuning.orchestration.conversion_rationales import (
     _BIT_PARITY_LOSSLESS_RATIONALE,
@@ -14,6 +14,9 @@ from mimarsinan.tuning.orchestration.conversion_rationales import (
     _TTFS_QUANTIZED_RATIONALE,
 )
 from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
+
+if TYPE_CHECKING:
+    from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
@@ -80,14 +83,12 @@ _LIF_RECIPE_KNOBS = {
     # DIAGNOSTIC only — the chip exports counts; deployed reads exclude it,
     # ledger §2F.1), C4 per-channel FULL affine fold (dead-zone bias
     # absorption, calibration-only; bias-only folds refuted at -4.2pp; Novena
-    # arm gated S>=8 in the step), C5 depth-balancing relays (exact V6 join
-    # fix, no-op on gap-free graphs).
+    # arm gated S>=8 in the step); C5 (the V6 relays) is derived in ``derive``.
     "lif_membrane_readout": True,
     # lif_affine_fold DISARMED by the same A/B (no_fold 0.9061 vs no_both
     # 0.9307: harmful in interaction; the premise gate + rollback keep it
     # safe but not profitable on-pipeline) — config-armable.
     "lif_affine_fold": False,
-    "lif_depth_balancing_relays": True,
     # [lif_exact_qat_program §6; tier-0 A/B 2026-07-13] exact-QAT arm, 10/10
     # runnable cells hold or gain (mixers +0.6..+5.2 pp; four >= pretrain).
     # Retiming stays False HERE: the fold pairing owns the arm so the pair
@@ -191,6 +192,8 @@ class ConversionRecipe:
 
     ``sim_opt_in`` names enables the capability derivation ADMITS but never
     turns on: capability and AVAILABILITY (a device) are different questions.
+    ``sim_off_reasons`` names, for each enable derived off, the value of the
+    point its backend does not execute.
     """
 
     driver: str
@@ -199,41 +202,36 @@ class ConversionRecipe:
     sim_opt_in: FrozenSet[str] = frozenset()
     special_case: Optional[str] = None
     rationale: str = ""
+    sim_off_reasons: Mapping[str, str] = field(default_factory=dict)
 
 
 class ConversionPolicy:
-    """The deterministic ``(spiking_mode, schedule) → ConversionRecipe`` SSOT table."""
+    """The deterministic ``resolved point → ConversionRecipe`` SSOT table."""
 
     @classmethod
-    def derive(
-        cls, spiking_mode: str, schedule: Any = None,
-        spiking_variant: Any = None, soma_law: Any = None,
-    ) -> ConversionRecipe:
-        """Derive the proven recipe for a deployment mode — the SSOT mode→recipe table.
+    def derive(cls, point: "SpikingPoint") -> ConversionRecipe:
+        """Derive the proven recipe of a resolved point: the SSOT mode→recipe table.
 
-        Maps ``(spiking_mode, schedule)`` to its empirically-proven recipe: the
-        fast-ladder ``driver``, the per-mode ``knobs``, the capability-derived
-        ``sim_enables``, and the ``special_case`` marker + ``rationale``.
-        ``soma_law`` carries the resolved soma point when the caller holds one,
-        so a backend with no executor for that point derives OFF rather than
-        being turned on by the mode alone.
+        [U-LIF2 W4] The point (``resolve_spiking_point``) is the one required
+        argument. Its mode and variant select the empirically-proven recipe: the
+        fast-ladder ``driver``, the per-mode ``knobs`` and the ``special_case``
+        marker + ``rationale``. The backend enables are the one capability
+        judgment over the whole point (``point_capability``): a backend that does
+        not execute its mode, soma law, window firing or a declared execution
+        extension derives OFF, with the reason named.
         """
         # Lazy: chip_simulation has a fragile import cycle; a top-level import breaks
         # when this module loads before chip_simulation finishes initializing.
-        from mimarsinan.chip_simulation.spiking_mode_policy import (
-            policy_for_spiking_mode,
-        )
+        from mimarsinan.chip_simulation.point_capability import sim_enable_refusals
+        from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
         from mimarsinan.chip_simulation.spiking_semantics import (
             is_bit_parity_lossless_conversion,
-            is_synchronized_ttfs,
             is_ttfs_cycle_based,
-            require_known_spiking_mode,
         )
 
-        mode = require_known_spiking_mode(spiking_mode)
-        policy = policy_for_spiking_mode(mode, schedule, soma_law=soma_law)
-        synchronized = is_synchronized_ttfs(mode, schedule)
-        streamed_lif = mode == "lif" and str(spiking_variant or "") == "streamed"
+        mode = point.spiking_mode
+        synchronized = point.is_synchronized_ttfs
+        streamed_lif = mode == "lif" and point.spiking_variant == "streamed"
 
         if streamed_lif:
             # The exact-QAT staircase refinement is inherently WINDOWED
@@ -265,6 +263,8 @@ class ConversionPolicy:
         else:
             knobs, special_case, rationale = {}, None, ""
         knobs = {**_WQ_RECIPE_KNOBS, **knobs}
+        if policy_for_spiking_mode(point).runs_per_cycle_cascade:  # [U-TGAUGE5] the V6 relays of every per-cycle cascade, one derivation
+            knobs["lif_depth_balancing_relays"] = True
         if is_bit_parity_lossless_conversion(mode):
             # [5u] the floor rides EXACTLY the analytic BIT_PARITY family; the
             # predicate (not a mode literal) is the audit.
@@ -272,29 +272,13 @@ class ConversionPolicy:
             special_case = special_case or "endpoint_target_floor"
             rationale = rationale or _BIT_PARITY_LOSSLESS_RATIONALE
 
-        sim_enables = {
-            "enable_nevresim_simulation":
-                policy.supports_backend("nevresim") and not synchronized,
-            "enable_sanafe_simulation": policy.supports_backend("sanafe"),
-            # [N5 2026-08-09] streamed Loihi ENABLED: the wave runner's
-            # per-core replay is free-running-equivalent on gap-1 graphs
-            # (src_cycle = latency+local-1 is the +1 hop; relays guarantee
-            # gap 1; per-sample window resets; our SubtractiveLIFReset owns
-            # comparator/reset), and the integer-theta lattice makes vth
-            # exactly representable. The step's spike-parity gate is FATAL.
-            "enable_loihi_simulation": policy.supports_backend("loihi"),
-            # [ODIN P7a/P8] the point-keyed capability decides whether the
-            # crossbar executes this law; the opt-in set decides a run reaches
-            # for the hardware — or freezes a bundle for it — only when asked.
-            "enable_odin_fpga_simulation": policy.supports_backend("odin_fpga"),
-            "enable_odin_hacc_export": policy.supports_backend("odin_hacc"),
-        }
-
+        refusals = sim_enable_refusals(point)
         return ConversionRecipe(
             driver=OPTIMIZATION_DRIVER_FAST,
             knobs=dict(knobs),
-            sim_enables=sim_enables,
+            sim_enables={key: reason is None for key, reason in refusals.items()},
             sim_opt_in=DEVICE_OPT_IN_ENABLES,
             special_case=special_case,
             rationale=rationale,
+            sim_off_reasons={key: reason for key, reason in refusals.items() if reason is not None},
         )

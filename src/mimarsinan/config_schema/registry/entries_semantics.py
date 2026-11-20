@@ -54,7 +54,8 @@ ENTRIES = (
        effect="Selects the family's temporal discipline (and simulation backends)",
        doc="lif: streamed (per-segment cycle-by-cycle streaming; host ops "
            "between segments see window counts; one segment = end-to-end) — "
-           "synchronized (windowed; counts re-encoded at every layer). "
+           "synchronized (windowed; counts re-encoded at every layer; how a hop "
+           "fires inside its window is lif_window_firing). "
            "ttfs: analytical (closed-form, continuous), "
            "quantized (closed-form, quantized activations), synchronized "
            "(per-cycle, bit-identical to quantized), cascaded (greedy "

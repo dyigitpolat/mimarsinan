@@ -242,4 +242,12 @@ class SegmentForwardDriver:
                 if remaining[dep] == 0 and dep in values:
                     del values[dep]
 
-        return output_value if output_value is not None else values[self._output]
+        if output_value is not None:
+            return output_value  # a segment's output: its policy returns it in the value domain
+        return self._value_domain_output(values[self._output])
+
+    def _value_domain_output(self, value):
+        """[U-TGAUGE] A forward returns its output in the value domain: a wire-currency policy decodes a host output node
+        by the inverse of its own encode there (``policy.decode_output``); a value-domain walk's output is as computed."""
+        decode = getattr(self.policy, "decode_output", None)
+        return value if decode is None else decode(self, self._output, value)

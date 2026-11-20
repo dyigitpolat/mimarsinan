@@ -12,6 +12,7 @@ These tests pin the V3 dispatch/precedence rules now made explicit:
 
 import pytest
 
+from spiking_points import declaring_fire_while_integrating, point_of_mode
 from mimarsinan.chip_simulation.backend import (
     BACKEND_REGISTRY,
     Backend,
@@ -33,7 +34,7 @@ def _plan(**cfg) -> DeploymentPlan:
         "model_type": "mlp_mixer",
     }
     base.update(cfg)
-    return DeploymentPlan.resolve(base)
+    return DeploymentPlan.resolve(declaring_fire_while_integrating(base))  # [U-LIF2 W16] the backends fire per cycle
 
 
 # ── ABC contract ─────────────────────────────────────────────────────────────
@@ -51,9 +52,14 @@ class TestBackendSupports:
         for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
             assert not loihi.supports(_plan(spiking_mode=mode)), mode
 
-    def test_supports_accepts_raw_mode_string(self):
-        assert BACKEND_REGISTRY.get("loihi").supports("lif")
-        assert not BACKEND_REGISTRY.get("loihi").supports("ttfs")
+    def test_supports_takes_a_point_and_refuses_a_raw_mode_string(self):
+        """[U-LIF2 r2] A backend question takes the run's resolved point (a plan, a contract or the point itself)."""
+        from mimarsinan.chip_simulation.spiking_point import UnresolvedPointRefusal
+
+        assert BACKEND_REGISTRY.get("loihi").supports(point_of_mode("lif"))
+        assert not BACKEND_REGISTRY.get("loihi").supports(point_of_mode("ttfs"))
+        with pytest.raises(UnresolvedPointRefusal, match="never a mode alone"):
+            BACKEND_REGISTRY.get("loihi").supports("lif")
 
     def test_require_supported_passes_for_supported(self):
         BACKEND_REGISTRY.get("loihi").require_supported(

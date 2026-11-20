@@ -23,12 +23,13 @@ from typing import Optional
 import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
-from mimarsinan.models.nn.activations.lif_serial import decomposition_tolerance
+from mimarsinan.models.nn.activations.lif_serial import decomposed_charge, decomposition_tolerance
 from mimarsinan.models.nn.lif_kernels import in_measurement_plane, lif_fire_and_reset
 from mimarsinan.spiking.cycle_trains import is_event_train
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import effective_parameters, output_axes
 
-__all__ = ["CycleFoldSlot", "cycle_fold_applies"]
+__all__ = ["CycleFoldSlot", "cycle_fold_applies", "twin_parameters"]
 
 #: Float64 slot-table elements one decomposition holds at once (the unfold's (batch, cores, slots) table, in batch rows).
 _TABLE_ELEMENTS = 1 << 24
@@ -42,6 +43,16 @@ def cycle_fold_applies(soma_law: SomaLaw, lif, dep_events: list) -> bool:
             and len(dep_events) == 1 and is_event_train(dep_events[0]))
 
 
+def twin_parameters(perceptron) -> tuple:
+    """``(effective weight, effective bias)`` a twin decomposes a hop with: [U-PFOLD] over a fold per position each
+    position's (its core's), ``(positions, out, in)`` and ``(positions, out)``; laid out as the twins read them
+    (``lif_serial.decomposed_charge``: a weight's output neuron before its fan-in, a bias's last) from the axes the
+    reader declares."""
+    weight, bias = effective_parameters(perceptron, PerceptronTransformer())
+    axes = output_axes(perceptron, True)
+    return weight.detach().movedim(axes.weight, -2), None if bias is None else bias.detach().movedim(axes.bias, -1)
+
+
 class CycleFoldSlot:
     """One perceptron's armed per-cycle fold (the LIF's ``_serial_fold`` slot), in the deployed core's units (theta 1).
 
@@ -49,10 +60,10 @@ class CycleFoldSlot:
     the reduction residual; the hop's runner then re-runs the window in the twin's own arithmetic."""
 
     def __init__(self, *, perceptron, lif, unfold) -> None:
-        transformer = PerceptronTransformer()
-        self.weight = transformer.get_effective_weight(perceptron).detach().to(torch.float64)
-        bias = transformer.get_effective_bias(perceptron)
-        self.bias = None if bias is None else bias.detach().to(torch.float64)
+        self.perceptron = perceptron
+        weight, bias = twin_parameters(perceptron)
+        self.weight = weight.to(torch.float64)
+        self.bias = None if bias is None else bias.to(torch.float64)
         self.unfold = unfold
         self.membrane_init = float(getattr(lif, "membrane_init", 0.0))
         self.thresholding_mode = lif.thresholding_mode
@@ -73,7 +84,7 @@ class CycleFoldSlot:
         bias = None if self.bias is None else self.bias.to(flat.device)
         per_row = max(1, int(self.unfold.n_cores) * int(self.unfold.n_slots))
         rows = max(1, _TABLE_ELEMENTS // per_row)
-        return torch.cat([torch.nn.functional.linear(self.unfold.unfold_events(part), weight, bias)
+        return torch.cat([decomposed_charge(self.unfold.unfold_events(part), weight, bias)
                           for part in flat.split(rows)])
 
     def run_cycle(self, x: torch.Tensor, safe_scale) -> torch.Tensor:
@@ -85,7 +96,7 @@ class CycleFoldSlot:
         charge = self.unfold.group_major(own)
         if tuple(charge.shape) != tuple(decomposed.shape) or not float(
                 (charge.to(decomposed.dtype) - decomposed).abs().max()) <= decomposition_tolerance(
-                    charge, decomposed, theta=1.0, n_slots=int(self.weight.shape[1])):
+                    charge, decomposed, theta=1.0, n_slots=int(self.weight.shape[-1])):
             self.agrees = False
             return torch.zeros_like(x)
         if self.membrane is None:

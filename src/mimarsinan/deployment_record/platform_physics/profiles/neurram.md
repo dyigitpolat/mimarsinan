@@ -48,3 +48,17 @@ the time-out (30 set-reset polarity reversals in the paper; 50, 30 or 20 iterati
 Static power, periphery and NoC rows, area and the host group. A published write energy is absent too: the declared
 band is derived, and the missing quantity is the selector's write current at 3.0 V (set) and 5.0 V (reset) gate bias,
 or a measured programming energy.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T3 (resistive (RRAM) in-memory compute); an anchor: its own published core scaled by the census's cells, converters or bits (rho), its size and word width flagged.
+- **Outside part (`outside: own_die`).** the published die's core-grid share (gamma of its own die); an area_global_fixed beside it is refused by name ('the outside part is stated twice').
+- **Node.** 130 nm.
+- **Anchor (die).** die_mm2 `v('T3-NR-01', 0) * v('T3-NR-01', 1)`; n_pub `v('T3-NR-04')`; its own share: published_split `(v('T3-NR-02', key='RRAMs') + v('T3-NR-02', key='neurons')) / 100 / r('types/t3:gamma')`.
+- **Organization.** 256 x 256, 4 weight bits per cell, 1 columns per converter, 2 cells per weight (review N-2); term weights {'cells': 12.0, 'converters': 28.0}. Citations: rows, cols: T3-NR-04 scope (each core 256 x 256 RRAM cells); columns_per_converter: T3-NR-04 scope (256 CMOS neurons per core); term_weights: T3-NR-02 (RRAMs 12%, neurons 28% of the chip); weight_bits_per_cell: CO profiles/neurram.json validity.geometry.cell_bits; cells_per_weight: TXT-wan2021edge-p06-15 (each weight is encoded by the differential conductance of 2 RRAM cells; T3-NR-04 scope: a signed weight is a differential pair; review N-2).
+- **Cell kind.** `rram_1t1r`.
+- **Converter.** kind `neuron_integrating`, 256 per core, its own unit T3-NR-03; it resolves at the run's readout bits (review N-6), and an area_per_adc beside it is refused by name ('the converter area is stated twice').
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

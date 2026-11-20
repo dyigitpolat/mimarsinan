@@ -19,6 +19,7 @@ import pytest
 
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.absolute.step_choice import carry_energy, price_step
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, price_write_terms
 from mimarsinan.deployment_record.platform_physics import available_profiles
 from mimarsinan.deployment_record.platform_physics.hosts import store as ST
@@ -96,9 +97,9 @@ def _census(payload=0, cells=0, producer=10, carry=(0, 0)):
     return PassPeriodCensus(passes=passes, boundaries=boundary)
 
 
-def _terms(physics, census, source="host", **values):
+def _terms(physics, census, source="host", loads=None, **values):
     pricing = price_absolute(_q(**{**BASE, "carry_in_bytes": 0, "carry_out_bytes": 0, **values}), physics,
-                             writes=WriteInputs(census, _policy(source)))
+                             writes=WriteInputs(census, _policy(source)), loads=loads)
     return {t.name: t for t in pricing.terms}
 
 
@@ -160,8 +161,8 @@ class TestABufferRowBesideTheEdgeHost:
                     PAYLOAD_BYTES * _k(self.PHYSICS, key, corner) * 1e3, rel=1e-9), (name, corner)
 
     def test_the_step_choice_pays_it_too(self):
-        host = price_step(_census(), self.PHYSICS, _policy("host")).write
-        own = price_step(_census(), self.PHYSICS, _policy("on_chip")).write
+        host = price_step(_census(), self.PHYSICS, _policy("host"), static=NO_STATIC).write
+        own = price_step(_census(), self.PHYSICS, _policy("on_chip"), static=NO_STATIC).write
         for corner in CORNERS:
             link = _k(self.PHYSICS, "e_link_per_byte", corner) + _k(self.PHYSICS, "e_host_mem_per_byte", corner)
             assert getattr(host, corner) - getattr(own, corner) == pytest.approx(
@@ -221,7 +222,11 @@ class TestABufferRowOnAHostOwnedStore:
                 400 / 4 * _k(self.PLAIN, DMA, corner) * 1e3, rel=1e-9), corner
 
     def test_a_program_load_pays_the_buffer_row(self):
-        buffered, plain = self._pair(_census(producer=0), reprogrammed_bytes=1000)
+        """[U-ENERGY] The program load is the one load law over the program's census (1000 B per round): the
+        buffer row is paid beside the link and host memory, the walls and so the static legs alike."""
+        from unit.deployment_record.load_census_fixtures import written_program
+
+        buffered, plain = self._pair(_census(producer=0), loads=written_program((500,), (500,), granularity="cell"))
         for corner in CORNERS:
             assert getattr(buffered["energy_programming_mj"].band, corner) - getattr(
                 plain["energy_programming_mj"].band, corner) == pytest.approx(

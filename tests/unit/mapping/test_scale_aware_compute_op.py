@@ -121,7 +121,10 @@ class TestEndToEndConcatPlusComputeOp:
         flat_a = PerceptronMapper(Ensure2DMapper(flat), a_perc)
         flat_b = PerceptronMapper(Ensure2DMapper(flat), b_perc)
 
-        cat = ConcatMapper([flat_a, flat_b], dim=1)
+        # [U-TGAUGE3] the concatenation's rank, as the converter records it: a join along the gauge axis holds each
+        # element at its producer's gauge (a rank-less one is placed by its elements' IR sources, which this unmappable
+        # graph, a fan-in of 2 over 4 features, does not have)
+        cat = ConcatMapper([flat_a, flat_b], dim=1, rank=2)
         layer_norm = ComputeOpMapper(cat, nn.LayerNorm([4]), name="ln")
 
         repr_ = ModelRepresentation(layer_norm)

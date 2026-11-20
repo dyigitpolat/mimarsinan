@@ -144,7 +144,7 @@ def normalize_boundary_slices_numpy(
             out = seg_input.copy()
             copied = True
         d = np.maximum(np.asarray(divisor, dtype=out.dtype).reshape(-1), 1e-12)
-        out[:, s.offset : s.offset + s.size] /= (d if d.size > 1 else d[0])
+        out[:, s.offset : s.offset + s.size] /= (d[: s.size] if d.size > 1 else d[0])  # the slice's own elements
     return out
 
 
@@ -168,7 +168,7 @@ def normalize_boundary_slices_torch(
         d = torch.as_tensor(
             divisor, dtype=out.dtype, device=out.device,
         ).reshape(-1).clamp(min=1e-12)
-        out[:, s.offset : s.offset + s.size] /= (d if d.numel() > 1 else d[0])
+        out[:, s.offset : s.offset + s.size] /= (d[: s.size] if d.numel() > 1 else d[0])  # the slice's own elements
     return out
 
 

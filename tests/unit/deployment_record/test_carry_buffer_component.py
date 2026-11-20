@@ -23,6 +23,7 @@ from mimarsinan.deployment_record.quantities.spec import QUANTITY_SPECS, Quantit
 from mimarsinan.deployment_record.units import AREA, POWER
 
 from unit.deployment_record.g3_fixtures import constant, physics, record_with
+from unit.deployment_record.printed_names import NOT_PRODUCED, named, without
 from unit.deployment_record.record_fixtures import make_schedule
 
 KEY, QUANTITY = "carry_buffer_bytes", "carry_buffer_capacity_bytes"
@@ -101,9 +102,14 @@ class TestThePricer:
 
     @pytest.mark.parametrize("constants", [{}, BUFFER], ids=["undeclared", "declared"])
     def test_a_chip_without_a_buffer_prices_what_it_priced_before(self, constants):
+        """[U-ENERGY class 2] The buffer's declared rows over a census the view does not produce are named beside the
+        estimate with the plane's reason, never priced: the values are the same, the texts the same but for those
+        names."""
         plain = {k: v for k, v in BASE.items() if k != "carry_onchip_bytes"}
         terms, refusals = _price(_q(**plain), **constants)
         base_terms, base_refusals = _price(_q(**plain))
-        assert {n: (t.value, t.source) for n, t in terms.items()} == {
+        rows = tuple(constants)
+        assert all(NOT_PRODUCED in n for t in terms.values() for r in rows for n in named(t.source, r))
+        assert {n: (t.value, without(t.source, rows)) for n, t in terms.items()} == {
             n: (t.value, t.source) for n, t in base_terms.items()}
         assert refusals == base_refusals

@@ -8,12 +8,13 @@ import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
-from mimarsinan.models.nn.lif_kernels import CHIP_LATTICE_SCALE
+from mimarsinan.models.nn.lif_kernels import CHIP_LATTICE_SCALE, lif_fire_and_reset
 
 from mimarsinan.models.spiking.serial.policy import serial_policy_for
 from mimarsinan.models.spiking.lif_core_step import (
     lif_core_advance,
     lif_core_contribute_and_fire,
+    lif_core_integrate,
 )
 from mimarsinan.models.spiking.ttfs_cycle_step import ttfs_cycle_contribute_and_fire
 
@@ -86,6 +87,21 @@ class LIFCyclePolicy:
             membrane_bounds=self.membrane_bounds,
             membrane_rail_assert=self.membrane_rail_assert,
         )
+
+    # [U-LIF2 W9] The fire gate of integrate then emit: a cycle of the integration window adds its charge with firing
+    # gated off; a cycle of the emission window takes no input and fires and resets. The same register and lattice.
+    def integrate(self, state, contribution) -> None:
+        lif_core_integrate(state["memb"], contribution, lattice_scale=self._lattice_scale(),
+                           membrane_bounds=self.membrane_bounds, membrane_rail_assert=self.membrane_rail_assert)
+
+    def integrate_step(self, state, weight, inp, *, hw_bias) -> None:
+        """``integrate`` on the per-core charge layout of ``step`` (the reference loop's)."""
+        contribution = torch.matmul(weight, inp.T).T
+        self.integrate(state, contribution if hw_bias is None else contribution + hw_bias)
+
+    def emit(self, state, threshold, *, thresholding_mode, output_dtype=None) -> torch.Tensor:
+        return lif_fire_and_reset(state["memb"], threshold, thresholding_mode=thresholding_mode,
+                                  firing_mode=self.firing_mode, output_dtype=output_dtype)
 
 
 class TTFSGreedyCyclePolicy:

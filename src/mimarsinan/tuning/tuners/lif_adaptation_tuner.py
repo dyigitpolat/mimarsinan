@@ -26,6 +26,7 @@ from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
 )
 from mimarsinan.tuning.orchestration.lif_adaptation_plan import LifAdaptationPlan
+from mimarsinan.tuning.orchestration.lif_exact_qat import pin_lif_theta_floors
 from mimarsinan.tuning.orchestration.mbh_tanneal import (
     TAnnealRealizableRamp,
     apply_simulation_steps,
@@ -62,8 +63,8 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self.name = "LIF Adaptation"
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
+        from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
         from mimarsinan.chip_simulation.spiking_semantics import (
-            lif_execution_synchronized,
             lif_membrane_init,
             lif_per_hop_retiming_enabled,
             spike_phase_dither_enabled,
@@ -74,7 +75,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._per_hop_retiming = lif_per_hop_retiming_enabled(self.pipeline.config)
         self._phase_dither = spike_phase_dither_enabled(self.pipeline.config)
         self._membrane_init = lif_membrane_init(self.pipeline.config)
-        self._synchronized = lif_execution_synchronized(self.pipeline.config)
+        self._synchronized = resolve_spiking_point(self.pipeline.config).integrates_then_emits
         from mimarsinan.tuning.orchestration.experimental_walk_recovery import (
             restore_lif_recovery_budget,
         )
@@ -127,6 +128,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             # P1'': the chip-aligned NF forward is installed at finalize, so the
             # endpoint stage trains the deployed composition itself.
             run_endpoint_recovery(self, base_steps=self._endpoint_recovery_steps)
+            pin_lif_theta_floors(self.model)  # [U-LIF P1] its theta moves end at the per-cycle charge bound
 
     def _calibrate_to_teacher_distribution(self) -> None:
         """DFQ-match the deployed LIF cascade's per-neuron mean to the frozen teacher ANN's.
@@ -166,16 +168,9 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         if self._cycle_accurate:
             cast(LIFActivation, target).use_cycle_accurate_trains = True
 
-    def _wrap_encoding_input(self, perceptron) -> None:
-        if getattr(perceptron, "is_encoding_layer", False):
-            # Idempotent: the LIF exact-QAT AQ install may already carry the snap.
-            from mimarsinan.tuning.orchestration.lif_exact_qat import (
-                install_lif_input_quantizer,
-            )
-
-            install_lif_input_quantizer(perceptron, self._T)
-
     def _finalize_forward_for(self, model):
+        # [U-LIF P1] the twin (the live model's at finalize, the gate's clone's) runs no theta below its charge bound.
+        pin_lif_theta_floors(model)
         if self._cycle_accurate:
             from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
             from mimarsinan.spiking.wire_gauge_seam import require_established_wire_gauge

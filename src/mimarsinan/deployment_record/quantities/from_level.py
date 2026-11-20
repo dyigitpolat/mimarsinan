@@ -29,9 +29,14 @@ from mimarsinan.chip_simulation.stage_timesteps import executed_stage_timesteps
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.deployment_record.build.payload_sizes import params_bytes
 from mimarsinan.deployment_record.build.write_census import PassRow, ProgramPasses
+from mimarsinan.deployment_record.quantities.planes.loads import LoadInputs, load_inputs
+from mimarsinan.deployment_record.quantities.planes.states import (
+    LEVEL_NO_ENTRIES, LEVEL_UNPRODUCED, NO_LEVEL_MESH, VALUE_DOMAIN_ZEROS, declared_zeros, plane_view,
+)
 from mimarsinan.deployment_record.quantities.spec import QUANTITY_SPECS, Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import (
     NO_VALUE_GRID,
+    declared_buffer_bytes,
     names_value_domain,
     refuse_spiking_activity,
     value_window,
@@ -53,8 +58,6 @@ CENSUS_FIELDS = ("host_macs", "onchip_macs", "compute_op_count", "macs", "cells_
 SPIKING_EVENTS_WITHHELD = (
     "a spiking target's synaptic events need a measured record's activity_factor, and no record of this census "
     "member exists: the level is priced on the time axis only")
-#: Why the traffic between the level's cores has no size.
-NO_LEVEL_MESH = "the level census places no core on the chip's mesh, so the traffic between its cores has no size"
 _VALUE_MESH = ("noc_value_bytes",)
 _SPIKE_MESH = ("noc_total_packets", "noc_intra_tile_packets", "noc_inter_tile_packets", "noc_total_hops")
 
@@ -66,12 +69,15 @@ class LevelViewError(ToolchainRefusal, ValueError):
 
 @dataclass(frozen=True)
 class LevelView:
-    """The priced level's quantities, its write-law inputs (None without ``inference_batch_K``) and its chip."""
+    """The priced level's quantities, its write-law inputs (None without ``inference_batch_K``) and its chip.
+    [U-ENERGY] ``loads``: the level's two load censuses over its own passes (the one load law's, each built when a
+    pricer reads it)."""
 
     quantities: Quantities
     writes: Optional[PlaneWrites]
     chip: Mapping[str, Any]
     label: str
+    loads: Optional[LoadInputs] = None
 
 
 def level_chip(platform: Mapping[str, Any], budget: int) -> Dict[str, Any]:
@@ -90,6 +96,8 @@ def chip_facts(chip: Mapping[str, Any]) -> Dict[str, QuantityValue]:
              "neurons_physical": count * neurons, "cells_physical": count * axons * neurons}
     if chip.get("weight_bits") is not None:
         facts["weight_bits"] = int(chip["weight_bits"])
+    if (capacity := declared_buffer_bytes(chip)) is not None:  # [U-ENERGY class 2] a declared carry buffer's size
+        facts["carry_buffer_capacity_bytes"] = capacity
     return {key: QuantityValue(float(value), "static") for key, value in facts.items()}
 
 
@@ -164,14 +172,17 @@ def from_level(row: LevelCensus, schedule: LevelSchedule, platform: Mapping[str,
         else:
             stated[key] = 0.0
     if value_domain:
-        stated["timesteps"] = 1
+        stated["timesteps"] = stated["neuron_cycles_per_window"] = 1
         if schedule.tiles > 1:
             withheld.update(dict.fromkeys(_VALUE_MESH, NO_LEVEL_MESH))
     else:
         stated["timesteps"] = natural(timesteps, "timesteps", error=LevelViewError)
+        stated["neuron_cycles_per_window"] = stated["timesteps"]  # a level view states no window firing: per cycle
         values.pop("synaptic_events", None)
         withheld["synaptic_events"] = SPIKING_EVENTS_WITHHELD
         withheld.update(dict.fromkeys(_SPIKE_MESH, NO_LEVEL_MESH))
+    if value_domain:  # [U-ENERGY class 2] a value-domain program sends values, never spikes (one rule, every plane)
+        stated.update(dict.fromkeys(VALUE_DOMAIN_ZEROS, 0.0))
     values.update({key: QuantityValue(float(value), provenance) for key, value in stated.items()})
     label = f"level plane: {schedule.label}"
     writes = plane_writes(passes, chip, weight_bits=weight_bits, timesteps=None if value_domain else timesteps,
@@ -182,8 +193,10 @@ def from_level(row: LevelCensus, schedule: LevelSchedule, platform: Mapping[str,
             most_written=writes.census.most_written_core, producer_slots=writes.census.producer_slots))
         values.update(quantities)
         withheld.update(held)
-    return LevelView(Quantities(values, withheld={k: v for k, v in withheld.items() if k not in values}),
-                     writes, chip, label)
+    zeros = declared_zeros(lanes_per_tile > 0, declared_buffer_bytes(chip) is not None, value_domain)
+    loads = load_inputs(passes, chip, weight_bits=weight_bits, label="level",
+                        entries_absent=LEVEL_NO_ENTRIES)  # [U-ENERGY] the one load law over the level's passes
+    return LevelView(plane_view(values, withheld, LEVEL_UNPRODUCED, zeros), writes, chip, label, loads)
 
 
 def lane_area_quantities(chip: Mapping[str, Any], lanes_per_tile: int) -> Quantities:

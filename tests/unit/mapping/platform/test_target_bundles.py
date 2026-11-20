@@ -28,6 +28,7 @@ from mimarsinan.mapping.platform.target_bundles import (
     target_departures,
 )
 from mimarsinan.mapping.platform.target_expansion import target_assignments
+from unit.mapping.platform.hand_descriptions import described
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import merge_pipeline_config
 from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved
 
@@ -54,10 +55,11 @@ LITERATURE = set(imc_platform_names()) - SYNTHETIC_GRIDS
 
 
 def _bundle(name="hand", geometry="recom_64x64_256", keys=None, faithfulness=None, **extra):
+    """[U-CHIPKEYS] A hand-made chip under the loader rule: value cores, every computation key named unstated."""
     data = {"name": name, "geometry": geometry, "keys": keys if keys is not None else {},
             "faithfulness": faithfulness or {"class": "exact"}}
     data.update(extra)
-    return data
+    return described(data)
 
 
 def _write(directory, *bundles):
@@ -78,7 +80,11 @@ class TestShippedRegistry:
         assert len(geometry_only) == 10 and "loihi2_like" in geometry_only
         for name in geometry_only:
             assert bundles[name].geometry == name
-            assert set(bundles[name].values) == {"cores", "weight_bits"}
+            # [U-CHIPKEYS] beside its geometry, a geometry-only bundle sets only the keys its sources state
+            sourced = {path for path, s in bundles[name].statements.items()
+                       if "." not in path and (s["kind"] == "stated" or "assumed" in s)}
+            assert set(bundles[name].values) - {"cores", "weight_bits"} == sourced - {"weight_bits"}
+            assert "core_semantics" in sourced
 
     def test_every_literature_geometry_is_bundled_once_and_no_synthetic_grid(self):
         geometries = [b.geometry for b in target_bundles().values()]
@@ -127,11 +133,17 @@ class TestShippedRegistry:
 
     def test_faithfulness_classes(self):
         labels = {name: b.faithfulness.label() for name, b in target_bundles().items()}
-        assert labels["loihi"] == "approximate: dense-equivalent capacity"
-        assert labels["odin"] == "approximate: per-cycle soma law; unbounded membrane for the 8-bit saturating one"
+        assert labels["loihi"] == 'approximate: named "dense-equivalent capacity"'  # [U-CHIPKEYS6] quoted
+        # [U-CHIPKEYS] ODIN states its RTL's soma law (per-event compare, an 8-bit unsigned saturating membrane, reset to
+        # zero): the two departures it named are gone, and it is the one exact description
+        # [U-CHIPKEYS2] with the configuration the exact class rests on, which its label states
+        assert labels["odin"] == 'exact, given "leakage and SDSP learning off by the deployment"'
+        from mimarsinan.mapping.platform.descriptions.computation_keys import departures
         for name in set(labels) - set(PHYSICS_BUNDLES):
-            assert labels[name] == "refused: no physics profile", name
-        assert all(not label.startswith("exact") for label in labels.values())
+            # [U-CHIPKEYS3] a departing statement's departure follows the class's own (DYNAP-SE's weight grid)
+            own = departures(target_bundles()[name].statements)
+            assert labels[name] == "; ".join(("refused: no physics profile",) + own), name
+        assert [name for name, label in labels.items() if label.startswith("exact")] == ["odin"]
 
 
 class TestLoadJudges:
@@ -171,7 +183,8 @@ class TestLoadJudges:
         {"class": "faithful"}, {"class": "exact", "notes": "a typo"},
     ], ids=str)
     def test_a_malformed_faithfulness_class_refuses(self, tmp_path, faithfulness):
-        _write(tmp_path, _bundle(faithfulness=faithfulness))
+        # [U-CHIPKEYS4] 3(f) the chip states its pricing (a profile), so its class names what departs on its own
+        _write(tmp_path, _bundle(faithfulness=faithfulness, keys={"platform_physics_profile": "generic_estimated_22nm"}))
         with pytest.raises(TargetBundleError, match="faithfulness"):
             load_bundles(tmp_path)
 
@@ -204,7 +217,8 @@ class TestLoadJudges:
         _write(tmp_path, _bundle(keys={"write_ports": 2, "readout_law": {
             "adc_bits": 6, "range": "calibrated", "mult_bits": 16}}))
         bundle = load_bundles(tmp_path)["hand"]
-        assert bundle.values["write_ports"] == 2 and bundle.faithfulness.label() == "exact"
+        # [U-CHIPKEYS4] 3(f) the hand chip states no pricing: its label names the pricing it resolves (none)
+        assert bundle.values["write_ports"] == 2 and bundle.faithfulness.label() == "approximate: no physics profile"
 
 
 class TestDecisionClass:
@@ -231,8 +245,11 @@ class TestDecisionClass:
     def test_a_chip_naming_key_is_never_one_class_for_two_chips(self):
         bundles = target_bundles()
         assert "core_semantics" in function_bearing_differences(bundles["odin"], bundles["isaac_like"])
-        assert {"weight_bits", "cores.has_bias"} <= set(
+        # [U-CHIPKEYS] TrueNorth and Loihi both add a bias on chip (a leak, a bias current); they differ in the weight
+        # grid, the membrane and the threshold compare, and ODIN's bias rides a row
+        assert {"weight_bits", "membrane_bits", "thresholding_mode"} <= set(
             function_bearing_differences(bundles["truenorth"], bundles["loihi"]))
+        assert "cores.has_bias" in function_bearing_differences(bundles["odin"], bundles["loihi"])
 
 
 def _field(values, key, field):
@@ -267,7 +284,9 @@ class TestGeometryOnlyBundles:
         assert refusal == "absolute_pricing"
         assert name in reason and "no physics profile" in reason
         assert pcfg["target_claim_class"] == bundle.claim_class
-        assert pcfg["target_faithfulness_class"] == "refused: no physics profile"
+        # [U-CHIPKEYS3] the class's own departure first, then its statements' (DYNAP-SE's weight grid departs)
+        assert pcfg["target_faithfulness_class"] == bundle.faithfulness.label()
+        assert bundle.faithfulness.label().startswith("refused: no physics profile")
 
     @pytest.mark.parametrize("name", sorted(PHYSICS_BUNDLES))
     def test_a_physics_bundle_has_no_pricing_refusal(self, name):

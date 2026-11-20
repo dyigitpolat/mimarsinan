@@ -18,6 +18,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     requires_ttfs_firing,
 )
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from spiking_points import point_of_mode
 
 CASES = [
     ("lif", "cascaded"),
@@ -72,6 +73,6 @@ def test_forward_routes_by_decode_mode(mode, schedule):
 @pytest.mark.parametrize("mode,schedule", CASES)
 def test_decode_mode_maps_to_legacy_route(mode, schedule):
     """``timing`` ⇔ ttfs forward, ``count`` ⇔ rate forward, per the old cascade."""
-    decode = policy_for_spiking_mode(mode, schedule).decode_mode()
+    decode = policy_for_spiking_mode(point_of_mode(mode, schedule)).decode_mode()
     expected = "_forward_ttfs" if decode == "timing" else "_forward_rate"
     assert expected == _legacy_route(mode, schedule)

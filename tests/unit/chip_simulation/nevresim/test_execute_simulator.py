@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.nevresim.execute_nevresim import execute_simulator
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.profiling.synthetic_mapping import build_synthetic_mapping
@@ -39,7 +40,7 @@ def compiled_segment(tmp_path_factory):
         float,
         spike_generation_mode="Deterministic",
         firing_mode="Default",
-        spiking_mode="lif",
+        point=point_of_mode("lif"),
         connectivity_mode="runtime",
         verbose=False,
     thresholding_mode="<=", )

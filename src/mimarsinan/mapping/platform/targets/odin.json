@@ -1,6 +1,6 @@
 {
   "name": "odin",
-  "display_name": "ODIN (28 nm FDSOI, Frenkel 2019): one 256-neuron, 64k-synapse crossbar core",
+  "display_name": "ODIN (28 nm FDSOI, Frenkel 2019), one 256-neuron, 64k-synapse crossbar core",
   "geometry": {
     "name": "odin_stock_core",
     "cores": [
@@ -20,15 +20,231 @@
     "core_semantics": "spiking",
     "platform_physics_profile": "odin",
     "allow_coalescing": false,
-    "allow_neuron_splitting": false
+    "allow_neuron_splitting": false,
+    "spiking_family": "lif",
+    "spiking_variant": "streamed",
+    "firing_granularity": "per_event",
+    "firing_mode": "Novena",
+    "membrane_bits": 8,
+    "membrane_signed": false,
+    "thresholding_mode": "<="
   },
   "faithfulness": {
-    "class": "approximate",
-    "named": [
-      "per-cycle soma law",
-      "unbounded membrane for the 8-bit saturating one"
+    "class": "exact",
+    "given": [
+      "leakage and SDSP learning off by the deployment"
     ],
-    "note": "ODIN integrates and fires per event (the serial fold of the odin-fpga-infra branch) into a saturating 8-bit membrane (membrane_bits 8 in the same declaration); this tree has neither a per-event soma law nor a membrane width, so a deployment on the bundle runs the declared per-cycle spiking law, with an unbounded membrane, on ODIN's geometry, weights, permissions and physics. ODIN's per-axon weight sign is declared (weight_sign_granularity 'per_axon') and is exact, not a departure: the mapper splits each mixed-sign row into an excitatory and an inhibitory row (W = W+ + W- on the integer grid)."
+    "note": "The LIF neuron of ODIN as its RTL computes it, with per-event integration and compare, a saturating unsigned 8-bit membrane, reset to zero, a threshold reached at equality, and 3-bit weight magnitudes with a static sign per presynaptic row. Leakage and SDSP learning are configured off by a deployment (param_leak_en, param_ca_en). The stated law is the declaration of record of the stock fabric (odin_gen passthrough.stock_core_spec), and the resident recertification on the card on 2026-10-26 gated 100 of 100 certificates exact on it (power_run_report.md). The description of ODIN states its per-axon weight sign (weight_sign_granularity per_axon), and the mapper splits each mixed-sign row into an excitatory and an inhibitory row (W = W+ + W- on the integer grid). [U-CHIPKEYS2] The exact class rests on that configuration, which the label states (given). The neuron words of the deployment set leak_en and ca_en to 0 (mapping/export/odin/images.py lines 55 to 62)."
   },
-  "notes": "Population 1 is the degenerate single-core case the curated table quarantines, so the claim class is quarantined; a multi-core study declares the core count through target_overrides with a note. allow_coalescing and allow_neuron_splitting are false as the odin_stock_core declaration states (odin-fpga-infra f08c8efa, mapping/platform/imc_platforms.py capabilities: 'No inter-core partial-sum transfer and no re-thresholding of a partial sum'); a deployment that needs either declares it through target_overrides with a note, and its faithfulness names it. The declaration's allow_scheduling false is not bundled: the config registry defines allow_scheduling as a deployment choice, and its default is false."
+  "notes": "Population 1 is the degenerate single-core case the curated table quarantines, so the claim class is quarantined; a multi-core study declares the core count through target_overrides with a note. allow_coalescing and allow_neuron_splitting are false as the odin_stock_core declaration states (odin-fpga-infra f08c8efa, mapping/platform/imc_platforms.py capabilities: 'No inter-core partial-sum transfer and no re-thresholding of a partial sum'); a deployment that needs either declares it through target_overrides with a note, and its faithfulness names it. The declaration's allow_scheduling false is not bundled: the config registry defines allow_scheduling as a deployment choice, and its default is false.",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "spiking",
+        "source": "frenkel2019odin",
+        "location": "Abstract, PDF p.1",
+        "quote": "In this work, we present ODIN, a 0.086-mm2 64k-synapse 256-neuron online-learning digital spiking neuromorphic processor in 28nm FDSOI CMOS achieving a minimum energy per synaptic operation (SOP) of 12.7pJ.",
+        "reads": "online-learning digital spiking neuromorphic processor"
+      }
+    },
+    "weight_bits": {
+      "stated": {
+        "value": 4,
+        "source": "frenkel2019odin",
+        "location": "Section II-A, PDF p.4",
+        "quote": "Each synapse of ODIN consists of a weight and 1 bit of mapping table to enable or disable online learning locally. A 3-bit resolution was chosen for the weight in order to obtain a resolution similar to the one presented by Brader et al. in [33], which results in a 4-bit synapse including the weight and the mapping table bit.",
+        "reads": "A 3-bit resolution was chosen for the weight",
+        "derivation": [
+          {
+            "field": null,
+            "rule": "sign_and_magnitude",
+            "reads": 3
+          }
+        ],
+        "note": "The sign is one static bit per presynaptic row (SPI_SYN_SIGN, src/synaptic_core.v:128 at ChFrenkel/ODIN 1781931; the stock card record's weight_sign_granularity per_axon): a 3-bit magnitude with its row's sign is the symmetric signed grid of 4 bits, [-7, 7].",
+        "composition": {
+          "slices_per_weight": {
+            "unstated": {
+              "note": "A synapse holds one weight (each synapse occupies 4 bits: its weight and a mapping-table bit); the source states no count."
+            }
+          },
+          "cell_bits": {
+            "stated": {
+              "value": 3,
+              "source": "frenkel2019odin",
+              "location": "Section II-A, PDF p.4",
+              "quote": "Each synapse of ODIN consists of a weight and 1 bit of mapping table to enable or disable online learning locally. A 3-bit resolution was chosen for the weight in order to obtain a resolution similar to the one presented by Brader et al. in [33], which results in a 4-bit synapse including the weight and the mapping table bit.",
+              "reads": "A 3-bit resolution was chosen for the weight",
+              "note": "The weight's magnitude bits; the sign is one static bit per presynaptic row (the grid's note)."
+            }
+          }
+        }
+      }
+    },
+    "cores.has_bias": {
+      "stated": {
+        "value": false,
+        "source": "ChFrenkel/ODIN@1781931",
+        "location": "src/LIF_neuron_blocks/lif_neuron_state.v:27-34",
+        "quote": "input wire [ 6:0] param_leak_str, // leakage strength parameter input wire param_leak_en, // leakage enable parameter input wire [ 7:0] param_thr, // neuron firing threshold parameter input wire [ 7:0] state_core, // membrane potential state from SRAM input wire event_leak, // leakage type event input wire event_inh, // excitatory type event input wire event_exc, // inhibitory type event input wire [ 2:0] syn_weight, // synaptic weight",
+        "reads": "input wire [ 6:0] param_leak_str, // leakage strength parameter input wire param_leak_en, // leakage enable parameter input wire [ 7:0] param_thr, // neuron firing threshold parameter input wire [ 7:0] state_core, // membrane potential state from SRAM input wire event_leak, // leakage type event input wire event_inh, // excitatory type event input wire event_exc, // inhibitory type event input wire [ 2:0] syn_weight, // synaptic weight",
+        "note": "The neuron's inputs are its leak strength and enable, its threshold, its membrane state, three event types and the synaptic weight, and its update adds or subtracts only the weight and the leak (lines 51-71): no bias. A deployment's bias rides the tail axon slot on the weight grid (the stock card record's bias_slot tail)."
+      }
+    },
+    "spiking_family": {
+      "stated": {
+        "value": "lif",
+        "source": "frenkel2019odin",
+        "location": "Abstract, PDF p.1",
+        "quote": "Neurons can be independently configured as a standard leaky integrate-and-fire (LIF) model or as a custom phenomenological model that emulates the 20 Izhikevich behaviors found in biological spiking neurons.",
+        "reads": "a standard leaky integrate-and-fire (LIF) model"
+      }
+    },
+    "spiking_variant": {
+      "stated": {
+        "value": "streamed",
+        "source": "frenkel2019odin",
+        "location": "Fig. 3 caption, PDF p.3",
+        "quote": "Timing diagram of ODIN for a neuron spike event from 8-bit source neuron address i, leading to 256 SOPs.",
+        "reads": "for a neuron spike event",
+        "note": "Every arriving event updates its 256 destination neurons at once, so a spike streams on as it is emitted; the toolchain declares per-event firing only under the streamed variant (firing_granularity's rule), and the stock fabric's declaration of record states streamed."
+      }
+    },
+    "simulation_steps": {
+      "unstated": {
+        "note": "ODIN's neurons integrate events with no window of their own; the deployment declares it (the card's stock run declared 16)."
+      }
+    },
+    "target_tq": {
+      "unstated": {
+        "note": "No level count is ODIN's; the deployment declares it."
+      }
+    },
+    "firing_granularity": {
+      "stated": {
+        "value": "per_event",
+        "source": "frenkel2019odin",
+        "location": "Fig. 3 caption, PDF p.3",
+        "quote": "Timing diagram of ODIN for a neuron spike event from 8-bit source neuron address i, leading to 256 SOPs. Each SOP lasts two clock cycles. First, the current state of a destination neuron with 8-bit address j is retrieved. Second, the current state of neuron j and the associated synaptic weight corresponding to the source neuron i are provided to the neuron update logic, the updated state of neuron j is then written back to the neuron memory.",
+        "reads": "Timing diagram of ODIN for a neuron spike event from 8-bit source neuron address i, leading to 256 SOPs. Each SOP lasts two clock cycles.",
+        "note": "The update logic compares every updated state with the threshold (src/LIF_neuron_blocks/lif_neuron_state.v:44): a neuron fires within the event that crosses its threshold."
+      }
+    },
+    "firing_mode": {
+      "stated": {
+        "value": "Novena",
+        "source": "ChFrenkel/ODIN@1781931",
+        "location": "src/LIF_neuron_blocks/lif_neuron_state.v:46",
+        "quote": "assign state_core_next =  spike_out ? 8'd0 : state_core_next_i;",
+        "reads": "spike_out ? 8'd0"
+      }
+    },
+    "membrane_bits": {
+      "stated": {
+        "value": 8,
+        "source": "frenkel2019odin",
+        "location": "Section II-C, PDF p.4",
+        "quote": "each of the 256 neurons of ODIN can be individually chosen between a standard 8-bit LIF neuron model and a custom phenomenological model of the 20 Izhikevich behaviors.",
+        "reads": "a standard 8-bit LIF neuron model"
+      }
+    },
+    "membrane_signed": {
+      "stated": {
+        "value": false,
+        "source": "ChFrenkel/ODIN@1781931",
+        "location": "src/LIF_neuron_blocks/lif_neuron_state.v:55-64",
+        "quote": "else if (event_inh) if (state_core >= state_inh) state_core_next_i = state_inh; else state_core_next_i = 8'b0; else if (event_exc) if (state_core <= state_exc) state_core_next_i = state_exc; else state_core_next_i = 8'hFF;",
+        "reads": "state_core_next_i = 8'b0; else if (event_exc) if (state_core <= state_exc) state_core_next_i = state_exc; else state_core_next_i = 8'hFF",
+        "note": "An inhibitory event floors the membrane at 0 and an excitatory one saturates it at 255: an unsigned saturating register."
+      }
+    },
+    "thresholding_mode": {
+      "stated": {
+        "value": "<=",
+        "source": "ChFrenkel/ODIN@1781931",
+        "location": "src/LIF_neuron_blocks/lif_neuron_state.v:44",
+        "quote": "assign spike_out       = (state_core_next_i >= param_thr);",
+        "reads": "(state_core_next_i >= param_thr)"
+      }
+    }
+  },
+  "realizations": {
+    "odin_wide_1024x256_mb16": {
+      "display_name": "The produced wide realization of ODIN on the Alveo U55C card, one generated core of 1,024 axons x 256 neurons, 8-bit signed synapse cells, a 16-bit membrane, the event-serial law",
+      "geometry": {
+        "name": "odin_wide_1024x256",
+        "cores": [
+          {
+            "max_axons": 1024,
+            "max_neurons": 256,
+            "count": 1,
+            "has_bias": false,
+            "weight_sign_granularity": "per_synapse"
+          }
+        ],
+        "weight_bits": 8,
+        "provenance": "The card session's record of the produced realization (HACC U55C, card power session of 2026-10-26, power_run_report.md; step03_recertify_wide/deployment_report.json, sha256 74c659107020dd47d879d6bd069593333ad3b0d395f98fa3620168209a830ffc). Its device.capacity, '\"axon_slots_per_core\":1024,\"cores\":1,\"neurons_per_core\":256', was set on the session's command line and not read back from the card (the record says so); the declared bundle.chip_config '\"weight_bits\":8,\"weight_sign_granularity\":\"per_synapse\"' is the toolchain's chip configuration odin_wide_1024x256_mb16 (chip_simulation/odin_fpga/chip_configs.py, variant gen_a1024n256_mb16w8_per_event), built into the bitstream of xclbin UUID 4d3b43ef-af3f-5b4e-75f7-11788ab241cd. The evidence that the card computes as declared is the session's 150 of 150 exact certificates (and 64 of 64 readouts equal to the frozen ones). A single core, so quarantined as the stock core is.",
+        "claim_class": "quarantined"
+      },
+      "keys": {
+        "membrane_bits": 16
+      },
+      "computation": {
+        "weight_bits": {
+          "stated": {
+            "value": 8,
+            "source": "card record (wide, 2026-10-26)",
+            "location": "step03_recertify_wide/deployment_report.json, bundle.chip_config",
+            "quote": "\"thresholding_mode\":\"<=\"},\"weight_bits\":8,\"weight_sign_granularity\":\"per_synapse\"",
+            "reads": "\"weight_bits\":8",
+            "note": "An 8-bit two's-complement synapse cell per synapse holds the symmetric signed grid of 8 bits.",
+            "composition": {
+              "slices_per_weight": {
+                "unstated": {
+                  "note": "The generated core holds one weight per synapse cell; the record states no count."
+                }
+              },
+              "cell_bits": {
+                "stated": {
+                  "value": 8,
+                  "source": "card record (wide, 2026-10-26)",
+                  "location": "step03_recertify_wide/deployment_report.json, bundle.chip_config",
+                  "quote": "\"thresholding_mode\":\"<=\"},\"weight_bits\":8,\"weight_sign_granularity\":\"per_synapse\"",
+                  "reads": "\"weight_bits\":8",
+                  "note": "One 8-bit two's-complement cell per synapse (per-synapse sign) holds the signed word."
+                }
+              }
+            }
+          }
+        },
+        "cores.has_bias": {
+          "stated": {
+            "value": false,
+            "source": "odin_wide_1024x256_mb16 RTL",
+            "location": "hw/gen/chips/odin_wide_1024x256_mb16/odin_gen_core.v:126-127 and :224",
+            "quote": "// One wide signed accumulator holds any (membrane + weight) before the // clamp, so the saturation is a decision and never a silent wrap. ... wire signed [ACCW-1:0] acc = (mode == M_EVENT) ? (v_ext + w_ext) : v_ext;",
+            "reads": "holds any (membrane + weight)",
+            "note": "The realization's generated core (ODIN's RTL with the leak, the learning datapath and the Izhikevich neuron omitted, its header's statement of changes) adds the synaptic weight to the membrane and nothing else: no bias. The bias rides the tail axon slot (the card's record, bias_slot tail)."
+          }
+        },
+        "membrane_bits": {
+          "stated": {
+            "value": 16,
+            "source": "card record (wide, 2026-10-26)",
+            "location": "step03_recertify_wide/deployment_report.json, bundle.chip_config.soma_law",
+            "quote": "\"firing_mode\":\"Novena\",\"membrane_arithmetic\":\"saturating_unsigned\",\"membrane_bits\":16,\"thresholding_mode\":\"<=\"",
+            "reads": "\"membrane_bits\":16"
+          }
+        }
+      },
+      "record": {
+        "report": "papers/mimarsinan_tcad_2026/research_artifacts/12_tcad_readiness/hardware/results_20261026/odin_power_overlay/results/board_power/step03_recertify_wide/deployment_report.json",
+        "sha256": "74c659107020dd47d879d6bd069593333ad3b0d395f98fa3620168209a830ffc",
+        "design": "chip configuration odin_wide_1024x256_mb16, xclbin UUID 4d3b43ef-af3f-5b4e-75f7-11788ab241cd (sha256 df7d661eaf7ae93eb0043bfaf9b3d6c9feedecef7d9030b0d83ce425291ddf11)",
+        "session": "card power session of 2026-10-26, HACC U55C, Slurm job 70881 (12_tcad_readiness/hardware/power_run_report.md)",
+        "result": "resident recertification on the card: 150 of 150 certificates exact and 64 of 64 readouts equal to the frozen ones (power_run_report.md, Outcome)"
+      },
+      "pricing_absent": "No physics profile describes the realization: it is an FPGA build on the Alveo U55C card (xclbin 4d3b43ef-af3f-5b4e-75f7-11788ab241cd), and the odin profile prices the 28 nm ASIC (its validity 256 x 256 cores of 3-bit cells), another technology. A run on the realization refuses absolute pricing by name."
+    }
+  }
 }

@@ -208,8 +208,9 @@ def executed_record(hybrid: Any, platform: Mapping[str, Any], *, weight_bits: in
         platform=declared, deployment_options={}, created_at="")
     timing = TimingRecord(
         s_global=1, depth=len(schedule.segments()), per_segment=(),
-        latency=LatencyDecomposition(programming_s=None, compute_steps=0, compute_sim_time_s=None, host_ops_s=None,
-                                     host_ops_s_per_pass=None, sync_s=None, note=STATIC_TIMING_NOTE))
+        latency=LatencyDecomposition(programming_s=None, compute_steps=0, compute_sim_time_s=None,
+                                     host_ops_s_raw_total=None, host_ops_s_per_pass=None, sync_s=None,
+                                     note=STATIC_TIMING_NOTE))
     accuracy = AccuracyRecord(
         deployed=AccuracyReadRecord(metric=0.0, backend="value_census", samples=0, kind="carried",
                                     step="design_point_instance"),

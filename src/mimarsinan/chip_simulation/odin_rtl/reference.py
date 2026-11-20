@@ -29,6 +29,7 @@ from mimarsinan.chip_simulation.odin_deployment_bundle import (
     gather_axon_slots,
 )
 from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 
 __all__ = [
@@ -153,7 +154,7 @@ def simulate_cycles(
         for core in mapping.cores
     ]
     thresholds = [
-        torch.tensor(float(core.threshold), dtype=torch.float64)
+        torch.tensor(core_threshold(core, "the ODIN RTL reference"), dtype=torch.float64)
         for core in mapping.cores
     ]
 

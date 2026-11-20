@@ -37,7 +37,9 @@ __all__ = [
     "WireGaugeNotEstablishedError",
     "arm_absolute_core_entries",
     "establish_deployed_wire_gauge",
+    "rederive_established_wire_gauge",
     "require_established_wire_gauge",
+    "walk_wire_gauge",
     "wire_gauge_established",
 ]
 
@@ -164,14 +166,63 @@ def _slots_differ(before: dict, after: dict) -> list:
     return changed
 
 
+def rederive_established_wire_gauge(model_or_repr) -> bool:
+    """[U-POST2] Re-derive a stamped graph's gauge at its current thetas (the slots are a function of the thetas, never
+    a cache a restore or a theta move may leave behind); a graph no seam stamped is left as it is. Returns whether it
+    re-derived."""
+    repr_ = _mapper_repr(model_or_repr)
+    if repr_ is None or not wire_gauge_established(repr_):
+        return False
+    establish_wire_gauge(model_or_repr, input_data_scale=stamped_input_boundary_scale(repr_))
+    return True
+
+
+_WALK_DERIVATION = "_wire_gauge_walk_derivation"
+
+
+def _walk_key(model, repr_) -> tuple:
+    """What the walk's gauge is derived from and what its derivation wrote: the model's thetas by value (one host copy),
+    the slot objects every gauge writer replaces (held, so compared by identity), the entry currencies' version
+    counters and the graph's gauge stamps."""
+    perceptrons = list(model.get_perceptrons()) if hasattr(model, "get_perceptrons") else []
+    thetas = [torch.as_tensor(p.activation_scale).detach().reshape(-1) for p in perceptrons]
+    values = torch.cat(thetas).to("cpu", torch.float64) if thetas else torch.zeros(0, dtype=torch.float64)
+    held = [slot for node in repr_.execution_order() if isinstance(node, ComputeOpMapper)
+            for slot in (node.per_source_scales, node.output_scale)]
+    held += [p.per_input_scales for p in perceptrons]
+    versions = tuple(int(p.input_activation_scale._version) for p in perceptrons)
+    return values, held, versions, tuple(repr_.__dict__.get(k) for k in _REPR_STAMPS)
+
+
+def _same_walk_key(a: tuple, b: tuple) -> bool:
+    return (a[0].shape == b[0].shape and torch.equal(a[0], b[0]) and len(a[1]) == len(b[1])
+            and all(x is y for x, y in zip(a[1], b[1])) and a[2] == b[2] and a[3] == b[3])
+
+
+def walk_wire_gauge(model) -> bool:
+    """[U-POST2] The gauge an installed walk reads is a function of the model's current thetas, never a cache: it is
+    re-derived (values only) whenever the thetas differ by value from those of its last derivation or any writer
+    replaced a slot since (a restore, a theta move, a seam); otherwise the slots are already the derivation's. A graph
+    no seam stamped is left as it is. Returns whether it re-derived."""
+    repr_ = _mapper_repr(model)
+    if repr_ is None or not wire_gauge_established(repr_):
+        return False
+    last = repr_.__dict__.get(_WALK_DERIVATION)
+    if last is not None and _same_walk_key(last, _walk_key(model, repr_)):
+        return False
+    with torch.no_grad():
+        establish_wire_gauge(model, input_data_scale=stamped_input_boundary_scale(repr_))
+    repr_.__dict__[_WALK_DERIVATION] = _walk_key(model, repr_)
+    return True
+
+
 def require_established_wire_gauge(model_or_repr, *, input_data_scale: float, reader: str) -> None:
     """The twin's precondition: re-derive a stamped graph at its current thetas; pass a graph the seam would not change;
     refuse any other graph by name, leaving it as it was."""
     repr_ = _mapper_repr(model_or_repr)
     if repr_ is None:
         return  # no mapper graph: the plain cycle-accurate fallback walks no currency
-    if wire_gauge_established(repr_):
-        establish_wire_gauge(model_or_repr, input_data_scale=stamped_input_boundary_scale(repr_))
+    if rederive_established_wire_gauge(model_or_repr):
         return
     before = _gauge_state(repr_)
     try:

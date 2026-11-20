@@ -1,13 +1,100 @@
 {
   "name": "puma_node_like",
-  "display_name": "PUMA node (32 nm, simulated, Ankit 2019): 2208 MVMUs of 128 x 128, 16-bit weights",
+  "display_name": "PUMA node (32 nm, simulated, Ankit 2019), 2208 MVMUs of 128 x 128, 16-bit weights",
   "geometry": "puma_node_like",
-  "keys": {},
+  "keys": {
+    "core_semantics": "mvm",
+    "activation_bits": 16,
+    "onchip_arithmetic": {
+      "classes": [
+        "L",
+        "E"
+      ]
+    }
+  },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
+  },
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "ankit2019puma",
+        "location": "Abstract, PDF p.1",
+        "quote": "Memristor crossbars are circuits capable of performing analog matrix-vector multiplications, overcoming the fundamental energy efficiency limitations of digital logic.",
+        "reads": "performing analog matrix-vector multiplications"
+      }
+    },
+    "weight_bits": {
+      "stated": {
+        "value": 16,
+        "source": "ankit2019puma",
+        "location": "Section 6 'Methodology', PDF p.9",
+        "quote": "We use 16 bit fixed-point precision that provides very high accuracy in inference applications [20, 95].",
+        "reads": "We use 16 bit fixed-point precision",
+        "composition": {
+          "slices_per_weight": {
+            "stated": {
+              "value": 8,
+              "source": "ankit2019puma",
+              "location": "Section 3.2.1 'Precision Considerations', PDF p.5",
+              "quote": "We conservatively use 2 bits per device, and realize 16-bit MVM operations by combining 8 crossbars via bit-slicing [95]",
+              "reads": "combining 8 crossbars"
+            }
+          },
+          "cell_bits": {
+            "stated": {
+              "value": 2,
+              "source": "ankit2019puma",
+              "location": "Section 3.2.1 'Precision Considerations', PDF p.5",
+              "quote": "We conservatively use 2 bits per device, and realize 16-bit MVM operations by combining 8 crossbars via bit-slicing [95]",
+              "reads": "We conservatively use 2 bits per device"
+            }
+          },
+          "law": "signed_word"
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The source states no bias circuit (a bias add would run on the vector functional unit); the registered geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "activation_bits": {
+      "stated": {
+        "value": 16,
+        "source": "ankit2019puma",
+        "location": "Section 6 'Methodology', PDF p.9",
+        "quote": "We use 16 bit fixed-point precision that provides very high accuracy in inference applications [20, 95].",
+        "reads": "We use 16 bit fixed-point precision"
+      }
+    },
+    "readout_law": {
+      "unstated": {
+        "note": "A 16-bit MVM combines eight 2-bit crossbars by bit-slicing with bit-serial inputs and ADCs per crossbar, merged by shift-and-add (Section 3.2.1): a per-array converter on partial products, not the toolchain's per-core law on the fused accumulator (W47's per-array ADC, not built); the deployment declares one."
+      }
+    },
+    "onchip_arithmetic": {
+      "stated": {
+        "value": {
+          "classes": [
+            "L",
+            "E"
+          ]
+        },
+        "source": "ankit2019puma",
+        "location": "Table 1 (instruction set), PDF p.5",
+        "quote": "Vector arithmetic/logical (add, subtract, multiply, divide, shift, and, or, invert) Vector non-linear (relu, sigmoid, tanh, log, exponential)",
+        "reads": "Vector arithmetic/logical (add, subtract, multiply, divide, shift, and, or, invert) Vector non-linear (relu",
+        "note": "Each core's vector functional unit adds two vectors (E) and applies ReLU (L), in 16-bit fixed point; pooling is not an instruction of the table (P not stated)."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The MVMUs hold programmed memristor weights; the description declares no run-time writable matrix."
+      }
+    }
   }
 }

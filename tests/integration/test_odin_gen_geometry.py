@@ -33,6 +33,7 @@ from integration.odin_gen_harness import (
 
 from integration.parity_harness import ensure_nevresim_ready, have_cxx_compiler
 from integration.nevresim_policy import requires_nevresim_policy
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.nevresim_policy_types import EVENT_SERIAL_INTEGRATE
 
 from mimarsinan.chip_simulation.odin_rtl.gen_cosim import run_variant_cosim
@@ -414,8 +415,8 @@ class TestNevresimIsTheThirdArmOnTheSmallVariant:
             driver = NevresimDriver(
                 SMALL_AXONS, mapping, tmp, int,
                 spike_generation_mode="SpikeTrain", firing_mode="Novena",
-                thresholding_mode="<=", spiking_mode="lif", threshold_type=int,
-                connectivity_mode="runtime", verbose=False, soma_law=law)
+                thresholding_mode="<=", point=point_of_mode("lif", soma_law=law), threshold_type=int,
+                connectivity_mode="runtime", verbose=False)
             _raw, records = driver.predict_spiking_raw_with_records(
                 loader, SMALL_S, max(samples[0].trace.latencies))
 
@@ -557,9 +558,8 @@ class TestTheCountCurrencyIsCarriedAtTheChipsOwnWidth:
             driver = NevresimDriver(
                 WIDE_AXONS, mapping, tmp, int,
                 spike_generation_mode="SpikeTrain", firing_mode="Novena",
-                thresholding_mode="<=", spiking_mode="lif", threshold_type=int,
-                connectivity_mode="runtime", verbose=False,
-                soma_law=per_event_law(16))
+                thresholding_mode="<=", point=point_of_mode("lif", soma_law=per_event_law(16)), threshold_type=int,
+                connectivity_mode="runtime", verbose=False)
             _raw, records = driver.predict_spiking_raw_with_records(
                 loader, HIGH_MULT_S, max(samples[0].trace.latencies))
 
@@ -597,9 +597,8 @@ class TestTheCountCurrencyIsCarriedAtTheChipsOwnWidth:
             driver = NevresimDriver(
                 WIDE_AXONS, mapping, tmp, int,
                 spike_generation_mode="SpikeTrain", firing_mode="Novena",
-                thresholding_mode="<=", spiking_mode="lif", threshold_type=int,
-                connectivity_mode="runtime", verbose=False,
-                soma_law=per_event_law(16))
+                thresholding_mode="<=", point=point_of_mode("lif", soma_law=per_event_law(16)), threshold_type=int,
+                connectivity_mode="runtime", verbose=False)
             _raw, _records, trains = driver.predict_spiking_raw_with_spike_trains(
                 loader, HIGH_MULT_S, max(samples[0].trace.latencies))
 

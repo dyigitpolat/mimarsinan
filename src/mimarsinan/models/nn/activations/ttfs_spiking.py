@@ -20,13 +20,19 @@ def _heaviside_surrogate(pre: torch.Tensor, thresholding_mode: str, alpha: float
     return 1.0 - _StrictHeavisideFunction.apply(-pre, alpha)
 
 
-def _channel_broadcast_view(bias: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+def _channel_broadcast_view(bias: torch.Tensor, x: torch.Tensor, axis: int = -1) -> torch.Tensor:
     """View a per-output-channel ``bias`` so it broadcasts against ``x``: match the
     axis whose size equals the bias length, preferring the last axis (channel-last
-    linear) and falling back to axis 1 (conv channel axis)."""
+    linear) and falling back to axis 1 (conv channel axis). [U-PFOLD] A bias per position, laid out by its writer as
+    the output sample (``position_forward.position_bias_totals``), views over the sample; a declared channel ``axis``
+    (its perceptron's, ``channel_axis``) is read where it is not the last."""
+    if bias.dim() == 2:
+        return bias.reshape(1, *x.shape[1:])
     n = int(bias.shape[0])
     dim = x.dim()
-    if x.shape[-1] == n:
+    if axis != -1 and x.shape[axis] == n:
+        axis = axis % dim
+    elif x.shape[-1] == n:
         axis = dim - 1
     elif dim >= 2 and x.shape[1] == n:
         axis = 1
@@ -46,6 +52,7 @@ class TTFSActivation(nn.Module):
     this layer's θ; ``bias`` is the effective (norm-folded) pre-activation bias."""
 
     _VALID_THRESHOLDING_MODES = ("<", "<=")
+    channel_axis = -1  # [U-PFOLD] its perceptron's output channel axis (``Perceptron`` stamps it)
 
     # Plain attribute installed via object.__setattr__ in set_bias (never a registered parameter).
     _bias: torch.Tensor | None
@@ -124,12 +131,12 @@ class TTFSActivation(nn.Module):
         self._has_fired = None
 
     def _scale_values(self, x):
-        sv = self._broadcast_scale(self.activation_scale, x)
-        iv = self._broadcast_scale(self.input_scale, x)
+        sv = self._broadcast_scale(self.activation_scale, x, self.channel_axis)
+        iv = self._broadcast_scale(self.input_scale, x, self.channel_axis)
         return sv, iv
 
     @staticmethod
-    def _broadcast_scale(scale, x):
+    def _broadcast_scale(scale, x, axis: int = -1):
         """Clamp a scale and align a per-channel (multi-element) one to ``x``.
 
         Scalar scales stay scalar. A per-output-channel ``[C]`` scale (the
@@ -143,7 +150,7 @@ class TTFSActivation(nn.Module):
             return max(float(scale), 1e-12)
         sv = scale.to(x.device, x.dtype).clamp(min=1e-12)
         if sv.numel() > 1 and x.dim() > 2:
-            return _channel_broadcast_view(sv.reshape(-1), x)
+            return _channel_broadcast_view(sv.reshape(-1), x, axis)
         return sv
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -176,7 +183,7 @@ class TTFSActivation(nn.Module):
         bias = self._bias
         if bias is not None:
             bias = bias.to(x.device, x.dtype)
-            bias_b = _channel_broadcast_view(bias, x)
+            bias_b = _channel_broadcast_view(bias, x, self.channel_axis)
             weighted_raw = x - bias_b
             bias_norm = bias_b / scale_v
         else:

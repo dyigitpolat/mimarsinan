@@ -13,6 +13,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.mapping.ir_mapping_class import IRMapping
@@ -24,7 +25,7 @@ from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
 from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
-    calibration_forward_for_mode,
+    calibration_forward_for_point,
     transfer_negative_shifts_to_ir,
     propagate_negative_shifts_to_hybrid,
 )
@@ -74,7 +75,7 @@ def _build(T, *, shift: bool, calib_x=None):
         shifts = apply_negative_value_shifts(
             flow,
             calibrated_compute_op_minima(
-                flow, calib_x, T, forward_fn=calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW),
+                flow, calib_x, T, forward_fn=calibration_forward_for_point(point_of_mode("lif")),
             ),
         )
         assert shifts, "the bare Linear boundary must derive a shift"

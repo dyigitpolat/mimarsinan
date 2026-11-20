@@ -48,10 +48,13 @@ def _copied_fragments(parent, first, rest, group_id=0):
     dense, sources = logical_view(parent) if signed else (parent.get_core_matrix(), None)
     fragments = tuple(
         build_real_fragment(parent, window=(lo, hi), matrix_slice=dense[:, lo:hi].copy(),
-                            hardware_bias_slice=None if hb is None else hb[lo:hi].copy(),
                             bank_neuron_slice=None if bns is None else bns[index], fragment_index=index,
                             group_id=group_id, original_neurons=total, axon_sources=sources)
         for index, (lo, hi) in enumerate(((0, first), (first, total))))
+    # [U-LIVE r2] the fragment now takes its bias with every value held per neuron (``take_neuron_columns``); the
+    # recipe keeps its own verbatim window of the bias, so the comparison below still reads the two apart
+    for fragment, (lo, hi) in zip(fragments, ((0, first), (first, total))):
+        fragment.hardware_bias = None if hb is None else hb[lo:hi].copy()
     if signed:
         for fragment in fragments:
             split_soft_core(fragment)

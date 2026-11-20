@@ -10,6 +10,7 @@ from typing import Any, Dict
 from mimarsinan.deployment_record.platform_physics.registry import get_platform_physics
 from mimarsinan.pipelining.core.simulation_factory import build_hybrid_mapping_for_pipeline
 from unit.chip_simulation.value_run.integer_programs import build_integer_program, integer_inputs, residual_block_net
+from mimarsinan.deployment_record.platform_physics.hosts.description import host_description_block, host_descriptions
 
 AXONS, NEURONS = 256, 32
 #: Test platform: few cores (several passes, rewritten per period), cell write granularity, one write per inference
@@ -51,13 +52,11 @@ def neurram() -> Any:
 #: cores, ``tests/fixtures/design_point/hybrid_neurram_sram_cim.json``) at test counts, with a small softmax attention
 #: block (``operand_programs.attention_block``, depth 1) built the pipeline's way onto its operand core type.
 HYBRID = "tests/fixtures/design_point/hybrid_neurram_sram_cim.json"
-#: A test host block (test constants): the host's MAC rate, dispatch wall and power.
-HOST_BLOCK = {"host_macs_per_s": {"nominal": 20.0, "unit": "G/s", "evidence_kind": "measured",
-                                   "note": "test constant: no machine was measured"},
-              "t_host_op_overhead": {"nominal": 13.0, "unit": "us", "evidence_kind": "measured",
-                                     "note": "test constant: no machine was measured"},
-              "p_host": {"nominal": 30.0, "unit": "W", "evidence_kind": "published",
-                         "citation": "test constant: no source"}}
+#: A host block: the host's MAC rate, dispatch time and power. [U-HOST2] The first read host description's own rows,
+#: as its block declares them (the admission rule admits a host row only as its description's row or a declared
+#: derivation of its rows, never another value under its name).
+HOST_BLOCK = {key: row for key, row in host_description_block(host_descriptions()[0]).items()
+              if key in ("host_macs_per_s", "t_host_op_overhead", "p_host")}
 
 
 def hybrid_declaration(static: int, operand: int, *, scheduling: bool, k: int = 1,
@@ -76,7 +75,9 @@ def hybrid_declaration(static: int, operand: int, *, scheduling: bool, k: int = 
     if static_write_physics is not None:
         cores[0]["write_physics"] = str(static_write_physics)
     width = {"value": 8, "note": "the vehicle's 8-bit value grid (the integer readout law's), a declared departure"}
-    return {**declared, "target_overrides": {"cores": {**declared["target_overrides"]["cores"], "value": cores},
+    # [U-CHIPKEYS] the fixture's other declared departures (the lanes' off ablation beside the operand core type) stay
+    return {**declared, "target_overrides": {**declared["target_overrides"],
+                                             "cores": {**declared["target_overrides"]["cores"], "value": cores},
                                              "activation_bits": width},
             "inference_batch_K": int(k), "inference_rate_hz": RATE_HZ,
             "min_lifetime_hours": FLOOR_H,

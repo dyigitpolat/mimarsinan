@@ -23,6 +23,8 @@ from mimarsinan.mapping.platform.core_residency import (
     adopt_or_check,
     ungrouped_fallback_id,
 )
+from mimarsinan.mapping.support.neuron_thresholds import place_neuron_value
+from mimarsinan.mapping.support.value_layouts import ValueLayout, declared_names, layouts
 from mimarsinan.mapping.support.spike_source_columns import SpikeSourceColumns
 
 
@@ -41,6 +43,12 @@ def _extended(sources, more):
 
 
 class HardCore:
+    #: [U-PCH3] What each per-core value's entries index (``mapping.support.value_layouts``): a singleton declared
+    #: per neuron is assembled over each resident's neuron range (``add_softcore``), every other one is stored once.
+    VALUE_LAYOUTS = layouts(
+        PER_NEURON=("threshold", "hardware_bias", "readout_law"),
+        WHOLE=("activation_scale", "parameter_scale", "input_activation_scale", "boundary_grid", "latency",
+               "weight_bits"))
     #: Declared-only: the per-column readout law, set only when a law-carrying soft core is placed.
     readout_law: CoreLaw
     #: Declared-only: ``per_axon`` on a core whose type keeps one static sign per axon row, else absent.
@@ -67,7 +75,7 @@ class HardCore:
         self.boundary_grid: Any = None
         self.activation_scale: Any = None
         self.parameter_scale: Any = None
-        self.threshold: float | None = None
+        self.threshold: float | np.ndarray | None = None  # [U-PCH] one register, or one per neuron
         self.residency_class_id: int | None = None
         self.latency = None
 
@@ -108,7 +116,11 @@ class HardCore:
         self.available_axons -= softcore.get_input_count()
         self.available_neurons -= softcore.get_output_count()
 
-        adopt_or_check(self, softcore, constrained=self.constrained_properties)
+        # [U-PCH3] each singleton declared per neuron takes its neuron range (as the hardware bias does) where either
+        # holds one entry per neuron; one held value is adopted and checked
+        assembled = tuple(name for name in declared_names(type(self), ValueLayout.PER_NEURON)
+                          if name in ALL_SINGLETON_NAMES and place_neuron_value(self, softcore, name, neuron_offset))
+        adopt_or_check(self, softcore, constrained=self.constrained_properties, assembled=assembled)
         note_resident_bank(self, softcore)
 
         if self.residency_class_id is None:

@@ -9,6 +9,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
 )
 from mimarsinan.tuning.orchestration import (
     adaptation_ledger,
+    dhat_highwater,
     endpoint_steps,
     run_instrumentation,
 )
@@ -34,6 +35,13 @@ class TunerPipelineStep(PipelineStep):
     def __init__(self, requires, promises, updates, clears, pipeline):
         super().__init__(requires, promises, updates, clears, pipeline)
         self.tuner = None
+        self._committed_model_read = None
+
+    def hold_committed_read(self, read: float) -> None:
+        """[U-POST2] A step that moves its model after the tuner's exit read (a re-estimation at its commit) records
+        the read of the model it commits: the retention ledger's exit and the D-hat high-water hold it."""
+        self._committed_model_read = float(read)
+        dhat_highwater.observe(self.pipeline, self._committed_model_read)
 
     def run(self):
         # Entry snapshot for the retention ledger's endpoint-step accounting
@@ -85,10 +93,12 @@ class TunerPipelineStep(PipelineStep):
             run_instrumentation.merge_ft_pass_walls(
                 working_directory, self.name, wall_metrics()
             )
-        exit_estimate = getattr(tuner, "exit_metric_estimate", None)
-        if exit_estimate is None:
-            return  # not a TunerBase family: no exit read to account
-        exit_metric = exit_estimate()
+        exit_metric = getattr(self, "_committed_model_read", None)
+        if exit_metric is None:
+            exit_estimate = getattr(tuner, "exit_metric_estimate", None)
+            if exit_estimate is None:
+                return  # not a TunerBase family: no exit read to account
+            exit_metric = exit_estimate()
         if exit_metric is None:
             return  # the run never measured anything (bare unit-test doubles)
         entry = run_instrumentation.retention_entry(

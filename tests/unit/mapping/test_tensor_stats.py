@@ -1,4 +1,10 @@
-"""Large-tensor-safe quantile: torch.quantile has a hard 2^24 input cap."""
+"""Large-tensor-safe quantile: torch.quantile has a hard 2^24 input cap.
+
+[U-BRANGE F-3] Above the cap the quantile is read exactly from its order statistics (selection, no sort and no size
+cap), never from a subsample: a strided subsample of a flattened (batch, token, channel) tensor whose channel count is
+even read even channels only (W38 group 6's diagnosis, m-2: ViT-B/16's GELU seams, 15.5% below to 9.9% above the exact
+quantiles).
+"""
 
 import pytest
 import torch
@@ -6,31 +12,45 @@ import torch
 from mimarsinan.mapping.support.tensor_stats import (
     QUANTILE_ELEMENT_LIMIT,
     safe_quantile,
-    subsample_to_limit,
 )
+from unit.pipelining.range_rule_reference import exact_quantile
 
 
-class TestSubsampleToLimit:
-    def test_small_tensor_keeps_every_element(self):
-        x = torch.arange(10.0)
-        out = subsample_to_limit(x, limit=100)
-        assert out.numel() == x.numel()
-        torch.testing.assert_close(out, x)
+class TestTheOversizedPathIsExact:
+    @pytest.mark.parametrize("q", [0.0, 0.25, 0.5, 0.9, 0.999, 1.0])
+    def test_linear_quantile_equals_the_full_sort_s(self, q):
+        x = torch.randn(20_000, generator=torch.Generator().manual_seed(4))
+        got = float(safe_quantile(x, q, limit=1000))
+        assert got == pytest.approx(exact_quantile(x, q), rel=1e-6, abs=1e-7)
 
-    @pytest.mark.parametrize("n,limit", [
-        (1000, 100),      # exact multiple
-        (1050, 100),      # NOT a multiple: a floor stride overshoots to 105
-        (77_070_336 // 64, (1 << 24) // 64),  # the ViT patch-embed ratio
-        (101, 100),
-        (199, 100),
-    ])
-    def test_result_never_exceeds_the_limit(self, n, limit):
-        out = subsample_to_limit(torch.arange(float(n)), limit=limit)
-        assert 0 < out.numel() <= limit
+    @pytest.mark.parametrize("interpolation", ["linear", "lower", "higher", "midpoint", "nearest"])
+    @pytest.mark.parametrize("q", [0.1, 0.5, 0.999])
+    def test_every_interpolation_equals_torch_s_on_the_whole_tensor(self, q, interpolation):
+        x = torch.rand(30_001, generator=torch.Generator().manual_seed(5))
+        got = float(safe_quantile(x, q, limit=999, interpolation=interpolation))
+        want = float(torch.quantile(x, q, interpolation=interpolation))
+        assert got == pytest.approx(want, rel=1e-6, abs=1e-7)
 
-    def test_multidimensional_input_is_flattened(self):
-        x = torch.randn(4, 5, 6)
-        assert subsample_to_limit(x, limit=10_000).dim() == 1
+    def test_a_seam_whose_last_axis_is_even_is_read_on_every_channel(self):
+        """(batch, token, channel) with an even channel count: the odd channels carry the large values. A stride of 2
+        over the flattened tensor reads even channels only; the exact path reads them all."""
+        generator = torch.Generator().manual_seed(6)
+        x = torch.rand(8, 16, 64, generator=generator)
+        x[..., 1::2] *= 10.0
+        limit = x.numel() // 2  # a stride of 2 above it
+        got = float(safe_quantile(x.abs(), 0.999, limit=limit))
+        assert got == pytest.approx(exact_quantile(x.abs(), 0.999), rel=1e-6)
+        assert got > 5.0  # the odd channels' tail, which an even-channel read never sees
+
+    def test_the_exact_path_is_used_only_above_the_limit(self):
+        x = torch.randn(5000, generator=torch.Generator().manual_seed(7))
+        assert torch.equal(safe_quantile(x, 0.999), torch.quantile(x, 0.999))
+
+    def test_an_out_of_range_q_is_refused_on_both_paths(self):
+        x = torch.rand(2000)
+        for limit in (10_000, 100):
+            with pytest.raises((ValueError, RuntimeError)):
+                safe_quantile(x, 1.5, limit=limit)
 
 
 class TestSafeQuantile:
@@ -43,8 +63,6 @@ class TestSafeQuantile:
 
     @pytest.mark.parametrize("q", [0.0, 0.5, 0.9, 0.999, 1.0])
     def test_oversized_path_approximates_the_true_quantile(self, q):
-        # The fallback subsamples; on a uniform population the estimate must
-        # track the exact quantile closely (calibration-grade, not exact).
         torch.manual_seed(1)
         x = torch.rand(20_000)
         got = safe_quantile(x, q, limit=1000)

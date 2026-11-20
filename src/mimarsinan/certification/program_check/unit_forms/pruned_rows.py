@@ -23,6 +23,7 @@ from mimarsinan.mapping.export.entry_offsets import (
     core_entry_offset, dropped_row_magnitude, offset_multipliers, whole_step_code,
 )
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore, IRSource
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 
 RULE = "dropped_offset_row"
 
@@ -84,7 +85,8 @@ def check_dropped_offset_rows(ir_graph: Any, result: ConditionResult, counts: Di
                                  f"step {step:g}), so the rows pruning dropped in {int(dropped.sum())} column(s) add a "
                                  "nonzero term the model keeps"))
             continue
-        residue = np.asarray(law.m0, dtype=np.int64) * int(k) - offset_multipliers(law, float(node.threshold), offset)
+        theta = core_threshold(node, "N-identity's dropped offset rows")  # [U-PCH2] the law's one register
+        residue = np.asarray(law.m0, dtype=np.int64) * int(k) - offset_multipliers(law, theta, offset)
         bad = np.flatnonzero(dropped & (residue != 0))
         if bad.size:
             result.add(Violation("N-identity", RULE, where, f"the image of value 0 (code {k}) is M0 k - M_o = "

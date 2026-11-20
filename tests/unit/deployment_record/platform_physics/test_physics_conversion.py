@@ -162,7 +162,8 @@ class TestIsolation:
             "cells_per_weight": 1, "dac_bits": 1,
         })
         derived = model.derive(_quantities(macs=1e5, cells_physical=1e5, timesteps=32))
-        assert set(derived) <= {"adc_conversions", "adc_count"}
+        # [U-ENERGY m-r2-7] a bit-sliced crossbar also derives its row drives (boundary_events)
+        assert set(derived) <= {"adc_conversions", "adc_count", "boundary_events"}
 
     def test_a_model_never_mutates_the_quantities_it_reads(self):
         model = conversion_model_for(None)

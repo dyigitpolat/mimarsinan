@@ -8,6 +8,10 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.certification import CertificationCell
+from mimarsinan.chip_simulation.mvm_core_policy import MvmCorePolicy
+from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.stored_point import DocumentDoor, read_run_document, stored_run_point
+from mimarsinan.common.refusal.format_version import exact_version
 from mimarsinan.chip_simulation.weight_reuse_cost_model import (
     DEFAULT_COEFFICIENT_BAND,
     CoefficientBand,
@@ -174,7 +178,8 @@ class CostRecord:
     def reuse_mj_band(
         self, coeffs: CoefficientBand = DEFAULT_COEFFICIENT_BAND
     ) -> Tuple[float, float, float]:
-        """The GROUNDED weight-reuse mJ as a ``(low, nominal, high)`` RANGE (0.0s when no passes)."""
+        """The GROUNDED weight-reuse mJ as a ``(low, nominal, high)`` RANGE (0.0s when no passes): [m-4] its energy is
+        dynamic only, no static power, since it prices no chip time to carry a static leg over."""
         band = phase_cost_band(
             reprogram_passes=self.reprogram_passes,
             reuse_passes=self.reuse_passes,
@@ -196,7 +201,7 @@ class CostRecord:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "CostRecord":
-        version = int(data.get("format_version", COST_RECORD_FORMAT_VERSION))
+        version = exact_version(data.get("format_version", COST_RECORD_FORMAT_VERSION), "cost-record")  # [U-HOST3]
         if version != COST_RECORD_FORMAT_VERSION:
             raise ValueError(
                 f"cost-record format_version {version} != "
@@ -323,27 +328,28 @@ def _ft_pass_walls_from_run(run_dir: str) -> Tuple[float, Tuple[Mapping[str, Any
     )
 
 
-def _cell_from_run_config(run_dir: str, *, backend: str) -> Optional[CertificationCell]:
-    """The (firing × sync) cell declared by a generated run's ``_RUN_CONFIG``, via the ``DeploymentPlan`` SSOT."""
-    config_path = os.path.join(run_dir, "_RUN_CONFIG", "config.json")
-    if not os.path.exists(config_path):
+def _cell_from_run_config(run_dir: str, *, backend: str, door: DocumentDoor) -> Optional[CertificationCell]:
+    """The (firing × sync) cell of the point a generated run resolved. [U-LIF2 r3] A reader of a stored run takes the
+    point the run resolved (``stored_run_point``: the point it persisted, else the historical point its saved document
+    states), never a plan resolved again from that document under today's entry data. [U-LIF2 r6] The document is
+    read through ``door`` as its run's door read it."""
+    document = read_run_document(run_dir)
+    if document is None:
         return None
-    config = _read_json(config_path) or {}
-    params = config.get("deployment_parameters") or {}
-    from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-
-    plan = DeploymentPlan.resolve(params)
-    return CertificationCell.from_mode_policy(plan.mode_policy(), backend=backend)
+    point = stored_run_point(run_dir, document, door=door)
+    policy = MvmCorePolicy() if point is None else policy_for_spiking_mode(point)
+    return CertificationCell.from_mode_policy(policy, backend=backend)
 
 
 def extract_cost_record_from_run(
-    run_dir: str, *, backend: str = "sanafe"
+    run_dir: str, *, door: DocumentDoor, backend: str = "sanafe"
 ) -> Optional[CostRecord]:
-    """Mine a generated-run directory's persisted artifacts into a :class:`CostRecord` (``None`` when no SANA-FE cost data)."""
+    """Mine a generated-run directory's persisted artifacts into a :class:`CostRecord` (``None`` when no SANA-FE cost data).
+    [U-LIF2 r6] ``door``: the door its saved document is read through (``stored_point.DocumentDoor``)."""
     snapshot = _sanafe_snapshot_from_run(run_dir)
     if snapshot is None:
         return None
-    cell = _cell_from_run_config(run_dir, backend=backend)
+    cell = _cell_from_run_config(run_dir, backend=backend, door=door)
     if cell is None:
         return None
     deployed_accuracy = _deployed_accuracy_from_run(run_dir)
@@ -396,12 +402,12 @@ class CostScatter:
 
     @classmethod
     def from_runs(
-        cls, run_dirs: Sequence[str], *, backend: str = "sanafe"
+        cls, run_dirs: Sequence[str], *, door: DocumentDoor, backend: str = "sanafe"
     ) -> "CostScatter":
-        """Build a scatter by mining each generated-run directory (skips uncostable runs)."""
+        """Build a scatter by mining each generated-run directory (skips uncostable runs) through ``door``."""
         scatter = cls()
         for run_dir in run_dirs:
-            record = extract_cost_record_from_run(run_dir, backend=backend)
+            record = extract_cost_record_from_run(run_dir, door=door, backend=backend)
             if record is not None:
                 scatter.add(record)
         return scatter

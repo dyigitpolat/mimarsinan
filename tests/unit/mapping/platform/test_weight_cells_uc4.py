@@ -15,8 +15,10 @@ derives its cores' weight capacity from it, and refuses by name a block whose ce
   declares, on one row; its 128 x 128 two-bit cells hold 128 x 16 weights.
 - PRIME [targeted M1]: "Finally, we employ two crossbar arrays store positive and negative weights, respectively, and
   allow them to share the same input port." (chi2016prime Section III-A1, p.30; the tree's card
-  ``docs/research/physics/prime_constants_research.md``), so at its bound 4-bit weights a signed weight takes two cells
-  on one input row, one in each array of the pair: its 256 x 256 cell mats hold 256 x 128 signed weights each.
+  ``docs/research/physics/prime_constants_research.md``), and [U-CHIPKEYS2] by the one definition of the weight grid
+  its synapse composes "two 4-bit cells to represent one 8-bit synaptic weight" (Section III-D, PDF p.7): a signed
+  weight takes four cells on one input row, two in each array of the pair, so its 256 x 256 cell mats hold 256 x 64
+  signed weights each (revision 1 and R5: two cells at the bound 4-bit weights, 256 x 128).
 - Every other shipped chip description stores one weight per cell of its geometry (HERMES-64: "a PCM crossbar array
   capable of storing a 256 × 256 weight matrix", gallo2022a p.2).
 """
@@ -46,7 +48,7 @@ FIXTURES = os.path.join(os.path.dirname(__file__), "..", "..", "..", "fixtures",
 PC = "platform_constraints"
 #: The chip descriptions whose stored weight takes several cells: (cells per weight, cells on rows, registered geometry).
 SEVERAL = {"neurram": (2, 2, "neurram_like"), "isaac_like": (8, 1, "isaac_like"),
-           "prime_mat_256x256": (2, 1, "prime_mat_256x256")}
+           "prime_mat_256x256": (4, 1, "prime_mat_256x256")}
 
 
 def _file(name):
@@ -125,36 +127,37 @@ class TestIsaacLike:
 
 
 class TestPrime:
-    """[targeted M1] PRIME's signed weights: "Finally, we employ two crossbar arrays store positive and negative
-    weights, respectively, and allow them to share the same input port." (chi2016prime Section III-A1, p.30). At the
-    geometry's bound 4-bit weights (one 4-bit MLC cell each, Section V-A, p.36) a signed weight is two cells on one
-    input row, one in each crossbar of the pair; the tree's card reads the registered 256 x 256 mats so ("the ± split
-    puts the negative half in a second mat", prime_constants_research.md section 3.3(b))."""
+    """[U-CHIPKEYS2] PRIME's signed weights by the one definition of the weight grid (the composed weight one synapse
+    represents): "two 4-bit cells to represent one 8-bit synaptic weight" (chi2016prime Section III-D, PDF p.7), its
+    sign held by a pair of crossbars, "Finally, we employ two crossbar arrays store positive and negative weights,
+    respectively, and allow them to share the same input port." (Section III-A1, PDF p.5). So a 9-bit symmetric signed
+    grid, and a stored signed weight takes four cells on one input row: its magnitude's two 4-bit cells in each crossbar
+    of the pair (revision 1 and R5 read the cell's 4 bits and two cells, one in each crossbar)."""
 
-    def test_a_mat_holds_256_by_128_signed_weights_of_two_cells_each(self):
-        assert _core("prime_mat_256x256") == {"max_axons": 256, "max_neurons": 128, "count": 128, "has_bias": False,
-                                              "cells_per_weight": 2, "weight_cell_rows": 1}
+    def test_a_mat_holds_256_by_64_signed_weights_of_four_cells_each(self):
+        assert _core("prime_mat_256x256") == {"max_axons": 256, "max_neurons": 64, "count": 128, "has_bias": False,
+                                              "cells_per_weight": 4, "weight_cell_rows": 1}
 
-    def test_the_weight_capacity_is_half_the_chip_s_cells(self):
+    def test_the_weight_capacity_is_a_quarter_of_the_chip_s_cells(self):
         core = _core("prime_mat_256x256")
         cells, = get_imc_platform("prime_mat_256x256").cores
-        assert core["max_axons"] * core["max_neurons"] * core["count"] == 4_194_304
-        assert 2 * 4_194_304 == cells["max_axons"] * cells["max_neurons"] * cells["count"]
+        assert core["max_axons"] * core["max_neurons"] * core["count"] == 2_097_152
+        assert 4 * 2_097_152 == cells["max_axons"] * cells["max_neurons"] * cells["count"]
 
     def test_the_array_is_the_registered_256_by_256_cells(self):
         from mimarsinan.mapping.platform.weight_cells import array_extent
         registered, = get_imc_platform("prime_mat_256x256").cores
         assert array_extent(_core("prime_mat_256x256")) == (registered["max_axons"], registered["max_neurons"])
 
-    def test_the_count_is_the_one_at_the_bound_four_bit_weights(self):
-        assert target_bundles()["prime_mat_256x256"].values["weight_bits"] == 4
+    def test_the_grid_is_the_composed_nine_bits(self):
+        assert target_bundles()["prime_mat_256x256"].values["weight_bits"] == 9
 
-    def test_the_bundle_cites_the_signed_pair_and_the_card(self):
+    def test_the_bundle_cites_the_signed_pair_and_the_composing_scheme(self):
         notes = _file("prime_mat_256x256")["notes"]
         for quote in ("Finally, we employ two crossbar arrays store positive and negative weights, respectively, and "
-                      "allow them to share the same input port.", "Section III-A1", "p.30",
-                      "docs/research/physics/prime_constants_research.md",
-                      "two 4-bit cells to represent one 8-bit synaptic weight"):
+                      "allow them to share the same input port.", "Section III-A1", "PDF p.5",
+                      "two 4-bit cells to represent one 8-bit synaptic weight", "PDF p.7",
+                      "docs/research/physics/prime_constants_research.md"):
             assert quote in notes, quote
 
 

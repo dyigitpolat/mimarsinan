@@ -8,6 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.models.nn.activations import LIFActivation
@@ -112,7 +113,7 @@ def test_lif_driver_applies_negative_shift_like_chip_aligned():
     from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
     from mimarsinan.mapping.support.bias_compensation import (
         apply_negative_value_shifts,
-        calibration_forward_for_mode,
+        calibration_forward_for_point,
     )
     from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
 
@@ -122,7 +123,7 @@ def test_lif_driver_applies_negative_shift_like_chip_aligned():
         flow,
         calibrated_compute_op_minima(
             flow, torch.rand(16, 8), T,
-            forward_fn=calibration_forward_for_mode("lif", soma_law=DEFAULT_SOMA_LAW),
+            forward_fn=calibration_forward_for_point(point_of_mode("lif")),
         ),
     )
     assert shifts, "calibration must derive a shift for the LayerNorm boundary"

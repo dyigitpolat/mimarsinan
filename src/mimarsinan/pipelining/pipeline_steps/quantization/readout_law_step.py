@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List
+from typing import Dict, FrozenSet, Iterable, List
 
 import torch
 import torch.nn as nn
@@ -12,7 +12,8 @@ from mimarsinan.mapping.export.law_solver import ReadoutLawDeclarationError
 from mimarsinan.mapping.mappers.operand import operand_perceptrons
 from mimarsinan.mapping.mappers.operand.consumer_groups import consumer_group_partition
 from mimarsinan.mapping.support.operand_lowering import PER_CONSUMER_GROUP, operand_declaration
-from mimarsinan.mapping.support.tensor_stats import safe_quantile
+from mimarsinan.mapping.support.range_rule import RangeCensus, RangeSite, least_squares_pooled, least_squares_ranges
+from mimarsinan.mapping.support.reader_grids import read_together
 from mimarsinan.models.nn.activations.integer_law import grid_levels
 from mimarsinan.models.nn.activations.readout_quantizer import ReadoutQuantizer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -21,16 +22,15 @@ from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.pipeline_steps.quantization.declared_state import declare_readout_state
 from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
     CALIBRATION_BATCHES,
-    CALIBRATION_QUANTILE,
-    MIN_BOUNDARY_SCALE,
-    measure_seam_quantiles,
+    grid_site,
+    zero_magnitude_condition,
 )
-from mimarsinan.mapping.lanes.model_lanes import install_planned_lanes, lane_clipping_census, measure_lane_ranges
+from mimarsinan.mapping.lanes.model_lanes import install_planned_lanes, lane_absorbed, lane_clipping_census, lane_site
 from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 
 
 class ReadoutLawCalibrationError(ToolchainRefusal, RuntimeError):
-    """A perceptron the calibration batches never reach: a silent floor range would saturate its outputs."""
+    """A range site whose calibration values are all zero: its grid has no range to search."""
 
 
 def install_readout_quantizers(perceptrons: list, activation_bits: int) -> List[ReadoutQuantizer]:
@@ -76,55 +76,98 @@ def install_consumer_groups(model, perceptrons: list, quantizers: list, platform
     return grouped
 
 
-def measure_group_quantiles(model, quantizers: list, batches) -> List[List[float]]:
-    """Per grouped quantizer, the largest per-batch quantile of each group's input magnitude (the boundary rule)."""
-    maxima = {id(q): [0.0] * len(q.group_levels) for q in quantizers}
-    handles = []
-    for quantizer in quantizers:
-        def hook(module, args, q=quantizer):
-            y = args[0].detach().abs()
-            groups = torch.as_tensor(q.channel_groups, device=y.device)
-            for g in range(len(q.group_levels)):
-                columns = torch.nonzero(groups == g).reshape(-1)
-                value = safe_quantile(y.index_select(q.channel_axis, columns), CALIBRATION_QUANTILE).item()
-                maxima[id(q)][g] = max(maxima[id(q)][g], value)
-        handles.append(quantizer.register_forward_pre_hook(hook))
-    try:
-        with torch.no_grad():
-            for x in batches:
-                model(x)
-    finally:
-        for handle in handles:
-            handle.remove()
-    return [maxima[id(q)] for q in quantizers]
+def readout_site(quantizer) -> RangeSite:
+    """[U-BRANGE F-4] The range site of a per-perceptron readout quantizer: its input, on its own signed grid."""
+    if isinstance(quantizer, ReadoutQuantizer):
+        return RangeSite(quantizer, grid_levels(quantizer.activation_bits))
+    return grid_site(quantizer)  # a bank's payload grid (a value-grid quantizer)
 
 
-def calibrate_readout_quantizers(model, perceptrons: list, quantizers: list, batches, *, platform) -> List[float]:
+def _group_magnitudes(quantizer: ReadoutQuantizer, group: int):
+    """The magnitudes of one consumer group's columns of the quantizer's input."""
+    def magnitudes(y: torch.Tensor) -> torch.Tensor:
+        groups = torch.as_tensor(quantizer.channel_groups, device=y.device)
+        return y.index_select(quantizer.channel_axis, torch.nonzero(groups == group).reshape(-1)).abs()
+    return magnitudes
+
+
+def group_censuses(model, quantizers: list, batches) -> List[List[RangeCensus]]:
+    """Per grouped quantizer, each group's census by the boundary rule on the group's columns and its own grid."""
+    sites = [[RangeSite(q, int(levels), _group_magnitudes(q, g)) for g, levels in enumerate(q.group_levels)]
+             for q in quantizers]
+    flat = least_squares_ranges(model, [site for group in sites for site in group], batches)
+    out, start = [], 0
+    for group in sites:
+        out.append(list(flat[start:start + len(group)]))
+        start += len(group)
+    return out
+
+
+def measure_group_ranges(model, quantizers: list, batches) -> List[List[float]]:
+    """Per grouped quantizer, each group's range by the boundary rule on the group's columns and its own grid."""
+    return [[census.scale for census in group] for group in group_censuses(model, quantizers, batches)]
+
+
+def _refuse_zero_sites(named: list, batches: int, what: str) -> None:
+    """[U-BRANGE2] Refuse by name the sites whose calibration values are all zero (``named``: ``(name, census)``)."""
+    zero = [(name, census) for name, census in named if census.scale == 0.0]
+    if zero:
+        raise ReadoutLawCalibrationError(
+            f"Readout Law refuses {what} " + zero_magnitude_condition([n for n, _ in zero], [c for _, c in zero],
+                                                                      batches)
+            + ": a range site needs calibration values")
+
+
+def _unions(model, keys: list, absorbed: FrozenSet[int]) -> List[List[int]]:
+    """[U-BRANGE2, the review's m-3] The site indices of every union of keys one reader reads together
+    (``reader_grids.read_together``: the law solvers' own union), among the ``(id(quantizer), group)`` keys given."""
+    graph = getattr(model, "get_mapper_repr", None)
+    if not callable(graph):  # a model without a mapper graph: no reader joins grids
+        return []
+    position = {key: i for i, key in enumerate(keys)}
+    return [[position[(id(q), g)] for q, g in union if (id(q), g) in position]
+            for union in read_together(graph(), absorbed=absorbed)]
+
+
+def calibrate_readout_quantizers(model, perceptrons: list, quantizers: list, batches, *, platform,
+                                 absorbed: FrozenSet[int] = frozenset()) -> List[float]:
     """Every readout range by the boundary rule (G2's: per perceptron, the declared ``range_value`` if fixed), per
-    consumer group where declared; then the payload grids of re-snapped operand banks. Returns the per-perceptron
-    measurement (0.0: never reached) for the caller's refusal."""
+    consumer group where declared; then the payload grids of re-snapped operand banks. [U-BRANGE F-4] The boundary
+    rule is ``range_rule``'s, the entry grids' own: the least squared error of each site's own grid, at any magnitude
+    (no floor); [U-BRANGE2] the grids one reader reads together are one site, their values pooled; a site whose
+    calibration values are all zero is refused by name with the measured condition. Returns the per-perceptron
+    range."""
     batches = list(batches)
     install_consumer_groups(model, perceptrons, quantizers, platform)
     fixed = (platform.get("readout_law") or {}).get("range_value")
-    grouped = [q for q in quantizers if q.channel_groups is not None]
-    plain = [q for q in quantizers if q.channel_groups is None]
-    payload = [op.payload_quantizer for op in _bank_perceptrons(model) if op.payload_quantizer is not None]
-    seams = (payload if fixed is not None else plain + payload)
-    measured = dict(zip(map(id, seams), measure_seam_quantiles(model, seams, batches) if seams else []))
-    groups = dict(zip(map(id, grouped), measure_group_quantiles(model, grouped, batches)
-                      if grouped and fixed is None else []))
+    banks = [op for op in _bank_perceptrons(model) if op.payload_quantizer is not None]
+    payload = [op.payload_quantizer for op in banks]
+    names = {id(q): str(p.name) for p, q in zip(perceptrons, quantizers)}
+    named: list = []  # (key, site, label) per range site
+    for quantizer in (quantizers if fixed is None else []):
+        if quantizer.channel_groups is None:
+            named.append(((id(quantizer), 0), readout_site(quantizer), names[id(quantizer)]))
+            continue
+        named += [((id(quantizer), group), RangeSite(quantizer, int(levels), _group_magnitudes(quantizer, group)),
+                   f"{names[id(quantizer)]} group {group}") for group, levels in enumerate(quantizer.group_levels)]
+    named += [((id(op.payload_quantizer), 0), readout_site(op.payload_quantizer), f"{op.name} payload") for op in banks]
+    keys, sites, labels = [n[0] for n in named], [n[1] for n in named], [n[2] for n in named]
+    ranges = least_squares_pooled(model, sites, _unions(model, keys, absorbed), batches) if sites else []
+    census = dict(zip(keys, ranges))
+    _refuse_zero_sites(list(zip(labels, ranges)), len(batches), "the range site(s)")
     for quantizer in quantizers:
         if fixed is not None:
             quantizer.calibrate(float(fixed))
         elif quantizer.channel_groups is not None:
-            quantizer.calibrate_groups([max(v, MIN_BOUNDARY_SCALE) for v in groups[id(quantizer)]])
+            quantizer.calibrate_groups([census[(id(quantizer), g)].scale for g in range(len(quantizer.group_levels))])
         else:
-            quantizer.calibrate(max(measured[id(quantizer)], MIN_BOUNDARY_SCALE))
+            quantizer.calibrate(census[(id(quantizer), 0)].scale)
     for grid in payload:
-        grid.calibrate(max(measured[id(grid)], MIN_BOUNDARY_SCALE))
+        grid.calibrate(census[(id(grid), 0)].scale)
     if fixed is not None:
         return [float(fixed)] * len(quantizers)
-    return [measured[id(q)] if id(q) in measured else min(groups[id(q)]) for q in quantizers]
+    return [min(census[(id(q), g)].scale for g in range(len(q.group_levels) if q.channel_groups is not None else 1))
+            for q in quantizers]
 
 
 def clipping_census(model, perceptrons: list, quantizers: list, batches: Iterable[torch.Tensor]) -> Dict[str, dict]:
@@ -174,18 +217,15 @@ class ReadoutLawStep(PipelineStep):
         return self.trainer.test()
 
     @staticmethod
-    def _calibrated(model, perceptrons, quantizers, batches, lanes) -> List[float]:
+    def _calibrated(model, perceptrons, quantizers, batches, lanes, absorbed) -> List[float]:
         """WI-5e, with executed lanes only (N2's calibration covers the rest): each lane's range at its end (after
-        its clamp or fused add); pool lanes by FX name."""
-        names = [p.name for p in perceptrons] + [name for name, _ in lanes]
-        measured = measure_lane_ranges(model, quantizers, batches, CALIBRATION_QUANTILE)
-        unseen = [names[i] for i, value in enumerate(measured) if value == 0.0]
-        if unseen:
-            raise ReadoutLawCalibrationError(
-                f"Readout Law calibration never reached perceptron(s) {unseen}: a silent floor range would "
-                f"saturate their outputs"
-            )
-        return [max(value, MIN_BOUNDARY_SCALE) for value in measured]
+        its clamp or fused add); pool lanes by FX name; [U-BRANGE2] the grids one reader reads together pooled."""
+        names = [str(p.name) for p in perceptrons] + [str(name) for name, _ in lanes]
+        keys = [(id(q), 0) for q in quantizers]
+        measured = least_squares_pooled(model, [lane_site(q) for q in quantizers], _unions(model, keys, absorbed),
+                                        batches)
+        _refuse_zero_sites(list(zip(names, measured)), len(batches), "the range(s) of perceptron(s) and lane(s)")
+        return [census.scale for census in measured]
 
     def process(self):
         model = self.get_entry("model")
@@ -208,17 +248,12 @@ class ReadoutLawStep(PipelineStep):
         lanes = install_planned_lanes(model, platform, int(bits))  # WI-5e: None without executed lanes
         every = quantizers + [q for _, q in lanes or ()]
         fixed = readout_law.get("range_value")
+        absorbed = lane_absorbed(model, self.pipeline.config)
         if lanes is None:  # [N2] per consumer group where declared, then the payload grids of re-snapped banks
-            measured = calibrate_readout_quantizers(model, perceptrons, quantizers, batches, platform=platform)
-            unseen = [perceptrons[i].name for i, value in enumerate(measured) if value == 0.0]
-            if fixed is None and unseen:
-                raise ReadoutLawCalibrationError(
-                    f"Readout Law calibration never reached perceptron(s) {unseen}: a silent floor range would "
-                    f"saturate their outputs"
-                )
+            calibrate_readout_quantizers(model, perceptrons, quantizers, batches, platform=platform, absorbed=absorbed)
         else:  # WI-5e: each lane's range at its end, pool lanes by FX name
             ranges = [float(fixed)] * len(every) if fixed is not None else self._calibrated(
-                model, perceptrons, every, batches, lanes)
+                model, perceptrons, every, batches, lanes, absorbed)
             for quantizer, value in zip(every, ranges):
                 quantizer.calibrate(value)
         declared = declare_readout_state(model, perceptrons, quantizers, platform, lanes or ())  # {} undeclared

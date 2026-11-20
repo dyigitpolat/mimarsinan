@@ -31,6 +31,7 @@ from integration.test_residency_executed import (
 )
 from mimarsinan.deployment_record.build.from_mapping import schedule_record_from_mapping
 from mimarsinan.deployment_record.cost.absolute.step_choice import cheapest_step
+from mimarsinan.deployment_record.cost.absolute.walls.static_power import NO_STATIC
 from mimarsinan.deployment_record.platform_physics import get_platform_physics
 from mimarsinan.deployment_record.quantities.write_law import WritePolicy
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
@@ -93,7 +94,7 @@ def test_the_priced_step_of_resnet18_quarter_is_its_floor(resnet18_quarter_progr
                                     bytes_of_cells=lambda cells: CF.params_bytes(cells, 8), tile_cells=0,
                                     bytes_per_element=1)
     physics = get_platform_physics("generic_estimated_22nm")
-    assert all(cheapest_step([census], physics, WritePolicy(batch_k=k)) == 0 for k in (1, 16, 64))
+    assert all(cheapest_step([census], physics, WritePolicy(batch_k=k), static=NO_STATIC) == 0 for k in (1, 16, 64))
 
 
 @pytest.mark.slow
@@ -116,7 +117,7 @@ def test_a_priced_non_floor_step_executes_equal_to_the_identity_run():
         censuses.append(CF.facts_period_census(
             comp.facts, forced=comp.units.forced, bytes_of_cells=lambda cells: CF.params_bytes(cells, platform["weight_bits"]),
             tile_cells=0, bytes_per_element=CF.bytes_per_element(platform, timesteps)))
-    index = cheapest_step(censuses, get_platform_physics("generic_estimated_22nm"), WritePolicy(batch_k=256))
+    index = cheapest_step(censuses, get_platform_physics("generic_estimated_22nm"), WritePolicy(batch_k=256), static=NO_STATIC)
     assert index > 0
     TV.activate(vehicle.ir, 32.0)
     plan = {"step": "index", "index": index}

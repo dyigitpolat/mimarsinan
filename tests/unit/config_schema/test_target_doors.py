@@ -21,6 +21,7 @@ from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentP
 from mimarsinan.pipelining.core.platform_constraints_resolver import build_platform_constraints_resolved
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_assembly import identity_from_pipeline
 from mimarsinan.pipelining.session import parse_deployment_config
+from unit.mapping.platform.hand_descriptions import described
 
 DP, PC = "deployment_parameters", "platform_constraints"
 _FIXTURES = os.path.join(os.path.dirname(__file__), "..", "..", "fixtures", "deployment_configs")
@@ -50,10 +51,21 @@ def _plain(fixture=SPIKING):
 
 
 def _document(name, fixture=SPIKING):
-    """A fixture with ``target: <name>`` in place of every key the bundle sets."""
+    """A fixture with ``target: <name>`` in place of every key the bundle sets ([U-CHIPKEYS] in both sections: a
+    description now states its neuron law's deployment-parameter keys too)."""
     doc = _load(fixture)
+    doc[DP] = {k: v for k, v in doc[DP].items() if k == "core_semantics" or k not in _gives_way(name)}
     doc[PC] = {**{k: v for k, v in doc[PC].items() if k not in _owned(name)}, "target": name}
     return doc
+
+
+def _gives_way(name):
+    """The fixture's deployment keys a target replaces: the keys its bundle sets and, where the bundle states a
+    spiking family, the fixture's whole neuron law (its spiking-group keys, such as a TTFS input encoding)."""
+    owned = set(target_bundles()[name].values)
+    if "spiking_family" in owned:
+        owned |= {k for k, e in REGISTRY.items() if e.group == "spiking" and k != "core_semantics"}
+    return owned
 
 
 def _run(doc, tmp_path):
@@ -275,7 +287,10 @@ class TestOverridesDepart:
         doc = _document("odin")
         doc[PC]["target_overrides"] = {"allow_coalescing": {"value": True, "note": "a departure"}}
         assert _verdicts(doc, tmp_path) == ([], [], None)
-        assert _run(doc, tmp_path)["target_faithfulness_class"].endswith("; allow_coalescing declared")
+        # [U-CHIPKEYS] the exact ODIN description becomes approximate by the one override, named
+        # [U-CHIPKEYS2] the label keeps the configuration the exact class rested on
+        assert _run(doc, tmp_path)["target_faithfulness_class"] == (
+            'approximate, given "leakage and SDSP learning off by the deployment": allow_coalescing declared')
 
 
 class TestConsumerReadDeclarations:
@@ -286,9 +301,9 @@ class TestConsumerReadDeclarations:
     def uniform_chip(self, tmp_path, monkeypatch):
         directory = tmp_path / "bundles"
         directory.mkdir()
-        (directory / "uniform_chip.json").write_text(json.dumps({
+        (directory / "uniform_chip.json").write_text(json.dumps(described({  # [U-CHIPKEYS] a hand chip under the rule
             "name": "uniform_chip", "geometry": "recom_64x64_256", "keys": {"s_allocation": "uniform"},
-            "faithfulness": {"class": "exact"}}))
+            "faithfulness": {"class": "exact"}}, semantics="spiking")))
         shipped = dict(target_bundles())
         bundles = {**shipped, **load_bundles(directory)}
         monkeypatch.setattr(bundle_module, "target_bundles", lambda: bundles)
@@ -300,7 +315,8 @@ class TestConsumerReadDeclarations:
         doc[DP]["s_allocation"] = "UNIFORM"
         assert _verdicts(doc, tmp_path) == ([], [], None)
         flat = _run(doc, tmp_path)
-        assert flat["s_allocation"] == "uniform" and flat["target_faithfulness_class"] == "exact"
+        # [U-CHIPKEYS4] 3(f) the hand chip states no pricing: its label names the pricing the run resolves (none)
+        assert flat["s_allocation"] == "uniform" and flat["target_faithfulness_class"] == "approximate: no physics profile"
 
     def test_a_reserved_mode_still_conflicts_at_every_door(self, tmp_path, uniform_chip):
         doc = _plain()
@@ -323,7 +339,10 @@ class TestTheOdinCell:
         bundle = target_bundles()["odin"]
         departed = sorted(key for key in bundle.values
                           if json.dumps(flat[key], sort_keys=True) != json.dumps(bundle.values[key], sort_keys=True))
-        assert departed == ["allow_coalescing", "cores"]
+        # [U-CHIPKEYS] the cell's own soma law (per-cycle compare, unbounded membrane, subtractive reset, strict
+        # compare) departs from ODIN's stated one, each key named
+        assert departed == ["allow_coalescing", "cores", "firing_granularity", "firing_mode", "membrane_bits",
+                            "thresholding_mode"]
         for key in departed:
             assert f"{key} declared" in flat["target_faithfulness_class"]
 
@@ -446,9 +465,13 @@ class TestNotApplied:
         with open(path, encoding="utf-8") as f:
             doc = json.load(f)
         flat = merge_pipeline_config(dict(doc[DP]), copy.deepcopy(doc[PC]))
-        assert flat["target_faithfulness_class"] == (
-            "approximate: 1-bit weights for the axon-type weight law; allow_coalescing declared; "
-            "weight grid not applied")
+        assert flat["target_faithfulness_class"] == (  # [U-CHIPKEYS] the cell's strict compare departs, named
+            # [U-CHIPKEYS3] the weight grid's departure as its statement states it (the report's candidate m-4)
+            # [U-CHIPKEYS6] the statement's computation and value assumed as quoted fields
+            # [U-CHIPKEYS7] the computation reworded to the alphabet
+            'approximate: weight_bits departs from its source\'s computation "binary synapse times a 9-bit signed '
+            'integer of its neuron for the type of the axon", assumed "1"; allow_coalescing declared; thresholding_mode '
+            'declared; weight grid not applied')
 
 
 class TestAPerAxonCoreUnderFloatWeights:

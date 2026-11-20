@@ -103,6 +103,10 @@ class CandidateProgramming:
     #: [U-PP P-1] The fragments' ``(pass_count, sync_count)`` (``LayoutNocFragments.schedule_census``): the candidate's
     #: schedule census, of the passes this census counts; None where the fragments state none.
     schedule_census: Optional[Tuple[int, int]] = None
+    #: [U-ENERGY class 3] Over every pass's evaluated cores, the used columns (outputs, the elements its local memories
+    #: write per evaluation) and the used rows (the elements they read into the arrays); None without ``core_used``.
+    output_neurons: Optional[int] = None
+    local_mem_read_elements: Optional[int] = None
 
 
 def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProgramming:
@@ -129,7 +133,16 @@ def candidate_programming_census(noc: Any, *, weight_bits: Any) -> CandidateProg
         pass_cores=tuple(_tiles(program) for program in programs),
         reprogrammed_cells=tuple(cells for program in written for cells in program.core_cells),
         schedule_census=getattr(noc, "schedule_census", None),
+        output_neurons=_used_sum(programs, 1), local_mem_read_elements=_used_sum(programs, 0),
     )
+
+
+def _used_sum(programs: Any, axis: int) -> Optional[int]:
+    """[U-ENERGY class 3] The used rows (``axis`` 0) or columns (1) over every pass's evaluated cores, or None where a
+    pass states no ``core_used``."""
+    if not programs or any(not getattr(p, "core_used", ()) for p in programs):
+        return None
+    return sum(int(program.core_used[i][axis]) for program in programs for i in _evaluated(program))
 
 
 def _evaluated(program: Any) -> Tuple[int, ...]:

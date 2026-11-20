@@ -146,10 +146,20 @@ class TestMultiStepLatticeSnap:
             assert count == 7, f"dust={dust}: count={count}"
 
 
-class TestArmFromParameterScale:
-    def test_arm_integer_membrane_lattice_stamps_from_ps(self):
+class TestArmFromTheLatticeRecord:
+    def test_arm_integer_membrane_lattice_derives_from_the_record_and_the_persisted_scale(self):
+        """[U-POST2] The arming derives the lattice from the projection's record and the persisted parameter_scale,
+        never from an integer parameter_scale alone, and caches nothing: an unrecorded perceptron stays unarmed; a
+        recorded core arms at 2 ps and follows its persisted scale; a fractional scale arms nothing; an encoding layer
+        is recorded on the entry grid (2 ps T) only when its input carries the 1/T entry grid."""
         import torch.nn as nn
 
+        from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
+        from mimarsinan.models.perceptron_mixer.membrane_lattice import (
+            CORE_LATTICE,
+            ENTRY_GRID_LATTICE,
+            record_membrane_lattice_kind,
+        )
         from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
         from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
 
@@ -166,15 +176,33 @@ class TestArmFromParameterScale:
             def get_perceptrons(self):
                 return [self.p]
 
+        unrecorded = _M(24.0)
+        assert arm_integer_membrane_lattice(unrecorded) == 0
+        assert unrecorded.p.activation.if_node.lattice_scale is None
+
         m = _M(24.0)
+        assert record_membrane_lattice_kind(m.p) == CORE_LATTICE
+        assert m.p.activation.if_node.lattice_scale is None  # the record arms nothing
         assert arm_integer_membrane_lattice(m) == 1
         assert m.p.activation.if_node.lattice_scale == 48.0
+        m.p.set_parameter_scale(torch.tensor(10.0))  # a restore writes the persisted scale back
+        assert arm_integer_membrane_lattice(m) == 1
+        assert m.p.activation.if_node.lattice_scale == 20.0
+        m.p.membrane_lattice_kind = None  # a restore to a state no projection reached
+        assert arm_integer_membrane_lattice(m) == 0
+        assert m.p.activation.if_node.lattice_scale is None
 
         frac = _M(24.37)
+        assert record_membrane_lattice_kind(frac.p) == CORE_LATTICE
         assert arm_integer_membrane_lattice(frac) == 0
+        assert frac.p.activation.if_node.lattice_scale is None
 
         enc = _M(24.0)
         enc.p.is_encoding_layer = True
+        assert record_membrane_lattice_kind(enc.p) is None  # a float input: no lattice
+        assert arm_integer_membrane_lattice(enc) == 0
+        enc.p.append_input_wire_op(ChipInputQuantizer(T=4, activation_scale=1.0))
+        assert record_membrane_lattice_kind(enc.p) == ENTRY_GRID_LATTICE
         assert arm_integer_membrane_lattice(enc) == 1
         # Encoding layers integrate the input-quantized pre-activation:
         # grid 1/(ps*T) => lattice 2*ps*T.
@@ -208,14 +236,25 @@ class TestScmLatticeSnap:
         assert fired == 0.0
 
 
-class TestNapqStampsLattice:
-    def test_transform_arms_the_activation(self):
+class TestNapqRecordsLattice:
+    def test_transform_records_the_lattice_and_the_arming_derives_it(self):
+        """[U-POST2] The projection records the lattice's kind and arms nothing (never cached); the arming derives the
+        lattice from the record and the persisted scale."""
         import torch.nn as nn
 
         from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
+        from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
         from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
             NormalizationAwarePerceptronQuantization,
         )
+
+        class _M(nn.Module):
+            def __init__(self, p):
+                super().__init__()
+                self.p = p
+
+            def get_perceptrons(self):
+                return [self.p]
 
         torch.manual_seed(0)
         p = Perceptron(4, 8, normalization=nn.Identity())
@@ -226,5 +265,7 @@ class TestNapqStampsLattice:
         NormalizationAwarePerceptronQuantization(
             8, "cpu", rate=1.0, two_scale=False,
         ).transform(p)
+        assert lif.if_node.lattice_scale is None
+        assert arm_integer_membrane_lattice(_M(p)) == 1
         expected = 2.0 * float(p.parameter_scale)
         assert lif.if_node.lattice_scale == expected

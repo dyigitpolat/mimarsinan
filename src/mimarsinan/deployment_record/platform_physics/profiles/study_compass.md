@@ -46,7 +46,7 @@ is declared, so it bounds nothing priced.
 | `conductance_levels` | 16 | derived | a 4-bit weight slot |
 | `write_sigma`, `read_sigma` | 0 | derived | exact digital storage and accumulation (constants.md sec. 3, 4) |
 | `membrane_bits` | 24 | derived | the probe tile's accumulators, A = 24 (pd.md sec. 3) |
-| `host_compute_rate` | 1 | derived | identity on a measured host wall (the host is not part of the study's chip) |
+| `host_compute_rate` | withdrawn [U-HOST]: no profile declares a host row; a host row is admitted only from an identified host description (hosts/<name>.json) as the run's host block, and a measured host wall prices nothing | | |
 
 ## Not priced by the study
 
@@ -155,3 +155,13 @@ the study at its 8-bit activations (one byte per element per direction) and at i
 design carries nothing), the toolchain at the program's value grid (`activation_bits`) and at every pass boundary of its
 schedule. The pinned
 reconciliation is `tests/unit/deployment_record/introspection/test_study_cost_cell_ue4.py`.
+
+## Chip Area by the Area Rule (`area_rule`)
+
+[U-AREA] `chip_area_mm2` of this description is priced from its `area_rule` block (the area rule from published silicon per technology type, `platform_physics/area_rule`; design revision 3). Where the rows or notes above describe another chip-area path (a per-core footprint, `area_global_fixed`, or a refusal outside the footprint's validity), the block supersedes them for chip area; the other constants keep their uses.
+
+- **Type and terms.** T2_digital (digital in-memory compute); complete declared terms: the constants above price the chip on R5's own path, unchanged.
+- **Outside part (`outside: declared_parts`).** gamma 1: the chip components' sum or a sourced area_global_fixed, as declared (R5's fixed-area refusal kept where neither is stated).
+- **Note.** ruling R1: the probe tile's measured terms, the router per NoC tile and the chip components stay as declared; no value moves.
+
+Every figure is cited by its evidence id (`area_rule/data/evidence/published_figures.json`); none is typed in this description.

@@ -13,10 +13,11 @@ Definitions (`06_parts/law.md` §1-§3; `lens_arch.md` §2.2-§2.3):
   writes.
 - Pi = cost of writing every tile of the program once / compute-only cost of one
   inference, per axis (energy, time); Pi/K at the declared batch K. [consts] The numerator
-  is the write law's (``scaling_ladder_reading.tile_writes``: the program's deployment load at
+  is the one load law's (``cost/absolute/walls/loads.py``: the program's deployment load at
   K = 1, serial), the pricer of every per-inference write, so its commit energy, its
   per-core e_core_program and its write-verify wall are Pi's; where the law refuses, the
-  axis is absent with its reason.
+  axis is absent with its reason. [U-ENERGY] In energy each cost carries the chip's static
+  power over its own wall (the load over its serial wall, one inference over its compute-only time).
   M's period writes are the same law on the program's period census.
 - Regime per band corner of Pi/K under caller-declared reading thresholds (the
   thresholds are reading constants of the caller, never framework constants);
@@ -158,10 +159,25 @@ def write_law_absence(terms: Mapping[str, Any]) -> str:
     return "no inference_batch_K declared" if terms else NO_PHYSICS
 
 
+def unlike_legs(legs: Optional[Mapping[str, Tuple[str, ...]]], compute_term: Any) -> Optional[str]:
+    """[V-M1] Why a ratio over ``compute_term``'s cost is not printed, None where it may be: a cost that carries a
+    static leg (a tuple of terms) is divided only by and into costs whose legs hold the same parts of the chip's static
+    power (``legs``: by column, ``host_split.static_legs``); a caller that states no legs for such a cost is refused."""
+    if isinstance(compute_term, str):
+        return None
+    if legs is None:
+        raise ValueError(f"a ratio over {compute_term} needs each cost's static legs stated (host_split.static_legs)")
+    held = {column: legs.get(column) for column in ("once", "period", "compute_only")}
+    if len(set(held.values())) == 1:
+        return None
+    return "the costs hold unlike static legs: " + "; ".join(
+        f"{column} {list(parts) if parts is not None else 'unstated'}" for column, parts in held.items())
+
+
 def axis_columns(
     terms: Mapping[str, Mapping[str, Band]], refusals: Mapping[str, Mapping[str, str]],
-    names: Sequence[str], *, k: Optional[int], reading: RegimeReading, multiplexed: bool, x: float,
-    passes: int, axis: str,
+    names: Sequence[Any], *, k: Optional[int], reading: RegimeReading, multiplexed: bool, x: float,
+    passes: int, axis: str, legs: Optional[Mapping[str, Tuple[str, ...]]] = None,
 ) -> Dict[str, Any]:
     """One axis of a row from the pricings (program, compute_only, no_host) and the write law's tile writes (once,
     period).
@@ -172,27 +188,32 @@ def axis_columns(
     (``multiplexed``) and none otherwise. An axis is absent when its compute is refused, or
     [consts] when the write law refuses writing every tile once (by the law's reason).
     [U-SH] The compute-only and boundary terms are the one share rule's (``host_split.shares``); a boundary absent
-    while the compute-only term prices is named (``boundary_absent``).
+    while the compute-only term prices is named (``boundary_absent``). [V-M1] A cost that carries a static leg is
+    divided only over like legs (``unlike_legs`` on ``legs``): otherwise Pi, Pi with the host and M are absent, the
+    two legs named.
     """
     compute_term, headline, programming, host_term = names
     t = {name: terms.get(name, {}) for name in ("program", "once", "period")}
     split = shares(terms, refusals, compute_term, headline)  # [U-SH] the one share rule of every plane
     compute, boundary, column = split["compute_only"], split["boundary"], share_column(split)
     once, period, host = t["once"].get(programming), t["period"].get(programming), t["program"].get(host_term)
-    pi = ratio(once, compute, f"Pi_{axis}")
-    with_host = None if host is None or compute is None else ratio(
-        once, add_bands([compute, host], "compute + host"), f"Pi_{axis} host included")
+    unlike = unlike_legs(legs, compute_term)  # [V-M1] a ratio only over like legs
+    divisor = None if unlike else compute
+    pi = ratio(once, divisor, f"Pi_{axis}")
+    with_host = None if host is None or divisor is None else ratio(
+        once, add_bands([divisor, host], "compute + host"), f"Pi_{axis} host included")
     pi_k = per_batch(pi, k)
     return {
         "terms": {**column["terms"], "once": triple(once), "period": triple(period), "host": triple(host)},
-        "absent": (None if compute is not None and once is not None else column["absent"] if compute is None else
+        "absent": (column["absent"] if compute is None else
                    "the write law refuses writing every tile once: "
-                   + (refusals.get("once", {}).get(programming) or "no write term is priced")),
+                   + (refusals.get("once", {}).get(programming) or "no write term is priced") if once is None else
+                   unlike),
         **({"boundary_absent": column["boundary_absent"]} if "boundary_absent" in column else {}),
         "host_share": share(host, t["program"].get(headline)),
         "pi": triple(pi), "pi_host_included": triple(with_host), "pi_over_k": triple(pi_k),
         "regime": regime(pi_k, reading, multiplexed),
-        "overhead": overhead(compute=compute, boundary=boundary, period_writes=period if multiplexed else None,
+        "overhead": overhead(compute=divisor, boundary=boundary, period_writes=period if multiplexed else None,
                              once=once, k=k, x=x, passes=passes) if passes >= 2 else None,
     }
 

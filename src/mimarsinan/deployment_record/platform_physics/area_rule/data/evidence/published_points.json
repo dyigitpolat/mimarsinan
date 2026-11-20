@@ -1,0 +1,649 @@
+{
+ "format_version": 1,
+ "what": "the published silicon and model points the held-out estimate prices: organization as expressions over the evidence, scopes, held-out prefixes, own units, declared kinds, the published array figure with its scope class",
+ "source": {
+  "parity.json": "V6/fix4/area/r2/parity.json",
+  "sha256": "07ccf9b32832b76f2c66529473faa6d07d5b2c5c7d9230e37a3082b6e5c70a1b"
+ },
+ "points": [
+  {
+   "name": "TrueNorth",
+   "type": "T1",
+   "node_nm": 28,
+   "held_out": [
+    "T1-TN-",
+    "S-SRAM-28"
+   ],
+   "own_units": [],
+   "organization": {
+    "memory_bits": "v('T1-TN-08')"
+   },
+   "scopes": [
+    {
+     "scope": "core",
+     "published_mm2": "v('T1-TN-01')",
+     "primary": true,
+     "class": "anchor",
+     "published_ids": [
+      "T1-TN-01"
+     ]
+    },
+    {
+     "scope": "die",
+     "published_mm2": "v('T1-TN-02')",
+     "primary": false,
+     "class": "anchor",
+     "count": "s('T1-TN-02', 'scope', '4096 cores (64 x 64)', 4096)",
+     "gamma": true,
+     "published_ids": [
+      "T1-TN-02"
+     ]
+    }
+   ],
+   "array_figure": {
+    "scope": "core",
+    "um2": "v('T1-TN-04') * v('T1-TN-05')",
+    "ids": [
+     "T1-TN-04",
+     "T1-TN-05"
+    ],
+    "published_um2_r2": 15953.92,
+    "scope_class_r2": [
+     "bitcells"
+    ]
+   }
+  },
+  {
+   "name": "ODIN",
+   "type": "T1",
+   "node_nm": 28,
+   "held_out": [
+    "T1-OD-"
+   ],
+   "own_units": [],
+   "organization": {
+    "memory_bits": "s('T1-OD-01', 'scope', '64k 4-bit synapses', 65536 * 4) + v('TXT-frenkel2018a-p03-266')"
+   },
+   "scopes": [
+    {
+     "scope": "core",
+     "published_mm2": "v('T1-OD-01')",
+     "primary": true,
+     "class": "anchor",
+     "published_ids": [
+      "T1-OD-01"
+     ]
+    }
+   ],
+   "array_figure": {
+    "scope": "core",
+    "um2": "(v('T1-OD-03', 0) + v('T1-OD-03', 1)) / 100 * (v('T1-OD-01') * 1e6)",
+    "ids": [
+     "T1-OD-03"
+    ],
+    "published_um2_r2": 56160.0,
+    "scope_class_r2": [
+     "macro_or_block"
+    ]
+   }
+  },
+  {
+   "name": "MorphIC",
+   "type": "T1",
+   "node_nm": 65,
+   "held_out": [
+    "T1-MO-"
+   ],
+   "own_units": [],
+   "organization": {
+    "memory_bits": "s('T1-MO-01', 'scope', '256 kB synapse SRAM, 32 kB neuron SRAM', (256 + 32) * 8192) / s('T1-MO-01', 'scope', '4 cores', 4)"
+   },
+   "scopes": [
+    {
+     "scope": "core (derived)",
+     "published_mm2": "v('T1-MO-01', 1) * (1 - (v('T1-MO-02', key='router L1') + v('T1-MO-02', key='router L2') + v('T1-MO-02', key='clock generator')) / 100) / s('T1-MO-01', 'scope', '4 cores', 4)",
+     "primary": true,
+     "class": "independent",
+     "published_ids": [
+      "T1-MO-01",
+      "T1-MO-02"
+     ],
+     "published_evidence_kind": "derived",
+     "derivation": "the chip without pads less its chip-level routers and clock generator, over its four cores (M6, N-9)"
+    },
+    {
+     "scope": "chip w/o pads",
+     "published_mm2": "v('T1-MO-01', 1)",
+     "primary": false,
+     "class": "independent",
+     "count": "s('T1-MO-01', 'scope', '4 cores', 4)",
+     "published_ids": [
+      "T1-MO-01"
+     ]
+    },
+    {
+     "scope": "die",
+     "published_mm2": "v('T1-MO-01', 0)",
+     "primary": false,
+     "class": "independent",
+     "count": "s('T1-MO-01', 'scope', '4 cores', 4)",
+     "gamma": true,
+     "published_ids": [
+      "T1-MO-01"
+     ]
+    }
+   ],
+   "array_figure": {
+    "scope": "chip w/o pads",
+    "um2": "v('T1-MO-01', 2) * 1e6",
+    "ids": [
+     "T1-MO-01"
+    ],
+    "published_um2_r2": 1590000.0,
+    "scope_class_r2": [
+     "macro_or_block"
+    ]
+   }
+  },
+  {
+   "name": "ReckOn",
+   "type": "T1",
+   "node_nm": 28,
+   "held_out": [
+    "T1-RK-"
+   ],
+   "own_units": [],
+   "organization": {
+    "memory_bits": "s('T1-RK-01', 'scope', '(138 kB SRAM total)', 138 * 8192)"
+   },
+   "scopes": [
+    {
+     "scope": "core",
+     "published_mm2": "v('T1-RK-01')",
+     "primary": true,
+     "class": "independent",
+     "published_ids": [
+      "T1-RK-01"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Loihi",
+   "type": "T1",
+   "node_nm": 14,
+   "held_out": [
+    "T1-LO-"
+   ],
+   "own_units": [],
+   "organization": {
+    "memory_bits": "v('TXT-intel_loihi2_brief-p07-16-a')"
+   },
+   "scopes": [
+    {
+     "scope": "core (vendor)",
+     "published_mm2": "v('T1-LO-05')",
+     "primary": true,
+     "class": "cited",
+     "published_ids": [
+      "T1-LO-05"
+     ]
+    },
+    {
+     "scope": "die",
+     "published_mm2": "v('T1-LO-01')",
+     "primary": false,
+     "class": "anchor",
+     "count": "s('T1-LO-01', 'quote', '128 neuromorphic cores', 128)",
+     "gamma": true,
+     "published_ids": [
+      "T1-LO-01"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Loihi 2",
+   "type": "T1",
+   "node_nm": 4,
+   "node_reading": "'Intel 4' read as 4 nm by name",
+   "held_out": [
+    "T1-L2-"
+   ],
+   "own_units": [],
+   "organization": {
+    "memory_bits": "v('TXT-intel_loihi2_brief-p07-16-b')"
+   },
+   "scopes": [
+    {
+     "scope": "core (vendor)",
+     "published_mm2": "v('T1-L2-02')",
+     "primary": true,
+     "class": "cited",
+     "published_ids": [
+      "T1-L2-02"
+     ]
+    },
+    {
+     "scope": "die",
+     "published_mm2": "v('T1-L2-01')",
+     "primary": false,
+     "class": "cited",
+     "count": "s('T1-L2-01', 'scope', '128 neuron cores', 128)",
+     "gamma": true,
+     "published_ids": [
+      "T1-L2-01"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "jiang2023a macro",
+   "type": "T2_digital",
+   "node_nm": 16,
+   "held_out": [
+    "T2-JI-"
+   ],
+   "own_units": [
+    "T2-JI-01"
+   ],
+   "cell_kind": "cim_logic_rule_6t_digital",
+   "organization": {
+    "cells": "s('T2-JI-01', 'quote', '128KB', 128 * 8192)"
+   },
+   "scopes": [
+    {
+     "scope": "macro",
+     "published_mm2": "v('T2-JI-02')",
+     "primary": true,
+     "class": "cited",
+     "published_ids": [
+      "T2-JI-02"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "IMAGINE",
+   "type": "T2_analog",
+   "node_nm": 22,
+   "held_out": [
+    "T2-IM-",
+    "S-SRAM-22"
+   ],
+   "own_units": [
+    "T2-IM-04",
+    "S-SRAM-22"
+   ],
+   "cell_kind": "cim_10t1c_mom",
+   "converter": {
+    "kind": "sar_bitcell_reusing",
+    "count": "s('T2-IM-01', 'scope', '1152 x 256', 256) / s('T2-IM-03', 'scope', 'one per four columns', 4)",
+    "bits": "v('TXT-kneip2024imagine-p06-100')"
+   },
+   "organization": {
+    "cells": "s('T2-IM-01', 'scope', '1152 x 256 10T1C DP array', 1152 * 256)"
+   },
+   "scopes": [
+    {
+     "scope": "macro",
+     "published_mm2": "v('T2-IM-01', 0)",
+     "primary": true,
+     "class": "independent",
+     "published_ids": [
+      "T2-IM-01"
+     ]
+    }
+   ],
+   "array_figure": {
+    "scope": "macro",
+    "um2": "v('T2-IM-02') / 100 * v('T2-IM-01', 0) * 1e6",
+    "ids": [
+     "T2-IM-02"
+    ],
+    "published_um2_r2": 145040.0,
+    "scope_class_r2": [
+     "macro_or_block"
+    ]
+   }
+  },
+  {
+   "name": "CAP-RAM",
+   "type": "T2_analog",
+   "node_nm": 65,
+   "held_out": [
+    "T2-CR-"
+   ],
+   "own_units": [
+    "T2-CR-02",
+    "T2-CR-03"
+   ],
+   "cell_kind": "cim_amortized_6t_charge_domain",
+   "converter": {
+    "kind": "sar_dedicated",
+    "count": "s('T2-CR-01', 'scope', '32 ciSAR ADCs', 32)",
+    "bits": "s('T2-CR-03', 'scope', '7-bit', 7)",
+    "own_unit": "T2-CR-03"
+   },
+   "organization": {
+    "cells": "s('T2-CR-01', 'scope', '512 x 128 6T array (8 kB)', 512 * 128)"
+   },
+   "scopes": [
+    {
+     "scope": "macro",
+     "published_mm2": "v('T2-CR-01')",
+     "primary": true,
+     "class": "independent",
+     "published_ids": [
+      "T2-CR-01"
+     ]
+    }
+   ],
+   "array_figure": {
+    "scope": "macro",
+    "um2": "v('T2-CR-02', key='8KB SRAM array') / 100 * v('T2-CR-01') * 1e6",
+    "ids": [
+     "T2-CR-02"
+    ],
+    "published_um2_r2": 112054.0,
+    "scope_class_r2": [
+     "macro_or_block"
+    ]
+   }
+  },
+  {
+   "name": "Jia 2020 processor",
+   "type": "T2_analog",
+   "node_nm": 65,
+   "held_out": [
+    "T2-JA-"
+   ],
+   "own_units": [],
+   "cell_kind": "cim_8t_multiplying_bitcell_mom",
+   "scope_mismatch": true,
+   "converter": {
+    "kind": "sar_dedicated",
+    "count": "s('T2-JA-01', 'scope', 'CIMA 2304 x 256', 256)",
+    "bits": "s('T2-JA-02', 'scope', '8-b SAR ADC', 8)"
+   },
+   "organization": {
+    "cells": "s('T2-JA-01', 'scope', 'CIMA 2304 x 256', 2304 * 256)",
+    "memory_beside": {
+     "bits": "s('T2-JA-01', 'scope', '128 kB P/DMEM', 128 * 8192)",
+     "type": "T1"
+    }
+   },
+   "scopes": [
+    {
+     "scope": "die",
+     "published_mm2": "v('T2-JA-01')",
+     "primary": true,
+     "class": "independent",
+     "gamma": true,
+     "published_ids": [
+      "T2-JA-01"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "NeuRRAM",
+   "type": "T3",
+   "node_nm": 130,
+   "held_out": [
+    "T3-NR-"
+   ],
+   "own_units": [
+    "T3-NR-03"
+   ],
+   "cell_kind": "rram_1t1r",
+   "converter": {
+    "kind": "neuron_integrating",
+    "count": "s('T3-NR-04', 'scope', '256 CMOS neurons', 256)",
+    "bits": "v('PROFILE-neurram-validity-notes')",
+    "own_unit": "T3-NR-03"
+   },
+   "organization": {
+    "cells": "s('T3-NR-04', 'scope', 'each core 256 x 256 RRAM cells', 256 * 256)"
+   },
+   "scopes": [
+    {
+     "scope": "die",
+     "published_mm2": "v('T3-NR-01', 0) * v('T3-NR-01', 1)",
+     "primary": true,
+     "class": "cited",
+     "count": "v('T3-NR-04')",
+     "gamma": true,
+     "published_ids": [
+      "T3-NR-01"
+     ]
+    }
+   ],
+   "array_figure": {
+    "scope": "die",
+    "um2": "v('T3-NR-02', key='RRAMs') / 100 * (v('T3-NR-01', 0) * v('T3-NR-01', 1)) * 1e6",
+    "ids": [
+     "T3-NR-02"
+    ],
+    "published_um2_r2": 19051200.0,
+    "scope_class_r2": [
+     "macro_or_block"
+    ]
+   }
+  },
+  {
+   "name": "ISAAC (model)",
+   "type": "T3",
+   "node_nm": 32,
+   "held_out": [
+    "T3-IS-"
+   ],
+   "own_units": [],
+   "model": true,
+   "cell_kind": "rram_crosspoint",
+   "converter": {
+    "kind": "sar_gsps",
+    "per_array": "s('T3-IS-09', 'scope', 'number 8', 8) / s('T3-IS-12', 'scope', 'number 8', 8)",
+    "bits": "8"
+   },
+   "organization": {
+    "arrays": "s('T3-IS-16', 'scope', 'number 12', 12) * s('T3-IS-12', 'scope', 'number 8', 8)",
+    "array_cells": "s('T3-IS-12', 'scope', 'size 128 \u00d7 128', 128 * 128)"
+   },
+   "scopes": [
+    {
+     "scope": "tile",
+     "published_mm2": "v('T3-IS-17')",
+     "primary": true,
+     "class": "anchor (model)",
+     "published_ids": [
+      "T3-IS-17"
+     ]
+    },
+    {
+     "scope": "chip",
+     "published_mm2": "v('T3-IS-20')",
+     "primary": false,
+     "class": "anchor (model)",
+     "count": "s('T3-IS-18', 'quote', \"'168 Tile Total'\", 168)",
+     "fixed_mm2": [
+      {
+       "expression": "v('T3-IS-19')",
+       "fallback": "v('T3-PU-08')"
+      }
+     ],
+     "published_ids": [
+      "T3-IS-20"
+     ]
+    }
+   ],
+   "array_figure": {
+    "scope": "tile",
+    "um2": "v('T3-IS-12') * s('T3-IS-16', 'scope', 'number 12', 12) * 1e6",
+    "ids": [
+     "T3-IS-12",
+     "T3-IS-16"
+    ],
+    "published_um2_r2": 2400.0,
+    "scope_class_r2": [
+     "macro_or_block",
+     "none"
+    ]
+   }
+  },
+  {
+   "name": "PUMA (model)",
+   "type": "T3",
+   "node_nm": 32,
+   "held_out": [
+    "T3-PU-"
+   ],
+   "own_units": [],
+   "model": true,
+   "cell_kind": "rram_crosspoint",
+   "converter": {
+    "kind": "sar_gsps",
+    "per_array": "s('T3-IS-09', 'scope', 'number 8', 8) / s('T3-IS-12', 'scope', 'number 8', 8)",
+    "bits": "8"
+   },
+   "organization": {
+    "arrays": "s('T3-PU-02', 'scope', '# per tile 8', 8) * s('T3-PU-01', 'scope', '# per core 2', 2) * v('TXT-ankit2019puma-p05-31')",
+    "array_cells": "s('T3-PU-01', 'scope', 'dimensions 128\u00d7128', 128 * 128)"
+   },
+   "scopes": [
+    {
+     "scope": "tile",
+     "published_mm2": "v('T3-PU-05')",
+     "primary": true,
+     "class": "cited (model)",
+     "published_ids": [
+      "T3-PU-05"
+     ]
+    },
+    {
+     "scope": "node",
+     "published_mm2": "v('T3-PU-07')",
+     "primary": false,
+     "class": "cited (model)",
+     "count": "s('T3-PU-05', 'scope', '# per node 138', 138)",
+     "fixed_mm2": [
+      {
+       "expression": "v('T3-IS-19')",
+       "fallback": "v('T3-PU-08')"
+      },
+      {
+       "expression": "v('T3-PU-06')"
+      }
+     ],
+     "published_ids": [
+      "T3-PU-07"
+     ]
+    },
+    {
+     "scope": "MVMU",
+     "published_mm2": "v('T3-PU-01')",
+     "primary": false,
+     "class": "cited (model)",
+     "sub_arrays": "v('TXT-ankit2019puma-p05-31')",
+     "published_ids": [
+      "T3-PU-01"
+     ]
+    },
+    {
+     "scope": "core",
+     "published_mm2": "v('T3-PU-02')",
+     "primary": false,
+     "class": "cited (model)",
+     "sub_arrays": "s('T3-PU-01', 'scope', '# per core 2', 2) * v('TXT-ankit2019puma-p05-31')",
+     "published_ids": [
+      "T3-PU-02"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "HERMES 64-core",
+   "type": "T4",
+   "node_nm": 14,
+   "held_out": [
+    "T4-HE-"
+   ],
+   "own_units": [],
+   "cell_kind": "pcm_analog_unit_cell",
+   "converter": {
+    "kind": "cco_time_based",
+    "count": "v('T4-HE-04')"
+   },
+   "organization": {
+    "cells": "s('T4-HE-02', 'scope', '256 x 256 unit cells', 256 * 256)"
+   },
+   "scopes": [
+    {
+     "scope": "core",
+     "published_mm2": "v('T4-HE-02')",
+     "primary": true,
+     "class": "anchor",
+     "published_ids": [
+      "T4-HE-02"
+     ]
+    },
+    {
+     "scope": "die",
+     "published_mm2": "v('T4-HE-01')",
+     "primary": false,
+     "class": "anchor",
+     "count": "s('T4-HE-01', 'scope', '64 cores', 64)",
+     "gamma": true,
+     "published_ids": [
+      "T4-HE-01"
+     ]
+    }
+   ],
+   "array_figure": {
+    "scope": "core",
+    "um2": "v('T4-HE-03', key='PCM array') / 100 * (s('T4-HE-01', 'scope', '64 cores', 64) * v('T4-HE-02') * 1e6 / (1 - v('T4-HE-03', key='GDPU') / 100)) / s('T4-HE-01', 'scope', '64 cores', 64)",
+    "ids": [
+     "T4-HE-03",
+     "T4-HE-01",
+     "T4-HE-02"
+    ],
+    "published_um2_r2": 522000.0,
+    "scope_class_r2": [
+     "macro_or_block",
+     "none"
+    ]
+   }
+  },
+  {
+   "name": "HERMES-core (JSSC)",
+   "type": "T4",
+   "node_nm": 14,
+   "held_out": [
+    "T4-HC-"
+   ],
+   "own_units": [
+    "T4-HC-02"
+   ],
+   "cell_kind": "pcm_analog_unit_cell",
+   "converter": {
+    "kind": "cco_time_based",
+    "count": "s('T4-HC-01', 'scope', '256 CCO-based ADCs', 256)",
+    "own_unit": "T4-HC-02"
+   },
+   "organization": {
+    "cells": "s('T4-HC-03', 'scope', '256 x 256 8T4R unit cells', 256 * 256)"
+   },
+   "scopes": [
+    {
+     "scope": "core",
+     "published_mm2": "v('T4-HC-03')",
+     "primary": true,
+     "class": "cited",
+     "published_ids": [
+      "T4-HC-03"
+     ]
+    }
+   ]
+  }
+ ]
+}

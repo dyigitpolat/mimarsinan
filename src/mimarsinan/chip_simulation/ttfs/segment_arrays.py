@@ -10,6 +10,7 @@ import numpy as np
 
 from mimarsinan.mapping.packing.executed_reads import bank_read
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 from mimarsinan.mapping.support.spike_source_spans import SpikeSourceSpan, compress_spike_sources
 
 #: Detects float dust on an integral weight, bias or threshold (the integer chip's check).
@@ -132,7 +133,7 @@ def _segment_ttfs_arrays_from_mapping_uncached(mapping: Any) -> SegmentTtfsArray
             hw_biases.append(None)
         else:
             hw_biases.append(np.asarray(bias[:used_neu], dtype=np.float64))
-        thresholds.append(np.array(float(core.threshold), dtype=np.float64))
+        thresholds.append(np.array(core_threshold(core, "the TTFS executor"), dtype=np.float64))
         latencies.append(int(core.latency) if core.latency is not None else 0)
 
     n_out = len(mapping.output_sources.flatten())

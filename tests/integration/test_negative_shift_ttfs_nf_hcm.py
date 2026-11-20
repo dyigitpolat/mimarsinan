@@ -13,6 +13,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.mapping.ir_mapping_class import IRMapping
@@ -24,7 +25,7 @@ from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
 from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
-    calibration_forward_for_mode,
+    calibration_forward_for_point,
     transfer_negative_shifts_to_ir,
     propagate_negative_shifts_to_hybrid,
 )
@@ -67,7 +68,7 @@ def _build_with_ttfs(mode, T, *, shift: bool, calib_x=None):
         apply_negative_value_shifts(
             flow,
             calibrated_compute_op_minima(
-                flow, calib_x, T, forward_fn=calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW),
+                flow, calib_x, T, forward_fn=calibration_forward_for_point(point_of_mode(mode)),
             ),
         )
     repr_.assign_perceptron_indices()
@@ -97,7 +98,7 @@ def test_analytical_ttfs_nf_hcm_parity_with_and_without_shift():
     mode = "ttfs_quantized"
     T = 8
     x = torch.rand(4, 8, dtype=torch.float64)
-    fwd = calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW)
+    fwd = calibration_forward_for_point(point_of_mode(mode))
 
     flow_s, hcm_s = _build_with_ttfs(mode, T, shift=True)
     flow_n, hcm_n = _build_with_ttfs(mode, T, shift=False)
@@ -120,7 +121,7 @@ def test_shift_moves_boundary_into_encodable_domain(mode):
     T = 8
     torch.manual_seed(7)
     x = torch.rand(16, 8, dtype=torch.float64)
-    fwd = calibration_forward_for_mode(mode, soma_law=DEFAULT_SOMA_LAW)
+    fwd = calibration_forward_for_point(point_of_mode(mode))
 
     flow, _ = _build_with_ttfs(mode, T, shift=True, calib_x=x)
     recorder: dict = {}

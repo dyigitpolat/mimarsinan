@@ -12,6 +12,7 @@ from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import HeatmapScaleFamily
 from mimarsinan.gui.snapshot.util.helpers import _histogram
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_nodes import process_ir_graph_node
+from mimarsinan.mapping.support.neuron_thresholds import report_registers
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     RESOURCE_KIND_IR_BANK_HEATMAP,
     make_resource_ref,
@@ -97,7 +98,7 @@ def snapshot_ir_graph(
 
     groups, group_edges = _build_layer_groups(nodes_info, deduped_edges, node_group_map)
 
-    thresholds = [c["threshold"] for c in neural_cores]
+    thresholds = [t for c in neural_cores for t in report_registers(c["threshold"])]  # [U-PCH2] every register
     latencies = [c["latency"] for c in neural_cores if c["latency"] is not None]
     axon_counts = [c["axons"] for c in neural_cores]
     neuron_counts = [c["neurons"] for c in neural_cores]

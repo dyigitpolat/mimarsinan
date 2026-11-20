@@ -20,7 +20,10 @@ CENSUS_SPLIT = "validation"
 
 
 def require_recorded_spikes(plan) -> None:
-    """The census reads the per-cycle executor's spike record (LIF, cascaded TTFS); other semantics refuse by name."""
+    """The census reads the executor of record's spike record (LIF, cascaded TTFS); other semantics refuse by name.
+    [U-LIF2 W13] Under integrate then emit that record is the gated cycle-level executor's (its reference loop records
+    every arrival of a core's integration window), so the census prices the executed spikes with no external
+    simulator."""
     if plan.spiking_mode == "lif" or is_cascaded_ttfs(plan.spiking_mode, plan.ttfs_cycle_schedule):
         return
     raise EventCensusRefusal(

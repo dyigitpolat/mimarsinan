@@ -20,6 +20,8 @@ from mimarsinan.deployment_record.platform_physics import (
     get_platform_physics,
     keys_in_group,
 )
+from mimarsinan.deployment_record.platform_physics.area_rule.declaration import AREA_RULE_AXES as _AREA_RULE_AXES
+from mimarsinan.deployment_record.platform_physics.area_rule.rule import wizard_also
 from mimarsinan.deployment_record.platform_physics.resolve import (
     resolve_platform_physics,
 )
@@ -88,16 +90,32 @@ _AXIS_HEAD_CONSTANT = {
 _AXIS_ALSO_CONSTANT = {"chip_area_mm2": "area_global_fixed"}
 
 
+def _rule_prices(physics: Optional[PlatformPhysics], axis: str) -> bool:
+    """[U-AREA] For a block of a type rule or an anchor on an axis it prices (``_AREA_RULE_AXES``, the declaration's
+    one tuple) the block is the head; the outside field names what stands beside it (``wizard_also``)."""
+    block = getattr(physics, "area_rule", None)
+    return axis in _AREA_RULE_AXES and block is not None and block.terms != "complete"
+
+
+def axis_also_constant(physics: Optional[PlatformPhysics], axis: str) -> Optional[str]:
+    """What ``axis`` needs beside its head: R5's constant, or for a block whose outside part is not a declared part,
+    the block's own source (``area_rule.anchor.die_mm2`` or ``area_rule.type``)."""
+    block = getattr(physics, "area_rule", None)
+    if axis in _AREA_RULE_AXES and block is not None and block.outside != "declared_parts":
+        return wizard_also(block)
+    return _AXIS_ALSO_CONSTANT.get(axis)
+
+
 def _first_missing(physics: Optional[PlatformPhysics], axis: str) -> str:
     """The constant this axis needs and does not have — named, not enumerated. A
     declared alternative is never named missing: the axis then waits on a quantity."""
     candidates = _AXIS_HEAD_CONSTANT.get(axis, ())
     if physics is None:
         return candidates[0] if candidates else "a declared physics profile"
-    if candidates and not any(physics.has(key) for key in candidates):
+    if candidates and not any(physics.has(key) for key in candidates) and not _rule_prices(physics, axis):
         return candidates[0]
-    also = _AXIS_ALSO_CONSTANT.get(axis)
-    if also is not None and not physics.has(also):
+    also = axis_also_constant(physics, axis)
+    if also is not None and also in PHYSICS_CONSTANTS and not physics.has(also):
         return also
     return "a quantity this run does not produce"
 

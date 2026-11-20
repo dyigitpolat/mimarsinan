@@ -14,8 +14,8 @@ from mimarsinan.chip_simulation.deployed_host import deployed_host_device
 from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     apply_input_shifts_numpy, assemble_segment_input_numpy, execute_compute_op_numpy, gather_final_output_numpy, resolve_stage_compute_scales, store_segment_output_numpy,)
-from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
-    enumerate_execution_stages, run_hybrid_stages,)
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import enumerate_execution_stages, run_hybrid_stages
+from mimarsinan.chip_simulation.hybrid_run.output_decode import decode_held, program_output_gauge
 from mimarsinan.chip_simulation.lava_loihi.core_lava import LavaCoreMixin, _subtractive_lif_cls
 from mimarsinan.chip_simulation.lava_loihi.segment_runner import LavaSegmentMixin
 from mimarsinan.chip_simulation.lava_loihi.timing import _RunProfile, _StageTrace
@@ -225,7 +225,7 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         )
 
         final = gather_final_output_numpy(self.mapping.output_sources, state_buffer, x_flat, N, dtype=SPIKING_ARITHMETIC.final_read_np)
-        preds = np.argmax(final, axis=1)
+        preds = np.argmax(decode_held(final, program_output_gauge(self.mapping)), axis=1)  # [U-TGAUGE2] value classes
         correct = int((preds == y_np).sum())
         self._accuracy = correct / max(1, N)
 

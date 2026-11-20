@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.sanafe import net_synth
 from mimarsinan.chip_simulation.sanafe.net_synth import (
     build_network_for_segment,
@@ -138,7 +139,7 @@ def test_build_network_creates_one_lif_group_per_hard_core(monkeypatch):
 
     _, core_to_group, _, _ = build_network_for_segment(
         arch, _fake_hcm(core_a, core_b),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
 
     assert len(core_to_group) == 2
@@ -153,7 +154,7 @@ def test_build_network_lif_neurons_map_to_their_hardcore_sanafe_core(monkeypatch
     cores = [_fake_hard_core(axons_per_core=1, neurons_per_core=1) for _ in range(3)]
     _, c2g, _, _ = build_network_for_segment(
         arch, _fake_hcm(*cores),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     for hc_idx, group in c2g.items():
         for n in group:
@@ -165,7 +166,7 @@ def test_build_network_lif_soma_hw_and_synapse_hw_are_named(monkeypatch):
     _, c2g, _, _ = build_network_for_segment(
         _fake_arch(1),
         _fake_hcm(_fake_hard_core(axons_per_core=1, neurons_per_core=2)),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     for n in c2g[0]:
         assert n.soma_hw_name == SOMA_LIF_NAME
@@ -179,7 +180,7 @@ def test_build_network_lif_threshold_and_bias_are_set_per_neuron(monkeypatch):
                            hardware_bias=bias)
     _, c2g, _, _ = build_network_for_segment(
         _fake_arch(1), _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     for i, n in enumerate(c2g[0]):
         assert n.model_attributes["threshold"] == 1.5
@@ -191,7 +192,7 @@ def test_build_network_no_bias_attribute_when_hardware_bias_is_none(monkeypatch)
     core = _fake_hard_core(axons_per_core=1, neurons_per_core=2, hardware_bias=None)
     _, c2g, _, _ = build_network_for_segment(
         _fake_arch(1), _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     for n in c2g[0]:
         assert "bias" not in n.model_attributes
@@ -217,7 +218,7 @@ def test_build_network_input_neuron_per_input_axon_on_same_core(monkeypatch):
     )
     _, c2g, ci, _ = build_network_for_segment(
         arch, _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     assert set(ci.keys()) == {(0, 0), (0, 1)}
     # Each input neuron is on the same SANA-FE core as core 0.
@@ -234,7 +235,7 @@ def test_build_network_no_input_neurons_when_no_input_axons(monkeypatch):
     _, _, ci, ao = build_network_for_segment(
         _fake_arch(1),
         _fake_hcm(_fake_hard_core(axons_per_core=1, neurons_per_core=1)),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     assert ci == {}
     assert ao == {}
@@ -256,7 +257,7 @@ def test_build_network_two_hard_cores_each_with_own_input_neurons(monkeypatch):
     )
     _, c2g, ci, _ = build_network_for_segment(
         arch, _fake_hcm(core_a, core_b),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     assert (0, 0) in ci and (1, 0) in ci
     assert ci[(0, 0)].mapped_core is arch.tiles[0].cores[0]
@@ -278,7 +279,7 @@ def test_build_network_input_axon_synapse_carries_weight_and_hw_name(monkeypatch
     )
     _, c2g, ci, _ = build_network_for_segment(
         _fake_arch(1), _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     src = ci[(0, 0)]
     conns = [(c.index, w) for c, w in src.connections if c.group is c2g[0]]
@@ -300,7 +301,7 @@ def test_build_network_cross_core_axon_wires_from_source_core_neuron(monkeypatch
     )
     _, c2g, _, _ = build_network_for_segment(
         _fake_arch(2), _fake_hcm(src_core, dst_core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     src_neuron = c2g[0][1]
     assert any(
@@ -321,7 +322,7 @@ def test_build_network_off_axons_are_skipped(monkeypatch):
     )
     _, c2g, ci, _ = build_network_for_segment(
         _fake_arch(1), _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     # Only one input neuron, only one synapse, only the input[0] weight.
     assert set(ci.keys()) == {(0, 1)}
@@ -338,7 +339,7 @@ def test_build_network_always_on_axon_wires_from_local_always_on_neuron(monkeypa
     )
     _, c2g, _, ao = build_network_for_segment(
         _fake_arch(1), _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     assert 0 in ao
     weights = [w["weight"] for c, w in ao[0].connections if c.group is c2g[0]]
@@ -358,7 +359,7 @@ def test_build_network_duplicate_axons_to_same_source_accumulate_weights(monkeyp
     )
     _, c2g, ci, _ = build_network_for_segment(
         _fake_arch(1), _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     # Two separate input neurons (one per axon), each with its own synapse.
     src_a, src_b = ci[(0, 0)], ci[(0, 1)]
@@ -377,7 +378,7 @@ def test_build_network_zero_weights_dont_create_synapses(monkeypatch):
     )
     _, c2g, ci, _ = build_network_for_segment(
         _fake_arch(1), _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     targets = [(c.index, w["weight"]) for c, w in ci[(0, 0)].connections if c.group is c2g[0]]
     assert targets == [(1, pytest.approx(4.0))]
@@ -402,7 +403,7 @@ def test_set_input_spike_trains_uses_logical_input_index(monkeypatch):
     hcm = _fake_hcm(core)
     _, _, ci, _ = build_network_for_segment(
         _fake_arch(1), hcm,
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     encoded = np.zeros((1, 8, 4), dtype=np.float32)
     encoded[0, 5, :] = [1, 0, 1, 0]
@@ -421,7 +422,7 @@ def test_set_always_on_spike_trains_fires_every_cycle(monkeypatch):
     )
     _, _, _, ao = build_network_for_segment(
         _fake_arch(1), _fake_hcm(core),
-        tile_offset=0, core_offset=0,
+        tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     set_always_on_spike_trains(ao, T=5)
     assert ao[0].model_attributes["spikes"] == [1, 1, 1, 1, 1]
@@ -445,7 +446,7 @@ def test_build_network_resolves_each_core_matrix_once(monkeypatch):
         axon_sources=[SpikeSource(-1, i, True, False, False) for i in range(3)],
     )
     build_network_for_segment(
-        _fake_arch(1), _fake_hcm(core), tile_offset=0, core_offset=0,
+        _fake_arch(1), _fake_hcm(core), tile_offset=0, core_offset=0, point=point_of_mode("lif", "cascaded"),
     )
     assert calls["n"] == 1, (
         f"{calls['n']} resolutions for one core with 3x4 weights: the "

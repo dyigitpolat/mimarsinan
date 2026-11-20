@@ -11,6 +11,28 @@ from mimarsinan.models.nn.lif_kernels import (
 )
 
 
+def lif_core_integrate(
+    memb: torch.Tensor,
+    contribution: torch.Tensor,
+    *,
+    lattice_scale: float | None = None,
+    membrane_bounds: tuple[float, float] | None = None,
+    membrane_rail_assert: bool = False,
+) -> None:
+    """The integration half of the LIF cycle, in place: add a precomputed
+    contribution, hold the declared register (``membrane_bounds`` clamps,
+    ``membrane_rail_assert`` refuses a rail instead) and project onto the chip
+    lattice (``lattice_scale``). [U-LIF2 W9] With the fire gate closed, this
+    alone is a cycle of integrate then emit's integration window."""
+    memb += contribution
+    if membrane_bounds is not None:
+        if membrane_rail_assert:
+            enforce_membrane_rails(memb, membrane_bounds)
+        memb.clamp_(membrane_bounds[0], membrane_bounds[1])
+    if lattice_scale is not None:
+        snap_membrane_to_lattice(memb, lattice_scale)
+
+
 def lif_core_advance(
     memb: torch.Tensor,
     contribution: torch.Tensor,
@@ -32,13 +54,8 @@ def lif_core_advance(
     today's unbounded arithmetic bit-identical. ``membrane_rail_assert`` refuses
     a rail instead of clamping onto it, for the law that claims to be the
     unbounded accumulator (``SomaLaw.asserts_no_saturation``)."""
-    memb += contribution
-    if membrane_bounds is not None:
-        if membrane_rail_assert:
-            enforce_membrane_rails(memb, membrane_bounds)
-        memb.clamp_(membrane_bounds[0], membrane_bounds[1])
-    if lattice_scale is not None:
-        snap_membrane_to_lattice(memb, lattice_scale)
+    lif_core_integrate(memb, contribution, lattice_scale=lattice_scale, membrane_bounds=membrane_bounds,
+                       membrane_rail_assert=membrane_rail_assert)
     return lif_fire_and_reset(
         memb,
         threshold,

@@ -18,6 +18,7 @@ from mimarsinan.config_schema.registry.types import (
 )
 from mimarsinan.config_schema.registry.value_schema import ValueSchema, enum_legal_set
 from mimarsinan.config_schema.registry.entries_platform_backends import (
+    ENABLE_BASIS,
     _meta_backend_enable,
     _why_backend_enable,
 )
@@ -149,10 +150,9 @@ ENTRIES = _BIAS_ENTRIES + (
            "runs. Recipe default: on where the backend supports the mode; "
            "declare false to skip the vehicle (a stored override); an "
            "explicit on for an unsupported mode is rejected.",
-       derived_from=("spiking_mode", "ttfs_cycle_schedule"),
-       why=_why_backend_enable(
-           "nevresim", "nevresim has no synchronized-window backend"),
-       meta=_meta_backend_enable("nevresim"), provenance="ConversionPolicy recipe"),
+       derived_from=ENABLE_BASIS,
+       why=_why_backend_enable("enable_nevresim_simulation", "nevresim has no synchronized-TTFS backend"),
+       meta=_meta_backend_enable("enable_nevresim_simulation"), provenance="ConversionPolicy recipe"),
     # The consumer's legal set and reading (connectivity.py: compile_time or runtime, read stripped).
     _E("nevresim_connectivity_mode", group="deployment_target", owner="nevresim_backend",
        type=T.ENUM, **enum_legal_set(get_args(ConnectivityMode)), category=Category.ADVANCED,
@@ -164,10 +164,9 @@ ENTRIES = _BIAS_ENTRIES + (
        category=Category.DERIVED, derivation="derived", exposure="derived",
        label="Loihi Simulation",
        doc="Whether the Lava Loihi spike-parity gate runs (recipe: on where supported; explicit-on for an unsupported mode is rejected).",
-       derived_from=("spiking_mode", "ttfs_cycle_schedule"),
-       why=_why_backend_enable(
-           "loihi", "Loihi/Lava only implements LIF dynamics"),
-       meta=_meta_backend_enable("loihi"), provenance="ConversionPolicy recipe"),
+       derived_from=ENABLE_BASIS,
+       why=_why_backend_enable("enable_loihi_simulation", "Loihi/Lava only implements LIF dynamics"),
+       meta=_meta_backend_enable("enable_loihi_simulation"), provenance="ConversionPolicy recipe"),
     _E("loihi_parity_sample_index", group="deployment_target", owner="loihi_backend",
        type=T.INT, category=Category.ADVANCED, label="Loihi Parity Sample Index",
        doc="Test-set sample index for the HCM-vs-Lava spike-parity check.",
@@ -180,10 +179,9 @@ ENTRIES = _BIAS_ENTRIES + (
        label="SANA-FE Simulation",
        doc="Whether the SANA-FE simulator (parity + energy/latency aggregates) "
            "runs (recipe: on where supported; explicit-on for an unsupported mode is rejected).",
-       derived_from=("spiking_mode", "ttfs_cycle_schedule"),
-       why=_why_backend_enable(
-           "sanafe", "SANA-FE does not support this mode"),
-       meta=_meta_backend_enable("sanafe"), provenance="ConversionPolicy recipe"),
+       derived_from=ENABLE_BASIS,
+       why=_why_backend_enable("enable_sanafe_simulation", "SANA-FE does not support this mode"),
+       meta=_meta_backend_enable("enable_sanafe_simulation"), provenance="ConversionPolicy recipe"),
     _E("sanafe_sample_count", group="deployment_target", owner="sanafe_backend",
        type=T.INT, category=Category.ADVANCED, exposure="user", label="SANA-FE Sample Count",
        doc="Deterministic test samples run through SANA-FE.", bounds=(1, None),

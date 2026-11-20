@@ -14,12 +14,13 @@ from mimarsinan.chip_simulation.backend import (
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.config_schema.registry.decision_classes import FUNCTION_BEARING, class_of_path
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from spiking_points import declaring_fire_while_integrating
 
 
 def _plan(**cfg) -> DeploymentPlan:
     base = {"configuration_mode": "user", "spiking_mode": "lif", "model_type": "mlp_mixer"}
     base.update(cfg)
-    return DeploymentPlan.resolve(base)
+    return DeploymentPlan.resolve(declaring_fire_while_integrating(base))  # [U-LIF2 W16] the backends fire per cycle
 
 
 @pytest.mark.parametrize("backend", ["nevresim", "sanafe", "loihi"])

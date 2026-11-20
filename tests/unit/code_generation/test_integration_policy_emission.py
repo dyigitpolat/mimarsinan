@@ -17,6 +17,7 @@ from mimarsinan.chip_simulation.nevresim_policy_types import (
     nevresim_integration_policy,
 )
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
+from spiking_points import point_of_mode
 from mimarsinan.code_generation.generate_main import (
     generate_main_function,
     generate_main_function_runtime,
@@ -38,7 +39,7 @@ _PER_EVENT_8 = SomaLaw.resolve({
 
 def _spec(**overrides):
     kwargs = dict(
-        spiking_mode="lif", firing_mode="Novena", thresholding_mode="<=",
+        point=point_of_mode("lif"), firing_mode="Novena", thresholding_mode="<=",
         spike_gen_mode="SpikeTrain", weight_type="int",
         simulation_length=6, latency=1, output_count=2,
     )
@@ -107,8 +108,8 @@ class TestTheDefaultPointEmitsNothingNew:
         for soma_law in (None, DEFAULT_SOMA_LAW):
             emit(str(tmp_path), 4, 2, 6, 1,
                  simulation_config=get_config(
-                     "Uniform", "Novena", "int", "lif", threshold_type="int",
-                     thresholding_mode="<=", soma_law=soma_law))
+                     "Uniform", "Novena", "int", point=point_of_mode("lif", soma_law=soma_law), threshold_type="int",
+                     thresholding_mode="<="))
             written.append((tmp_path / "main" / "main.cpp").read_bytes())
         assert written[0] == written[1]
         assert b"IntegrationPolicy" not in written[0]
@@ -141,8 +142,8 @@ class TestThePointNamesTheFoldInBothStrings:
         generate_main_function_runtime(
             str(tmp_path), 4, 2, 6, 1,
             simulation_config=get_config(
-                "SpikeTrain", "Novena", "int", "lif", threshold_type="int",
-                thresholding_mode="<=", soma_law=_PER_EVENT_8))
+                "SpikeTrain", "Novena", "int", point=point_of_mode("lif", soma_law=_PER_EVENT_8), threshold_type="int",
+                thresholding_mode="<="))
         text = Path(tmp_path / "main" / "main.cpp").read_text()
         assert text.count("EventSerialIntegrate<8>") == 2
         assert "CountedSpikeTrainSpikeGenerator" in text
@@ -170,8 +171,8 @@ class TestTheSyncFirePointNamesItsPolicyButKeepsABinaryWire:
         generate_main_function_runtime(
             str(tmp_path), 4, 2, 6, 1,
             simulation_config=get_config(
-                "SpikeTrain", "Novena", "int", "lif", threshold_type="int",
-                thresholding_mode="<=", soma_law=_SYNC_FIRE_16))
+                "SpikeTrain", "Novena", "int", point=point_of_mode("lif", soma_law=_SYNC_FIRE_16), threshold_type="int",
+                thresholding_mode="<="))
         text = Path(tmp_path / "main" / "main.cpp").read_text()
         assert text.count("WholeVectorSaturatingSigned<16>") == 2
         assert "CountedSpikeTrainSpikeGenerator" not in text

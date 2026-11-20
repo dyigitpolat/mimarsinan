@@ -22,14 +22,17 @@ from mimarsinan.deployment_record.objectives import (
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics
 from mimarsinan.mapping.lanes.declaration import lane_declaration, lanes_executed
 from mimarsinan.mapping.lanes.output_stage import planned_lane_ops
-from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
+from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING, DeployedConversion
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
 )
-from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps
+from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps as program_latency_steps
+from mimarsinan.chip_simulation.stage_timesteps import semantics_program_steps
+from mimarsinan.chip_simulation.window_firing_axis import INTEGRATE_THEN_EMIT
+from mimarsinan.mapping.noc.stages import execution_stage_depths
 from dataclasses import replace as _dc_replace
 
 from mimarsinan.mapping.noc import (
@@ -69,17 +72,14 @@ def candidate_latency_steps(
     """
     if noc is None or timesteps is None:
         return None
-    stages = execution_stage_latencies(
-        softcores, noc.pass_placements, retimed=semantics.retimed,
-        census=noc.census, runs=getattr(noc, "runs", None),
-        transparent=tuple(bool(getattr(p, "wavefront", False)) for p in noc.pass_programs),
-    )
-    return program_latency_steps(
-        stage_max_latencies=stages, timesteps=int(timesteps),
-        is_cycle=semantics.is_cycle, is_cascade=semantics.is_cascade,
-        latency_group_count=semantics.latency_group_count,
-        chip_latency=semantics.chip_latency,
-    )
+    runs = getattr(noc, "runs", None)
+    transparent = tuple(bool(getattr(p, "wavefront", False)) for p in noc.pass_programs)
+    stages = execution_stage_latencies(softcores, noc.pass_placements, retimed=semantics.retimed, census=noc.census,
+                                       runs=runs, transparent=transparent)
+    # [U-LIF2 W11] each stage's dependency depth from the wire census (never the tags)
+    depths = execution_stage_depths(softcores, noc.pass_placements, retimed=semantics.retimed, census=noc.census,
+                                    runs=runs, transparent=transparent)
+    return semantics_program_steps(semantics, stages, depths, timesteps)
 
 
 @dataclass(frozen=True)
@@ -101,6 +101,8 @@ class ProgramFacts:
     #: [W08] The lane work by kind the declared lanes run on the candidate's model (the lane plan's estimate,
     #: ``planned_lane_ops``); None on a chip declaring no ``onchip_arithmetic``.
     lane_ops: Optional[Dict[str, int]] = None
+    #: [U-LIF2 W12] The run's resolved window firing: the neuron cycles per window of the energy terms.
+    window_firing: Optional[str] = None
 
 
 def with_stage_placements(
@@ -127,7 +129,7 @@ def candidate_program_facts(
     """The pass-structure facts of one candidate: the executed wall (E1), the
     programming census (E2), and the carry census (H2)."""
     if noc is None:
-        return ProgramFacts()
+        return ProgramFacts(window_firing=semantics.window_firing)
     carry = candidate_carry_census(softcores, noc, timesteps=timesteps, pass_transfer=pass_transfer)
     return ProgramFacts(
         latency_steps=candidate_latency_steps(
@@ -136,17 +138,20 @@ def candidate_program_facts(
         programming=candidate_programming_census(noc, weight_bits=weight_bits),
         carry=carry,
         passes=candidate_program_passes(softcores, noc, semantics=semantics, timesteps=timesteps),
+        window_firing=semantics.window_firing,
     )
 
 
 def stage_semantics_of(
-    spiking_mode: str, ttfs_cycle_schedule: str, *, retimed: bool,
+    spiking_mode: str, ttfs_cycle_schedule: str, *, retimed: bool, window_firing: Optional[str] = None,
 ) -> "StageSemantics":
-    """The executed-window branch this run's firing semantics select."""
+    """The executed-window branch this run's firing semantics select; [U-LIF2 W11] ``window_firing`` is the run's
+    resolved value (None away from the synchronized LIF variant)."""
     return StageSemantics(
         retimed=bool(retimed),
         is_cycle=is_synchronized_ttfs(spiking_mode, ttfs_cycle_schedule),
         is_cascade=is_cascaded_ttfs(spiking_mode, ttfs_cycle_schedule),
+        window_firing=window_firing,
     )
 
 
@@ -159,6 +164,11 @@ class StageSemantics:
     is_cascade: bool = False
     latency_group_count: Optional[int] = None
     chip_latency: Optional[int] = None
+    window_firing: Optional[str] = None  # [U-LIF2 W11] the run's resolved lif_window_firing
+
+    @property
+    def integrates_then_emits(self) -> bool:
+        return self.window_firing == INTEGRATE_THEN_EMIT
 
 
 def candidate_fragments(
@@ -185,6 +195,7 @@ def candidate_fragments(
         carry=program.carry,
         passes=program.passes,
         lane_ops=program.lane_ops,
+        window_firing=program.window_firing,
     )
     return physics, context
 
@@ -254,11 +265,14 @@ def compute_onchip_census(
     input_shape: Tuple[int, ...],
     num_classes: int,
     placement: str,
+    *,
+    conversion: Optional[DeployedConversion] = None,
 ) -> OnchipCensus:
     """Host/on-chip param+MAC counts through the deployment's own estimator —
-    one flow conversion for both metrics [H4]."""
+    one flow conversion for both metrics [H4], under the run's ``conversion``."""
     params_est, macs_est, ops_est = estimate_onchip_fractions(
         model, tuple(input_shape), int(num_classes),
         encoding_placement=placement, metrics=("params", "macs", "ops"),
+        conversion=conversion,
     )
     return params_est, macs_est, ops_est

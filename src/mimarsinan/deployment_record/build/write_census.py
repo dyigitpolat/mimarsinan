@@ -75,6 +75,8 @@ class PassRow:
     operand_only_cores: FrozenSet[int] = frozenset()
     #: [U-F4] Tiles of a wavefront group's first pass that it loads (writes) but does not evaluate (its dark cores').
     dark: FrozenSet[int] = frozenset()
+    #: [U-ENERGY] Per core, the connectivity entries a load programs with it (a sealed record states them); empty: none.
+    core_entries: Tuple[int, ...] = ()
 
     def core_bytes(self, i: int, weight_bits: int) -> int:
         """Core ``i``'s payload by the one rule (``core_payload_bytes``): its cells and its sign register."""
@@ -248,6 +250,8 @@ def period_census(passes: ProgramPasses, *, weight_bits: int,
             payload_bytes=sum(row.core_bytes(i, weight_bits) for i in written),
             compute_steps=row.compute_steps or 0,
             operand_only_cores=len(set(written) & row.operand_only_cores),
+            connectivity_entries=sum(row.core_entries[i] for i in written)  # [U-ENERGY] the written cores' own
+            if len(row.core_entries) == len(row.core_cells) else None,
         ))
         if row.core_extents is not None:
             extents.append(tuple(row.core_extents[i] for i in written))

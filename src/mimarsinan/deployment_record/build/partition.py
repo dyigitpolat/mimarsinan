@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
 from mimarsinan.deployment_record.schema import ComputePartitionRecord
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
 from mimarsinan.mapping.verification.onchip_fraction import estimate_onchip_fraction
 from mimarsinan.mapping.verification.onchip_majority import compute_onchip_fraction
 
@@ -37,6 +38,7 @@ def compute_partition_record(
     num_classes: int,
     *,
     encoding_placement: str,
+    conversion: Optional[DeployedConversion] = None,
 ) -> ComputePartitionRecord:
     """The logical split of a mapped deployment — an ungated census, not a gate.
 
@@ -44,7 +46,7 @@ def compute_partition_record(
     MACs from the model's forward census under the resolved placement
     (``estimate_onchip_fraction``) — the exact SSOT pair behind
     ``assert_onchip_validity_or_raise``, so the sealed fact and the gate can never
-    disagree.
+    disagree. ``conversion`` as there (the pipeline's model is its flow, measured as born).
     """
     total_params = int(sum(p.numel() for p in model.parameters()))
     params = compute_onchip_fraction(ir_graph, total_params=total_params)
@@ -54,5 +56,6 @@ def compute_partition_record(
         num_classes,
         encoding_placement=encoding_placement,
         metric="macs",
+        conversion=conversion,
     )
     return partition_record_from_breakdowns(params, macs)

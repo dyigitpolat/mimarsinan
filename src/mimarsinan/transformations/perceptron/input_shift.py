@@ -1,11 +1,11 @@
 """The input shift a perceptron's bias compensates, recorded at its bake and re-derived at every weight projection.
 
 A negative-value boundary feeds its consumer ``x + s`` (a lifted host op, or Soft Core Mapping's shift), and the
-consumer's bias is baked once to ``B' = B - W~ s`` on the effective weights of that moment
-(``mapping.support.negative_shift.apply_negative_shift_bias``). A weight projection that replaces ``W~`` by ``Q(W~)``
-must move the bias with it, ``B' <- B' - (Q(W~) - W~) s``, or every lifted entry deploys an extra ``(Q(W~) - W~) s``
-(phase C defect D-WQ, cause B). The bake therefore records ``s`` here, and the projection compensates every weight
-write it makes.
+consumer's bias is corrected for the field each axon receives, ``B' = B - W~ s`` on the effective weights of that moment
+(``mapping.support.received_shift``, the one writer). A weight projection that replaces ``W~`` by ``Q(W~)`` must move
+the bias with it, ``B' <- B' - (Q(W~) - W~) s``, or every lifted entry deploys an extra ``(Q(W~) - W~) s`` (phase C
+defect D-WQ, cause B). The correction therefore records ``s`` here (one value, one per input, or one per element of the
+input), and the projection compensates every weight write it makes (``received_shift.compensate_projected_weights``).
 """
 
 from __future__ import annotations
@@ -13,13 +13,13 @@ from __future__ import annotations
 import torch
 
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 INPUT_SHIFT = "input_shift"
-"""The buffer holding the shift a bake compensated (effective units, a scalar or one value per axon)."""
+"""The buffer holding the shift a correction compensates (effective units: one value, one per input, or one per element
+of the input)."""
 
 BAKED_FLAG = "_neg_shift_baked"
-"""The bake's once-only flag (``apply_negative_shift_bias``)."""
+"""Marks that a correction's record exists (it no longer decides a correction: ``received_shift`` keeps the sources)."""
 
 
 class UnrecordedShiftBakeError(ToolchainRefusal, ValueError):
@@ -35,17 +35,6 @@ def record_input_shift(perceptron, shift: torch.Tensor) -> None:
 def recorded_input_shift(perceptron) -> torch.Tensor | None:
     """The shift ``perceptron``'s bias compensates, or None when no bake recorded one."""
     return getattr(perceptron, INPUT_SHIFT, None)
-
-
-def compensate_projected_weights(perceptron, transformer: PerceptronTransformer, weight_before: torch.Tensor) -> None:
-    """``B' <- B' - (W~_after - W~_before) s``: the bias keeps compensating the recorded shift through the effective
-    weights the projection just installed, at any rate (the delta is whatever the projection wrote)."""
-    shift = recorded_input_shift(perceptron)
-    if shift is None:
-        return
-    delta = transformer.get_effective_weight(perceptron) - weight_before
-    correction = (delta * shift.to(dtype=delta.dtype, device=delta.device)).sum(dim=-1)
-    transformer.apply_effective_bias_transform(perceptron, lambda b, c=correction: b - c)
 
 
 def refuse_unrecorded_shift_bakes(perceptrons) -> None:

@@ -3,11 +3,14 @@ import torch
 from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.mapping.support.bias_rows import bias_register_span
 from mimarsinan.mapping.support.grid_declarations import ParameterGrids
+from mimarsinan.models.perceptron_mixer.perceptron import placed_on_cores
 from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_wq_two_scale_projection
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.transformations.perceptron.bias_drive import bias_row_values
+from mimarsinan.transformations.perceptron.neuron_scales import is_per_neuron_scale, scale_view
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.perceptron.position_fold import output_axes
 from mimarsinan.transformations.quantization_bounds import LAYER_WEIGHT_BITS, layer_weight_bits, quantization_bounds
 
 
@@ -43,7 +46,7 @@ def assert_effective_parameters_on_chip_grid(perceptron, q_max: int, *, law_bias
     ``[-(q_max+1) r, q_max r]`` with ``r = ceil(max|code| / q_max)`` (the span the
     export allocates). A bias declared at the law's resolution (``law_bias``)
     has no grid to be on."""
-    transformer = PerceptronTransformer()
+    transformer = PerceptronTransformer(positions=True)  # [U-PFOLD] each weight row and position of a fold per position
     fused_w = transformer.get_effective_weight(perceptron)
     # An always-on row driven at d holds the bias over d (d = 1.0 without a stamp): its codes are what the lattice holds.
     fused_b = bias_row_values(perceptron, transformer.get_effective_bias(perceptron))
@@ -52,14 +55,17 @@ def assert_effective_parameters_on_chip_grid(perceptron, q_max: int, *, law_bias
     if bias_scale is None:
         bias_scale = param_scale
 
-    _assert_integer_lattice(fused_w * param_scale, "weights off the chip grid")
+    # [U-PCH] a per-neuron grid reads each output neuron on its own scale (``scale_view``), [U-PFOLD r2] on the axis
+    # the reader declares for each view.
+    axes = output_axes(perceptron, transformer.positions)
+    _assert_integer_lattice(fused_w * scale_view(param_scale, fused_w, axes.weight), "weights off the chip grid")
     if law_bias:
         return
     codes = _assert_integer_lattice(
-        fused_b * param_scale, "bias off the weight-grid lattice"
+        fused_b * scale_view(param_scale, fused_b, axes.bias), "bias off the weight-grid lattice"
     )
     bias_ints = _assert_integer_lattice(
-        fused_b * bias_scale, "bias off its own grid"
+        fused_b * scale_view(bias_scale, fused_b, axes.bias), "bias off its own grid"
     )
     if register_bias:
         span = bias_register_span(float(codes.abs().max()) if codes.numel() else 0.0, q_max)
@@ -80,7 +86,8 @@ def _declared_q_max(perceptron, q_max: int) -> int:
 
 def assert_weights_within_layer_grid(perceptron, q_max: int) -> None:
     """A perceptron on a core type of its own width holds weight codes inside that width's register (WI-5g)."""
-    ints = torch.round(PerceptronTransformer().get_effective_weight(perceptron) * perceptron.parameter_scale)
+    fused_w = PerceptronTransformer(positions=True).get_effective_weight(perceptron)  # [U-PFOLD] each weight row
+    ints = torch.round(fused_w * scale_view(perceptron.parameter_scale, fused_w, output_axes(perceptron, True).weight))
     assert float(ints.abs().max()) <= q_max + 0.5, (
         f"{getattr(perceptron, 'name', '?')}: weight codes up to {float(ints.abs().max())} outside the ±{q_max} "
         f"register of its {layer_weight_bits(perceptron, 0)}-bit core type")
@@ -90,14 +97,16 @@ def quantization_grid_report(perceptrons, q_max: int) -> list[dict]:
     """Per-perceptron integer-grid rows following the verification convention
     (``round(fused_w * parameter_scale)`` lies on the ±q_max grid, or that of the layer's core type, WI-5g)."""
     rows: list[dict] = []
-    transformer = PerceptronTransformer()
+    transformer = PerceptronTransformer(positions=True)  # [U-PFOLD] the weights the program holds, each weight row
     for index, perceptron in enumerate(perceptrons):
         fused_w = transformer.get_effective_weight(perceptron)
-        ints = torch.round(fused_w * perceptron.parameter_scale)
+        scale = perceptron.parameter_scale
+        ints = torch.round(fused_w * scale_view(scale, fused_w, output_axes(perceptron, transformer.positions).weight))
         rows.append({
             "index": index,
             "name": str(getattr(perceptron, "name", f"perceptron_{index}")),
-            "parameter_scale": float(perceptron.parameter_scale.item()),
+            # [U-PCH] a per-neuron grid reports each output neuron's scale
+            "parameter_scale": scale.detach().cpu().tolist() if is_per_neuron_scale(scale) else float(scale.item()),
             **integer_grid_stats(ints, _declared_q_max(perceptron, q_max)),
         })
     return rows
@@ -132,7 +141,10 @@ class QuantizationVerificationStep(TrainerPipelineStep):
         # The run's grids: the declared rules and the two-scale projection's bias route (as the WQ step named it).
         grids = ParameterGrids.from_config(
             self.pipeline.config, register_bias=resolve_wq_two_scale_projection(self.pipeline.config))
-        for perceptron in model.get_perceptrons():
+        # [U-POST G3] The verification applies to the perceptrons the placement maps to cores, as the projection does: a
+        # host-placed perceptron (a subsumed encoder) keeps its float weights and runs as a host op.
+        projected = [p for p in model.get_perceptrons() if placed_on_cores(p)]
+        for perceptron in projected:
             print(perceptron.parameter_scale)
             print(perceptron.scale_factor)
             perceptron.to(self.pipeline.config["device"])
@@ -144,7 +156,7 @@ class QuantizationVerificationStep(TrainerPipelineStep):
 
         # The asserts above ARE the gate; surviving them is the verdict. The
         # per-layer grid diagnostics ship as one low-rate structured event.
-        layers = quantization_grid_report(model.get_perceptrons(), q_max)
+        layers = quantization_grid_report(projected, q_max)
         bits = int(self.pipeline.config["weight_bits"])
         emit_reporter_event(
             getattr(self.pipeline, "reporter", None),

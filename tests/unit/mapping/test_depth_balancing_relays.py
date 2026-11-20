@@ -192,13 +192,8 @@ class TestJoinCountExactness:
                 f"target {self._target(rate).tolist()}"
             )
 
-    def test_unbalanced_join_violates_commutation_target(self):
-        graph = _join_graph()
-        mismatched = [
-            rate for rate in (0.25, 0.5, 0.75)
-            if not torch.equal(self._counts(graph, rate), self._target(rate))
-        ]
-        assert mismatched, (
-            "the un-relayed join unexpectedly matched the commutation target "
-            "on every rate — the V6 window hazard no longer reproduces?"
-        )
+    def test_unbalanced_join_is_refused_by_name_at_the_executor(self):
+        """[U-TGAUGE5] The un-relayed join read a step low (it missed the commutation target); the per-cycle executor
+        now refuses such a stage by name before a cycle folds (the window rule; no mapping armed its relays)."""
+        with pytest.raises(UnbalancedFanInError, match="no mapping armed"):
+            self._counts(_join_graph(), 0.5)

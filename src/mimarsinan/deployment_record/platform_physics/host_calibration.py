@@ -1,17 +1,18 @@
-"""[H3b] Measure THIS host's compute rate, as operator-declared physics.
+"""[H3b] Measure THIS machine's compute rate and dispatch wall: [U-HOST] a labelled diagnostic of the development
+machine, never a host block.
 
-The host terms were the 100x wildcard in every e2e/energy comparison: priced
-from ESTIMATED rates while the host wall is 99% of the measured e2e. The
-deployment host is right here, so its rate is measurable — the result is an
-override-ready ``platform_physics_overrides`` block with ``evidence_kind:
-measured`` and the machine's identity in the note, never a silent default.
+The machine that runs the toolchain is not the deployment host (the owner's rule: host metrics are priced from a
+Jetson-class device's published data, never from the development machine or a GPU), so its measured rows price
+nothing: the artifact's ``diagnostic`` carries them under ``DIAGNOSTIC_LABEL`` (``evidence_kind: measured``, the
+machine's identity in each note), each judged as a constant of the vocabulary, and no ``platform_physics_overrides``
+block. A priced host is an identified host description (``hosts/<name>.json``), the only source the admission rule
+admits a host row from (``hosts.admission``); ``host_block`` and ``load_host_block`` refuse a calibration artifact
+by that rule's name.
 
 ``p_host`` is measured only where RAPL exposes package energy; otherwise it is
-NOT invented: the block omits it and says so, or carries the operator's
+NOT invented: the diagnostic omits it and says so, or carries the operator's
 DECLARED row (a band with its own evidence) beside the measured ones. A row both
-measured and declared refuses by name. ``host_block`` reads the block of a
-calibration artifact as the named ``host`` block of ``merge_override_blocks``
-(CL0): every host row present and valid, nothing but host rows.
+measured and declared refuses by name.
 """
 
 from __future__ import annotations
@@ -20,23 +21,19 @@ import json
 import os
 import platform
 import time
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, NoReturn, Optional, Tuple
 
 from mimarsinan.common.refusal import ToolchainRefusal
-from mimarsinan.deployment_record.platform_physics.constants import keys_in_group
-from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
-from mimarsinan.deployment_record.platform_physics.vocabulary import HOST
+from mimarsinan.deployment_record.platform_physics.constants import constant_from_declaration
+from mimarsinan.deployment_record.platform_physics.hosts.admission import HostRowAdmissionError
 
-#: The rows the host terms multiply: rate (host MACs), dispatch (host ops), power (host time).
-HOST_BLOCK_KEYS: Tuple[str, ...] = ("host_macs_per_s", "t_host_op_overhead", "p_host")
+#: [U-HOST] The label of a calibration's rows: what they are, and that they price nothing.
+DIAGNOSTIC_LABEL = ("diagnostic: host rows measured on the development machine (the machine running the toolchain); "
+                    "never a host block or a priced term (a priced host is an identified host description's rows)")
 
 
 class HostRowConflictError(ToolchainRefusal, ValueError):
     """A host row the calibration measured is also declared: two values for one host."""
-
-
-class HostBlockIncompleteError(ToolchainRefusal, ValueError):
-    """A host block lacks a row the host terms multiply, or carries a row that is not the host's."""
 
 
 #: ComputeOp-shaped fp32 matmuls: (batch, in_features, out_features) — the
@@ -181,20 +178,21 @@ def _affinity() -> Tuple[int, ...]:
     return tuple(sorted(getter(0))) if getter is not None else ()
 
 
-def calibration_overrides(
+def calibration_diagnostic(
     *, macs_per_s: float, op_overhead_s: Tuple[float, float, float],
     p_host_w: Optional[float],
     identity: str,
     declared: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """The ``platform_physics_overrides`` block a run config declares: the measured rows plus the
-    operator's ``declared`` rows (each a physics constant with its own evidence, copied verbatim)."""
+    """[U-HOST] The development machine's measured host rows (``DIAGNOSTIC_LABEL``) plus the operator's ``declared``
+    rows (each a physics constant with its own evidence, copied verbatim), each judged as a constant of the
+    vocabulary: a diagnostic, never an override block (no physics is resolved from it)."""
     note = (
-        f"Measured on the deployment host {identity} over ComputeOp-shaped "
-        f"fp32 matmuls (best sustained shape). Re-run "
-        f"scripts/calibrate_host.py when the host changes."
+        f"Measured on the development machine {identity} over ComputeOp-shaped "
+        f"fp32 matmuls (best sustained shape): a diagnostic, never a host price. Re-run "
+        f"scripts/calibrate_host.py when the machine changes."
     )
-    overrides: Dict[str, Dict[str, Any]] = {
+    rows: Dict[str, Dict[str, Any]] = {
         "t_host_op_overhead": {
             # The vocabulary declares us; the band is measured percentiles.
             "low": op_overhead_s[0] * 1e6,
@@ -205,8 +203,7 @@ def calibration_overrides(
             "note": (
                 f"Per-invocation host ComputeOp dispatch wall on {identity}, "
                 f"measured through execute_compute_op_torch (the deployment's "
-                f"own path; median of repeats). The rate term prices the "
-                f"arithmetic; this prices the dispatch."
+                f"own path; median of repeats): a diagnostic of the development machine."
             ),
         },
         "host_macs_per_s": {
@@ -218,29 +215,30 @@ def calibration_overrides(
         },
     }
     if p_host_w is not None:
-        overrides["p_host"] = {
+        rows["p_host"] = {
             "nominal": p_host_w,
             "unit": "W",
             "evidence_kind": "measured",
             "note": (
                 f"RAPL package power under the calibration load on {identity}. "
-                f"Whole-package: an upper bound on the deployment share."
+                f"Whole-package: an upper bound on the machine's share (a diagnostic)."
             ),
         }
     for key, declaration in (declared or {}).items():
-        if key in overrides:
+        if key in rows:
             raise HostRowConflictError(
                 f"host row {key!r} is both measured on {identity} and declared; declare it only "
                 "where the calibration cannot measure it")
-        overrides[key] = dict(declaration)
-    resolve_platform_physics(None, overrides)  # every row a valid constant, evidence included
-    return overrides
+        rows[key] = dict(declaration)
+    for key, row in rows.items():  # every row a valid constant, evidence included
+        constant_from_declaration(key, row)
+    return rows
 
 
 def run_calibration(
     *, declared: Optional[Mapping[str, Mapping[str, Any]]] = None, **measure_kwargs: Any,
 ) -> Dict[str, Any]:
-    """Measure and assemble the full calibration artifact."""
+    """Measure and assemble the full calibration artifact: [U-HOST] a labelled diagnostic."""
     import torch
 
     rates = measure_host_mac_rates(**measure_kwargs)
@@ -268,28 +266,22 @@ def run_calibration(
         "t_host_op_overhead_s": list(op_overhead_s),
         "p_host_w": p_host,
         "p_host_basis": basis,
-        "platform_physics_overrides": calibration_overrides(
+        "diagnostic": {"label": DIAGNOSTIC_LABEL, "rows": calibration_diagnostic(
             macs_per_s=macs_per_s, op_overhead_s=op_overhead_s,
             p_host_w=p_host, identity=identity, declared=declared,
-        ),
+        )},
     }
 
 
-def host_block(artifact: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """The calibration artifact's override block as the named ``host`` block: every row
-    ``HOST_BLOCK_KEYS`` names, nothing outside the host group, each a valid constant."""
-    block = {key: dict(row) for key, row in artifact["platform_physics_overrides"].items()}
-    missing = [key for key in HOST_BLOCK_KEYS if key not in block]
-    foreign = sorted(set(block) - set(keys_in_group(HOST)))
-    if missing or foreign:
-        raise HostBlockIncompleteError(
-            f"a host block needs {list(HOST_BLOCK_KEYS)} and only host rows; missing {missing}, "
-            f"not host rows {foreign}")
-    resolve_platform_physics(None, block)
-    return block
+def host_block(artifact: Mapping[str, Any]) -> NoReturn:
+    """[U-HOST] A calibration artifact is never a host block: refused by the admission rule's name."""
+    raise HostRowAdmissionError(
+        f"a host calibration artifact ({artifact.get('machine', 'the development machine')}) is a labelled "
+        f"diagnostic of the machine running the toolchain, never a host block: host rows are admitted only from an "
+        "identified host description (hosts/<name>.json, hosts.description.host_description_block)")
 
 
-def load_host_block(path: str) -> Dict[str, Dict[str, Any]]:
-    """``host_block`` of the calibration artifact at ``path``."""
+def load_host_block(path: str) -> NoReturn:
+    """``host_block`` of the calibration artifact at ``path``: refused by name."""
     with open(path, "r", encoding="utf-8") as fh:
-        return host_block(json.load(fh))
+        host_block(json.load(fh))

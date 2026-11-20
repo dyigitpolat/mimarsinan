@@ -7,6 +7,8 @@ from typing import Any, Callable
 import torch
 
 from mimarsinan.mapping.support.gauge_channels import gauge_channels, wrap_channel_axis
+from mimarsinan.mapping.support.gauge_placement import fold_per_input
+from mimarsinan.transformations.perceptron.position_bias import held_per_position
 from mimarsinan.mapping.support.scale_broadcast import (
     align_scale_devices as _align_scale_devices,
     broadcast_scale_pair as _broadcast_scale_pair,
@@ -14,16 +16,21 @@ from mimarsinan.mapping.support.scale_broadcast import (
 )
 
 
-def walk_out_scales(model_repr, visit: Callable[[Any, list, dict], Any]) -> dict:
+def walk_out_scales(model_repr, visit: Callable[[Any, list, dict], Any],
+                    place: Callable[[Any, Any, dict], Any] | None = None) -> dict:
     """Topological walk of the mapper graph accumulating per-node out-scales.
 
     visit(node, deps, out_scales) returns this node's out-scale (or None to record nothing); side effects happen inside visit.
+    [U-TGAUGE3] ``place(node, scale, out_scales)``: the placement rule's hook (``map_model_to_ir.LayoutGaugePlacement``),
+    which places a layout node's out-scale per element by its elements' sources before any consumer reads it.
     """
     model_repr._ensure_exec_graph()
     out_scales: dict = {}
     for node in model_repr._exec_order:
         deps = model_repr._deps.get(node, [])
         scale = visit(node, deps, out_scales)
+        if place is not None and scale is not None:
+            scale = place(node, scale, out_scales)
         if scale is not None:
             out_scales[node] = scale
     return out_scales
@@ -102,7 +109,7 @@ def perceptron_source_out_scale(perceptron) -> torch.Tensor:
     )
 
 
-def assign_per_input_scales(perceptron, source_scales) -> None:
+def assign_per_input_scales(perceptron, source_scales, reader=None, source=None) -> None:
     """Stamp ``per_input_scales`` on a perceptron from its source out-scale vector.
 
     The ONE writer of ``per_input_scales``, and therefore the seam where the
@@ -130,28 +137,38 @@ def assign_per_input_scales(perceptron, source_scales) -> None:
     anchored = source_scales.to(
         device=perceptron.layer.weight.device, dtype=torch.float32,
     )
+    # [U-PFOLD] a convolution (``reader`` declares ``in_channels``) reads its vector by its own channels, never by
+    # the vector's length: one gauge per channel spreads over its kernel slots, any other is per element.
+    channel_first = int(getattr(perceptron, "output_channel_axis", -1)) == 1
+    channels = getattr(reader, "in_channels", None) if channel_first else None
+    if channels is not None and n_channels != int(channels):
+        perceptron.per_input_scales = held_per_position(
+            perceptron, fold_per_input(perceptron, anchored, in_features, reader, source))
+        return
     if in_features == n_channels:
         # ``.to`` is a no-op when nothing changes, so the clone is what owns it.
-        perceptron.per_input_scales = anchored.clone()
+        perceptron.per_input_scales = held_per_position(perceptron, anchored.clone())
         return
 
     if in_features % n_channels == 0:
         spatial = in_features // n_channels
-        perceptron.per_input_scales = anchored.repeat_interleave(spatial)
+        perceptron.per_input_scales = held_per_position(perceptron, anchored.repeat_interleave(spatial))
         return
 
-    perceptron.per_input_scales = _spread(anchored.mean(), in_features)
+    perceptron.per_input_scales = held_per_position(
+        perceptron, fold_per_input(perceptron, anchored, in_features, reader, source))
 
 
 def perceptron_per_source_scale(node, deps, out_scales) -> torch.Tensor:
-    """Shared ``propagate_source_scale`` body for perceptron-bearing mappers."""
-    src = first_source_scale(deps, out_scales)
-    if src is not None:
-        assign_per_input_scales(node.perceptron, src)
+    """Shared ``propagate_source_scale`` body for perceptron-bearing mappers (the node and its source name the input's
+    own order, ``fold_per_input``)."""
+    source = next((d for d in deps if d in out_scales), None)
+    if source is not None:
+        assign_per_input_scales(node.perceptron, out_scales[source], node, source)
     return perceptron_source_out_scale(node.perceptron)
 
 
-def arm_compute_op_wrap_slots(model_repr) -> None:
+def arm_compute_op_wrap_slots(model_repr, place: Callable[[Any, Any, dict], Any] | None = None) -> None:
     """Stamp ONLY the ComputeOp wrap slots (``per_source_scales`` /
     ``output_scale``) from the current perceptron thetas, so the deployed
     ScaleNormalizingWrapper and its NF twin agree from the install seam on.
@@ -166,7 +183,7 @@ def arm_compute_op_wrap_slots(model_repr) -> None:
             return perceptron_source_out_scale(perceptron)
         return node.propagate_source_scale(deps, out_scales)
 
-    walk_out_scales(model_repr, visit)
+    walk_out_scales(model_repr, visit, place)
 
 
 def perceptron_boundary_scale(node, deps, out_scales, default) -> float:

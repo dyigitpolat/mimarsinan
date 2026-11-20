@@ -13,6 +13,7 @@ import pytest
 from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver
 from mimarsinan.tuning.orchestration.mbh_gate import entry_is_lossless
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
+from spiking_points import point_of_mode
 
 
 class _SchedulerMustNotRun:
@@ -89,5 +90,5 @@ def test_knob_off_globally_and_armed_by_the_lif_recipe():
     from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
     assert effective_value({}, "tuning_lossless_entry_fast_path") is False
-    recipe = ConversionPolicy.derive("lif", None)
+    recipe = ConversionPolicy.derive(point_of_mode("lif", None))
     assert recipe.knobs.get("tuning_lossless_entry_fast_path") is True

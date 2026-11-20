@@ -65,6 +65,10 @@ def _bit_sliced_crossbar(
 
     Converters: one ADC per ``adc_sharing_factor`` columns, per array, over as many
     arrays as the declared cell capacity implies.
+
+    [U-ENERGY m-r2-7] Row drives (``boundary_events``, what ``e_row_drive`` multiplies): a
+    driven row feeds every column of its array, so one input slice drives
+    ``ceil(macs * cells_per_weight / array_cols)`` rows, once per slice.
     """
     derived: Dict[str, QuantityValue] = {}
     if quantities.has("macs"):
@@ -74,6 +78,8 @@ def _bit_sliced_crossbar(
         )
         slices = params["input_bits"] / params["dac_bits"]
         derived["adc_conversions"] = _derived(integrations * slices)
+        rows = math.ceil(quantities.get("macs").value * params["cells_per_weight"] / params["array_cols"])
+        derived["boundary_events"] = _derived(rows * slices)
     if quantities.has("cells_physical"):
         cells_per_array = params["array_rows"] * params["array_cols"]
         arrays = math.ceil(quantities.get("cells_physical").value / cells_per_array)

@@ -5,7 +5,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Mapping
 
-from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.point_capability import backend_refusal_reason
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint, recorded_point
 from mimarsinan.chip_simulation.spiking_semantics import (
     LIF_MODES,
     forces_activation_quantization,
@@ -73,15 +74,10 @@ def classify_nf_scm_contract(
     return ParityContractKind.INAPPLICABLE
 
 
-def classify_backend_contract(
-    *,
-    backend: str,
-    spiking_mode: str,
-    schedule: str | None = None,
-) -> ParityContractKind:
-    """Backend parity against identity SCM / HCM reference."""
-    policy = policy_for_spiking_mode(spiking_mode, schedule=schedule)
-    if not policy.supports_backend(backend):
+def classify_backend_contract(*, backend: str, point: SpikingPoint) -> ParityContractKind:
+    """Backend parity against identity SCM / HCM reference, at the run's resolved point (a backend that does not
+    execute it is INAPPLICABLE)."""
+    if backend_refusal_reason(backend, point) is not None:
         return ParityContractKind.INAPPLICABLE
     if backend in {"hcm", "scm", "nevresim", "sanafe", "lava"}:
         return ParityContractKind.BIT_PARITY
@@ -89,13 +85,22 @@ def classify_backend_contract(
 
 
 def parity_contract_metadata(row: Mapping[str, Any]) -> dict[str, str]:
-    """Attach parity contract kinds to a ledger/campaign row."""
+    """Attach parity contract kinds to a ledger/campaign row. [U-LIF2 r2] The backend contract reads the row's point as
+    its run resolves the row's axes (the one resolution: the mode, the schedule, the soma keys, the window firing and the
+    execution extensions the row declares; ``firing`` and ``sync`` read as the mode and an explicit schedule). [U-LIF2
+    r6, m-1] A row is read as written: its window firing is the row's own, else the historical one
+    (``recorded_point``)."""
     spiking_mode = str(row.get("spiking_mode") or row.get("firing") or "")
     schedule = row.get("schedule") or row.get("sync")
     if not is_explicit_ttfs_cycle_schedule(schedule):
         schedule = None
     backend = str(row.get("backend") or "sanafe")
     training_forward_kind = row.get("training_forward_kind")
+    axes = {key: value for key, value in row.items() if key != "spiking_mode"}
+    axes["ttfs_cycle_schedule"] = schedule
+    if spiking_mode:
+        axes["spiking_mode"] = spiking_mode
+    point = recorded_point(axes)  # [U-LIF2 r6, m-1] at the row's own window firing
     return {
         "ttfs_quantized_sync_equivalence": classify_ttfs_quantized_sync_equivalence(
             spiking_mode=spiking_mode,
@@ -108,9 +113,5 @@ def parity_contract_metadata(row: Mapping[str, Any]) -> dict[str, str]:
             if training_forward_kind is not None
             else None,
         ).value,
-        "backend_contract": classify_backend_contract(
-            backend=backend,
-            spiking_mode=spiking_mode,
-            schedule=str(schedule) if schedule is not None else None,
-        ).value,
+        "backend_contract": classify_backend_contract(backend=backend, point=point).value,
     }

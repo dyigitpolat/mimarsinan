@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps
+from mimarsinan.chip_simulation.stage_timesteps import sealed_stage_steps, semantics_program_steps
+from mimarsinan.chip_simulation.stage_wiring import executed_window_arrivals, pass_wiring
 from mimarsinan.deployment_record.build.pass_carry import (  # the candidate's carry census: re-exported
     boundary_widths_of, candidate_carry_census as candidate_carry_census,
 )
@@ -25,6 +26,7 @@ from mimarsinan.deployment_record.schema import SegmentCoreRecord, SegmentRecord
 from mimarsinan.deployment_record.schema.schedule import ResidencyPlanRecord
 from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
 from mimarsinan.mapping.noc.fragments import delayed_carry_wires, execution_stage_latencies, spec_segments
+from mimarsinan.mapping.noc.stages import execution_stage_depths
 from mimarsinan.mapping.packing.residency_tiles import declared_tiles, expand_to_tiles, tile_rows
 from mimarsinan.mapping.support.period_census import (
     SCHEDULE_RESIDENCY_PLAN, SCHEDULE_RESIDENT_CORES, resident_core_indices,
@@ -62,6 +64,12 @@ def core_record(core_index: int, core: Any, *, weight_bits: int, resident: bool,
         static_delay_levels=None if latency is None else int(latency),
         sign_register_rows=signs or None, operand_only=operand_only,
     )
+
+
+def pass_dependency_depth(segment: Any) -> int:
+    """[U-LIF2 W7] The dependency depth D of one (segment, pass): one more than the deepest level of its cores, by the
+    gate's own leveling of its wiring (``stage_wiring.pass_wiring``; never the latency tags), 0 without cores."""
+    return 1 + max((level for level in pass_wiring(segment)[1] if level is not None), default=-1)
 
 
 def segment_record(stage_index: int, segment_index: int, pass_index: int, stage: Any, *,
@@ -102,6 +110,8 @@ def segment_record(stage_index: int, segment_index: int, pass_index: int, stage:
         operand_core_cells=tuple(operand_cells_by_core(segment, banks)) if banks else None,
         dark_core_indices=tuple(sorted(dark_cores(stage))) or None,  # [U-F4] a wavefront head's dark cores
         core_ordinals=getattr(stage, SCHEDULE_CORE_ORDINALS, None),  # [U-F4] a later wavefront pass's head ordinals
+        dependency_depth=pass_dependency_depth(segment),
+        window_arrivals=executed_window_arrivals(stage) or None,  # [U-LIF2 r6, m-2] sealed where a core takes one
     )
 
 
@@ -149,9 +159,11 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
         owner.update({h: min(owner.values()) for h in dark})
         for segment in sorted({segment_of[softcore] for softcore, _ in placements}):
             cores = sorted(h for h, s in owner.items() if s == segment)
-            latencies = execution_stage_latencies(
-                softcores, [[pl for pl in placements if segment_of[pl[0]] == segment]],
-                retimed=bool(semantics.retimed), runs=runs, transparent=(bool(getattr(program, "wavefront", False)),))
+            own = [[pl for pl in placements if segment_of[pl[0]] == segment]]
+            wave, retimed = (bool(getattr(program, "wavefront", False)),), bool(semantics.retimed)
+            latencies = execution_stage_latencies(softcores, own, retimed=retimed, runs=runs, transparent=wave)
+            depths = execution_stage_depths(softcores, own, retimed=retimed, census=noc.census, runs=runs,
+                                            transparent=wave)  # [U-LIF2 W11] each stage's depth from the wiring
             position[(index, segment)] = len(rows)
             tiles = [split[h] if split else (program.core_cells[h],) for h in cores]
             first = [sum(len(t) for t in tiles[:i]) for i in range(len(cores))]
@@ -165,10 +177,7 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
                 marks=frozenset(first[i] + j for i, h in enumerate(cores) if h in kept for j in range(len(tiles[i]))),
                 dark=frozenset(first[i] + j for i, h in enumerate(cores) if h in dark for j in range(len(tiles[i]))),
                 core_extents=None,
-                compute_steps=None if timesteps is None else program_latency_steps(
-                    stage_max_latencies=latencies, timesteps=int(timesteps), is_cycle=semantics.is_cycle,
-                    is_cascade=semantics.is_cascade, latency_group_count=semantics.latency_group_count,
-                    chip_latency=semantics.chip_latency),
+                compute_steps=semantics_program_steps(semantics, latencies, depths, timesteps),
                 stage_latencies=tuple(latencies),
                 core_types=None if geometry is None else tuple(  # a fused core's members are of one type
                     (int(geometry[h][0]) // len(t), int(geometry[h][1])) for h, t in zip(cores, tiles) for _ in t),
@@ -246,6 +255,7 @@ def record_program_passes(record: Any) -> ProgramPasses:
     measured: Dict[int, int] = {}
     for row in record.timing.per_segment:
         measured[int(row.stage_index)] = measured.get(int(row.stage_index), 0) + int(row.timesteps_executed)
+    firing = getattr(record.identity, "window_firing", None)  # [U-LIF2 W11] unmeasured: the stage's own cycles
     declared = declared_core_geometries(record.identity.platform)
     rows = []
     segments = record.schedule.segments()
@@ -254,6 +264,10 @@ def record_program_passes(record: Any) -> ProgramPasses:
         span = stage_latency([c.static_delay_levels for c in segment.cores])
         latencies = None if span is None else (span,)
         steps = measured.get(int(segment.stage_index))
+        if steps is None and not measured and firing is not None:
+            steps = sealed_stage_steps(timesteps=int(record.timing.s_global), window_firing=firing,
+                                       depth=segment.dependency_depth,
+                                       delays=[c.static_delay_levels for c in segment.cores])
         # One entry per physical tile; a geometry the declared types do not determine stays one entry of its own
         # geometry, which the census refuses by name (a core type the chip does not declare).
         tiles = [declared_tiles(c.axons, c.neurons, declared) or ((c.axons, c.neurons),) for c in segment.cores]
@@ -268,6 +282,10 @@ def record_program_passes(record: Any) -> ProgramPasses:
             operand_only_cores=operand_only_tiles([bool(c.operand_only) for c in segment.cores], tiles), dark=dark,
             core_sign_rows=tuple(r for c, t in zip(segment.cores, tiles)
                                  for r in tile_rows(c.sign_register_rows or 0, t)),
+            # [U-ENERGY] each core's entries on its first tile: a core is written or kept whole, so the entries of
+            # the written tiles are exact
+            core_entries=tuple(e for c, t in zip(segment.cores, tiles)
+                               for e in (int(c.connectivity_entries),) + (0,) * (len(t) - 1)),
         ))
     return ProgramPasses(rows=tuple(rows), operands_unstated=None if stated else RECORD_OPERANDS_UNSTATED)
 

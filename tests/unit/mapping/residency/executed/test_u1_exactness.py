@@ -46,10 +46,14 @@ class TestUOneKeepsTheCapacitySplit:
     to D two levels on), and the chain at C 5 splits layer 2 mid-level; both run equal to the identity run."""
 
     def test_the_first_overflow_cut_is_planned_and_runs_exact(self):
+        """[U-TGAUGE5] The cut is read on the relay-free vehicle; each run reads it as the mapping builds it for that
+        run (``runs.mapped``); the relay-free cut is refused by name by a per-cycle executor (this file's refusal
+        test)."""
         ir = V.ir_of(V.branchy_repr("late_skip"))
         assert V.built_pass_layers(V.build(ir, 3, None), ir) == [_layers(ir, [1, 2, 3]), _layers(ir, [4, 5])]
         for semantics in R.ALL_RUNS:
-            R.assert_runs_equal_to_the_identity_run(ir, 3, semantics)
+            R.assert_runs_equal_to_the_identity_run(R.mapped(V.branchy_repr("late_skip"), semantics), 3, semantics)
+        R.assert_refused_at_the_executor(V.build(ir, 3, None), R.STREAMED_LIF)
 
     def test_a_chain_is_cut_mid_level(self):
         chain = V.ir_of(V.chain_repr(seed=0))

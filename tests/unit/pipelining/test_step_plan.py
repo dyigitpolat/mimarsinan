@@ -39,12 +39,13 @@ from mimarsinan.pipelining.pipeline_steps import (
     WeightPreloadingStep,
     WeightQuantizationStep,
 )
+from spiking_points import declaring_fire_while_integrating
 
 
 def _plan(**overrides) -> DeploymentPlan:
     cfg = {"configuration_mode": "user", "spiking_mode": "lif", "model_type": "mlp_mixer"}
     cfg.update(overrides)
-    return DeploymentPlan.resolve(cfg)
+    return DeploymentPlan.resolve(declaring_fire_while_integrating(cfg))
 
 
 # ── StepPlan mechanics ───────────────────────────────────────────────────────
@@ -239,8 +240,8 @@ class TestRegistryIntegrity:
             {"model_type": "torch_custom", "weight_source": "w.pt"},
             {"pruning": True, "pruning_fraction": 0.3, "enable_loihi_simulation": True},
         ]:
-            cfg = {"configuration_mode": "user", "spiking_mode": "lif",
-                   "model_type": "mlp_mixer", **overrides}
+            cfg = declaring_fire_while_integrating({"configuration_mode": "user", "spiking_mode": "lif",
+                                                    "model_type": "mlp_mixer", **overrides})
             plan = DeploymentPlan.resolve(cfg)
             assert [s.to_pair() for s in _STEP_PLAN.resolve(plan)] == get_pipeline_step_specs(cfg)
 
@@ -320,7 +321,8 @@ class TestDataContractDagValidation:
     def test_public_entry_point_validates_the_dag(self):
         # get_pipeline_step_specs routes through validate_data_contract; a valid
         # config returns the resolved sequence unchanged.
-        cfg = {"configuration_mode": "user", "spiking_mode": "lif", "model_type": "mlp_mixer"}
+        cfg = declaring_fire_while_integrating(
+            {"configuration_mode": "user", "spiking_mode": "lif", "model_type": "mlp_mixer"})
         assert get_pipeline_step_specs(cfg) == [
             s.to_pair() for s in _STEP_PLAN.resolve(DeploymentPlan.resolve(cfg))
         ]
@@ -415,7 +417,7 @@ class TestSemanticGroupsLiveOnTheRegistry:
             get_pipeline_semantic_group_by_step_name,
         )
 
-        cfg = default_config()
+        cfg = declaring_fire_while_integrating(default_config())
         cfg["input_shape"] = (1, 8, 8)
         groups = get_pipeline_semantic_group_by_step_name(cfg)
         assert groups["Soft Core Mapping"] == "soft_mapping"

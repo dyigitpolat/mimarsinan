@@ -59,6 +59,80 @@ def execution_stage_latencies(
     return tuple(stages)
 
 
+def execution_stage_depths(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    pass_placements: Sequence[Sequence[Tuple[int, int]]],
+    *,
+    retimed: bool,
+    census: Optional[LayoutWireCensus] = None,
+    runs: Optional[Sequence[int]] = None,
+    transparent: Optional[Sequence[bool]] = None,
+) -> Optional[Tuple[int, ...]]:
+    """[U-LIF2 W11] Per-execution-stage dependency depth D, one entry per stage in :func:`execution_stage_latencies`'s
+    order, read from the wire census: a softcore that reads no softcore of its own stage is level 0, any other one more
+    than the deepest stage softcore it reads, and D is one more than the deepest level (a carried or host input is a
+    stage input). None without the census: the wiring is unknown, never read from the latency tags."""
+    if census is None:
+        return None
+    segment_of = spec_segments(softcores, runs)
+    pinned = (project_planned_passes([int(s.output_count) for s in softcores],
+                                     [[i for i, _ in p] for p in pass_placements], census.pair_wires,
+                                     segment_of).pinned_spans
+              if not retimed else (None,) * len(pass_placements))
+    readers: Dict[int, List[int]] = {}
+    for (producer, consumer), count in census.pair_wires.items():
+        if int(count) > 0 and int(producer) != int(consumer):
+            readers.setdefault(int(consumer), []).append(int(producer))
+    depths: List[int] = []
+    flat = tuple(transparent) if transparent is not None else (False,) * len(pass_placements)
+    for placements, span, own in zip(pass_placements, pinned, flat):
+        indices = [int(i) for i, _h in placements]
+        if own:
+            depths.extend(1 for _ in sorted({int(segment_of[i]) for i in indices}))
+            continue
+        if span is not None:
+            depths.append(_wiring_depth(indices, readers))
+            continue
+        by_segment: Dict[int, List[int]] = {}
+        for i in indices:
+            by_segment.setdefault(int(segment_of[i]), []).append(i)
+        for _segment, members in sorted(by_segment.items()):
+            levels = sorted({int(softcores[i].latency_tag or 0) for i in members})
+            if retimed and len(levels) > 1:
+                for level in levels:
+                    depths.append(_wiring_depth([i for i in members if int(softcores[i].latency_tag or 0) == level],
+                                                readers))
+            else:
+                depths.append(_wiring_depth(members, readers))
+    return tuple(depths)
+
+
+def _wiring_depth(members: Sequence[int], readers: Dict[int, List[int]]) -> int:
+    """The dependency depth of one stage's softcores over their in-stage reads, walked producers first (Kahn's order);
+    a cycle of in-stage reads is refused by name."""
+    stage = set(members)
+    inside = {core: [p for p in readers.get(core, ()) if p in stage] for core in stage}
+    consumers: Dict[int, List[int]] = {}
+    for core, producers in inside.items():
+        for producer in producers:
+            consumers.setdefault(producer, []).append(core)
+    pending = {core: len(producers) for core, producers in inside.items()}
+    level = {core: 0 for core in stage}
+    ready = [core for core, n in pending.items() if n == 0]
+    done = 0
+    while ready:
+        core = ready.pop()
+        done += 1
+        for consumer in consumers.get(core, ()):
+            level[consumer] = max(level[consumer], level[core] + 1)
+            pending[consumer] -= 1
+            if pending[consumer] == 0:
+                ready.append(consumer)
+    if done != len(stage):
+        raise ValueError("an execution stage holds a cycle of in-stage reads")
+    return 1 + max(level.values(), default=-1)
+
+
 def execution_stage_placements(
     softcores: Sequence[LayoutSoftCoreSpec],
     pass_placements: Sequence[Sequence[Tuple[int, int]]],

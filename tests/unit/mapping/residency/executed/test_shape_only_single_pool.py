@@ -162,7 +162,9 @@ class TestTheFootprint:
 class TestTheVehicleMapsAtTheCoresParameters:
     """The census vehicle's IR is the one Soft Core Mapping builds: the cores' bias capability and effective axons."""
 
-    @pytest.mark.parametrize("name", ["t0_63", "t0_64"])
+    # [U-CHIPKEYS] Loihi states its bias current on chip (davies2018loihi Eq. (1)), so its cell t0_63 left this list
+    # for ODIN's t0_61 (a bias row: the tail axon slot, its card's record)
+    @pytest.mark.parametrize("name", ["t0_61", "t0_64"])
     def test_a_chip_without_on_core_bias_lays_out_the_bias_row_on_both_planes(self, name):
         vehicle = TV.template_vehicle(name)
         params = resolve_platform_mapping_params(vehicle.config["cores"],
@@ -171,6 +173,13 @@ class TestTheVehicleMapsAtTheCoresParameters:
         specs, _census, _program, _walk = TV.layout_walk(vehicle)
         assert [(s.input_count, s.output_count) for s in vehicle.specs] == [
             (s.input_count, s.output_count) for s in specs]
+
+    def test_loihi_s_stated_bias_is_on_core(self):
+        """[U-CHIPKEYS] the Loihi cell's cores carry the chip's stated on-chip bias."""
+        vehicle = TV.template_vehicle("t0_63")
+        params = resolve_platform_mapping_params(vehicle.config["cores"],
+                                                 allow_coalescing=bool(vehicle.config.get("allow_coalescing", False)))
+        assert params.hardware_bias is True
 
     def test_a_chip_with_on_core_bias_is_unchanged(self, t0_13):
         vehicle, (specs, _census, _program, _walk) = t0_13
@@ -254,6 +263,7 @@ class TestTheUnscheduledFragmentsAreTheBuildersSinglePool:
             encoding_placement = "subsume"
             pruning_fraction = onchip_min_fraction = 0.0
             spiking_mode, ttfs_cycle_schedule, per_hop_retiming = "lif", "cascaded", False
+            window_firing = None  # [U-LIF2 W11] a host that names no window firing prices the tag rule
             pass_transfer = None
             active_objective_names = ("total_params", "param_utilization_pct")
 

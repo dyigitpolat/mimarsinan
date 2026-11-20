@@ -12,7 +12,13 @@ fused segment runs at two latencies (instances of one layer read at two depths),
 The witnesses are the re-verifiers' vehicles, each inexact or crashing before (``G5/runs/u1_projection/``): the skew
 and shift vehicles (pins, delays), the fuzz seeds of the leak (191, 23, 144, 192), the mixed-input and windowed-crash
 seeds, the multi-source in-pass seed 71, the order-effect seeds 28 and 61, the identity-own crash seed 4, and the
-segment-id seed 2."""
+segment-id seed 2.
+
+[U-TGAUGE5] A run whose executor reads the window (streamed LIF, cascaded TTFS) reads the vehicle as Soft Core Mapping
+builds it, with the depth-balancing relays the recipe of every per-cycle cascade arms (``runs.mapped``): the per-cycle
+executor refuses a stage holding a live edge at a latency gap other than one by name, so the relay-free vehicle of
+those runs is this file's refusal test (``TestTheWindowRule``). The windowed, analytical and synchronized runs read the
+relay-free vehicle, whose fused timing (pins, delivery delays) they read without a window."""
 
 from __future__ import annotations
 
@@ -32,8 +38,8 @@ from . import runs as R
 from . import vehicles as V
 
 
-def _fuzz(seed: int):
-    return V.ir_of(V.random_rep(seed))
+def _fuzz(seed: int, semantics=None):
+    return V.ir_of(V.random_rep(seed)) if semantics is None else R.mapped(V.random_rep(seed), semantics)
 
 
 class TestTimingMovingCutsRunExact:
@@ -46,7 +52,7 @@ class TestTimingMovingCutsRunExact:
                                             ("shift_streamed", 3), ("shift_streamed", 5), ("late_skip", 2),
                                             ("deep_skip", 2)])
     def test_the_cut_builds_and_runs_equal_to_the_identity_run(self, kind, count, semantics):
-        ir = V.ir_of(V.branchy_repr(kind))
+        ir = R.mapped(V.branchy_repr(kind), semantics)
         u1 = V.build(ir, count, None, retimed_level_stages=R.retimed(semantics))
         assert R.multi_pass(u1, ir) and carried_outputs_by_stage(u1.stages)
         R.assert_runs_equal_to_the_identity_run(ir, count, semantics, mapping=u1)
@@ -55,7 +61,7 @@ class TestTimingMovingCutsRunExact:
     @pytest.mark.parametrize("count", [2, 3, 4, 5, 6])
     def test_a_consumer_of_two_in_pass_producers_runs_equal(self, count, semantics):
         """Fuzz seed 71: only the second producer's relative latency moves when the pass runs alone."""
-        R.assert_runs_equal_to_the_identity_run(_fuzz(71), count, semantics)
+        R.assert_runs_equal_to_the_identity_run(_fuzz(71, semantics), count, semantics)
 
 
 class TestTheCarryStoreIsScopedToItsSegment:
@@ -118,7 +124,7 @@ class TestDependencyOrderedWalks:
 
     @pytest.mark.parametrize("seed", [28, 61])
     def test_analytical_ttfs_after_a_streamed_run_of_the_same_mapping(self, seed):
-        ir = _fuzz(seed)
+        ir = _fuzz(seed, R.STREAMED_LIF)
         u1 = V.build(ir, 4, None)
         x = torch.rand(6, V.IN, generator=torch.Generator().manual_seed(0))
         with torch.no_grad():
@@ -167,9 +173,12 @@ class TestOneSegmentationForThePlanner:
 
     @pytest.mark.parametrize("semantics", R.ALL_RUNS, ids=R.RUN_IDS)
     def test_the_depth_segment_cuts_of_one_ir_run_segment_run_exact(self, semantics):
-        ir = _fuzz(2)
+        plain = _fuzz(2)
+        cut = V.build(plain, 5, None, retimed_level_stages=R.retimed(semantics))
+        assert len(V.neural_passes(cut)) == 3 and len(V.neural_passes(build_identity_hybrid_mapping(ir_graph=plain))) == 1
+        ir = _fuzz(2, semantics)
         u1 = V.build(ir, 5, None, retimed_level_stages=R.retimed(semantics))
-        assert len(V.neural_passes(u1)) == 3 and len(V.neural_passes(build_identity_hybrid_mapping(ir_graph=ir))) == 1
+        assert len(V.neural_passes(u1)) > 1
         R.assert_runs_equal_to_the_identity_run(ir, 5, semantics, mapping=u1)
 
     @pytest.mark.parametrize("kind", ["moved_to_output", "edge_class", "intra_to_cross", "cores_only",
@@ -195,7 +204,7 @@ class TestAPlannedPassThatDoesNotPack:
     @pytest.mark.parametrize("semantics", R.ALL_RUNS, ids=R.RUN_IDS)
     @pytest.mark.parametrize("count", [2, 3])
     def test_the_former_witness_builds_and_runs_equal_to_the_identity_run(self, count, semantics):
-        R.assert_runs_equal_to_the_identity_run(_fuzz(38), count, semantics)
+        R.assert_runs_equal_to_the_identity_run(_fuzz(38, semantics), count, semantics)
 
     def test_a_capacity_failure_of_a_planned_pass_refuses_by_name(self, monkeypatch):
         from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
@@ -267,7 +276,9 @@ class TestTheBuildRefusalClasses:
             V.build(ir, 2, None, retimed_level_stages=True, **self.COALESCE)
 
     def test_without_that_refusal_the_windowed_run_differs(self, monkeypatch):
-        ir = self._psum_tagged(V.ir_of(V.wide_rep(3), coalescing=True))
+        """[U-TGAUGE5] The vehicle as the mapping builds a LIF program (its relays armed): without the refusal the
+        streaming pass runs a fused segment cycle by cycle and differs from the identity run."""
+        ir = self._psum_tagged(V.ir_of(V.wide_rep(3), relays=True, coalescing=True))
         monkeypatch.setattr(hybrid_build_scheduled, "_pass_levels", _lenient_levels(hybrid_build_scheduled._pass_levels))
         u1 = V.build(ir, 2, None, retimed_level_stages=True, **self.COALESCE)
         identity = build_identity_hybrid_mapping(ir_graph=ir, retimed_level_stages=True)
@@ -318,16 +329,16 @@ class TestTheBuildRefusalClasses:
         second.latency = 1
         assert len(_single_pool(ir, 5, None).stages) == 1
 
-    def test_without_that_refusal_the_single_pool_differs(self, monkeypatch):
-        """The base's silent difference: the default single pool of the token vehicle at C 8, run unprojected."""
+    def test_without_that_refusal_the_single_pool_is_refused_at_the_executor(self, monkeypatch):
+        """The base's silent difference: the default single pool of the token vehicle at C 8, run unprojected, differed
+        from the identity run. [U-TGAUGE5] Its co-packed hard core starts the shallow instance at the deep reader's
+        latency minus one, a live edge at a latency gap other than one, so the per-cycle executor refuses it by name
+        (the build refusal stays the first and specific one)."""
         ir = V.ir_of(V.token_repr())
         monkeypatch.setattr(hybrid_build_pool, "project_passes", lambda stages: None)
         packed = _single_pool(ir, 8, None)
-        identity = build_identity_hybrid_mapping(ir_graph=ir)
-        x = torch.rand(6, V.IN, generator=torch.Generator().manual_seed(0))
         for semantics in (R.STREAMED_LIF, R.CASCADED_TTFS):
-            with torch.no_grad():
-                assert not torch.equal(R.flow(packed, **semantics)(x), R.flow(identity, **semantics)(x))
+            R.assert_refused_at_the_executor(packed, semantics)
 
 
 def _single_pool(ir, count, residency_plan):
@@ -336,3 +347,15 @@ def _single_pool(ir, count, residency_plan):
 
     return build_hybrid_hard_core_mapping(ir_graph=ir, cores_config=V.cores(count),
                                           strategy=MappingStrategy.resolve(ChipCapabilities()))
+
+
+class TestTheWindowRule:
+    """[U-TGAUGE5] This file's refusal test: the relay-free skew vehicle (L1 read two levels on) cut at C 2 and its
+    identity program, run by a per-cycle executor, hold a live edge at a latency gap other than one, so the executor
+    refuses both by name (they read the skipped producer a step off, alike, and compared equal)."""
+
+    @pytest.mark.parametrize("semantics", [R.STREAMED_LIF, R.CASCADED_TTFS], ids=["streamed_lif", "cascaded_ttfs"])
+    def test_a_relay_free_skew_cut_and_its_identity_program_are_refused_by_name(self, semantics):
+        ir = V.ir_of(V.branchy_repr("skew3"))
+        R.assert_refused_at_the_executor(V.build(ir, 2, None), semantics)
+        R.assert_refused_at_the_executor(build_identity_hybrid_mapping(ir_graph=ir), semantics)

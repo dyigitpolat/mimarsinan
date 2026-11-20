@@ -26,6 +26,7 @@ from unit.deployment_record.record_fixtures import (
     make_full_record,
     make_layout,
     make_timing,
+    with_partition,
 )
 
 # The legacy tuple, frozen HERE as literal data: keys, directions and ORDER.
@@ -309,7 +310,8 @@ class TestAvailabilityOnTheRecordView:
             "noc_total_packets",
             "programming_energy_mj",
             "sync_barrier_energy_mj",
-            "throughput_samples_per_s",
+            # [U-HOST2] no throughput_samples_per_s: the fixture holds a host op and seals no partition census, so
+            # its host share is unknown and the measured plane withholds its total by the absolute plane's refusal
             # [N3] derived from the sealed NoC census (Σ per-link loads).
             "noc_total_hops",
             # [H3] the record's layout mirror carries the chip axis; [H2]
@@ -353,13 +355,16 @@ class TestAvailabilityOnTheRecordView:
         assert "host_op_wall_s" not in {
             s.key for s in OBJECTIVES.available_for(record_view())
         }
-        timing = make_timing()
-        timed = replace(
-            timing,
-            latency=replace(timing.latency, host_ops_s=0.25, host_ops_s_per_pass=0.05),
-        )
-        view = record_view(timing=timed)
-        assert OBJECTIVES.get("host_op_wall_s").value(view) == 0.25
+        # [U-HOST] The objective reads the one per-inference host wall (stage_timing.host_wall): 0.25 s over 5
+        # one-sample calls is 0.05 s per inference; a wall without its count leaves the objective unavailable.
+        record = make_full_record()
+        stages = tuple(replace(s, wall_s_total=0.25, invocations=5, samples_per_call=1) if hasattr(s, "op_type")
+                       else s for s in record.schedule.stages)
+        view = DeploymentRecordView(record=replace(record, schedule=replace(record.schedule, stages=stages)))
+        assert OBJECTIVES.get("host_op_wall_s").value(view) == pytest.approx(0.05)
+        uncounted = tuple(replace(s, samples_per_call=None) if hasattr(s, "op_type") else s for s in stages)
+        view = DeploymentRecordView(record=replace(record, schedule=replace(record.schedule, stages=uncounted)))
+        assert "host_op_wall_s" not in {s.key for s in OBJECTIVES.available_for(view)}
 
     def test_an_undeclared_core_capacity_makes_the_capacity_axis_unavailable(self):
         record = make_full_record()
@@ -443,7 +448,7 @@ class TestExtractedValues:
             assert record_values[key] == candidate_values[key]
 
     def test_the_modeled_axes_are_the_cost_model_terms_not_a_recomputation(self):
-        record = make_full_record()
+        record = with_partition(make_full_record())  # [U-HOST2] dispatch-only host work: the total stands
         report = DeploymentCostModel().evaluate(record)
         values = OBJECTIVES.extract(DeploymentRecordView(record=record))
         assert values["programming_energy_mj"] == find_term(

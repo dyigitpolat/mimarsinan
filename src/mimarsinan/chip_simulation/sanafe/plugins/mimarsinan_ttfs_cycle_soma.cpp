@@ -13,15 +13,18 @@
 // cycle c with (c-1) % S == k_src, carrying activation a = (S - k_src)/S. So
 //   V += current_in(c) * (S - ((c-1) mod S)) / S
 // accumulated over the input phase reconstructs V = sum_j W_ij * a_j (+ bias).
-// At the neuron's window start the fire step k_fire = ceil(S*(1 - V/theta)) is
-// computed, and a single spike is emitted at (active_start + k_fire).
+// At the neuron's window start the fire step k_fire is taken by the one timing
+// decision (nevresim's timing_decision.hpp): on the integer chip's lattice
+// (the stage's ``lattice`` flag, the executor's record) from the arrivals'
+// integer numerator, decided in integers; otherwise the closed form
+// ceil(S*(1 - V/theta)) on the float membrane. A single spike is emitted at
+// (active_start + k_fire).
 //
 // NOTE: the exact pipeline-delay offset is validated against the analytical
 // reference via the cross-backend parity harness.
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <optional>
@@ -32,6 +35,10 @@
 #include "mapped.hpp"
 #include "pipeline.hpp"
 
+#include "simulator/compute_policy/timing_decision.hpp"
+
+namespace timing = nevresim::timing;
+
 class MimarsinanTtfsCycleSoma : public sanafe::SomaUnit
 {
 public:
@@ -39,7 +46,7 @@ public:
     {
         register_attributes({
                 "threshold", "bias", "active_start", "active_length",
-                "simulation_length",
+                "simulation_length", "lattice",
         });
         // Opt-in per-cycle CSV trace (debug): MIMARSINAN_TTFS_CYCLE_TRACE=<path>.
         const char *trace_path = std::getenv("MIMARSINAN_TTFS_CYCLE_TRACE");
@@ -67,6 +74,7 @@ public:
         if (!initialized_[neuron_address])
         {
             membrane_[neuron_address] = bias_[neuron_address];
+            numerator_[neuron_address] = 0;
             initialized_[neuron_address] = true;
             has_fired_[neuron_address] = false;
             fire_step_[neuron_address] = -1;
@@ -85,6 +93,7 @@ public:
             const long int local = ((cycle - 1) % s + s) % s;  // k_src
             const double weight = static_cast<double>(s - local) / static_cast<double>(s);
             membrane_[neuron_address] += current_in.value() * weight;
+            timing::add_arrival(numerator_[neuron_address], current_in.value(), s - local);
             trace_event("in", neuron_address, simulation_time, cycle, start,
                     current_in.value(), local, weight, s);
         }
@@ -107,7 +116,7 @@ public:
 
         sanafe::NeuronStatus status = sanafe::updated;
         if (computed_[neuron_address] && has_fired_[neuron_address]
-                && !emitted_fire_[neuron_address] && fire_step_[neuron_address] >= 0
+                && !emitted_fire_[neuron_address] && timing::in_window(fire_step_[neuron_address])
                 && (cycle - start) == fire_step_[neuron_address])
         {
             status = sanafe::fired;
@@ -141,6 +150,8 @@ public:
         fire_step_.clear();
         emitted_fire_.clear();
         computed_.clear();
+        numerator_.clear();
+        lattice_.clear();
         simulation_length_ = 0;
     }
 
@@ -176,29 +187,24 @@ public:
             active_length_[neuron_address] =
                     static_cast<long int>(static_cast<int>(param));
         }
+        else if (attribute_name == "lattice")
+        {
+            lattice_[neuron_address] = static_cast<bool>(param);
+        }
     }
 
     void apply_fire_step_from_membrane(std::size_t neuron_address, int s)
     {
-        const double theta = std::max(threshold_[neuron_address], 1e-12);
+        const double theta = threshold_[neuron_address];
         const double v = membrane_[neuron_address];
-        const double k_fire_raw =
-                std::ceil(static_cast<double>(s) * (1.0 - v / theta));
-        if (k_fire_raw >= static_cast<double>(s))
-        {
-            activation_[neuron_address] = 0.0;
-            has_fired_[neuron_address] = false;
-            fire_step_[neuron_address] = -1;
-            trace_fire(neuron_address, s, v, theta, k_fire_raw, -1, 0.0);
-            return;
-        }
-        const int k_fire = std::max(
-                0, std::min(static_cast<int>(k_fire_raw), s - 1));
+        const int k_fire = timing::fire_step(
+                timing::arrivals_membrane(numerator_[neuron_address],
+                        bias_[neuron_address], s, lattice_[neuron_address], v),
+                theta, s, false, timing::FloatPath::closed_form);
         fire_step_[neuron_address] = k_fire;
-        activation_[neuron_address] =
-                static_cast<double>(s - k_fire) / static_cast<double>(s);
-        has_fired_[neuron_address] = activation_[neuron_address] > 0.0;
-        trace_fire(neuron_address, s, v, theta, k_fire_raw, k_fire,
+        has_fired_[neuron_address] = timing::in_window(k_fire);
+        activation_[neuron_address] = timing::level(s, k_fire);
+        trace_fire(neuron_address, s, v, theta, static_cast<double>(k_fire), k_fire,
                 activation_[neuron_address]);
     }
 
@@ -249,6 +255,8 @@ private:
     std::vector<int> fire_step_;
     std::vector<bool> emitted_fire_;
     std::vector<bool> computed_;
+    std::vector<std::int64_t> numerator_;
+    std::vector<bool> lattice_;
     int simulation_length_{0};
 
     void ensure_capacity(std::size_t neuron_address)
@@ -267,6 +275,8 @@ private:
             fire_step_.resize(new_size, -1);
             emitted_fire_.resize(new_size, false);
             computed_.resize(new_size, false);
+            numerator_.resize(new_size, 0);
+            lattice_.resize(new_size, false);
         }
     }
 };
@@ -275,3 +285,6 @@ extern "C" sanafe::PipelineUnit *create_mimarsinan_ttfs_cycle_soma()
 {
     return static_cast<sanafe::PipelineUnit *>(new MimarsinanTtfsCycleSoma());
 }
+
+// The one timing decision's version, read by the toolchain before it stamps this soma (timing_decision.py).
+extern "C" int mimarsinan_timing_decision_abi() { return timing::abi; }

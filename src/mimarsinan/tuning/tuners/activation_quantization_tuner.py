@@ -2,14 +2,11 @@
 
 import dataclasses
 
-import torch
-
 from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.mapping.support.bias_compensation import (
     apply_lif_half_step_bias_compensation,
     apply_sync_exact_entry_half_step,
 )
-from mimarsinan.models.nn.activations.autograd import LIF_EXACT_QAT_THETA_FLOOR
 from mimarsinan.spiking.dfq_bias_correction import preactivation_channel_means
 from mimarsinan.spiking.sync_first_moment import apply_sync_first_moment_fold
 from mimarsinan.spiking.theta_cotrain import (
@@ -33,6 +30,8 @@ from mimarsinan.tuning.orchestration.lif_exact_qat import (
     deployed_lif_gauge_forward,
     install_lif_entry_input_quantizers,
     lif_exact_qat_active,
+    pin_lif_theta_floors,
+    record_lif_charge_bounds,
 )
 from mimarsinan.tuning.orchestration.ttfs_exact_qat import ttfsq_exact_qat_active
 from mimarsinan.tuning.orchestration.frontier import frontier_ladder
@@ -120,6 +119,7 @@ class ActivationQuantizationTuner(CascadeForwardInstall, AdaptationRateTuner):
 
     def _install_lif_exact_qat(self) -> None:
         report = promote_theta_for_exact_qat(self.model)
+        bounds = record_lif_charge_bounds(self.model)  # [U-LIF P1] before any tuner move
         folded = apply_lif_half_step_bias_compensation(
             self.model, int(self.pipeline.config["simulation_steps"]),
         )
@@ -131,6 +131,7 @@ class ActivationQuantizationTuner(CascadeForwardInstall, AdaptationRateTuner):
             self.pipeline.reporter, "LIF-EXACT-QAT", report,
             extra={
                 "folded": int(folded),
+                "charge_bounds": int(bounds),
                 "entry_snaps": int(snaps),
                 "retimed": bool(self.pipeline.config.get("lif_per_hop_retiming", False)),
             },
@@ -178,23 +179,12 @@ class ActivationQuantizationTuner(CascadeForwardInstall, AdaptationRateTuner):
         )
 
     def _pin_lif_theta_positivity_floor(self) -> None:
-        """Pin trained theta at the kernel's forward floor so the finalize-built
-        LIF nodes run exactly the theta the QAT trained."""
-        pinned = 0
-        for perceptron in self.model.get_perceptrons():
-            theta = perceptron.activation_scale
-            if torch.is_tensor(theta) and bool(
-                (theta.detach() < LIF_EXACT_QAT_THETA_FLOOR).any()
-            ):
-                with torch.no_grad():
-                    theta.clamp_(min=LIF_EXACT_QAT_THETA_FLOOR)
-                pinned += 1
+        """Pin trained theta at its floor (the kernel's positivity floor and, [U-LIF P1], the per-cycle charge bound)
+        so the finalize-built LIF nodes run exactly the theta the QAT read."""
+        pinned = pin_lif_theta_floors(self.model)
         if pinned:
-            print(
-                f"[LIF-EXACT-QAT] theta positivity floor pinned on {pinned} "
-                f"perceptron(s) (min {LIF_EXACT_QAT_THETA_FLOOR})",
-                flush=True,
-            )
+            print(f"[LIF-EXACT-QAT] theta floor pinned on {pinned} perceptron(s) (positivity and per-cycle charge)",
+                  flush=True)
 
     def _fold_entry_half_step(self) -> None:
         folded = apply_sync_exact_entry_half_step(

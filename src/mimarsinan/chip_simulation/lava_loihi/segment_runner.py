@@ -19,6 +19,7 @@ from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts,
 from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
+from mimarsinan.mapping.support.neuron_thresholds import threshold_columns
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.lava_loihi.timing import _LAVA_DTYPE, _SegmentTiming
@@ -150,7 +151,7 @@ class LavaSegmentMixin:
                     )
                     wave_tasks[core_idx] = (
                         weights,
-                        float(core.threshold),
+                        threshold_columns(core.threshold, 0, used_neu),  # [U-PCH] one register or each used neuron's
                         hardware_bias,
                         active_input.reshape(used_ax, N * T),
                     )

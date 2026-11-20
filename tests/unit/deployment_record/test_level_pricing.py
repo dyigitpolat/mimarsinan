@@ -13,7 +13,7 @@ from mimarsinan.deployment_record.build.payload_sizes import params_bytes
 from mimarsinan.deployment_record.build.write_census import period_census
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.cost.absolute.level_pricing import price_level
-from mimarsinan.deployment_record.platform_physics.host_calibration import calibration_overrides, host_block
+from mimarsinan.deployment_record.platform_physics.host_calibration import calibration_diagnostic
 from mimarsinan.deployment_record.platform_physics.resolve import merge_override_blocks, resolve_platform_physics
 from mimarsinan.deployment_record.quantities.from_level import (
     NO_LEVEL_MESH,
@@ -32,6 +32,7 @@ from mimarsinan.mapping.capability.level_schedule import CoreGeometry, level_sch
 from mimarsinan.mapping.capability.mac_split import MacCounters
 
 from unit.deployment_record.g3_fixtures import constant
+from unit.deployment_record.registered_hosts import declared_rows, registered_fixture
 from unit.mapping.capability.ir_fixtures import contraction_graph, lane_graph
 
 _GEOMETRY = CoreGeometry(max_axons=256, max_neurons=256, allow_coalescing=True, allow_splitting=True)
@@ -50,11 +51,26 @@ def _platform(*, axons=256, neurons=256, semantics="mvm", **extra):
     return declared
 
 
+#: [U-HOST2] The calibration's numbers as a test host's own description, registered around each test (a calibration
+#: itself is a diagnostic, refused as a host block).
+_HOST_NAME = "test_level_pricing_host"
+_HOST_ROWS = {"host_macs_per_s": {"nominal": 2.0, "unit": "G/s", "evidence_kind": "estimated", "note": "test rate"},
+              "t_host_op_overhead": {"low": 10.0, "nominal": 20.0, "high": 40.0, "unit": "us",
+                                     "evidence_kind": "estimated", "note": "test dispatch"},
+              "p_host": _P_HOST}
+_host_description = registered_fixture(_HOST_NAME, _HOST_ROWS)
+
+
 def _physics(profile="generic_estimated_22nm", **blocks):
-    host = host_block({"platform_physics_overrides": calibration_overrides(
-        macs_per_s=2.0e9, op_overhead_s=(1e-5, 2e-5, 4e-5), p_host_w=None, identity="h",
-        declared={"p_host": _P_HOST})})
+    host = declared_rows(_HOST_NAME, _HOST_ROWS)
     return resolve_platform_physics(profile, merge_override_blocks({"host": host, **blocks}))
+
+
+def test_the_calibration_stays_a_diagnostic():
+    rows = calibration_diagnostic(macs_per_s=2.0e9, op_overhead_s=(1e-5, 2e-5, 4e-5), p_host_w=None, identity="h",
+                                  declared={"p_host": _P_HOST})
+    with pytest.raises(ToolchainRefusal):
+        resolve_platform_physics("generic_estimated_22nm", merge_override_blocks({"host": rows}))
 
 
 def _view(ir, level, budget, *, geometry=_GEOMETRY, payload_write=ON_CHIP_WRITE_BACK, platform=None,

@@ -44,6 +44,7 @@ from mimarsinan.mapping.ir.core_law import CoreLaw
 from mimarsinan.mapping.lanes.declaration import LaneDeclarationError, lane_operand_conflict, lanes_executed
 from mimarsinan.mapping.lanes.install import install_lane_laws
 from mimarsinan.mapping.support.bias_drive import install_bias_row_drives, reads_a_core, refuse_drives_off_their_grid
+from mimarsinan.mapping.support.drive_rule import DriveGrid
 from mimarsinan.mapping.support.grid_declarations import ParameterGrids, identity_output_law
 from mimarsinan.models.nn.activations.integer_law import (
     FP64_EXACT_BOUND,
@@ -129,9 +130,9 @@ def solve_ir_laws(ir_graph, perceptron_ranges: Mapping[int, float], spec: Readou
     if grids is None:
         grids, _steps = assign_core_grids(ir_graph, perceptron_ranges, spec.activation_bits)
     nodes_by_id = {int(n.id): n for n in ir_graph.nodes}
-    # [bias-row gauge] a core's row drive is the top code value of the input grid assigned here (m-5).
+    # [bias-row gauge, U-BRANGE2] a core's row drive is a code value of the input grid assigned here (m-5).
     refuse_drives_off_their_grid(ir_graph, lambda core: (
-        grids[int(core.id)].input_step * grids[int(core.id)].input_levels
+        DriveGrid(step=grids[int(core.id)].input_step, offset=0.0, code_max=int(grids[int(core.id)].input_levels))
         if reads_a_core(data_sources(core), nodes_by_id) else None))
     floors = dict(floors or {})
     memo: Dict[tuple, CoreLaw] = {}

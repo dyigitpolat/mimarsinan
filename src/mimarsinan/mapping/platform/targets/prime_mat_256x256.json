@@ -1,18 +1,107 @@
 {
   "name": "prime_mat_256x256",
-  "display_name": "PRIME (Chi 2016): ReRAM mats of 256 x 256",
+  "display_name": "PRIME (Chi 2016), ReRAM mats of 256 x 256",
   "geometry": "prime_mat_256x256",
-  "keys": {},
+  "keys": {
+    "core_semantics": "mvm",
+    "onchip_arithmetic": {
+      "classes": [
+        "L"
+      ]
+    }
+  },
   "core_fields": {
-    "cells_per_weight": 2,
+    "cells_per_weight": 4,
     "weight_cell_rows": 1
   },
   "faithfulness": {
     "class": "refused",
-    "named": [
-      "no physics profile"
-    ],
-    "note": "Geometry only: the registered geometry resolves with its claim class, and no physics profile ships for this target, so absolute area, energy and latency are refused by name."
+    "note": "Geometry only. The registered geometry resolves with its claim class. The description states no pricing, so the label of each run names the pricing the run resolves. A run that declares a physics profile or constants is priced under them, and one that declares neither refuses absolute area, energy and latency by name."
   },
-  "notes": "[U-C4 targeted M1] The geometry counts ReRAM cells (\"for each mat, there are 256×256 ReRAM cells\", chi2016prime Section V-A, p.36) at their bound 4-bit weights (\"for each ReRAM cell, we assume 4-bit MLC for computation\", same sentence), and a signed weight takes two of them, one in each crossbar of a pair on the same input: \"Finally, we employ two crossbar arrays store positive and negative weights, respectively, and allow them to share the same input port.\" (chi2016prime Section III-A1 'Decoder and Driver', p.30). So core_fields cells_per_weight 2 with weight_cell_rows 1: the partner cell sits on the same input row, in the paired crossbar, so each 256 x 256 cell mat holds 256 x 128 signed weights (the bundle's cores, derived from the geometry), its cells, rows and columns stay 256 x 256, and a weight write writes both cells. This is the tree's card's reading (docs/research/physics/prime_constants_research.md section 3.3(b): \"the ± split puts the negative half in a second mat ... the composing-aware one is the physically correct one\"); the paper's own \"256 − 256 mat\" capacity framing (Section IV-B1, Section V-C) ignores the pair and is not used. The count is the chip's at its bound 4-bit weights: the paper's deployed 8-bit weights compose two of them (\"two 4-bit cells to represent one 8-bit synaptic weight\", Section III-D1, p.33, on adjacent bitlines), so 4 cells per 8-bit signed weight; a run that overrides weight_bits keeps the count of 2, a boundary stated here. A mat pair declared as one core of 256 x 256 signed weights (count 64) would hold the same weights on the same cells; the bundle keeps the registered mats."
+  "notes": "[U-CHIPKEYS2] The geometry counts ReRAM cells (\"for each mat, there are 256×256 ReRAM cells\", chi2016prime Section V-A, p.36) of 4 bits (\"for each ReRAM cell, we assume 4-bit MLC for computation\", same sentence). The weight grid is the composed weight one synapse represents: \"two 4-bit cells to represent one 8-bit synaptic weight\" (Section III-D, PDF p.7), its sign held by a pair of crossbars: \"Finally, we employ two crossbar arrays store positive and negative weights, respectively, and allow them to share the same input port.\" (Section III-A1 'Decoder and Driver', PDF p.5), so the symmetric signed grid of 9 bits. A stored signed weight takes four cells on one input row: its magnitude's two 4-bit cells on adjacent bitlines in each crossbar of the pair. So core_fields cells_per_weight 4 with weight_cell_rows 1, and each 256 x 256 cell mat holds 256 x 64 signed weights (the bundle's cores, derived from the geometry); its cells, rows and columns stay 256 x 256, and a weight write writes its four cells. Revision 1 and R5 declared the cell's 4 bits with two cells per weight (one in each crossbar of the pair, the reading of docs/research/physics/prime_constants_research.md section 3.3(b)); the composing scheme the paper deploys doubles both. The paper's own \"256 − 256 mat\" capacity framing (Section IV-B1, Section V-C) ignores the pair and is not used.",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "chi2016prime",
+        "location": "Section I, PDF p.1",
+        "quote": "ReRAM can perform matrix-vector multiplication efficiently in a crossbar structure, and has been widely studied to represent synapses in neural computation [10]–[15].",
+        "reads": "can perform matrix-vector multiplication"
+      }
+    },
+    "weight_bits": {
+      "stated": {
+        "value": 9,
+        "source": "chi2016prime",
+        "location": "Section III-A 'Decoder and Driver', PDF p.5, and Section III-D 'Overcoming the Precision Challenge', PDF p.7",
+        "quote": "Finally, we employ two crossbar arrays store positive and negative weights, respectively, and allow them to share the same input port. ... To achieve high computation accuracy with conservative assumptions, we propose an input and synapse composing scheme, which can use two 3-bit input signals to compose one 6-bit input signal and two 4-bit cells to represent one 8-bit synaptic weight.",
+        "reads": "one 8-bit synaptic weight",
+        "derivation": [
+          {
+            "field": null,
+            "rule": "sign_and_magnitude",
+            "reads": 8
+          }
+        ],
+        "note": "The composed weight one synapse represents: an 8-bit magnitude in two 4-bit cells, its sign held by the crossbar of the pair it is written to (positive or negative weights), the symmetric signed grid of 9 bits. Revision 1 declared the cell's 4 bits.",
+        "composition": {
+          "slices_per_weight": {
+            "stated": {
+              "value": 2,
+              "source": "chi2016prime",
+              "location": "Section III-D 'Overcoming the Precision Challenge', PDF p.7",
+              "quote": "two 4-bit cells to represent one 8-bit synaptic weight",
+              "reads": "two 4-bit cells",
+              "note": "The slices of one magnitude; the paired crossbar holds the other sign's (law magnitude_signed_apart), so the core field's cells_per_weight 4 holds two copies of the 2 slices."
+            }
+          },
+          "cell_bits": {
+            "stated": {
+              "value": 4,
+              "source": "chi2016prime",
+              "location": "Section III-D 'Overcoming the Precision Challenge', PDF p.7",
+              "quote": "two 4-bit cells to represent one 8-bit synaptic weight",
+              "reads": "two 4-bit cells"
+            }
+          },
+          "law": "magnitude_signed_apart"
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The source states no bias handling; the registered geometry's bias row is the description's assumption.",
+        "assumed": false
+      }
+    },
+    "activation_bits": {
+      "unstated": {
+        "note": "Input voltages carry 3 bits (8 levels), and two 3-bit signals compose one 6-bit input (Section III-D): a composition over passes, not one input grid; the deployment declares its grid."
+      }
+    },
+    "readout_law": {
+      "unstated": {
+        "note": "Po-bit reconfigurable sense amplifiers (Po at most 8) and a precision-control scheme compose a 6-bit target output from partial results (Section III-D): not a per-core converter of the toolchain's form; the deployment declares one."
+      }
+    },
+    "onchip_arithmetic": {
+      "stated": {
+        "value": {
+          "classes": [
+            "L"
+          ]
+        },
+        "source": "chi2016prime",
+        "location": "Fig. 4 caption, PDF p.5",
+        "quote": "(C) reconfigurable SA with counters for multi-level outputs, and added ReLU and 4-1 max pooling function units",
+        "reads": "added ReLU",
+        "note": "ReLU (L) runs at the sense amplifier; the pooling unit is max pooling, not the toolchain's average pool (P); no addition unit is stated."
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The ReRAM mats hold programmed weights; the description declares no run-time writable matrix."
+      }
+    }
+  }
 }

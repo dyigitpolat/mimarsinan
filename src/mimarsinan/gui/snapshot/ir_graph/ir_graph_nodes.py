@@ -11,6 +11,7 @@ logger = logging.getLogger("mimarsinan.gui")
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _t, _histogram
 from mimarsinan.common.presentation import layer_key_from_node_name
+from mimarsinan.mapping.support.neuron_thresholds import threshold_report
 from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import (
     _detect_neural_core_liveness,
@@ -58,7 +59,7 @@ def process_ir_graph_node(
             info["layer_group"] = group_key
             info["axons"] = int(mat.shape[0])
             info["neurons"] = int(mat.shape[1])
-            info["threshold"] = float(node.threshold)
+            info["threshold"] = threshold_report(node.threshold)  # [U-PCH] a list for per-neuron registers
             info["activation_scale"] = _t(node.activation_scale)
             info["parameter_scale"] = _t(node.parameter_scale)
             info["input_activation_scale"] = _t(node.input_activation_scale)

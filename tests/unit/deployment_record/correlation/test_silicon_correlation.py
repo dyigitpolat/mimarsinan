@@ -13,14 +13,28 @@ from mimarsinan.deployment_record.correlation.library import (
     get_case,
 )
 from mimarsinan.deployment_record.correlation.run import correlate
+from mimarsinan.deployment_record.platform_physics import get_platform_physics
 
 ACCEPTED_PCT = 25.0
 
 
+def _host_unpriced(case) -> bool:
+    """[U-HOST] The case's census carries host work and its physics declares no host: a host-inclusive axis is
+    priced only from an identified host description, so it refuses by that rule's name (a published host wall in
+    the census is a measurement, never a host price)."""
+    host_work = float(case.census.get("host_macs", 0) or 0) > 0
+    return host_work and not get_platform_physics(case.profile).has("host_macs_per_s")
+
+
 @pytest.mark.parametrize("name", sorted(available_cases()))
 def test_every_shipped_case_reproduces_its_published_value(name):
-    result = correlate(get_case(name))
+    case = get_case(name)
+    result = correlate(case)
+    refusals = " ".join(axis.refusal or "" for axis in result.axes)
     for axis in result.axes:
+        if axis.predicted is None and _host_unpriced(case):  # the root is named on the case's host-inclusive axes
+            assert "identified host description" in refusals, (name, axis.name, axis.refusal)
+            continue
         assert axis.predicted is not None, (
             f"{name}/{axis.name}: the physics refused the axis — {axis.refusal}")
         assert abs(axis.error_pct) <= ACCEPTED_PCT, (

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -21,6 +21,9 @@ class NeuralSegmentResult:
     # Per-core V = W @ a + b from the SAME execution (TTFS analytical path), so
     # SANA-FE preset injection never re-runs the segment.
     membrane_voltages: Optional[List[np.ndarray]] = None
+    # Per-core lattice record ``(on_lattice, m)`` of the same execution (``membrane_lattice``; None where the core
+    # holds no lattice neuron): the integers a compiled timing soma decides on, handed by the SANA-FE stage.
+    membrane_lattice: Optional[List[Optional[Tuple[np.ndarray, np.ndarray]]]] = None
 
 
 def is_ttfs_spiking_mode(spiking_mode: str) -> bool:

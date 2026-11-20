@@ -54,6 +54,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.mapping.ir_mapping_class import IRMapping
@@ -62,7 +63,7 @@ from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
-from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_mode
+from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_point
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
 from integration._split_reassembly import (
@@ -260,7 +261,7 @@ def build_torch_and_hcm(
 def _torch_nf(flow, x, spiking_mode, T):
     if spiking_mode == "lif":
         return chip_aligned_segment_forward(flow, x, T, soma_law=DEFAULT_SOMA_LAW)
-    return calibration_forward_for_mode(spiking_mode, soma_law=DEFAULT_SOMA_LAW)(flow, x, T)
+    return calibration_forward_for_point(point_of_mode(spiking_mode))(flow, x, T)
 
 
 def _lif_per_neuron_counts(flow, hcm, hybrid, nodes, sample, T):

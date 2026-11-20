@@ -97,7 +97,9 @@ class TestLoihi2:
         energy or step time; the notes carry the dense-equivalent rule and the permissions the brief states."""
         bundle, pcfg = target_bundles()["loihi2_like"], _pcfg("loihi2_like")
         assert bundle.geometry == "loihi2_like" and bundle.claim_class == "curve-only"
-        assert set(bundle.values) == {"cores", "weight_bits"}
+        # [U-CHIPKEYS] beside the geometry, the one key the brief states: spiking cores
+        assert set(bundle.values) == {"cores", "weight_bits", "core_semantics"}
+        assert bundle.values["core_semantics"] == "spiking"
         assert pcfg["platform_physics_resolved"] is None
         assert pcfg["target_faithfulness_class"] == "refused: no physics profile"
         notes = _file("loihi2_like")["notes"]
@@ -244,14 +246,17 @@ class TestDeparturePrints:
         assert design_point_script.BUILD_DECLARATIONS["activation_bits"] == 8
         rram = block({}, {"target": "neurram", "core_fields": {"write_granularity": "cell"}, "arithmetic_class": "t"},
                      4)
+        # [U-CHIPKEYS] the build's lane-free program departs, named, from a chip that declares on-chip classes
         assert rram["faithfulness"]["named"] == [*target_bundles()["neurram"].faithfulness.named,
-                                                 "activation_bits declared"]
+                                                 "activation_bits declared", "onchip_arithmetic declared"]
         row = block({}, {"target": "neurram", "core_fields": {"write_granularity": "core"}, "arithmetic_class": "t"},
                     4)
-        assert row["faithfulness"]["named"][-2:] == ["activation_bits declared", "cores.write_granularity declared"]
+        assert row["faithfulness"]["named"][-3:] == ["activation_bits declared", "onchip_arithmetic declared",
+                                                     "cores.write_granularity declared"]
         for name in ("hermes_64", "generic_estimated_22nm"):  # an 8-bit chip, and the point that binds no width
             plain = block({}, {"target": name, "arithmetic_class": "t"}, 4)
-            assert not any(n.endswith(" declared") for n in plain["faithfulness"]["named"]), name
+            assert [n for n in plain["faithfulness"]["named"] if n.endswith(" declared")] == [
+                "onchip_arithmetic declared"], name
 
     def test_a_row_of_several_core_types_names_each_type_s_departure(self, design_point_script):
         operand = {"payload_bits": 8, "write_source": "host"}
@@ -259,8 +264,10 @@ class TestDeparturePrints:
                               {"role": "operand", "target": "sram_cim_macro", "operand": operand}],
                "arithmetic_class": "t"}
         block = design_point_script.chip_block({}, row, None)
-        assert block["faithfulness"]["named"] == [
+        assert block["faithfulness"]["named"] == [  # [U-CHIPKEYS] the build's lane-free program departs, named
             "activation_bits declared (static core type, bundle neurram)",
+            "onchip_arithmetic declared (static core type, bundle neurram)",
             "activation_bits declared (operand core type, bundle sram_cim_macro)"]
         eight = {"core_types": [{"role": "static", "target": "hermes_64"}], "arithmetic_class": "t"}
-        assert design_point_script.chip_block({}, eight, None)["faithfulness"]["named"] == []
+        assert design_point_script.chip_block({}, eight, None)["faithfulness"]["named"] == [
+            "onchip_arithmetic declared (static core type, bundle hermes_64)"]

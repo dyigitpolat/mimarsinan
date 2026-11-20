@@ -241,8 +241,10 @@ class TestInstallRefusals:
 
     def test_a_declared_fixed_range_that_the_quantizers_do_not_carry_refuses_by_name(self):
         law = {"adc_bits": 40, "range": "fixed", "range_value": 0.5, "mult_bits": 16}
+        # [U-BRANGE2 stage 1b] the test programs calibrate their readouts by Readout Law's own calibration, which
+        # installs a declared fixed range; quantizers carrying another range (0.25) are built explicitly
         with pytest.raises(ReadoutLawStaleRangeError, match="range_value 0.5"):
-            build_integer_program(mlp(), (8,), num_classes=4, readout_law=law)
+            build_integer_program(mlp(), (8,), num_classes=4, readout_law=law, readout_ranges=[0.25] * 3)
         program = build_integer_program(mlp(), (8,), num_classes=4, readout_law=law, readout_ranges=[0.5] * 3)
         assert law_digests_by_core(program.ir)
 

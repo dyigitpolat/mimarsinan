@@ -1,0 +1,57 @@
+{
+ "type": "T3",
+ "what": "resistive RAM crossbars",
+ "scaled_terms": "cells_converters",
+ "cell_family": "resistive",
+ "s": {
+  "value": 0.44448107733219366,
+  "unit": "1",
+  "evidence_kind": "fitted",
+  "citation": [
+   "T3-IS-09",
+   "T3-IS-12",
+   "T3-IS-16",
+   "T3-IS-17",
+   "T3-NR-02",
+   "T3-ST-01"
+  ],
+  "derivation": "the array and converter share at core scope (rule C: a chip pie over gamma; a tile share as is)",
+  "recompute": {
+   "aggregate": "geometric_mean",
+   "points": [
+    {
+     "label": "NeuRRAM",
+     "expression": "(v('T3-NR-02', key='RRAMs') + v('T3-NR-02', key='neurons')) / 100 / r('types/t3:gamma')"
+    },
+    {
+     "label": "STELLAR",
+     "expression": "(v('T3-ST-01', key='array') + v('T3-ST-01', key='ADC')) / 100 / r('types/t3:gamma')"
+    },
+    {
+     "label": "ISAAC (model)",
+     "expression": "s('T3-IS-16', 'scope', 'number 12', 12) * (v('T3-IS-12') + v('T3-IS-09')) / v('T3-IS-17')"
+    }
+   ]
+  },
+  "held_out": {
+   "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+   "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+  },
+  "note": ""
+ },
+ "gamma": {
+  "value": 0.8777264028620466,
+  "unit": "1",
+  "evidence_kind": "derived",
+  "citation": [],
+  "derivation": "no T3 die publishes its core-grid share: the T1 dies' (flagged)",
+  "recompute": {
+   "expression": "r('types/t1:gamma')"
+  },
+  "note": ""
+ },
+ "default_cell_kind": "rram_1t1r",
+ "default_converter_kind": "sar_gsps",
+ "outside_parts": "types/t1",
+ "band": "bands:pooled"
+}

@@ -1,6 +1,6 @@
 {
   "name": "study_vr_like",
-  "display_name": "VR-like SRAM-CIM tile of the co-design study (256 x 64 four-bit cells; the study's estimate, not a fabricated chip)",
+  "display_name": "VR-like SRAM-CIM tile of the co-design study (256 x 64 four-bit cells, an estimate of the study, not a fabricated chip)",
   "geometry": {
     "name": "study_vr_like_256x64x4",
     "cores": [
@@ -28,18 +28,115 @@
       ],
       "lanes_per_core": 1,
       "lane_block": "ng45_os_lane"
+    },
+    "readout_law": {
+      "adc_bits": 32,
+      "mult_bits": 24,
+      "output_law": "identity",
+      "range": "calibrated"
     }
   },
   "faithfulness": {
     "class": "approximate",
     "named": [
-      "the study's modelled tile, not a fabricated chip",
+      "the modelled tile of the study, not a fabricated chip",
       "MAC energy per committed cell (the study charges whole tile activations)",
-      "quantities the study does not price declared from sourced bands",
+      "quantities the study does not price, stated from sourced bands",
       "output-stage lanes estimated",
       "one ADC on the fused accumulator (per-array ADC not built, W47)"
     ],
-    "note": "The study's chip as its estimator prices it (codesign.md, constants.md, audit_v4/pd.md); every departure is named in the profile's rows and description."
+    "note": "The chip of the study as its estimator prices it (codesign.md, constants.md, audit_v4/pd.md). Every departure is named in the rows and the description of the profile."
   },
-  "notes": "The certified function applies one ADC (the run's readout law) to each column's fused accumulator, as on every lane bundle; the study's tile accumulates its 32-bit partial sums exactly and converts nothing, and its cost model prices no conversion (W47's per-array ADC is not built). allow_coalescing and allow_neuron_splitting are true: the study's census splits a layer's rows over ceil(cin k^2 / R) tiles and its columns over ceil(cout / 64) tiles, accumulating 32-bit full-precision partial sums (constants.md sec. 4, jiang2023a p.2-3). onchip_arithmetic declares the lane subset L, E and P on the ng45_os_lane block, one lane per 64 output columns (one per tile): the block the study's capability-on tile-area factor s_AU reads (arith_toggle.md sec. 6; codesign.md sec. 2.2, D136: 1.069 to 1.130 of a G3 tile, frozen picks at 1.130). The study prices no lane energy (about 0.4% of MAC energy); the toolchain prices the block's e_lane_op. activation_bits is not set: the study carries 8-bit activations at its cuts and prices a tile activation at 8 bit-serial cycles, while a program declares its own value grid."
+  "notes": "The certified function applies one ADC (the run's readout law) to each column's fused accumulator, as on every lane bundle; the study's tile accumulates its 32-bit partial sums exactly and converts nothing, and its cost model prices no conversion (W47's per-array ADC is not built). allow_coalescing and allow_neuron_splitting are true: the study's census splits a layer's rows over ceil(cin k^2 / R) tiles and its columns over ceil(cout / 64) tiles, accumulating 32-bit full-precision partial sums (constants.md sec. 4, jiang2023a p.2-3). onchip_arithmetic declares the lane subset L, E and P on the ng45_os_lane block, one lane per 64 output columns (one per tile): the block the study's capability-on tile-area factor s_AU reads (arith_toggle.md sec. 6; codesign.md sec. 2.2, D136: 1.069 to 1.130 of a G3 tile, frozen picks at 1.130). The study prices no lane energy (about 0.4% of MAC energy); the toolchain prices the block's e_lane_op. activation_bits is not set: the study carries 8-bit activations at its cuts and prices a tile activation at 8 bit-serial cycles, while a program declares its own value grid.",
+  "computation": {
+    "core_semantics": {
+      "stated": {
+        "value": "mvm",
+        "source": "study_vr_like profile",
+        "location": "profiles/study_vr_like.md, introduction",
+        "quote": "This profile is the VR-like tile: 256 rows by 64 four-bit cells, one 4-bit weight per cell (the VR template R = 256, C = 64, w = a = 4, A = 24, `RA/06_parts/vr.md:247-268` via pd.md sec. 3), 65,536 bits, 16,384 MACs per activation.",
+        "reads": "16,384 MACs per activation"
+      }
+    },
+    "weight_bits": {
+      "stated": {
+        "value": 4,
+        "source": "study_vr_like profile",
+        "location": "profiles/study_vr_like.md, introduction",
+        "quote": "This profile is the VR-like tile: 256 rows by 64 four-bit cells, one 4-bit weight per cell",
+        "reads": "one 4-bit weight per cell",
+        "composition": {
+          "slices_per_weight": {
+            "stated": {
+              "value": 1,
+              "source": "study_vr_like profile",
+              "location": "profiles/study_vr_like.md, introduction",
+              "quote": "256 rows by 64 four-bit cells, one 4-bit weight per cell",
+              "reads": "one 4-bit weight per cell"
+            }
+          },
+          "cell_bits": {
+            "stated": {
+              "value": 4,
+              "source": "study_vr_like profile",
+              "location": "profiles/study_vr_like.md, introduction",
+              "quote": "256 rows by 64 four-bit cells, one 4-bit weight per cell",
+              "reads": "64 four-bit cells"
+            }
+          },
+          "law": "signed_word"
+        }
+      }
+    },
+    "cores.has_bias": {
+      "unstated": {
+        "note": "The study's census counts ceil(cin k^2 / R) rows per layer (x9_0_v3.py census), no bias row: the bias enters at the output stage, the description's assumption from the census.",
+        "assumed": true
+      }
+    },
+    "activation_bits": {
+      "unstated": {
+        "note": "The study prices 8-bit activations at its cuts (constants.md sec. 2: 'Activations. 8 bits at cuts'), a tile activation at 8 bit-serial cycles (cd41_chip.T_ACT); the tile takes any input width bit-serially, so the description leaves the activation grid to the program (the bundle's notes)."
+      }
+    },
+    "readout_law": {
+      "stated": {
+        "value": {
+          "adc_bits": 32,
+          "mult_bits": 24,
+          "output_law": "identity",
+          "range": "calibrated"
+        },
+        "source": "the co-design study (constants.md)",
+        "location": "RA/06_parts/constants.md sec. 4 'Digital SRAM-CIM macro rows', the jiang2023a row the study's tile prices",
+        "quote": "Exact accumulation (full-width digital adder trees) in every row. ... 8b W, 4b inputs, 32b full-precision partial sums (p2-3)",
+        "reads": {
+          "adc_bits": "32b full-precision partial sums",
+          "output_law": "Exact accumulation (full-width digital adder trees) in every row"
+        },
+        "assumed_fields": {
+          "range": "the toolchain's converter form (W34's point form): the range calibrated from data; the study converts nothing",
+          "mult_bits": "the toolchain's converter form (W34's point form): a 24-bit requantization multiplier; the study states no multiplier"
+        },
+        "note": "The study's tile accumulates its 32-bit partial sums exactly and converts nothing: the identity converter at 32 bits."
+      }
+    },
+    "onchip_arithmetic": {
+      "unstated": {
+        "note": "The study prices a capability-on arm at the declared lane cost (codesign.md, the estimator convention, D136) and an off arm; the lanes L, E and P are the owner's ruling of 2026-10-15 (on by default for value-domain chips) on the ng45_os_lane block the study's s_AU reads.",
+        "assumed": {
+          "classes": [
+            "L",
+            "E",
+            "P"
+          ]
+        }
+      }
+    },
+    "cores.operand": {
+      "unstated": {
+        "note": "The study's tiles hold static weights; no run-time writable matrix is declared."
+      }
+    }
+  }
 }

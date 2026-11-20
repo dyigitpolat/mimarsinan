@@ -37,6 +37,7 @@ from mimarsinan.mapping.export.odin.program import (
 )
 from mimarsinan.mapping.export.odin.layout import masked_state_byte_writes
 from mimarsinan.mapping.platform.platform_constraints import PER_AXON
+from mimarsinan.mapping.support.neuron_thresholds import core_threshold
 
 #: While the memories are written the network must be gated (doc Sec.2.1).
 GATE_ACTIVITY_WHILE_PROGRAMMING = 1
@@ -88,7 +89,7 @@ def export_odin(
 
     for core_index, core in enumerate(mapping.cores):
         theta = check_theta_ceiling(
-            core.threshold, membrane_bits=soma_law.membrane_bits,
+            core_threshold(core, "the ODIN export"), membrane_bits=soma_law.membrane_bits,
             core_index=core_index,
         )
         initial = check_membrane_init(

@@ -98,9 +98,12 @@ MODES = {
     # Configs author the (spiking_family, spiking_variant) axes; the "axis"
     # tuple keeps the historical hypervolume-cell ids for scoreboard continuity.
     # Windowed lif (the historical 'lif' cells keep their hypervolume axis).
+    # [U-LIF2 W16] The toolchain's own windowed cells declare firing during the window (the owner's option A), so
+    # nevresim, SANA-FE and Loihi keep checking them as before; integrate then emit is the default of a silent row.
     "lifsync": {"spiking_family": "lif", "spiking_variant": "synchronized",
                 "firing_mode": "Default", "spike_generation_mode": "Uniform",
-                "thresholding_mode": "<", "axis": ("lif", "none")},
+                "thresholding_mode": "<", "lif_window_firing": "fire_while_integrating",
+                "axis": ("lif", "none")},
     # [P4] end-to-end event-streamed lif: the canonical 'lif' discipline.
     "lifs": {"spiking_family": "lif", "spiking_variant": "streamed",
              "firing_mode": "Default", "spike_generation_mode": "Uniform",
@@ -483,35 +486,71 @@ T0 = [
              "cores": {
                  "value": [{"max_axons": 256, "max_neurons": 256, "count": 64, "has_bias": False,
                             "weight_sign_granularity": "per_axon"}],
-                 "note": "64 ODIN cores: ODIN is one core, and the MNIST cell needs a pool of them"}},
+                 "note": "64 ODIN cores: ODIN is one core, and the MNIST cell needs a pool of them"},
+             # [U-CHIPKEYS] the cell's soma law departs from the one ODIN states (its RTL): each key named
+             "firing_granularity": {
+                 "value": "per_cycle",
+                 "note": "the cell's subtractive reset needs the per-cycle compare (the per-event law requires the "
+                         "zero reset, the derivation's rule): a departure from ODIN's per-event compare (Fig. 3, "
+                         "lif_neuron_state.v:44, the odin description's statement)"},
+             "membrane_bits": {
+                 "value": 0,
+                 "note": "the per-cycle compare runs the unbounded accumulator (an unsigned 8-bit register under the "
+                         "per-cycle compare is refused by the derivation's parity rule): a departure from ODIN's "
+                         "8-bit saturating membrane (frenkel2019odin Section II-C, lif_neuron_state.v:55-64, the "
+                         "odin description's statement)"},
+             "firing_mode": {
+                 "value": "Default",
+                 "note": "the tier-0 cell runs the framework's subtractive reset (Default), a departure from ODIN's "
+                         "reset to zero (src/LIF_neuron_blocks/lif_neuron_state.v:46, the odin description's "
+                         "statement)"},
+             "thresholding_mode": {
+                 "value": "<",
+                 "note": "the tier-0 cell fires above the threshold (strict '<'), a departure from ODIN's threshold "
+                         "at equality (lif_neuron_state.v:44, the odin description's statement)"}},
          note="ODIN bundle (4-bit weights, 256 x 256 cores with one sign per axon row, so "
               "dense layers use the rows in sign pairs; no bias lane, no coalescing or neuron "
               "splitting), the minimal pair of t0_45; the core count and coalescing are "
               "declared overrides, so the faithfulness names both "
-              "('...; allow_coalescing declared; cores declared')"),
+              "('...; allow_coalescing declared; cores declared'); [U-CHIPKEYS] the cell's soma law (per-cycle "
+              "compare, unbounded membrane, subtractive reset, strict compare) departs from the one ODIN states, "
+              "each key named ('...; firing_granularity declared; firing_mode declared; membrane_bits declared; "
+              "thresholding_mode declared')"),
     dict(n=62, mode="lifs", quant="fp", s=8, vehicle="simplemlp", target="truenorth",
          target_overrides={
              "allow_coalescing": {
                  "value": True,
                  "note": "the MLP's 784-input layer exceeds one TrueNorth core's 256 axons, "
                          "and a TrueNorth neuron integrates its own core's axons only: the "
-                         "cell declares coalescing, a departure from the chip"}},
+                         "cell declares coalescing, a departure from the chip"},
+             "thresholding_mode": {  # [U-CHIPKEYS]
+                 "value": "<",
+                 "note": "the tier-0 cell fires above the threshold (strict '<'), a departure from TrueNorth's "
+                         "threshold at equality ('equals or exceeds the threshold', merolla2014a Table S2, the "
+                         "truenorth description's statement)"}},
          note="TrueNorth bundle (4096 cores of 256 x 256 on a 64 x 64 mesh, no coalescing or "
               "neuron splitting): a float (vanilla) cell, because both doors refuse weight "
               "quantization on a 1-bit signed grid (no nonzero level); no weight grid "
               "quantizes a float run's weights, while its payload sizes, pricing and record "
               "read the bundle's weight_bits=1, and the faithfulness names it ('...; "
-              "allow_coalescing declared; weight grid not applied')"),
+              "allow_coalescing declared; thresholding_mode declared; weight grid not applied'; [U-CHIPKEYS] the "
+              "strict compare departs from TrueNorth's stated one)"),
     dict(n=63, mode="lifsync", quant="wq", s=4, vehicle="simplemlp", seed=1, target="loihi",
          target_overrides={
              "allow_coalescing": {
                  "value": True,
                  "note": "the MLP's 784- and 256-input layers exceed the dense equivalent's "
                          "128 axons, and a Loihi neuron integrates within its core: the cell "
-                         "declares coalescing, a departure from the chip"}},
+                         "declares coalescing, a departure from the chip"},
+             "firing_mode": {  # [U-CHIPKEYS]
+                 "value": "Default",
+                 "note": "the tier-0 cell runs the framework's subtractive reset (Default), a departure from Loihi's "
+                         "reset to zero ('reset to 0 right after a spiking event occurs', davies2018loihi p.83, the "
+                         "loihi description's statement)"}},
          note="Loihi bundle (dense equivalent 128 x 1024, 8-bit weights, no coalescing, "
               "neuron splitting), the minimal pair of t0_05; coalescing is a declared "
-              "override, so the faithfulness names it ('...; allow_coalescing declared')"),
+              "override, so the faithfulness names it ('...; allow_coalescing declared; firing_mode declared'; "
+              "[U-CHIPKEYS] the subtractive reset departs from Loihi's stated one)"),
     dict(n=64, mode="mvm", quant="wq", vehicle="lenet5", pruned=0.05, tags=["pruned"],
          target="isaac_like",
          note="ISAAC-like bundle (16128 arrays of 128 x 128, 16-bit weights, value "
@@ -761,9 +800,9 @@ def _without_target_keys(row, plat):
     if "target" not in row:
         return plat
     from mimarsinan.config_schema.registry import REGISTRY
-    from mimarsinan.mapping.platform.target_bundles import target_bundles
+    from mimarsinan.mapping.platform.target_bundles import get_target_bundle
 
-    owned = set(target_bundles()[row["target"]].values) | {"has_bias"}
+    owned = set(get_target_bundle(row["target"]).values) | {"has_bias"}
     owned |= {key for key, entry in REGISTRY.items() if set(entry.derived_from) & owned}
     return {key: value for key, value in plat.items() if key not in owned}
 
@@ -814,6 +853,8 @@ def _deployment(tier, row, vehicles, dataset):
         dp["firing_mode"] = row.get("firing", mode["firing_mode"])
         dp["spike_generation_mode"] = mode["spike_generation_mode"]
         dp["thresholding_mode"] = mode["thresholding_mode"]
+        if "lif_window_firing" in mode:
+            dp["lif_window_firing"] = mode["lif_window_firing"]
         dp["encoding_layer_placement"] = row.get("encoding", "subsume")
     dp["weight_quantization"] = quant["weight_quantization"]
     if "pruned" in row:
@@ -858,7 +899,30 @@ def _deployment(tier, row, vehicles, dataset):
     # census-graded ViT set) live on the row, not as generator cases.
     dp.update(row_config_keys(row, "deployment_parameters"))
     dp.update(row.get("extra_dp", {}))
-    return dp
+    return _without_target_dp_keys(row, dp)
+
+
+#: [composed head, merge rule 8] The keys a cell's kind is read from: kept where they equal the target's.
+CELL_KIND_KEYS = ("core_semantics", "spiking_family", "spiking_variant")
+
+
+def _without_target_dp_keys(row, dp):
+    """[U-CHIPKEYS] A target row authors no deployment key its bundle sets (a description states its neuron law's
+    keys): one equal to the bundle's is dropped (an equal key of the cell's kind stays, rule 8), one the row's
+    target_overrides names departs there with its note, and any other refuses by name."""
+    if "target" not in row:
+        return dp
+    from mimarsinan.mapping.platform.target_bundles import get_target_bundle
+
+    values, overrides = get_target_bundle(row["target"]).values, row.get("target_overrides", {})
+    out = {}
+    for key, value in dp.items():
+        if key not in values or key in CELL_KIND_KEYS and value == values[key]:
+            out[key] = value
+        elif key not in overrides and json.dumps(value, sort_keys=True) != json.dumps(values[key], sort_keys=True):
+            raise ValueError(f"row t0_{row.get('n')}: {key}={value!r} departs from target={row['target']!r}, which "
+                             f"states {key}={values[key]!r}: name the departure in the row's target_overrides")
+    return out
 
 
 def _cell(tier, row, vehicles, dataset):

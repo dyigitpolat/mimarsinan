@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from mimarsinan.chip_simulation.soma_axes import (
     FIRING_GRANULARITIES,
+    FIRING_GRANULARITY_KEY,
+    MEMBRANE_ARITHMETIC_KEY,
     MEMBRANE_ARITHMETICS,
+    SOMA_LEGAL_VALUES,
     WEIGHT_SIGN_GRANULARITIES,
     derived_firing_granularity,
     derived_membrane_arithmetic,
-    legal_firing_granularities,
-    legal_membrane_arithmetics,
 )
 from mimarsinan.config_schema.registry.types import (
     Category,
@@ -34,7 +35,7 @@ ENTRIES = (
            "would destroy the multiplicity.",
        provenance="derivation rule",
        derived_default=derived_firing_granularity,
-       legal_values=lambda cfg: legal_firing_granularities(cfg),
+       legal_values=SOMA_LEGAL_VALUES[FIRING_GRANULARITY_KEY],  # [U-LIF2 r3, n-1] the one soma table
        empty_means="per_cycle — today's one-compare-per-cycle law"),
     _E("membrane_arithmetic", domain="event", group="spiking", owner="SomaLaw",
        type=T.ENUM, options=MEMBRANE_ARITHMETICS, category=Category.ADVANCED,
@@ -51,7 +52,7 @@ ENTRIES = (
            "refused by key.",
        provenance="derivation rule",
        derived_default=derived_membrane_arithmetic,
-       legal_values=lambda cfg: legal_membrane_arithmetics(cfg),
+       legal_values=SOMA_LEGAL_VALUES[MEMBRANE_ARITHMETIC_KEY],
        empty_means="derived from platform membrane_bits (0 -> unbounded)"),
     _E("membrane_bits", domain="event", section=_PC, group="hardware",
        owner="SomaLaw/platform", type=T.INT, category=Category.ADVANCED,

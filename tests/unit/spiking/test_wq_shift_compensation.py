@@ -25,6 +25,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.ir_mapping_class import IRMapping
@@ -120,7 +121,7 @@ def _lifted_pyramidnet():
     from the lifted op's stamps exactly as ``negative_boundary_seam._bake`` computes them."""
     flow = _pyramidnet()
     seam = NegativeBoundarySeam(calibration_x=_inputs(7, 64), simulation_steps=T, input_data_scale=2.0,
-                                soma_law=DEFAULT_SOMA_LAW)
+                                point=point_of_mode("lif"))
     establish_deployed_wire_gauge(flow, input_data_scale=2.0, negative_boundary=seam)
     repr_ = flow.get_mapper_repr()
     consumers = repr_.consumer_map()

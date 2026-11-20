@@ -8,6 +8,7 @@ from mimarsinan.chip_simulation.activation_semantics import (
     effective_legacy_spiking_mode,
 )
 from mimarsinan.chip_simulation.soma_axes import (
+    SOMA_LEGAL_VALUES,
     firing_mode_for_granularity,
     resolved_firing_granularity,
 )
@@ -15,9 +16,6 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     DEFAULT_THRESHOLDING_MODE,
     derived_firing_mode,
     derived_spike_generation_mode,
-    legal_firing_modes,
-    legal_spike_generation_modes,
-    legal_thresholding_modes,
 )
 from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
@@ -53,6 +51,9 @@ def _derived_firing_mode(cfg: Mapping[str, Any]) -> str:
 # evaluates them against the draft), so they speak family/variant — never the
 # derivation-owned legacy twins.
 _LIF_FAMILY_RELEVANT = R.when("spiking_family", in_=("lif",))
+#: [U-TGAUGE5] where ``SpikingModePolicy.runs_per_cycle_cascade`` holds over the declared axes (a test pins the two)
+_PER_CYCLE_CASCADE_RELEVANT = R.any_of(_LIF_FAMILY_RELEVANT, R.all_of(
+    R.when("spiking_family", in_=("ttfs",)), R.when("spiking_variant", in_=("cascaded",))))
 _TTFS_CYCLE_RELEVANT = R.all_of(
     R.when("spiking_family", in_=("ttfs",)),
     R.when("spiking_variant", in_=("synchronized", "cascaded")),
@@ -78,7 +79,7 @@ ENTRIES = (
            "no-op only while every fire leaves the membrane below theta.",
        provenance="derivation rule",
        derived_default=_derived_firing_mode,
-       legal_values=lambda cfg: legal_firing_modes(_mode(cfg)),
+       legal_values=SOMA_LEGAL_VALUES["firing_mode"],  # [U-LIF2 r3, n-1] the one soma table
        empty_means="derived from spiking_mode (TTFS modes force 'TTFS'; a "
                    "per_event granularity forces 'Novena')"),
     _E("spike_generation_mode", domain="event", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
@@ -89,7 +90,7 @@ ENTRIES = (
            "family admits only 'TTFS' (the field locks); the rate encoder refuses it.",
        provenance="derivation rule",
        derived_default=lambda cfg: derived_spike_generation_mode(_mode(cfg)),
-       legal_values=lambda cfg: legal_spike_generation_modes(_mode(cfg)),
+       legal_values=SOMA_LEGAL_VALUES["spike_generation_mode"],
        empty_means="derived from spiking_mode (TTFS modes force 'TTFS')"),
     _E("thresholding_mode", domain="event", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
        options=("<", "<="), category=Category.ADVANCED, exposure="user",
@@ -97,7 +98,7 @@ ENTRIES = (
        doc="Membrane-threshold comparison (strict or inclusive). Both values are legal "
            "in every mode; unset derives '<='.",
        provenance="derivation rule", derived_default=_frozen(DEFAULT_THRESHOLDING_MODE),
-       legal_values=lambda cfg: legal_thresholding_modes(_mode(cfg)),
+       legal_values=SOMA_LEGAL_VALUES["thresholding_mode"],
        empty_means="derived from spiking_mode ('<=')"),
     _E("encoding_layer_placement", domain="event", group="mapping_strategy", owner="mapping/encoding_layer",
        type=T.ENUM, options=("subsume", "offload"), category=Category.BASIC,
@@ -158,18 +159,18 @@ ENTRIES = (
        provenance="ConversionPolicy recipe"),
     _E("lif_depth_balancing_relays", domain="event", group="mapping_strategy",
        owner="latency/depth_balancing",
-       type=T.BOOL, category=Category.ADVANCED, label="LIF Depth-balancing Relays",
+       type=T.BOOL, category=Category.ADVANCED, label="Depth-balancing Relays (Per-cycle Cascade)",
        effect="Inserts identity relay cores on gap>1 intra-segment edges",
-       doc="[C5] Unequal-depth fan-in inside a neural segment both drops the "
-           "shallow branch's early spikes and re-reads its stale final buffer "
-           "(V6). The exact remedy inserts identity relay chains so every "
-           "live intra-segment edge is gap-1; a loud mapping-time guard "
-           "rejects dead relays (an exact-theta identity weight never fires "
-           "under the strict '<' comparator — the integer-lattice hazard). "
-           "No-op on gap-free graphs; the LIF recipe arms it.",
+       doc="[C5, U-TGAUGE5] In a per-cycle cascade (the LIF family and the cascaded timing schedule) "
+           "unequal-depth fan-in inside a neural segment both drops the shallow branch's early spikes and "
+           "re-reads its stale final buffer (V6). The exact remedy inserts identity relay chains so every live "
+           "intra-segment edge is gap-1; a loud mapping-time guard rejects dead relays (an exact-theta identity "
+           "weight never fires under the strict '<' comparator, the integer-lattice hazard). No-op on gap-free "
+           "graphs; the recipe of every per-cycle cascade arms it. Declared false, a program that keeps another "
+           "gap is refused by name at mapping (UnbalancedFanInError).",
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
-       relevant=_LIF_FAMILY_RELEVANT,
-       empty_means="the lif recipe arms it; other modes stay off"),
+       relevant=_PER_CYCLE_CASCADE_RELEVANT,
+       empty_means="the recipe of every per-cycle cascade arms it; other modes stay off"),
     _E("comparator_half_step", domain="event", group="spiking", owner="deployment_contract",
        type=T.BOOL, category=Category.ADVANCED, label="Comparator-side Half-step",
        effect="Staircase hops carry the +theta/(2S) mid-tread offset in the "

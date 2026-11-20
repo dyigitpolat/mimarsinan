@@ -118,30 +118,30 @@ def test_streaming_matches_sync_only_for_constant_input():
     assert float(_streaming_counts(bursty, theta, T)) > 0.0  # level-crossing overfire
 
 
-def test_policy_walk_and_accessor_carry_the_discipline():
-    from mimarsinan.chip_simulation.spiking_semantics import (
-        lif_execution_synchronized,
-    )
+def test_policy_walk_and_accessor_carry_the_discipline(window_firing_declared):
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
 
+    window_firing_declared()  # [U-LIF2] the accessor is the record's window firing, read at a widened set
     assert LifSegmentPolicy(synchronized=True, soma_law=DEFAULT_SOMA_LAW).synchronized is True
     assert LifSegmentPolicy(soma_law=DEFAULT_SOMA_LAW).synchronized is False
     assert "synchronized" in inspect.signature(chip_aligned_segment_forward).parameters
-    assert lif_execution_synchronized({}) is False
-    assert lif_execution_synchronized(
-        {"lif_execution_discipline": "synchronized"}
-    ) is True
-    assert lif_execution_synchronized(
-        {"lif_execution_discipline": "streaming"}
-    ) is False
+    assert resolve_spiking_point({"spiking_mode": "lif"}).integrates_then_emits is False
+    assert resolve_spiking_point(
+        {"spiking_mode": "lif", "lif_window_firing": "integrate_then_emit"}
+    ).integrates_then_emits is True
+    assert resolve_spiking_point(
+        {"spiking_mode": "lif", "lif_window_firing": "fire_while_integrating"}
+    ).integrates_then_emits is False
 
 
-def test_contract_carries_the_discipline():
+def test_contract_carries_the_discipline(window_firing_declared):
     from mimarsinan.chip_simulation.deployment_contract import (
         SpikingDeploymentContract,
     )
 
+    window_firing_declared()
     contract = SpikingDeploymentContract.from_pipeline_config({
         "spiking_mode": "lif", "simulation_steps": 8,
-        "lif_execution_discipline": "synchronized",
+        "lif_window_firing": "integrate_then_emit",
     })
     assert contract.lif_execution_synchronized is True

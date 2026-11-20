@@ -30,19 +30,38 @@ def _digest(data) -> str:
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
-def test_the_format_version_is_unchanged():
-    assert DEPLOYMENT_RECORD_FORMAT_VERSION == 1
+def test_the_format_version_moved_for_its_two_named_changes():
+    """[composed head] Format 3: the sealed raw host wall named apart (U-HOST2, VERSION_1_RULE) and the window firing
+    with each pass's dependency depth (U-LIF2 W7)."""
+    assert DEPLOYMENT_RECORD_FORMAT_VERSION == 3
 
 
-def test_a_wave_zero_record_keeps_its_bytes_and_loads():
+def _as_format_1(data):
+    """A format-3 dict in the base's form: both units' named changes removed and the version written back."""
+    data = json.loads(json.dumps(data))
+    assert data["format_version"] == data["identity"]["format_version"] == 3
+    data["format_version"] = data["identity"]["format_version"] = 1
+    assert data["identity"].pop("window_firing") is None
+    for stage in data["schedule"]["stages"]:
+        stage.pop("dependency_depth", None)
+    if "timing" in data:
+        assert "host_ops_s" not in data["timing"]["latency"]
+        data["timing"]["latency"]["host_ops_s"] = data["timing"]["latency"].pop("host_ops_s_raw_total")
+    return data
+
+
+def test_a_wave_zero_record_keeps_its_bytes_but_the_named_change_and_loads():
+    """[U-HOST2] The one named change, stated and then removed: the version and the raw host wall field's name; every
+    other byte is the base's."""
     record = make_full_record()
-    assert _digest(record.to_dict()) == _BASE_FULL_RECORD_DIGEST
+    assert _digest(_as_format_1(record.to_dict())) == _BASE_FULL_RECORD_DIGEST
     assert DeploymentRecord.from_dict(record.to_dict()) == record
 
 
 #: [W03] The one named change: at 3 cores the chain fits the declared cores, so the residency planner pins every core
 #: of its pass and the stage record carries ``resident_core_indices``; at 1 core it does not fit and nothing is pinned.
 _W03_FIT_MARKS = {1: None, 3: [0, 1, 2]}
+_W7_DEPTHS = {1: [1, 1, 1], 3: [3]}
 
 
 @pytest.mark.parametrize("count", sorted(_BASE_BUILD_DIGESTS))
@@ -54,4 +73,6 @@ def test_the_record_build_is_byte_identical_after_the_census_split(count):
     placement = placement_record_from_mapping(mapping).to_dict()
     marks = [stage.pop("resident_core_indices", None) for stage in schedule["stages"]]
     assert [None if m is None else list(m) for m in marks] == [_W03_FIT_MARKS[count]] * len(schedule["stages"])
+    # [U-LIF2 W7] each pass states its dependency depth: one level a pass at 1 core, the fused chain of 3 at 3 cores.
+    assert [stage.pop("dependency_depth") for stage in schedule["stages"]] == _W7_DEPTHS[count]
     assert (_digest(schedule), _digest(placement)) == _BASE_BUILD_DIGESTS[count]

@@ -7,6 +7,10 @@ import numpy as np
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
+from mimarsinan.chip_simulation.hybrid_run.output_decode import (
+    bare_mapping_output_gauge, decode_held, program_output_gauge)
+from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.chip_simulation.simulation_runner.host_contract import SimulationHostContract
 from mimarsinan.chip_simulation.simulation_runner.membrane_probe import flat_membrane_slices
 
@@ -14,6 +18,10 @@ from mimarsinan.chip_simulation.simulation_runner.membrane_probe import flat_mem
 class SimulationFlatMixin(SimulationHostContract):
     def _run_flat_mapping(self, hard_core_mapping: HardCoreMapping) -> float:
         """Run a flat (single-segment) HardCoreMapping through nevresim."""
+        # [U-TGAUGE2] the readout's classes are the value domain's: each output at its program's gauge; [U-TGAUGE3] a
+        # bare HardCoreMapping carries no gauge table: its counts rank only at one output gauge, else it refuses by name
+        gauge = (program_output_gauge(self.mapping, timing=requires_ttfs_firing(self.spiking_mode))
+                 if isinstance(self.mapping, HybridHardCoreMapping) else bare_mapping_output_gauge(self.mapping))
         delay = ChipLatency(hard_core_mapping).calculate()
         print(f"  delay: {delay}")
         print(f"  simulation length: {self.simulation_length}")
@@ -26,11 +34,10 @@ class SimulationFlatMixin(SimulationHostContract):
             spike_generation_mode=self.spike_generation_mode,
             firing_mode=self.firing_mode,
             thresholding_mode=self.thresholding_mode,
-            spiking_mode=self.spiking_mode,
+            point=self.spiking_point,
             threshold_type=self.threshold_type,
             connectivity_mode=self.nevresim_connectivity_mode,
             simulation_step_timeout_s=self.simulation_step_timeout_s,
-            soma_law=self.soma_law,
         )
 
         simulation_steps = int(self.simulation_length)
@@ -51,12 +58,13 @@ class SimulationFlatMixin(SimulationHostContract):
             half_step = float(self.membrane_half_step_charge)
             for _node_id, start, end in eligible_slices:
                 corrected[:, start:end] += membranes[:, start:end] - half_step
-            predictions = np.argmax(corrected, axis=1)
+            predictions = np.argmax(decode_held(corrected, gauge), axis=1)
         else:
             predictions, total_spikes = simulation_driver.predict_spiking(
                 self.test_data,
                 simulation_steps,
                 delay,
+                output_gauge=gauge,
             )
             # [W4.3] the driver's measured total-output-spikes read, formerly
             # printed-and-dropped (deployment_record_schema.md §4).

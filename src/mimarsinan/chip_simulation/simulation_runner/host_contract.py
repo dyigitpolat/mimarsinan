@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from mimarsinan.chip_simulation.nevresim.connectivity import ConnectivityMode
-from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 
 
 class SimulationHostContract:
@@ -22,8 +22,8 @@ class SimulationHostContract:
     firing_mode: str
     thresholding_mode: str
     spiking_mode: str
-    # The resolved soma point of the run (one law per run).
-    soma_law: SomaLaw = DEFAULT_SOMA_LAW
+    # [U-LIF2 r2] The run's resolved point (its soma law with it), the record nevresim's code generation takes.
+    spiking_point: SpikingPoint
     pass_transfer: str
     nevresim_connectivity_mode: ConnectivityMode
     simulation_step_timeout_s: float

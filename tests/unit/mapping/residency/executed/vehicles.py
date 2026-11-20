@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.ir_mapping_class import IRMapping
-from mimarsinan.mapping.latency.depth_balancing import insert_depth_balancing_relays
 from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
@@ -331,12 +330,15 @@ def shape_only(specs, census, program, count: int, residency_plan: dict, max_sch
 
 def ir_of(rep: ModelRepresentation, relays: bool = False, coalescing: bool = False):
     """The IR as the pipeline maps it (``SoftCoreMappingStep``): relays inserted when ``lif_depth_balancing_relays``
-    is declared, then the IR latency pass, which orders a packed segment's cores for the executors that read it;
+    is declared (the mapping's window pass, [U-TGAUGE5] dead in-segment reads off first), then the IR latency pass,
+    which orders a packed segment's cores for the executors that read it;
     ``coalescing``: wide fan-ins split into psum groups (``IRMapping(allow_coalescing=True)``)."""
     ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=MAX_AXONS, max_neurons=MAX_NEURONS,
                    allow_coalescing=coalescing).map(rep)
     if relays:
-        insert_depth_balancing_relays(ir, thresholding_mode="<=")
+        from mimarsinan.mapping.latency.depth_balancing import balance_cycle_windows
+
+        balance_cycle_windows(ir, cascade=True, armed=True, thresholding_mode="<=")
     IRLatency(ir).calculate()
     return ir
 

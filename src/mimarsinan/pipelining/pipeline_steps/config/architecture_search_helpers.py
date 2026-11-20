@@ -19,9 +19,7 @@ from mimarsinan.search.optimizers.sampling_optimizer import (
     DEFAULT_GRID_CAP, GridStrategy, RandomStrategy, SamplingOptimizer,
     SamplingStrategy, SobolStrategy,
 )
-from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 from mimarsinan.search.problems.joint import PlatformResolver
-from mimarsinan.search.problems.joint.model_build import DeployedConversion
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 from mimarsinan.visualization.search_viz import (
     create_interactive_search_report,
@@ -263,12 +261,6 @@ def write_search_visualizations(result_json: Dict[str, Any], out_dir: str) -> No
                     os.remove(legacy_path)
 
 
-def deployed_conversion_of(plan, config: Mapping[str, Any]) -> DeployedConversion:
-    """[M10] How the run's pipeline builds and converts its model, for the search route and its twin."""
-    return DeployedConversion(packaging=packaging_contract_for(plan),
-                              decompose_leaf_modules=bool(config.get("decompose_leaf_modules", False)))
-
-
 def firing_semantics_kwargs(plan, config: Mapping[str, Any]) -> Dict[str, Any]:
     """[H3] ONE resolution of the run's firing semantics, for every consumer.
 
@@ -281,9 +273,13 @@ def firing_semantics_kwargs(plan, config: Mapping[str, Any]) -> Dict[str, Any]:
     )
     from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 
+    # [U-LIF2 W2] the mode and the schedule of the run's one resolved point (the value domain has none).
+    point = plan.spiking_point
     return {
-        "spiking_mode": str(plan.spiking_mode),
-        "ttfs_cycle_schedule": str(plan.ttfs_cycle_schedule),
+        "spiking_mode": str(plan.spiking_mode if point is None else point.spiking_mode),
+        "ttfs_cycle_schedule": str(plan.ttfs_cycle_schedule if point is None else point.ttfs_cycle_schedule),
         "per_hop_retiming": bool(lif_per_hop_retiming_enabled(config)),
         "pass_transfer": str(run_pass_transfer(config)),
+        # [U-LIF2 W11] the window firing the run resolved: the search and its twin price one program's stage cycles
+        "window_firing": None if point is None else point.window_firing,
     }

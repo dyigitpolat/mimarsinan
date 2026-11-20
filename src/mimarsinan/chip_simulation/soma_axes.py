@@ -1,11 +1,13 @@
-"""The soma-law axes: firing granularity and membrane arithmetic (vocabulary + legality)."""
+"""The soma-law axes: firing granularity and membrane arithmetic (vocabulary + legality), and [U-LIF2 r3] the legal-set
+table of every soma key (``SOMA_LEGAL_VALUES``)."""
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Tuple
+from typing import Any, Callable, Mapping, Tuple
 
 from mimarsinan.chip_simulation.activation_axes import LIF_FAMILY
 from mimarsinan.chip_simulation.activation_semantics import (
+    effective_legacy_spiking_mode,
     is_streamed_lif,
     resolve_activation_semantics,
 )
@@ -13,7 +15,12 @@ from mimarsinan.chip_simulation.core_semantics import (
     is_mvm_core_semantics,
     resolve_core_semantics,
 )
-from mimarsinan.chip_simulation.spiking_semantics import NOVENA_FIRING_MODE
+from mimarsinan.chip_simulation.spiking_semantics import (
+    NOVENA_FIRING_MODE,
+    legal_firing_modes,
+    legal_spike_generation_modes,
+    legal_thresholding_modes,
+)
 
 FIRING_GRANULARITY_KEY = "firing_granularity"
 MEMBRANE_ARITHMETIC_KEY = "membrane_arithmetic"
@@ -191,3 +198,21 @@ def firing_mode_for_granularity(firing_granularity: str, otherwise: str) -> str:
     if firing_granularity == PER_EVENT_FIRING:
         return NOVENA_FIRING_MODE
     return otherwise
+
+
+#: [U-LIF2 r3, n-1] Each soma key with its own legal set at a config's point, the one table the registry's legal sets of
+#: these keys read: a value outside its key's set is that key's refusal at every door, never another key's.
+SOMA_LEGAL_VALUES: Mapping[str, Callable[[Mapping[str, Any]], Tuple[str, ...]]] = {
+    "firing_mode": lambda cfg: legal_firing_modes(effective_legacy_spiking_mode(cfg)),
+    "spike_generation_mode": lambda cfg: legal_spike_generation_modes(effective_legacy_spiking_mode(cfg)),
+    "thresholding_mode": lambda cfg: legal_thresholding_modes(effective_legacy_spiking_mode(cfg)),
+    FIRING_GRANULARITY_KEY: legal_firing_granularities,
+    MEMBRANE_ARITHMETIC_KEY: legal_membrane_arithmetics,
+}
+
+
+def soma_keys_refusing(cfg: Mapping[str, Any]) -> Tuple[str, ...]:
+    """The soma keys whose declared value lies outside that key's own legal set at the config's point (each refused by
+    its own name). A derived value never leaves its set, so only declarations are read."""
+    return tuple(key for key, legal in SOMA_LEGAL_VALUES.items()
+                 if cfg.get(key) is not None and cfg[key] not in legal(cfg))

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.ir import NeuralCore
+from mimarsinan.mapping.platform.packaging_contract import DeployedConversion
 from mimarsinan.mapping.verification.onchip_fraction import (
     _build_flow,
     _exec_nodes,
@@ -80,11 +81,12 @@ def streamed_span_report_ir(ir_graph) -> StreamedSpanReport:
 
 def streamed_span_report_model(
     model, input_shape, num_classes, *, encoding_placement: str = "subsume",
+    conversion: Optional[DeployedConversion] = None,
 ) -> StreamedSpanReport:
     """Static span topology of the model SPEC (before pretraining): classifies
     the mapper exec order with the SAME host/on-chip units the on-chip-majority
-    estimate uses."""
-    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    estimate uses, on the deployment's ``conversion``."""
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement, conversion=conversion)
     kinds: List[Tuple[str, str]] = []
     for node in _exec_nodes(flow) or ():
         if _host_unit(node) is not None:

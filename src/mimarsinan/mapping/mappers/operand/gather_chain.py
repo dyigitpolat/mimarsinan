@@ -25,7 +25,8 @@ def mapper_output_shapes(model_repr, input_shape: Optional[Tuple[int, ...]] = No
         input_shape = tuple(int(d) for d in root.input_shape)
     first = next((p for node in order for p in node.parameters()), None)
     dtype = first.dtype if first is not None else torch.float32
-    x = torch.zeros((1, *tuple(int(d) for d in input_shape)), dtype=dtype)
+    device = first.device if first is not None else None  # [U-RSHIFT] the zero sample on the model's device
+    x = torch.zeros((1, *tuple(int(d) for d in input_shape)), dtype=dtype, device=device)
     values: dict = {}
     remaining = dict(consumers)
     shapes: Dict[int, Tuple[int, ...]] = {}

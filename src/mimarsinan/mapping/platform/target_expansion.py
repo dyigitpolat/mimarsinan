@@ -17,7 +17,8 @@ that departs from nothing, and refuses an unknown name listing the known ones; t
 - **Not applied.** A key the bundle sets whose registry relevance fails under the declarations, and that no
   other concern provides, is named "<key> not applied" in the faithfulness label (the relevance the wizard's
   dormant rows read); one whose consumer applies it only where ``applied_when`` holds, and it fails, is named
-  "<applied_by> not applied" (its other consumers read it as declared).
+  "<applied_by> not applied" (its other consumers read it as declared). [U-CHIPKEYS5] Each is written by the label
+  grammar (``label_clauses.clause``), which reads it back.
 - **Same declaration.** Two values declare the same thing when their consumers read the same JSON value: types
   count at every depth (4.0 is not 4, True is not 1), spellings a consumer normalizes do not.
 - **Labels.** ``write_derived`` adds a flat config's two labels, never a document's, and refuses a declared label
@@ -40,6 +41,7 @@ from mimarsinan.config_schema.registry.value_schema import DeclarationValueError
 # Bound as a module (resolved from sys.modules while it initializes): target_bundles imports the registry, whose
 # package imports the entry points and so this module first when target_bundles is the first import.
 import mimarsinan.mapping.platform.target_bundles as target_bundles
+from mimarsinan.mapping.platform.descriptions.label_clauses import clause
 
 DP, PC = "deployment_parameters", "platform_constraints"
 #: The keys that select a target and depart from it.
@@ -138,9 +140,9 @@ def _not_applied(key: str, state: Mapping[str, Any]) -> Optional[str]:
     ``applied_by`` names does not apply (its ``applied_when`` fails; the key's other consumers read it)."""
     entry = REGISTRY[key]
     if not entry.relevant.evaluate(state):
-        return f"{key} not applied"
+        return clause("not_applied", key=key)
     if entry.applied_when is not None and not entry.applied_when.evaluate(state):
-        return f"{entry.applied_by} not applied"
+        return clause("not_applied", key=entry.applied_by)
     return None
 
 
@@ -175,6 +177,9 @@ def target_assignments(dp: Mapping[str, Any], pc: Mapping[str, Any], *, write_de
     bundle = target_bundles.get_target_bundle(name, bundles)
     values = bundle.values  # a fresh copy (target_bundles.TargetBundle.values)
     _refuse_misplaced(values, paths, unread_section_paths(dp, pc) if unread is None else unread)
+    # [U-CHIPKEYS3] M-2: a stated pricing absence is read here, before any override is judged or a label derived
+    if (why := target_bundles.declared_pricing_refusal(name, bundle.pricing_absent, flat, overrides)) is not None:
+        raise target_bundles.PricingAbsentError(why)
     _judge_overrides(name, values, overrides, flat)
     out: Dict[str, Dict[str, Any]] = {DP: {}, PC: {}}
     state = {**SCHEMA_DEFAULTS, **flat, **{key: overrides[key]["value"] if key in overrides else value
@@ -193,9 +198,10 @@ def target_assignments(dp: Mapping[str, Any], pc: Mapping[str, Any], *, write_de
     if write_derived:
         # A key another concern provides was refused above wherever its relevance fails (Rule R).
         inert = [departure for key in values if (departure := _not_applied(key, state))]
+        # [U-CHIPKEYS4] 3(f) the label names the pricing this run resolves (one source: departures.run_faithfulness)
         derived = {"target_claim_class": bundle.claim_class,
-                   "target_faithfulness_class": bundle.faithfulness.with_declared(overrides).with_departures(
-                       inert).label()}
+                   "target_faithfulness_class": target_bundles.run_faithfulness(bundle, state).with_declared(
+                       overrides).with_departures(inert).label()}
         _refuse_declared_labels(pc, derived, name)
         out[PC].update(derived)
     return out
@@ -234,6 +240,13 @@ def expand_target_document(document: Mapping[str, Any], *, write_derived: bool =
         if isinstance(out.get(section), dict):
             out[section].update(written.get(section, {}))
     return out
+
+
+def door_read(document: Mapping[str, Any]) -> Mapping[str, Any]:
+    """[U-LIF2 r6] The session's own first step on a deployment document: its target expanded into both sections,
+    nothing written. The door every reader of a stored run's point hands to ``chip_simulation.stored_point`` (a layer
+    below this one), so a stored document is read as its run's door read it."""
+    return expand_target_document(document, write_derived=False)
 
 
 def target_core_semantics(document: Mapping[str, Any]) -> Optional[str]:

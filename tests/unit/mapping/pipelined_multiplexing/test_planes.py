@@ -129,10 +129,18 @@ def _every_core_less_dark(noc, weight_bits):
     each wavefront head's dark cores out: their physical tiles (``core_tile_cells``) out of the segment cores and their
     cells out of the committed cells. The written cores, bytes, passes and cells and the per-pass cores keep them (the
     head loads its dark cores). [U-PP P-1] The eighth, the fragments' schedule census, rides through as they state it
-    (None where they state none). Returns the fields and the number of dark cores."""
+    (None where they state none). [U-ENERGY class 3] The ninth and tenth, the used columns (outputs) and used rows of
+    every evaluated core, a head's dark cores out, None where a pass states no used extents. Returns the fields and
+    the number of dark cores."""
     programs = () if noc is None else noc.pass_programs
     written = [p for p in programs if not p.resident]
     dark = [(p, i) for p in programs for i in sorted(p.dark_cores or ())]
+    used = programs and all(getattr(p, "core_used", ()) for p in programs)
+
+    def used_sum(axis):
+        return None if not used else sum(p.core_used[i][axis] for p in programs for i in range(len(p.core_cells))) \
+            - sum(p.core_used[i][axis] for p, i in dark)
+
     return {
         "segment_cores": sum(p.tiles for p in programs)
         - sum(len(p.core_tile_cells[i]) if p.core_tile_cells else 1 for p, i in dark),
@@ -144,6 +152,8 @@ def _every_core_less_dark(noc, weight_bits):
         "pass_cores": tuple(p.tiles for p in programs),
         "reprogrammed_cells": tuple(cells for p in written for cells in p.core_cells),
         "schedule_census": getattr(noc, "schedule_census", None),
+        "output_neurons": used_sum(1),
+        "local_mem_read_elements": used_sum(0),
     }, len(dark)
 
 
@@ -156,8 +166,10 @@ def _random_program(rng):
     signs = tuple(rng.randint(0, 256) for _ in range(n)) if rng.random() < 0.5 else ()
     subset = frozenset(i for i in range(n) if rng.random() < 0.35)
     dark = rng.choice([None, frozenset(), subset, subset])
+    # [U-ENERGY class 3] each core's used (rows, columns), stated or not
+    used = tuple((rng.randint(0, 64), rng.randint(0, 64)) for _ in range(n)) if rng.random() < 0.5 else ()
     return PassProgram(core_cells=cells, resident=rng.random() < 0.4, core_sign_rows=signs, core_tile_cells=tile_cells,
-                       wavefront=bool(dark), dark_cores=dark)
+                       wavefront=bool(dark), dark_cores=dark, core_used=used)
 
 
 def test_one_programming_census_on_every_import_path():
@@ -239,6 +251,9 @@ def test_the_candidate_census_is_the_sealed_record_field_by_field(fixture, geome
                                                    "reprogram_passes", "pass_count", "cores_allocated", "macs")}
     read.update(schedule_census=(int(sealed.get("pass_count").value), int(sealed.get("sync_count").value)),
                 committed_cells=sealed.get("cells_used").value,
+                # [U-ENERGY class 3] the evaluated cores' used columns and rows, dark cores out, on both planes
+                output_neurons=sealed.get("neurons_used").value,
+                local_mem_read_elements=sealed.get("axons_used").value,
                 pass_cores=tuple(sum(tiles(c) for c in s.cores) for s in segments),
                 reprogrammed_cells=tuple(c.cells_used for s in segments if s.programming == "reprogram"
                                          for c in s.cores))

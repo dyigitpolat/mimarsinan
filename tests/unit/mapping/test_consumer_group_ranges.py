@@ -10,16 +10,13 @@ import torch
 
 from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.mappers.operand import OperandContractionMapper, operand_perceptrons
-from mimarsinan.mapping.support.tensor_stats import safe_quantile
 from mimarsinan.models.nn.activations.integer_law import grid_levels
 from mimarsinan.models.nn.activations.readout_quantizer import ReadoutQuantizer, snap_channel_groups
 from mimarsinan.models.nn.activations.value_quantizer import quantize_to_value_grid
-from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
-    CALIBRATION_QUANTILE,
-    MIN_BOUNDARY_SCALE,
-)
+
 from unit.chip_simulation.value_run.integer_programs import law_digests_by_core
 from unit.chip_simulation.value_run.operand_programs import attention_program, operand_platform
+from unit.pipelining.range_rule_reference import RELATIVE, grid_error, least_error, levels_grid
 
 DIM, HEADS = 8, 2
 HEAD_DIM = DIM // HEADS
@@ -71,8 +68,9 @@ def test_a_perceptron_read_whole_gets_one_group_and_the_per_perceptron_law(group
 
 
 def test_group_ranges_are_the_boundary_rule_on_the_group_columns():
-    """The per-group range is the 0.999 quantile of the group's outputs, the largest over the calibration
-    batches, floored at MIN_BOUNDARY_SCALE: measured beside the calibration on the very tensors it reads."""
+    """[U-BRANGE F-4] The per-group range is the boundary rule on the group's columns: the least squared error of the
+    group's own grid (its levels) over the calibration batches, over the whole interval up to the maximum,
+    at any magnitude (no floor): measured beside the calibration on the very tensors it reads."""
     import contextlib
     import io
 
@@ -103,8 +101,11 @@ def test_group_ranges_are_the_boundary_rule_on_the_group_columns():
     assert len(seen) >= 2 and len(set(groups.tolist())) == 3 * HEADS
     for group in sorted(set(groups.tolist())):
         columns = torch.as_tensor(np.flatnonzero(groups == group))
-        measured = max(float(safe_quantile(y[..., columns].abs(), CALIBRATION_QUANTILE).item()) for y in seen[:2])
-        assert float(qkv.group_ranges[group]) == max(measured, MIN_BOUNDARY_SCALE)
+        magnitudes = [y[..., columns].abs() for y in seen[:2]]
+        snap = levels_grid(qkv.group_levels[group])
+        chosen = float(qkv.group_ranges[group])
+        assert chosen > 0.0
+        assert grid_error(magnitudes, chosen, snap) <= least_error(magnitudes, snap) * (1 + RELATIVE)
 
 
 def test_the_s_core_reads_its_q_group_grid_with_no_boundary_quantizer(grouped):
@@ -218,3 +219,38 @@ def test_the_calibrated_attention_block_runs_each_qkv_group_on_its_group_grid_be
     for y, out in seen:
         assert torch.equal(out, _group_grid(qkv, y))
         assert not torch.equal(out, quantize_to_value_grid(y, qkv.range, 8))
+
+
+def test_a_grouped_perceptron_s_returned_range_is_its_least_group_range():
+    """[U-BRANGE2 stage 1b, sweep SW08] ``calibrate_readout_quantizers`` returns one range per perceptron: a grouped
+    perceptron's is the least of its groups' ranges (the narrowest grid it writes), a plain one's its own range. The
+    attention block's qkv perceptron holds groups of different ranges (so the widest would differ)."""
+    import contextlib
+    import io
+
+    from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
+    from mimarsinan.mapping.support.operand_lowering import lower_contractions
+    from mimarsinan.pipelining.pipeline_steps.quantization.readout_law_step import (
+        calibrate_readout_quantizers,
+        install_readout_quantizers,
+    )
+    from mimarsinan.torch_mapping.converter import convert_torch_model
+    from unit.chip_simulation.value_run.operand_programs import attention_block
+
+    platform = operand_platform(payload_bits=4)
+    with contextlib.redirect_stdout(io.StringIO()):
+        flow = convert_torch_model(attention_block(), (3, 8, 8), 5, device="cpu", packaging=MVM_PACKAGING).eval()
+    lower_contractions(flow.get_mapper_repr(), platform)
+    perceptrons = list(flow.get_perceptrons()) + list(operand_perceptrons(flow.get_mapper_repr()))
+    quantizers = install_readout_quantizers(perceptrons, 8)
+    batches = [torch.randn(16, 3, 8, 8, generator=torch.Generator().manual_seed(s)) for s in (5, 6)]
+    returned = calibrate_readout_quantizers(flow, perceptrons, quantizers, batches, platform=platform)
+    told = False
+    for quantizer, value in zip(quantizers, returned):
+        if quantizer.channel_groups is None:
+            assert value == float(quantizer.range)
+            continue
+        ranges = [float(r) for r in quantizer.group_ranges.reshape(-1)]
+        assert value == min(ranges)
+        told = told or max(ranges) != min(ranges)
+    assert told, "fixture: a grouped perceptron whose groups' ranges differ"

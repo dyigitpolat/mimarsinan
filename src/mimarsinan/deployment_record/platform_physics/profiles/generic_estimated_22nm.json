@@ -19,22 +19,6 @@
     }
   },
   "constants": {
-    "area_per_cell": {
-      "low": 0.05,
-      "nominal": 0.09,
-      "high": 0.16,
-      "unit": "um^2",
-      "evidence_kind": "estimated",
-      "note": "A 6T SRAM bitcell holding one weight bit. Anchored on TrueNorth's published 0.152 um^2 6T cell at 28 nm and scaled by area ~ node^2: 0.152 x (22/28)^2 = 0.094 um^2. The band spans a dense foundry cell (0.05) to a relaxed one (0.16), which is roughly the published spread across vendors at this node. Expected error: a factor of ~2 either way."
-    },
-    "area_per_cell_per_weight_bit": {
-      "low": 0.05,
-      "nominal": 0.09,
-      "high": 0.16,
-      "unit": "um^2",
-      "evidence_kind": "estimated",
-      "note": "Digital SRAM storage scales linearly with precision \u2014 one bitcell per weight bit \u2014 so this equals area_per_cell by construction. Same anchor and same expected error."
-    },
     "e_mac": {
       "low": 0.03,
       "nominal": 0.08,
@@ -99,51 +83,11 @@
       "evidence_kind": "estimated",
       "note": "The timestep period. A DECLARED DESIGN CHOICE rather than a physical limit: the band spans 100 MHz down to 100 kHz timestep rates, and the 1 us nominal is a fast synchronous digital design. Any real target should override this first \u2014 it alone converts latency_steps into seconds, so it gates end-to-end latency and throughput entirely."
     },
-    "area_per_neuron_logic": {
-      "low": 4.0,
-      "nominal": 9.0,
-      "high": 25.0,
-      "unit": "um^2",
-      "evidence_kind": "estimated",
-      "note": "Per-neuron update logic, excluding state storage. Anchored on TrueNorth's published 11.328 um^2 per neuron at 28 nm (a 2900 um^2 block time-multiplexed 256 ways) scaled by node^2 to 7.0 um^2, rounded up for a less aggressively multiplexed design. Expected error: a factor of ~3."
-    },
-    "area_per_state_bit": {
-      "low": 0.05,
-      "nominal": 0.09,
-      "high": 0.16,
-      "unit": "um^2",
-      "evidence_kind": "estimated",
-      "note": "One bit of membrane state in SRAM \u2014 the same bitcell as area_per_cell, so it carries the same anchor, band and expected error."
-    },
     "membrane_bits": {
       "nominal": 24.0,
       "unit": "bit",
       "evidence_kind": "estimated",
       "note": "A 24-bit signed accumulator, matching Loihi's independently characterized width and comfortably above TrueNorth's 20 bits. A design choice rather than a measurement, so it is stated as an estimate."
-    },
-    "area_per_router": {
-      "low": 1000.0,
-      "nominal": 4000.0,
-      "high": 15000.0,
-      "unit": "um^2",
-      "evidence_kind": "estimated",
-      "note": "One 5-port mesh router. Typical published NoC router areas at this class of node fall in the low thousands of um^2; the band is wide because buffer depth dominates and no depth is assumed here. Expected error: a factor of ~4."
-    },
-    "area_per_tile_fixed": {
-      "low": 2000.0,
-      "nominal": 8000.0,
-      "high": 30000.0,
-      "unit": "um^2",
-      "evidence_kind": "estimated",
-      "note": "Per-tile overhead that is neither array, neuron logic nor router: schedulers, controllers, local buffers. Taken as ~2x the router area, the ratio TrueNorth's core floorplan roughly exhibits. Expected error: a factor of ~4."
-    },
-    "area_global_fixed": {
-      "low": 2.0,
-      "nominal": 10.0,
-      "high": 40.0,
-      "unit": "mm^2",
-      "evidence_kind": "estimated",
-      "note": "Whole-chip area scaling with neither cores nor tiles: pads, PLLs, host interface. Anchored on TrueNorth's derived 46.6 mm^2 periphery at 28 nm for a 4.3 cm^2 die, scaled down for a smaller die at 22 nm. Expected error: a factor of ~4."
     },
     "e_dma_per_byte": {
       "low": 31.0,
@@ -168,6 +112,24 @@
       "unit": "B",
       "evidence_kind": "estimated",
       "note": "Wire size of one connectivity (axon source span) entry. The framework's declared 4/8/16 B band: span entries are exact counts, but their byte size is modeled until a real chip wire format exists."
+    },
+    "e_local_mem_read_per_byte": {
+      "low": 0.15,
+      "nominal": 0.61,
+      "high": 2.5,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "derivation": "[U-ENERGY] One byte read from a core-local activation SRAM of 8 to 32 KB, at the Horowitz scale this profile's e_program_per_byte reads: an 8 KB SRAM 32-bit read is ~5 pJ at 45 nm = 1.25 pJ/B, and the node ratio 22/45 gives 0.61 pJ/B (nominal). A wide access (128 bits and more) amortizes the wordline and sense amplifiers toward 0.15 pJ/B (low); the unscaled 32 KB figure at 45 nm, 20 pJ per 64-bit access = 2.5 pJ/B (jouppi2021ten Table 2), is the high end.",
+      "note": "An ESTIMATED band: no source states a core-local activation memory of this projection. Expected error: a factor of ~4."
+    },
+    "e_local_mem_write_per_byte": {
+      "low": 0.15,
+      "nominal": 1.056551,
+      "high": 7.5,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "derivation": "[U-ENERGY] One byte written into the same core-local activation SRAM: the read band (e_local_mem_read_per_byte) times this profile's own stated write-to-read ratio, 'a write costs about 1-3x a read' (e_program_per_byte's derivation), corner by corner: low 0.15 x 1 = 0.15 pJ/B, high 2.5 x 3 = 7.5 pJ/B, nominal 0.61 x sqrt(3) = 1.056551 pJ/B (the ratio's log-space centre, this profile's convention for a nominal inside a stated range).",
+      "note": "An ESTIMATED band derived from the read band and a stated ratio, never from a comparison. Expected error: a factor of ~5."
     },
     "e_program_per_byte": {
       "low": 0.1,
@@ -264,13 +226,6 @@
       "evidence_kind": "estimated",
       "note": "Zero for the same digital-array assumption as area_per_adc."
     },
-    "host_compute_rate": {
-      "nominal": 1.0,
-      "unit": "fraction",
-      "evidence_kind": "derived",
-      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
-      "note": "The derate a MEASURED host wall is divided by. Identity by definition: this framework measures its host ComputeOp walls end-to-end on the deployment host (StageTimer), and derating a measurement would invent headroom. [H5] Declared here after the loihi precedent because its absence refused the record-plane e2e/energy headlines BY NAME on runs whose host wall was in fact measured."
-    },
     "endurance_cycles": {
       "nominal": 1e+16,
       "unit": "cycles",
@@ -306,6 +261,26 @@
       "unit": "pJ",
       "evidence_kind": "estimated",
       "note": "[CH-D2] One byte of a value-domain activation over one inter-tile link: Horowitz-scale on-chip wire energy (about 0.1-0.2 pJ per bit per mm at this node, a link of about 1 mm, so 0.8-1.6 pJ per byte) plus the router traversal; banded on this profile's own e_inter_tile_hop envelope (0.5 - 4.0 pJ) because a value byte and a spike flit cross the same link."
+    }
+  },
+  "area_rule": {
+    "type": "T2_digital",
+    "terms": "type_rule",
+    "outside": "type",
+    "node": {
+      "node_nm": 22,
+      "citation": "S-SRAM-22 (the push-rule 6T at 22 nm)"
+    },
+    "drops": [
+      "area_per_cell, area_per_cell_per_weight_bit, area_per_neuron_logic, area_per_state_bit, area_per_router, area_per_tile_fixed, area_global_fixed (estimated constants)"
+    ],
+    "reading_low_edge": {
+      "type": "T1",
+      "ruling": "R2: the digital spiking reading is the band's low edge",
+      "bits_per_neuron": 24,
+      "citation": {
+        "bits_per_neuron": "the description's membrane_bits 24, as declared (review m12; TrueNorth's published 152 beside it)"
+      }
     }
   }
 }

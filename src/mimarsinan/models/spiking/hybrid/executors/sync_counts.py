@@ -1,4 +1,4 @@
-"""[calculus §16] the synchronized count-domain HCM reference executor."""
+"""[calculus §16] the synchronized count-domain HCM executor: [U-LIF2 W9] the closed form of integrate then emit."""
 
 from __future__ import annotations
 
@@ -10,34 +10,45 @@ from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 from mimarsinan.models.spiking.serial.refusals import (
     refuse_cycle_atomic,
     refuse_saturating_membrane,
+    refuse_zero_reset_window_count,
 )
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 from mimarsinan.models.spiking.wire_semantics import lif_window_count
 
 
-def runs_synchronized_counts(flow, *, recording: bool) -> bool:
-    """Whether ``run_neural_segment_counts`` executes a neural segment of ``flow``: the synchronized LIF twin, unless a
-    spike record is asked for (the per-core reference loop records one). One predicate for the executed path
-    (``_run_neural_segment_rate``) and for the input it reads (``_encode_segment_input``): the count executor reads
-    each slice's window count, so a pass's delivery delay, a shift in time, does not apply to its input."""
+def integrates_then_emits(flow) -> bool:
+    """[U-LIF2 W9] Whether ``flow`` executes integrate then emit (its two-window flag at LIF): its executor of record is
+    the gated cycle-level executor (``gated_reference.run_integrate_then_emit``), recording or not. One predicate for the
+    executed path (``_run_neural_segment_rate``) and for the input it reads (``_encode_segment_input``): a window-count
+    reader reads each slice's count, so a pass's delivery delay, a shift in time, does not apply to its input."""
     policy = cycle_neuron_policy(flow.spiking_mode, flow.ttfs_cycle_schedule, flow.firing_mode,
                                  soma_law=getattr(flow, "soma_law", DEFAULT_SOMA_LAW))
     return (bool(getattr(flow, "lif_execution_synchronized", False)) and flow.spiking_mode == "lif"
-            and not policy.single_spike_io and not recording)
+            and not policy.single_spike_io)
+
+
+def runs_closed_form(flow, *, recording: bool) -> bool:
+    """[U-LIF2 W9] Whether ``run_neural_segment_counts``, the closed form of integrate then emit, computes a segment of
+    ``flow``: only where it is asked for by its name (``window_count_closed_form``, the certification's analytic
+    gauge), never for a spike record, and never as the executor of record (the owner's law of 2026-07-22)."""
+    return integrates_then_emits(flow) and bool(getattr(flow, "window_count_closed_form", False)) and not recording
 
 
 def run_neural_segment_counts(
     flow, input_spike_train, *, seg, T, batch_size, device, soma_law,
     neuron_count_recorder: dict | None = None,
 ) -> torch.Tensor:
-    """The synchronized count-domain reference: per core, memb = W·counts +
+    """The closed form of integrate then emit: per core, memb = W·counts +
     bias·T (+ V0·θ) and the emitted count is the staircase's count of that charge — bit-equal
     to two-window execution for ANY arrival (§16 theorem), and latch-correct
-    for level-gapped consumers (counts have no windows).
+    for level-gapped consumers (counts have no windows). [U-LIF2 W9] Equal to the
+    gated cycle-level executor (``gated_window``) on every neuron window, never load-bearing.
 
-    That theorem's hypotheses are a lossless subtractive-or-zero reset on an
-    UNBOUNDED accumulator with at most one spike per cycle, so both soma axes
-    can deny it — and this executor then refuses instead of approximating.
+    That theorem's hypotheses are the subtractive reset (a zero-reset
+    emission window emits at most one spike, never the window's count) on an
+    UNBOUNDED accumulator with at most one spike per cycle, so the reset and
+    both soma axes can deny it — and this executor then refuses instead of
+    approximating.
     """
     refuse_cycle_atomic(
         soma_law, mechanism="the synchronized count executor",
@@ -53,6 +64,8 @@ def run_neural_segment_counts(
             "the whole window."
         ),
     )
+    refuse_zero_reset_window_count(
+        getattr(flow, "firing_mode", None), mechanism="the synchronized count executor")
     cores = seg["cores"]
     counts_in = input_spike_train.sum(dim=0)
     buffers = [

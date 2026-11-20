@@ -9,8 +9,9 @@ corners never cross (:class:`Band` re-validates the order anyway).
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Tuple
 
+from mimarsinan.chip_simulation.hybrid_run.stage_timing import host_wall
 from mimarsinan.deployment_record.cost.coefficients import banded, corner_value
 from mimarsinan.deployment_record.cost.terms import CostTerm
 from mimarsinan.deployment_record.schema import Band
@@ -59,24 +60,17 @@ def flat_band(value: float, basis: str) -> Band:
     return Band(low=value, nominal=value, high=value, basis=basis)
 
 
-def host_ops_term(decomposition: Any) -> Optional[CostTerm]:
-    """The per-pass host-op latency term, or ``None`` when nothing was timed.
+#: [U-HOST] The measured plane's host term: the development machine's wall, a diagnostic beside the latency total.
+HOST_WALL_DIAGNOSTIC = "host_wall_diagnostic_s"
 
-    ``compute_sim_time_s`` is a per-sample census while the raw host wall covers
-    the whole run, so only the per-pass normalization may join the sum; a timed
-    wall with no invocation count raises rather than guess a divisor.
-    """
-    if decomposition.host_ops_s is None:
-        return None
-    per_pass = decomposition.host_ops_s_per_pass
-    if per_pass is None:
-        raise ValueError(
-            "measured host-op walls carry no per pass normalization "
-            "(timing.latency.host_ops_s_per_pass is None because some timed op "
-            "has no invocation count); the whole-run total cannot join a "
-            "per-sample decomposition and a guessed divisor would be a proxy "
-            "presented as a measurement"
-        )
-    return measured(
-        "host_ops_s", "s", float(per_pass), "timing.latency.host_ops_s_per_pass"
-    )
+
+def host_ops_term(record: Any) -> Tuple[Optional[CostTerm], Optional[str]]:
+    """[U-HOST] (the measured host-op wall per inference as a labelled diagnostic term, or None when nothing was
+    timed or its count is missing; why the count is missing, or None), read through the one per-inference host wall
+    (``stage_timing.host_wall``). The wall is the development machine's: it joins no total (a priced host is an
+    identified host description's rows), and a wall without its sample count is never put per inference."""
+    wall = host_wall(record.schedule.stages)
+    if wall.per_inference_s is None:
+        return None, wall.refusal
+    return measured(HOST_WALL_DIAGNOSTIC, "s", float(wall.per_inference_s),
+                    f"stage_timing.host_wall ({wall.definition}); never in a total"), None

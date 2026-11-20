@@ -104,12 +104,14 @@ def test_a_reader_of_a_consumer_grouped_producer_is_driven_at_the_union_of_its_g
     by_index = _perceptrons_by_index(flow)
     index = {str(p.name): i for i, p in by_index.items()}
     reader = by_index[index["r"]]
-    assert _stamp(reader) == 127 * (GROUP_RANGES[1] / 127)
+    step = GROUP_RANGES[1] / 127  # [U-BRANGE2] a code of the union's grid (the wider group's), no longer its top
+    assert 1 <= round(_stamp(reader) / step) <= 127 and round(_stamp(reader) / step) * step == _stamp(reader)
     assert "not determinable" not in out.getvalue()
     ranges = {int(i): float(p.scaler.range) for i, p in by_index.items()}
     grids, _ = assign_core_grids(ir, ranges, BITS, groups=output_groups_of(flow.get_mapper_repr()))
     cores = [n for n in ir.nodes if isinstance(n, NeuralCore) and n.perceptron_index == index["r"]]
-    assert cores and all(_stamp(c) == grids[int(c.id)].input_step * grids[int(c.id)].input_levels for c in cores)
+    assert cores and all(_stamp(c) == _stamp(reader) and grids[int(c.id)].input_step * grids[int(c.id)].input_levels
+                         == pytest.approx(GROUP_RANGES[1], rel=1e-12) for c in cores)
     _exact(flow, ir, _inputs())
 
 
@@ -140,3 +142,37 @@ def test_a_reader_without_a_row_bias_keeps_no_drive_and_no_refusal(monkeypatch):
         flow.get_perceptrons()[1].layer.bias.zero_()
     _wq(monkeypatch, flow, _value_config())
     assert _stamp(flow.get_perceptrons()[1]) == 1.0
+
+
+def test_a_reader_of_groups_narrower_than_the_activation_width_reads_their_own_levels():
+    """[U-BRANGE2 stage 1b, sweep SW57] A reader of a grouped producer reads the groups' own grid: groups of 63 levels
+    (as payload groups at a narrower width are) under 8-bit activations give ``r`` a grid of 63 codes at the wider
+    group's range, the solver's grid, never the activation width's 127."""
+    from mimarsinan.mapping.support.reader_grids import _perceptron_nodes, reader_input_grids
+
+    flow = _flow(_Chain(), levels=(63, 63))
+    repr_ = flow.get_mapper_repr()
+    grids = {str(n.perceptron.name): g for n in _perceptron_nodes(repr_)
+             for g in [reader_input_grids(repr_)[id(n)]]}
+    grid = grids["r"]
+    assert grid is not None and grid.code_max == 63 and grid.offset == 0.0
+    assert grid.step == GROUP_RANGES[1] / 63 and grid.top == pytest.approx(GROUP_RANGES[1], rel=1e-12)
+
+
+def test_a_core_fed_reader_driven_at_its_grid_s_top_code_passes_the_solver_s_check(monkeypatch):
+    """[U-BRANGE2 stage 1b, sweep SW64] The top code value is a code: ``r`` reads core ``p``'s readout grid (range 4
+    on 127 codes) and holds a bias of 10 max|w| on one row, so its drive is that grid's top code value; the law
+    solver's check (each core's drive a code of the grid it assigned the core, every level of it) takes it, and the
+    program is exact."""
+    flow = _flow(_Chain(), levels=None)
+    by_name = {str(p.name): p for p in flow.get_perceptrons()}
+    reader = by_name["r"]
+    with torch.no_grad():
+        reader.layer.bias[0] = 10.0 * float(reader.layer.weight.abs().max())
+    flow, ir = _program(monkeypatch, flow=flow)
+    top = 127 * (4.0 / 127)
+    assert _stamp(reader) == top, (_stamp(reader), top)
+    index = {str(p.name): i for i, p in _perceptrons_by_index(flow).items()}
+    cores = [n for n in ir.nodes if isinstance(n, NeuralCore) and n.perceptron_index == index["r"]]
+    assert cores and all(_stamp(c) == top for c in cores)
+    _exact(flow, ir, _inputs())

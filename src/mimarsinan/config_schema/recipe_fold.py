@@ -6,6 +6,7 @@ from typing import Any, FrozenSet, Iterable, Mapping, MutableMapping, Optional, 
 
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.soma_law import SomaLaw
+from mimarsinan.chip_simulation.spiking_point import SpikingPoint
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_default_firing_mode,
     is_lif,
@@ -36,13 +37,15 @@ def resolve_backend_enable(
 def _fold_sim_enables(
     dp: MutableMapping[str, Any],
     sim_enables: Mapping[str, bool],
-    spiking_mode: str,
+    point: SpikingPoint,
     explicit_keys: Set[str],
     opt_in: FrozenSet[str] | Set[str] = frozenset(),
+    off_reasons: Mapping[str, str] | None = None,
 ) -> None:
     """Backend enables, three states, in this order.
 
-    Capability OFF is authoritative (an explicit ON is rejected loudly). A
+    Capability OFF is authoritative (an explicit ON is rejected loudly, naming
+    the value of the resolved point the backend does not execute). A
     supported backend that needs a DEVICE is opt-in: it derives off and an
     explicit ON is honored — capability admits it, availability declares it.
     Everything else defaults ON per the recipe, and a declared OFF is honored:
@@ -52,12 +55,18 @@ def _fold_sim_enables(
         declared = dp.get(key) if key in explicit_keys else None
         if not supported:
             if declared is True:
+                reason = (off_reasons or {}).get(key, "")
+                if reason.startswith("spiking_mode=") or not reason:
+                    raise ValueError(
+                        f"{key}=true contradicts the mode capability: the backend "
+                        f"cannot run spiking_mode={point.spiking_mode!r} (schedule="
+                        f"{dp.get('ttfs_cycle_schedule')!r}). Remove the explicit "
+                        f"key to accept the capability derivation."
+                    )
                 raise ValueError(
-                    f"{key}=true contradicts the mode capability: the backend "
-                    f"cannot run spiking_mode={spiking_mode!r} (schedule="
-                    f"{dp.get('ttfs_cycle_schedule')!r}). Remove the explicit "
-                    f"key to accept the capability derivation."
-                )
+                    f"{key}=true contradicts the resolved point: the backend does not "
+                    f"execute {reason}. Remove the explicit key to accept the "
+                    f"capability derivation.")
             dp[key] = False
         else:
             dp[key] = resolve_backend_enable(
@@ -204,10 +213,11 @@ def fold_mvm_recipe(
 
 def fold_conversion_recipe(
     dp: MutableMapping[str, Any],
-    spiking_mode: str,
+    point: SpikingPoint,
     explicit_keys: Optional[Iterable[str]] = None,
 ) -> None:
-    """Fold the ConversionPolicy SSOT recipe for ``spiking_mode`` into ``dp``.
+    """Fold the ConversionPolicy SSOT recipe of the resolved ``point`` into ``dp``
+    (the axes fold resolved it, window firing included, before this runs).
 
     Two-tier contract: INTERNAL recipe knobs (non-config keys) and the
     recipe-owned correctness keys are written authoritatively; REGISTRY
@@ -217,13 +227,10 @@ def fold_conversion_recipe(
     present key as declared (dict-as-document callers).
     """
     explicit: Set[str] = set(dp) if explicit_keys is None else set(explicit_keys)
-    recipe = ConversionPolicy.derive(
-        spiking_mode, dp.get("ttfs_cycle_schedule"),
-        spiking_variant=dp.get("spiking_variant"),
-        soma_law=SomaLaw.resolve(dp),
-    )
+    recipe = ConversionPolicy.derive(point)
     _fold_sim_enables(
-        dp, recipe.sim_enables, spiking_mode, explicit, set(recipe.sim_opt_in))
+        dp, recipe.sim_enables, point, explicit, set(recipe.sim_opt_in),
+        recipe.sim_off_reasons)
     dp["optimization_driver"] = recipe.driver
     for key, value in recipe.knobs.items():
         if (

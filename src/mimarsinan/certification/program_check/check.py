@@ -33,6 +33,7 @@ from mimarsinan.certification.program_check.unbounded.latency import IdentityFac
 from mimarsinan.certification.program_check.view import K_ON, ProgramView, build_view
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.support.bias_compensation import propagate_negative_shifts_to_hybrid
+from mimarsinan.mapping.support.value_layouts import placement_value
 
 T1, P2 = "theorem1", "proposition2"
 CONDITION_MAP: Tuple[ConditionSpec, ...] = (
@@ -169,9 +170,9 @@ def _value_levels(iota: ProgramView) -> Callable[[Any, Any], np.ndarray]:
             law = getattr(cv.core, "readout_law", None)
             if law is None:
                 continue
-            for p in cv.placements:
-                cols = slice(p.neuron_offset, p.neuron_offset + p.cols)
-                levels[p.node] = float(max(np.abs(law.lo[cols]).max(initial=0), np.abs(law.hi[cols]).max(initial=0)))
+            for p in cv.placements:  # [U-PCH3] the law at the placement's columns, by the core's declared layout
+                held = placement_value(cv.core, "readout_law", p.neuron_offset, p.neuron_offset + p.cols, value=law)
+                levels[p.node] = float(max(np.abs(held.lo).max(initial=0), np.abs(held.hi).max(initial=0)))
 
     def rows(unit, cv) -> np.ndarray:
         grid = getattr(cv.core, "boundary_grid", None)

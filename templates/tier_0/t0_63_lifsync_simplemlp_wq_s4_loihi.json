@@ -12,6 +12,10 @@
       "allow_coalescing": {
         "value": true,
         "note": "the MLP's 784- and 256-input layers exceed the dense equivalent's 128 axons, and a Loihi neuron integrates within its core: the cell declares coalescing, a departure from the chip"
+      },
+      "firing_mode": {
+        "value": "Default",
+        "note": "the tier-0 cell runs the framework's subtractive reset (Default), a departure from Loihi's reset to zero ('reset to 0 right after a spiking event occurs', davies2018loihi p.83, the loihi description's statement)"
       }
     }
   },
@@ -33,9 +37,8 @@
     "allow_scheduling": false,
     "spiking_family": "lif",
     "spiking_variant": "synchronized",
-    "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
-    "thresholding_mode": "<",
+    "lif_window_firing": "fire_while_integrating",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
     "scale_migration": true,

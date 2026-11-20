@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from typing import Any, Dict, Mapping, Optional
 
+from mimarsinan.common.refusal.format_version import exact_version  # [U-HOST3] the version rule's one reading
+
 
 __all__ = [
     "CertificationCell",
@@ -80,7 +82,8 @@ class CertificationCell:
     ) -> "CertificationCell":
         """Build a cell from a (firing × sync) ``SpikingModePolicy`` + a backend.
 
-        A NON-default soma point rides the existing ``variant`` slot, so a
+        A NON-default point (a soma law, or [U-LIF2 W7] a window firing other
+        than fire_while_integrating) rides the existing ``variant`` slot, so a
         per-event run can never be certified against the per-cycle floor and
         every historical key stays byte-identical. An explicit ``variant``
         (a caller separating two configs sharing a recipe cell) still wins.
@@ -89,8 +92,10 @@ class CertificationCell:
         sync = getattr(mode_policy, "schedule", None)
         sync = None if sync is None else str(sync)
         if variant is None:
+            point = getattr(mode_policy, "point", None)
             soma_law = getattr(mode_policy, "soma_law", None)
-            variant = None if soma_law is None else soma_law.point_tag()
+            variant = (point.point_tag() if point is not None
+                       else None if soma_law is None else soma_law.point_tag())
         return cls(firing=firing, sync=sync, backend=str(backend), variant=variant)
 
 
@@ -178,7 +183,7 @@ class CertificationFloorBook:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "CertificationFloorBook":
-        version = int(data.get("format_version", FLOOR_BOOK_FORMAT_VERSION))
+        version = exact_version(data.get("format_version", FLOOR_BOOK_FORMAT_VERSION), "certification floor-book")
         if version != FLOOR_BOOK_FORMAT_VERSION:
             raise ValueError(
                 f"certification floor-book format_version {version} != "

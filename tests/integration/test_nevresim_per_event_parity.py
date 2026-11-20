@@ -27,6 +27,7 @@ import torch.nn as nn
 
 from integration.parity_harness import ensure_nevresim_ready, have_cxx_compiler, mimarsinan_root
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.simulation_runner.segment_run import (
     raster_from_spike_trains,
 )
@@ -159,11 +160,10 @@ def _driver(segment, tmp, *, spike_generation_mode):
         spike_generation_mode=spike_generation_mode,
         firing_mode="Novena",
         thresholding_mode="<=",
-        spiking_mode="lif",
+        point=point_of_mode("lif", soma_law=PER_EVENT_8),
         threshold_type=int,
         connectivity_mode="runtime",
         verbose=False,
-        soma_law=PER_EVENT_8,
     )
 
 

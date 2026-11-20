@@ -24,6 +24,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     supports_spiking_mode,
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from spiking_points import declaring_fire_while_integrating, point_of_mode
 
 # [ODIN P2/P3/P7a] the torch executors, nevresim and the physical ODIN backend
 # implement the fold; everything else refuses permanently.
@@ -104,7 +105,7 @@ class TestRefusalByName:
 class TestThePolicyChainIsPointAware:
     @pytest.mark.parametrize("backend", _REFUSING_BACKENDS)
     def test_the_policy_refuses_the_point(self, backend):
-        policy = policy_for_spiking_mode("lif", soma_law=_PER_EVENT)
+        policy = policy_for_spiking_mode(point_of_mode("lif", soma_law=_PER_EVENT))
         assert policy.supports_backend(backend) is False
         with pytest.raises(ValueError, match=backend):
             policy.require_backend_supported(backend=backend, context="ctx")
@@ -113,24 +114,25 @@ class TestThePolicyChainIsPointAware:
     @pytest.mark.parametrize("mode", sorted(ALL_SPIKING_MODES))
     def test_the_default_point_answers_exactly_as_the_mode_matrix(self, backend, mode):
         assert (
-            policy_for_spiking_mode(mode, soma_law=DEFAULT_SOMA_LAW).supports_backend(
+            policy_for_spiking_mode(point_of_mode(mode, soma_law=DEFAULT_SOMA_LAW)).supports_backend(
                 backend)
             is supports_spiking_mode(backend, mode)
         )
         assert (
-            policy_for_spiking_mode(mode).supports_backend(backend)
+            policy_for_spiking_mode(point_of_mode(mode)).supports_backend(backend)
             is supports_spiking_mode(backend, mode)
         )
 
     def test_valid_backends_keeps_exactly_the_backends_with_an_executor(self):
-        policy = policy_for_spiking_mode("lif", soma_law=_PER_EVENT)
+        policy = policy_for_spiking_mode(point_of_mode("lif", soma_law=_PER_EVENT))
         assert policy.valid_backends(_BACKENDS) == _EXECUTING_BACKENDS
 
     def test_the_policy_carries_the_law_it_was_given(self):
-        assert policy_for_spiking_mode("lif", soma_law=_PER_EVENT).soma_law is (
+        assert policy_for_spiking_mode(point_of_mode("lif", soma_law=_PER_EVENT)).soma_law == (
             _PER_EVENT
         )
-        assert policy_for_spiking_mode("lif").soma_law is None
+        # [U-LIF2 W4] a policy is built from a resolved point, so it always carries the point's law.
+        assert policy_for_spiking_mode(point_of_mode("lif")).soma_law == DEFAULT_SOMA_LAW
 
 
 class TestTheRawModeStringSurfaceIsUnchanged:
@@ -145,9 +147,10 @@ class TestTheRawModeStringSurfaceIsUnchanged:
         }[mode]
         assert supports_spiking_mode(backend, mode) is expected
 
-    def test_backend_supports_accepts_a_raw_mode_string_unchanged(self):
-        assert BACKEND_REGISTRY.get("loihi").supports("lif") is True
-        assert BACKEND_REGISTRY.get("loihi").supports("ttfs") is False
+    def test_backend_supports_takes_the_point_of_a_mode_unchanged(self):
+        """[U-LIF2 r2] A mode alone is refused by name; the point of a mode is answered as the raw string was."""
+        assert BACKEND_REGISTRY.get("loihi").supports(point_of_mode("lif")) is True
+        assert BACKEND_REGISTRY.get("loihi").supports(point_of_mode("ttfs")) is False
 
 
 # [U-H port] The lineage folded ``FiringStrategy.capabilities`` into the capability table and refused an
@@ -218,10 +221,10 @@ class TestTheLegacyModeRefusalKeepsItsExactMessage:
     cause — an unsupported spiking mode at the default soma point."""
 
     def _mode_plan(self, mode):
-        return DeploymentPlan.resolve({
+        return DeploymentPlan.resolve(declaring_fire_while_integrating({  # [U-LIF2 W16] Loihi fires per cycle
             "configuration_mode": "user", "model_type": "mlp_mixer",
             "spiking_mode": mode, "enable_loihi_simulation": True,
-        })
+        }))
 
     @pytest.mark.parametrize("mode", ["ttfs", "ttfs_quantized", "ttfs_cycle_based"])
     def test_loihi_pins_its_historical_text_and_untyped_class(self, mode):

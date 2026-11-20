@@ -1,0 +1,424 @@
+{
+ "format_version": 2,
+ "what": "published push-rule 6T bitcells by node: the array's node scale sigma(n)",
+ "range_nm": {
+  "value": [
+   5.0,
+   65.0
+  ],
+  "unit": "nm",
+  "evidence_kind": "derived",
+  "citation": [
+   "S-SRAM-5",
+   "S-SRAM-65"
+  ],
+  "derivation": "rule B: the smallest and largest node with a published push-rule 6T cell",
+  "recompute": {
+   "aggregate": "range_of_nodes"
+  }
+ },
+ "interpolation": "log-log between the reference cells of the adjacent nodes inside the range",
+ "outside_range": "a named refusal unless the description declares its own bitcell with a citation",
+ "lifting_figures": {
+  "below the range": "a published 3 nm (or Intel 4) push-rule 6T bitcell area",
+  "above the range": "a published 90 nm or 130 nm push-rule 6T bitcell area"
+ },
+ "nodes": [
+  {
+   "node_nm": 5.0,
+   "cells": [
+    {
+     "value": 0.021,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-5"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-5",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.021000000000000005,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-5"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-5",
+       "expression": "v('S-SRAM-5')"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  },
+  {
+   "node_nm": 7.0,
+   "cells": [
+    {
+     "value": 0.027,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-7"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-7",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.026999999999999996,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-7"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-7",
+       "expression": "v('S-SRAM-7')"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  },
+  {
+   "node_nm": 10.0,
+   "cells": [
+    {
+     "value": 0.0312,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-10"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-10",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.031200000000000006,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-10"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-10",
+       "expression": "v('S-SRAM-10')"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  },
+  {
+   "node_nm": 14.0,
+   "cells": [
+    {
+     "value": 0.0588,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-14"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-14",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.0588,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-14"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-14",
+       "expression": "v('S-SRAM-14')"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  },
+  {
+   "node_nm": 16.0,
+   "cells": [
+    {
+     "value": 0.07,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-16"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-16",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.07,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-16"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-16",
+       "expression": "v('S-SRAM-16')"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  },
+  {
+   "node_nm": 22.0,
+   "cells": [
+    {
+     "value": 0.116,
+     "unit": "um^2",
+     "evidence_kind": "derived",
+     "citation": [
+      "S-SRAM-22"
+     ],
+     "derivation": "the push-rule 6T AREA-PUB derived from IMAGINE's cell label (0.44 um2 at 3.8x a push-rule 6T)",
+     "recompute": {
+      "expression": "v('S-SRAM-22', 0)"
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.116,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-22"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-22",
+       "expression": "v('S-SRAM-22', 0)"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  },
+  {
+   "node_nm": 28.0,
+   "cells": [
+    {
+     "value": 0.152,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-28"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-28",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.15200000000000002,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-28"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-28",
+       "expression": "v('S-SRAM-28')"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  },
+  {
+   "node_nm": 32.0,
+   "cells": [
+    {
+     "value": 0.171,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-32"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-32",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.171,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-32"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-32",
+       "expression": "v('S-SRAM-32')"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  },
+  {
+   "node_nm": 65.0,
+   "cells": [
+    {
+     "value": 0.57,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-65"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-65",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    },
+    {
+     "value": 0.5,
+     "unit": "um^2",
+     "evidence_kind": "published",
+     "citation": [
+      "S-SRAM-65-valavi2019a"
+     ],
+     "entry_value": {
+      "id": "S-SRAM-65-valavi2019a",
+      "index": null,
+      "key": null
+     },
+     "note": ""
+    }
+   ],
+   "reference": {
+    "value": 0.5338539126015656,
+    "unit": "um^2",
+    "evidence_kind": "fitted",
+    "citation": [
+     "S-SRAM-65",
+     "S-SRAM-65-valavi2019a"
+    ],
+    "derivation": "rule A: the reference push-rule 6T cell at the node, the geometric mean of the node's published cells (each alike)",
+    "recompute": {
+     "aggregate": "geometric_mean",
+     "points": [
+      {
+       "label": "S-SRAM-65",
+       "expression": "v('S-SRAM-65')"
+      },
+      {
+       "label": "S-SRAM-65-valavi2019a",
+       "expression": "v('S-SRAM-65-valavi2019a')"
+      }
+     ]
+    },
+    "held_out": {
+     "rule": "every fitted value is re-derived with the held-out chip's entries removed (by id prefix); a point that reads one is dropped, a point that meets a named refusal is dropped by name",
+     "record": "the toolchain's held-out estimate (area_rule/parity.py; tests T-6, T-27)"
+    },
+    "note": ""
+   }
+  }
+ ]
+}

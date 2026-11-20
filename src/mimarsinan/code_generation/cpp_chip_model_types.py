@@ -110,3 +110,10 @@ class Core:
         ]
         parts.append(f"    cores[{idx}] = Core{{neurons, {self.latency}}};\n")
         return ''.join(parts)
+
+
+def _python_to_cpp_type_name(py_type) -> str:
+    """Map a Python numeric type to its C++ template-argument string."""
+    if py_type is float:
+        return "double"
+    return py_type.__name__

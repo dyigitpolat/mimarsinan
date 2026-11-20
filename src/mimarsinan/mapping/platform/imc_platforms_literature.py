@@ -7,6 +7,11 @@ structured-elimination workspace (research-tree tag
 ``checkpoint/structured-elimination-2026-07-29``), ``hermes_64`` and
 ``puma_node_like`` from the CL2 cards that extend it, ``loihi2_like`` from the card U-C promoted there
 (``papers/mimarsinan_tcad_2026/research_artifacts/11_wave2/explore/cl2/chip_geometries/``).
+[U-CHIPKEYS] ``has_bias`` is a key that changes the computation, which a chip description states from its source:
+loihi_dense_equiv_128x1024 and hermes_64 state the on-chip bias their sources describe, each quote appended to the
+provenance (the extraction cards' ``has_bias`` false was a modeling default, not a quote); [U-CHIPKEYS2]
+hermes_core_like's is an assumption named in its description (its source states no bias). [U-CHIPKEYS2]
+``weight_bits`` is the composed weight one synapse represents: prime_mat_256x256's card gave one cell's precision.
 Do not round or invent a number here — add a new extraction card to that JSON
 and re-transcribe instead. ``claim_eligibility`` mirrors the curated table in
 the sibling ``13_chip_geometries.md`` §"S2 / allocation-claim eligibility"
@@ -52,10 +57,10 @@ register_imc_platform(
     IMCPlatform(
         name="hermes_core_like",
         cores=(
-            {"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": False},
+            {"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": True},
         ),
         weight_bits=8,
-        provenance="khaddamaljameh2022hermescorea: \"Central to its architecture is an array of 256 × 256 8T4R unit cells.\" (Section II, p.1028)",
+        provenance="khaddamaljameh2022hermescorea: \"Central to its architecture is an array of 256 × 256 8T4R unit cells.\" (Section II, p.1028) | khaddamaljameh2022hermescorea: \"These units apply the scaling and offset factors and also subtract positive and negative ADC values.\" (Section III-C, the LDPU's FP16 multiply-add units; [U-CHIPKEYS2] has_bias is assumed by name, not read: the core's paper states the LDPU's scaling and offset factors and an inference-required affine scaling, never a bias, and the 64-core chip built from these cores adds the bias in the LDPU, gallo2022a's inference experiments, PDF p.5)",
         capabilities={"allow_scheduling": True},
         claim_eligibility="quarantined",
     )
@@ -132,8 +137,8 @@ register_imc_platform(
         cores=(
             {"max_axons": 256, "max_neurons": 256, "count": 128, "has_bias": False},
         ),
-        weight_bits=4,
-        provenance="chi2016prime: \"There are 2 FF subarrays and 1 Buffer subarray per bank (totally 64 subarrays). In FF subarrays, for each mat, there are 256×256 ReRAM cells and eight 6-bit reconfigurable SAs; for each ReRAM cell, we assume 4-bit MLC for computation while SLC for memory; the input voltage has 8 levels (3-bit) for computation while 2 levels (1-bit) for memory.\" (Section V.A 'PRIME Configurations', p.36)",
+        weight_bits=9,
+        provenance="chi2016prime: \"There are 2 FF subarrays and 1 Buffer subarray per bank (totally 64 subarrays). In FF subarrays, for each mat, there are 256×256 ReRAM cells and eight 6-bit reconfigurable SAs; for each ReRAM cell, we assume 4-bit MLC for computation while SLC for memory; the input voltage has 8 levels (3-bit) for computation while 2 levels (1-bit) for memory.\" (Section V.A 'PRIME Configurations', p.36) | chi2016prime: \"two 4-bit cells to represent one 8-bit synaptic weight\" (Section III-D 'Overcoming the Precision Challenge', PDF p.7) | chi2016prime: \"we employ two crossbar arrays store positive and negative weights, respectively\" (Section III-A, PDF p.5; [U-CHIPKEYS2] weight_bits, the composed weight one synapse represents: an 8-bit magnitude in two 4-bit cells, its sign held by the crossbar pair, the symmetric signed grid of 9 bits; the extraction card's 4 was one cell's precision)",
         capabilities={"allow_scheduling": True},
         claim_eligibility="curve-only",
     )
@@ -156,10 +161,10 @@ register_imc_platform(
     IMCPlatform(
         name="loihi_dense_equiv_128x1024",
         cores=(
-            {"max_axons": 128, "max_neurons": 1024, "count": 128, "has_bias": False},
+            {"max_axons": 128, "max_neurons": 1024, "count": 128, "has_bias": True},
         ),
         weight_bits=8,
-        provenance="davies2018loihi: \"Loihi features a manycore mesh comprising 128 neuromorphic cores, three embedded x86 processor cores, and off-chip communication interfaces that hierarchically extend the mesh in four planar directions to other chips.\" (p.86, 'Chip Overview') | davies2018loihi: \"Each neuromorphic core implements 1,024 primitive spiking neural units (compartments) grouped into sets of trees constituting neurons.\" (p.86, 'Chip Overview') | davies2018loihi: \"The total number of neurons assigned to any core may not exceed 1,024 (Ncx). The total synaptic fan-in state mapped to any core must not exceed 128 KB (Nsyn × 64b, subject to compression and list alignment considerations). The total number of core-to-core fan-out edges mapped to any given core must not exceed 4,096 (Naxout)... The total number of distribution lists, associated by axon_id, in any core must not exceed 4,096 (Naxin)... In practice, constraints 2 and 4 tend to be the most limiting.\" (p.89, numbered constraint list under 'Network Connectivity Architecture')",
+        provenance="davies2018loihi: \"Loihi features a manycore mesh comprising 128 neuromorphic cores, three embedded x86 processor cores, and off-chip communication interfaces that hierarchically extend the mesh in four planar directions to other chips.\" (p.86, 'Chip Overview') | davies2018loihi: \"Each neuromorphic core implements 1,024 primitive spiking neural units (compartments) grouped into sets of trees constituting neurons.\" (p.86, 'Chip Overview') | davies2018loihi: \"The total number of neurons assigned to any core may not exceed 1,024 (Ncx). The total synaptic fan-in state mapped to any core must not exceed 128 KB (Nsyn × 64b, subject to compression and list alignment considerations). The total number of core-to-core fan-out edges mapped to any given core must not exceed 4,096 (Naxout)... The total number of distribution lists, associated by axon_id, in any core must not exceed 4,096 (Naxin)... In practice, constraints 2 and 4 tend to be the most limiting.\" (p.89, numbered constraint list under 'Network Connectivity Architecture') | davies2018loihi: \"The synaptic response current is the sum of filtered input spike trains and a constant bias current\" ('Spiking Neural Unit', Eq. (1), p.83; [U-CHIPKEYS] has_bias: each compartment adds its bias on chip)",
         capabilities={"allow_scheduling": True},
         claim_eligibility="curve-only",
     )
@@ -182,10 +187,10 @@ register_imc_platform(
     IMCPlatform(
         name="hermes_64",
         cores=(
-            {"max_axons": 256, "max_neurons": 256, "count": 64, "has_bias": False},
+            {"max_axons": 256, "max_neurons": 256, "count": 64, "has_bias": True},
         ),
         weight_bits=4,
-        provenance="gallo2022a: \"The fully-integrated chip features 64 256x256 AIMC cores interconnected via an on-chip communication network.\" (Abstract, p.1) | gallo2022a: \"Its 64 cores, each of size 1.2 mm × 1.16 mm, are placed in eight rows and eight columns.\" (Section I 'Chip architecture', p.2) | gallo2022a: \"Each core contains a PCM crossbar array capable of storing a 256 × 256 weight matrix and performing an analog MVM using the input activations provided from outside of the core.\" (Section I 'Chip architecture', p.2) | gallo2022a: \"Compared with an equivalent digital engine having 8-bit input/output precision and N-bit weight precision, the precision achieved with ODP is close to 3-bit weights. With TDP, a precision between 3-bit and 4-bit weights is achieved.\" (Section IV 'MVM accuracy', p.5)",
+        provenance="gallo2022a: \"The fully-integrated chip features 64 256x256 AIMC cores interconnected via an on-chip communication network.\" (Abstract, p.1) | gallo2022a: \"Its 64 cores, each of size 1.2 mm × 1.16 mm, are placed in eight rows and eight columns.\" (Section I 'Chip architecture', p.2) | gallo2022a: \"Each core contains a PCM crossbar array capable of storing a 256 × 256 weight matrix and performing an analog MVM using the input activations provided from outside of the core.\" (Section I 'Chip architecture', p.2) | gallo2022a: \"Compared with an equivalent digital engine having 8-bit input/output precision and N-bit weight precision, the precision achieved with ODP is close to 3-bit weights. With TDP, a precision between 3-bit and 4-bit weights is achieved.\" (Section IV 'MVM accuracy', p.5) | gallo2022a: \"For the last dense layer, the bias is programmed into the affine scale registers of the LDPU so that it gets added to the MVM result.\" (Section 'Inference experiments', p.6; [U-CHIPKEYS] has_bias: the bias is added on chip)",
         capabilities={"allow_scheduling": True},
         claim_eligibility="headline-eligible",
     )

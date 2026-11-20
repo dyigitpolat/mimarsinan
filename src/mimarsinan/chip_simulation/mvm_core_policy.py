@@ -15,11 +15,20 @@ class MvmCorePolicy(SpikingModePolicy):
     """
 
     def __init__(self) -> None:
-        super().__init__(CORE_SEMANTICS_MVM, None)
+        # [U-LIF2 W4] The value domain has no spiking point: the policy names its domain and carries no soma law,
+        # and it overrides every point-keyed judgment of the base below (no spiking backend runs it).
+        self.spiking_mode = CORE_SEMANTICS_MVM
+        self.schedule = None
+        self.soma_law = None
 
     def certification_observable(self) -> tuple[str, "str | None"]:
         """[cert-plan W3 shape] per-neuron post-affine VALUES, never counts."""
         return ("values", None)
+
+    @property
+    def runs_per_cycle_cascade(self) -> bool:
+        """Value cores compute one matrix product per read: no cycle, no window."""
+        return False
 
     def requires_activation_alignment(self) -> bool:
         """No on-chip activations exist, so the alignment ladder is inert."""

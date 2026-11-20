@@ -196,14 +196,16 @@ def test_the_same_walks_are_untouched_at_the_default_point(discipline):
 def test_the_membrane_readout_derives_off_under_a_saturating_point():
     """Not a late crash inside the executor that refuses it: the recipe fold
     turns the knob off, exactly like an unsupported backend enable."""
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
     from mimarsinan.config_schema.recipe_fold import fold_conversion_recipe
 
     dp = dict(_PER_EVENT_CONFIG, spiking_mode="lif", firing_mode="Novena")
-    fold_conversion_recipe(dp, "lif", explicit_keys=set(_PER_EVENT_CONFIG))
+    fold_conversion_recipe(dp, resolve_spiking_point(dp), explicit_keys=set(_PER_EVENT_CONFIG))
     assert dp["lif_membrane_readout"] is False
 
 
 def test_an_explicit_membrane_readout_contradicts_the_point_loudly():
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
     from mimarsinan.config_schema.recipe_fold import fold_conversion_recipe
 
     dp = dict(
@@ -212,14 +214,15 @@ def test_an_explicit_membrane_readout_contradicts_the_point_loudly():
     )
     with pytest.raises(ValueError, match="lif_membrane_readout=true"):
         fold_conversion_recipe(
-            dp, "lif",
+            dp, resolve_spiking_point(dp),
             explicit_keys=set(_PER_EVENT_CONFIG) | {"lif_membrane_readout"},
         )
 
 
 def test_the_default_point_keeps_the_membrane_readout_recipe_default():
+    from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
     from mimarsinan.config_schema.recipe_fold import fold_conversion_recipe
 
     dp = {"spiking_mode": "lif", "simulation_steps": T}
-    fold_conversion_recipe(dp, "lif", explicit_keys={"simulation_steps"})
+    fold_conversion_recipe(dp, resolve_spiking_point(dp), explicit_keys={"simulation_steps"})
     assert dp["lif_membrane_readout"] is True

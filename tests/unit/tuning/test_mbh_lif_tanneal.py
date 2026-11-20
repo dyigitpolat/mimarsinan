@@ -27,6 +27,7 @@ from mimarsinan.common import env
 from mimarsinan.models.nn.activations import ChipInputQuantizer, LIFActivation
 from mimarsinan.tuning.orchestration import mbh_ledger
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
+from spiking_points import point_of_mode
 
 _LEDGER_RE = re.compile(r"^\[MBH\] tuner=\S+ rung=\d+ rate=[0-9.]+ ")
 
@@ -96,7 +97,7 @@ class TestRecipeKnob:
     def test_lif_recipe_turns_tanneal_on(self):
         from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
-        assert ConversionPolicy.derive("lif").knobs["lif_tanneal"] is True
+        assert ConversionPolicy.derive(point_of_mode("lif")).knobs["lif_tanneal"] is True
 
     def test_non_lif_recipes_carry_no_tanneal_knob(self):
         from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
@@ -107,7 +108,7 @@ class TestRecipeKnob:
             ("ttfs_cycle_based", "cascaded"),
             ("ttfs_cycle_based", "synchronized"),
         ):
-            assert "lif_tanneal" not in ConversionPolicy.derive(mode, schedule).knobs
+            assert "lif_tanneal" not in ConversionPolicy.derive(point_of_mode(mode, schedule)).knobs
 
 
 # -- schedule math (the rate -> T SSOT) ------------------------------------------
@@ -248,9 +249,11 @@ class TestEveryRungRealizable:
                 for lif in _lif_targets(tuner.model):
                     assert isinstance(lif, LIFActivation)
                     assert lif.T == rung_T
-                quantizers = _input_quantizers(tuner.model)
-                assert quantizers, "the encoding layer must carry a ChipInputQuantizer"
-                for q in quantizers:
+                # [U-LIF D1] the host-side (subsumed) encoder takes no input grid; any entry grid present is at the rung T.
+                for p in tuner.model.get_perceptrons():
+                    if getattr(p, "is_encoding_layer", False):
+                        assert not any(isinstance(m, ChipInputQuantizer) for m in p.input_activation.modules())
+                for q in _input_quantizers(tuner.model):
                     assert q.T == rung_T
         finally:
             tuner.close()

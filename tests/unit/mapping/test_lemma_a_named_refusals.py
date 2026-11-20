@@ -82,10 +82,27 @@ def test_a_wrapped_refusal_whose_constructor_takes_more_keeps_its_own_name():
 
 
 @pytest.mark.parametrize("arm, seed", [("on", 2), ("on", 13), ("on_scheduled", 3), ("on_values_classes", 23)])
-def test_screen_seeds_that_refused_without_a_name_refuse_by_name(arm, seed):
+def test_screen_seeds_that_refused_without_a_name_refuse_by_name(arm, seed, monkeypatch):
     """Seeds of the CL9 screen (``11_wave2/integration2/cl9/gates/screen/<arm>.jsonl``) whose outcome was
-    ``refused_unnamed`` by ``WideFanInUnsupportedError``."""
-    from mimarsinan.certification.randomized.runner import REFUSED, run_instance
+    ``refused_unnamed`` by ``WideFanInUnsupportedError``. [U-TGAUGE5] A draw whose run reads the window is mapped
+    through the mapping's window pass, so its identity program runs and the deployment's own refusal is read (seed 13's
+    relay-free identity program is refused by the window rule first, ``test_the_window_rule_refuses_first``)."""
+    from mimarsinan.certification.randomized.arms import ARMS
+    from mimarsinan.certification.randomized.runner import REFUSED, instance_for, run_instance
+
+    from unit.certification.x3a_window import map_through_the_window, reads_the_window
+
+    if reads_the_window(instance_for(seed, ARMS[arm]).semantics):
+        map_through_the_window(monkeypatch)
 
     verdict = run_instance(seed, arm)
     assert verdict.outcome == REFUSED and verdict.detail.startswith("WideFanInUnsupportedError: ")
+
+
+def test_the_window_rule_refuses_first():
+    """[U-TGAUGE5] This file's refusal test: seed 13's relay-free identity program (a per-cycle cascade holding a live
+    edge at a latency gap other than one) is refused by name before the deployment's own refusal is reached."""
+    from mimarsinan.certification.randomized.runner import REFERENCE_ERROR, run_instance
+
+    verdict = run_instance(13, "on")
+    assert verdict.outcome == REFERENCE_ERROR and verdict.detail.startswith("UnbalancedFanInError: "), verdict.detail

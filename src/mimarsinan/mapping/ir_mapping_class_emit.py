@@ -9,6 +9,7 @@ import torch
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
 from mimarsinan.mapping.ir_mapping_class_base import IRMappingCore
+from mimarsinan.mapping.packing.softcore.compaction import take_neuron_columns
 from mimarsinan.mapping.support.bias_rows import core_matrix_with_bias_rows
 
 
@@ -160,21 +161,16 @@ class IRMappingEmitMixin(IRMappingCore):
                 # Bank rows ARE the perceptron's output channels at this position.
                 perceptron_output_slice = weight_row_slice
 
-            node_hw_bias: np.ndarray | None = None
-            if has_bias:
-                if bank.hardware_bias is not None:
-                    start, end = weight_row_slice
-                    node_hw_bias = bank.hardware_bias[start:end]
-                else:
-                    for _ in range(self._layout_bank_bias_rows[weight_bank_id]):
-                        ir_input_list.append(IRSource(node_id=-3, index=0))
+            if has_bias and bank.hardware_bias is None:
+                for _ in range(self._layout_bank_bias_rows[weight_bank_id]):
+                    ir_input_list.append(IRSource(node_id=-3, index=0))
 
             neural_core = NeuralCore(
                 id=node_id,
                 name=name or f"neural_core_{node_id}",
                 input_sources=np.array(ir_input_list, dtype=object),
                 core_matrix=None,
-                hardware_bias=node_hw_bias,
+                hardware_bias=None,
                 threshold=1.0,
                 activation_scale=bank.activation_scale,
                 parameter_scale=bank.parameter_scale,
@@ -192,6 +188,10 @@ class IRMappingEmitMixin(IRMappingCore):
                 coalescing_group_id=coalescing_group_id,
                 coalescing_role=coalescing_role,
             )
+            if has_bias and bank.hardware_bias is not None:
+                # [U-LIVE r2] an instance's neurons are its window of the bank's columns: every value the bank holds
+                # per neuron follows them (``take_neuron_columns``), the window its matrix resolves through
+                take_neuron_columns(bank, np.arange(*weight_row_slice), into=neural_core, count=out_features)
             self.nodes.append(neural_core)
             return result
 

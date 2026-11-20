@@ -46,7 +46,19 @@ def bank_reads(mapper, role: int) -> np.ndarray:
 
 def consumer_group_partition(model_repr) -> Dict[int, ConsumerGroups]:
     """{id(perceptron): its groups} for every static perceptron an operand product reads."""
+    return {key: groups for key, (groups, _names) in _partition(model_repr).items()}
+
+
+def consumer_group_readers(model_repr) -> Dict[int, List[Tuple[Tuple[str, str], ...]]]:
+    """[U-BRANGE2 (d)] {id(perceptron): per group, in the partition's own order, its readers named as the toolchain names
+    them: ``(bank perceptron name, "stream" | "payload")`` for each operand bank that reads it, ``("whole", "")`` for a
+    reader that reads every channel}. A quantizer-state map keys a consumer group's declared range by these names."""
+    return {key: names for key, (_groups, names) in _partition(model_repr).items()}
+
+
+def _partition(model_repr):
     readers: Dict[int, Dict[int, set]] = {}
+    named: Dict[tuple, Tuple[str, str]] = {}
     owners: Dict[int, object] = {}
     sizes: Dict[int, int] = {}
     for mapper in operand_mappers(model_repr):
@@ -60,6 +72,7 @@ def consumer_group_partition(model_repr) -> Dict[int, ConsumerGroups]:
             payload = (role == 1) == (mapper.lowering.stationary == B_STATIONARY)
             for bank, flat in enumerate(bank_reads(mapper, role)):
                 key = (id(mapper), bank, "payload" if payload else "stream")
+                named[key] = (str(mapper.banks[bank].name), key[2])
                 for channel in np.unique(channels_of(perceptron, shape, flat)).tolist():
                     readers.setdefault(id(perceptron), {}).setdefault(int(channel), set()).add(key)
     consumers = model_repr.consumer_map()
@@ -72,7 +85,7 @@ def consumer_group_partition(model_repr) -> Dict[int, ConsumerGroups]:
         if others or node is model_repr.output_layer_mapper:
             for channel in range(sizes[id(perceptron)]):
                 readers[id(perceptron)].setdefault(channel, set()).add(_WHOLE)
-    out: Dict[int, ConsumerGroups] = {}
+    out: Dict[int, tuple] = {}
     for key, by_channel in readers.items():
         signatures: List[frozenset] = []
         channels = np.zeros(sizes[key], dtype=np.int64)
@@ -82,5 +95,6 @@ def consumer_group_partition(model_repr) -> Dict[int, ConsumerGroups]:
                 signatures.append(signature)
             channels[channel] = signatures.index(signature)
         payload = tuple(any(isinstance(r, tuple) and r[-1] == "payload" for r in s) for s in signatures)
-        out[key] = ConsumerGroups(channels=channels, payload=payload)
+        names = [tuple(sorted(named.get(r, ("whole", "")) for r in s)) for s in signatures]
+        out[key] = (ConsumerGroups(channels=channels, payload=payload), names)
     return out

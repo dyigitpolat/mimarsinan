@@ -15,9 +15,10 @@ from mimarsinan.chip_simulation.activation_semantics import (
     ANALYTICAL_VARIANT, CASCADED_VARIANT, LIF_FAMILY, QUANTIZED_VARIANT, STREAMED_VARIANT,
     resolve_activation_semantics,
 )
+from mimarsinan.chip_simulation.spiking_point import resolve_spiking_point
 from mimarsinan.chip_simulation.spiking_semantics import (
-    cycle_accurate_lif_trains, lif_execution_synchronized, lif_membrane_init, lif_per_hop_retiming_enabled,
-    spike_phase_dither_enabled, ttfs_half_step_folded,
+    cycle_accurate_lif_trains, lif_membrane_init, lif_per_hop_retiming_enabled, spike_phase_dither_enabled,
+    ttfs_half_step_folded,
 )
 from mimarsinan.mapping.ir.deployment_dtype import SPIKING_ARITHMETIC, VALUE_ARITHMETIC, dtype_name
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
@@ -128,7 +129,7 @@ def semantics_of_config(config: Mapping[str, Any], *, has_laws: Optional[bool] =
     if semantics.family == LIF_FAMILY:
         if semantics.variant == STREAMED_VARIANT:
             return STREAMED_LIF
-        if lif_execution_synchronized(config):
+        if resolve_spiking_point(config).integrates_then_emits:
             return SYNCHRONIZED_LIF
         # Without per-hop re-timing the synchronized variant runs every segment on per-cycle cores (host boundaries
         # re-encode counts as under streamed LIF), so it is held to streamed LIF's conditions with the run's transfer.

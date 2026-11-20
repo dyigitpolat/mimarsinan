@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 import numpy as np
 
@@ -16,6 +16,12 @@ from mimarsinan.chip_simulation.nevresim_policy_types import (
 from mimarsinan.chip_simulation.recording._spike_encoding import encode_segment_input
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_point import (
+    HISTORICAL_WINDOW_FIRING,
+    SpikingPoint,
+    resolve_spiking_point,
+    stated_point,
+)
 from mimarsinan.chip_simulation.spiking_semantics import is_novena_firing_mode
 from mimarsinan.models.spiking.spiking_config import SPIKE_MODES
 
@@ -27,6 +33,8 @@ class NeuralBehaviorConfig:
     thresholding_mode: str
     spike_generation_mode: str
     spike_encoding_seed: int | None = None
+    #: [U-LIF2 W5] The run's resolved point when built from a config (the runners' checks read it); outside equality.
+    point: Optional[SpikingPoint] = field(default=None, compare=False, repr=False)
 
     @classmethod
     def from_deployment_config(cls, cfg: dict[str, Any]) -> NeuralBehaviorConfig:
@@ -38,10 +46,21 @@ class NeuralBehaviorConfig:
             thresholding_mode=str(cfg.get("thresholding_mode", "<=")),
             spike_generation_mode=str(cfg.get("spike_generation_mode", "Uniform")),
             spike_encoding_seed=cfg.get("spike_encoding_seed"),
+            point=resolve_spiking_point(cfg),
         )
 
+    def spiking_point(self, schedule: Any = None) -> SpikingPoint:
+        """The resolved point this behavior runs: the config's, else [U-LIF2 r2] the point its own fields state (a
+        behavior built directly, or stored before the point existed), with the historical window firing, never the
+        declared default."""
+        if self.point is not None:
+            return self.point
+        return stated_point({"spiking_mode": self.spiking_mode, "ttfs_cycle_schedule": schedule,
+                             "firing_mode": self.firing_mode, "thresholding_mode": self.thresholding_mode},
+                            window_firing=HISTORICAL_WINDOW_FIRING)
+
     def _mode_policy(self):
-        return policy_for_spiking_mode(self.spiking_mode)
+        return policy_for_spiking_mode(self.spiking_point())
 
     @classmethod
     def for_lava(cls, cfg: dict[str, Any]) -> NeuralBehaviorConfig:

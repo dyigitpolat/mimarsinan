@@ -90,8 +90,11 @@ class TestTheDeclaration:
         assert KEY in CONFIG_KEYS_SET and KEY not in get_default_deployment_parameters()
 
     def test_the_plan_reads_the_declaration_and_absence_is_zero(self):
-        assert DeploymentPlan.resolve(_config()).event_census_samples == 0
+        fwi = {"lif_window_firing": "fire_while_integrating"}  # [U-LIF2 W13] an external backend executes it
+        assert DeploymentPlan.resolve(_config(**fwi)).event_census_samples == 0
         assert DeploymentPlan.resolve(_config(**{KEY: 64})).event_census_samples == 64
+        # integrate then emit, which no external backend executes: the executor of record's census (SANA-FE's count)
+        assert DeploymentPlan.resolve(_config()).event_census_samples == int(_config().get("sanafe_sample_count") or 1)
 
 
 class TestTheStepJoinsOnlyWhenDeclared:
@@ -106,6 +109,8 @@ class TestTheStepJoinsOnlyWhenDeclared:
         pipeline, _ = _census_pipeline(tmp_path)
         assert "event_census" in DeploymentRecordStep(pipeline).requires
         pipeline.config.pop(KEY)
+        assert "event_census" in DeploymentRecordStep(pipeline).requires  # [U-LIF2 W13] integrate then emit: derived
+        pipeline.config["lif_window_firing"] = "fire_while_integrating"
         assert "event_census" not in DeploymentRecordStep(pipeline).requires
 
 

@@ -26,6 +26,8 @@ __all__ = [
     "gauge_axis",
     "gauge_channels",
     "gauge_view",
+    "same_gauge",
+    "wire_gauge",
     "wrap_channel_axis",
 ]
 
@@ -111,8 +113,9 @@ def gauge_view(vector, like: torch.Tensor, axis: int | None) -> torch.Tensor | N
     """A per-channel gauge ``vector`` broadcastable against a batched value ``like`` (U-SC2: the per-element scale a
     walk re-encodes a wire value at, the one the deployed core folds): along axis 1 of a channel-first value on the
     leading gauge axis, along the last axis otherwise, repeated over the leading groups of a flattened channel-first
-    value as the fold repeats it. ``None`` for a scalar (uniform) gauge, which every reader takes from the boundary
-    table, or a vector the value's layout does not hold."""
+    value as the fold repeats it; [U-TGAUGE3] a gauge per element of a sample (a layout's, placed by its elements'
+    sources) over the sample's elements. ``None`` for a scalar (uniform) gauge, which every reader takes from the
+    boundary table, or a vector the value's layout does not hold."""
     if vector is None:
         return None
     flat = torch.as_tensor(vector).detach().reshape(-1)
@@ -126,9 +129,36 @@ def gauge_view(vector, like: torch.Tensor, axis: int | None) -> torch.Tensor | N
         shape = [1] * dim
         shape[ax] = n
         return flat.view(*shape)
+    if dim >= 2 and flat.numel() == like[0].numel():
+        return flat.view(1, *like.shape[1:])
     if ax == dim - 1 and n % flat.numel() == 0:
         return flat.repeat_interleave(n // flat.numel())
     return None
+
+
+def wire_gauge(node, vector, scalar, like: torch.Tensor):
+    """[U-TGAUGE4] The gauge ``node``'s wire value ``like`` holds each element at: the source walk's placed ``vector``
+    per element where it is no one value (``gauge_view``); its one value where ``node`` is a layout whose elements all
+    sit at it while ``scalar`` (the boundary table's, a layout's own propagation: the mean of its sources) is another
+    (a gather that holds one producer of a join at differing gauges; ``same_gauge``); else ``scalar``."""
+    view = gauge_view(vector, like, gauge_axis(node))
+    if view is not None or vector is None or not getattr(node, "moves_elements_only", False):
+        return scalar if view is None else view
+    flat = torch.as_tensor(vector).detach().reshape(-1)
+    if flat.numel() and not same_gauge(float(flat[0]), float(scalar)):
+        return float(flat[0])
+    return scalar
+
+
+#: A gauge read through two float32 tables (the boundary walk's float64 mean written into a float32 parameter, the
+#: source walk's float32 combination) differs by a few float32 units in the last place; more is another producer's.
+GAUGE_READINGS_ULPS = 4
+
+
+def same_gauge(a: float, b: float) -> bool:
+    """[U-TGAUGE4] Whether two readings of a gauge are one gauge (within ``GAUGE_READINGS_ULPS`` float32 units)."""
+    return abs(float(a) - float(b)) <= GAUGE_READINGS_ULPS * float(torch.finfo(torch.float32).eps) * max(
+        abs(float(a)), abs(float(b)))
 
 
 def wrap_channel_axis(node, slots) -> int | None:

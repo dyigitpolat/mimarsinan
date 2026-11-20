@@ -29,6 +29,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from spiking_points import point_of_mode
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     execute_compute_op_numpy,
@@ -139,7 +140,9 @@ def _grid_samples(n: int = N_GRID) -> torch.Tensor:
 def _tie_program(semantics: str):
     """The program, its grid samples, and the samples whose stem the plane decides (exact ties of the stem)."""
     retimed = SEMANTICS[semantics][0]
-    program = build_program(WQ_THETA_ENC, retimed=retimed, thetas=WQ_THETAS, weight_bits=WQ_BITS)
+    # [U-POST G4] the program declares the stem's 1/T entry grid its samples sit on, so the projection stamps the stem's
+    # lattice (without the declaration a host-side stem reads a float input and carries none).
+    program = build_program(WQ_THETA_ENC, retimed=retimed, thetas=WQ_THETAS, weight_bits=WQ_BITS, stem_entry_grid=True)
     x = _grid_samples()
     stem = program.stem().params["module"]
     with torch.no_grad():
@@ -260,6 +263,7 @@ def test_the_nevresim_runner_reads_the_tie_samples_as_the_gate():
     runner = object.__new__(SimulationRunner)
     with tempfile.TemporaryDirectory() as work:
         vars(runner).update(
+            spiking_point=point_of_mode("lif"),  # [U-LIF2 r2] the run's point
             spike_generation_mode="Uniform", firing_mode="Default", spiking_mode="lif", pass_transfer=VERBATIM,
             thresholding_mode="<=", nevresim_connectivity_mode=default_nevresim_connectivity_mode(),
             simulation_step_timeout_s=600.0, membrane_readout=False, membrane_half_step_charge=False,
