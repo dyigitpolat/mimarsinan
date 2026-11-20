@@ -63,6 +63,9 @@ class LayoutNocFragments:
     #: program is the planner's; (0, 0) for the single pool (no scheduling, or [fix_b] the fit rule), whose stages
     #: carry no pass index. None where no planner stated it (fragments built by hand).
     schedule_census: Optional[Tuple[int, int]] = None
+    #: [thru:w3] Under the batch pipeline, per pass the input slot of each of its placements (``pass_placements``
+    #: order): a run serves B inputs, and each placement is one input's instance. None: one input per run.
+    pass_slots: Optional[Tuple[Tuple[int, ...], ...]] = None
 
 
 def collect_noc_fragments(
@@ -143,6 +146,7 @@ def collect_noc_fragments(
             )
         pass_lists = [list(chunk) for chunk in plan.pass_lists]
         schedule_census = (int(plan.total_pass_count), int(plan.sync_count))
+        input_slots = _input_slots(plan)
         # Residency is a per-SEGMENT question: only a segment whose passes
         # the residency composition produced keeps weights installed.
         pass_resident = list(plan.resident_flags)
@@ -152,11 +156,13 @@ def collect_noc_fragments(
         pass_lists = [softcores]
         pass_resident = [False]
         layouts = {}
+        input_slots = None
     # [E-3, targeted pass] Without scheduling the one planned pass is packed as the builder's single pool (segment by
     # segment from one pool, ``pack_layout(runs=...)``), the pack ``compute_mapping_stats`` judges.
     pass_runs = [runs] if not allow_scheduling and runs is not None else None
-    per_pass, programs = _placed_passes(pass_lists, pass_resident, global_index, core_types, residency,
-                                        allow_neuron_splitting, allow_coalescing, declared_cores, pass_runs, layouts)
+    per_pass, programs, slots = _placed_passes(pass_lists, pass_resident, global_index, core_types, residency,
+                                               allow_neuron_splitting, allow_coalescing, declared_cores, pass_runs,
+                                               layouts, input_slots)
     fit = allow_scheduling and fit_rule_applies(residency_plan) and not all(
         p.schedule_resident_cores == frozenset(range(p.cores)) for p in programs) and unscheduled_pack_holds(
         pack_layout(softcores=softcores, core_types=core_types, allow_neuron_splitting=allow_neuron_splitting,
@@ -164,29 +170,41 @@ def collect_noc_fragments(
     if fit:  # [fix_b, fix_c] the fit rule, under U1 and every declared plan but the stateless baseline
         per_pass, programs = _single_pool_passes(softcores, runs, global_index, core_types, allow_neuron_splitting,
                                                  allow_coalescing, declared_cores)
+        slots = None
     return LayoutNocFragments(
         pass_placements=tuple(per_pass), census=census, pass_programs=tuple(programs),
         runs=None if residency_plan is not None and not fit else runs,
-        schedule_census=(0, 0) if fit else schedule_census,
+        schedule_census=(0, 0) if fit else schedule_census, pass_slots=slots,
     )
 
 
+def _input_slots(plan: Any) -> Optional[List[Tuple[int, ...]]]:
+    """[thru:w3] Per planned pass, the input slot of each of its specs (``SegmentPassPlan.input_slots``, segment by
+    segment), or None where no segment plans input slots (one input per run)."""
+    if all(getattr(segment, "input_slots", None) is None for _sid, segment in plan.segments):
+        return None
+    return [tuple(int(b) for b in slots) for _sid, segment in plan.segments for slots in segment.input_slots]
+
+
 def _placed_passes(pass_lists, pass_resident, global_index, core_types, residency, allow_neuron_splitting,
-                   allow_coalescing, declared_cores, pass_runs=None, layouts=None
-                   ) -> Tuple[List[Tuple[Tuple[int, int], ...]], List[PassProgram]]:
+                   allow_coalescing, declared_cores, pass_runs=None, layouts=None, input_slots=None
+                   ) -> Tuple[List[Tuple[Tuple[int, int], ...]], List[PassProgram], Optional[Tuple]]:
     """Every planned pass packed with its placements, and its programs (``packed_pass_program``: per physical tile
     its cells and signed rows, per core its geometry) with the residency marks. ``pass_runs`` (per pass, its specs'
     builder segments, or None): [E-3, targeted pass] a pass packed as the builder's single pool. [U-F4] ``layouts``:
-    the wavefront passes, placed on their group's layout (``wavefront_fragments``)."""
+    the wavefront passes, placed on their group's layout (``wavefront_fragments``). [thru:w3] ``input_slots`` (per
+    pass, each spec's input slot, or None): the third value states each placement's slot (None without them)."""
     per_pass: List[Tuple[Tuple[int, int], ...]] = []
     programs: List[PassProgram] = []
     pass_types: List[Tuple[CoreTiles, ...]] = []
+    slots: List[Tuple[int, ...]] = []
     for index, (pass_softcores, resident) in enumerate(zip(pass_lists, pass_resident)):
         if layouts and index in layouts:
-            placed, placed_program, placed_tiles = layouts[index]
+            placed, placed_program, placed_tiles, placed_slots = layouts[index]
             per_pass.append(placed)
             programs.append(placed_program)
             pass_types.append(placed_tiles)
+            slots.append(placed_slots or ())
             continue
         pack = pack_layout(
             softcores=pass_softcores, core_types=core_types,
@@ -203,12 +221,15 @@ def _placed_passes(pass_lists, pass_resident, global_index, core_types, residenc
             (global_index[id(pass_softcores[local])], hardcore)
             for local, hardcore in pack.placements
         ))
+        if input_slots is not None:
+            slots.append(tuple(input_slots[index][int(local)] for local, _hardcore in pack.placements))
         pass_program, tiles = packed_pass_program(pack.used_core_snapshots or (), resident=bool(resident),
                                                   core_types=core_types, declared_cores=declared_cores,
                                                   operand_axons=_core_operand_axons(pass_softcores, pack))
         programs.append(pass_program)
         pass_types.append(tiles)
-    return per_pass, _resident_programs(programs, pass_types, residency, core_types)
+    return (per_pass, _resident_programs(programs, pass_types, residency, core_types),
+            None if input_slots is None else tuple(slots))
 
 
 def _single_pool_passes(softcores, runs, global_index, core_types, allow_neuron_splitting, allow_coalescing,
@@ -217,8 +238,8 @@ def _single_pool_passes(softcores, runs, global_index, core_types, allow_neuron_
     the cores of its segment in one segment-by-segment pack of the declared pool, every core pinned (the pack holds
     on the pool, so its passes fit side by side)."""
     if runs is None:
-        per_pass, programs = _placed_passes([softcores], [False], global_index, core_types, None,
-                                            allow_neuron_splitting, allow_coalescing, declared_cores)
+        per_pass, programs, _slots = _placed_passes([softcores], [False], global_index, core_types, None,
+                                                    allow_neuron_splitting, allow_coalescing, declared_cores)
     else:
         pack = pack_layout(softcores=softcores, core_types=core_types, allow_neuron_splitting=allow_neuron_splitting,
                            allow_coalescing=allow_coalescing, collect_placements=True, runs=runs)
@@ -253,13 +274,21 @@ def delayed_carry_wires(softcores: Sequence[LayoutSoftCoreSpec], frag: LayoutNoc
                         runs: Optional[Sequence[int]] = None) -> Tuple[Tuple[int, int, int], ...]:
     """[U1 W10] ``(producer, width, consuming pass)`` per delayed carried slice the builder adds beyond one per
     producer and pass: each crosses the chip boundary once more (the boundary-in term). ``runs``: the fragments'
-    own when not given."""
+    own when not given. [thru:w3] Under the batch pipeline each input slot's passes are projected apart (a slot's
+    instances read only its slot's values)."""
     if frag.census is None:
         return ()
-    projection = project_planned_passes(
-        [int(s.output_count) for s in softcores], [[i for i, _ in p] for p in frag.pass_placements],
-        frag.census.pair_wires, spec_segments(softcores, getattr(frag, "runs", None) if runs is None else runs))
-    return tuple((p, w, q) for q, extra in enumerate(projection.extra_slices) for p, w in extra)
+    segments = spec_segments(softcores, getattr(frag, "runs", None) if runs is None else runs)
+    widths = [int(s.output_count) for s in softcores]
+    slots = getattr(frag, "pass_slots", None)
+    members = [[[i for i, _ in p] for p in frag.pass_placements]] if slots is None else [
+        [[i for (i, _), b in zip(p, ps) if b == slot] for p, ps in zip(frag.pass_placements, slots)]
+        for slot in sorted({b for ps in slots for b in ps})]
+    out = []
+    for passes in members:
+        projection = project_planned_passes(widths, passes, frag.census.pair_wires, segments)
+        out += [(p, w, q) for q, extra in enumerate(projection.extra_slices) for p, w in extra]
+    return tuple(out)
 
 
 def walk_runs(program: Optional[ProgramGraph], count: int) -> Optional[Tuple[int, ...]]:

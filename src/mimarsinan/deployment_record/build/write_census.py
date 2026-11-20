@@ -77,6 +77,8 @@ class PassRow:
     dark: FrozenSet[int] = frozenset()
     #: [U-ENERGY] Per core, the connectivity entries a load programs with it (a sealed record states them); empty: none.
     core_entries: Tuple[int, ...] = ()
+    #: [thru:w3] Under the batch pipeline, the input slots whose instances the pass runs; None without it.
+    slots: Optional[FrozenSet[int]] = None
 
     def core_bytes(self, i: int, weight_bits: int) -> int:
         """Core ``i``'s payload by the one rule (``core_payload_bytes``): its cells and its sign register."""

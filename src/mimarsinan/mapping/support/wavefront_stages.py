@@ -93,6 +93,46 @@ def serves_slot(stage: Any, slot: int) -> bool:
     return own is None or int(own.slot) == int(slot)
 
 
+@dataclass(frozen=True)
+class PassUnion:
+    """[thru:w3] The stages of one pass of a program of input slots (one per slot) as the one pass they run as: each
+    layout core once, by its head ordinal, as ``(member, core index)``; the head ordinals of a wholly resident pass
+    (None where a member loads the layout, whose cores then come in its order); the cores no member evaluates (a
+    loading head's dark cores less every core another slot's stage runs); the loading member (None: none loads)."""
+
+    cores: Tuple[Tuple[int, int], ...]
+    ordinals: Optional[Tuple[int, ...]]
+    dark: FrozenSet[int]
+    loader: Optional[int]
+
+
+def pass_union(members: Any) -> PassUnion:
+    """[thru:w3] One pass of several input slots' stages, each member ``(cores, head ordinals or None, dark cores,
+    wholly resident)``: two slots' instances on one core in one pass are one evaluation of that core (the copies of a
+    key take disjoint rows and columns), so the pass's cores are counted once each. A single member is itself."""
+    members = list(members)
+    if len(members) == 1:
+        count, ordinals, dark, resident = members[0]
+        return PassUnion(tuple((0, i) for i in range(int(count))), None if ordinals is None else tuple(ordinals),
+                         frozenset(dark), None if resident else 0)
+    loaders = [m for m, member in enumerate(members) if not member[3]]
+    if len(loaders) > 1:
+        raise PositionMultiplexingError(f"batch_pipeline_slots: members {loaders} of one pass each load cores; only a "
+                                        "group's first stage loads its layout and every other stage runs resident")
+    loader = loaders[0] if loaders else None
+    used: Dict[int, Tuple[int, int]] = {}
+    for m, (count, ordinals, dark, _resident) in enumerate(members):
+        for i, o in enumerate(range(int(count)) if ordinals is None else ordinals):
+            if not (m == loader and i in dark):  # a loading head's dark core is loaded, not evaluated, by it
+                used.setdefault(int(o), (m, i))
+    if loader is not None:
+        count = int(members[loader][0])
+        return PassUnion(tuple((loader, o) for o in range(count)), None,
+                         frozenset(o for o in range(count) if o not in used), loader)
+    order = sorted(used)
+    return PassUnion(tuple(used[o] for o in order), tuple(order), frozenset(), None)
+
+
 def slot_rows(slot: int, slots: int, batch: int) -> range:
     """[thru:w2] The rows of a batch of ``batch`` inputs that input slot ``slot`` of ``slots`` serves: input k is
     slot k mod ``slots`` of run k // ``slots``."""

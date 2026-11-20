@@ -4,7 +4,8 @@ plane's passes as the period census reads them (``write_census.PassRow``)."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from dataclasses import replace
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.stage_timesteps import sealed_stage_steps, semantics_program_steps
 from mimarsinan.chip_simulation.stage_wiring import executed_window_arrivals, pass_wiring
@@ -32,9 +33,10 @@ from mimarsinan.mapping.support.period_census import (
     SCHEDULE_RESIDENCY_PLAN, SCHEDULE_RESIDENT_CORES, resident_core_indices,
 )
 from mimarsinan.mapping.support.schedule.pass_carry import (
-    carried_softcore_spans, carried_wire_spans, delayed_input_slices, group_held,
+    carried_softcore_spans, carried_wire_spans, delayed_input_slices, group_held, pass_positions,
 )
-from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_CORE_ORDINALS, dark_cores, program_groups, stage_groups
+from mimarsinan.mapping.support.wavefront_stages import (
+    SCHEDULE_CORE_ORDINALS, PassUnion, dark_cores, input_slot, pass_union, program_groups, stage_groups)
 from mimarsinan.mapping.weight_programming import weight_programming_report
 from mimarsinan.transformations.quantization_bounds import core_weight_bits
 
@@ -112,6 +114,7 @@ def segment_record(stage_index: int, segment_index: int, pass_index: int, stage:
         core_ordinals=getattr(stage, SCHEDULE_CORE_ORDINALS, None),  # [U-F4] a later wavefront pass's head ordinals
         dependency_depth=pass_dependency_depth(segment),
         window_arrivals=executed_window_arrivals(stage) or None,  # [U-LIF2 r6, m-2] sealed where a core takes one
+        input_slot=None if input_slot(stage) is None else int(input_slot(stage).slot),  # [thru:w3]
     )
 
 
@@ -143,6 +146,7 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
         return None
     runs = getattr(noc, "runs", None)
     segment_of = spec_segments(softcores, runs)
+    pass_slots = getattr(noc, "pass_slots", None)
     rows: List[PassRow] = []
     position: Dict[Tuple[int, int], int] = {}
     for index, (placements, program) in enumerate(zip(noc.pass_placements, noc.pass_programs)):
@@ -157,6 +161,7 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
             owner[hardcore] = segment_of[softcore] if previous is None else min(previous, segment_of[softcore])
         dark = frozenset(getattr(program, "dark_cores", None) or ())  # [U-F4] loaded by the pass, unused by it
         owner.update({h: min(owner.values()) for h in dark})
+        inputs = None if pass_slots is None else pass_slots[index]  # [thru:w3] each placement's input slot
         for segment in sorted({segment_of[softcore] for softcore, _ in placements}):
             cores = sorted(h for h, s in owner.items() if s == segment)
             own = [[pl for pl in placements if segment_of[pl[0]] == segment]]
@@ -183,12 +188,15 @@ def candidate_program_passes(softcores: Sequence[Any], noc: Any, *, semantics: A
                     (int(geometry[h][0]) // len(t), int(geometry[h][1])) for h, t in zip(cores, tiles) for _ in t),
                 core_sign_rows=tuple(r for h, t in zip(cores, tiles) for r in (
                     split_signs[h] if split_signs else (int(signs[h]),) + (0,) * (len(t) - 1))) if signs else (),
+                slots=None if inputs is None else frozenset(
+                    int(b) for (spec, _core), b in zip(placements, inputs) if segment_of[spec] == segment),
             ))
     widths: Tuple[BoundaryWidths, ...] = ()
     onchip: Tuple[BoundaryWidths, ...] = ()
     if noc.census is not None:
         widths, onchip = _split_widths(
-            carried_softcore_spans(softcores, noc.pass_placements, noc.census.pair_wires, segment_of),
+            carried_softcore_spans(softcores, noc.pass_placements, noc.census.pair_wires, segment_of,
+                                   getattr(noc, "pass_slots", None)),
             delayed_carry_wires(softcores, noc), program_groups(noc.pass_programs),
             lambda node, made: position[(made, segment_of[node])])
     return ProgramPasses(rows=tuple(rows), boundary_widths=widths, onchip_boundary_widths=onchip,
@@ -214,43 +222,109 @@ def mapping_program_passes(hybrid_mapping: Any) -> ProgramPasses:
     banks = getattr(hybrid_mapping, "dynamic_bank_bindings", None) or {}
     rows: List[PassRow] = []
     position: Dict[int, int] = {}
-    for index, stage in enumerate(stages):
-        if stage.kind != "neural":
-            continue
-        cores = list(stage.hard_core_mapping.cores)
+    for members in _neural_passes(stages):
+        union, stage, slots = _stage_union(stages, members)
+        cores = [stages[members[m]].hard_core_mapping.cores[i] for m, i in union.cores]
         occupancy = [CoreOccupancy.from_hard_core(c) for c in cores]
-        operand = operand_cells_by_core(stage.hard_core_mapping, banks) if banks else [0] * len(cores)
+
+        def per_core(values_of) -> list:  # a per-core figure of each member, at the pass's cores
+            values = [values_of(stages[index]) for index in members]
+            return [values[m][i] for m, i in union.cores]
+
+        operand = per_core(lambda s: operand_cells_by_core(s.hard_core_mapping, banks)) if banks else [0] * len(cores)
         span = stage_latency([getattr(c, "latency", None) for c in cores])
         latencies = None if span is None else (span,)
-        position[index] = len(rows)
+        position.update({index: len(rows) for index in members})
         tiles = [tuple((int(a), o.neurons_physical) for a in getattr(c, "fused_component_axons", None) or ())
                  or ((o.axons_physical, o.neurons_physical),) for c, o in zip(cores, occupancy)]
+        pinned = per_core(lambda s: [h in resident_core_indices(s, len(s.hard_core_mapping.cores))
+                                     if getattr(s, SCHEDULE_RESIDENT_CORES, None) is not None else False
+                                     for h in range(len(s.hard_core_mapping.cores))])
         cells, marks, extents, types = expand_to_tiles(  # one entry per physical tile (a fused core's members)
             [(o.cells_used, (o.axons_used, o.neurons_used), t) for o, t in zip(occupancy, tiles)],
-            resident_core_indices(stage, len(cores)) if getattr(stage, SCHEDULE_RESIDENT_CORES, None) is not None
-            else ())
-        only = operand_only_tiles(operand_only_by_core(stage.hard_core_mapping, banks), tiles) if banks else frozenset()
-        dark = expand_to_tiles([(0, None, t) for t in tiles], dark_cores(stage))[1]  # [U-F4]
+            frozenset(h for h, pin in enumerate(pinned) if pin))
+        only = operand_only_tiles(per_core(lambda s: operand_only_by_core(s.hard_core_mapping, banks)), tiles) \
+            if banks else frozenset()
+        dark = expand_to_tiles([(0, None, t) for t in tiles], union.dark)[1]  # [U-F4]
         operand = operand_cells_per_tile(operand, tiles)
         rows.append(PassRow(
             segment_index=int(stage.schedule_segment_index if stage.schedule_segment_index is not None
                               else len(rows)),
-            resident=bool(getattr(stage, "schedule_weights_resident", False)),
+            resident=union.loader is None,
             **producer_split(cells, operand), operand_only_cores=only, marks=marks, core_extents=extents,
             compute_steps=None, stage_latencies=latencies, core_types=types, dark=dark,
             core_sign_rows=tuple(r for c, o, t in zip(cores, occupancy, tiles)
                                  for r in tile_rows(core_sign_rows(c, o), t)),
+            slots=slots,
         ))
     widths, onchip = _split_widths(carried_wire_spans(stages), delayed_input_slices(stages), stage_groups(stages),
                                    lambda _node, index: position[index])
     return ProgramPasses(rows=tuple(rows), boundary_widths=widths, onchip_boundary_widths=onchip)
 
 
+def _neural_passes(stages: Sequence[Any]) -> List[List[int]]:
+    """[thru:w3] The neural stages' indices grouped as the passes they run as: each stage its own pass, or under the
+    batch pipeline the stages of one (segment, pass index), one per input slot, as one (``pass_positions``)."""
+    neural = [index for index, stage in enumerate(stages) if stage.kind == "neural"]
+    positions = pass_positions(stages)
+    if positions is None:
+        return [[index] for index in neural]
+    groups: Dict[int, List[int]] = {}
+    for index in neural:
+        groups.setdefault(positions[index], []).append(index)
+    return [groups[p] for p in sorted(groups)]
+
+
+def _stage_union(stages: Sequence[Any], members: Sequence[int]) -> Tuple[PassUnion, Any, Optional[FrozenSet[int]]]:
+    """[thru:w3] One pass's stages as one pass (``pass_union``), its leading stage (the loading one, else the first)
+    and the input slots it serves (None without the batch pipeline)."""
+    union = pass_union([(len(stages[i].hard_core_mapping.cores), getattr(stages[i], SCHEDULE_CORE_ORDINALS, None),
+                         dark_cores(stages[i]), bool(getattr(stages[i], "schedule_weights_resident", False)))
+                        for i in members])
+    slots = [input_slot(stages[i]) for i in members]
+    lead = stages[members[union.loader if union.loader is not None else 0]]
+    return union, lead, None if any(s is None for s in slots) else frozenset(int(s.slot) for s in slots)
+
+
+def pass_segments(segments: Sequence[SegmentRecord]
+                  ) -> List[Tuple[SegmentRecord, Optional[FrozenSet[int]], Tuple[int, ...]]]:
+    """[thru:w3] A sealed schedule's segments as the passes they run as, each with the input slots it serves (None
+    without the batch pipeline) and its members' stage indices: each segment its own pass, or, where the segments state
+    input slots, the segments of one (segment, pass index), one per input slot, as one (``pass_union``): each core
+    once, the loading segment's fields, the dark cores no member evaluates."""
+    if all(segment.input_slot is None for segment in segments):
+        return [(segment, None, (int(segment.stage_index),)) for segment in segments]
+    groups: Dict[Tuple[int, int], List[SegmentRecord]] = {}
+    for segment in segments:
+        groups.setdefault((int(segment.segment_index), int(segment.pass_index)), []).append(segment)
+    out = []
+    for members in groups.values():
+        union = pass_union([(len(m.cores), m.core_ordinals, frozenset(m.dark_core_indices or ()),
+                             m.programming == "resident") for m in members])
+        lead = members[union.loader if union.loader is not None else 0]
+
+        def per_core(values_of) -> Optional[Tuple]:  # a member's per-core field at the pass's cores, None if unstated
+            values = [values_of(m) for m in members]
+            return None if any(v is None for v in values) else tuple(values[m][i] for m, i in union.cores)
+
+        pins = per_core(lambda m: None if m.resident_core_indices is None else
+                        [h in m.resident_core_indices for h in range(len(m.cores))])
+        merged = replace(lead, cores=tuple(members[m].cores[i] for m, i in union.cores),
+                         programming="resident" if union.loader is None else lead.programming,
+                         dark_core_indices=tuple(sorted(union.dark)) or None, core_ordinals=union.ordinals,
+                         resident_core_indices=None if pins is None else tuple(k for k, pin in enumerate(pins) if pin),
+                         operand_core_cells=per_core(lambda m: m.operand_core_cells), input_slot=None)
+        out.append((merged, frozenset(int(m.input_slot) for m in members if m.input_slot is not None),
+                    tuple(int(m.stage_index) for m in members)))
+    return out
+
+
 def record_program_passes(record: Any) -> ProgramPasses:
     """A sealed record's passes; compute steps from the measured stage timing where sealed.
 
     A sealed record keeps no per-wire spans, so it states no per-boundary carry (its carry totals
-    ride ``PassCarryRecord``).
+    ride ``PassCarryRecord``). [thru:w3] A program of input slots is read as the passes its stages run as
+    (``pass_segments``), a pass's measured steps its longest member's.
     """
     measured: Dict[int, int] = {}
     for row in record.timing.per_segment:
@@ -258,12 +332,13 @@ def record_program_passes(record: Any) -> ProgramPasses:
     firing = getattr(record.identity, "window_firing", None)  # [U-LIF2 W11] unmeasured: the stage's own cycles
     declared = declared_core_geometries(record.identity.platform)
     rows = []
-    segments = record.schedule.segments()
-    stated = operands_stated(segments)  # [E-6]
-    for segment in segments:
+    passes = pass_segments(record.schedule.segments())
+    stated = operands_stated([segment for segment, _slots, _members in passes])  # [E-6]
+    for segment, slots, members in passes:
         span = stage_latency([c.static_delay_levels for c in segment.cores])
         latencies = None if span is None else (span,)
-        steps = measured.get(int(segment.stage_index))
+        timed = [measured.get(index) for index in members]
+        steps = None if any(t is None for t in timed) else max(timed)
         if steps is None and not measured and firing is not None:
             steps = sealed_stage_steps(timesteps=int(record.timing.s_global), window_firing=firing,
                                        depth=segment.dependency_depth,
@@ -286,6 +361,7 @@ def record_program_passes(record: Any) -> ProgramPasses:
             # the written tiles are exact
             core_entries=tuple(e for c, t in zip(segment.cores, tiles)
                                for e in (int(c.connectivity_entries),) + (0,) * (len(t) - 1)),
+            slots=slots,
         ))
     return ProgramPasses(rows=tuple(rows), operands_unstated=None if stated else RECORD_OPERANDS_UNSTATED)
 

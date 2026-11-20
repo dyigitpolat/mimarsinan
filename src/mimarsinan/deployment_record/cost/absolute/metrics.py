@@ -21,7 +21,7 @@ from mimarsinan.deployment_record.cost.absolute.walls.static_power import static
 from mimarsinan.deployment_record.cost.absolute.validity import (
     aggregate_scales, footprint_cores, judged_geometry, mean_core_note)
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs, WritePricing, price_write_inputs
-from mimarsinan.deployment_record.cost.compute_time import compute_time
+from mimarsinan.deployment_record.cost.compute_time import STEP_LAW, compute_law, compute_time
 from mimarsinan.deployment_record.cost.host_terms import (
     LATENCY_LINK, host_link_time, price_system_energy, store_refusal, write_link_bytes)
 from mimarsinan.deployment_record.cost.terms import PricingFlag
@@ -29,6 +29,7 @@ from mimarsinan.deployment_record.platform_physics.area_components import fixed_
 from mimarsinan.deployment_record.platform_physics.area_rule.pricing import rule_area
 from mimarsinan.deployment_record.platform_physics.converter import resolve as resolve_converter
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.deployment_record.quantities.batch_rounds import SPAN_CORES, SPAN_KEYS, SPAN_STEPS, SPAN_SYNCS
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.provenance import Band
 
@@ -214,6 +215,39 @@ def price_latency(ctx: PricingContext, writes: Optional[WritePricing] = None) ->
     return band
 
 
+#: [thru:w3] An input's span under the batch pipeline: the barriers and core initializations of its passes.
+SPAN_HEADLINE = "latency_input_span_s"
+#: [thru:w3] The priced times that read passes ``e2e_latency_s`` prices per inference: e2e's static leg covers them, so
+#: none takes a leg of its own and none is its summand (the runtime ratchet reads this table).
+E2E_READINGS: Tuple[str, ...] = (SPAN_HEADLINE,)
+SPAN_COMPONENTS = (("t_sync_barrier", (SPAN_SYNCS,), SPAN_SYNCS), ("t_core_init", (SPAN_CORES,), SPAN_CORES))
+
+
+def price_input_span(ctx: PricingContext) -> None:
+    """[thru:w3] Under the batch pipeline, an input's span from its first pass to its last (``batch_rounds``): the
+    compute of the span's passes at ``t_cycle``, their barriers and core initializations, beside the headline (which
+    stays the time per inference that the throughput inverts). Priced by the step law only; on a chip priced per
+    synaptic operation, or with the span's steps withheld, it is refused by name. Absent without the batch pipeline."""
+    q = ctx.quantities
+    if not any(q.has(key) or q.withheld_reason(key) for key in SPAN_KEYS):
+        return
+    if compute_law(ctx.physics, ctx.priced) != STEP_LAW:
+        ctx.refuse(SPAN_HEADLINE, "an input's span is priced per step (t_cycle x input_span_steps); this chip prices "
+                                  "compute otherwise, and no plane states a span's events")
+        return
+    if not q.has(SPAN_STEPS):
+        ctx.refuse(SPAN_HEADLINE, f"the span's steps are withheld: {q.withheld_reason(SPAN_STEPS)}")
+        return
+    cycle = ctx.physics.band(STEP_LAW)
+    components = [scale_band(cycle, q.get(SPAN_STEPS).value, "t_cycle x input_span_steps")]
+    bands, notes, unpriced = ctx.component_bands(SPAN_COMPONENTS, 1.0)
+    source = "; ".join([f"compute: t_cycle [{cycle.basis}]"] + notes) + (
+        "; an input's span under the batch pipeline: the passes from its first to its last, per input")
+    if unpriced:
+        source += f"; unpriced: {', '.join(unpriced)}"
+    ctx.term(SPAN_HEADLINE, "s", add_bands(components + bands, source), source)
+
+
 def price_throughput(ctx: PricingContext, e2e: Optional[Band]) -> None:
     """Inverse steady-state latency (v1; pipelined overlap is a stated follow-up)."""
     if e2e is None:
@@ -277,6 +311,7 @@ def price_absolute(
     ctx.write_link_bytes = None if writes is None else write_link_bytes(writes)  # [U-J] priced by an edge host only
     flags = price_area(ctx, readout_bits)  # [U-AREA] the area rule's flags, computed at read
     e2e = price_latency(ctx, priced_writes)
+    price_input_span(ctx)  # [thru:w3] beside the headline, under the batch pipeline only
     price_energy(ctx, e2e, priced_writes, compute)
     price_system_energy(ctx)  # [U-J2] the whole-system line beside the headline, where the host states one
     price_throughput(ctx, e2e)

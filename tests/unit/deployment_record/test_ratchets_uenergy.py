@@ -22,7 +22,7 @@ import pytest
 
 import mimarsinan
 from mimarsinan.deployment_record.cost.absolute import price_absolute
-from mimarsinan.deployment_record.cost.absolute.metrics import E2E_SUMMANDS, LATENCY_HEADLINE
+from mimarsinan.deployment_record.cost.absolute.metrics import E2E_READINGS, E2E_SUMMANDS, LATENCY_HEADLINE
 from mimarsinan.deployment_record.cost.absolute.walls.loads import LOAD_FIGURES
 from mimarsinan.deployment_record.cost.absolute.writes import WriteInputs
 from mimarsinan.deployment_record.cost.host_terms import LATENCY_LINK
@@ -70,6 +70,8 @@ TIME_RULES = {
     DR + "cost/absolute/metrics.py:latency_host_s": SUMMAND,
     DR + "cost/absolute/metrics.py:price_latency:LATENCY_HEADLINE": E2E,
     DR + "cost/absolute/metrics.py:price_latency:LATENCY_LINK": SUMMAND,
+    # [thru:w3] an input's span under the batch pipeline: a reading of passes e2e's leg covers per inference
+    DR + "cost/absolute/metrics.py:price_input_span:SPAN_HEADLINE": READING,
     DR + "cost/absolute/walls/loads.py:_put:name [unit unit]": WRITER,
     DR + "cost/absolute/walls/loads.py:price_loads:wall_name": LOAD_WALL,
     DR + "cost/absolute/writes.py:_price_technologies:LATENCY_WRITE": SUMMAND,
@@ -212,6 +214,9 @@ def time_rule_failures(terms):
                 failures.append((term.name, "not a summand of e2e under its label exactly once"))
             if legs:
                 failures.append((term.name, f"a summand with a leg of its own: {legs}"))
+        elif term.name in E2E_READINGS:  # [thru:w3] a reading of passes e2e prices: no leg of its own
+            if legs:
+                failures.append((term.name, f"a reading with a leg of its own: {legs}"))
         elif term.name in load_walls:
             if legs not in ([], [load_walls[term.name]]) or (by_name.get("energy_static_mj") and load_walls[
                     term.name] in by_name and not legs):

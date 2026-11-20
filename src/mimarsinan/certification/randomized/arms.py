@@ -42,6 +42,9 @@ ON_SIGN_SPLIT = "on_sign_split"
 ON_SIGN_SPLIT_SCHEDULED = "on_sign_split_scheduled"
 #: Closure fix round (X1): TTFS, the encoder on chip (the first segment reads the raw input), T in 3-12, half per-axon.
 ON_TTFS_OFFLOAD = "on_ttfs_offload"
+#: [thru:w4] The throughput branch's arm: both base forms of position multiplexing and the four keys of layer copies and
+#: the batch pipeline drawn on networks applied at several positions (``batch_arm``), on its own stream.
+ON_BATCH_PIPELINE = "on_batch_pipeline"
 
 
 @dataclass(frozen=True)
@@ -233,6 +236,8 @@ ARMS: Dict[str, Arm] = {arm.id: arm for arm in (
         stream=ON_SIGN_SPLIT_SCHEDULED),
     Arm(ON_TTFS_OFFLOAD, "", "", semantics=(SYNCHRONIZED_TTFS, CASCADED_TTFS), declaration={"sign_split_rate": 0.5},
         stream=ON_TTFS_OFFLOAD, timesteps=(3, 12), encoding_placement="offload"),
+    Arm(ON_BATCH_PIPELINE, "", "", semantics=(VALUE, STREAMED_LIF, CASCADED_TTFS, SYNCHRONIZED_TTFS, ANALYTICAL_TTFS),
+        declaration=_SCHEDULED, stream=ON_BATCH_PIPELINE),
     Arm("H2", "H2", _MODEL_LEVEL + "window coverage relates the identity program to N", exercisable=False),
     Arm("H3", "H3", _MODEL_LEVEL + "terminal overshoot relates the identity program to N", exercisable=False),
     Arm("H4", "H4", _MODEL_LEVEL + "chase completion relates the identity program to N", exercisable=False),

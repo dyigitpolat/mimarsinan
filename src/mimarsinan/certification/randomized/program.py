@@ -76,12 +76,15 @@ def _perceptron(width: int, fan_in: int, timesteps: int, weights, bias, *, dtype
     return p
 
 
-def mapper_graph(instance: Instance, encoding_placement: str = "subsume") -> MappedNetwork:
+def mapper_graph(instance: Instance, encoding_placement: str = "subsume", positions: int = 1) -> MappedNetwork:
     """The mapper graph of ``instance``; a spiking instance reads its input through the identity encoder, on the host
-    (``subsume``) or on chip (``offload``, a first segment reading the raw input)."""
+    (``subsume``) or on chip (``offload``, a first segment reading the raw input). [thru:w4] ``positions`` P > 1 applies
+    the network at P positions, its weights shared (an input of P rows of ``input_width``): every neural layer is then a
+    weight bank of P instances, as a 1 x 1 convolution maps, the form position multiplexing plans."""
     net, T = instance.network, instance.timesteps
     nodes: Dict[str, object] = {}
-    raw = InputMapper((net.input_width,))
+    lead = () if positions == 1 else (int(positions),)
+    raw = InputMapper(lead + (net.input_width,))
     if instance.semantics == VALUE:
         nodes[INPUT] = raw
     else:
@@ -92,16 +95,16 @@ def mapper_graph(instance: Instance, encoding_placement: str = "subsume") -> Map
         nodes[INPUT] = PerceptronMapper(raw, encoder)
     neural: Dict[str, PerceptronMapper] = {}
     for layer in net.layers:
-        source = _joined(nodes, layer)
+        source = _joined(nodes, layer, lead)
         if layer.kind == HOST:
             nodes[layer.name] = ComputeOpMapper(
-                source, _HOST_MODULES[layer.op](), input_shape=(net.fan_in(layer),),
-                output_shape=(layer.width,), name=f"host_{layer.name}")
+                source, _HOST_MODULES[layer.op](), input_shape=lead + (net.fan_in(layer),),
+                output_shape=lead + (layer.width,), name=f"host_{layer.name}")
             continue
         mapper = PerceptronMapper(source, _perceptron(layer.width, net.fan_in(layer), T, layer.weights, layer.bias))
         nodes[layer.name] = neural[layer.name] = mapper
     sinks = [nodes[name] for name in net.outputs]
-    out = sinks[0] if len(sinks) == 1 else ConcatMapper(sinks, dim=1, rank=2)
+    out = sinks[0] if len(sinks) == 1 else ConcatMapper(sinks, dim=len(lead) + 1, rank=len(lead) + 2)
     rep = ModelRepresentation(out)
     mark_encoding_layers(rep, placement=encoding_placement,
                          packaging=MVM_PACKAGING if instance.semantics == VALUE else SPIKING_PACKAGING)
@@ -111,9 +114,9 @@ def mapper_graph(instance: Instance, encoding_placement: str = "subsume") -> Map
     return MappedNetwork(rep, perceptron_of, theta_of)
 
 
-def _joined(nodes: Dict[str, object], layer: Layer):
+def _joined(nodes: Dict[str, object], layer: Layer, lead: Tuple[int, ...] = ()):
     sources = [nodes[s] for s in layer.sources]
-    return sources[0] if len(sources) == 1 else ConcatMapper(sources, dim=1, rank=2)
+    return sources[0] if len(sources) == 1 else ConcatMapper(sources, dim=len(lead) + 1, rank=len(lead) + 2)
 
 
 def integer_ir(mapped: MappedNetwork, *, max_axons: Optional[int], max_neurons: Optional[int],

@@ -17,6 +17,7 @@ from mimarsinan.mapping.support.schedule.pass_cut import (
     VERBATIM,
     raster_bytes,
 )
+from mimarsinan.mapping.support.wavefront_stages import input_slot
 
 
 def carried_wire_bytes(width: int, timesteps: int, transfer: str) -> int:
@@ -57,7 +58,10 @@ def carried_wire_spans(stages: Sequence) -> Tuple[Tuple[int, int, int, int], ...
 
     The census twin of :func:`carried_outputs_by_stage`, over the same reader map:
     widths come from the producing stage's own output slice, so nothing re-derives a
-    size the program already states.
+    size the program already states. [thru:w3] Under the batch pipeline a wire is one
+    input's: a stage of one input slot reads only its slot's values, so a producer's
+    readers are the later stages of its own input (``same_input``), one span per input
+    slot and node.
     """
     reads = _stage_reads(stages)
     spans = []
@@ -70,6 +74,7 @@ def carried_wire_spans(stages: Sequence) -> Tuple[Tuple[int, int, int, int], ...
             later = [
                 reader for reader in reads.get(node_id, ())
                 if reader > index and _segment_of(stages[reader]) == segment
+                and same_input(stage, stages[reader])
             ]
             if later:
                 spans.append((node_id, int(slice_.size), index, max(later)))
@@ -81,14 +86,14 @@ def delayed_input_slices(stages: Sequence) -> Tuple[Tuple[int, int, int], ...]:
     that producer: the builder replays a carried producer once per delivery delay (``pass_timing``), and each slice
     beyond the first crosses the chip boundary once more, at the producer's width (G5 report 23.6), the width the
     dense crossing counts too, also where the pass reads only part of the producer. The record twin of
-    ``noc.fragments.delayed_carry_wires``."""
-    produced: Dict[Optional[int], Dict[int, int]] = {}
+    ``noc.fragments.delayed_carry_wires``. [thru:w3] Under the batch pipeline per input slot and node."""
+    produced: Dict[Tuple[Optional[int], Optional[int]], Dict[int, int]] = {}
     out = []
     for index, stage in enumerate(stages):
         segment = _segment_of(stage)
         if segment is None:
             continue
-        carried = produced.setdefault(segment, {})
+        carried = produced.setdefault((segment, _slot_of(stage)), {})  # [thru:w3] one input's producers
         seen: set = set()
         for slice_ in getattr(stage, "input_map", ()) or ():
             node_id = int(slice_.node_id)
@@ -177,12 +182,59 @@ def pass_carry_census(
     stages: Sequence, timesteps: int, transfer: str, groups: Optional[Sequence[Optional[int]]] = None,
 ) -> Dict[str, int]:
     """The sealed program's census — spans and delayed slices from its own hybrid stages (``groups``: per stage, its
-    wavefront group, [U-F4])."""
+    wavefront group, [U-F4]). [thru:w3] A program of input slots is read at its pass positions (``pass_positions``):
+    the stages of one pass, one per input slot, run as one pass, so a span lives over passes, as the candidate plane
+    counts it."""
+    spans, extra = carried_wire_spans(stages), delayed_input_slices(stages)
+    positions = pass_positions(stages)
+    if positions is None:
+        return carry_census_from_spans(spans, boundary_count=len(stages), timesteps=timesteps, transfer=transfer,
+                                       extra_in=extra, groups=groups)
+    at = list(positions)
+    placed: List[Optional[int]] = [None] * (max(at, default=-1) + 1)
+    for index, group in enumerate(groups or ()):
+        if group is not None:
+            placed[at[index]] = group
     return carry_census_from_spans(
-        carried_wire_spans(stages),
-        boundary_count=len(stages), timesteps=timesteps, transfer=transfer,
-        extra_in=delayed_input_slices(stages), groups=groups,
+        [(n, w, at[a], at[b]) for n, w, a, b in spans], boundary_count=len(placed), timesteps=timesteps,
+        transfer=transfer, extra_in=[(n, w, at[r]) for n, w, r in extra],
+        groups=None if groups is None else placed,
     )
+
+
+def _slot_of(stage) -> Optional[int]:
+    slot = input_slot(stage)
+    return None if slot is None else int(slot.slot)
+
+
+def same_input(producer, reader) -> bool:
+    """[thru:w3] Whether ``reader`` reads ``producer``'s values: always without the batch pipeline; under it only within
+    one input slot (a stage that names no slot serves every input)."""
+    a, b = _slot_of(producer), _slot_of(reader)
+    return a is None or b is None or a == b
+
+
+def pass_positions(stages: Sequence) -> Optional[Tuple[int, ...]]:
+    """[thru:w3] Per stage of a program of input slots, its pass position: the stages of one (segment, pass index),
+    one per input slot, share one, every other stage holds its own, in program order. None for a program without input
+    slots (each stage its own position)."""
+    if not any(input_slot(stage) is not None for stage in stages):
+        return None
+    out: List[int] = []
+    seen: Dict[Tuple[int, int], int] = {}
+    count = 0
+    for stage in stages:
+        key = None
+        if getattr(stage, "kind", None) == "neural" and getattr(stage, "schedule_segment_index", None) is not None:
+            key = (int(stage.schedule_segment_index), int(getattr(stage, "schedule_pass_index", 0) or 0))
+        if key is not None and key in seen:
+            out.append(seen[key])
+            continue
+        if key is not None:
+            seen[key] = count
+        out.append(count)
+        count += 1
+    return tuple(out)
 
 
 def carried_softcore_spans(
@@ -190,6 +242,7 @@ def carried_softcore_spans(
     pass_placements: Sequence[Sequence[Tuple[int, int]]],
     pair_wires,
     segment_of: Optional[Sequence[int]] = None,
+    pass_slots: Optional[Sequence[Sequence[int]]] = None,
 ) -> Tuple[Tuple[int, int, int, int], ...]:
     """[H2] A candidate's carried-wire spans, from its planned pass structure.
 
@@ -201,28 +254,34 @@ def carried_softcore_spans(
     membership the NoC estimator prices carried re-entry traffic with [E5].
     ``segment_of``: each spec's segment the passes were planned in (the
     fragments' builder segments, ``noc.fragments.spec_segments``; [fix_b] the
-    walk's runs), else its depth segment.
+    walk's runs), else its depth segment. [thru:w3] ``pass_slots`` (per pass, each
+    placement's input slot, the fragments' ``pass_slots``): under the batch pipeline
+    membership and spans are per input slot and spec, one span per input, as the
+    record's stages carry them (``carried_wire_spans``).
     """
     segment_of = ([int(s) for s in segment_of] if segment_of is not None
                   else [_softcore_segment(softcore) for softcore in softcores])
-    membership: Dict[int, int] = {}
+    membership: Dict[Tuple[Optional[int], int], int] = {}
     for pass_index, placements in enumerate(pass_placements):
-        for softcore_index, _hardcore in placements:
-            membership.setdefault(int(softcore_index), pass_index)
-    last_read: Dict[int, int] = {}
-    for (producer, consumer) in pair_wires:
-        produced = membership.get(int(producer))
-        consumed = membership.get(int(consumer))
-        if produced is None or consumed is None or consumed <= produced:
-            continue
-        if segment_of[int(producer)] != segment_of[int(consumer)]:
-            continue  # a later SEGMENT is a host boundary, never a carry
-        key = int(producer)
-        last_read[key] = max(last_read.get(key, consumed), consumed)
+        slots = None if pass_slots is None else pass_slots[pass_index]
+        for k, (softcore_index, _hardcore) in enumerate(placements):
+            membership.setdefault((None if slots is None else int(slots[k]), int(softcore_index)), pass_index)
+    last_read: Dict[Tuple[Optional[int], int], int] = {}
+    for slot in sorted({b for b, _i in membership}, key=lambda b: -1 if b is None else b):
+        for (producer, consumer) in pair_wires:
+            produced = membership.get((slot, int(producer)))
+            consumed = membership.get((slot, int(consumer)))
+            if produced is None or consumed is None or consumed <= produced:
+                continue
+            if segment_of[int(producer)] != segment_of[int(consumer)]:
+                continue  # a later SEGMENT is a host boundary, never a carry
+            key = (slot, int(producer))
+            last_read[key] = max(last_read.get(key, consumed), consumed)
     return tuple(
         (producer, int(softcores[producer].output_count),
-         membership[producer], last)
-        for producer, last in sorted(last_read.items())
+         membership[(slot, producer)], last)
+        for (slot, producer), last in sorted(last_read.items(), key=lambda kv: (-1 if kv[0][0] is None else kv[0][0],
+                                                                                kv[0][1]))
     )
 
 
@@ -252,7 +311,8 @@ def carried_outputs_by_stage(stages: Sequence) -> Dict[int, Tuple[int, ...]]:
     Duck-typed on the hybrid stages: a wire read by a later pass of the SAME segment
     is an intra-segment pass boundary and must cross verbatim; a wire read by a later
     SEGMENT crosses a host boundary and collapses to counts by design. Distinguishing
-    them is the whole of the transfer rule, and it is one comparison.
+    them is the whole of the transfer rule, and it is one comparison. [thru:w3] Under
+    the batch pipeline a later pass of another input slot never reads it (``same_input``).
     """
     reads: Dict[int, List[int]] = {}
     for index, stage in enumerate(stages):
@@ -273,7 +333,7 @@ def carried_outputs_by_stage(stages: Sequence) -> Dict[int, Tuple[int, ...]]:
         for slice_ in getattr(stage, "output_map", ()) or ():
             node_id = int(slice_.node_id)
             for reader in reads.get(node_id, ()):
-                if reader <= index:
+                if reader <= index or not same_input(stage, stages[reader]):  # [thru:w3] one input's readers
                     continue
                 if getattr(stages[reader], "schedule_segment_index", None) == segment:
                     ids.append(node_id)

@@ -20,6 +20,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 from mimarsinan.deployment_record.cost.host_terms import MEMORY_BOUND, TRANSFERS, prices_host_link
 from mimarsinan.deployment_record.platform_physics.hosts.store import CHIP, owner
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.deployment_record.quantities.batch_rounds import rounds_per_inference
 from mimarsinan.deployment_record.quantities.spec import QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import (
     declared_buffer_bytes, names_value_domain, value_bits, value_bytes,
@@ -81,7 +82,11 @@ def host_link_context(context: Any, pcfg: Mapping[str, Any], census: Any, passes
             withheld[TRANSFERS] = NO_PASSES if passes is None else NO_SPLIT
         else:
             carried = sum(int(bool(out)) + int(bool(inbound)) for _after, out, inbound in crossing)
-            values[TRANSFERS] = float(census.transfers + carried)
+            factor, refusal = rounds_per_inference(pcfg)  # [thru:w3] a run's carry crossings per inference
+            if refusal is not None:
+                withheld[TRANSFERS] = refusal
+            else:
+                values[TRANSFERS] = float(census.transfers + (carried if factor is None else carried * factor))
         values[MEMORY_BOUND] = float(census.memory_bound_elements * HOST_VALUE_BYTES)
     return replace(context, host_link_quantities=tuple(sorted(
         (key, QuantityValue(value, "static")) for key, value in values.items())),

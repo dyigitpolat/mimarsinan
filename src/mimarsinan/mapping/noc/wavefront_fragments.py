@@ -13,7 +13,7 @@ pass is the builder's stages of that pass index, one per slot."""
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Callable, Dict, List, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.noc.pass_program import PassProgram, packed_pass_program
@@ -21,8 +21,9 @@ from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 from mimarsinan.mapping.packing.residency_tiles import CoreTiles
 from mimarsinan.mapping.support.pipelined_multiplexing import layout_specs
 
-#: Per planned pass index: its placements ``(program spec index, pass-local core)``, its program and core tiles.
-PlacedPass = Tuple[Tuple[Tuple[int, int], ...], PassProgram, Tuple[CoreTiles, ...]]
+#: Per planned pass index: its placements ``(program spec index, pass-local core)``, its program and core tiles, and
+#: [thru:w3] each placement's input slot under the batch pipeline (None without it).
+PlacedPass = Tuple[Tuple[Tuple[int, int], ...], PassProgram, Tuple[CoreTiles, ...], Optional[Tuple[int, ...]]]
 
 
 def _select(program: PassProgram, keep: Sequence[int]) -> PassProgram:
@@ -72,26 +73,32 @@ def _group(wave, group, specs, offset, global_index, core_types, allow_neuron_sp
                                       declared_cores=declared_cores, operand_axons=operand_axons(template, pack))
     out: Dict[int, PlacedPass] = {}
     for q in range(group.first_pass, group.end_pass):
-        placed = [(global_index[id(specs[i])], core) for i in range(len(specs)) if wave.pass_of[i] == q
-                  for core in cores_of[slot_of[i]]] if wave.entry_slots is None else _entries_placed(
-            wave, q, specs, global_index, cores_of)
+        if wave.entry_slots is None:
+            placed = [(global_index[id(specs[i])], core) for i in range(len(specs)) if wave.pass_of[i] == q
+                      for core in cores_of[slot_of[i]]]
+            inputs = None
+        else:
+            placed, inputs = _entries_placed(wave, q, specs, global_index, cores_of)
         if q == group.first_pass:
             used = {core for _, core in placed}
             dark = frozenset(h for h in range(head.cores) if h not in used)
-            out[offset + q] = (tuple(placed), replace(head, wavefront=True, dark_cores=dark or None), tiles)
+            out[offset + q] = (tuple(placed), replace(head, wavefront=True, dark_cores=dark or None), tiles, inputs)
             continue
         keep = sorted({core for _, core in placed})
         local = {core: j for j, core in enumerate(keep)}
         program = replace(_select(head, keep), resident=True, wavefront=True, core_ordinals=tuple(keep))
         out[offset + q] = (tuple((spec, local[core]) for spec, core in placed), program,
-                           tuple(tiles[h] for h in keep))
+                           tuple(tiles[h] for h in keep), inputs)
     return out
 
 
-def _entries_placed(wave, q: int, specs, global_index: Dict[int, int], cores_of: Dict[Any, List[int]]) -> List:
+def _entries_placed(wave, q: int, specs, global_index: Dict[int, int], cores_of: Dict[Any, List[int]]
+                    ) -> Tuple[List, Tuple[int, ...]]:
     """[thru:w2] Pass ``q``'s placements under the batch pipeline: every entry (one input slot's instance) on its key's
-    cores, or its key's copy's cores under layer copies."""
+    cores, or its key's copy's cores under layer copies; [thru:w3] with each placement's input slot."""
     index = {id(spec): i for i, spec in enumerate(specs)}
     copies = wave.entry_copies[q] if wave.entry_copies is not None else (None,) * len(wave.pass_lists[q])
-    return [(global_index[id(spec)], core) for spec, c in zip(wave.pass_lists[q], copies)
-            for core in cores_of[wave.keys[index[id(spec)]] if c is None else (wave.keys[index[id(spec)]], c)]]
+    placed = [(global_index[id(spec)], core, int(b)) for spec, c, b in zip(wave.pass_lists[q], copies,
+                                                                          wave.entry_slots[q])
+              for core in cores_of[wave.keys[index[id(spec)]] if c is None else (wave.keys[index[id(spec)]], c)]]
+    return [(spec, core) for spec, core, _b in placed], tuple(b for _spec, _core, b in placed)

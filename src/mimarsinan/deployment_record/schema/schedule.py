@@ -95,6 +95,8 @@ class SegmentRecord:
     core_ordinals: Optional[Tuple[int, ...]] = declared_only()  # [U-F4] a later wavefront pass: each core's head core
     dependency_depth: Optional[int] = declared_only()  # [U-LIF2 W7] the pass's level count D (unset: a format-1 record)
     window_arrivals: Optional[int] = declared_only()  # [U-LIF2 r6] neuron-weighted producer windows taken early
+    #: [thru:w3] Under the batch pipeline, the input slot whose rows the stage serves (``schedule_input_slot``).
+    input_slot: Optional[int] = declared_only()
 
     def __post_init__(self) -> None:
         require_choice("SegmentRecord", "pass_reason", self.pass_reason, PASS_REASONS)

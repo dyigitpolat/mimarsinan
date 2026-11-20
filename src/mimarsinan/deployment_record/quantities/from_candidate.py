@@ -8,6 +8,7 @@ from typing import Any, Dict, Mapping, Optional, Protocol, Tuple
 from mimarsinan.deployment_record.quantities.planes.local_memory import candidate_local_memory
 from mimarsinan.deployment_record.quantities.planes.states import (
     CANDIDATE_UNPRODUCED, VALUE_DOMAIN_ZEROS, declared_zeros, plane_view)
+from mimarsinan.deployment_record.quantities.batch_rounds import per_inference
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 from mimarsinan.deployment_record.quantities.value_domain import BUFFER_CAPACITY, ONCHIP_CARRY
 from mimarsinan.deployment_record.quantities.write_law import summed_cells, write_quantities
@@ -154,6 +155,12 @@ class CandidateQuantityContext:
     local_mem_read_elements: Optional[int] = None
     #: [U-ENERGY] The plane's two load censuses (``planes.loads.LoadInputs``) for the one load law.
     loads: Optional[Any] = None
+    #: [thru:w3] Under the batch pipeline: the runs one inference costs (``batch_rounds.rounds_per_inference``), every
+    #: count per run read per inference by them, and an input's span (``batch_rounds.input_span``) with what it
+    #: withholds. None and empty without it.
+    batch_rounds: Optional[Any] = None
+    input_span: Tuple[Tuple[str, QuantityValue], ...] = ()
+    input_span_withheld: Tuple[Tuple[str, str], ...] = ()
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
@@ -294,6 +301,10 @@ def from_candidate(
             **dict(context.lane_withheld), **dict(context.host_link_withheld),
             **dict(withheld or {}), **writes_held,
             **({ONCHIP_CARRY: context.carry_onchip_refusal} if context.carry_onchip_refusal else {})}
+    if context.batch_rounds is not None:  # [thru:w3] every count per run per inference, and an input's span
+        held.update(per_inference(values, context.batch_rounds))
+        values.update(dict(context.input_span))
+        held.update(dict(context.input_span_withheld))
     zeros = declared_zeros(context.output_stage is not None, context.carry_buffer_capacity_bytes is not None,
                            context.value_rule is not None)
     return plane_view(values, held, CANDIDATE_UNPRODUCED, zeros)  # [U-ENERGY class 2] the four states

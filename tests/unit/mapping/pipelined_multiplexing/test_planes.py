@@ -297,3 +297,70 @@ def _census_against_the_record(platform, program, scheduled):
                                          for c in s.cores))
     assert stated == read
     return segments
+
+
+# --- [thru:w3] the batch pipeline on both planes ----------------------------------------------------------------------
+
+#: The batch pipeline's declarations (B, the chip's carry slots, a batch K that leaves a partial round).
+SLOTS = (2, 3)
+#: The quantities both planes state of a program of input slots, read per inference at the declared K.
+SLOTTED_KEYS = ("pass_count", "sync_count", "segment_cores", "cores_allocated", "macs", "cells_used",
+                "reprogrammed_cores", "reprogrammed_bytes", "reprogram_passes", "carry_out_bytes", "carry_in_bytes",
+                "carry_peak_live_bytes", "input_span_syncs", "input_span_cores")
+
+
+def _slotted(fixture, geometry, copies, b):
+    platform, program = _pipelined(fixture, geometry, copies)
+    platform.update(batch_pipeline_slots=b, carry_input_slots=b, inference_batch_K=2 * b + 1)
+    return platform, program
+
+
+def _both_planes(platform, program, num_classes):
+    """The candidate plane's quantities (the exploration's context and ``from_candidate``) and the sealed record's
+    (``executed_record``, ``from_record``) of one program."""
+    from mimarsinan.deployment_record.objectives.context import candidate_context_from_platform
+    from mimarsinan.deployment_record.quantities.from_candidate import from_candidate
+
+    scheduled, _specs = _ladder_noc(program, platform, num_classes)
+    facts = scheduled.facts
+    context = candidate_context_from_platform(platform, latency_steps=facts.latency_steps,
+                                              programming=facts.programming, carry=facts.carry, passes=facts.passes)
+    candidate = from_candidate(layout=None, chip_param_capacity=None, total_params=None, host_side_segment_count=None,
+                               context=context)
+    record = executed_record(build_hybrid_mapping_for_pipeline(program.ir, platform), platform, weight_bits=4,
+                             label="slotted lane program", timesteps=STEPS, pass_transfer=TRANSFER)
+    return candidate, from_record(record), record
+
+
+@pytest.mark.parametrize("b", SLOTS)
+@pytest.mark.parametrize("copies", ["", "copies"])
+@pytest.mark.parametrize("geometry", sorted(GEOMETRIES))
+@pytest.mark.parametrize("fixture", ["residual", "lenet"])
+def test_both_planes_price_the_batch_pipeline_alike(fixture, geometry, copies, b):
+    """A program of B input slots read per inference at K = 2B + 1 (two runs and a partial third): the candidate plane
+    equals the sealed record of the program the builder builds on every count both state, the carry counted per input
+    slot and node at the record's pass positions, and an input's span; the record states each stage's slot."""
+    platform, program = _slotted(fixture, geometry, copies, b)
+    candidate, sealed, record = _both_planes(platform, program, FIXTURES[fixture][2])
+    assert {s.input_slot for s in record.schedule.segments()} == set(range(b))
+    both = {key: (candidate.get(key).value, sealed.get(key).value) for key in SLOTTED_KEYS}
+    assert {key: c for key, (c, _r) in both.items()} == pytest.approx({key: r for key, (_c, r) in both.items()})
+    one, _one_sealed, _r = _both_planes(*_pipelined(fixture, geometry, copies)[:2], FIXTURES[fixture][2])
+    assert sealed.get("pass_count").value < 3 * one.get("pass_count").value  # the inputs share passes
+
+
+def test_a_core_two_slots_share_in_one_pass_counts_once_on_both_planes():
+    """The residual block at 3 cores with copies, B 2: some pass runs two inputs' instances on one core (each slot's
+    stage runs it whole); both planes count that core once per pass."""
+    platform, program = _slotted("residual", "groups", "copies", 2)
+    mapping = build_hybrid_mapping_for_pipeline(program.ir, platform)
+    from mimarsinan.mapping.support.wavefront_stages import input_slot
+
+    by_pass = {}
+    for stage in [s for s in mapping.stages if s.kind == "neural"]:
+        ordinals = getattr(stage, "schedule_core_ordinals", None) or tuple(range(len(stage.hard_core_mapping.cores)))
+        by_pass.setdefault((stage.schedule_segment_index, stage.schedule_pass_index), []).append(
+            (input_slot(stage).slot, set(ordinals)))
+    assert any(len(m) > 1 and set.intersection(*(o for _b, o in m)) for m in by_pass.values())
+    candidate, sealed, _record = _both_planes(platform, program, FIXTURES["residual"][2])
+    assert candidate.get("segment_cores").value == pytest.approx(sealed.get("segment_cores").value)

@@ -32,6 +32,7 @@ from mimarsinan.certification.program_check.unit_forms.widths import check_cell_
 from mimarsinan.certification.program_check.unbounded.latency import IdentityFacts
 from mimarsinan.certification.program_check.view import K_ON, ProgramView, build_view
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
+from mimarsinan.mapping.support.wavefront_stages import program_slots
 from mimarsinan.mapping.support.bias_compensation import propagate_negative_shifts_to_hybrid
 from mimarsinan.mapping.support.value_layouts import placement_value
 
@@ -72,7 +73,9 @@ CONDITION_MAP: Tuple[ConditionSpec, ...] = (
                   "codes on its type's grid, and every charge below each executor's exact integer reach (a bound "
                   "bank's cells at its payload width)"),
     ConditionSpec("H9", T1, "executor", "every unit reads only produced nodes (its slices and its payload writes), "
-                  "every node is produced once, no coalescing group is cut, the refcount memos are fresh"),
+                  "every node is produced once, no coalescing group is cut, the refcount memos are fresh; under the "
+                  "batch pipeline per input slot and node, a stage reads only its own slot's values and its slot lies "
+                  "below the slots a run serves"),
     ConditionSpec("R6", T1, "executor", "every unit's core graph is acyclic and every core read is walked"),
     ConditionSpec("H2", P2, "network", "window coverage", "a latency gap above one leaves coverage to the data"),
     ConditionSpec("H3", P2, "network", "no terminal overshoot", "a signed fan-in leaves overshoot to the data"),
@@ -118,7 +121,7 @@ RULES: Dict[str, Tuple[str, ...]] = {
     "H7": ("co_residency", "split_neuron", "fused_fan_in", "level_unit"),
     "H8": ("off_lattice", "input_range", "accumulation_bound", "law_magnitude", "upload_precision", "cell_width"),
     "H9": ("reads_unproduced", "produced_twice", "output_unproduced", "coalescing_group_cut", "stale_memo",
-           "payload_unproduced"),
+           "payload_unproduced", "slot_scope", "slot_range"),
     "R6": ("core_cycle", "unwalked_core"),
     "H8-staircase": ("off_lattice",),
     "N-identity": ("dropped_live_row", "dropped_output", "dropped_read_column", "dropped_offset_row"),
@@ -208,7 +211,23 @@ def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclarati
     ``unbounded_ir`` (the same network's IR at unbounded geometry), ``ir_graph`` against it per neuron (``ir-tiling``,
     which also reads what that identity program executes: ``report.identity_facts``, so a caller can run it later
     with ``check_ir_tiling``); a mapping loaded from a cache (``compile_source``) has no compile wall to price the
-    check against."""
+    check against. [thru:w4] A program of input slots is read slot by slot (``slots.check_slotted``)."""
+    if program_slots(program.stages) is not None:
+        from mimarsinan.certification.program_check.slots import check_slotted
+
+        return check_slotted(program, ir_graph=ir_graph, declaration=declaration, identity=identity,
+                             law_inputs=law_inputs, compile_wall_s=compile_wall_s, compile_source=compile_source,
+                             unbounded_ir=unbounded_ir, check=check_program)
+    return check_program(program, ir_graph=ir_graph, declaration=declaration, identity=identity,
+                         law_inputs=law_inputs, compile_wall_s=compile_wall_s, compile_source=compile_source,
+                         unbounded_ir=unbounded_ir)
+
+
+def check_program(program: Any, *, ir_graph: Any, declaration: CheckDeclaration, identity: Any = None,
+                  law_inputs: Optional[Mapping[str, Any]] = None, compile_wall_s: Optional[float] = None,
+                  compile_source: str = "built", unbounded_ir: Any = None, residency: bool = True) -> StaticCheckReport:
+    """``check_deployment`` on one program as its stages stand; [thru:w4] ``residency`` False leaves H10 to the caller
+    (an input slot's projection, whose resident stages run on another slot's loads)."""
     start = time.perf_counter()
     decl = declaration
     results = {s.condition: ConditionResult(s.condition, ESTABLISHED) for s in CONDITION_MAP}
@@ -240,7 +259,8 @@ def check_deployment(program: Any, *, ir_graph: Any, declaration: CheckDeclarati
         results["H7"].status, results["H7"].note = VACUOUS, "no core type declares per-event firing"
     E.check_accumulation(delta, facts, decl, results["H8"], results["laws"], counts)
     check_cell_widths({"deployment": delta, "identity": iota}, results["H8"], counts)
-    check_residency(program, delta, decl, results["H10"])
+    if residency:
+        check_residency(program, delta, decl, results["H10"])
     N.check_staircase(facts, results["H8-staircase"])
     N.check_coverage(ident, results["H2"])
     N.check_overshoot(facts, results["H3"])

@@ -70,6 +70,9 @@ MUTANTS = {
     ("H9", "produced_twice"): ("test_a_node_produced_twice",),
     ("H9", "output_unproduced"): ("test_the_network_reading_a_node_no_stage_produces",),
     ("H9", "coalescing_group_cut"): ("test_a_coalescing_group_cut_across_passes",),
+    # [thru:w4] the batch pipeline's two rules (``test_slot_forms``)
+    ("H9", "slot_scope"): ("test_a_stage_reading_another_slot_s_value", "test_a_writer_relabelled_to_the_other_slot"),
+    ("H9", "slot_range"): ("test_a_stage_whose_slot_is_not_below_b", "test_a_stage_stating_another_count_of_slots"),
     ("H9", "stale_memo"): ("test_a_stale_consumer_count_memo",),
     ("H10", "pinned_slot_overwritten"): ("test_a_pinned_slot_overwritten",
                                          "test_a_fit_on_a_pool_too_small_for_its_loading_passes"),
@@ -81,7 +84,8 @@ MUTANTS = {
     ("H10", "undeclared_pool"): ("test_pinned_cores_without_a_declared_pool",),
     # [U-F4] a wavefront group's head and its later passes (``test_wavefront_forms``)
     ("H10", "wavefront_layout"): ("test_a_head_stating_another_layout_than_it_loads",
-                                  "test_a_later_pass_that_reprograms_its_cores"),
+                                  "test_a_later_pass_that_reprograms_its_cores",
+                                  "test_a_later_member_of_a_group_that_loads"),  # [thru:w4] read by pass index
     ("H10", "wavefront_dark_core"): ("test_a_dark_core_holding_a_placement",),
     ("H1-theta", "threshold"): ("test_a_threshold_stored_differently",),
     ("H1-theta", "activation_scale"): ("test_a_stored_singleton_of_the_core_changed",),

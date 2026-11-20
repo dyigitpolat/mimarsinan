@@ -119,6 +119,15 @@ ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
     ("latency_steps", _COUNT,
      "End-to-end latency in timesteps: the sum of per-segment executed timesteps "
      "for one sample — what t_cycle converts to seconds."),
+    # [thru:w3] An input's span under the batch pipeline (batch_pipeline_slots): per input, never per round.
+    ("input_span_steps", _COUNT,
+     "[thru:w3] Under the batch pipeline, the executed steps of the passes from an input's first pass to its last "
+     "(the largest over the run's inputs): the passes it waits across, other inputs' instances in them included."),
+    ("input_span_syncs", _COUNT,
+     "[thru:w3] The barriers between the passes of an input's span (the largest over the run's inputs)."),
+    ("input_span_cores", _COUNT,
+     "[thru:w3] The cores the passes of an input's span evaluate, each pass's once (the largest over the run's "
+     "inputs): their initializations lie on the input's path."),
     ("total_spikes", _COUNT,
      "Spike EMISSIONS counted by the simulator — not synapse arrivals."),
     ("boundary_events", _COUNT,

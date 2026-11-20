@@ -28,6 +28,7 @@ from mimarsinan.deployment_record.quantities.value_domain import (
     value_window,
 )
 from mimarsinan.deployment_record.platform_physics.converter import declared_adc_bits
+from mimarsinan.deployment_record.quantities.batch_rounds import evaluated_tiles, input_span, rounds_per_inference
 from mimarsinan.deployment_record.quantities.compute_technology import compute_split
 from mimarsinan.deployment_record.quantities.planes.loads import CANDIDATE_NO_ENTRIES, load_inputs
 from mimarsinan.deployment_record.quantities.write_law import plane_writes
@@ -85,6 +86,7 @@ def candidate_context_from_platform(
     context = replace(context, carry_onchip_bytes=None if carry is None else carry.get(ONCHIP_CENSUS),
                       carry_onchip_refusal=carry_refusal, carry_buffer_capacity_bytes=declared_buffer_bytes(pcfg))
     context = host_link_context(context, pcfg, host_boundary, passes)
+    context = _batch_pipeline_context(context, pcfg, passes)
     if context.timesteps is not None:
         context = replace(context, neuron_cycles_per_window=int(neuron_cycles_per_window(  # [U-LIF2 r6] no arrivals:
             context.timesteps, window_firing)))  # the plane states no per-core wiring and no neurons_used to price
@@ -105,6 +107,26 @@ def candidate_context_from_platform(
         carry_in_bytes=rule.carry_in_bytes, value_bits=value_bits(pcfg), value_rule=rule,
         carry_onchip_bytes=sized.get(ONCHIP_CARRY),
     ), pcfg, passes)
+
+
+def _batch_pipeline_context(context: CandidateQuantityContext, pcfg: Mapping[str, Any],
+                            passes: Optional[Any]) -> CandidateQuantityContext:
+    """[thru:w3] Under a declared ``batch_pipeline_slots`` the runs one inference costs and an input's span over the
+    candidate's pass rows (``batch_rounds``), each pass's steps by the plane's own rule (the value window of its
+    latencies in the value domain, its executed steps otherwise); the context itself without it."""
+    rounds = rounds_per_inference(pcfg)
+    if rounds == (None, None):
+        return context
+    value = names_value_domain(pcfg)
+
+    def steps_of(row: Any) -> Optional[int]:
+        if value:
+            return None if row.stage_latencies is None else value_window(row.stage_latencies)
+        return row.compute_steps
+
+    span, withheld = ({}, {}) if passes is None else input_span(passes.rows, steps_of, evaluated_tiles)
+    return replace(context, batch_rounds=rounds, input_span=tuple(sorted(span.items())),
+                   input_span_withheld=tuple(sorted(withheld.items())))
 
 
 def _event_census(context: CandidateQuantityContext, pcfg: Mapping[str, Any],

@@ -33,7 +33,8 @@ from mimarsinan.mapping.support.neuron_thresholds import threshold_key
 from mimarsinan.mapping.support.value_layouts import placement_value
 from mimarsinan.mapping.support.period_census import SCHEDULE_RESIDENT_CORES
 from mimarsinan.mapping.support.residency_rules import declared_pool, dominance_matching
-from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_CORE_ORDINALS, SCHEDULE_DARK_CORES, SCHEDULE_WAVEFRONT
+from mimarsinan.mapping.support.wavefront_stages import (
+    SCHEDULE_CORE_ORDINALS, SCHEDULE_DARK_CORES, SCHEDULE_WAVEFRONT, stage_groups)
 
 
 def _region(core, axons: int, neurons: int, blocks=()) -> Optional[Tuple[np.ndarray, Any, Any]]:
@@ -106,12 +107,14 @@ def _ordinals(stage: Any, count: int) -> List[int]:
 
 def _wavefront_groups(program: Any, h10: ConditionResult) -> int:
     """Each wavefront head loads exactly the layout it states, its dark cores hold no placement, and every later pass
-    of its group is wholly resident on it with one head ordinal per core; returns the heads checked."""
-    passes = [s for s in program.stages if s.kind == "neural"]
+    of its group is wholly resident on it with one head ordinal per core; returns the heads checked. [thru:w4] A group
+    is read by pass index (``stage_groups``): under the batch pipeline a pass is one stage per input slot, and the
+    other slots' stages of the head's own pass run resident on the layout it loads, so the head's pass is one load."""
+    groups = stage_groups(program.stages)
     heads = 0
-    for q, stage in enumerate(passes):
+    for index, stage in enumerate(program.stages):
         head = getattr(stage, SCHEDULE_WAVEFRONT, None)
-        if head is None:
+        if head is None or stage.kind != "neural":
             continue
         heads += 1
         h10.checked += 1
@@ -125,10 +128,14 @@ def _wavefront_groups(program: Any, h10: ConditionResult) -> int:
         if any(i >= len(cores) or (i < len(records) and records[i]) for i in dark):
             h10.add(Violation("H10", "wavefront_dark_core", f"pass {stage.name}", f"dark cores {dark} hold a "
                               "placement or lie outside its layout"))
-        group = passes[q + 1:q + int(head.passes)]
+        group = [s for i, s in enumerate(program.stages) if groups[i] == index and i != index]
+        passes = len({int(s.schedule_pass_index or 0) for s in [stage] + group})
+        if passes != int(head.passes):
+            h10.add(Violation("H10", "wavefront_layout", f"pass {stage.name}", f"states a group of {head.passes} "
+                              f"passes, and {passes} pass(es) run wholly resident on its layout"))
         for later in group:
             stated = getattr(later, SCHEDULE_CORE_ORDINALS, None)
-            if (len(group) != int(head.passes) - 1 or not getattr(later, "schedule_weights_resident", False)
+            if (not getattr(later, "schedule_weights_resident", False)
                     or later.schedule_segment_index != stage.schedule_segment_index or stated is None
                     or len(stated) != len(later.hard_core_mapping.cores)):
                 h10.add(Violation("H10", "wavefront_layout", f"pass {later.name}", f"a later pass of the wavefront "

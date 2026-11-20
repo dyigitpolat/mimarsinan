@@ -79,7 +79,8 @@ def candidate_carry_census(softcores: Sequence[Any], noc: Any, *, timesteps: Any
         return None
     return carry_census_from_spans(
         carried_softcore_spans(softcores, noc.pass_placements, noc.census.pair_wires,
-                               spec_segments(softcores, getattr(noc, "runs", None))),
+                               spec_segments(softcores, getattr(noc, "runs", None)),
+                               getattr(noc, "pass_slots", None)),  # [thru:w3] per input slot under the batch pipeline
         boundary_count=len(noc.pass_placements), timesteps=int(timesteps), transfer=str(pass_transfer),
         extra_in=delayed_carry_wires(softcores, noc), groups=program_groups(noc.pass_programs),
     )

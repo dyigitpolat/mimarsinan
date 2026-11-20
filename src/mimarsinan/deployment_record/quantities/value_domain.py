@@ -228,8 +228,11 @@ def apply_value_rule(values: Dict[str, QuantityValue], facts: ValueDomainFacts) 
 
 
 def record_value_facts(record: Any) -> ValueDomainFacts:
-    """The value rule on a sealed record: MAC events = committed cells, the window, value carry."""
-    segments = record.schedule.segments()
+    """The value rule on a sealed record: MAC events = committed cells, the window, value carry. [thru:w3] A program of
+    input slots is read as the passes its stages run as (``pass_segments``)."""
+    from mimarsinan.deployment_record.build.program_census import pass_segments
+
+    segments = [segment for segment, _slots, _members in pass_segments(record.schedule.segments())]
     spans = [stage_latency([c.static_delay_levels for c in segment.cores]) for segment in segments]
     latencies = None if any(span is None for span in spans) else [int(span) for span in spans if span is not None]
     carry = record.schedule.carry

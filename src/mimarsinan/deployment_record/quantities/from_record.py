@@ -6,6 +6,8 @@ from typing import Dict, Optional
 
 from mimarsinan.chip_simulation.hybrid_run.stage_timing import host_wall
 from mimarsinan.chip_simulation.stage_timesteps import neuron_cycles_per_window
+from mimarsinan.deployment_record.quantities.batch_rounds import (
+    evaluated_tiles, input_span, per_inference, rounds_per_inference)
 from mimarsinan.deployment_record.quantities.lanes import lane_block_quantities
 from mimarsinan.deployment_record.quantities.planes.local_memory import record_local_memory
 from mimarsinan.deployment_record.quantities.planes.states import RECORD_UNPRODUCED, declared_zeros, plane_view
@@ -21,6 +23,7 @@ from mimarsinan.deployment_record.quantities.value_domain import (
     record_carry_census,
     record_value_facts,
     refuse_spiking_activity,
+    value_window,
 )
 from mimarsinan.deployment_record.quantities.write_law import (
     record_write_census,
@@ -28,7 +31,8 @@ from mimarsinan.deployment_record.quantities.write_law import (
     write_quantities,
 )
 from mimarsinan.deployment_record.schema import DeploymentRecord
-from mimarsinan.deployment_record.build.program_census import declared_core_geometries
+from mimarsinan.deployment_record.build.program_census import (
+    declared_core_geometries, pass_segments, record_program_passes)
 from mimarsinan.mapping.packing.residency_tiles import declared_tiles
 from mimarsinan.mapping.platform.weight_cells import array_totals
 from mimarsinan.transformations.quantization_bounds import CORE_WEIGHT_BITS
@@ -73,13 +77,24 @@ def from_record(record: DeploymentRecord) -> Quantities:
     values: Dict[str, QuantityValue] = {}
 
     crossbar = record.utilization.crossbar
+    # [thru:w3] a program of input slots is read as the passes its stages run as, each pass's cores once
+    passes = pass_segments(record.schedule.segments())
+    slotted = any(slots is not None for _segment, slots, _members in passes)
+    segments = [segment for segment, _slots, _members in passes]
     # [U-F4] a wavefront head's dark cores are loaded, never evaluated: the occupancy and MAC census leave them out
-    dark = [s.cores[i] for s in record.schedule.segments() for i in (s.dark_core_indices or ())]
-    values["cells_used"] = _measured(crossbar.cells_used - sum(c.cells_used for c in dark))
-    values["cores_allocated"] = _measured(crossbar.cores_allocated)
-    values["neurons_used"] = _measured(crossbar.neurons_used - sum(c.neurons_used for c in dark))
-    values["axons_used"] = _measured(crossbar.axons_used - sum(c.axons_used for c in dark))
-    values["macs"] = _measured(crossbar.macs - sum(c.cells_used for c in dark))
+    dark = [s.cores[i] for s in segments for i in (s.dark_core_indices or ())]
+    if slotted:
+        evaluated = [c for s in segments for i, c in enumerate(s.cores) if i not in (s.dark_core_indices or ())]
+        values["cells_used"] = values["macs"] = _measured(sum(c.cells_used for c in evaluated))
+        values["cores_allocated"] = _measured(sum(len(s.cores) for s in segments))
+        values["neurons_used"] = _measured(sum(c.neurons_used for c in evaluated))
+        values["axons_used"] = _measured(sum(c.axons_used for c in evaluated))
+    else:
+        values["cells_used"] = _measured(crossbar.cells_used - sum(c.cells_used for c in dark))
+        values["cores_allocated"] = _measured(crossbar.cores_allocated)
+        values["neurons_used"] = _measured(crossbar.neurons_used - sum(c.neurons_used for c in dark))
+        values["axons_used"] = _measured(crossbar.axons_used - sum(c.axons_used for c in dark))
+        values["macs"] = _measured(crossbar.macs - sum(c.cells_used for c in dark))
     # The *_physical totals are the DECLARED chip's — area and static power price
     # the chip as declared, never just the cores this mapping happened to allocate.
     cores = list(record.identity.platform.get("cores") or ())
@@ -133,9 +148,9 @@ def from_record(record: DeploymentRecord) -> Quantities:
     elif ONCHIP_CENSUS in held:
         values[ONCHIP_CARRY] = QuantityValue(float(held[ONCHIP_CENSUS]), "static")
     _put(values, BUFFER_CAPACITY, declared_buffer_bytes(record.identity.platform), provenance="static")
-    segments = list(schedule.segments())
     reprogrammed = [s for s in segments if s.programming == "reprogram"]
-    counts_withheld = _physical_core_counts(values, record, segments, reprogrammed)
+    counts_withheld = _physical_core_counts(values, record, segments, reprogrammed,
+                                            allocated=int(values["cores_allocated"].value))
     values["reprogrammed_bytes"] = _measured(sum(s.params_bytes for s in reprogrammed))
     values["connectivity_entries"] = _measured(
         sum(s.connectivity_entries for s in reprogrammed)
@@ -198,15 +213,32 @@ def from_record(record: DeploymentRecord) -> Quantities:
             most_written=writes.census.most_written_core, producer_slots=writes.census.producer_slots))
         values.update(quantities)
         withheld.update(held)
+    rounds = rounds_per_inference(platform)
+    if rounds != (None, None):  # [thru:w3] every count per run per inference, and an input's span
+        withheld.update(per_inference(values, rounds))
+        span, span_withheld = input_span(record_program_passes(record).rows, _row_steps(value_domain),
+                                         evaluated_tiles)
+        values.update(span)
+        withheld.update(span_withheld)
     zeros = declared_zeros(record.output_stage is not None, declared_buffer_bytes(platform) is not None, value_domain)
     return plane_view(values, {**counts_withheld, **withheld}, RECORD_UNPRODUCED, zeros)  # [U-ENERGY class 2]
+
+
+def _row_steps(value_domain: bool):
+    """[thru:w3] A sealed pass's executed steps, by the rule of the record's latency: the value window of its latencies
+    in the value domain, its sealed steps otherwise."""
+    def steps(row) -> Optional[int]:
+        if value_domain:
+            return None if row.stage_latencies is None else value_window(row.stage_latencies)
+        return row.compute_steps
+    return steps
 
 
 _CORE_COUNTS = ("segment_cores", "reprogrammed_cores", "cores_allocated")
 
 
-def _physical_core_counts(values: Dict[str, QuantityValue], record: DeploymentRecord, segments, reprogrammed
-                          ) -> Dict[str, str]:
+def _physical_core_counts(values: Dict[str, QuantityValue], record: DeploymentRecord, segments, reprogrammed, *,
+                          allocated: int) -> Dict[str, str]:
     """The core counts in physical tiles: a sealed core of a fused geometry (several declared cores of one type,
     its axons summed) counts its members, read against the declared core types. ``cores_allocated`` is the sealed
     allocated crossbars plus every fused core's further members. A geometry the declared types do not determine
@@ -223,8 +255,7 @@ def _physical_core_counts(values: Dict[str, QuantityValue], record: DeploymentRe
         return {key: reason for key in _CORE_COUNTS}
     dark = {id(s.cores[i]) for s in segments for i in (s.dark_core_indices or ())}  # [U-F4] loaded, never reset
     values["segment_cores"] = _measured(sum(tiles[id(c)] for c in cores if id(c) not in dark))
-    values["cores_allocated"] = _measured(
-        record.utilization.crossbar.cores_allocated + sum(tiles[id(c)] - 1 for c in cores))
+    values["cores_allocated"] = _measured(allocated + sum(tiles[id(c)] - 1 for c in cores))
     # [U-C C-6] e_core_program's multiplicand: the reprogrammed cores holding a static program (an operand-only core
     # holds none). On a chip with an operand core type a core sealed without its mark leaves them undetermined.
     programmed = [c for s in reprogrammed for c in s.cores]

@@ -46,6 +46,8 @@ STAGE: Dict[str, Readers] = {
     "schedule_wavefront": ("H10",), "schedule_dark_cores": ("tiles", "H10"), "schedule_core_ordinals": ("H10",),
     # [thru:w1] under layer copies, a pass's copies loaded beside an instance it runs, run on off axons, read by nothing.
     "schedule_idle_columns": ("tiles",),
+    # [thru:w4] under the batch pipeline, the input slot whose rows a stage serves: the slot's projection (H9, R3).
+    "schedule_input_slot": ("H9", "R3"),
 }
 IO_SLICE: Dict[str, Readers] = _same(("tiles", "H9"), "node_id", "offset", "size")
 CORE_MAPPING: Dict[str, Readers] = {
