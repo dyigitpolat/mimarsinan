@@ -5,18 +5,23 @@ included (``schedule_dark_cores``: loaded, not evaluated), and it carries the gr
 (``schedule_wavefront``). Every later pass of the group runs wholly resident on that layout and holds only the layout
 cores an instance of it uses, each with the head ordinal of the core it runs on (``schedule_core_ordinals``). All three
 are declared-only: a program built without the decision carries none of them.
+
+[thru:w1] Under layer copies a core may hold several copies, and a pass may run an instance on one of them only: the
+core runs wholly, and the pass declares the columns of its copies that hold no instance of the pass
+(``schedule_idle_columns``: loaded, run on off axons, read by nothing). Declared-only as well.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, FrozenSet, Optional, Tuple
+from typing import Any, Dict, FrozenSet, Optional, Tuple
 
 from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError
 
 SCHEDULE_CORE_ORDINALS = "schedule_core_ordinals"
 SCHEDULE_DARK_CORES = "schedule_dark_cores"
 SCHEDULE_WAVEFRONT = "schedule_wavefront"
+SCHEDULE_IDLE_COLUMNS = "schedule_idle_columns"
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,20 @@ def core_ordinals(stage: Any, count: int) -> Tuple[int, ...]:
 def dark_cores(stage: Any) -> FrozenSet[int]:
     """The cores ``stage`` loads without evaluating (a wavefront head's cores no instance of the pass uses)."""
     return frozenset(int(i) for i in (getattr(stage, SCHEDULE_DARK_CORES, None) or ()))
+
+
+def idle_columns(stage: Any) -> Dict[int, FrozenSet[int]]:
+    """[thru:w1] Per core of ``stage``, the columns it loads and runs on off axons (a copy no instance of the pass
+    uses, beside one that runs)."""
+    return column_sets(getattr(stage, SCHEDULE_IDLE_COLUMNS, None))
+
+
+def column_sets(runs: Any) -> Dict[int, FrozenSet[int]]:
+    """[thru:w1] Declared ``(core, first column, columns)`` runs as each core's set of columns."""
+    out: Dict[int, set] = {}
+    for core, first, count in runs or ():
+        out.setdefault(int(core), set()).update(range(int(first), int(first) + int(count)))
+    return {core: frozenset(columns) for core, columns in out.items()}
 
 
 def wavefront_head(stage: Any) -> Optional[WavefrontHead]:

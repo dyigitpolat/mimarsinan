@@ -5,7 +5,10 @@ the same MAC events and core initializations (a head's dark cores loaded, never 
 
 [U-N] One programming census (``payload_sizes.candidate_programming_census``, which ``program_census`` re-exports): on
 any pass programs it is the every-core figures less the dark cores' physical tiles and cells, and on the lane programs
-it is the sealed record of the program the builder builds, field by field, through a full ``from_record`` call."""
+it is the sealed record of the program the builder builds, field by field, through a full ``from_record`` call.
+
+[thru:w1] Layer copies (``layer_replication``, with and without a ``wavefront_group_cores`` limit): both planes state
+the same program of copies, and the candidate census is its sealed record field by field."""
 
 from __future__ import annotations
 
@@ -40,10 +43,16 @@ COUNTS = {("lenet", "groups"): 12}
 SHARED_CARRY = ("transfer", "carried_wires", "carried_bytes", "boundary_out_bytes", "boundary_in_bytes")
 
 
-def _pipelined(fixture: str, geometry: str):
+#: [thru:w1] The layer copies' declarations: copies on every free core, and copies under a group limit of 2 cores.
+COPIES = {"copies": {"layer_replication": True}, "copies_limit": {"layer_replication": True,
+                                                                  "wavefront_group_cores": 2}}
+
+
+def _pipelined(fixture: str, geometry: str, copies: str = ""):
     shape = dict(GEOMETRIES[geometry], count=COUNTS.get((fixture, geometry), GEOMETRIES[geometry]["count"]))
     platform, program = _fixture(fixture, ("L", "E"), multiplexing=True, **shape)
     platform["pipelined_multiplexing"] = True
+    platform.update(COPIES.get(copies, {}))
     return platform, program
 
 
@@ -73,9 +82,23 @@ def test_both_planes_state_the_pipelined_program(fixture, geometry):
     assert {k: carry[k] for k in carry if k in SHARED_CARRY} == {k: base[k] for k in base if k in SHARED_CARRY}
 
 
+@pytest.mark.parametrize("copies", sorted(COPIES))
+@pytest.mark.parametrize("geometry", sorted(GEOMETRIES))
 @pytest.mark.parametrize("fixture", ["residual", "lenet"])
-def test_both_planes_price_one_evaluation_per_wavefront_pass_and_the_evaluated_cores(fixture):
-    platform, program = _pipelined(fixture, "together")
+def test_both_planes_state_the_program_of_copies(fixture, geometry, copies):
+    platform, program = _pipelined(fixture, geometry, copies)
+    candidate, builder = candidate_plane(program, platform, FIXTURES[fixture][2]), builder_plane(program, platform)
+    _assert_same(candidate, builder)
+    one = builder_plane(program, {k: v for k, v in platform.items() if k not in COPIES[copies]})
+    assert builder["passes"] <= one["passes"]
+    carry, base = candidate["carry"], one["carry"]
+    assert {k: carry[k] for k in carry if k in SHARED_CARRY} == {k: base[k] for k in base if k in SHARED_CARRY}
+
+
+@pytest.mark.parametrize("copies", ["", "copies"])
+@pytest.mark.parametrize("fixture", ["residual", "lenet"])
+def test_both_planes_price_one_evaluation_per_wavefront_pass_and_the_evaluated_cores(fixture, copies):
+    platform, program = _pipelined(fixture, "together", copies)
     scheduled, _specs = _ladder_noc(program, platform, FIXTURES[fixture][2])
     mapping = build_hybrid_mapping_for_pipeline(program.ir, platform)
     neural = [s for s in mapping.stages if s.kind == "neural"]
@@ -115,9 +138,12 @@ def test_the_quarter_width_resnet18_with_fo_star_s_pass_shape(geometry):
 # --- [U-N] one programming census (R-1 review, minors 1 and 2) --------------------------------------------------------
 
 FIELDS = tuple(field.name for field in dataclasses.fields(PS.CandidateProgramming))
-#: The lane programs: each fixture at each geometry, pipelined and position-multiplexed one level per pass.
+#: The lane programs: each fixture at each geometry, pipelined and position-multiplexed one level per pass; [thru:w1]
+#: pipelined with each declaration of layer copies.
 CASES = [(fixture, geometry, pipelined) for fixture in ("residual", "lenet") for geometry in sorted(GEOMETRIES)
          for pipelined in (True, False)]
+COPY_CASES = [(fixture, geometry, copies) for fixture in ("residual", "lenet") for geometry in sorted(GEOMETRIES)
+              for copies in sorted(COPIES)]
 
 
 def _row(census):
@@ -208,8 +234,8 @@ def test_a_program_stating_no_tiles_or_dark_cores_counts_each_core_once_and_eval
     assert (census.reprogrammed_cores, census.reprogram_passes, census.reprogrammed_cells) == (3, 1, (6, 4, 9))
 
 
-def _lane_program(fixture, geometry, pipelined):
-    platform, program = _pipelined(fixture, geometry)
+def _lane_program(fixture, geometry, pipelined, copies=""):
+    platform, program = _pipelined(fixture, geometry, copies)
     if not pipelined:
         platform = {k: v for k, v in platform.items() if k != "pipelined_multiplexing"}
     scheduled, _specs = _ladder_noc(program, platform, FIXTURES[fixture][2])
@@ -233,11 +259,23 @@ def test_the_candidate_census_is_the_sealed_record_field_by_field(fixture, geome
     written cells off the sealed segments by ``from_record``'s tile rule (``declared_tiles``); [U-PP P-1] the schedule
     census, the record's pass and sync counts."""
     platform, program, scheduled = _lane_program(fixture, geometry, pipelined)
+    segments = _census_against_the_record(platform, program, scheduled)
+    assert any(s.dark_core_indices for s in segments) == (fixture == "residual" and pipelined)
+
+
+@pytest.mark.parametrize("fixture,geometry,copies", COPY_CASES)
+def test_the_candidate_census_of_copies_is_the_sealed_record_field_by_field(fixture, geometry, copies):
+    """[thru:w1] As above, on the programs of layer copies: the copies are written cores of their group's first pass on
+    both planes, and the candidate plane equals the record plane."""
+    platform, program, scheduled = _lane_program(fixture, geometry, True, copies)
+    _census_against_the_record(platform, program, scheduled)
+
+
+def _census_against_the_record(platform, program, scheduled):
     census = candidate_programming_census(scheduled.noc, weight_bits=4)
     record = executed_record(build_hybrid_mapping_for_pipeline(program.ir, platform), platform, weight_bits=4,
                              label="pipelined lane program", timesteps=STEPS, pass_transfer=TRANSFER)
     segments = list(record.schedule.segments())
-    assert any(s.dark_core_indices for s in segments) == (fixture == "residual" and pipelined)
     sealed = from_record(record)
     assert not sealed.withheld, sealed.withheld
     declared = declared_core_geometries(platform)
@@ -258,3 +296,4 @@ def test_the_candidate_census_is_the_sealed_record_field_by_field(fixture, geome
                 reprogrammed_cells=tuple(c.cells_used for s in segments if s.programming == "reprogram"
                                          for c in s.cores))
     assert stated == read
+    return segments

@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_DARK_CORES
+from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_DARK_CORES, SCHEDULE_IDLE_COLUMNS, column_sets
 from mimarsinan.certification.program_check.unit_forms.operands import core_blocks, program_bindings, static_part
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import enumerate_execution_stages
 from mimarsinan.mapping.packing.executed_reads import executed_weights
@@ -201,6 +201,7 @@ def build_view(program: Any, *, foreign: int) -> ProgramView:
                         [(int(s.node_id), int(s.offset), int(s.size)) for s in stage.input_map], [])
         blocks, refused = core_blocks(hcm, bindings)
         dark = frozenset(getattr(program_stage, SCHEDULE_DARK_CORES, None) or ())
+        idle = column_sets(getattr(program_stage, SCHEDULE_IDLE_COLUMNS, None))
         for h, core in enumerate(hcm.cores):
             ua, un = _used(core)
             cv = CoreView(core, ua, un, np.full(un, -1, dtype=np.int64), np.full(un, -1, dtype=np.int64),
@@ -210,7 +211,9 @@ def build_view(program: Any, *, foreign: int) -> ProgramView:
             for p in cv.placements:
                 placements.setdefault(p.node, []).append(p)
             if not (cv.placements == [] and h in dark):  # [U-F4] a dark core is loaded, never evaluated
-                unplaced.extend((len(units), h, int(k)) for k in np.flatnonzero(cv.node_of < 0))
+                # [thru:w1] a copy's columns the pass declares idle are loaded and read by nothing
+                unplaced.extend((len(units), h, int(k)) for k in np.flatnonzero(cv.node_of < 0)
+                                if int(k) not in idle.get(h, ()))
             view.cores.append(cv)
         tables = _slice_tables(view.slices)
         for cv in view.cores:

@@ -1,9 +1,10 @@
 """[thru:k] The layer copies' two declared keys (PL/thru/design.md (b), (c)): ``layer_replication`` (more copies of a
 wavefront group's layers on the cores its layout leaves free) and ``wavefront_group_cores`` (the cores one copy of a
 group may take). Both are cost-only, legal exactly where ``pipelined_multiplexing`` is legal, relevant under the key
-they refine, deferred in the cost draws' partition, and passed through to the one pass planner on both planes. They
-plan nothing yet: the planner refuses a declared ``layer_replication`` true by name, and a group limit without it.
-Absent or false, every program is the paper version's (the identity test, ``tests/identity``)."""
+they refine, deferred in the cost draws' partition, and passed through to the one pass planner on both planes, which
+plans the copies ([thru:w1], ``test_layer_copies_planner``) and refuses by name a group limit without
+``layer_replication`` and ``layer_replication`` without the wavefront. Absent or false, every program is the paper
+version's (the identity test, ``tests/identity``)."""
 
 from __future__ import annotations
 
@@ -153,14 +154,13 @@ def test_every_layout_helper_takes_them():
         assert set(KEYS) <= set(inspect.signature(helper).parameters), helper.__name__
 
 
-class TestTheOnePlannerRefusesTheCopiesUntilTheyArePlanned:
-    def test_the_builder_refuses_a_declared_replication_by_name(self, block):
-        with pytest.raises(PositionMultiplexingError, match="layer_replication"):
-            V.build(block.ir, V.cores(3), True, layer_replication=True)
-        with pytest.raises(PositionMultiplexingError, match="layer_replication"):
-            V.build(block.ir, V.cores(3), True, layer_replication=True, wavefront_group_cores=2)
+class TestTheOnePlannerPlansTheCopies:
+    def test_the_builder_builds_a_declared_replication(self, block):
+        one = len(V.neural(V.build(block.ir, V.cores(3), True)))
+        for kw in ({}, {GROUP_CORES: 2}):
+            assert len(V.neural(V.build(block.ir, V.cores(3), True, layer_replication=True, **kw))) <= one
 
-    def test_the_shape_only_plane_refuses_it_by_the_same_name(self):
+    def test_the_shape_only_plane_plans_it(self):
         """A platform declaring it, through the candidate plane's calls (CL5's and W48's), reaches the planner."""
         from mimarsinan.deployment_record.introspection import scaling_ladder as LD
         from unit.mapping.lanes.lane_planes import ladder, network_of
@@ -168,18 +168,24 @@ class TestTheOnePlannerRefusesTheCopiesUntilTheyArePlanned:
 
         platform, program = _fixture("residual", ("L", "E"), multiplexing=True, axons=256, neurons=64, count=3,
                                      passes=1 << 16, coalescing=True, hardware_bias=True)
-        platform.update({"pipelined_multiplexing": True, REPLICATION: True})
         network = network_of(program, FIXTURES["residual"][2])
-        census = LD.shape_census(network, platform)
-        with pytest.raises(PositionMultiplexingError, match="layer_replication"):
-            LD.schedule_program(network, census, platform, ladder().program_facts,
-                                tiles=LD.packed_tiles(census, platform))
+        passes = {}
+        for replication in (None, True):
+            declared = {**platform, "pipelined_multiplexing": True}
+            if replication:
+                declared[REPLICATION] = True
+            census = LD.shape_census(network, declared)
+            scheduled = LD.schedule_program(network, census, declared, ladder().program_facts,
+                                            tiles=LD.packed_tiles(census, declared))
+            assert scheduled.refusal is None, scheduled.refusal
+            passes[replication] = len(scheduled.noc.pass_programs)
+        assert passes[True] <= passes[None]
 
-    def test_the_planner_itself_refuses_it(self, block):
+    def test_the_planner_refuses_replication_without_the_wavefront(self, block):
         specs = list(block.ir.layout_softcores)
-        with pytest.raises(PositionMultiplexingError, match="layer_replication"):
+        with pytest.raises(PositionMultiplexingError, match="layer_replication.*pipelined_multiplexing"):
             plan_program_passes(specs, [LayoutHardCoreType(256, 64, 3)], position_multiplexing=True,
-                                pipelined_multiplexing=True, layer_replication=True)
+                                layer_replication=True)
 
     def test_the_planner_refuses_a_group_limit_without_replication(self, block):
         specs = list(block.ir.layout_softcores)

@@ -144,9 +144,9 @@ def plan_segment_passes(
     composes one and every chunk packs, else the validated capacity split.
     [W02] Declared ``position_multiplexing``: one copy per shared bank serves its instances
     in turn (``shares``: which instances read their bank's copy; default all); [U-F4] with ``pipelined_multiplexing``
-    its levels share passes as a wavefront (``producers``: per spec, the segment positions it reads). [thru:k] The layer
-    copies' keys (``layer_replication``, ``wavefront_group_cores``) reach it; declared, they refuse by name until the
-    copies are planned (``refuse_layer_copies``).
+    its levels share passes as a wavefront (``producers``: per spec, the segment positions it reads). [thru:w1] With
+    ``layer_replication`` each wavefront group's free cores hold copies of its banks (``wavefront_group_cores``: the
+    cores one copy of a group may take); a declaration it cannot serve refuses by name (``refuse_layer_copies``).
 
     A composition that cannot pack is not the program deployment runs;
     it is declined rather than reported as an infeasible layout.
@@ -155,7 +155,7 @@ def plan_segment_passes(
     specs' own groups (``coalescing_group_id``), so both planes keep them alike. A segment holding a dynamic
     operand bank's instances takes the capacity split (N2) and refuses a declared ``position_multiplexing``.
     """
-    refuse_layer_copies(layer_replication, wavefront_group_cores)
+    refuse_layer_copies(layer_replication, wavefront_group_cores, pipelined_multiplexing)
     if coalescing_group_ids is None and any(getattr(s, "coalescing_group_id", None) is not None for s in softcores):
         coalescing_group_ids = [getattr(s, "coalescing_group_id", None) for s in softcores]
     # N2: an operand bank's payload is rewritten every pass (design §2.7), so residency never composes over one, and
@@ -171,7 +171,8 @@ def plan_segment_passes(
         wave = pipelined_segment_passes(
             softcores, core_types, producers=producers, budget=budget, allow_coalescing=allow_coalescing,
             allow_splitting=allow_splitting, max_schedule_passes=max_schedule_passes, shares=shares,
-            coalescing_group_ids=coalescing_group_ids)
+            coalescing_group_ids=coalescing_group_ids, layer_replication=layer_replication,
+            wavefront_group_cores=wavefront_group_cores)
         return SegmentPassPlan(wave.pass_lists, wave.feasible, False, run_heads=wave.run_heads, wavefront=wave)
     if position_multiplexing and shares_a_bank(softcores, shares):
         mux = multiplexed_segment_passes(
@@ -264,7 +265,7 @@ def plan_program_passes(
     whose capacity split cuts at their ``segment_id``), so the plane's passes and pass counts are the builder's.
     [U-F4] ``producers``: per spec, the program indices of the specs it reads (each segment reads its own). [thru:k]
     The layer copies' keys reach every segment's plan (``plan_segment_passes``)."""
-    refuse_layer_copies(layer_replication, wavefront_group_cores)
+    refuse_layer_copies(layer_replication, wavefront_group_cores, pipelined_multiplexing)
     if residency is not None:  # [E85] one residency composition over the whole program, the builder's refusal rules
         comp = compose_shape_only_program(softcores, core_types, residency, allow_coalescing=allow_coalescing,
                                           allow_splitting=allow_splitting, max_schedule_passes=max_schedule_passes)

@@ -4,7 +4,9 @@ The group's layout is ONE pack of its template specs (the first instance of each
 of the group places each of its instances on its key's cores of that layout. The first pass states every layout core
 (it loads them; the cores none of its instances use are its dark cores) and every later pass the layout cores its
 instances use, each wholly resident, so the pass programs, the period census and the fit rule read the builder's
-program. A W02 group's passes are left to the caller's own packing."""
+program. A W02 group's passes are left to the caller's own packing. [thru:w1] Under layer copies the layout packs each
+key's template once per copy (key by key, then copy by copy, ``layout_specs``) and each instance is placed on its own
+copy's cores; a core holding an instance runs wholly, as the builder runs it (its other copies idle)."""
 
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.noc.pass_program import PassProgram, packed_pass_program
 from mimarsinan.mapping.packing.infeasibility_proofs import CoreCapacityRefusal
 from mimarsinan.mapping.packing.residency_tiles import CoreTiles
+from mimarsinan.mapping.support.pipelined_multiplexing import layout_specs
 
 #: Per planned pass index: its placements ``(program spec index, pass-local core)``, its program and core tiles.
 PlacedPass = Tuple[Tuple[Tuple[int, int], ...], PassProgram, Tuple[CoreTiles, ...]]
@@ -51,20 +54,24 @@ def wavefront_passes(plan: Any, softcores: Sequence[Any], global_index: Dict[int
 
 def _group(wave, group, specs, offset, global_index, core_types, allow_neuron_splitting, allow_coalescing,
            declared_cores, operand_axons) -> Dict[int, PlacedPass]:
-    template = [specs[i] for i in group.template]
+    template = layout_specs(specs, group.template, group.copies)
     pack = pack_layout(softcores=template, core_types=core_types, allow_neuron_splitting=allow_neuron_splitting,
                        allow_coalescing=allow_coalescing, collect_placements=True)
     if not pack.feasible or pack.placements is None:
         raise CoreCapacityRefusal(f"NoC fragments: a wavefront group's layout does not pack ({pack.error})")
+    # [thru:w1] the layout's slots: per key, or per key and copy under layer copies
+    slots = list(group.keys) if group.copies is None else [
+        (key, c) for key, count in zip(group.keys, group.copies) for c in range(int(count))]
+    slot_of = list(wave.keys) if wave.copy_of is None else list(zip(wave.keys, wave.copy_of))
     cores_of: Dict[Any, List[int]] = {}
     for origin, core in pack.placements:
-        cores_of.setdefault(group.keys[int(origin)], []).append(int(core))
+        cores_of.setdefault(slots[int(origin)], []).append(int(core))
     head, tiles = packed_pass_program(pack.used_core_snapshots or (), resident=False, core_types=core_types,
                                       declared_cores=declared_cores, operand_axons=operand_axons(template, pack))
     out: Dict[int, PlacedPass] = {}
     for q in range(group.first_pass, group.end_pass):
         placed = [(global_index[id(specs[i])], core) for i in range(len(specs)) if wave.pass_of[i] == q
-                  for core in cores_of[wave.keys[i]]]
+                  for core in cores_of[slot_of[i]]]
         if q == group.first_pass:
             used = {core for _, core in placed}
             dark = frozenset(h for h in range(head.cores) if h not in used)

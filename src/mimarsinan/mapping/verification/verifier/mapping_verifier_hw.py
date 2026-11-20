@@ -66,10 +66,12 @@ def verify_hardware_config(
 ) -> Dict[str, Any]:
     """Memoizing front of :func:`_verify_hardware_config_uncached` (LRU, deep-copied). ``runs``: the walk's builder
     segments (``residency_rules.spec_runs``), so the preview plans the deployed passes [U1 W9]. [thru:k] The layer
-    copies' keys are judged by the one planner's rule (``refuse_layer_copies``): undeclared or false, one copy."""
+    copies' keys are judged by the one planner's rule (``refuse_layer_copies``): copies need the wavefront, which this
+    preview refuses without a wire census, so a declared ``layer_replication`` true refuses here by name and the memo
+    never holds a program of copies."""
     refuse_without_cut_census("verify_hardware_config (the wizard layout preview)", residency_plan)
     refuse_without_wire_census("verify_hardware_config (the wizard layout preview)", pipelined_multiplexing)
-    refuse_layer_copies(layer_replication, wavefront_group_cores)
+    refuse_layer_copies(layer_replication, wavefront_group_cores, pipelined_multiplexing)
     key = _memo_key(
         softcores, core_types, allow_neuron_splitting, allow_coalescing,
         allow_scheduling, max_schedule_passes, runs, position_multiplexing,

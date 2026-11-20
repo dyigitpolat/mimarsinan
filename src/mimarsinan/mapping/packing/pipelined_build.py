@@ -7,12 +7,17 @@ ordinal and offsets in every pass; that is verified per core against the group's
 before the stand-ins are stripped. The first pass keeps every layout core (it loads the layout; the cores no instance
 of it uses are dark: loaded, not evaluated); every later pass keeps the cores its instances use, each with its head
 ordinal, and runs wholly resident. A W02 group of the segment is materialized and verified as W02 materializes it.
+
+[thru:w1] Under declared layer copies the layout holds each key's copies, its cores ordered by key and then copy: one
+stand-in per copy (each with ids of its own), and each instance at the copy the plan gives it. A core of a pass that
+holds an instance runs wholly: a copy beside it that no instance of the pass uses runs on off axons, its outputs
+unread (copies of one key may share a core, and the pass's instances do not always fill them).
 """
 
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Sequence, Tuple
 
 import numpy as np
 
@@ -30,7 +35,7 @@ from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingEr
 from mimarsinan.mapping.platform.platform_constraints import pool_sign_granularity
 from mimarsinan.mapping.support.spike_source_columns import PlacementNeuronMap
 from mimarsinan.mapping.support.wavefront_stages import (
-    SCHEDULE_CORE_ORDINALS, SCHEDULE_DARK_CORES, SCHEDULE_WAVEFRONT, WavefrontHead)
+    SCHEDULE_CORE_ORDINALS, SCHEDULE_DARK_CORES, SCHEDULE_IDLE_COLUMNS, SCHEDULE_WAVEFRONT, WavefrontHead)
 
 __all__ = ["flush_wavefront_segment", "ir_producers", "refuse_with_retiming"]
 
@@ -79,6 +84,8 @@ def _fresh(standin: Any) -> Any:
 
 
 def _arranger(keys, node_key: Dict[int, Any], standins: Sequence[Sequence[Any]], label: str):
+    """``keys``: the layout's slots in order (a key, or [thru:w1] a key and copy), ``node_key``: per IR node its slot,
+    ``standins``: per slot its stand-in soft cores."""
     def arrange(soft_cores: List[Any]) -> List[Any]:
         by_key: Dict[Any, List[Any]] = {}
         for core in soft_cores:
@@ -93,18 +100,43 @@ def _arranger(keys, node_key: Dict[int, Any], standins: Sequence[Sequence[Any]],
     return arrange
 
 
-def _keep(stage: Any, standin_ids: frozenset, head: bool, label: str) -> None:
+def _copy_slots(group, standins: List[List[Any]], first_id: int) -> Tuple[List[Any], List[List[Any]]]:
+    """[thru:w1] The layout's slots (key, copy), key by key then copy by copy, and per slot its stand-ins: a copy past
+    the first takes its key's stand-ins under ids of its own, numbered on from the first copies'."""
+    next_id = first_id + sum(len(cs) for cs in standins)
+    slots: List[Any] = []
+    per_slot: List[List[Any]] = []
+    for key, cores_, count in zip(group.keys, standins, group.copies):
+        for c in range(int(count)):
+            clones = cores_ if c == 0 else [copy.copy(core) for core in cores_]
+            if c:
+                for core in clones:
+                    core.id, next_id = next_id, next_id + 1
+            slots.append((key, c))
+            per_slot.append(clones)
+    return slots, per_slot
+
+
+def _keep(stage: Any, standin_ids: frozenset, head: bool, label: str, whole: bool = False) -> None:
     """Strip the stand-ins; a later pass drops the cores they alone held (each keeping its head ordinal), the head
-    marks them dark. Every kept core reads only stage inputs (pass transparency), else refused by name."""
+    marks them dark. Every kept core reads only stage inputs (pass transparency), else refused by name. [thru:w1]
+    ``whole`` (layer copies): a core that holds an instance beside a stand-in runs wholly, the stand-in on off axons,
+    and the pass declares the stand-in's columns idle."""
     hcm = stage.hard_core_mapping
     placements = [[p for p in ps if int(p["ir_node_id"]) not in standin_ids]
                   for ps in hcm.soft_core_placements_per_hard_core]
     placements += [[] for _ in range(len(hcm.cores) - len(placements))]
-    if any(ps and len(ps) != len(full) for ps, full in zip(placements, hcm.soft_core_placements_per_hard_core)):
+    if not whole and any(ps and len(ps) != len(full)
+                         for ps, full in zip(placements, hcm.soft_core_placements_per_hard_core)):
         raise PositionMultiplexingError(f"pipelined_multiplexing: in {label} a core holds copies its pass uses beside "
                                         "copies it does not; a core of a wavefront pass runs wholly or not at all")
     keep = list(range(len(hcm.cores))) if head else [i for i, ps in enumerate(placements) if ps]
     new = {old: j for j, old in enumerate(keep)}
+    idle = tuple((new[i], int(p["neuron_offset"]), int(p["neurons"]))
+                 for i, full in enumerate(hcm.soft_core_placements_per_hard_core) if placements[i]
+                 for p in full if int(p["ir_node_id"]) in standin_ids)
+    if idle:
+        setattr(stage, SCHEDULE_IDLE_COLUMNS, idle)
     for core in hcm.cores:
         if any(not _special(s) for s in core.axon_sources):
             raise PositionMultiplexingError(f"pipelined_multiplexing: in {label} a core reads another core of its "
@@ -155,6 +187,8 @@ def flush_wavefront_segment(*, plan, specs, spec_to_core, cores, ir_graph, segme
     chunks = [[spec_to_core[id(spec)] for spec in chunk] for chunk in plan.pass_lists]
     refuse_typed_multi_pass(label, len(chunks), cores)
     node_key = {int(spec_to_core[id(spec)].id): key for spec, key in zip(specs, wave.keys)}
+    if wave.copy_of is not None:  # [thru:w1] each instance at its copy of its key
+        node_key = {int(spec_to_core[id(spec)].id): (key, c) for spec, key, c in zip(specs, wave.keys, wave.copy_of)}
     first_id = 1 + max(int(n.id) for n in ir_graph.nodes)
     for g, group in enumerate(wave.groups):
         passes = range(group.first_pass, group.end_pass)
@@ -165,8 +199,11 @@ def flush_wavefront_segment(*, plan, specs, spec_to_core, cores, ir_graph, segme
             continue
         standins = _template_standins([spec_to_core[id(specs[i])] for i in group.template], flush["weight_banks"],
                                       flush["all_reindex_maps"], flush["cores_config"], first_id)
+        slots = group.keys
+        if group.copies is not None:
+            slots, standins = _copy_slots(group, standins, first_id)
         ids = frozenset(int(c.id) for cs in standins for c in cs)
-        arrange = _arranger(group.keys, node_key, standins, f"segment {label!r}")
+        arrange = _arranger(slots, node_key, standins, f"segment {label!r}")
         layout = None
         for q in passes:
             stage = _materialize(chunks[q], q, label=label, tag="wave", arrange=arrange, segment_index=segment_index,
@@ -181,4 +218,4 @@ def flush_wavefront_segment(*, plan, specs, spec_to_core, cores, ir_graph, segme
                     f"pipelined_multiplexing: pass {q} of segment {label!r} places its copies elsewhere than its "
                     "group's first pass loaded them, so it cannot run on that layout")
             stage.schedule_weights_resident = q != group.first_pass
-            _keep(stage, ids, q == group.first_pass, f"pass {q} of segment {label!r}")
+            _keep(stage, ids, q == group.first_pass, f"pass {q} of segment {label!r}", group.copies is not None)
