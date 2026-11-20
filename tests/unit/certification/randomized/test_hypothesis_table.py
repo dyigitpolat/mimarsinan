@@ -59,7 +59,11 @@ TABLE = ROOT / "tests" / "fixtures" / "theorem_box" / "hypothesis_table.json"
 #: sorted position in ``cost_only`` and its ``cost_only_hypotheses`` row after pipelined_multiplexing's, nothing else
 #: changed (RA/11_wave2/integration8/ul2/fixture_union_check.txt), 38 cost-only rows; RA/10_wave1/thm/ is
 #: regenerated from the fixture.
-TABLE_SHA256 = "ef954b700c0acbad5dbcabd2b6e09d8bbd143448052e61761ef6597b4b8c4a4f"
+#: [thru:k] re-pin on the throughput branch: ``layer_replication`` and ``wavefront_group_cores`` (the layer copies of
+#: pipelined multiplexing, PL/thru/design.md (b)) join the cost-only list in sorted position (X3a ``DEFERRED``), each
+#: with the ``cost_only_hypotheses`` row of pipelined_multiplexing after reduction_core_banks's, nothing else changed,
+#: 40 rows. The paper version's RA/10_wave1/thm/ is not regenerated from the branch.
+TABLE_SHA256 = "cefe9de0a114c7b68f4910eee989caa143b3a6cab67816e8b5aa587aabe59f70"
 #: The twelve arms of D17 (RA/04_experiment_portfolio.md:580, :1304).
 D17 = ("H1-theta", "H1-latency", "H2", "H3", "H4", "H5-collapse", "H5-skew", "H6", "H7", "H8", "H9", "H10")
 
@@ -75,7 +79,7 @@ def test_the_fixture_is_the_pinned_one():
 
 def test_the_class_list_is_the_registry_cost_only_set(table):
     assert set(table["cost_only"]) == cost_only_set()
-    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 38  # [U-L2] reduction_core_banks
+    assert len(table["cost_only"]) == len(set(table["cost_only"])) == 40  # [thru:k] the layer copies' two keys
 
 
 #: The proof check's split (PC1): conditions on the two deployments, and conditions on every run (the

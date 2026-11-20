@@ -22,7 +22,7 @@ from mimarsinan.mapping.layout.layout_types import (
     LayoutSoftCoreSpec,
 )
 from mimarsinan.mapping.support.pipelined_multiplexing import (
-    WavefrontPlan, pipelined_segment_passes, segment_producers)
+    WavefrontPlan, pipelined_segment_passes, refuse_layer_copies, segment_producers)
 from mimarsinan.mapping.support.position_multiplexing import multiplexed_segment_passes, shares_a_bank
 from mimarsinan.mapping.support.schedule.bank_clustered_law import (
     BankInstance,
@@ -137,12 +137,16 @@ def plan_segment_passes(
     shares: Optional[Sequence[bool]] = None,
     pipelined_multiplexing: Optional[bool] = None,
     producers: Optional[Sequence[frozenset]] = None,
+    layer_replication: Optional[bool] = None,
+    wavefront_group_cores: Optional[int] = None,
 ) -> SegmentPassPlan:
     """One segment's passes: the residency composition whenever the law
     composes one and every chunk packs, else the validated capacity split.
     [W02] Declared ``position_multiplexing``: one copy per shared bank serves its instances
     in turn (``shares``: which instances read their bank's copy; default all); [U-F4] with ``pipelined_multiplexing``
-    its levels share passes as a wavefront (``producers``: per spec, the segment positions it reads).
+    its levels share passes as a wavefront (``producers``: per spec, the segment positions it reads). [thru:k] The layer
+    copies' keys (``layer_replication``, ``wavefront_group_cores``) reach it; declared, they refuse by name until the
+    copies are planned (``refuse_layer_copies``).
 
     A composition that cannot pack is not the program deployment runs;
     it is declined rather than reported as an infeasible layout.
@@ -151,6 +155,7 @@ def plan_segment_passes(
     specs' own groups (``coalescing_group_id``), so both planes keep them alike. A segment holding a dynamic
     operand bank's instances takes the capacity split (N2) and refuses a declared ``position_multiplexing``.
     """
+    refuse_layer_copies(layer_replication, wavefront_group_cores)
     if coalescing_group_ids is None and any(getattr(s, "coalescing_group_id", None) is not None for s in softcores):
         coalescing_group_ids = [getattr(s, "coalescing_group_id", None) for s in softcores]
     # N2: an operand bank's payload is rewritten every pass (design §2.7), so residency never composes over one, and
@@ -250,12 +255,16 @@ def plan_program_passes(
     position_multiplexing: Optional[bool] = None,
     pipelined_multiplexing: Optional[bool] = None,
     producers: Optional[Sequence[Collection[int]]] = None,
+    layer_replication: Optional[bool] = None,
+    wavefront_group_cores: Optional[int] = None,
 ) -> ProgramPassPlan:
     """Group by the specs' own ``segment_id`` and plan each segment. [U1 W9] ``runs`` (aligned with *softcores*: the
     walk's IR-run segment of each spec, ``residency_rules.spec_runs``) groups them by the builder's segments
     (``partition_ir_graph``), each planned as the builder plans it (``plan_segment_passes`` over the segment's specs,
     whose capacity split cuts at their ``segment_id``), so the plane's passes and pass counts are the builder's.
-    [U-F4] ``producers``: per spec, the program indices of the specs it reads (each segment reads its own)."""
+    [U-F4] ``producers``: per spec, the program indices of the specs it reads (each segment reads its own). [thru:k]
+    The layer copies' keys reach every segment's plan (``plan_segment_passes``)."""
+    refuse_layer_copies(layer_replication, wavefront_group_cores)
     if residency is not None:  # [E85] one residency composition over the whole program, the builder's refusal rules
         comp = compose_shape_only_program(softcores, core_types, residency, allow_coalescing=allow_coalescing,
                                           allow_splitting=allow_splitting, max_schedule_passes=max_schedule_passes)
@@ -286,6 +295,7 @@ def plan_program_passes(
                     max_schedule_passes=max_schedule_passes,
                     position_multiplexing=position_multiplexing, pipelined_multiplexing=pipelined_multiplexing,
                     producers=segment_producers(producers, seg_members[sid]),
+                    layer_replication=layer_replication, wavefront_group_cores=wavefront_group_cores,
                 ),
             )
             for sid in sorted(seg_softcores.keys())

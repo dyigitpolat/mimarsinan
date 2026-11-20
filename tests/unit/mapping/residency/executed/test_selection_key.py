@@ -71,8 +71,10 @@ class TestTheKeyIsDeclaredOnly:
 
     def test_one_metadata_rule_with_no_branch_on_a_key_name(self):
         declared_only = [f.name for f in fields(ChipCapabilities) if f.metadata.get("declared_only")]
-        # [U-F4] pipelined_multiplexing joins the declared-only fields under the same one metadata rule
-        assert declared_only == ["residency_plan", "position_multiplexing", "pipelined_multiplexing"]
+        # [U-F4] pipelined_multiplexing joins the declared-only fields under the same one metadata rule; [thru:k] so do
+        # the layer copies' two keys
+        assert declared_only == ["residency_plan", "position_multiplexing", "pipelined_multiplexing",
+                                 "layer_replication", "wavefront_group_cores"]
         for method in (ChipCapabilities.declared_fields, ChipCapabilities.capability_bits,
                        ChipCapabilities.layout_kwargs):
             assert "residency" not in inspect.getsource(method)

@@ -806,6 +806,9 @@ AUDITED_LEGAL_SETS = {
     # [U-F4] audited against its one consumer, deployment_record/quantities/value_domain.py onchip_carry: a declared
     # on-chip carry buffer's capacity in bytes, compared with each wavefront group's live carry (above it refuses).
     "carry_buffer_bytes": "INT >= 1",
+    # [thru:k] audited against its one consumer, the pass planner (mapping/support/pipelined_multiplexing.py): the
+    # cores one copy of a wavefront group may take under layer_replication.
+    "wavefront_group_cores": "INT >= 1",
     "conversion_draws": "INT >= 1",
     "core_semantics": "ENUM spiking | mvm",
     "cores_per_tile": "INT >= 0",

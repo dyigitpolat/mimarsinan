@@ -78,6 +78,8 @@ def _flush_scheduled_subsegments(
     planned_chunks: "Sequence[Sequence[NeuralCore]] | None" = None,
     position_multiplexing: "bool | None" = None,
     pipelined_multiplexing: "bool | None" = None,
+    layer_replication: "bool | None" = None,
+    wavefront_group_cores: "int | None" = None,
 ) -> int:
     """Flush one IR segment as the planner's passes of one shared budget.
 
@@ -138,6 +140,7 @@ def _flush_scheduled_subsegments(
             position_multiplexing=position_multiplexing,
             shares=shares, pipelined_multiplexing=pipelined_multiplexing,
             producers=ir_producers(cores) if pipelined_multiplexing else None,
+            layer_replication=layer_replication, wavefront_group_cores=wavefront_group_cores,
         )
         if not plan.feasible:  # [W04] the shape-only plane's verdict and name, before anything is materialized
             if allow_coalescing:  # the specific cause first: a wide core needs more coalescing cores than declared
@@ -223,6 +226,8 @@ def _build_scheduled(
     residency_plan: "Mapping[str, Any] | None" = None,
     position_multiplexing: "bool | None" = None,
     pipelined_multiplexing: "bool | None" = None,
+    layer_replication: "bool | None" = None,
+    wavefront_group_cores: "int | None" = None,
 ) -> "tuple[ResidencySegmentPlan, ...] | None":
     """Scheduled compilation: the planner's passes of one shared budget per segment.
 
@@ -276,6 +281,8 @@ def _build_scheduled(
                 planned_chunks=planned,
                 position_multiplexing=position_multiplexing,
                 pipelined_multiplexing=pipelined_multiplexing,
+                layer_replication=layer_replication,
+                wavefront_group_cores=wavefront_group_cores,
             )
         else:
             node = segment.compute_op

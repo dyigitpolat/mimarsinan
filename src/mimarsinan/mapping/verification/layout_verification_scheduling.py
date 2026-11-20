@@ -30,6 +30,8 @@ def compute_mapping_stats(
     census: Optional[Any] = None,
     program: Optional[Any] = None,
     pipelined_multiplexing: Optional[bool] = None,
+    layer_replication: Optional[bool] = None,
+    wavefront_group_cores: Optional[int] = None,
 ) -> Tuple[LayoutVerificationStats, Optional[str]]:
     """Pack softcores and compute verification statistics with scheduling support.
 
@@ -59,7 +61,8 @@ def compute_mapping_stats(
     [E-3] With the builder's segments (``runs``, else the census's) the unscheduled pack is the builder's single
     pool (``pack_layout(runs=...)``: segment by segment from one pool), so the unscheduled feasibility and the fit
     rule judge the program the builder builds, and refuse where it refuses, by the same name.
-    [U-F4] A declared ``pipelined_multiplexing`` reads each spec's producers off the ``census``.
+    [U-F4] A declared ``pipelined_multiplexing`` reads each spec's producers off the ``census``. [thru:k] The layer
+    copies' keys reach the one planner as the builder's do.
     """
     if census is None or program is None:
         refuse_without_cut_census("compute_mapping_stats", residency_plan)
@@ -103,6 +106,7 @@ def compute_mapping_stats(
         position_multiplexing=position_multiplexing,
         pipelined_multiplexing=pipelined_multiplexing,
         producers=census_producers(census, len(softcores)) if pipelined_multiplexing else None,
+        layer_replication=layer_replication, wavefront_group_cores=wavefront_group_cores,
     )
 
     if not plan.feasible:

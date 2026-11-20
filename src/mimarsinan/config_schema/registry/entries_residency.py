@@ -1,5 +1,5 @@
-"""Registry entries: the executed residency plan selection, position multiplexing, its pipelined form and its banked
-reduction cores."""
+"""Registry entries: the executed residency plan selection, position multiplexing, its pipelined form with its layer
+copies, and its banked reduction cores."""
 
 from __future__ import annotations
 
@@ -67,6 +67,26 @@ ENTRIES = (
        passthrough=True, relevant=R.when_true("position_multiplexing"),
        legal_values=lambda cfg: _pipelined_legal(cfg),
        empty_means="one level per pass under position multiplexing, the planner byte for byte"),
+    _E("layer_replication", section="platform_constraints", group="mapping_strategy",
+       owner="mapping/support/pipelined_multiplexing", type=T.BOOL,
+       category=Category.ADVANCED, exposure="user", label="Layer Replication",
+       effect="A wavefront group's free cores hold more copies of its layers, so each pass serves more positions",
+       doc="Mapping decision under pipelined multiplexing: true fills the cores a wavefront group's layout leaves free "
+           "with more copies of the group's banks, one at a time to the bank with the most instances per copy while "
+           "the layout packs, and each instance runs on its bank's copy that is free earliest, so the program costs "
+           "fewer passes for more programmed cells; false or absent keeps one copy per bank. Outputs are unchanged.",
+       passthrough=True, relevant=R.when_true("pipelined_multiplexing"),
+       legal_values=lambda cfg: _replication_legal(cfg),
+       empty_means="one copy per bank, the planner byte for byte"),
+    _E("wavefront_group_cores", section="platform_constraints", group="mapping_strategy",
+       owner="mapping/support/pipelined_multiplexing", type=T.INT,
+       category=Category.ADVANCED, exposure="user", label="Wavefront Group Cores",
+       effect="One copy of a wavefront group's layers takes at most this many cores, the rest hold copies",
+       doc="Mapping decision under layer replication: a wavefront group closes when one copy of its banks no longer "
+           "packs on this many cores, so groups end earlier and more of the declared cores hold copies. Outputs are "
+           "unchanged.",
+       passthrough=True, relevant=R.when_true("layer_replication"), bounds=(1, None),
+       empty_means="every declared core"),
     _E("carry_buffer_bytes", section="platform_constraints", group="hardware",
        owner="deployment_record/quantities/value_domain", type=T.INT,
        category=Category.ADVANCED, exposure="user", label="On-Chip Carry Buffer (bytes)", unit="B",
@@ -145,6 +165,11 @@ def _pipelined_legal(cfg):
     except ValueError:
         windowed = False
     return (False,) if windowed else (False, True)
+
+
+def _replication_legal(cfg):
+    """True exactly where pipelined multiplexing may be true: the copies are copies of its wavefront groups."""
+    return _pipelined_legal(cfg)
 
 
 def _reduction_banks_legal(cfg):

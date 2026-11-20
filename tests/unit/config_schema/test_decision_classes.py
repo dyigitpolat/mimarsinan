@@ -141,6 +141,7 @@ FROZEN_COST_ONLY = frozenset({
     "platform_physics_overrides", "platform_physics_profile",
     "residency_plan", "residency_plan.index", "residency_plan.step", "position_multiplexing", "pipelined_multiplexing",
     "reduction_core_banks",  # [U-L2]
+    "layer_replication", "wavefront_group_cores",  # [thru:k] the layer copies of pipelined multiplexing
     "tile_grid_cols", "tile_grid_rows",
     "write_overlap", "write_overlap.mode", "write_overlap.shadow_capacity_fraction", "write_ports",
 })
@@ -209,8 +210,8 @@ class TestPlanClasses:
         # (write_source) + the N2b one (write_physics) + W02's position_multiplexing (pack) + W08's two lane-block
         # pricing fields (lanes) + E-6's compute_physics + U-S's event_census_samples (the event census) + U-F4's
         # pipelined_multiplexing + U-C4's two weight-cell fields (cells_per_weight, weight_cell_rows) + U-L2's
-        # reduction_core_banks
-        assert len(FROZEN_COST_ONLY) == 38
+        # reduction_core_banks + the throughput branch's two layer-copy keys (thru:k)
+        assert len(FROZEN_COST_ONLY) == 40
         assert cost_only == FROZEN_COST_ONLY, (
             sorted(cost_only - FROZEN_COST_ONLY), sorted(FROZEN_COST_ONLY - cost_only))
 

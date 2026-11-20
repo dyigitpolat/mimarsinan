@@ -168,6 +168,11 @@ KEY_CLASSES: Mapping[str, Tuple[str, str]] = {
                                    "partition, latency, carry and programmed cells only"),
     "pipelined_multiplexing": (_CO, "layers share passes as a wavefront over resident copies: the pass "
                                     "partition, latency, carry and programmed cells only"),
+    # [thru:k] the layer copies of pipelined multiplexing's wavefront groups (PL/thru/design.md (b)).
+    "layer_replication": (_CO, "more copies of a wavefront group's banks on its free cores: the pass partition, "
+                               "latency, carry and programmed cells only"),
+    "wavefront_group_cores": (_CO, "the cores one copy of a wavefront group may take under layer replication: where "
+                                   "groups end, so the pass partition, latency, carry and programmed cells only"),
     "carry_buffer_bytes": (_AB, "an on-chip carry buffer: a wavefront group whose live carry exceeds it is refused"),
     "reduction_core_banks": (_CO, "a pool lane's window groups of one matrix share one bank copy: the pass "
                                   "partition, latency, carry and programmed cells only"),

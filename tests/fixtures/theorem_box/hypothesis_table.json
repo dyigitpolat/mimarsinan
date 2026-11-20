@@ -64,6 +64,7 @@
   "cores_per_tile",
   "event_census_samples",
   "inference_batch_K",
+  "layer_replication",
   "max_axons",
   "max_neurons",
   "max_schedule_passes",
@@ -79,6 +80,7 @@
   "residency_plan.step",
   "tile_grid_cols",
   "tile_grid_rows",
+  "wavefront_group_cores",
   "write_overlap",
   "write_overlap.mode",
   "write_overlap.shadow_capacity_fraction",
@@ -175,6 +177,32 @@
    "H8"
   ],
   "reduction_core_banks": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "H10",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "layer_replication": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "H10",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "wavefront_group_cores": [
    "H5-collapse",
    "H5-skew",
    "R3",

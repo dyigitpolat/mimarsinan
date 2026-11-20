@@ -175,11 +175,13 @@ class TestTheLegalValueSets:
         # cores the shape-only plane cannot plan (carried minor N1 of the pack verify). [U-F4] pipelined_multiplexing
         # is legal true only where position_multiplexing is and on runs that are not windowed LIF, so it locks false
         # with position_multiplexing on every LIF state below. [U-L2] reduction_core_banks is legal true exactly where
-        # position_multiplexing is, so it locks false with it.
+        # position_multiplexing is, so it locks false with it. [thru:k] layer_replication is legal true exactly where
+        # pipelined_multiplexing is, so it locks false with it.
         lif = legal_values_view({"spiking_family": "lif"})
         ttfs = legal_values_view({"spiking_family": "ttfs"})
         assert sorted(k for k, v in lif.items() if len(v) == 1) == [
-            "pipelined_multiplexing", "position_multiplexing", "reduction_core_banks", "s_allocation",
+            "layer_replication", "pipelined_multiplexing", "position_multiplexing", "reduction_core_banks",
+            "s_allocation",
         ]
         assert lif["position_multiplexing"] == [False]
         relays_off = legal_values_view({"spiking_family": "lif", "lif_depth_balancing_relays": False})
@@ -191,7 +193,7 @@ class TestTheLegalValueSets:
         # A windowed hop collapses counts, so the per-event soma law is not
         # declarable there and the field LOCKS.
         assert sorted(k for k, v in windowed.items() if len(v) == 1) == [
-            "firing_granularity", "pipelined_multiplexing", "position_multiplexing",
+            "firing_granularity", "layer_replication", "pipelined_multiplexing", "position_multiplexing",
             "reduction_core_banks", "s_allocation",
         ]
         # [U-LIF2 option A] both firing forms are declared values of the window: the field does not lock
@@ -208,7 +210,8 @@ class TestTheLegalValueSets:
             {"spiking_family": "lif", "spiking_variant": "streamed"}
         )
         assert sorted(k for k, v in streamed.items() if len(v) == 1) == [
-            "pipelined_multiplexing", "position_multiplexing", "reduction_core_banks", "s_allocation",
+            "layer_replication", "pipelined_multiplexing", "position_multiplexing", "reduction_core_banks",
+            "s_allocation",
         ]
         assert streamed["spiking_variant"] == ["streamed", "synchronized"]
         # The ONLY point where the per-event soma law is declarable.

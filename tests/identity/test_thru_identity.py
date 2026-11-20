@@ -1,5 +1,6 @@
-"""The branch's standing identity test (PL/thru/design.md (e), Identity): with the layer copies' keys absent, every
-fixture's canonical plan, program and priced record on this branch equal the paper version's byte for byte.
+"""The branch's standing identity test (PL/thru/design.md (e), Identity): with the layer copies' keys absent, and with
+``layer_replication`` declared false, every fixture's canonical plan, program and priced record on this branch equal
+the paper version's byte for byte.
 
 Each fixture is planned, built and priced twice by ``identity_digests.py``, once on the export of record (the paper
 version, Form R 644b4c3b on base e5f6bb37, read only: its own src, tests and scripts in a subprocess) and once on this
@@ -28,11 +29,11 @@ SCRIPT = Path(__file__).resolve().parent / "identity_digests.py"
 DIGESTS = ("plan", "program", "priced")
 
 
-def _start(tree: Path, fixture: str, declare: str, cwd: Path) -> subprocess.Popen:
+def _start(tree: Path, fixture: str, declare: str, compare: str, cwd: Path) -> subprocess.Popen:
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONHASHSEED="0", MPLCONFIGDIR=str(cwd / "mpl"))
     return subprocess.Popen([sys.executable, "-s", "-B", str(SCRIPT), "--tree", str(tree), "--fixture", fixture,
-                             "--declare", declare], cwd=cwd, env=env, stdout=subprocess.PIPE,
+                             "--declare", declare, "--compare", compare], cwd=cwd, env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True)
 
 
@@ -44,8 +45,8 @@ def _read(run: subprocess.Popen, tree: Path) -> dict:
 
 def _assert_identical(fixture: str, declare: str, tmp_path: Path) -> None:
     assert (REFERENCE / "src" / "mimarsinan").is_dir(), f"the export of record is missing at {REFERENCE}"
-    reference = _start(REFERENCE, fixture, "absent", tmp_path)
-    branch = _start(BRANCH, fixture, declare, tmp_path)
+    reference = _start(REFERENCE, fixture, "absent", declare, tmp_path)
+    branch = _start(BRANCH, fixture, declare, declare, tmp_path)
     want, got = _read(reference, REFERENCE), _read(branch, BRANCH)
     assert {k: got[k] for k in DIGESTS} == {k: want[k] for k in DIGESTS}, (
         f"{fixture} ({declare}): the branch {got['facts']} differs from the paper version {want['facts']}")
@@ -55,3 +56,11 @@ def _assert_identical(fixture: str, declare: str, tmp_path: Path) -> None:
 @pytest.mark.parametrize("fixture", sorted(FIXTURES) + list(CANDIDATE_FIXTURES))
 def test_absent_keys_plan_build_and_price_the_paper_version(fixture, tmp_path):
     _assert_identical(fixture, "absent", tmp_path)
+
+
+@pytest.mark.timeout(3600)
+@pytest.mark.parametrize("fixture", sorted(FIXTURES) + list(CANDIDATE_FIXTURES))
+def test_replication_declared_false_plans_builds_and_prices_the_paper_version(fixture, tmp_path):
+    """[thru:k] layer_replication false (declared on every fixture, on C1's pipelined arms, its own echo left out) is
+    the absent program."""
+    _assert_identical(fixture, "false", tmp_path)

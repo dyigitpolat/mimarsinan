@@ -106,6 +106,10 @@ class ChipCapabilities:
     position_multiplexing: Optional[bool] = field(default=None, metadata=DECLARED_ONLY)
     # [U-F4] Under position multiplexing, levels share passes as a wavefront; None = undeclared (one level per pass).
     pipelined_multiplexing: Optional[bool] = field(default=None, metadata=DECLARED_ONLY)
+    # [thru:k] Under pipelined multiplexing, a wavefront group's free cores hold more copies of its banks; None =
+    # undeclared (one copy per bank). The cores one copy of a group may take; None = undeclared (every declared core).
+    layer_replication: Optional[bool] = field(default=None, metadata=DECLARED_ONLY)
+    wavefront_group_cores: Optional[int] = field(default=None, metadata=DECLARED_ONLY)
 
     def __post_init__(self) -> None:
         if self.residency_plan is not None:
@@ -125,6 +129,17 @@ class ChipCapabilities:
         if self.pipelined_multiplexing and not self.position_multiplexing:
             raise PositionMultiplexingError("pipelined_multiplexing shares passes between the levels position "
                                             "multiplexing serves: it needs position_multiplexing")
+        if self.layer_replication is not None and not isinstance(self.layer_replication, bool):
+            raise PositionMultiplexingError(f"layer_replication must be a bool, got {self.layer_replication!r}")
+        if self.layer_replication and not self.pipelined_multiplexing:
+            raise PositionMultiplexingError("layer_replication copies the banks of pipelined multiplexing's wavefront "
+                                            "groups: it needs pipelined_multiplexing")
+        groups = self.wavefront_group_cores
+        if groups is not None and (isinstance(groups, bool) or not isinstance(groups, int) or groups < 1):
+            raise PositionMultiplexingError(f"wavefront_group_cores must be an integer >= 1, got {groups!r}")
+        if groups is not None and not self.layer_replication:
+            raise PositionMultiplexingError("wavefront_group_cores bounds the cores one copy of a wavefront group "
+                                            "takes so that the rest hold copies: it needs layer_replication")
 
     @classmethod
     def from_platform_constraints(
@@ -163,6 +178,8 @@ class ChipCapabilities:
             ),
             position_multiplexing=constraints.get("position_multiplexing"),
             pipelined_multiplexing=constraints.get("pipelined_multiplexing"),
+            layer_replication=constraints.get("layer_replication"),
+            wavefront_group_cores=constraints.get("wavefront_group_cores"),
         )
 
     def declared_fields(self) -> dict[str, Any]:

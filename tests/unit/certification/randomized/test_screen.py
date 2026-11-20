@@ -178,8 +178,9 @@ def test_the_coverage_reports_every_declared_variable():
     cov = coverage(rows)
     assert cov["drawn_paths"]["residency_plan.step"] == 1 and "present in 1 " in cov["drawn_by_fields"]["residency_plan"]
     # residency_plan is drawn, not deferred; U-F4's pipelined form and [U-L2] its banked reduction cores are deferred
-    # beside position_multiplexing
-    assert set(cov["deferred_to_cl1"]) == {"position_multiplexing", "pipelined_multiplexing", "reduction_core_banks"}
+    # beside position_multiplexing, [thru:k] and the layer copies' two keys
+    assert set(cov["deferred_to_cl1"]) == {"position_multiplexing", "pipelined_multiplexing", "reduction_core_banks",
+                                           "layer_replication", "wavefront_group_cores"}
     assert cov["declared"]["residency_plan"] == {'{"step": "floor"}': 1}
     declared = cov["declared"]
     assert declared["max_axons"] == {"17-32": 1} and declared["count"] == {"1-8": 1}

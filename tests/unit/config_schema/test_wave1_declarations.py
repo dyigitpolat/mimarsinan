@@ -159,6 +159,8 @@ class TestRegistryEntries:
                                                                 "pipelined_multiplexing",  # U-F4
                                                                 "carry_buffer_bytes",  # U-F4
                                                                 "reduction_core_banks",  # U-L2
+                                                                "layer_replication",  # thru:k
+                                                                "wavefront_group_cores",  # thru:k
                                                                 "quantizer_state", "weight_scale_rule",
                                                                 "bias_resolution",
                                                                 "weight_scale_granularity",  # U-PCH

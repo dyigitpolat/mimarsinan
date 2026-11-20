@@ -15,11 +15,11 @@ helpers are that tree's own (``<tree>/src``, ``<tree>/tests``, ``<tree>/scripts`
 The canonical form walks every object generically: mappings, sequences, arrays and tensors by content, dataclasses by
 their fields, other objects by their attributes. An attribute or a dataclass field holding None is left out, so a
 declared-only field (absent when undeclared) leaves the form unchanged. Wall-clock readings and per-run tokens are
-left out by name (``WALL_KEYS``). Under ``--declare false`` the new keys' own declarations (``NEW_KEYS``), wherever a
-declaration is echoed, are left out with the config digest that hashes them, so the run is compared with the paper
-version's run of the same fixture without them.
+left out by name (``WALL_KEYS``). In a comparison of the declared-false run (``--compare false``, on both sides) the
+new keys' own declarations (``NEW_KEYS``), wherever a declaration is echoed, are left out with the config digest that
+hashes them, so the run is compared with the paper version's run of the same fixture without them.
 
-usage: python -s -B identity_digests.py --tree ROOT --fixture NAME [--declare absent|false]
+usage: python -s -B identity_digests.py --tree ROOT --fixture NAME [--declare absent|false] [--compare absent|false]
 """
 
 from __future__ import annotations
@@ -189,7 +189,8 @@ def sealed_and_priced(hybrid: Any, platform: Dict[str, Any], *, weight_bits: int
     physics = get_platform_physics(PHYSICS_PROFILE).to_dict()
     priced_platform = {**record.identity.platform, "platform_physics_resolved": physics, "inference_batch_K": BATCH_K}
     priced = dataclasses.replace(record, identity=dataclasses.replace(record.identity, platform=priced_platform))
-    return {"record": record.to_dict(), "quantities": from_record(record), "pricing": absolute_pricing_for_record(priced)}
+    return {"record": record.to_dict(), "quantities": from_record(record),
+            "pricing": absolute_pricing_for_record(priced)}
 
 
 def _pricing_fact(pricing: Any) -> str:
@@ -321,9 +322,9 @@ FIXTURES: Dict[str, Callable] = {
 CANDIDATE_FIXTURES = ("c1_compass_k16",)
 
 
-def run(tree: Path, fixture: str, declare: str) -> Dict[str, Any]:
+def run(tree: Path, fixture: str, declare: str, compare: str) -> Dict[str, Any]:
     extra = DECLARATIONS[declare]
-    drop = WALL_KEYS | (frozenset(NEW_KEYS) | DECLARATION_DIGESTS if extra else frozenset())
+    drop = WALL_KEYS | (frozenset(NEW_KEYS) | DECLARATION_DIGESTS if DECLARATIONS[compare] else frozenset())
     if fixture in CANDIDATE_FIXTURES:
         plans, programs, priced = _c1_compass_k16(extra, tree)
         facts = {arm: {k: (v.get("passes") if isinstance(v, dict) else v) for k, v in out["candidate"].items()}
@@ -342,6 +343,8 @@ def main(argv=None) -> int:
     ap.add_argument("--tree", required=True, type=Path)
     ap.add_argument("--fixture", required=True, choices=sorted(FIXTURES) + list(CANDIDATE_FIXTURES))
     ap.add_argument("--declare", default="absent", choices=sorted(DECLARATIONS))
+    ap.add_argument("--compare", default=None, choices=sorted(DECLARATIONS),
+                    help="the declaration this run is compared under (default: --declare)")
     args = ap.parse_args(argv)
     here = str(Path(__file__).resolve().parent)
     sys.path[:] = [p for p in sys.path if p not in ("", here)]
@@ -351,7 +354,7 @@ def main(argv=None) -> int:
     torch.set_num_threads(1)
     import warnings
     warnings.simplefilter("ignore")
-    print(json.dumps(run(tree, args.fixture, args.declare), sort_keys=True))
+    print(json.dumps(run(tree, args.fixture, args.declare, args.compare or args.declare), sort_keys=True))
     return 0
 
 

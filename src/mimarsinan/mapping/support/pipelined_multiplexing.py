@@ -20,7 +20,7 @@ from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSof
 from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError
 from mimarsinan.mapping.support.position_multiplexing import CopyKey, copy_keys, multiplexed_segment_passes
 
-__all__ = ["WavefrontGroup", "WavefrontPlan", "census_producers", "pipelined_segment_passes",
+__all__ = ["WavefrontGroup", "WavefrontPlan", "census_producers", "pipelined_segment_passes", "refuse_layer_copies",
            "refuse_without_wire_census", "segment_producers"]
 
 
@@ -82,6 +82,17 @@ def refuse_without_wire_census(caller: str, pipelined: Optional[bool]) -> None:
         raise PositionMultiplexingError(
             f"pipelined_multiplexing orders each pass by the instances it reads, and {caller} holds no wire census "
             "of the layout walk to read them from")
+
+
+def refuse_layer_copies(layer_replication: Optional[bool], wavefront_group_cores: Optional[int]) -> None:
+    """[thru:k] The layer copies' keys reach the one planner on both planes; until its copies are planned (item W1 of
+    PL/thru/design.md), a declared ``layer_replication`` true refuses by name, as does a group limit without it."""
+    if wavefront_group_cores is not None and not layer_replication:
+        raise PositionMultiplexingError("wavefront_group_cores bounds the cores one copy of a wavefront group takes so "
+                                        "that the rest hold copies: it needs layer_replication")
+    if layer_replication:
+        raise PositionMultiplexingError("layer_replication: copies of a wavefront group's banks on its free cores are "
+                                        "not planned on this tree yet, so the declaration is refused")
 
 
 def _packs(specs: Sequence[LayoutSoftCoreSpec], core_types, allow_coalescing: bool, allow_splitting: bool) -> bool:
