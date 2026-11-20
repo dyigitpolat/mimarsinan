@@ -1,5 +1,5 @@
 """Registry entries: the executed residency plan selection, position multiplexing, its pipelined form with its layer
-copies, and its banked reduction cores."""
+copies and its batch pipeline, and its banked reduction cores."""
 
 from __future__ import annotations
 
@@ -87,6 +87,28 @@ ENTRIES = (
            "unchanged.",
        passthrough=True, relevant=R.when_true("layer_replication"), bounds=(1, None),
        empty_means="every declared core"),
+    _E("batch_pipeline_slots", section="platform_constraints", group="mapping_strategy",
+       owner="mapping/support/pipelined_multiplexing", type=T.INT,
+       category=Category.ADVANCED, exposure="user", label="Batch Pipeline Slots",
+       effect="A run of the program serves this many inputs, which share the passes of every wavefront group",
+       doc="Mapping decision under pipelined multiplexing: a run of the program serves B inputs. The instances of "
+           "input 1, then input 2, and so on share each wavefront group's passes, each in the first pass after its own "
+           "input's producers on its bank's copy that is free earliest, so a group's start-up passes are paid once "
+           "per run; a pass outside every wavefront group runs once per input. The chip must state how many inputs' "
+           "carried values it holds at once (carry_input_slots), else B is refused by name, as is a B above it. "
+           "Absent, one input per run. Outputs are unchanged.",
+       passthrough=True, relevant=R.when_true("pipelined_multiplexing"), bounds=(2, None),
+       empty_means="one input per run, the planner byte for byte"),
+    _E("carry_input_slots", section="platform_constraints", group="hardware",
+       owner="mapping/support/pipelined_multiplexing", type=T.INT,
+       category=Category.ADVANCED, exposure="user", label="Carried Input Slots",
+       effect="How many inputs' carried values the chip holds at once",
+       doc="Chip component: the number of inputs whose values carried between passes the chip holds apart at once. "
+           "It admits a batch pipeline of at most this many inputs per run (batch_pipeline_slots); a chip that states "
+           "none refuses a declared batch_pipeline_slots by name, and a larger one is refused by name. Stated alone, "
+           "it changes nothing.",
+       passthrough=True, relevant=R.when_set("batch_pipeline_slots"), bounds=(1, None),
+       empty_means="unstated: a declared batch_pipeline_slots is refused by name"),
     _E("carry_buffer_bytes", section="platform_constraints", group="hardware",
        owner="deployment_record/quantities/value_domain", type=T.INT,
        category=Category.ADVANCED, exposure="user", label="On-Chip Carry Buffer (bytes)", unit="B",

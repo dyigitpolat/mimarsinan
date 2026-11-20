@@ -1,8 +1,14 @@
-"""Shared compute-op dispatch and segment state plumbing for simulators."""
+"""Shared compute-op dispatch and segment state plumbing for simulators.
+
+[thru:w2] The reference executors' one rule for a program of input slots (the batch pipeline): input k of a batch is
+slot k mod B, and the program runs once per slot that holds a row, on that slot's rows only (``input_slot_runs``), so
+a slot stage reads and writes only its slot's rows and a read of a row no earlier stage of its input wrote is refused by
+name (``hybrid_stage_runner.require_inputs_produced``). The runs' rows are put back in batch order (``scatter_rows``).
+"""
 
 from __future__ import annotations
 
-from typing import Dict, Iterable
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -16,10 +22,34 @@ from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.executed_reads import op_source_counts_fresh
 from mimarsinan.mapping.support.activation_scales import scalar_node_scale
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
+from mimarsinan.mapping.support.wavefront_stages import program_slots, slot_rows
 from mimarsinan.chip_simulation.hybrid_run.input_shifts import (
     apply_input_shifts_numpy as apply_input_shifts_numpy,
     compute_input_state_with_shifts as compute_input_state_with_shifts,
 )
+
+
+def input_slot_runs(stages: Sequence[Any], batch: int) -> List[Tuple[Optional[int], Optional[List[int]]]]:
+    """[thru:w2] The runs a reference executor makes of a program on ``batch`` inputs: ``[(None, None)]`` (one run over
+    every row) without input slots, else per input slot that holds a row its ``(slot, rows)``."""
+    slots = program_slots(stages)
+    if slots is None:
+        return [(None, None)]
+    return [(b, rows) for b in range(slots) if (rows := list(slot_rows(b, slots, batch)))]
+
+
+def scatter_rows(parts: Sequence[Tuple[List[int], Any]], batch: int) -> Any:
+    """[thru:w2] One array (tensor or ndarray, rows first) of ``batch`` rows from each run's ``(rows, value)``."""
+    first = parts[0][1]
+    if torch.is_tensor(first):
+        out = torch.zeros((batch, *first.shape[1:]), dtype=first.dtype, device=first.device)
+        for rows, value in parts:
+            out[torch.as_tensor(rows, dtype=torch.long, device=first.device)] = value
+        return out
+    out = np.zeros((batch, *np.shape(first)[1:]), dtype=np.asarray(first).dtype)
+    for rows, value in parts:
+        out[np.asarray(rows, dtype=np.int64)] = value
+    return out
 
 
 def assemble_segment_input_torch(

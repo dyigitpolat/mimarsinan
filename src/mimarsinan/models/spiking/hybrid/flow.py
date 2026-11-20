@@ -7,6 +7,7 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import input_slot_runs, scatter_rows
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
 from mimarsinan.chip_simulation.soma_law import DEFAULT_SOMA_LAW, SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
@@ -178,9 +179,14 @@ class SpikingHybridCoreFlow(
             x = x.view(x.shape[0], -1)
 
             policy = policy_for_spiking_mode(self.spiking_point())
-            if policy.runs_per_cycle_cascade:  # [U-TGAUGE5] the one predicate the relays and the window rule read
-                return self._forward_rate(x)
-            return self._forward_ttfs(x)
+            # [U-TGAUGE5] the one predicate the relays and the window rule read
+            run = self._forward_rate if policy.runs_per_cycle_cascade else self._forward_ttfs
+            program = getattr(self, "hybrid_mapping", None)  # a routing stub holds none
+            runs = [(None, None)] if program is None else input_slot_runs(program.stages, int(x.shape[0]))
+            if runs == [(None, None)]:
+                return run(x)
+            # [thru:w2] a program of input slots runs once per slot on its rows, put back in batch order
+            return scatter_rows([(rows, run(x[rows], input_slot=b)) for b, rows in runs], int(x.shape[0]))
         finally:
             self._evict_segment_cache()
             if isinstance(x, torch.Tensor) and x.is_cuda:

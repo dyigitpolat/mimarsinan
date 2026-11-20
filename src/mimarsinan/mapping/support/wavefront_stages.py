@@ -9,6 +9,12 @@ are declared-only: a program built without the decision carries none of them.
 [thru:w1] Under layer copies a core may hold several copies, and a pass may run an instance on one of them only: the
 core runs wholly, and the pass declares the columns of its copies that hold no instance of the pass
 (``schedule_idle_columns``: loaded, run on off axons, read by nothing). Declared-only as well.
+
+[thru:w2] Under the batch pipeline a run serves B inputs, and a pass that serves several inputs is one stage per input
+slot, all with the pass's index, each carrying its slot (``schedule_input_slot``: ``InputSlot(slot, slots)``). The
+first stage of a group's first pass loads the layout and every other stage of the group runs resident on it, so a
+group's stages are read by pass index (``stage_groups``). Input k of a batch is slot k mod B (``slot_rows``): a slot
+stage reads and writes only its slot's rows. Declared-only as well.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ SCHEDULE_CORE_ORDINALS = "schedule_core_ordinals"
 SCHEDULE_DARK_CORES = "schedule_dark_cores"
 SCHEDULE_WAVEFRONT = "schedule_wavefront"
 SCHEDULE_IDLE_COLUMNS = "schedule_idle_columns"
+SCHEDULE_INPUT_SLOT = "schedule_input_slot"
 
 
 @dataclass(frozen=True)
@@ -62,15 +69,58 @@ def wavefront_head(stage: Any) -> Optional[WavefrontHead]:
     return getattr(stage, SCHEDULE_WAVEFRONT, None)
 
 
+@dataclass(frozen=True)
+class InputSlot:
+    """[thru:w2] The input slot a stage serves (``slot``, from 0) of a run's ``slots`` inputs."""
+
+    slot: int
+    slots: int
+
+
+def input_slot(stage: Any) -> Optional[InputSlot]:
+    """[thru:w2] The input slot ``stage`` serves (None: a stage of every input, as without the batch pipeline)."""
+    return getattr(stage, SCHEDULE_INPUT_SLOT, None)
+
+
+def program_slots(stages: Any) -> Optional[int]:
+    """[thru:w2] The inputs a run of the program serves (None without the batch pipeline: one)."""
+    return next((slot.slots for slot in map(input_slot, stages) if slot is not None), None)
+
+
+def serves_slot(stage: Any, slot: int) -> bool:
+    """[thru:w2] Whether ``stage`` runs for input slot ``slot`` (a stage without a slot runs for every input)."""
+    own = input_slot(stage)
+    return own is None or int(own.slot) == int(slot)
+
+
+def slot_rows(slot: int, slots: int, batch: int) -> range:
+    """[thru:w2] The rows of a batch of ``batch`` inputs that input slot ``slot`` of ``slots`` serves: input k is
+    slot k mod ``slots`` of run k // ``slots``."""
+    return range(int(slot), int(batch), int(slots))
+
+
 def stage_groups(stages: Any) -> Tuple[Optional[int], ...]:
-    """Per stage of a program, the stage index of its wavefront group's first pass (None outside every group)."""
+    """Per stage of a program, the stage index of its wavefront group's first pass (None outside every group).
+    [thru:w2] Read by pass index: a group's stages are its segment's neural stages from its head on whose pass index
+    lies in the head's passes, so a pass of several input slots (one stage each) is the group's once per slot."""
     out: list = [None] * len(stages)
     for index, stage in enumerate(stages):
         head = wavefront_head(stage)
         if head is None:
             continue
-        neural = [i for i in range(index, len(stages)) if getattr(stages[i], "kind", None) == "neural"]
-        for i in neural[:int(head.passes)]:
+        if input_slot(stage) is None:
+            neural = [i for i in range(index, len(stages)) if getattr(stages[i], "kind", None) == "neural"]
+            for i in neural[:int(head.passes)]:
+                out[i] = index
+            continue
+        first, segment = int(stage.schedule_pass_index), stage.schedule_segment_index
+        for i in range(index, len(stages)):
+            member = stages[i]
+            if getattr(member, "kind", None) != "neural":
+                continue
+            if (member.schedule_segment_index != segment
+                    or not first <= int(member.schedule_pass_index) < first + int(head.passes)):
+                break
             out[i] = index
     return tuple(out)
 
@@ -93,7 +143,13 @@ def is_wavefront_program(stages: Any) -> bool:
 
 def refuse_wavefront_backend(stages: Any, backend: str) -> None:
     """A backend not composed with wavefront programs refuses one by name: each group's first pass loads layout cores
-    no instance of that pass uses, and the backend runs (and censuses) every core it is handed."""
+    no instance of that pass uses, and the backend runs (and censuses) every core it is handed. [thru:w2] A program of
+    input slots likewise: its stages serve one input slot each, and the backend runs every stage on every input."""
+    if program_slots(stages) is not None:
+        raise PositionMultiplexingError(
+            f"batch_pipeline_slots: the {backend} backend is not composed with a program of input slots (each stage "
+            "serves the rows of one input slot; the backend would run every stage on every input); run it on the "
+            "reference executors (HCM, value, TTFS) or without batch_pipeline_slots")
     if is_wavefront_program(stages):
         raise PositionMultiplexingError(
             f"pipelined_multiplexing: the {backend} backend is not composed with a wavefront program (a group's first "

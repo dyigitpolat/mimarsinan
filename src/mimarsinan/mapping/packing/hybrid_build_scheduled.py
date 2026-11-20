@@ -25,6 +25,7 @@ from mimarsinan.mapping.packing.schedule_residency_plan import (
 from mimarsinan.mapping.platform.mapping_structure import ResidencyPlanError
 from mimarsinan.mapping.packing.type_binding import refuse_typed_multi_pass
 from mimarsinan.mapping.support.period_census import ResidencySegmentPlan
+from mimarsinan.mapping.support.wavefront_stages import SCHEDULE_INPUT_SLOT, InputSlot
 from mimarsinan.mapping.layout.segmentation import (
     NeuralSegment,
     partition_ir_graph,
@@ -80,6 +81,8 @@ def _flush_scheduled_subsegments(
     pipelined_multiplexing: "bool | None" = None,
     layer_replication: "bool | None" = None,
     wavefront_group_cores: "int | None" = None,
+    batch_pipeline_slots: "int | None" = None,
+    carry_input_slots: "int | None" = None,
 ) -> int:
     """Flush one IR segment as the planner's passes of one shared budget.
 
@@ -92,6 +95,8 @@ def _flush_scheduled_subsegments(
     segment, materialized exactly as the capacity split's. [U1 W9] The
     capacity split cuts at the specs' depth segments, as on the base; the
     planes plan the same passes given the walk's runs (``spec_runs``).
+    [thru:w2] Under a declared batch pipeline each pass outside the wavefront
+    serves one input, planned once per input: it carries that input's slot.
     """
     from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
     from mimarsinan.mapping.packing.canonical import declared_core_roles
@@ -112,7 +117,7 @@ def _flush_scheduled_subsegments(
     if not cores:
         return segment_index_start
 
-    residency_applied, run_heads = False, None
+    residency_applied, run_heads, input_slots = False, None, None
     if planned_chunks is not None:
         chunks = [list(chunk) for chunk in planned_chunks]
     else:
@@ -141,6 +146,7 @@ def _flush_scheduled_subsegments(
             shares=shares, pipelined_multiplexing=pipelined_multiplexing,
             producers=ir_producers(cores) if pipelined_multiplexing else None,
             layer_replication=layer_replication, wavefront_group_cores=wavefront_group_cores,
+            batch_pipeline_slots=batch_pipeline_slots, carry_input_slots=carry_input_slots,
         )
         if not plan.feasible:  # [W04] the shape-only plane's verdict and name, before anything is materialized
             if allow_coalescing:  # the specific cause first: a wide core needs more coalescing cores than declared
@@ -156,6 +162,8 @@ def _flush_scheduled_subsegments(
             return segment_index_start + 1
         chunks = [[spec_to_core[id(spec)] for spec in chunk] for chunk in plan.pass_lists]
         residency_applied, run_heads = plan.residency_applied, plan.run_heads
+        if plan.input_slots is not None:  # [thru:w2] each pass serves one input: its slot
+            input_slots = [InputSlot(int(slots[0]), int(plan.slots)) for slots in plan.input_slots]
     if not chunks:
         return segment_index_start
     refuse_typed_multi_pass(segment_label_base, len(chunks), cores)
@@ -198,6 +206,9 @@ def _flush_scheduled_subsegments(
                     allow_coalescing=allow_coalescing,
                     level_units=[unit for unit in units if unit],
                 )
+        if input_slots is not None:
+            for seg_stage in seg_stages:
+                setattr(seg_stage, SCHEDULE_INPUT_SLOT, input_slots[pass_idx])
         stages.extend(seg_stages)
         pass_stages.extend(seg_stages)
         all_reindex_maps.update(seg_reindex)
@@ -228,6 +239,8 @@ def _build_scheduled(
     pipelined_multiplexing: "bool | None" = None,
     layer_replication: "bool | None" = None,
     wavefront_group_cores: "int | None" = None,
+    batch_pipeline_slots: "int | None" = None,
+    carry_input_slots: "int | None" = None,
 ) -> "tuple[ResidencySegmentPlan, ...] | None":
     """Scheduled compilation: the planner's passes of one shared budget per segment.
 
@@ -283,6 +296,8 @@ def _build_scheduled(
                 pipelined_multiplexing=pipelined_multiplexing,
                 layer_replication=layer_replication,
                 wavefront_group_cores=wavefront_group_cores,
+                batch_pipeline_slots=batch_pipeline_slots,
+                carry_input_slots=carry_input_slots,
             )
         else:
             node = segment.compute_op

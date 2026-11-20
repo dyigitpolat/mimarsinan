@@ -94,6 +94,8 @@ def build_hybrid_hard_core_mapping(
             pipelined_multiplexing=strategy.capabilities.pipelined_multiplexing,
             layer_replication=strategy.capabilities.layer_replication,
             wavefront_group_cores=strategy.capabilities.wavefront_group_cores,
+            batch_pipeline_slots=strategy.capabilities.batch_pipeline_slots,
+            carry_input_slots=strategy.capabilities.carry_input_slots,
         )
         # [fix_b, fix_c] the fit rule (U1 and every declared plan but stateless): the unscheduled pack holds unwritten
         specs = _segment_specs(list(ir_graph.get_neural_cores()), ir_graph=ir_graph)[0]

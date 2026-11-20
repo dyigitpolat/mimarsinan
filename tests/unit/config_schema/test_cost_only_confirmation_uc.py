@@ -49,10 +49,11 @@ LANE_FIELDS = frozenset({"onchip_arithmetic.lane_block", "onchip_arithmetic.lane
 #: ``certification/randomized/cost_draws.py``), and [U-L2] U-L2's B-1 (W02's banked reduction cores, cost-only in
 #: ``decision_classes.py``, deferred by name in ``cost_draws.py``; final_units/ul2, plan item B-1), and [thru:k] the
 #: throughput branch's layer copies (layer_replication, wavefront_group_cores: cost-only, deferred by name;
-#: PL/thru/design.md (b)).
+#: PL/thru/design.md (b)), [thru:w2] and its batch pipeline (batch_pipeline_slots: cost-only, deferred by name).
 LATER = frozenset({"cores.weight_sign_granularity", "cores.operand.write_source", "cores.write_physics",
                    "position_multiplexing", "cores.compute_physics", "event_census_samples",
-                   "pipelined_multiplexing", "reduction_core_banks", "layer_replication", "wavefront_group_cores"})
+                   "pipelined_multiplexing", "reduction_core_banks", "layer_replication", "wavefront_group_cores",
+                   "batch_pipeline_slots"})
 #: [U-C4] The cells per stored weight (B3 intake open item 4): two pricing-only core-type fields, recorded in
 #: RA/11_wave2/final_units/uc4/report.md.
 WEIGHT_CELLS = frozenset({"cores.cells_per_weight", "cores.weight_cell_rows"})
@@ -77,7 +78,7 @@ class TestCostOnlySet:
 
     def test_the_tree_s_set_is_the_confirmed_28_and_the_later_amendments(self):
         assert _cost_only() == S0_SET | LANE_FIELDS | LATER | WEIGHT_CELLS
-        assert len(_cost_only()) == 40
+        assert len(_cost_only()) == 41
 
 
 ONE_GEOMETRY = [{"max_axons": 64, "max_neurons": 64, "count": 6, "has_bias": True},

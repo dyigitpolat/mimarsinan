@@ -10,6 +10,7 @@ from mimarsinan.mapping.packing.infeasibility_proofs import (
     no_core_type_fits,
 )
 from mimarsinan.mapping.verification.layout_verification_packing import build_stats_from_packing_result
+from mimarsinan.mapping.platform.mapping_structure import refuse_batch_slots
 from mimarsinan.mapping.support.pipelined_multiplexing import refuse_layer_copies, refuse_without_wire_census
 from mimarsinan.mapping.support.schedule.pass_planner import (
     compute_schedule_sync_count,
@@ -63,15 +64,19 @@ def verify_hardware_config(
     pipelined_multiplexing: Optional[bool] = None,
     layer_replication: Optional[bool] = None,
     wavefront_group_cores: Optional[int] = None,
+    batch_pipeline_slots: Optional[int] = None,
+    carry_input_slots: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Memoizing front of :func:`_verify_hardware_config_uncached` (LRU, deep-copied). ``runs``: the walk's builder
     segments (``residency_rules.spec_runs``), so the preview plans the deployed passes [U1 W9]. [thru:k] The layer
     copies' keys are judged by the one planner's rule (``refuse_layer_copies``): copies need the wavefront, which this
     preview refuses without a wire census, so a declared ``layer_replication`` true refuses here by name and the memo
-    never holds a program of copies."""
+    never holds a program of copies. [thru:w2] The batch pipeline's keys likewise (``refuse_batch_slots``): its slots
+    need the wavefront, so a declared ``batch_pipeline_slots`` refuses here by name."""
     refuse_without_cut_census("verify_hardware_config (the wizard layout preview)", residency_plan)
     refuse_without_wire_census("verify_hardware_config (the wizard layout preview)", pipelined_multiplexing)
     refuse_layer_copies(layer_replication, wavefront_group_cores, pipelined_multiplexing)
+    refuse_batch_slots(batch_pipeline_slots, carry_input_slots, pipelined_multiplexing)
     key = _memo_key(
         softcores, core_types, allow_neuron_splitting, allow_coalescing,
         allow_scheduling, max_schedule_passes, runs, position_multiplexing,

@@ -174,6 +174,8 @@ def build_layout_plan(
     pipelined_multiplexing: Optional[bool] = None,
     layer_replication: Optional[bool] = None,
     wavefront_group_cores: Optional[int] = None,
+    batch_pipeline_slots: Optional[int] = None,
+    carry_input_slots: Optional[int] = None,
 ) -> LayoutPlan:
     """Build a ``LayoutPlan`` from a shape-only ``MappingVerificationResult``.
 
@@ -195,6 +197,8 @@ def build_layout_plan(
         pipelined_multiplexing=pipelined_multiplexing,
         layer_replication=layer_replication,
         wavefront_group_cores=wavefront_group_cores,
+        batch_pipeline_slots=batch_pipeline_slots,
+        carry_input_slots=carry_input_slots,
     )
 
     stats_dict = dict(hw.get("stats") or {})

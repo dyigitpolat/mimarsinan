@@ -161,6 +161,8 @@ class TestRegistryEntries:
                                                                 "reduction_core_banks",  # U-L2
                                                                 "layer_replication",  # thru:k
                                                                 "wavefront_group_cores",  # thru:k
+                                                                "batch_pipeline_slots",  # thru:w2
+                                                                "carry_input_slots",  # thru:w2
                                                                 "quantizer_state", "weight_scale_rule",
                                                                 "bias_resolution",
                                                                 "weight_scale_granularity",  # U-PCH

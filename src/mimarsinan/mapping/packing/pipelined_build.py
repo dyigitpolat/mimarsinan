@@ -12,6 +12,11 @@ ordinal, and runs wholly resident. A W02 group of the segment is materialized an
 stand-in per copy (each with ids of its own), and each instance at the copy the plan gives it. A core of a pass that
 holds an instance runs wholly: a copy beside it that no instance of the pass uses runs on off axons, its outputs
 unread (copies of one key may share a core, and the pass's instances do not always fill them).
+
+[thru:w2] Under a declared batch pipeline a pass that serves several inputs is one stage per input slot, all with the
+pass's index, each carrying its slot (``schedule_input_slot``) and holding its slot's instances on their copies. The
+first stage of a group's first pass loads the layout; every other stage of the group, its first pass's included, runs
+resident on it. A W02 group's passes, planned once per input, carry their input's slot.
 """
 
 from __future__ import annotations
@@ -35,7 +40,8 @@ from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingEr
 from mimarsinan.mapping.platform.platform_constraints import pool_sign_granularity
 from mimarsinan.mapping.support.spike_source_columns import PlacementNeuronMap
 from mimarsinan.mapping.support.wavefront_stages import (
-    SCHEDULE_CORE_ORDINALS, SCHEDULE_DARK_CORES, SCHEDULE_IDLE_COLUMNS, SCHEDULE_WAVEFRONT, WavefrontHead)
+    SCHEDULE_CORE_ORDINALS, SCHEDULE_DARK_CORES, SCHEDULE_IDLE_COLUMNS, SCHEDULE_INPUT_SLOT, SCHEDULE_WAVEFRONT,
+    InputSlot, WavefrontHead)
 
 __all__ = ["flush_wavefront_segment", "ir_producers", "refuse_with_retiming"]
 
@@ -179,6 +185,20 @@ def _materialize(chunk, q, *, label, tag, arrange, consumed_by, cores_config, we
     return built[0]
 
 
+def _slot_chunks(wave, specs, spec_to_core, q: int) -> List[Tuple[Any, List[Any], Dict[int, Any]]]:
+    """[thru:w2] Pass ``q``'s stages: per input slot it serves, in slot order, the slot, its IR cores and, per IR core,
+    the layout slot it runs on (its key, or its key and copy under layer copies)."""
+    key_of = {id(spec): key for spec, key in zip(specs, wave.keys)}
+    copies = wave.entry_copies[q] if wave.entry_copies is not None else (None,) * len(wave.pass_lists[q])
+    out: Dict[int, Tuple[List[Any], Dict[int, Any]]] = {}
+    for spec, b, c in zip(wave.pass_lists[q], wave.entry_slots[q], copies):
+        core = spec_to_core[id(spec)]
+        cores_, keys = out.setdefault(int(b), ([], {}))
+        cores_.append(core)
+        keys[int(core.id)] = key_of[id(spec)] if c is None else (key_of[id(spec)], c)
+    return [(b, *out[b]) for b in sorted(out)]
+
+
 def flush_wavefront_segment(*, plan, specs, spec_to_core, cores, ir_graph, segment_index: int, label: str,
                             **flush) -> None:
     """Materialize every group of ``plan.wavefront`` in pass order; ``flush``: the scheduled flush's keyword arguments
@@ -196,6 +216,9 @@ def flush_wavefront_segment(*, plan, specs, spec_to_core, cores, ir_graph, segme
             built = [_materialize(chunks[q], q, label=label, tag="cap", arrange=None, segment_index=segment_index,
                                   **flush) for q in passes]
             mark_multiplexed_residency(built, wave.run_heads[group.first_pass:group.end_pass])
+            if wave.slots is not None:  # [thru:w2] a W02 pass serves one input: its slot
+                for q, stage in zip(passes, built):
+                    setattr(stage, SCHEDULE_INPUT_SLOT, InputSlot(int(wave.entry_slots[q][0]), int(wave.slots)))
             continue
         standins = _template_standins([spec_to_core[id(specs[i])] for i in group.template], flush["weight_banks"],
                                       flush["all_reindex_maps"], flush["cores_config"], first_id)
@@ -203,6 +226,9 @@ def flush_wavefront_segment(*, plan, specs, spec_to_core, cores, ir_graph, segme
         if group.copies is not None:
             slots, standins = _copy_slots(group, standins, first_id)
         ids = frozenset(int(c.id) for cs in standins for c in cs)
+        if wave.slots is not None:
+            _flush_slotted_group(wave, group, specs, spec_to_core, slots, standins, ids, label, segment_index, flush)
+            continue
         arrange = _arranger(slots, node_key, standins, f"segment {label!r}")
         layout = None
         for q in passes:
@@ -219,3 +245,31 @@ def flush_wavefront_segment(*, plan, specs, spec_to_core, cores, ir_graph, segme
                     "group's first pass loaded them, so it cannot run on that layout")
             stage.schedule_weights_resident = q != group.first_pass
             _keep(stage, ids, q == group.first_pass, f"pass {q} of segment {label!r}", group.copies is not None)
+
+
+def _flush_slotted_group(wave, group, specs, spec_to_core, slots, standins, ids, label, segment_index, flush) -> None:
+    """[thru:w2] One wavefront group of a batch pipeline: per pass, one stage per input slot it serves, in slot order,
+    each on the group's one layout (verified as every pass is) and carrying its slot. The first stage of the group's
+    first pass loads the layout; every other stage runs resident on it, each core at its head ordinal. A core of a
+    stage runs wholly: beside its slot's instances it may hold another slot's (or a copy no instance of the stage
+    uses), which runs on off axons with its columns declared idle, as under layer copies."""
+    passes = range(group.first_pass, group.end_pass)
+    layout = None
+    for q in passes:
+        for b, chunk, stage_keys in _slot_chunks(wave, specs, spec_to_core, q):
+            arrange = _arranger(slots, stage_keys, standins, f"segment {label!r}")
+            stage = _materialize(chunk, q, label=label, tag=f"s{b}wave", arrange=arrange,
+                                 segment_index=segment_index, **flush)
+            copies = stage_copies(stage)
+            head = layout is None
+            if head:
+                layout = copies
+                setattr(stage, SCHEDULE_WAVEFRONT, WavefrontHead(levels=tuple(group.levels), passes=len(passes),
+                                                                 layout_cores=len(copies)))
+            elif copies != layout:
+                raise PositionMultiplexingError(
+                    f"pipelined_multiplexing: pass {q} (input slot {b}) of segment {label!r} places its copies "
+                    "elsewhere than its group's first pass loaded them, so it cannot run on that layout")
+            stage.schedule_weights_resident = not head
+            _keep(stage, ids, head, f"pass {q} (input slot {b}) of segment {label!r}", True)
+            setattr(stage, SCHEDULE_INPUT_SLOT, InputSlot(int(b), int(wave.slots)))

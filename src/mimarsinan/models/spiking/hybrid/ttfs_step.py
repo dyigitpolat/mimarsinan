@@ -57,10 +57,11 @@ class HybridTtfsStepMixin(HybridFlowHost):
         )
         return torch.tensor(result.inter_stage, dtype=COMPUTE_DTYPE, device=device)
 
-    def _forward_ttfs(self, x: torch.Tensor) -> torch.Tensor:
+    def _forward_ttfs(self, x: torch.Tensor, input_slot=None) -> torch.Tensor:
         """TTFS forward on a float64 NUMPY state buffer (the analytical executor's
         native domain): one host conversion in, one device conversion out — no
-        per-stage torch round-trips (W3 wall)."""
+        per-stage torch round-trips (W3 wall). [thru:w2] ``input_slot``: the run of
+        one input slot's rows of a program of input slots."""
         T = self.simulation_length
         batch_size = x.shape[0]
         device = x.device
@@ -130,6 +131,7 @@ class HybridTtfsStepMixin(HybridFlowHost):
             after_neural=_after_neural_ttfs,
             after_compute=_after_compute_ttfs,
             context_factory=_ctx_factory,
+            input_slot=input_slot,
         )
 
         final_np = gather_final_output_numpy(  # [U-DAR] the record's final read

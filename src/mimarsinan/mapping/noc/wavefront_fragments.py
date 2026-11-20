@@ -6,7 +6,9 @@ of the group places each of its instances on its key's cores of that layout. The
 instances use, each wholly resident, so the pass programs, the period census and the fit rule read the builder's
 program. A W02 group's passes are left to the caller's own packing. [thru:w1] Under layer copies the layout packs each
 key's template once per copy (key by key, then copy by copy, ``layout_specs``) and each instance is placed on its own
-copy's cores; a core holding an instance runs wholly, as the builder runs it (its other copies idle)."""
+copy's cores; a core holding an instance runs wholly, as the builder runs it (its other copies idle). [thru:w2] Under
+the batch pipeline a pass places every input slot's instances it serves, each on its own copy's cores: the plane's one
+pass is the builder's stages of that pass index, one per slot."""
 
 from __future__ import annotations
 
@@ -71,7 +73,8 @@ def _group(wave, group, specs, offset, global_index, core_types, allow_neuron_sp
     out: Dict[int, PlacedPass] = {}
     for q in range(group.first_pass, group.end_pass):
         placed = [(global_index[id(specs[i])], core) for i in range(len(specs)) if wave.pass_of[i] == q
-                  for core in cores_of[slot_of[i]]]
+                  for core in cores_of[slot_of[i]]] if wave.entry_slots is None else _entries_placed(
+            wave, q, specs, global_index, cores_of)
         if q == group.first_pass:
             used = {core for _, core in placed}
             dark = frozenset(h for h in range(head.cores) if h not in used)
@@ -83,3 +86,12 @@ def _group(wave, group, specs, offset, global_index, core_types, allow_neuron_sp
         out[offset + q] = (tuple((spec, local[core]) for spec, core in placed), program,
                            tuple(tiles[h] for h in keep))
     return out
+
+
+def _entries_placed(wave, q: int, specs, global_index: Dict[int, int], cores_of: Dict[Any, List[int]]) -> List:
+    """[thru:w2] Pass ``q``'s placements under the batch pipeline: every entry (one input slot's instance) on its key's
+    cores, or its key's copy's cores under layer copies."""
+    index = {id(spec): i for i, spec in enumerate(specs)}
+    copies = wave.entry_copies[q] if wave.entry_copies is not None else (None,) * len(wave.pass_lists[q])
+    return [(global_index[id(spec)], core) for spec, c in zip(wave.pass_lists[q], copies)
+            for core in cores_of[wave.keys[index[id(spec)]] if c is None else (wave.keys[index[id(spec)]], c)]]

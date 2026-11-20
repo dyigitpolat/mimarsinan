@@ -179,6 +179,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # Wave 2 (registry/entries_residency.py): no default, an absent key leaves every program byte for byte.
     "position_multiplexing", "pipelined_multiplexing", "carry_buffer_bytes", "reduction_core_banks",
     "layer_replication", "wavefront_group_cores",  # [thru:k] no default, absent is one copy per bank byte for byte
+    "batch_pipeline_slots", "carry_input_slots",  # [thru:w2] no default, absent is one input per run byte for byte
     # Wave 2 WI-5a to WI-5c declarations (registry/entries_grids.py): no default, absent is the calibrated,
     # integer-lattice, weight-grid-bias program.
     "quantizer_state", "weight_scale_rule", "bias_resolution", "weight_scale_granularity",

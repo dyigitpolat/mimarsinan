@@ -44,8 +44,9 @@ from mimarsinan.spiking.segment_boundary import (
 class HybridRateForwardMixin(HybridFlowHost):
     """LIF rate-coded hybrid stage orchestration."""
 
-    def _forward_rate(self, x: torch.Tensor) -> torch.Tensor:
-        """Rate-coded forward; encoding LIF ComputeOps pass spike trains to the next neural segment."""
+    def _forward_rate(self, x: torch.Tensor, input_slot=None) -> torch.Tensor:
+        """Rate-coded forward; encoding LIF ComputeOps pass spike trains to the next neural segment. [thru:w2]
+        ``input_slot``: the run of one input slot's rows of a program of input slots."""
         batch_size = x.shape[0]
         device = x.device
         T = self.simulation_length
@@ -245,6 +246,7 @@ class HybridRateForwardMixin(HybridFlowHost):
             after_neural=_after_neural_rate,
             after_compute=_after_compute_rate,
             context_factory=_ctx_factory,
+            input_slot=input_slot,
         )
 
         final = self._gather_final_output(state_buffer, x_compute, batch_size, device)

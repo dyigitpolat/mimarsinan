@@ -1,4 +1,9 @@
-"""The int64 golden (E283): every core's law in exact int64, host ops by the same functions in fp64 on grid values."""
+"""The int64 golden (E283): every core's law in exact int64, host ops by the same functions in fp64 on grid values.
+
+[thru:w2] A program of input slots (the batch pipeline) runs by the value executor's one rule
+(``hybrid_execution.input_slot_runs``): once per input slot on that slot's rows, each stage of another slot left out,
+and a read of a row no earlier stage of its input wrote refused by name (``require_inputs_produced``).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,8 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import torch
 
+from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import input_slot_runs, scatter_rows
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import require_inputs_produced
 from mimarsinan.chip_simulation.value_run.host_ops import execute_host_op
 from mimarsinan.chip_simulation.value_run.operand_blocks import (
     bank_payload,
@@ -18,6 +25,8 @@ from mimarsinan.chip_simulation.value_run.operand_blocks import (
 from mimarsinan.common.refusal import ToolchainRefusal
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.ir.deployment_dtype import VALUE_ARITHMETIC
+from mimarsinan.mapping.platform.mapping_structure import BatchPipelineError
+from mimarsinan.mapping.support.wavefront_stages import serves_slot
 from mimarsinan.models.nn.activations.integer_law import apply_law_int64
 
 _RAW_INPUT = -2
@@ -224,7 +233,26 @@ def run_golden(program, x, *, trace: Optional[GoldenTrace] = None,
     ops are replayed segment by segment in fp64 by the executor's seam; bound banks read their payload codes
     per sample (N2). ``trace`` collects the payloads, host values and core codes the certificate compares.
     ``keep`` (a dict) receives every node output the program materializes, by node id: ``codes``, ``steps`` and
-    ``values`` (codes x steps) of segment outputs, and ``values`` of host ops, for per-operator censuses [CL7]."""
+    ``values`` (codes x steps) of segment outputs, and ``values`` of host ops, for per-operator censuses [CL7].
+    [thru:w2] A program of input slots runs once per slot on its rows (``input_slot_runs``), the codes put back in
+    batch order; its ``trace`` and ``keep`` (one run's reads) are refused by name."""
+    runs = input_slot_runs(program.stages, len(x))
+    if runs == [(None, None)]:
+        return _run(program, x, trace=trace, keep=keep)
+    if trace is not None or keep is not None:
+        raise BatchPipelineError("batch_pipeline_slots: the golden's trace and kept node outputs read one run of the "
+                                 "program, and a program of input slots runs once per input slot")
+    x = np.asarray(x, dtype=VALUE_ARITHMETIC.core_np)
+    parts = [(rows, _run(program, x[rows], input_slot=b)) for b, rows in runs]
+    steps = parts[0][1][1]
+    if any(not np.array_equal(run[1], steps) for _rows, run in parts):
+        raise GoldenGridError("batch_pipeline_slots: the input slots' runs read their outputs on different grids")
+    return scatter_rows([(rows, run[0]) for rows, run in parts], len(x)), steps
+
+
+def _run(program, x, *, trace: Optional[GoldenTrace] = None, keep: Optional[Dict[str, Dict[int, np.ndarray]]] = None,
+         input_slot: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+    """One run of ``program`` (see :func:`run_golden`); [thru:w2] ``input_slot``: the run of that slot's rows."""
     bindings = getattr(program, "dynamic_bank_bindings", None) or None
     x = np.asarray(x, dtype=VALUE_ARITHMETIC.core_np)
     flat = x.reshape(x.shape[0], -1)
@@ -235,6 +263,10 @@ def run_golden(program, x, *, trace: Optional[GoldenTrace] = None,
     twins: Dict = {}
     x_torch = torch.as_tensor(flat)
     for stage in program.stages:
+        if input_slot is not None:  # [thru:w2] this slot's stages and every input's, each read written earlier
+            if not serves_slot(stage, input_slot):
+                continue
+            require_inputs_produced(stage, values, input_slot)
         if stage.kind == "neural":
             _neural_stage(stage, values, codes, steps, offsets, bindings, trace)
         elif stage.kind == "compute":

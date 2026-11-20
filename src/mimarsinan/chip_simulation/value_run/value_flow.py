@@ -14,6 +14,8 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     decref_consumers,
     decref_op_consumers,
     gather_final_output_torch,
+    input_slot_runs,
+    scatter_rows,
     store_segment_output_torch,
 )
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
@@ -80,13 +82,27 @@ class ValueHybridCoreFlow(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._execute(x, retain_state=False)[0]
+        return self._by_input_slot(x, retain_state=False)[0]
 
     def run_retaining_state(self, x: torch.Tensor):
         """``(output, state buffer of every node, flat input)``: the forward without state-buffer pruning."""
-        return self._execute(x, retain_state=True)
+        return self._by_input_slot(x, retain_state=True)
 
-    def _execute(self, x: torch.Tensor, *, retain_state: bool):
+    def _by_input_slot(self, x: torch.Tensor, *, retain_state: bool):
+        """[thru:w2] A program of input slots runs once per slot on its rows (``input_slot_runs``), the output, the
+        retained state and the flat input put back in batch order; any other program runs once."""
+        runs = input_slot_runs(self.hybrid_mapping.stages, int(x.shape[0]))
+        if runs == [(None, None)]:
+            return self._execute(x, retain_state=retain_state)
+        batch = int(x.shape[0])
+        parts = [(rows, self._execute(x[rows], retain_state=retain_state, input_slot=b)) for b, rows in runs]
+        output = scatter_rows([(rows, run[0]) for rows, run in parts], batch)
+        if not retain_state:
+            return output, None, None
+        state = {node: scatter_rows([(rows, run[1][node]) for rows, run in parts], batch) for node in parts[0][1][1]}
+        return output, state, scatter_rows([(rows, run[2]) for rows, run in parts], batch)
+
+    def _execute(self, x: torch.Tensor, *, retain_state: bool, input_slot=None):
         batch = x.shape[0]
         x_flat = x.reshape(batch, -1).to(self.execution_device, self.value_dtype)
         state_buffer: Dict[int, torch.Tensor] = {_RAW_INPUT_NODE_ID: x_flat}
@@ -145,9 +161,15 @@ class ValueHybridCoreFlow(nn.Module):
             spent["compute"] += time.perf_counter() - _t
             decref_op_consumers(buf, remaining, op)
 
+        def on_other_slot(_index, stage, _buf):
+            # [thru:w2] another input slot's stage: the weights it loads stay loaded for this slot's resident stages
+            if stage.kind == "neural" and not getattr(stage, "schedule_weights_resident", False):
+                scope.begin_chain(stage.hard_core_mapping)
+
         run_hybrid_stages(
             self.hybrid_mapping, state_buffer,
             on_neural=on_neural, on_compute=on_compute,
+            input_slot=input_slot, on_other_slot=on_other_slot,
         )
         _wall = time.perf_counter() - t_fwd
         if _wall > 5.0:   # slow forwards only; tests stay silent

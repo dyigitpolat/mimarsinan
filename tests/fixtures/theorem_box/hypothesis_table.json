@@ -49,6 +49,7 @@
   "allow_coalescing",
   "allow_neuron_splitting",
   "allow_scheduling",
+  "batch_pipeline_slots",
   "core_value_granularity",
   "cores.cells_per_weight",
   "cores.compute_physics",
@@ -203,6 +204,19 @@
    "H8"
   ],
   "wavefront_group_cores": [
+   "H5-collapse",
+   "H5-skew",
+   "R3",
+   "H9",
+   "H10",
+   "R6",
+   "R1",
+   "R2",
+   "R4",
+   "R5",
+   "H8"
+  ],
+  "batch_pipeline_slots": [
    "H5-collapse",
    "H5-skew",
    "R3",

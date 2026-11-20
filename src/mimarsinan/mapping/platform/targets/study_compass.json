@@ -20,6 +20,7 @@
     "platform_physics_profile": "study_compass",
     "allow_coalescing": true,
     "allow_neuron_splitting": true,
+    "carry_input_slots": 16,
     "onchip_arithmetic": {
       "classes": [
         "L",
@@ -47,7 +48,7 @@
     ],
     "note": "The chip of the study as its estimator prices it (codesign.md, constants.md, audit_v4/pd.md). Every departure is named in the rows and the description of the profile."
   },
-  "notes": "The certified function applies one ADC (the run's readout law) to each column's fused accumulator, as on every lane bundle; the study's tile accumulates its 32-bit partial sums exactly and converts nothing, and its cost model prices no conversion (W47's per-array ADC is not built). allow_coalescing and allow_neuron_splitting are true: the study's census splits a layer's rows over ceil(cin k^2 / R) tiles and its columns over ceil(cout / 64) tiles, accumulating 32-bit full-precision partial sums (constants.md sec. 4, jiang2023a p.2-3). onchip_arithmetic declares the lane subset L, E and P on the ng45_os_lane block, one lane per 64 output columns (one per tile): the block the study's capability-on tile-area factor s_AU reads (arith_toggle.md sec. 6; codesign.md sec. 2.2, D136: 1.069 to 1.130 of a G3 tile, frozen picks at 1.130). The study prices no lane energy (about 0.4% of MAC energy); the toolchain prices the block's e_lane_op. activation_bits is not set: the study carries 8-bit activations at its cuts and prices a tile activation at 8 bit-serial cycles, while a program declares its own value grid.",
+  "notes": "The certified function applies one ADC (the run's readout law) to each column's fused accumulator, as on every lane bundle; the study's tile accumulates its 32-bit partial sums exactly and converts nothing, and its cost model prices no conversion (W47's per-array ADC is not built). allow_coalescing and allow_neuron_splitting are true: the study's census splits a layer's rows over ceil(cin k^2 / R) tiles and its columns over ceil(cout / 64) tiles, accumulating 32-bit full-precision partial sums (constants.md sec. 4, jiang2023a p.2-3). onchip_arithmetic declares the lane subset L, E and P on the ng45_os_lane block, one lane per 64 output columns (one per tile): the block the study's capability-on tile-area factor s_AU reads (arith_toggle.md sec. 6; codesign.md sec. 2.2, D136: 1.069 to 1.130 of a G3 tile, frozen picks at 1.130). The study prices no lane energy (about 0.4% of MAC energy); the toolchain prices the block's e_lane_op. activation_bits is not set: the study carries 8-bit activations at its cuts and prices a tile activation at 8 bit-serial cycles, while a program declares its own value grid. carry_input_slots is 16 (the inputs whose carried values the chip holds at once, which bounds a batch pipeline): COMPASS executes each partition in a batched manner, its weights loaded and reused until a batch of input features is processed and saved to DRAM, the stored output becoming the next partition's input (park2025compass Sec. II-B p. 2 and Fig. 2), and evaluates batches of 1 to 16 with the replacement overhead amortized at 16 (park2025compass Sec. IV p. 6 and Fig. 9), so its chip keeps 16 images' intermediate values apart in its global memory.",
   "computation": {
     "core_semantics": {
       "stated": {

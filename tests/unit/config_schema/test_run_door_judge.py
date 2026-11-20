@@ -809,6 +809,10 @@ AUDITED_LEGAL_SETS = {
     # [thru:k] audited against its one consumer, the pass planner (mapping/support/pipelined_multiplexing.py): the
     # cores one copy of a wavefront group may take under layer_replication.
     "wavefront_group_cores": "INT >= 1",
+    # [thru:w2] audited against their one consumer, the pass planner's rule (mapping_structure.refuse_batch_slots): the
+    # inputs one run serves (two or more), and the inputs whose carried values the chip holds at once.
+    "batch_pipeline_slots": "INT >= 2",
+    "carry_input_slots": "INT >= 1",
     "conversion_draws": "INT >= 1",
     "core_semantics": "ENUM spiking | mvm",
     "cores_per_tile": "INT >= 0",

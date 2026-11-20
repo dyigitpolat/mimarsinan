@@ -82,6 +82,8 @@ def collect_noc_fragments(
     pipelined_multiplexing: Optional[bool] = None,
     layer_replication: Optional[bool] = None,
     wavefront_group_cores: Optional[int] = None,
+    batch_pipeline_slots: Optional[int] = None,
+    carry_input_slots: Optional[int] = None,
 ) -> LayoutNocFragments:
     """Place every pass of the candidate program and seal the placements.
 
@@ -105,7 +107,7 @@ def collect_noc_fragments(
     [CL-SG] ``declared_cores`` (the platform's ``cores``) signs each packed core of a per-axon type
     (``carries_sign_register``): its used rows ride the pass program for the payload rule. [U-PP P-1] The fragments
     state their program's schedule census (``schedule_census``), the one every candidate quantity of the passes reads.
-    [thru:k] The layer copies' keys reach the one planner as the builder's do.
+    [thru:k] The layer copies' keys reach the one planner as the builder's do, [thru:w2] as do the batch pipeline's.
     """
     softcores = list(softcores)
     runs = runs if runs is not None else walk_runs(program, len(softcores))
@@ -130,6 +132,7 @@ def collect_noc_fragments(
             pipelined_multiplexing=pipelined_multiplexing,
             producers=census_producers(census, len(softcores)) if pipelined_multiplexing else None,
             layer_replication=layer_replication, wavefront_group_cores=wavefront_group_cores,
+            batch_pipeline_slots=batch_pipeline_slots, carry_input_slots=carry_input_slots,
         )
         residency = plan.residency
         if not plan.feasible:  # [W04] the capacity refusal both planes name

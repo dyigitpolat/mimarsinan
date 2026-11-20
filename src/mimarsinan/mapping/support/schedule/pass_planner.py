@@ -12,11 +12,12 @@ law's floor) and its sync cost priced where schedules are priced.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Collection, Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.packing.canonical import OPERAND_ROLE
-from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError
+from mimarsinan.mapping.platform.mapping_structure import (
+    BatchPipelineError, PositionMultiplexingError, refuse_batch_slots)
 from mimarsinan.mapping.layout.layout_types import (
     LayoutHardCoreType,
     LayoutSoftCoreSpec,
@@ -112,6 +113,10 @@ class SegmentPassPlan:
     run_heads: Optional[Tuple[bool, ...]] = None
     #: [U-F4] Under pipelined position multiplexing, the wavefront composition (groups, each spec's pass).
     wavefront: Optional[WavefrontPlan] = None
+    #: [thru:w2] Under a declared ``batch_pipeline_slots``: B, and per pass the input slot of each of its specs
+    #: (``pass_lists[q][k]`` serves input slot ``input_slots[q][k]``). None undeclared (one input per run).
+    slots: Optional[int] = None
+    input_slots: Optional[Tuple[Tuple[int, ...], ...]] = None
 
     @property
     def pass_count(self) -> int:
@@ -139,6 +144,8 @@ def plan_segment_passes(
     producers: Optional[Sequence[frozenset]] = None,
     layer_replication: Optional[bool] = None,
     wavefront_group_cores: Optional[int] = None,
+    batch_pipeline_slots: Optional[int] = None,
+    carry_input_slots: Optional[int] = None,
 ) -> SegmentPassPlan:
     """One segment's passes: the residency composition whenever the law
     composes one and every chunk packs, else the validated capacity split.
@@ -147,6 +154,9 @@ def plan_segment_passes(
     its levels share passes as a wavefront (``producers``: per spec, the segment positions it reads). [thru:w1] With
     ``layer_replication`` each wavefront group's free cores hold copies of its banks (``wavefront_group_cores``: the
     cores one copy of a group may take); a declaration it cannot serve refuses by name (``refuse_layer_copies``).
+    [thru:w2] With ``batch_pipeline_slots`` B a run serves B inputs: they share each wavefront group's passes, and every
+    pass outside the wavefront runs once per input (``_once_per_input``), the pass budget counted per run; a B the chip
+    cannot serve (``carry_input_slots``) refuses by name (``refuse_batch_slots``).
 
     A composition that cannot pack is not the program deployment runs;
     it is declined rather than reported as an infeasible layout.
@@ -156,6 +166,7 @@ def plan_segment_passes(
     operand bank's instances takes the capacity split (N2) and refuses a declared ``position_multiplexing``.
     """
     refuse_layer_copies(layer_replication, wavefront_group_cores, pipelined_multiplexing)
+    refuse_batch_slots(batch_pipeline_slots, carry_input_slots, pipelined_multiplexing)
     if coalescing_group_ids is None and any(getattr(s, "coalescing_group_id", None) is not None for s in softcores):
         coalescing_group_ids = [getattr(s, "coalescing_group_id", None) for s in softcores]
     # N2: an operand bank's payload is rewritten every pass (design §2.7), so residency never composes over one, and
@@ -172,23 +183,26 @@ def plan_segment_passes(
             softcores, core_types, producers=producers, budget=budget, allow_coalescing=allow_coalescing,
             allow_splitting=allow_splitting, max_schedule_passes=max_schedule_passes, shares=shares,
             coalescing_group_ids=coalescing_group_ids, layer_replication=layer_replication,
-            wavefront_group_cores=wavefront_group_cores)
-        return SegmentPassPlan(wave.pass_lists, wave.feasible, False, run_heads=wave.run_heads, wavefront=wave)
+            wavefront_group_cores=wavefront_group_cores, batch_pipeline_slots=batch_pipeline_slots,
+            carry_input_slots=carry_input_slots)
+        return SegmentPassPlan(wave.pass_lists, wave.feasible, False, run_heads=wave.run_heads, wavefront=wave,
+                               slots=wave.slots, input_slots=wave.entry_slots)
+    once = (lambda plan: _once_per_input(plan, batch_pipeline_slots, max_schedule_passes))
     if position_multiplexing and shares_a_bank(softcores, shares):
         mux = multiplexed_segment_passes(
             softcores, core_types, budget=budget, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
             max_schedule_passes=max_schedule_passes, shares=shares, coalescing_group_ids=coalescing_group_ids)
-        return SegmentPassPlan(mux.pass_lists, mux.feasible, False, run_heads=mux.run_heads)
+        return once(SegmentPassPlan(mux.pass_lists, mux.feasible, False, run_heads=mux.run_heads))
     chunks = None if operand else bank_clustered_layout_passes(
         softcores, core_types, max_schedule_passes=max_schedule_passes,
     )
     if chunks is not None and placement_regions_hold(
         chunks, core_types, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
     ):
-        return SegmentPassPlan(tuple(tuple(chunk) for chunk in chunks), feasible=True, residency_applied=True)
+        return once(SegmentPassPlan(tuple(tuple(chunk) for chunk in chunks), feasible=True, residency_applied=True))
 
     if budget <= 0:
-        return SegmentPassPlan(pass_lists=(tuple(softcores),), feasible=True, residency_applied=False)
+        return once(SegmentPassPlan(pass_lists=(tuple(softcores),), feasible=True, residency_applied=False))
     n_passes, pass_lists, ok = estimate_passes_for_layout_validated(
         softcores, budget,
         max_hw_axons=max(ct.max_axons for ct in core_types) if core_types else 0,
@@ -199,7 +213,24 @@ def plan_segment_passes(
         coalescing_group_ids=coalescing_group_ids,
     )
     del n_passes
-    return SegmentPassPlan(tuple(tuple(chunk) for chunk in pass_lists), feasible=ok, residency_applied=False)
+    return once(SegmentPassPlan(tuple(tuple(chunk) for chunk in pass_lists), feasible=ok, residency_applied=False))
+
+
+def _once_per_input(plan: SegmentPassPlan, slots: Optional[int], max_schedule_passes: int) -> SegmentPassPlan:
+    """[thru:w2] A segment planned outside every wavefront group serves one input per pass: under a declared
+    ``batch_pipeline_slots`` B its passes run once per input, input by input, each input's as planned (its run heads
+    repeated; a residency composition's passes all place the regions its first pass programs). The pass budget is
+    counted per run. Undeclared, the plan itself."""
+    if slots is None:
+        return plan
+    n = int(slots)
+    if n * len(plan.pass_lists) > int(max_schedule_passes):
+        raise BatchPipelineError(f"batch_pipeline_slots {n}: a segment of {len(plan.pass_lists)} passes per input "
+                                 f"needs {n * len(plan.pass_lists)} passes per run, above max_schedule_passes "
+                                 f"{int(max_schedule_passes)}; declare a larger pass budget")
+    return replace(plan, pass_lists=plan.pass_lists * n,
+                   run_heads=None if plan.run_heads is None else plan.run_heads * n, slots=n,
+                   input_slots=tuple((b,) * len(chunk) for b in range(n) for chunk in plan.pass_lists))
 
 
 @dataclass(frozen=True)
@@ -258,14 +289,18 @@ def plan_program_passes(
     producers: Optional[Sequence[Collection[int]]] = None,
     layer_replication: Optional[bool] = None,
     wavefront_group_cores: Optional[int] = None,
+    batch_pipeline_slots: Optional[int] = None,
+    carry_input_slots: Optional[int] = None,
 ) -> ProgramPassPlan:
     """Group by the specs' own ``segment_id`` and plan each segment. [U1 W9] ``runs`` (aligned with *softcores*: the
     walk's IR-run segment of each spec, ``residency_rules.spec_runs``) groups them by the builder's segments
     (``partition_ir_graph``), each planned as the builder plans it (``plan_segment_passes`` over the segment's specs,
     whose capacity split cuts at their ``segment_id``), so the plane's passes and pass counts are the builder's.
     [U-F4] ``producers``: per spec, the program indices of the specs it reads (each segment reads its own). [thru:k]
-    The layer copies' keys reach every segment's plan (``plan_segment_passes``)."""
+    The layer copies' keys reach every segment's plan (``plan_segment_passes``), [thru:w2] as do the batch
+    pipeline's."""
     refuse_layer_copies(layer_replication, wavefront_group_cores, pipelined_multiplexing)
+    refuse_batch_slots(batch_pipeline_slots, carry_input_slots, pipelined_multiplexing)
     if residency is not None:  # [E85] one residency composition over the whole program, the builder's refusal rules
         comp = compose_shape_only_program(softcores, core_types, residency, allow_coalescing=allow_coalescing,
                                           allow_splitting=allow_splitting, max_schedule_passes=max_schedule_passes)
@@ -297,6 +332,7 @@ def plan_program_passes(
                     position_multiplexing=position_multiplexing, pipelined_multiplexing=pipelined_multiplexing,
                     producers=segment_producers(producers, seg_members[sid]),
                     layer_replication=layer_replication, wavefront_group_cores=wavefront_group_cores,
+                    batch_pipeline_slots=batch_pipeline_slots, carry_input_slots=carry_input_slots,
                 ),
             )
             for sid in sorted(seg_softcores.keys())

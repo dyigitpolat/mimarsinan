@@ -26,6 +26,36 @@ class PositionMultiplexingError(ToolchainRefusal, ValueError):
     """A declared ``position_multiplexing`` the toolchain cannot plan or execute exactly; the message names why."""
 
 
+class BatchPipelineError(PositionMultiplexingError):
+    """[thru:w2] A declared ``batch_pipeline_slots`` the chip or the toolchain cannot serve; the message names why."""
+
+
+def _whole(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def refuse_batch_slots(batch_pipeline_slots: Any, carry_input_slots: Any, pipelined_multiplexing: Any) -> None:
+    """[thru:w2] The one rule of the batch pipeline's keys, read by the capability and by the one pass planner: B
+    inputs share the passes of pipelined multiplexing's wavefront groups, so B needs ``pipelined_multiplexing``, and
+    the chip states how many inputs' carried values it holds at once (``carry_input_slots``): a chip that states none
+    refuses B by name, and a B above it is refused by name. The chip's statement alone changes nothing."""
+    if carry_input_slots is not None and not (_whole(carry_input_slots) and carry_input_slots >= 1):
+        raise BatchPipelineError(f"carry_input_slots must be an integer >= 1, got {carry_input_slots!r}")
+    if batch_pipeline_slots is None:
+        return
+    if not (_whole(batch_pipeline_slots) and batch_pipeline_slots >= 2):
+        raise BatchPipelineError(f"batch_pipeline_slots must be an integer >= 2, got {batch_pipeline_slots!r}")
+    if not pipelined_multiplexing:
+        raise BatchPipelineError("batch_pipeline_slots streams B inputs through the wavefront groups of "
+                                 "pipelined_multiplexing: it needs pipelined_multiplexing")
+    if carry_input_slots is None:
+        raise BatchPipelineError(f"batch_pipeline_slots {batch_pipeline_slots}: the chip states no carry_input_slots "
+                                 "(how many inputs' carried values it holds at once), so the batch pipeline is refused")
+    if batch_pipeline_slots > carry_input_slots:
+        raise BatchPipelineError(f"batch_pipeline_slots {batch_pipeline_slots} is above the chip's carry_input_slots "
+                                 f"{carry_input_slots} (the inputs whose carried values it holds at once): refused")
+
+
 def residency_declaration(value: Any) -> Tuple[str, Optional[int]]:
     """The one rule judging a declared ``residency_plan`` (``{step, index}``): its (rule, index), or a refusal by
     name. Read where the key enters (``ChipCapabilities``) and where a step is selected (``ResidencySelection``)."""
@@ -110,6 +140,11 @@ class ChipCapabilities:
     # undeclared (one copy per bank). The cores one copy of a group may take; None = undeclared (every declared core).
     layer_replication: Optional[bool] = field(default=None, metadata=DECLARED_ONLY)
     wavefront_group_cores: Optional[int] = field(default=None, metadata=DECLARED_ONLY)
+    # [thru:w2] Under pipelined multiplexing, a run serves this many inputs, which share the wavefront groups' passes;
+    # None = undeclared (one input per run). The inputs whose carried values the chip holds at once (the chip's
+    # statement); None = unstated, so a declared batch_pipeline_slots is refused.
+    batch_pipeline_slots: Optional[int] = field(default=None, metadata=DECLARED_ONLY)
+    carry_input_slots: Optional[int] = field(default=None, metadata=DECLARED_ONLY)
 
     def __post_init__(self) -> None:
         if self.residency_plan is not None:
@@ -140,6 +175,7 @@ class ChipCapabilities:
         if groups is not None and not self.layer_replication:
             raise PositionMultiplexingError("wavefront_group_cores bounds the cores one copy of a wavefront group "
                                             "takes so that the rest hold copies: it needs layer_replication")
+        refuse_batch_slots(self.batch_pipeline_slots, self.carry_input_slots, self.pipelined_multiplexing)
 
     @classmethod
     def from_platform_constraints(
@@ -180,6 +216,8 @@ class ChipCapabilities:
             pipelined_multiplexing=constraints.get("pipelined_multiplexing"),
             layer_replication=constraints.get("layer_replication"),
             wavefront_group_cores=constraints.get("wavefront_group_cores"),
+            batch_pipeline_slots=constraints.get("batch_pipeline_slots"),
+            carry_input_slots=constraints.get("carry_input_slots"),
         )
 
     def declared_fields(self) -> dict[str, Any]:

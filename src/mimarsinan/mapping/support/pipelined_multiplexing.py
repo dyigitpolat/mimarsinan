@@ -14,6 +14,14 @@ its keys, one at a time, each to the key with the most instances per copy, while
 cores; an instance runs on its key's copy that is free earliest. ``wavefront_group_cores`` bounds the cores (physical
 tiles) one copy of a group's keys may take, so a group closes earlier and leaves more cores to copies; a bound below
 one copy of a level is refused by name. Undeclared or false, one copy per key, byte for byte.
+
+[thru:w2] The batch pipeline (declared ``batch_pipeline_slots`` B): a run of the program serves B inputs. The instances
+of input 1, then input 2, and so on share each wavefront group's passes, each in the first pass after its own input's
+producers, on its key's copy that is free earliest (a copy computes one instance per pass, of whichever input), so a
+group's start-up passes are paid once per run. A W02 group's passes serve one input each: they run once per input,
+input by input. The pass budget is counted per run. The chip states how many inputs' carried values it holds at once
+(``carry_input_slots``): none stated, or fewer than B, refuses B by name (``refuse_batch_slots``). Undeclared, one
+input per run, byte for byte.
 """
 
 from __future__ import annotations
@@ -23,7 +31,7 @@ from typing import Collection, Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError
+from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingError, refuse_batch_slots
 from mimarsinan.mapping.support.position_multiplexing import CopyKey, copy_keys, multiplexed_segment_passes
 
 __all__ = ["WavefrontGroup", "WavefrontPlan", "census_producers", "layout_specs", "pipelined_segment_passes",
@@ -61,6 +69,13 @@ class WavefrontPlan:
     feasible: bool
     specs: Tuple[LayoutSoftCoreSpec, ...] = ()
     copy_of: Optional[Tuple[int, ...]] = None
+    #: [thru:w2] Under a declared ``batch_pipeline_slots``: B, and per pass the input slot of each of its entries
+    #: (``pass_lists[q][k]`` serves input slot ``entry_slots[q][k]``; a spec appears once per input) and, under layer
+    #: copies, the copy of its key each entry runs on; ``pass_of`` and ``copy_of`` then state input slot 0's. None
+    #: undeclared (one input per run).
+    slots: Optional[int] = None
+    entry_slots: Optional[Tuple[Tuple[int, ...], ...]] = None
+    entry_copies: Optional[Tuple[Tuple[int, ...], ...]] = None
 
     def group_of_pass(self) -> Tuple[int, ...]:
         return tuple(g for g, group in enumerate(self.groups) for _ in range(group.first_pass, group.end_pass))
@@ -195,40 +210,47 @@ def _replicate(specs, keys, members, order: Sequence[CopyKey], template: Sequenc
     return tuple(copies[k] for k in order)
 
 
+Entry = Tuple[int, int]   # [thru:w2] (input slot, member): one instance of one input
+
+
 def _wavefront(members: Sequence[int], keys, producers, start: int, coalescing, label: str,
-               copies: Optional[Dict[CopyKey, int]] = None) -> Tuple[Dict[int, int], Dict[int, int]]:
-    """Per member its pass and its copy: the first pass after its producers inside the group and after its copy's
-    previous instance, on its key's copy free earliest ([thru:w1] one copy per key undeclared), the members of one
-    coalescing group together; a producer not yet composed refuses by name."""
+               copies: Optional[Dict[CopyKey, int]] = None, inputs: int = 1
+               ) -> Tuple[Dict[Entry, int], Dict[Entry, int]]:
+    """Per entry (input slot, member) its pass and its copy: the first pass after its producers of its own input inside
+    the group and after its copy's previous instance, on its key's copy free earliest ([thru:w1] one copy per key
+    undeclared), the members of one coalescing group together; a producer not yet composed refuses by name. [thru:w2]
+    Input 0's members first, then input 1's, and so on (``inputs``: one undeclared); the copies are every input's."""
     member_set = set(members)
     units: Dict[object, List[int]] = {}
     for i in members:
         group = coalescing[i] if coalescing is not None and coalescing[i] is not None else ("own", i)
         units.setdefault(group, []).append(i)
-    t: Dict[int, int] = {}
-    copy_of: Dict[int, int] = {}
+    t: Dict[Entry, int] = {}
+    copy_of: Dict[Entry, int] = {}
     free: Dict[CopyKey, List[int]] = {}   # per key, per copy: the first pass it is free in
-    for unit in units.values():
-        ready = start
-        chosen: List[Tuple[int, int]] = []
-        for i in unit:
-            for p in producers[i]:
-                if p not in member_set:
-                    continue
-                if p not in t:
-                    raise PositionMultiplexingError(
-                        f"pipelined_multiplexing: in {label}, spec {i} reads spec {p}, which is composed after it; "
-                        "pass transparency needs every read from an earlier pass")
-                ready = max(ready, t[p] + 1)
-            slots = free.setdefault(keys[i], [start] * (1 if copies is None else int(copies[keys[i]])))
-            taken = {c for j, c in chosen if keys[j] == keys[i]}
-            c = min((c for c in range(len(slots)) if c not in taken), key=lambda c: (slots[c], c), default=0)
-            ready = max(ready, slots[c])
-            chosen.append((i, c))
-        for i, c in chosen:
-            t[i] = ready
-            copy_of[i] = c
-            free[keys[i]][c] = ready + 1
+    for b in range(int(inputs)):
+        for unit in units.values():
+            ready = start
+            chosen: List[Tuple[int, int]] = []
+            for i in unit:
+                for p in producers[i]:
+                    if p not in member_set:
+                        continue
+                    if (b, p) not in t:
+                        raise PositionMultiplexingError(
+                            f"pipelined_multiplexing: in {label}, spec {i} reads spec {p}, which is composed after "
+                            "it; pass transparency needs every read from an earlier pass")
+                    ready = max(ready, t[(b, p)] + 1)
+                copy_free = free.setdefault(keys[i], [start] * (1 if copies is None else int(copies[keys[i]])))
+                taken = {c for j, c in chosen if keys[j] == keys[i]}
+                c = min((c for c in range(len(copy_free)) if c not in taken), key=lambda c: (copy_free[c], c),
+                        default=0)
+                ready = max(ready, copy_free[c])
+                chosen.append((i, c))
+            for i, c in chosen:
+                t[(b, i)] = ready
+                copy_of[(b, i)] = c
+                free[keys[i]][c] = ready + 1
     return t, copy_of
 
 
@@ -246,20 +268,25 @@ def pipelined_segment_passes(
     label: str = "segment",
     layer_replication: Optional[bool] = None,
     wavefront_group_cores: Optional[int] = None,
+    batch_pipeline_slots: Optional[int] = None,
+    carry_input_slots: Optional[int] = None,
 ) -> WavefrontPlan:
     """The segment's groups in level order, each a wavefront (or W02's runs), the passes numbered across groups.
     [thru:w1] Under ``layer_replication`` each wavefront group's free cores hold copies of its keys
-    (``wavefront_group_cores``: the cores one copy of a group may take)."""
+    (``wavefront_group_cores``: the cores one copy of a group may take). [thru:w2] Under ``batch_pipeline_slots`` B
+    the run serves B inputs: they share each wavefront group's passes, and a W02 group runs once per input."""
     refuse_layer_copies(layer_replication, wavefront_group_cores, True)
+    refuse_batch_slots(batch_pipeline_slots, carry_input_slots, True)
+    inputs = 1 if batch_pipeline_slots is None else int(batch_pipeline_slots)
     keys = copy_keys(specs, shares)
     level_of = [int(s.latency_tag or 0) for s in specs]
     levels = sorted(set(level_of))
     by_level = {lv: [i for i in range(len(specs)) if level_of[i] == lv] for lv in levels}
-    pass_lists: List[List[int]] = []
+    pass_lists: List[List[Entry]] = []   # per pass, its entries (input slot, spec position)
     heads: List[bool] = []
     groups: List[WavefrontGroup] = []
-    pass_of: Dict[int, int] = {}
-    copy_of: Dict[int, int] = {}
+    pass_of: Dict[Entry, int] = {}
+    copy_of: Dict[Entry, int] = {}
     feasible = True
     for wavefront, group_levels in _level_plan(specs, keys, by_level, levels, core_types, allow_coalescing,
                                                allow_splitting, wavefront_group_cores if layer_replication else None,
@@ -275,9 +302,10 @@ def pipelined_segment_passes(
                 else [coalescing_group_ids[i] for i in members], label=label)
             feasible = feasible and mux.feasible
             local = {id(specs[i]): i for i in members}
-            for chunk, head in zip(mux.pass_lists, mux.run_heads):
-                pass_lists.append([local[id(s)] for s in chunk])
-                heads.append(bool(head))
+            for b in range(inputs):  # [thru:w2] a W02 pass serves one input: the group's passes once per input
+                for chunk, head in zip(mux.pass_lists, mux.run_heads):
+                    pass_lists.append([(b, local[id(s)]) for s in chunk])
+                    heads.append(bool(head))
             groups.append(WavefrontGroup(tuple(group_levels), start, len(pass_lists), False, (), ()))
             continue
         order = list(dict.fromkeys(keys[i] for i in members))
@@ -286,30 +314,37 @@ def pipelined_segment_passes(
         copies = _replicate(specs, keys, members, order, template, core_types, allow_coalescing,
                             allow_splitting) if layer_replication else None
         t, copied = _wavefront(members, keys, producers, start, coalescing_group_ids, label,
-                               None if copies is None else dict(zip(order, copies)))
+                               None if copies is None else dict(zip(order, copies)), inputs)
         copy_of.update(copied)
         end = max(t.values()) + 1
         pass_lists.extend([] for _ in range(start, end))
         heads.extend(p == start for p in range(start, end))
-        for i in sorted(members, key=lambda j: (t[j], j)):
-            pass_lists[t[i]].append(i)
+        for entry in sorted(t, key=lambda e: (t[e], e)):   # a pass lists input 0's specs, then input 1's, ...
+            pass_lists[t[entry]].append(entry)
         groups.append(WavefrontGroup(tuple(group_levels), start, end, True, tuple(order),  # type: ignore[arg-type]
                                      template, copies))
     for q, chunk in enumerate(pass_lists):
-        for i in chunk:
-            pass_of[i] = q
-    for c in range(len(specs)):
-        for p in producers[c]:
-            if pass_of[p] >= pass_of[c]:
-                raise PositionMultiplexingError(
-                    f"pipelined_multiplexing: in {label}, spec {c} (pass {pass_of[c]}) reads spec {p} of pass "
-                    f"{pass_of[p]}; pass transparency needs every read from an earlier pass")
+        for entry in chunk:
+            pass_of[entry] = q
+    for b in range(inputs):
+        for c in range(len(specs)):
+            for p in producers[c]:
+                if pass_of[(b, p)] >= pass_of[(b, c)]:
+                    raise PositionMultiplexingError(
+                        f"pipelined_multiplexing: in {label}, spec {c} (pass {pass_of[(b, c)]}) reads spec {p} of pass "
+                        f"{pass_of[(b, p)]}{'' if batch_pipeline_slots is None else f' (input slot {b})'}; pass "
+                        "transparency needs every read from an earlier pass")
     if len(pass_lists) > int(max_schedule_passes):
         raise PositionMultiplexingError(
             f"position_multiplexing: {label} needs {len(pass_lists)} passes (pipelined: levels sharing passes as a "
             f"wavefront), above max_schedule_passes {int(max_schedule_passes)}; declare a larger pass budget")
+    slotted = batch_pipeline_slots is not None
     return WavefrontPlan(
-        pass_lists=tuple(tuple(specs[i] for i in chunk) for chunk in pass_lists), run_heads=tuple(heads),
-        groups=tuple(groups), pass_of=tuple(pass_of[i] for i in range(len(specs))), keys=tuple(keys),
+        pass_lists=tuple(tuple(specs[i] for _b, i in chunk) for chunk in pass_lists), run_heads=tuple(heads),
+        groups=tuple(groups), pass_of=tuple(pass_of[(0, i)] for i in range(len(specs))), keys=tuple(keys),
         feasible=feasible, specs=tuple(specs),
-        copy_of=tuple(copy_of.get(i, 0) for i in range(len(specs))) if layer_replication else None)
+        copy_of=tuple(copy_of.get((0, i), 0) for i in range(len(specs))) if layer_replication else None,
+        slots=inputs if slotted else None,
+        entry_slots=tuple(tuple(b for b, _i in chunk) for chunk in pass_lists) if slotted else None,
+        entry_copies=tuple(tuple(copy_of.get(entry, 0) for entry in chunk) for chunk in pass_lists)
+        if slotted and layer_replication else None)

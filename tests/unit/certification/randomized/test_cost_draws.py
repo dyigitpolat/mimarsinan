@@ -21,8 +21,9 @@ class TestPartition:
         # cores.compute_physics (pricing-only); U-S (the event census): event_census_samples (pricing-only, a
         # measurement of the built program); U-F4: pipelined_multiplexing (deferred by name); U-C4:
         # cores.cells_per_weight and cores.weight_cell_rows (pricing-only); U-L2: reduction_core_banks (deferred
-        # by name); thru:k: layer_replication and wavefront_group_cores (deferred by name)
-        assert len(cd.cost_only_set()) == 40
+        # by name); thru:k: layer_replication and wavefront_group_cores (deferred by name); thru:w2:
+        # batch_pipeline_slots (deferred by name)
+        assert len(cd.cost_only_set()) == 41
         assert {"cores.cells_per_weight", "cores.weight_cell_rows"} <= set(cd.PRICING_ONLY)
 
     @pytest.mark.parametrize("change", ["add", "drop"])
@@ -81,9 +82,10 @@ class TestDraws:
         assert set(report["pricing_only"].values()) == {cd.PRESERVED_BY_CONSTRUCTION}
         assert set(report["drawn_by_fields"]) == {"residency_plan"}
         # residency_plan is drawn by its fields (CL1); W02's position_multiplexing, U-F4's pipelined form and [U-L2]
-        # its banked reduction cores stay deferred by name, [thru:k] and the layer copies' two keys
+        # its banked reduction cores stay deferred by name, [thru:k] and the layer copies' two keys, [thru:w2] and the
+        # batch pipeline's slots
         deferred = {"position_multiplexing", "pipelined_multiplexing", "reduction_core_banks", "layer_replication",
-                    "wavefront_group_cores"}
+                    "wavefront_group_cores", "batch_pipeline_slots"}
         assert set(report["deferred_to_cl1"]) == deferred
         assert set(report["deferred_to_cl1"].values()) == {cd.DEFERRED_REASONS[key] for key in deferred}
 

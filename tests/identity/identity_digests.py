@@ -19,6 +19,11 @@ left out by name (``WALL_KEYS``). In a comparison of the declared-false run (``-
 new keys' own declarations (``NEW_KEYS``), wherever a declaration is echoed, are left out with the config digest that
 hashes them, so the run is compared with the paper version's run of the same fixture without them.
 
+[thru:w2] On this branch the COMPASS-size study chip's description states ``carry_input_slots`` (a chip statement that
+changes nothing without ``batch_pipeline_slots``). The run states every chip description without the new keys
+(``chips_without_new_keys``), so every fixture runs with all four keys absent; on the paper version no description
+states one, and nothing changes.
+
 usage: python -s -B identity_digests.py --tree ROOT --fixture NAME [--declare absent|false] [--compare absent|false]
 """
 
@@ -38,8 +43,9 @@ import types
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-#: The branch's new keys of the layer copies (PL/thru/design.md (b)): declared false, each is the absent program.
-NEW_KEYS = ("layer_replication", "wavefront_group_cores")
+#: The branch's new keys of the layer copies and the batch pipeline (PL/thru/design.md (b)): declared false, each is the
+#: absent program.
+NEW_KEYS = ("layer_replication", "wavefront_group_cores", "batch_pipeline_slots", "carry_input_slots")
 DECLARATIONS = {"absent": {}, "false": {"layer_replication": False}}
 #: Readings of the wall clock and per-run tokens (an IR build's random cache-trust token, which its mapping echoes),
 #: never part of a plan, a program or a price.
@@ -153,6 +159,26 @@ def _attributes(obj: Any) -> Optional[list]:
 def digest(obj: Any, drop: frozenset) -> str:
     text = json.dumps(Canon(drop)(obj), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+# --------------------------------------------------------------------------------------------- the chip descriptions
+def chips_without_new_keys() -> None:
+    """[thru:w2] Every shipped chip description as the run reads it (the target bundles' cache), stated without the
+    branch's new keys: on this branch the study chip ``study_compass`` states ``carry_input_slots``."""
+    from types import MappingProxyType
+
+    from mimarsinan.mapping.platform import target_bundles as TB
+
+    TB.target_bundles()
+    for directory, bundles in list(TB._CACHE.items()):
+        kept = {}
+        for name, bundle in bundles.items():
+            values = bundle.values
+            if set(values) & set(NEW_KEYS):
+                bundle = dataclasses.replace(bundle, values_json=json.dumps(
+                    {k: v for k, v in values.items() if k not in NEW_KEYS}))
+            kept[name] = bundle
+        TB._CACHE[directory] = MappingProxyType(kept)
 
 
 # --------------------------------------------------------------------------------------------- the planner's plans
@@ -324,6 +350,7 @@ CANDIDATE_FIXTURES = ("c1_compass_k16",)
 
 def run(tree: Path, fixture: str, declare: str, compare: str) -> Dict[str, Any]:
     extra = DECLARATIONS[declare]
+    chips_without_new_keys()
     drop = WALL_KEYS | (frozenset(NEW_KEYS) | DECLARATION_DIGESTS if DECLARATIONS[compare] else frozenset())
     if fixture in CANDIDATE_FIXTURES:
         plans, programs, priced = _c1_compass_k16(extra, tree)
