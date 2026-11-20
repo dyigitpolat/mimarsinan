@@ -18,10 +18,12 @@ one copy of a level is refused by name. Undeclared or false, one copy per key, b
 [thru:w2] The batch pipeline (declared ``batch_pipeline_slots`` B): a run of the program serves B inputs. The instances
 of input 1, then input 2, and so on share each wavefront group's passes, each in the first pass after its own input's
 producers, on its key's copy that is free earliest (a copy computes one instance per pass, of whichever input), so a
-group's start-up passes are paid once per run. A W02 group's passes serve one input each: they run once per input,
-input by input. The pass budget is counted per run. The chip states how many inputs' carried values it holds at once
-(``carry_input_slots``): none stated, or fewer than B, refuses B by name (``refuse_batch_slots``). Undeclared, one
-input per run, byte for byte.
+group's start-up passes are paid once per run. [thru:w5] A pass outside every wavefront group (a W02 group's, or a
+segment's outside the wavefront) holds by the group rule as a group of one pass (``slot_turns``): it serves the run's
+inputs as slot stages under one load, input slot 0 to B-1 in consecutive passes (its one copy computes one instance per
+pass), the first with the pass's own load and every other resident on it. The pass budget is counted per run. The chip
+states how many inputs' carried values it holds at once (``carry_input_slots``): none stated, or fewer than B, refuses B
+by name (``refuse_batch_slots``). Undeclared, one input per run, byte for byte.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ from mimarsinan.mapping.platform.mapping_structure import PositionMultiplexingEr
 from mimarsinan.mapping.support.position_multiplexing import CopyKey, copy_keys, multiplexed_segment_passes
 
 __all__ = ["WavefrontGroup", "WavefrontPlan", "census_producers", "layout_specs", "pipelined_segment_passes",
-           "refuse_layer_copies", "refuse_without_wire_census", "segment_producers"]
+           "refuse_layer_copies", "refuse_without_wire_census", "segment_producers", "slot_turns"]
 
 
 @dataclass(frozen=True)
@@ -213,6 +215,16 @@ def _replicate(specs, keys, members, order: Sequence[CopyKey], template: Sequenc
 Entry = Tuple[int, int]   # [thru:w2] (input slot, member): one instance of one input
 
 
+def slot_turns(heads: Sequence[bool], slots: int) -> List[Tuple[int, int, bool]]:
+    """[thru:w5] The group rule for the passes outside every wavefront group, each as a group of one pass: under a
+    declared ``batch_pipeline_slots`` B every planned pass (``heads``: per pass, whether it loads its weights) serves the
+    run's B inputs in B consecutive passes, input slot 0 to B-1 (its one copy computes one instance per pass), slot 0's
+    with the pass's own load and every other slot's resident on the layout it loads. Every producer of such a pass ran,
+    for every slot, in an earlier pass (an earlier group's, or an earlier planned pass's turns), so each slot's reads are
+    of its own earlier values. Per run pass, ``(planned pass, input slot, whether it loads)``."""
+    return [(q, b, bool(head) and b == 0) for q, head in enumerate(heads) for b in range(int(slots))]
+
+
 def _wavefront(members: Sequence[int], keys, producers, start: int, coalescing, label: str,
                copies: Optional[Dict[CopyKey, int]] = None, inputs: int = 1
                ) -> Tuple[Dict[Entry, int], Dict[Entry, int]]:
@@ -274,7 +286,8 @@ def pipelined_segment_passes(
     """The segment's groups in level order, each a wavefront (or W02's runs), the passes numbered across groups.
     [thru:w1] Under ``layer_replication`` each wavefront group's free cores hold copies of its keys
     (``wavefront_group_cores``: the cores one copy of a group may take). [thru:w2] Under ``batch_pipeline_slots`` B
-    the run serves B inputs: they share each wavefront group's passes, and a W02 group runs once per input."""
+    the run serves B inputs: they share each wavefront group's passes, and [thru:w5] each pass of a W02 group serves
+    them in turn under one load (``slot_turns``)."""
     refuse_layer_copies(layer_replication, wavefront_group_cores, True)
     refuse_batch_slots(batch_pipeline_slots, carry_input_slots, True)
     inputs = 1 if batch_pipeline_slots is None else int(batch_pipeline_slots)
@@ -302,10 +315,9 @@ def pipelined_segment_passes(
                 else [coalescing_group_ids[i] for i in members], label=label)
             feasible = feasible and mux.feasible
             local = {id(specs[i]): i for i in members}
-            for b in range(inputs):  # [thru:w2] a W02 pass serves one input: the group's passes once per input
-                for chunk, head in zip(mux.pass_lists, mux.run_heads):
-                    pass_lists.append([(b, local[id(s)]) for s in chunk])
-                    heads.append(bool(head))
+            for q, b, head in slot_turns(mux.run_heads, inputs):  # [thru:w5] each W02 pass serves the slots in turn
+                pass_lists.append([(b, local[id(s)]) for s in mux.pass_lists[q]])
+                heads.append(head)
             groups.append(WavefrontGroup(tuple(group_levels), start, len(pass_lists), False, (), ()))
             continue
         order = list(dict.fromkeys(keys[i] for i in members))

@@ -1,8 +1,11 @@
 """[thru:w2] The batch pipeline in the ONE pass planner (PL/thru/design.md (c) 'Planner', (e) 'Planner'): under a
 declared ``batch_pipeline_slots`` B a run of the program serves B inputs. The instances of input 1, then input 2, and so
 on share each wavefront group's passes, each in the first pass after its own input's producers, on its key's copy that
-is free earliest (one copy computes one instance per pass, of whichever input). A pass outside every wavefront group
-serves one input, so it runs once per input, input by input. The pass budget is counted per run.
+is free earliest (one copy computes one instance per pass, of whichever input). [thru:w5] A pass outside every
+wavefront group follows the group rule as a group of one pass: it serves the run's inputs as slot stages under one
+load, input slot 0 to B-1 in consecutive passes (its one copy computes one instance per pass), the first with the pass's
+own load and every other resident on it, so a run loads what one input's program loads. The pass budget is counted per
+run.
 
 Vehicles: the copies' chain of ``test_layer_copies_planner`` (20 x 20 bank instances on 32 x 32 cores, every copy one
 whole core, hand-counted), and the wavefront chain of ``test_composition`` with a level of owned cores (a W02 group)."""
@@ -143,7 +146,9 @@ class TestPassesOutsideTheWavefront:
         return plan_segment_passes(specs, 16, core_types=TC.CORES, max_schedule_passes=64, position_multiplexing=True,
                                    pipelined_multiplexing=True, producers=reads, **kw)
 
-    def test_a_w02_group_runs_once_per_input_input_by_input(self):
+    def test_a_w02_group_serves_the_inputs_pass_by_pass_under_one_load(self):
+        """[thru:w5] Each W02 pass serves slot 0, then slot 1, in consecutive passes: slot 0's keeps the pass's own
+        load (its run's head), slot 1's runs resident on it, so the group loads what one input's group loads."""
         specs, reads = self._owned()
         one, two = self._plan(specs, reads), self._plan(specs, reads, 2)
         w02, w02_two = one.wavefront.groups[1], two.wavefront.groups[1]
@@ -152,25 +157,50 @@ class TestPassesOutsideTheWavefront:
         assert w02_two.end_pass - w02_two.first_pass == 2 * n
         base = [[s.name for s in chunk] for chunk in one.pass_lists[w02.first_pass:w02.end_pass]]
         got = _entries(two)[w02_two.first_pass:w02_two.end_pass]
-        assert got == [_named(0, names) for names in base] + [_named(1, names) for names in base]
+        assert got == [_named(b, names) for names in base for b in (0, 1)]
         heads = one.run_heads[w02.first_pass:w02.end_pass]
-        assert two.run_heads[w02_two.first_pass:w02_two.end_pass] == heads + heads
+        assert two.run_heads[w02_two.first_pass:w02_two.end_pass] == tuple(h and b == 0 for h in heads for b in (0, 1))
+        assert sum(two.run_heads) == sum(one.run_heads)
         assert len(two.pass_lists) == 22 and len(one.pass_lists) == 11
 
-    def test_a_segment_without_a_shared_bank_runs_once_per_input(self):
+    @pytest.mark.parametrize("slots", [2, 3, 5])
+    def test_a_segment_without_a_shared_bank_serves_the_inputs_pass_by_pass_under_one_load(self, slots):
+        """[thru:w5] A capacity split (owned cores, three dependent levels) on 1 and 3 cores: each planned pass serves
+        the B inputs in consecutive passes, slot 0's with the pass's own load, the others resident on it."""
         specs = [LayoutSoftCoreSpec(20, 20, latency_tag=lv, segment_id=0, name=f"own{lv}") for lv in range(3)]
         reads = [frozenset(), frozenset({0}), frozenset({1})]
         for count in (1, 3):
             kw = dict(core_types=_cores(count), max_schedule_passes=64, position_multiplexing=True,
                       pipelined_multiplexing=True, producers=reads)
             one = plan_segment_passes(specs, count, **kw)
-            three = plan_segment_passes(specs, count, batch_pipeline_slots=3, carry_input_slots=3, **kw)
-            assert one.wavefront is None and three.wavefront is None
-            assert three.pass_lists == one.pass_lists * 3 and three.slots == 3
-            assert three.input_slots == tuple((b,) * len(chunk) for b in range(3) for chunk in one.pass_lists)
-            assert three.residency_applied == one.residency_applied
-            assert three.resident_flags == resident_passes(3 * len(one.pass_lists),
-                                                           policy_applied=one.residency_applied)
+            many = plan_segment_passes(specs, count, batch_pipeline_slots=slots, carry_input_slots=slots, **kw)
+            assert one.wavefront is None and many.wavefront is None and not one.residency_applied
+            assert many.pass_lists == tuple(chunk for chunk in one.pass_lists for _ in range(slots))
+            assert many.slots == slots
+            assert many.input_slots == tuple((b,) * len(chunk) for chunk in one.pass_lists for b in range(slots))
+            assert many.resident_flags == tuple(b > 0 or flag for flag in one.resident_flags for b in range(slots))
+            assert many.resident_flags.count(False) == one.resident_flags.count(False)
+
+    def test_every_read_of_such_a_pass_is_of_an_earlier_pass_of_its_own_input(self):
+        """Its inputs' producers have ended for every slot: an earlier pass's, which served every slot before it."""
+        specs = [LayoutSoftCoreSpec(20, 20, latency_tag=lv, segment_id=0, name=f"own{lv}") for lv in range(3)]
+        reads = [frozenset(), frozenset({0}), frozenset({1})]
+        plan = plan_segment_passes(specs, 1, core_types=_cores(1), max_schedule_passes=64, position_multiplexing=True,
+                                   pipelined_multiplexing=True, producers=reads, batch_pipeline_slots=3,
+                                   carry_input_slots=3)
+        at = {(b, s.name): q for q, (chunk, inputs) in enumerate(zip(plan.pass_lists, plan.input_slots))
+              for s, b in zip(chunk, inputs)}
+        for c, ps in enumerate(reads):
+            for p in ps:
+                assert max(at[(b, f"own{p}")] for b in range(3)) < min(at[(b, f"own{c}")] for b in range(3))
+
+    def test_the_pass_budget_still_counts_the_run(self):
+        specs = [LayoutSoftCoreSpec(20, 20, latency_tag=lv, segment_id=0, name=f"own{lv}") for lv in range(3)]
+        kw = dict(core_types=_cores(1), position_multiplexing=True, pipelined_multiplexing=True,
+                  producers=[frozenset(), frozenset({0}), frozenset({1})], batch_pipeline_slots=3, carry_input_slots=3)
+        assert len(plan_segment_passes(specs, 1, max_schedule_passes=9, **kw).pass_lists) == 9
+        with pytest.raises(PositionMultiplexingError, match="needs 9 passes per run"):
+            plan_segment_passes(specs, 1, max_schedule_passes=8, **kw)
 
 
 class TestOneFunctionOfBothPlanes:

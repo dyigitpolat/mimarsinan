@@ -16,7 +16,8 @@ unread (copies of one key may share a core, and the pass's instances do not alwa
 [thru:w2] Under a declared batch pipeline a pass that serves several inputs is one stage per input slot, all with the
 pass's index, each carrying its slot (``schedule_input_slot``) and holding its slot's instances on their copies. The
 first stage of a group's first pass loads the layout; every other stage of the group, its first pass's included, runs
-resident on it. A W02 group's passes, planned once per input, carry their input's slot.
+resident on it. A W02 group's passes carry their input's slot: [thru:w5] each planned pass serves the slots in turn,
+slot 0's with the pass's own load and the others resident on it, verified as W02's runs are.
 """
 
 from __future__ import annotations

@@ -23,7 +23,7 @@ from mimarsinan.mapping.layout.layout_types import (
     LayoutSoftCoreSpec,
 )
 from mimarsinan.mapping.support.pipelined_multiplexing import (
-    WavefrontPlan, pipelined_segment_passes, refuse_layer_copies, segment_producers)
+    WavefrontPlan, pipelined_segment_passes, refuse_layer_copies, segment_producers, slot_turns)
 from mimarsinan.mapping.support.position_multiplexing import multiplexed_segment_passes, shares_a_bank
 from mimarsinan.mapping.support.schedule.bank_clustered_law import (
     BankInstance,
@@ -154,9 +154,9 @@ def plan_segment_passes(
     its levels share passes as a wavefront (``producers``: per spec, the segment positions it reads). [thru:w1] With
     ``layer_replication`` each wavefront group's free cores hold copies of its banks (``wavefront_group_cores``: the
     cores one copy of a group may take); a declaration it cannot serve refuses by name (``refuse_layer_copies``).
-    [thru:w2] With ``batch_pipeline_slots`` B a run serves B inputs: they share each wavefront group's passes, and every
-    pass outside the wavefront runs once per input (``_once_per_input``), the pass budget counted per run; a B the chip
-    cannot serve (``carry_input_slots``) refuses by name (``refuse_batch_slots``).
+    [thru:w2] With ``batch_pipeline_slots`` B a run serves B inputs: they share each wavefront group's passes, and
+    [thru:w5] every pass outside the wavefront serves them in turn under one load (``_slot_turns``), the pass budget
+    counted per run; a B the chip cannot serve (``carry_input_slots``) refuses by name (``refuse_batch_slots``).
 
     A composition that cannot pack is not the program deployment runs;
     it is declined rather than reported as an infeasible layout.
@@ -187,7 +187,7 @@ def plan_segment_passes(
             carry_input_slots=carry_input_slots)
         return SegmentPassPlan(wave.pass_lists, wave.feasible, False, run_heads=wave.run_heads, wavefront=wave,
                                slots=wave.slots, input_slots=wave.entry_slots)
-    once = (lambda plan: _once_per_input(plan, batch_pipeline_slots, max_schedule_passes))
+    once = (lambda plan: _slot_turns(plan, batch_pipeline_slots, max_schedule_passes))
     if position_multiplexing and shares_a_bank(softcores, shares):
         mux = multiplexed_segment_passes(
             softcores, core_types, budget=budget, allow_coalescing=allow_coalescing, allow_splitting=allow_splitting,
@@ -216,11 +216,13 @@ def plan_segment_passes(
     return once(SegmentPassPlan(tuple(tuple(chunk) for chunk in pass_lists), feasible=ok, residency_applied=False))
 
 
-def _once_per_input(plan: SegmentPassPlan, slots: Optional[int], max_schedule_passes: int) -> SegmentPassPlan:
-    """[thru:w2] A segment planned outside every wavefront group serves one input per pass: under a declared
-    ``batch_pipeline_slots`` B its passes run once per input, input by input, each input's as planned (its run heads
-    repeated; a residency composition's passes all place the regions its first pass programs). The pass budget is
-    counted per run. Undeclared, the plan itself."""
+def _slot_turns(plan: SegmentPassPlan, slots: Optional[int], max_schedule_passes: int) -> SegmentPassPlan:
+    """[thru:w5] A segment planned outside every wavefront group, under a declared ``batch_pipeline_slots`` B: each of
+    its passes holds by the group rule as a group of one pass (``slot_turns``), serving the B inputs in consecutive
+    passes, input slot 0 to B-1, slot 0's with the pass's own load (its run head, the capacity split's every pass, the
+    residency composition's first) and every other resident on it. The residency composition keeps its own marks (every
+    pass after its first places the regions that pass programs). The pass budget is counted per run. Undeclared, the
+    plan itself."""
     if slots is None:
         return plan
     n = int(slots)
@@ -228,9 +230,10 @@ def _once_per_input(plan: SegmentPassPlan, slots: Optional[int], max_schedule_pa
         raise BatchPipelineError(f"batch_pipeline_slots {n}: a segment of {len(plan.pass_lists)} passes per input "
                                  f"needs {n * len(plan.pass_lists)} passes per run, above max_schedule_passes "
                                  f"{int(max_schedule_passes)}; declare a larger pass budget")
-    return replace(plan, pass_lists=plan.pass_lists * n,
-                   run_heads=None if plan.run_heads is None else plan.run_heads * n, slots=n,
-                   input_slots=tuple((b,) * len(chunk) for b in range(n) for chunk in plan.pass_lists))
+    turns = slot_turns(tuple(not resident for resident in plan.resident_flags), n)
+    return replace(plan, pass_lists=tuple(plan.pass_lists[q] for q, _b, _head in turns),
+                   run_heads=None if plan.residency_applied else tuple(head for _q, _b, head in turns), slots=n,
+                   input_slots=tuple((b,) * len(plan.pass_lists[q]) for q, b, _head in turns))
 
 
 @dataclass(frozen=True)

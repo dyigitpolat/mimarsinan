@@ -108,20 +108,30 @@ def stage_copies(stage) -> list:
     ]
 
 
+def stage_soft_cores(stage) -> list:
+    """[thru:w5] Per physical core: the soft cores it holds, each as its IR node and offsets (a soft core's weights are
+    its IR node's)."""
+    return [frozenset((int(p["ir_node_id"]), int(p["axon_offset"]), int(p["neuron_offset"])) for p in placements)
+            for placements in stage.hard_core_mapping.soft_core_placements_per_hard_core]
+
+
 def mark_multiplexed_residency(pass_stages: list, run_heads) -> None:
     """[W02] A pass that is not its run's first executes on the copies the first programmed: verify that every
     physical core holds exactly the head's bank regions, each bank-backed, then mark the pass weight-resident; any
-    divergence is refused by name, never claimed as residency."""
+    divergence is refused by name, never claimed as residency. [thru:w5] A pass that serves another input slot of its
+    head's own planned pass (``slot_turns``) holds the head's very soft cores, which need no bank: the same IR nodes at
+    the same offsets of every core."""
     if len(pass_stages) != len(run_heads):
         raise PositionMultiplexingError(
             f"position_multiplexing: {len(pass_stages)} executed passes for {len(run_heads)} planned ones")
-    head = None
+    head = head_cores = None
     for stage, is_head in zip(pass_stages, run_heads):
         copies = stage_copies(stage)
         if is_head:
-            head = copies
+            head, head_cores = copies, stage_soft_cores(stage)
             continue
-        if copies != head or any(region[0] is None for _a, _n, regions in copies for region in regions):
+        banked = all(region[0] is not None for _a, _n, regions in copies for region in regions)
+        if copies != head or not (banked or stage_soft_cores(stage) == head_cores):
             raise PositionMultiplexingError(
                 f"position_multiplexing: pass {stage.schedule_pass_index} of segment {stage.schedule_segment_index} "
                 f"places other weights than the first pass of its run, so it cannot execute on that pass's copies")

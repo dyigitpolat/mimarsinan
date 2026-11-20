@@ -96,7 +96,9 @@ def _flush_scheduled_subsegments(
     capacity split cuts at the specs' depth segments, as on the base; the
     planes plan the same passes given the walk's runs (``spec_runs``).
     [thru:w2] Under a declared batch pipeline each pass outside the wavefront
-    serves one input, planned once per input: it carries that input's slot.
+    serves one input: it carries that input's slot. [thru:w5] The planner
+    gives each planned pass to the slots in turn, slot 0's with the pass's own
+    load and the others resident on it (``mark_multiplexed_residency``).
     """
     from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
     from mimarsinan.mapping.packing.canonical import declared_core_roles
