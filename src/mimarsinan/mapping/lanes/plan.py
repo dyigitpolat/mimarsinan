@@ -7,9 +7,13 @@ feeds (the producer-side reduction, §3.4: the pool sums the perceptron's accumu
 rounding for the pooled value), then a ReLU (the lane's last value's only reader: the clamp); any other average
 pool over an on-chip value is a lane of its own (a requantizing reduction). A fused add also needs its accumulator
 on chip: a perceptron that reads a host value (the network input or a host op, a segment entry) snaps its rows on
-its entry grid, which a core-fed operand row does not share, so its add stays on the host (exact there). Every
-decision reads the graph and the declaration only, so Boundary Quantization, Readout Law and Soft Core Mapping
-recompute the same plan.
+its entry grid, which a core-fed operand row does not share, so its add stays on the host (exact there). A
+constant-zero pad over an on-chip value is on-chip wiring (``forms.zero_pad_form``): its padded elements are off
+sources, which add 0, so an add whose operand is a zero-padded on-chip value takes its on-chip addition and its sum is
+rounded once (branch tcad/residual-sum-rounding). An add class E would put on chip that stays on the host is noted
+with its holder and why (``host_adds``), for the declared state's refusal (``declared_lanes``). Every decision reads
+the graph and the declaration only, so Boundary Quantization, Readout Law and Soft Core Mapping recompute the same
+plan.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 from mimarsinan.mapping.export.output_law import WIRING_MAPPERS
 from mimarsinan.mapping.lanes.declaration import ADD, CLAMP, POOL, LaneDeclaration
-from mimarsinan.mapping.lanes.forms import is_add_form, is_clamp_form, is_pool_form, pool_form
+from mimarsinan.mapping.lanes.forms import is_add_form, is_clamp_form, is_pool_form, pool_form, zero_pad_form
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 
 
@@ -53,23 +57,41 @@ class PoolLane:
 
 
 @dataclass
+class HostAdd:
+    """An add class E would put on chip that stays on the host: ``holder``, the perceptron it alone reads (whose lane
+    it would end, so whose lane grid would be the sum's), and why it stays."""
+
+    add: ComputeOpMapper
+    holder: Any
+    reason: str
+
+
+@dataclass
 class LanePlan:
     declaration: LaneDeclaration
     perceptron_lanes: List[PerceptronLane] = field(default_factory=list)
     pool_lanes: List[PoolLane] = field(default_factory=list)
+    #: Constant-zero pads over on-chip values: on-chip wiring, absorbed as the lanes' ops are.
+    pads: List[ComputeOpMapper] = field(default_factory=list)
+    host_adds: List[HostAdd] = field(default_factory=list)
 
     def absorbed(self) -> FrozenSet[int]:
         """``id`` of every host-op mapper a lane absorbs (an on-chip op, never a segment boundary)."""
         ids = {id(m) for lane in self.perceptron_lanes for m in (lane.add, lane.reduce, lane.clamp) if m is not None}
-        return frozenset(ids | {id(lane.pool) for lane in self.pool_lanes})
+        return frozenset(ids | {id(lane.pool) for lane in self.pool_lanes} | {id(pad) for pad in self.pads})
 
     def lane_of(self, holder) -> Optional[PerceptronLane]:
         return next((lane for lane in self.perceptron_lanes if lane.holder is holder), None)
 
     def counts(self) -> Dict[str, int]:
-        return {"clamp": sum(lane.clamp is not None for lane in self.perceptron_lanes),
-                "add": sum(lane.add is not None for lane in self.perceptron_lanes), "pool": len(self.pool_lanes),
-                "reduce": sum(lane.reduce is not None for lane in self.perceptron_lanes)}
+        """The lane ops by kind, and the absorbed pads where there are any (absent at 0, so a plan without a pad
+        reports as it did)."""
+        counts = {"clamp": sum(lane.clamp is not None for lane in self.perceptron_lanes),
+                  "add": sum(lane.add is not None for lane in self.perceptron_lanes), "pool": len(self.pool_lanes),
+                  "reduce": sum(lane.reduce is not None for lane in self.perceptron_lanes)}
+        if self.pads:
+            counts["pad"] = len(self.pads)
+        return counts
 
 
 def is_holder(node) -> bool:
@@ -115,6 +137,11 @@ def plan_lanes(model_repr, declaration: LaneDeclaration) -> LanePlan:
         if not isinstance(node, ComputeOpMapper):
             continue
         module = node.module
+        if (declaration.any and len(sources) == 1 and id(sources[0]) in on_chip
+                and zero_pad_form(module, _shapes(node)[0]) is not None):
+            plan.pads.append(node)  # wiring: each padded element an off source, which adds 0
+            on_chip.add(id(node))
+            continue
         if declaration.declares(ADD) and len(sources) == 2 and is_add_form(module, _shapes(node)):
             for index in (0, 1):
                 lane = open_lane.get(id(sources[index]))
@@ -127,6 +154,8 @@ def plan_lanes(model_repr, declaration: LaneDeclaration) -> LanePlan:
                     open_lane[id(node)] = lane
                     on_chip.add(id(node))
                     break
+            else:
+                plan.host_adds.extend(_host_adds(node, sources, open_lane, on_chip, only_reader, reads_on_chip))
             continue
         if declaration.declares(CLAMP) and len(sources) == 1 and is_clamp_form(module):
             lane = open_lane.get(id(sources[0]))
@@ -150,13 +179,33 @@ def plan_lanes(model_repr, declaration: LaneDeclaration) -> LanePlan:
     return plan
 
 
+def _host_adds(node, sources, open_lane, on_chip, only_reader, reads_on_chip) -> List[HostAdd]:
+    """The add ``node`` stays on the host: each input it alone reads whose lane is still open (the holder the add's
+    lane would end), with why the add does not join that lane."""
+    found = []
+    for index in (0, 1):
+        holder, operand = sources[index], sources[1 - index]
+        lane = open_lane.get(id(holder))
+        if (lane is None or lane.holder is not holder or lane.add is not None or lane.clamp is not None
+                or not only_reader(holder, node)):
+            continue
+        reasons = [] if id(operand) in on_chip else [
+            f"its operand {getattr(operand, 'name', None) or type(operand).__name__!r} is a host value"]
+        if not reads_on_chip(holder):
+            reasons.append(f"its holder {getattr(holder, 'name', None)!r} reads host values (a segment entry)")
+        found.append(HostAdd(node, holder, ", and ".join(reasons)))
+    return found
+
+
 def _unsigned_value(node, plan: LanePlan) -> bool:
-    """Whether an on-chip value is non-negative by construction (a clamp lane's end, or a pool over one)."""
+    """Whether an on-chip value is non-negative by construction (a clamp lane's end, or a pool over one, or wiring,
+    a zero pad included, over such values)."""
     for lane in plan.perceptron_lanes:
         if lane.end is node:
             return lane.unsigned
     for lane in plan.pool_lanes:
         if lane.pool is node:
             return lane.unsigned
-    sources = node.get_source_mappers() if isinstance(node, WIRING_MAPPERS) else []
+    wiring = isinstance(node, WIRING_MAPPERS) or any(node is pad for pad in plan.pads)
+    sources = node.get_source_mappers() if wiring else []
     return bool(sources) and all(_unsigned_value(s, plan) for s in sources)

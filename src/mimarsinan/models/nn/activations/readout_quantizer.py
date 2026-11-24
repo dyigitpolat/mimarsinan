@@ -23,6 +23,19 @@ OFFSET_MULTIPLIER = "offset_multiplier"
 OUTPUT_OFFSET, OPERAND_M, OPERAND_STEP, OPERAND_OFFSET = "output_offset", "operand_m", "operand_step", "operand_offset"
 
 
+def _operand_steps(operand: torch.Tensor, steps: torch.Tensor, owner: str) -> torch.Tensor:
+    """The fused operand's grid step per channel, an infinite step (code 0) where the law reads no operand: a
+    channel whose operand is an off element (a zero-padded or pruned one, step 0 and multiplier 0 in the law) adds
+    0, as its off operand row does on the cores. A nonzero value there is refused by name."""
+    none = steps == 0
+    if not bool(none.any()):
+        return steps
+    if bool((torch.where(none, operand.to(torch.float64), torch.zeros((), dtype=torch.float64)) != 0).any()):
+        raise IntegerLawRangeError(f"{owner} operand: a nonzero value in a channel whose law reads no operand (an off "
+                                   "element adds 0)")
+    return torch.where(none, torch.full_like(steps, float("inf")), steps)
+
+
 def straight_through(values: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """The stamped law's estimator: the law's ``values`` forward (in ``y``'s dtype), the identity onto the
     perceptron's float output ``y`` backward."""
@@ -133,8 +146,8 @@ class ReadoutStamp:
         if (operand is None) != (OPERAND_M not in per):
             raise IntegerLawRangeError(f"{type(self.owner[0]).__name__}: a lane operand and its law disagree")
         if operand is not None:
-            q = grid_codes(operand, per[OPERAND_STEP], where=f"{type(self.owner[0]).__name__} operand",
-                           offset=per[OPERAND_OFFSET])
+            q = grid_codes(operand, _operand_steps(operand, per[OPERAND_STEP], type(self.owner[0]).__name__),
+                           where=f"{type(self.owner[0]).__name__} operand", offset=per[OPERAND_OFFSET])
             operands = ((q, per[OPERAND_M]),)
         codes = apply_law(acc, m0=per["m0"], bias=bias, shift=per["shift"], lo=per["lo"], hi=per["hi"],
                           adc_shift=per["adc_shift"], adc_levels=per["adc_levels"], operands=operands)

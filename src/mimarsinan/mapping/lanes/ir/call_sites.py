@@ -18,12 +18,14 @@ from mimarsinan.mapping.lanes.plan import LanePlan
 
 #: A planned host op's role in fusion: ``(kind, argument)``, the argument an add's operand index or a pool's owner key.
 Role = Tuple[str, object]
+#: The role of a constant-zero pad the plan takes as on-chip wiring.
+PAD = "pad"
 
 
 def planned_call_sites(plan: LanePlan, first_owner: int) -> List[Tuple[Any, Role]]:
-    """Every host op ``plan`` absorbs, as its call site and its role: each perceptron lane's add, reduction and
-    clamp, then each pool lane (owner keys from ``first_owner`` on)."""
-    sites: List[Tuple[Any, Role]] = []
+    """Every host op ``plan`` absorbs, as its call site and its role: each zero pad (wiring), each perceptron lane's
+    add, reduction and clamp, then each pool lane (owner keys from ``first_owner`` on)."""
+    sites: List[Tuple[Any, Role]] = [(pad, (PAD, None)) for pad in plan.pads]
     for lane in plan.perceptron_lanes:
         if lane.add is not None:
             sites.append((lane.add, ("add", lane.operand_index)))

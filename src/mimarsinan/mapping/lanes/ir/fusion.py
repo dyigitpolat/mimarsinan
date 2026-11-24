@@ -5,10 +5,12 @@ is removed: each accumulator column of its producing cores gains one operand row
 input's element as its source) and the add's readers read the cores. A producer-side reduction replaces its
 producer's cores by reduced cores (``reduce_cores``: each pool output stacks its window instances on the producer's
 weights, one rounding). Any other average pool becomes reduction cores (0/1 weights over each window, ``theta`` the
-window size) that requantize onto the pool lane's grid. Every role is keyed on the plan's call sites (one per
-call of a module, ``call_sites``), so the IR and the model absorb the same ops; a planned op the IR cannot fuse is
-refused by name. [U-L] Every core the fusion inserts gets a layout record of its own, its level in the fused program
-(``layout_records.py``), so the planners that order passes by the records order it too. [U-L2] Declared
+window size) that requantize onto the pool lane's grid. A constant-zero pad (on-chip wiring) is removed and its
+readers read its input's sources, an off source at each padded element (``pad_wiring.py``). Every role is keyed on
+the plan's call sites (one per call of a module, ``call_sites``), so the IR and the model absorb the same ops; a
+planned op the IR cannot fuse is refused by name. [U-L] Every core the fusion inserts gets a layout record of its
+own, its level in the fused program (``layout_records.py``), so the planners that order passes by the records order
+it too. [U-L2] Declared
 ``reduction_core_banks``, each pool lane's window groups of one matrix over one producer grid become the instances of
 one shared bank (``reduction_banks.py``) before their records are written, so each record states its bank.
 """
@@ -22,10 +24,11 @@ import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.ir.source import encode_ir_sources
-from mimarsinan.mapping.lanes.forms import PoolForm, pool_form
-from mimarsinan.mapping.lanes.ir.call_sites import call_site_roles, planned_call_sites
+from mimarsinan.mapping.lanes.forms import PoolForm, pool_form, zero_pad_form
+from mimarsinan.mapping.lanes.ir.call_sites import PAD, call_site_roles, planned_call_sites
 from mimarsinan.mapping.lanes.ir.layout_records import record_inserted_cores
 from mimarsinan.mapping.lanes.ir.operand_rows import insert_operand_rows
+from mimarsinan.mapping.lanes.ir.pad_wiring import padded_sources
 from mimarsinan.mapping.lanes.ir.pool_cores import PoolLaneError, pool_lane_cores
 from mimarsinan.mapping.lanes.ir.reduction_banks import bank_ir_cores
 from mimarsinan.mapping.lanes.ir.reduce_cores import reduced_lane_cores, refuse_unreducible
@@ -61,6 +64,8 @@ class LaneFusion:
     #: [U-L2] The banks the pool lanes' cores became instances of (None: the decision undeclared), and their ids.
     reduction_banks: Optional[int] = None
     bank_ids: Tuple[int, ...] = ()
+    #: The constant-zero pads removed as wiring.
+    pads: int = 0
 
     def as_dict(self) -> Dict[str, object]:
         out: Dict[str, object] = {
@@ -69,6 +74,8 @@ class LaneFusion:
             "reductions": self.reductions, "reduced_cores": self.reduced_cores}
         if self.reduction_banks is not None:  # declared-only: an undeclared report is the one it was
             out["reduction_banks"] = self.reduction_banks
+        if self.pads:  # absent at 0: a program without a pad reports as it did
+            out["pads"] = self.pads
         return out
 
 
@@ -182,6 +189,21 @@ class _Fuser:
         self.report.adds += 1
         self.report.lane_ops["add"] += int(size)
 
+    def pad(self, op: ComputeOp) -> None:
+        """A constant-zero pad as wiring: its output elements become its input's sources, an off source (the
+        constant 0) at each padded element."""
+        shape = tuple(int(d) for d in (op.input_shape or ()))
+        form = zero_pad_form(op.params.get("module"), shape or None)
+        if form is None:
+            raise LaneFusionError(f"pad {op.name!r} over input {shape}: not a constant-zero pad of its input (the IR "
+                                  "and the plan disagree)")
+        sources = self.resolved(op)
+        self._on_cores(sources, op, "pad")
+        if int(np.prod(shape)) != sources.size:
+            raise LaneFusionError(f"pad {op.name!r} reads {sources.size} elements over input {shape}")
+        self.replace[int(op.id)] = padded_sources(sources, shape, form)
+        self.report.pads += 1
+
     def pool(self, op: ComputeOp, owner: int) -> None:
         sources = self.resolved(op)
         self._on_cores(sources, op, "pool")
@@ -268,6 +290,8 @@ def fuse_ir_lanes(ir_graph: IRGraph, plan: LanePlan, *, first_owner: int, max_ax
             fuser.add(node, int(argument))  # pyright: ignore[reportArgumentType] -- the add role carries an int
         elif kind == "reduce":
             fuser.reduce(node)
+        elif kind == PAD:
+            fuser.pad(node)
         else:
             fuser.pool(node, int(argument))  # pyright: ignore[reportArgumentType] -- the pool role carries an int
         removed.add(int(node.id))

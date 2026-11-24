@@ -8,7 +8,8 @@ cells: a clamp's readers read its producer's cells; a fused add's readers read t
 accumulator core takes one operand row per column (every core of a bank the bank's whole block, ``operand_rows``),
 placed as axons and counted as no cell (``operand_axons``); a pool lane's outputs are reduction cores over its
 windows (``pool_cores``' windows and core groups); a reduction replaces its producer's cores by reduced cores
-(``reduce_cores``' groups). So the absorbed ops leave the host census and the segmentation, and the wires through
+(``reduce_cores``' groups); a constant-zero pad's readers read its input's cells with an off source at each padded
+element (``pad_wiring``). So the absorbed ops leave the host census and the segmentation, and the wires through
 them are core-to-core. Weights, grids and laws stay the builder's. A plan the walk cannot apply is refused by the
 fusion's own name (``LaneFusionError``, ``PoolLaneError``). [U-L2] A pool lane's banks: ``reduction_banks.WalkBanks``.
 """
@@ -22,9 +23,10 @@ import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.lanes.declaration import lanes_executed
-from mimarsinan.mapping.lanes.forms import pool_form
+from mimarsinan.mapping.lanes.forms import pool_form, zero_pad_form
 from mimarsinan.mapping.lanes.install import lane_core_geometry
-from mimarsinan.mapping.lanes.ir.call_sites import planned_call_sites
+from mimarsinan.mapping.lanes.ir.call_sites import PAD, planned_call_sites
+from mimarsinan.mapping.lanes.ir.pad_wiring import padded_sources
 from mimarsinan.mapping.lanes.ir.pool_cores import PoolLaneError, pool_windows, window_rows
 from mimarsinan.mapping.lanes.ir.reduction_banks import WalkBanks, declared_reduction_banks
 from mimarsinan.mapping.lanes.ir.refusal import LaneFusionError
@@ -123,6 +125,8 @@ class LaneWalk:
             return input_sources.reshape(shape)
         if kind == "add":
             return self._add(mapping, input_sources, params, int(argument), name, shape)  # type: ignore[arg-type]
+        if kind == PAD:
+            return self._pad(mapping, input_sources, module, input_shape, name, shape)
         flat = np.asarray(input_sources, dtype=object).ravel()
         windows, out_shape = self._windows(module, input_shape, output_shape, name, kind)
         if kind == "pool":
@@ -180,6 +184,19 @@ class LaneWalk:
             columns[int(a.index)] = b
         self.lane_ops["add"] += int(size)
         return sources.flatten()[halves[1 - operand_index]].reshape(shape)
+
+    def _pad(self, mapping: Any, sources: Any, module: Any, input_shape: Any, name: Optional[str],
+             shape: Tuple[int, ...]) -> Any:
+        """A constant-zero pad as wiring (the fusion's ``pad``): its input's cells, an off source per padded
+        element."""
+        in_shape = tuple(int(d) for d in (input_shape or ()))
+        form = zero_pad_form(module, in_shape or None)
+        flat = np.asarray(sources, dtype=object).ravel()
+        if form is None or int(np.prod(in_shape)) != flat.size:
+            raise LaneFusionError(f"pad {name!r} over input {in_shape}: not a constant-zero pad of its input (the walk "
+                                  "and the plan disagree)")
+        self._require_cores(mapping, flat, "pad", name)
+        return padded_sources(flat, in_shape, form).reshape(shape)
 
     def _windows(self, module: Any, input_shape: Any, output_shape: Any, name: Optional[str],
                  kind: str) -> Tuple[List[List[int]], Tuple[int, ...]]:

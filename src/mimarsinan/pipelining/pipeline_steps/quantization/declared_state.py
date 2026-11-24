@@ -12,7 +12,7 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 
 from mimarsinan.mapping.export.output_law import model_output_perceptrons
 from mimarsinan.mapping.lanes.declaration import lanes_executed
-from mimarsinan.mapping.lanes.declared_lanes import declare_lane_state
+from mimarsinan.mapping.lanes.declared_lanes import declare_lane_state, refuse_host_sum_ranges
 from mimarsinan.mapping.support.grid_declarations import identity_output_law
 from mimarsinan.mapping.support.quantizer_state import (
     QuantizerStateError,
@@ -41,10 +41,12 @@ def declare_readout_state(model, perceptrons: list, quantizers: list, platform: 
                           pools: Sequence[Tuple[str, Any]] = ()) -> Dict[str, int]:
     """After calibration: the declared readout ranges (with a lane program's offsets and pool lane ranges, WI-5e),
     then the identity output law's inert quantizers (an output core writes its exact integers, so its trained forward
-    requantizes nothing). The step report's counts."""
+    requantizes nothing). The step report's counts. A declared range on the holder of an add that stays on the host
+    is refused by name (``refuse_host_sum_ranges``)."""
     report: Dict[str, int] = {}
     state = load_quantizer_state(platform.get("quantizer_state"))
     if state is not None:
+        refuse_host_sum_ranges(model, platform, state)
         report["declared_ranges"] = declare_readout_ranges(model, perceptrons, quantizers, state)
         if state.bank_readout_ranges:
             report["declared_bank_ranges"] = declare_bank_readout_ranges(model, perceptrons, quantizers, state)

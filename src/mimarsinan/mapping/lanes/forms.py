@@ -1,4 +1,5 @@
-"""Lane forms: the host-op payloads a lane realizes (ReLU as the clamp, a two-tensor add, an average pool).
+"""Lane forms: the host-op payloads a lane realizes (ReLU as the clamp, a two-tensor add, an average pool), and the
+constant-zero pad, which executed lanes take as on-chip wiring (``plan.py``).
 
 Each form is a subset of a requirement-table kind (``mapping/capability/op_kinds.py``): a payload this module does
 not recognize keeps its op on the host, where it is exact, and the census prints it there.
@@ -19,6 +20,9 @@ from mimarsinan.models.nn.activations.lane_quantization import LaneAddModule, La
 
 _RELU_FUNCTIONS = (F.relu, torch.relu)
 _ADD_FUNCTIONS = (operator.add, torch.add)
+#: ``F.pad`` and the padding builtin the converter records (``torch._C._nn.pad``, which ``F.pad`` wraps).
+_PAD_FUNCTIONS = (F.pad, getattr(getattr(torch._C, "_nn"), "pad"))
+_PAD_ARGUMENTS = ("pad", "mode", "value")
 
 
 def unwrap_lane(module: Optional[nn.Module]) -> Optional[nn.Module]:
@@ -46,6 +50,44 @@ def is_add_form(module: Optional[nn.Module], input_shapes: Sequence[Optional[Tup
     shapes = [tuple(s) for s in input_shapes if s is not None]
     return (_plain_adapter(unwrap_lane(module), _ADD_FUNCTIONS) and len(input_shapes) == 2 and len(shapes) == 2
             and shapes[0] == shapes[1])
+
+
+@dataclass(frozen=True)
+class PadForm:
+    """A constant-zero pad of a per-sample input: per dimension, the elements added before and after (a negative
+    amount crops). Wiring: each output element is an input element or the constant 0."""
+
+    widths: Tuple[Tuple[int, int], ...]
+
+    def output_shape(self, input_shape: Sequence[int]) -> Tuple[int, ...]:
+        return tuple(int(d) + b + a for d, (b, a) in zip(input_shape, self.widths))
+
+
+def zero_pad_form(module: Optional[nn.Module], input_shape: Optional[Sequence[int]]) -> Optional[PadForm]:
+    """The form of a constant-zero pad over a per-sample input of ``input_shape`` (``F.pad`` or its builtin, mode
+    constant, value 0, integer amounts on the per-sample dimensions only), or ``None``."""
+    if not isinstance(module, ComputeAdapter) or module.fn not in _PAD_FUNCTIONS or input_shape is None:
+        return None
+    if getattr(module, "_bound_count", 0) or module.arg_template is not None or len(module.extra_args) > 3:
+        return None
+    call = dict(zip(_PAD_ARGUMENTS, module.extra_args))
+    if set(module.kwargs) - set(_PAD_ARGUMENTS) or set(call) & set(module.kwargs):
+        return None
+    call.update(module.kwargs)
+    pad, mode, value = call.get("pad"), call.get("mode", "constant"), call.get("value")
+    if mode not in (None, "constant") or isinstance(value, bool) or not (value is None or value == 0):
+        return None
+    if (not isinstance(pad, (tuple, list)) or not pad or len(pad) % 2
+            or not all(isinstance(p, int) and not isinstance(p, bool) for p in pad)):
+        return None
+    shape = tuple(int(d) for d in input_shape)
+    if len(pad) // 2 > len(shape):  # the pad would reach the batch dimension
+        return None
+    widths = [(0, 0)] * len(shape)
+    for k in range(len(pad) // 2):  # F.pad's amounts start at the last dimension
+        widths[len(shape) - 1 - k] = (int(pad[2 * k]), int(pad[2 * k + 1]))
+    form = PadForm(tuple(widths))
+    return form if all(d > 0 for d in form.output_shape(shape)) else None
 
 
 @dataclass(frozen=True)

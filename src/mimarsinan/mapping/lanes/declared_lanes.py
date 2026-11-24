@@ -1,9 +1,12 @@
-"""Declared lane grids (WI-5e): readout offsets on perceptron lanes and the ranges of pool lanes, from the map."""
+"""Declared lane grids (WI-5e): readout offsets on perceptron lanes and the ranges of pool lanes, from the map; and
+the refusal of a declared readout range on the holder of an add that stays on the host."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
+from mimarsinan.mapping.lanes.declaration import lanes_executed
+from mimarsinan.mapping.lanes.plan import plan_lanes
 from mimarsinan.mapping.support.quantizer_state import (
     DECLARED_OFFSET_ATTRIBUTE,
     DECLARED_STATE_ATTRIBUTE,
@@ -11,6 +14,32 @@ from mimarsinan.mapping.support.quantizer_state import (
     QuantizerStateError,
     perceptron_fx_names,
 )
+
+
+class HostSumRangeError(QuantizerStateError):
+    """A declared readout range on a perceptron whose only reader is an add that the declared class E would put on
+    chip but that stays on the host: the range would round the branch before the add, never the sum."""
+
+
+def refuse_host_sum_ranges(model, platform: Mapping[str, Any], state: QuantizerState) -> None:
+    """Under executed lanes, refuse by name a declared readout range on the holder of an add the lane plan leaves on
+    the host (``LanePlan.host_adds``: its operand a host value, or its holder a segment entry). Such a holder's lane
+    ends at its own output, so the range would round the branch and the host would add the other input exactly, where
+    an on-chip addition rounds the sum once on that range. Without a declared range nothing changes."""
+    declaration = lanes_executed(platform)
+    if declaration is None or not state.readout_ranges:
+        return
+    repr_ = model.get_mapper_repr()
+    names = {id(p): name for name, p in perceptron_fx_names(repr_).items()}
+    for host in plan_lanes(repr_, declaration).host_adds:
+        name = names.get(id(host.holder.perceptron))
+        if name in state.readout_ranges:
+            raise HostSumRangeError(
+                f"quantizer_state declares the readout range of {name!r}, whose only reader is the add "
+                f"{host.add.name!r}, which stays on the host ({host.reason}): the range would round the branch "
+                f"{name!r} and the host would add the other input exactly, never rounding the sum; an add rounds its "
+                f"sum once only on chip (its operand and its holder on chip), else declare no readout range for "
+                f"{name!r}")
 
 
 def _offset(quantizer, name: str, offset: float, sha256: str) -> None:
