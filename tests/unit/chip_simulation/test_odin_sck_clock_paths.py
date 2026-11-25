@@ -7,9 +7,9 @@ other than the SCK register's own (the generated clock's source pin). It counts 
 paths that print no clock path, so an empty read is seen, and fails a read with no SCK
 path at all.
 
-Red, MEASURED (survey build lock revision 2, ``clock_path_read``): S1-NC1's (71211) SCK
+Red, MEASURED (survey build lock revision 2, ``clock_path_read``): S1-NC1's SCK
 sections, 41 clock paths with the ULP reset register in five sets of checks; the
-SCK-to-core sections of S1-NC4 (71213) and of 71070, the feedback's setup launch clock
+SCK-to-core sections of S1-NC4 and of the seven-unit build, the feedback's setup launch clock
 path in 4 of 4 and 7 of 7 domains. The fixtures are byte copies of the diagnosis records
 (``tests/fixtures/odin_routed_timing/PROVENANCE.md``). Green: SCK paths whose clock paths
 follow the clock.
@@ -29,9 +29,9 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 CHECK = REPO / "scripts" / "hacc" / "check_sck_clock_paths.py"
 FIXTURES = REPO / "tests" / "fixtures" / "odin_routed_timing"
-S1NC1 = FIXTURES / "s1nc1_71211_sck_sections.rpt.gz"
-S1NC4 = FIXTURES / "s1nc4_71213_sck_to_core_sections.rpt.gz"
-B71070 = FIXTURES / "b71070_sck_to_core_sections.rpt.gz"
+S1NC1 = FIXTURES / "s1nc1_sck_sections.rpt.gz"
+S1NC4 = FIXTURES / "s1nc4_sck_to_core_sections.rpt.gz"
+FIXED_CU7 = FIXTURES / "fixed_cu7_sck_to_core_sections.rpt.gz"
 
 #: sha256 of each fixture's bytes and of its uncompressed text (the diagnosis records).
 FIXTURE_SHA256 = {
@@ -39,8 +39,8 @@ FIXTURE_SHA256 = {
                  "c8523936b03b7d77bedb118116294f8716edf46139462ef9a34023add79159fe"),
     S1NC4.name: ("2d19c6f32038f1a9d9a5f0b6986a4c7915f54e2f666641cbb2e2b1c712bd1879",
                  "811269ddb4219c918d429a0eca9a0ce0d816c9707813120bc847185452d2d0cc"),
-    B71070.name: ("48369320d15660171bbd74ffb9feddfd6bb0c50f9d981a673fdb72f78fd1a7a2",
-                  "fc2f559493b0f8c235d8ca99f82f57cf649223714cd4beeb10756572d73e07c3"),
+    FIXED_CU7.name: ("48369320d15660171bbd74ffb9feddfd6bb0c50f9d981a673fdb72f78fd1a7a2",
+                     "fc2f559493b0f8c235d8ca99f82f57cf649223714cd4beeb10756572d73e07c3"),
 }
 
 RESET_REG = ("level0_i/ulp/proc_sys_reset_freerun_slr0/U0/"
@@ -211,7 +211,7 @@ Slack (MET) :             19.000ns  (arrival time - required time)
 class TestTheFixturesAreTheDiagnosisRecords:
 
     def test_each_fixture_is_its_record(self):
-        for path in (S1NC1, S1NC4, B71070):
+        for path in (S1NC1, S1NC4, FIXED_CU7):
             raw = path.read_bytes()
             packed, plain = FIXTURE_SHA256[path.name]
             assert hashlib.sha256(raw).hexdigest() == packed, path.name
@@ -259,7 +259,7 @@ class TestTheRevision3BuildsAreRed:
         assert out.rstrip().endswith("RESULT: FAIL")
 
     @pytest.mark.parametrize("fixture, units, cores, slaves", [
-        (S1NC4, 1, 4, 36), (B71070, 7, 1, 63)])
+        (S1NC4, 1, 4, 36), (FIXED_CU7, 7, 1, 63)])
     def test_every_closed_domain_carries_the_arc_on_its_feedback_setup(self, fixture, units,
                                                                        cores, slaves):
         paths = _paths(fixture)

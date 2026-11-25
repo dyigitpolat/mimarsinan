@@ -1,4 +1,4 @@
-"""HACC NUS - ODIN Deployment: freeze the mapped network into a board bundle."""
+"""HACC ODIN Deployment: freeze the mapped network into a board bundle."""
 
 from __future__ import annotations
 
@@ -176,7 +176,7 @@ class OdinHaccDeploymentStep(PipelineStep):
         return build_bundle(
             name=str(config.get("odin_hacc_bundle_name")
                      or _default_name(self.pipeline)),
-            title=f"HACC NUS - ODIN Deployment: {config.get('model_type')} as "
+            title=f"HACC ODIN Deployment: {config.get('model_type')} as "
                   f"{len(segment.cores)} host-mediated NC=1 passes",
             description=(
                 "The deployed network's neural segment, frozen one core per "

@@ -129,7 +129,7 @@ def _gate_clock_input(c: int) -> str:
     clock in the linked design, a local clock where the kernel clock is a port, as in the
     kernel's own synthesized netlist; the enable and reset nets are signals in both); the
     pin is the one leaf, non-clock input on that segment. Only the clock arc reaches it, so
-    a generated clock defined there takes its latency along the clock (probe 71248 on
+    a generated clock defined there takes its latency along the clock (the fix probe on
     S1-NC1: the LUT3's I0, never the inserted BUFGCE; the link-stage read of S1-NC1's
     kernel netlist: the same LUT, its I0 on a LOCAL_CLOCK net)."""
     gate = ("[get_cells -filter {PRIMITIVE_SUBGROUP == LUT} "
@@ -159,7 +159,7 @@ def _expected_core_lines(c: int) -> list:
 #: at its LEAF DRIVER (the gating LUT): the SPI master of core 0 (present at every NC)
 #: is clocked by it, like every core. Asked on the hierarchical segment at the master's
 #: clock pin, the buffer covers only the master's 58 clock pins and the LUT keeps
-#: driving the other 3,929 (probe 71068; build 71057, Place 30-568).
+#: driving the other 3,929 (a probe job of that build, Place 30-568).
 CORE_CLOCK_LINE = (
     "set_property CLOCK_BUFFER_TYPE BUFG [get_nets -of_objects [get_pins -leaf "
     f"-filter {{DIRECTION == OUT}} -of_objects [get_nets -of_objects {_sck(0, 'C')}]]]")
@@ -180,7 +180,7 @@ class TestTheBuildWritesTheSpiConstraintPerCore:
         expected = [CORE_CLOCK_LINE] + [
             line for c in range(int(cores)) for line in _expected_core_lines(c)]
         assert _code(xdc.read_text()) == expected
-        assert f"[hacc-build] spi xdc  : {cores} SPI clock domain(s)" in result.stdout
+        assert f"[odin-build] spi xdc  : {cores} SPI clock domain(s)" in result.stdout
 
     def test_the_set_names_no_unit_and_is_the_same_at_every_unit_count(self, tmp_path):
         texts = []
@@ -201,7 +201,7 @@ class TestTheBuildWritesTheSpiConstraintPerCore:
     def test_the_core_clock_is_asked_for_once_whatever_the_core_count(self, tmp_path):
         """opt_design's BUFG optimization inserts at most eight buffers per build, and a
         buffer asked for by property counts toward them: at N = 7, SCK requests alone
-        left six units' gated core clocks unbuffered (build 71055). Every kernel clock
+        left six units' gated core clocks unbuffered (the first seven-unit build). Every kernel clock
         is therefore asked for by property, the core clock once per kernel."""
         for cores in ("1", "4"):
             root, result = _build(tmp_path / f"nc{cores}", ODIN_KERNEL_CORES=cores)
@@ -463,7 +463,7 @@ class TestThePackagedCoreCarriesTheConstraint:
         assert tcl.index("PROCESSING_ORDER LATE") < tcl.index("ipx::package_project")
         assert "ODIN_PACKAGED_XDC" in tcl
         assert tcl.index("ODIN_PACKAGED_XDC") < tcl.index("ipx::save_core")
-        assert "[hacc-build] packaged : spi xdc for implementation, late" in result.stdout
+        assert "[odin-build] packaged : spi xdc for implementation, late" in result.stdout
 
     @pytest.mark.parametrize("answer", ["none", "synthesis implementation late",
                                         "implementation normal"])
@@ -482,7 +482,7 @@ class TestThePackagedCoreCarriesTheConstraint:
         assert not (build / XDC_NAME).exists()
         tcl = (build / "pack_kernel.tcl").read_text()
         assert "constrs_1" not in tcl and "ODIN_PACKAGED_XDC" not in tcl
-        assert "[hacc-build] spi xdc  : none (no SPI clock domain in this fabric)" in result.stdout
+        assert "[odin-build] spi xdc  : none (no SPI clock domain in this fabric)" in result.stdout
         assert (tmp_path / "vxx.trace").exists()
 
     def test_the_stub_vivado_answers_what_the_tcl_asked(self, tmp_path):

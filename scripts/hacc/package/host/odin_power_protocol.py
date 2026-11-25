@@ -158,9 +158,13 @@ def sha256_file(path: str) -> Optional[str]:
 
 
 def resolve(plan_dir: str, path: Optional[str]) -> Optional[str]:
-    """A plan path: absolute as written, or relative to the plan's own folder."""
+    """A plan path: absolute as written, or relative to the plan's own folder.
+
+    Environment variables in it are expanded first, so a plan names the staging
+    area as ``/data/${USER}/...`` rather than by one user's directory."""
     if not path:
         return path
+    path = os.path.expandvars(path)
     return path if os.path.isabs(path) else os.path.normpath(os.path.join(plan_dir, path))
 
 

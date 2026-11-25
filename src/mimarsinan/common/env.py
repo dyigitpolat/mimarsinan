@@ -106,7 +106,8 @@ def ffcv_disabled() -> bool:
 
 def skip_cudnn_init() -> bool:
     """Skip the startup cudnn-warmup conv (value exactly "1"): some hosts'
-    driver/toolkit combos abort in cublasLt during that first conv (peta)."""
+    driver/toolkit combos abort in cublasLt during that first conv (seen on one
+    of our A100 servers)."""
     return os.environ.get(SKIP_CUDNN_INIT_VAR) == "1"
 
 

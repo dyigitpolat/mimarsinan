@@ -17,8 +17,7 @@ import torch
 
 DEV, T = "cuda:0", 32
 RUN = "generated/t2_04_stemheal_ab3_phased_deployment_run"
-SCRATCH = ("/tmp/claude-1005/-home-yigit-repos-research-stuff-mimarsinan/"
-           "c73daf12-2a91-4dc4-9e8f-3b7f618308d5/scratchpad")
+SCRATCH = os.environ.get("PROBE_SCRATCH", "generated/_probes")  # where the probe states live
 
 from mimarsinan.pipelining.session import apply_determinism
 

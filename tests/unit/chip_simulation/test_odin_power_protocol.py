@@ -282,6 +282,17 @@ class TestTheExecutorCommandLine:
 
 
 class TestThePlan:
+    def test_a_plan_path_expands_the_environment(self, host, tmp_path, monkeypatch):
+        """A plan names its files by ${USER} rather than by one user's directory."""
+        monkeypatch.setenv("USER", "someone")
+        protocol = host.protocol
+        assert protocol.resolve(str(tmp_path), "/data/${USER}/odin/x.xclbin") == \
+            "/data/someone/odin/x.xclbin"
+        assert protocol.resolve(str(tmp_path), "staged/${USER}.json") == \
+            os.path.normpath(os.path.join(str(tmp_path), "staged", "someone.json"))
+        plan = protocol.load_plan(str(SHIPPED_PLAN))
+        assert plan["designs"]["stock"]["xclbin"] == "/data/someone/odin_stock/odin_fpga_hw.xclbin"
+
     def test_the_shipped_plan_fits_its_budget(self, host):
         plan = host.protocol.load_plan(str(SHIPPED_PLAN))
         budget = host.protocol.budget(plan)

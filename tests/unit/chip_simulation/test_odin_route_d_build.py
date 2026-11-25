@@ -257,7 +257,7 @@ class TestTheBuildScriptLinksNUnits:
         assert "-o build/hacc/hw_nc1_cu10/odin_fpga_hw.xclbin" in argv
         generated = (root / "build" / "hacc" / "hw_nc1_cu10" / "link_cu10.cfg").read_text()
         assert generated == _gen_module().link_config(U55C_CFG.read_text(), units=10, banks=32)
-        assert "[hacc-build] compute units: 10" in result.stdout
+        assert "[odin-build] compute units: 10" in result.stdout
 
     def test_the_widened_chip_and_its_slr_list_travel_with_the_count(self, tmp_path):
         root = _stage_build_tree(tmp_path / "pkg")
@@ -302,8 +302,8 @@ class TestTheBuildJobReportsTheSameDirectory:
 OVERLAY = HACC / "make_power_overlay.py"
 
 #: The kernel.xml the archived September packages froze (sha256 of
-#: scripts/hacc/kernel.xml in /data/yigit/odin_hacc_package and the widened
-#: package, read 2026-10-26). A rebuilt bitstream must be packaged from the same
+#: scripts/hacc/kernel.xml in the stock install of odin_hacc_package and in the
+#: widened package, read 2026-10-26). A rebuilt bitstream must be packaged from the same
 #: register map, or its host and its kernel disagree.
 ARCHIVED_KERNEL_XML_SHA256 = (
     "0411419c3599e42ad0e798e6475595c12f7e57e86c618e968397f040691cddf3")

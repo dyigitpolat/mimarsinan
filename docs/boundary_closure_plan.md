@@ -23,7 +23,7 @@ Repo: `mimarsinan` @ `2bb39fb3` (streamed-scheduling G-series closed). This prog
 closes the honest boundary the substrate discussion named, in the owner's priority
 order, and ends with the first real co-optimization study.
 
-## Directives (owner, 2026-08)
+## Requirements (2026-08)
 
 1. **N** — NoC quantities are very important during search; needed before anything else.
 2. **P** — `pruning_fraction` must produce deterministic mappable shapes that affect the
@@ -33,7 +33,7 @@ order, and ends with the first real co-optimization study.
    particular program), not a search axis.
 4. **L** — latency evidence quality must be improved.
 5. **S** — once boundaries close, perform a real study. Thesis work comes later.
-6. SSOT discipline is absolute: we cannot afford another SSOT violation.
+6. SSOT discipline is absolute: no further SSOT violation is acceptable.
 
 ## Owner decisions (asked 2026-08-16)
 
@@ -149,14 +149,13 @@ counts from `analysis/diagnostics.py`.
    constant; study report under `mimarsinan_research/docs/research/findings/`.
 4. Stretch: single-profile LeNet5 repetition.
 
-## E-series — the cost components that were silently zero (owner, 2026-08-17)
+## E-series — the cost components that were silently zero (2026-08-17)
 
 The study's energy decomposition exposed terms the candidate priced at 0 not because
 they are negligible but because nothing produced their multiplicand. The governing
-rule the owner set:
-
-> if it's reasonable for non-declared cost components to be counted as zero, you can
-> leave them as zero. but if declared or derivable, we should not leave them as zero.
+rule: a cost component that is neither declared nor derivable may stay at zero where
+that is reasonable, and a component that is declared or derivable is never left at
+zero.
 
 | Question | Decision |
 |---|---|

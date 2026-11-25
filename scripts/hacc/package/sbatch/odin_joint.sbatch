@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --chdir /tmp/
-#SBATCH --account=slurm
 #SBATCH --job-name=odin_joint
 #SBATCH --output=slurm-odin-joint-%j.out
 #SBATCH --error=slurm-odin-joint-%j.err
@@ -9,28 +8,28 @@
 # joined on the shared filesystem and certified A == B.
 #
 # WHY NOT `--het-group`. The task asked for a slurm heterogeneous job. The
-# cluster's own documentation (Xtra-Computing/hacc_demo: README.md, doc/0-login
-# through doc/7-coyote, and doc/1-FPGA-allocation.md's example.sh) documents
-# exactly two submission forms — `srun -p <partition>` and `sbatch -p
-# <partition> script.sh` — and mentions neither heterogeneous jobs nor job
-# dependencies anywhere. What it DOES document is better for this purpose:
-# `mi210_vck_u55c` (doc/1-FPGA-allocation.md lines 32-33) is a 7-day partition
-# whose nodes, hacc-gpu2 and hacc-gpu3, carry BOTH a U55C and an MI210
-# (README.md lines 32 and 38). One allocation on that partition therefore
-# already holds both devices, so the two components are two concurrent steps of
-# one job rather than two het-groups that must be co-scheduled across
-# hour-capped partitions. Same guarantee — one submission, two components, a
-# filesystem join — with syntax the cluster is documented to accept.
+# cluster's own documentation describes exactly two submission forms — `srun -p
+# <partition>` and `sbatch -p <partition> script.sh` — and mentions neither
+# heterogeneous jobs nor job dependencies anywhere. What it DOES describe is
+# better for this purpose: a long partition whose nodes carry BOTH a U55C and
+# an MI210. One allocation on such a partition therefore already holds both
+# devices, so the two components are two concurrent steps of one job rather
+# than two het-groups that must be co-scheduled across hour-capped partitions.
+# Same guarantee — one submission, two components, a filesystem join — with
+# syntax the cluster is documented to accept.
 #
-# FIELD-OBSERVED 2026-08-25: `mi210_vck_u55c` is not usable from this account —
-# it does not appear in `scontrol show partition` and a submission answers
-# "User's group not permitted to use this partition". The live joint venue is
-# `mi210_u280_u55c` (AllowGroups=lab,hgpu,fpga_u280; 12 h, or 5 days on
-# mi210_u280_u55c_long_reservation) on hacc-gpu1, which carries the MI210, the
-# U280 AND a U55C in one chassis. run_all.sh picks it by asking the cluster.
+# FIELD-OBSERVED 2026-08-25: a partition the documentation names may not be
+# usable from a given account — it does not appear in `scontrol show partition`
+# and a submission answers "User's group not permitted to use this partition".
+# run_all.sh therefore picks the joint venue from the site's candidates
+# (ODIN_JOINT_CANDIDATES, or ODIN_JOINT_PARTITION) by asking the cluster, and a
+# node that carries the MI210 beside the U55C in one chassis serves it.
+#
+# No account is set here: a site that requires one sets SBATCH_ACCOUNT=<account>
+# (sbatch reads it) or passes --account.
 #
 # AND ON THE U250 (v3, the card the cluster can actually build), the two-device
-# chassis argument does not apply at all — hacc-u250-* nodes carry no GPU. It
+# chassis argument does not apply at all — the U250 nodes carry no GPU. It
 # never had to. Component B has always been a CPU recomputation of the frozen
 # evidence, not a second simulation: it imports no device library, opens no
 # card and asks for no accelerator. So on a U250 allocation the SAME two
@@ -42,7 +41,7 @@
 # than asserting a GPU that is not there.
 #
 #   ODIN_PKG=... ODIN_XCLBIN=... ODIN_CARD=u250 \
-#       sbatch --wait -p u250_standard_reservation_pool scripts/hacc/odin_joint.sbatch
+#       sbatch --wait -p <U250 partition> scripts/hacc/odin_joint.sbatch
 
 set -euo pipefail
 
@@ -81,7 +80,7 @@ case "$(odin_card_field joint_model "${CARD}")" in
         ;;
 esac
 echo "[joint] join directory ${JOIN}  (the shared filesystem is the only path the head node and"
-echo "        the board VMs share — hacc_demo/doc/1-FPGA-allocation.md line 155)"
+echo "        the board VMs share — ODIN_DATA_ROOT, /data by default)"
 
 # --- component B: the reference. No device, no XRT, no card. -----------------
 # It re-derives every fixture's window counts from the SHIPPED per-cycle table

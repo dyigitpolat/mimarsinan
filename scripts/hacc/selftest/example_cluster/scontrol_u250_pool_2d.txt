@@ -1,0 +1,6 @@
+# Invented example for the local gate harness, not a capture of any real cluster.
+PartitionName=u250_pool_2d
+   AllowGroups=staff,u250_users AllowAccounts=ALL AllowQos=ALL
+   MaxNodes=UNLIMITED MaxTime=2-00:00:00 MinNodes=0
+   Nodes=fpga-[1-4]
+   State=UP

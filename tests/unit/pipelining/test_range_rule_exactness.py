@@ -73,7 +73,7 @@ def _search(calls, levels, signed, full=False):
 
 CASES = [(name, levels) for name, (_c, signed) in sorted(SEAMS.items()) if not signed for levels in (7, 127, 2047)]
 # [U-BRANGE2 stage 1d, the check's n-2] a signed site's full search reads every low end with every span (55 s for
-# signed skew at 15 levels on a sura worker at load 180, over the default 60 s budget under heavier load): the signed
+# signed skew at 15 levels on a shared-server worker at load 180, over the default 60 s budget under heavier load): the signed
 # cases take a time budget of their own
 SIGNED = [pytest.param(name, levels, marks=pytest.mark.timeout(240))
           for name, (_c, signed) in sorted(SEAMS.items()) if signed for levels in (7, 15)]

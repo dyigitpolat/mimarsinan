@@ -1,0 +1,6 @@
+# Invented example for the local gate harness, not a capture of any real cluster.
+PartitionName=u55c_board_1h
+   AllowGroups=staff,gpu_users,u55c_users AllowAccounts=ALL AllowQos=ALL
+   MaxNodes=UNLIMITED MaxTime=01:00:00 MinNodes=0
+   Nodes=gpu-[1-3]
+   State=UP

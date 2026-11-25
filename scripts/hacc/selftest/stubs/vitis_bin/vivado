@@ -13,7 +13,7 @@
 #
 # And the SPI constraint read-back: a constraint file added to `constrs_1` comes
 # back as `ODIN_PACKAGED_XDC <file> <used in> <processing order> <file group>`,
-# the way Vivado 2022.2 packages it (probe job 71049: ipx::package_project puts an
+# the way Vivado 2022.2 packages it (a probe job: ipx::package_project puts an
 # implementation-only XDC in the core's `xilinx_implementation` group).
 # ODIN_STUB_PACKAGED_XDC replaces everything after the tag.
 set -euo pipefail
