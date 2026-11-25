@@ -256,7 +256,7 @@ class TestTheTwinFollowsTheProgram:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(),
-                    reason="no CUDA device visible: the GPU form runs only on a qualifying sura GPU (U-PS real_cuda_run)")
+                    reason="no CUDA device visible: the GPU form runs only on a qualifying server GPU (U-PS real_cuda_run)")
 @pytest.mark.parametrize("name", sorted(KERNELS))
 def test_on_a_gpu_the_declared_kernel_reads_established_and_equals_the_per_sample_replay(name):
     """The tuned rows' sessions evaluate their sampled certificates on a GPU: there too the declared kernel is a

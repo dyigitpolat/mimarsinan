@@ -83,8 +83,8 @@ is therefore **structural**, not argued.
 ## 5. The true graph cut
 
 The cut between passes is **every edge from a core in pass ≤ p to a core in pass > p** —
-not "the last latency group". Two cases the naive view misses, both required by the
-owner's "properly routing the potentially incomplete latency groups":
+not "the last latency group". Two cases the naive view misses, both required for
+routing the potentially incomplete latency groups properly:
 
 - **A split latency group.** If group *g* is halved across passes p and p+1 (its cores
   are mutually independent, so this is legal), then *g*'s own **inputs** must also be
@@ -226,13 +226,13 @@ changes — scheduling became choosable, not automatic.
 | **nevresim / lava carry** | nevresim needs the carried raster to cross the C++ program-format seam; lava needs Loihi channel semantics. Both are larger than the SANA-FE case. |
 | **SP4 — the carry census** | `carried_raster_bytes` / `carry_peak_live_bytes` as quantities, sealed and priced through `e_dma_per_byte`. `PassCut` already computes both; nothing consumes them yet, so a scheduled run still looks cheaper than it is. |
 
-## 14. The correction: a pass boundary is one we INTRODUCE (owner, 2026-08-14)
+## 14. The correction: a pass boundary is one we INTRODUCE (2026-08-14)
 
 SP3's refusal rested on an unexamined premise: that collapsing a pass boundary to
-counts is a *lie*. It is not, and the owner's correction is the load-bearing one:
-
-> "this is not a function requirement since we are introducing pass boundaries,
-> decode/re-encode at boundary becomes available and it can operate on spike counts"
+counts is a *lie*. It is not, and the correction is the load-bearing one: carrying the
+train across a pass boundary is not a functional requirement, because the schedule
+introduces the boundary, so a decode and re-encode becomes available there and it can
+operate on spike counts.
 
 A pass boundary does not pre-exist the decision to schedule — **we create it**. A chip
 that reprograms between passes must buffer the intermediate signal either way, and the
@@ -261,7 +261,7 @@ two computations produced its numbers.
 | --- | --- |
 | **Record the discipline per run** | The record must carry which discipline each backend executed, since they are different computations. Nothing consumes `pass_transfer_for_backend` yet. |
 | **SANA-FE `VERBATIM`** | Both primitives exist (`_pack_spike_trace_matrix` out, `set_input_spike_trains` in), and SANA-FE is the cost-measuring backend, so carrying there raises fidelity where it counts most. |
-| **nevresim spike-train extraction** | Per the owner: NOT a functional gap, but a missing feature worth having on its own merits. `SPKREC` currently prints per-core COUNTS (`SPKREC <core> IN … OUT …`); a per-timestep variant would give nevresim segment-output rasters generally, not only for this program. Clean if done as a separate record line so the existing parser is untouched. |
+| **nevresim spike-train extraction** | NOT a functional gap, but a missing feature worth having on its own merits. `SPKREC` currently prints per-core COUNTS (`SPKREC <core> IN … OUT …`); a per-timestep variant would give nevresim segment-output rasters generally, not only for this program. Clean if done as a separate record line so the existing parser is untouched. |
 | **SP4 — the carry census** | `PassCut` computes `carried_bytes`/`peak_live_bytes`; with `carried_wire_bytes` the census can now be priced under EITHER discipline. |
 
 ## 16. The degenerate vehicle, found and fixed (2026-08-14)
@@ -474,7 +474,7 @@ moved modules — a stale artifact, moved aside, rerun green.
 
 ## 21. Why the comparator incident was possible, and its structural removal (2026-08-16)
 
-The owner's question — "aren't we using SSOT spike semantics?" — has a precise answer:
+The question whether the SSOT spike semantics were in use has a precise answer:
 **production is**, and that is why no gate ever disagreed: every pipeline flow is built
 by `build_spiking_hybrid_flow` from the `SpikingDeploymentContract`. The incident's
 probe bypassed the factory and constructed the executor directly — and the constructor

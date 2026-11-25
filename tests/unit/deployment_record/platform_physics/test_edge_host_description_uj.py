@@ -113,7 +113,7 @@ class TestTheDescription:
 
     def test_no_constant_comes_from_the_experiment_machines(self):
         text = (HOSTS / f"{NAME}.json").read_text() + (HOSTS / f"{NAME}.md").read_text()
-        for word in ("sura", "EPYC", "RTX", "Blackwell", "calibrate_host"):
+        for word in ("server", "EPYC", "RTX", "Blackwell", "calibrate_host"):
             assert word not in text, word
         description = host_description(NAME)
         rows = [*description.constants.values()] + [r for m in description.modes.values()

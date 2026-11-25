@@ -177,7 +177,7 @@ class TestTheBuildPackagesNCores:
         assert "ODIN_PACKAGED_NC" in tcl
         # The parameter is set BEFORE the core is saved, or the saved IP keeps 1.
         assert tcl.index("ipx::get_user_parameters NC") < tcl.index("ipx::save_core")
-        assert f"[hacc-build] cores    : {cores}" in result.stdout
+        assert f"[odin-build] cores    : {cores}" in result.stdout
 
     @pytest.mark.parametrize("cores", ["2", "4"])
     def test_n_cores_link_into_their_own_directory(self, tmp_path, cores):
@@ -336,7 +336,7 @@ class TestTheBuildRecordsItsCoreCountWithItsIdentity:
         assert record["chip_config"] == "odin_stock_256x256"
         assert record["compute_units"] == "1"
         assert record["target"] == "hw"
-        assert f"[hacc-build] identity : NC {cores}" in result.stdout
+        assert f"[odin-build] identity : NC {cores}" in result.stdout
 
     def test_the_units_and_the_cores_both_reach_the_record(self, tmp_path):
         root = _stage_build_tree(tmp_path / "pkg")

@@ -61,7 +61,7 @@ EXPECTED_STEP_LISTS = {
         "LIF Adaptation", "Weight Quantization", "Quantization Verification",
         "Normalization Fusion", "Soft Core Mapping",
         "Core Quantization Verification", "Hard Core Mapping", "Simulation",
-        "HACC NUS - ODIN Deployment",
+        "HACC ODIN Deployment",
     ],
     "lif_cifar_deepcnn.json": _COMMON_LIF,
     "lif_deepcnn.json": _COMMON_LIF,

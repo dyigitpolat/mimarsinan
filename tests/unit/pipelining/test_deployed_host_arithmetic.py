@@ -23,7 +23,7 @@ evaluated where the pipeline names refuses here ("No CUDA GPUs are available"), 
   executor reads from the model is held as a copy where it lives elsewhere (``held_on``).
 
 A CUDA-resident model (its placement handed back on exit) needs a CUDA device: that reading is the unit's GPU probe on a
-sura GPU (final_units/uhda), not a test here, because a test that skips without CUDA is no reading in the suite.
+server GPU (final_units/uhda), not a test here, because a test that skips without CUDA is no reading in the suite.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 """Card power and temperature telemetry for the ODIN power protocol (H0).
 
 WHAT IT READS. The card's own electrical and thermal reports, the ones XRT
-builds in ``core/common/sensor.cpp`` (XRT branch 2024.2, the runtime HACC@NUS
+builds in ``core/common/sensor.cpp`` (XRT branch 2024.2, the runtime HACC
 ships as 2.18.179): ``read_electrical`` fills ``power_consumption_watts``,
 ``power_consumption_max_watts``, ``power_consumption_warning`` and a
 ``power_rails`` array of ``{id, description, voltage{volts, is_present},

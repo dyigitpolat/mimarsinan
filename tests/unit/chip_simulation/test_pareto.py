@@ -45,7 +45,8 @@ from mimarsinan.chip_simulation.pareto import (
 # Real ledger lives in the MAIN repo runtime tree, not the worktree git state.
 _LEDGER_CANDIDATES = [
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "runs", "campaign", "ledger.jsonl"),
-    "/home/yigit/repos/research_stuff/mimarsinan/runs/campaign/ledger.jsonl",
+    # A worktree reads the main checkout's ledger through this variable.
+    os.environ.get("MIMARSINAN_CAMPAIGN_LEDGER", ""),
 ]
 
 

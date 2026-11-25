@@ -1,11 +1,11 @@
 # ODIN firing semantics as declared axes + variable-geometry RTL export — engineering plan
 
-2026-08-21 · status: **approved plan of record, revised under adversarial review** (owner
-directives 2026-08-21 in §3; four-judge review record in §14) · baseline `17be1010` on
+2026-08-21 · status: **approved plan of record, revised under adversarial review** (design
+decisions 2026-08-21 in §3; four-judge review record in §14) · baseline `17be1010` on
 branch `odin-fpga-infra` in the `mimarsinan_fpga` clone · prerequisite: none.
 
 **Trigger:** the owner is realizing the thesis deployment system physically — ODIN cores
-(Frenkel, TBioCAS'19; `ChFrenkel/ODIN`) instantiated multi-core on HACC@NUS Alveo FPGAs as a
+(Frenkel, TBioCAS'19; `ChFrenkel/ODIN`) instantiated multi-core on HACC Alveo FPGAs as a
 mimarsinan execution backend, with host segments on the same node's CPUs/MI210 GPUs. ODIN's
 soma law (event-serial threshold checks, hard zero reset, saturating unsigned fixed-width
 membrane, possibly >1 spike per neuron per timestep, per-pre-row weight sign) is not a point
@@ -22,9 +22,9 @@ the current axes system can declare, and no exporter emits physical memory image
 | P3 nevresim integration policy + resolver consolidation | **DONE after one evidence-gap fix cycle** — C++ integration-policy axis atol-0 against the torch fold (verifier's own 8-case harness incl. both saturation rails); counted SPKTRN2 carry through real file formats; cache discrimination with the pre-change literal pinned; reset+compare resolvers one total SSOT each. The first real-network run then exposed the NF twin running DEFAULT physics (a defaulted soma_law construction — the exact test_semantic_defaults failure class); fixed by making the point required keyword-only, four further generic defects closed, and **t0_54 landed green end-to-end: deployed hcm 0.9525 / nevresim 0.96 (trained 0.9533), both NF-SCM arms exact atol=0, certificates exact=1.000000 max\|dcount\|=0 — the first complete per_event deployment through the pipeline and the nevresim backend** | nevresim(ODIN3) 7ff3c2d2 (submodule bf8b9cb) + fix(ODIN2) 1b9e1768 + fix(ODIN3) 278f5403 (submodule 733443f) — suite 12,863→+ green, typecheck 0, golden zero-diff, cell wall ~25 min |
 | P4 exporter + platform declaration + feasibility gates | **DONE after one adversarial fix cycle** — bit layouts verified field-by-field against upstream RTL by the verifier's own hand tables; 20k round-trips clean; feasibility gates fire by key with hand-checked emission propagation; the refuted round was a coverage gap (INJECT payload unpinned) — now five tests die on the mutant; sign granularity enforced, GATE staging added, floor bound proven | export(ODIN4) 2503dd28 + fix(ODIN4) 38175bc3 — branch suite green, typecheck 0, byte-identity vs parent |
 | P5 vendored RTL + cosim harness (semantic-equivalence gate R11a) | **DONE, first-pass CONFIRMED** — vendor byte-identical to upstream 1781931 (manifest 20/20, hashed by the verifier before and after every run); BRAM overlay event-for-event equivalent; **R11a: exporter-programmed stock RTL ≡ nevresim ≡ torch fold at ZERO difference** on the committed θ=255-ceiling fixture (576 points, 3 consecutive samples, one on CLEAR alone; certificate exact=1.000000 max\|dcount\|=0 over 96 windows) AND the verifier's own independent fixture (336 points, max window count 55); CLEAR proven load-bearing; SPI readback 36,864 reads / 0 mismatches with written-byte teeth; BARRIER bound re-derived from the closed form, dominating a 1.8× heavier case; verilator↔iverilog event-identical | rtl(ODIN5) 881dac4a — hw_tests runner green (R11a 75 s; ~13.4 M simulated cycles), default suite/typecheck/budgets green |
-| P5.5 synthesis/implementation gate + resource table | **P5.5a DONE, CONFIRMED** — yosys `synth_xilinx -family xcup` clean over vendor+overlay: per stock core **5,659 LUT-equiv, 4,362 FFs, 381 CARRY4, 10 RAMB36E2** (2 neuron-mem + 8 synapse-mem, zero distributed RAM; verifier re-ran yosys directly, zero drift), the F17 control proves the overlay is load-bearing (vendor-only fails synthesis); `hw/fpga/synth_resources.json` is P8's input artifact and regenerates byte-identically. **P5.5b** = Vivado/U55C-shell closure folded into P7's HACC build (Vivado exists only on HACC; login owner-gated 2FA) | synth(ODIN5.5) 4979da78, merge f0956670 — merged suite 12,976/32/0, typecheck 0, budgets 0 |
+| P5.5 synthesis/implementation gate + resource table | **P5.5a DONE, CONFIRMED** — yosys `synth_xilinx -family xcup` clean over vendor+overlay: per stock core **5,659 LUT-equiv, 4,362 FFs, 381 CARRY4, 10 RAMB36E2** (2 neuron-mem + 8 synapse-mem, zero distributed RAM; verifier re-ran yosys directly, zero drift), the F17 control proves the overlay is load-bearing (vendor-only fails synthesis); `hw/fpga/synth_resources.json` is P8's input artifact and regenerates byte-identically. **P5.5b** = Vivado/U55C-shell closure folded into P7's HACC build (Vivado exists only on HACC; the cluster login is owner-gated) | synth(ODIN5.5) 4979da78, merge f0956670 — merged suite 12,976/32/0, typecheck 0, budgets 0 |
 | P6 geometry/semantics generator | **DONE after one evidentiary fix cycle** — stock spec is a vendored passthrough (verifier byte-compared 18/18); geometry variants (128×128 mb8, 512×256 mb16) at zero difference vs the verifier's own independent fold with on-wire multiplicity 4 and a load-bearing saturation rail; sync-fire flagship on `saturating_signed`/16 with the hand-checked floor-vs-signed divergence, both no-saturation refusal rails, and rail asserts; the refuted round was a law-blind sync-fire witness (no neuron got two suprathreshold events in one cycle) — after the fix, three differently-shaped law-swap mutants die on committed tests with nevresim as a third independent killer | generate(ODIN6) e11a22b9 + fix(ODIN6) 4771726f, merge 4ab39d57 + gitlink fix (nevresim 64280cf) — merged suite **13,128/32/0**, typecheck 0, hw_tests runner **66/66** (~8 min) |
-| P7 FPGA kernel + XRT backend; **stock-core board bring-up first** (R11b) | **P7a DONE after two adversarial fix cycles** — the physical backend is device-parameterized: `RtlCosimTransport` (the P5 instrument) is the first device and the whole `OdinFpgaDeploymentStep` runs end-to-end locally (certificate `[odin_fpga/exact] PASS exact=1.000000 max\|dcount\|=0`, deployed counts ≡ twin ≡ nevresim, measured programming/execution walls recorded separately); the pyxrt `XrtTransport` skeleton is contract-tested (byte-identical payloads to the cosim transport; full U55C XDMA call sequence against an independent fake; exclusive CU access for register reads); the Vitis kernel wrapper carries a real, simulation-proven AXI4 DMA engine (wrapper-path smoke through a stalling AXI model, counts identical incl. the multiplicity-3 witness; 3/3 DMA mutations red; capture-capacity CSR + typed truncation refusal; status/err reader; width guard at elaboration); `scripts/hacc/` build/run/sbatch + RUNBOOK audited fact-by-fact against the cluster docs, refuted twice on truth defects (inert-DMA promise; dangling SSOT pointers; a B0 command that could not run) and corrected — the runbook now states the simulation-proven scope and the known coverage shadows plainly. **P7b (owner-gated: HACC 2FA)** = `v++` build on `cpu_only`/hacchead, B0 load/CSR smoke, stock-core R11b board campaign per the RUNBOOK | backend(ODIN7a) ddbf54ce + fix 8350429b + fix 935b19ac — suite **13,202/32/0** ~57 s, typecheck 0, budgets 0, hw_tests runner **90/90** in ~466 s, golden +107/−0 |
+| P7 FPGA kernel + XRT backend; **stock-core board bring-up first** (R11b) | **P7a DONE after two adversarial fix cycles** — the physical backend is device-parameterized: `RtlCosimTransport` (the P5 instrument) is the first device and the whole `OdinFpgaDeploymentStep` runs end-to-end locally (certificate `[odin_fpga/exact] PASS exact=1.000000 max\|dcount\|=0`, deployed counts ≡ twin ≡ nevresim, measured programming/execution walls recorded separately); the pyxrt `XrtTransport` skeleton is contract-tested (byte-identical payloads to the cosim transport; full U55C XDMA call sequence against an independent fake; exclusive CU access for register reads); the Vitis kernel wrapper carries a real, simulation-proven AXI4 DMA engine (wrapper-path smoke through a stalling AXI model, counts identical incl. the multiplicity-3 witness; 3/3 DMA mutations red; capture-capacity CSR + typed truncation refusal; status/err reader; width guard at elaboration); `scripts/hacc/` build/run/sbatch + RUNBOOK audited fact-by-fact against the cluster docs, refuted twice on truth defects (inert-DMA promise; dangling SSOT pointers; a B0 command that could not run) and corrected — the runbook now states the simulation-proven scope and the known coverage shadows plainly. **P7b (owner-gated: cluster login)** = `v++` build on a build partition or the head node, B0 load/CSR smoke, stock-core R11b board campaign per the RUNBOOK | backend(ODIN7a) ddbf54ce + fix 8350429b + fix 935b19ac — suite **13,202/32/0** ~57 s, typecheck 0, budgets 0, hw_tests runner **90/90** in ~466 s, golden +107/−0 |
 | P8 measured campaign + fidelity + compile-limits study | **LOCAL HALF DONE, CONFIRMED** — the compile-limits study (study(ODIN8) d4a14e43 + fix 45d3a215): per-configuration yosys censuses verified at zero drift by direct re-synthesis; the study itself FOUND two RTL defects before any cluster hour (combinational variant synapse reads; a wrapper capture RAM unbuildable at its shipped depth — 32 FF/word from three write ports) and the fix landed at **zero count movement, cycle-exact** (verifier re-ran the P6 law-swap and P7a DMA mutants — both still die). After the fix: stock binds on BRAM at **201 / 141 cores** (datasheet / 30%-shell-assumption), 128×128 mb8 **663 / 464**, sync-fire 256×256 **198 / 138**, 512×256 mb16 flipped to BRAM-bound **126 / 88**; the wrapper at true shipped defaults costs 6,825 LUT-eq / 282 RAMB36 and is genuinely buildable. Recorded advisories: the single-membrane-clamp masking equivalence in the gen gates predates P8; the capture-slope assertion assumes 1,024-aligned depths. **BOARD HALF = owner-gated** (measured fidelity + the campaign, after P7b) | suite **13,230/32/0** ~57 s, typecheck 0, budgets 0, hw_tests runner **97/97** ~10 min |
 
 ## 0. Verified findings this plan is built on
@@ -138,16 +138,17 @@ ODIN-target findings (verified in the upstream RTL, all 3,368 lines read; upstre
   (128-bit neuron word, `N>>4` SPI generate loops, 32-bit synapse word, 13-bit synapse
   address, controller sweep bounds all hard-wired to 256). Full-fan-out event = 512 cycles;
   scheduler FIFO depth 32; no testbench ships upstream.
-- **F18 — HACC@NUS toolchain is sufficient, with these operational facts** (from
-  `Xtra-Computing/hacc_demo`): Slurm; Vitis 2021.2/2022.2 + XRT + shells for
-  U250×6/U280×4/U55C×6/U50/VCK5000×3; hw_emu + VNC waveform sim; host-driven xclbin
-  programming; `/data/${USER}` staging; `#SBATCH --account=slurm`. **The true U55C+MI210
-  nodes are hacc-gpu2 and hacc-gpu3 only** (hacc-gpu1 pairs U55C with U250/U280; gpu3 also
-  hosts VCK5000); their pools (`mi210_*`) run 7-day limits, while the bare U55C *shell*
-  partitions are capped at **1 hour** and the 12 h pools are U250/U280/U50. Hardware
-  builds run on `cpu_only` (hacc-node2, 7-day) or hacchead with `/tools/xilinx` Vitis
-  2022.2 — never on a board reservation. The repo's `.slurmech.toml` targets a different
-  cluster entirely (xlog1/H100); HACC submission is hand-written `sbatch` v1 (§5.4).
+- **F18 — HACC toolchain is sufficient, with these operational facts** (from the
+  cluster's documentation): Slurm; Vitis 2021.2/2022.2 + XRT + shells for the Alveo U250,
+  U280, U55C, U50 and VCK5000 cards; hw_emu + VNC waveform sim; host-driven xclbin
+  programming; a shared data root (`/data/${USER}`) for staging; the site's own account
+  line on `sbatch`. **Only some board nodes carry both a U55C and an MI210** (another
+  pairs its U55C with U250/U280 cards); partitions that allocate the card and the GPU
+  together run multi-day limits, while the bare U55C *shell* partitions are capped at
+  **1 hour**. Hardware builds run on a long-limit build partition or the head node with a
+  `/tools/xilinx` Vitis 2022.2 — never on a board reservation. The repo's `.slurmech.toml`
+  targets a different cluster entirely (an H100 compute cluster); HACC submission is
+  hand-written `sbatch` v1 (§5.4).
 
 ## 1. The semantic model — ODIN firing as declared points on two new generic axes
 
@@ -350,27 +351,27 @@ constraint, not an accident** (§14, J3-10). Raster-bytes accounting prices
 `log2(k_max+1)` bits per slot from the declared point (default 1 — byte-identical). The
 honesty ledger gains the discipline's row at P3.
 
-## 3. Owner decisions (2026-08-21, verbatim where load-bearing)
+## 3. Design decisions (2026-08-21)
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | ODIN-style firing support | "generically support ODIN-style firing, by extending the current SSOT contracts. The elegance of the spike semantics must be retained and the design integration must stay generic (no ODIN-specific config). Mathematical parity must be retained throughout the entire pipeline." |
-| 2 | Non-default semantics | "a code generator for non-default spike semantics in ODIN deployments. LIF datapath modification should be allowed. But, the default ODIN chip must be supported out of the box." |
-| 3 | Non-default geometry | "Supporting non-default core geometry on ODIN must be supported… default ODIN chip must be deployable. This is a hard requirement." |
-| 4 | Compile limits | "study limits of what we can compile into FPGA later once we have the infrastructure" (→ P8) |
-| 5 | Isolation | "Create a mimarsinan_fpga clone repo… we only merge to real mimarsinan once we are sure that the infrastructure is elegant and correct." |
-| 6 | No-impact bar | "this new support cannot impact previously existing behavior, correctness, code elegance, and performance." |
-| 7 | Target node | U55C + MI210 (hacc-gpu2/3), Vitis RTL-kernel flow (approved). |
-| 8 | Semantics path | Stock-exact contract first, sync-fire variant as generator flagship (approved). |
-| 9 | Signed weights | Row-pair expansion below the mapper; logical geometry declared (approved). |
-| 10 | v1 routing | Host-mediated inter-core routing, on-fabric router v2 (approved). |
+| 1 | ODIN-style firing support | ODIN-style firing is supported generically, by extending the current SSOT contracts. The spike semantics stay elegant, the design integration stays generic (no ODIN-specific config), and mathematical parity holds throughout the pipeline. |
+| 2 | Non-default semantics | A code generator covers non-default spike semantics in ODIN deployments, and the LIF datapath may be modified, while the default ODIN chip is supported out of the box. |
+| 3 | Non-default geometry | Non-default core geometry on ODIN is supported, and the default ODIN chip must be deployable (a hard requirement). |
+| 4 | Compile limits | The limits of what can be compiled into the FPGA are studied once the infrastructure exists (→ P8). |
+| 5 | Isolation | The work happens in a mimarsinan_fpga clone repository and merges into mimarsinan only once the infrastructure is shown elegant and correct. |
+| 6 | No-impact bar | The new support does not change existing behavior, correctness, code elegance or performance. |
+| 7 | Target node | U55C + MI210 board node, Vitis RTL-kernel flow. |
+| 8 | Semantics path | Stock-exact contract first, sync-fire variant as generator flagship. |
+| 9 | Signed weights | Row-pair expansion below the mapper; logical geometry declared. |
+| 10 | v1 routing | Host-mediated inter-core routing, on-fabric router v2. |
 
-"Deployable" (directive 3) is read in two stages, both required: **R11a** semantic
+"Deployable" (decision 3) is read in two stages, both required: **R11a** semantic
 equivalence of the exported images against the stock RTL (Verilator, P5) certifies
 correctness; **R11b** the stock core synthesizes/implements (P5.5) and is the **first**
 hardware bring-up on the board (P7) — cosim alone does not discharge the word (§14, J4-2).
 
-Designer decisions within the directives: two axes over a variant value (§1.1); bits-driven
+Designer choices within these decisions: two axes over a variant value (§1.1); bits-driven
 membrane arithmetic (§1.1); `per_event` restricted to the streamed variant (§1.2); wire
 ceiling 1.0 in v1 (§2.6); bias at the order's tail (§2.3); exporter consumes
 `HardCoreMapping` (F9); no new top-level module — exporter at `mapping/export/odin/`,
@@ -459,7 +460,7 @@ worst-case drain = f(count, 512-cycle sweeps, FIFO 32, output-handshake stalls),
 against cosim on adversarial cases) — the vendored tree carries no patch at all. Config
 registers have no readback: the runtime re-programs them on every power-cycle/session
 start and the P5 tb shadow-asserts them; memories are verified by SPI readback
-byte-compare (§7 rows 20–21). Build host: `cpu_only`/hacchead (F18); staging via
+byte-compare (§7 rows 20–21). Build host: a build partition or the head node (F18); staging via
 `/data/${USER}`; submission = hand-written `sbatch` v1 (a HACC slurmech profile is a
 recorded option, not assumed); `pyxrt` gets `OPTIONAL_TOP_LEVEL_DEPS` + lazy-import
 entries with stated reasons and a `DependencyBoundary` with non-empty guards. Per-pass
@@ -568,8 +569,8 @@ is not a collapsed member of the faithfulness axis until a screening artifact ea
   serial-aware QAT (training gap measured and carried on the ledger), `saturating_signed`
   membranes, multi-row bias: all deliberately not built; each becomes real work only when
   a study demands it.
-- **Board-side**: node contention on hacc-gpu2/3 (both busy in the sampled `sinfo`); 1-h
-  shell partitions vs multi-hour builds (build on `cpu_only`); per-pass ~236 ms/core SPI
+- **Board-side**: node contention on the U55C + MI210 board nodes (both busy when
+  sampled); 1-h shell partitions vs multi-hour builds (build on a build partition); per-pass ~236 ms/core SPI
   reprogramming dominating multi-pass latency (it is also the *measurement* we want).
 - First-run cache-cold flake (13 sanafe-arch tests on a cold clone): re-run is
   authoritative; watch the file.
@@ -580,7 +581,7 @@ Registry `doc=`/`empty_means=`; advisory `detail=`; recipe rationale constants; 
 SSOT list; root + touched module ARCHITECTURE rows; `how_networks_reach_the_chip.md`;
 `templates/generate.py` coverage notes; this plan's Status table.
 
-## 13. Merge protocol (owner directive 5)
+## 13. Merge protocol (decision 5)
 
 Work lands on `odin-fpga-infra` only; nothing is pushed. Merge to real mimarsinan on the
 owner's judgment, as one reviewed branch, after re-running the full gate set on a fresh
@@ -591,7 +592,7 @@ bodies carrying the gates' numbers.
 ## 14. Adversarial review record (2026-08-21)
 
 Four independent judges (behavior preservation; genericity/elegance; mathematical parity;
-directive completeness) attacked the committed plan of record; every finding was verified
+decision completeness) attacked the committed plan of record; every finding was verified
 against source before acceptance. Accepted and applied: the P0 subpackage restatement and
 the corrected 19-at-cap census (J1-1/2/9, J2-2); in-tree cell identity moved to P1
 (J1-3/J4-3); the unified point-keyed capability query replacing a third gate
@@ -614,7 +615,7 @@ overlay + cycle-bound BARRIER replacing the probe-wire patch (J3-7, J4-1); the N
 invariance gate (J3-8); v1-scoped boundary claim + the second v2-router constraint
 (J3-10); R11a/R11b split with P5.5 (J4-1/2); SPI readback + shadow-assert gates (J4-6);
 the corrected ~236 ms SPI figure (J4-7); HACC operational corrections — build host,
-partitions, hacc-gpu2/3, hand-written `sbatch` v1 (J4-8/9/14/15); the program-format SSOT
+partitions, board nodes, hand-written `sbatch` v1 (J4-8/9/14/15); the program-format SSOT
 row (J4-10); license notices for derivative RTL (J4-16); the vendor manifest gate and
 pinned SHA `1781931` (J4-17); the wizard row and the in-P1 fix of the schema hardcode
 (J4-18); P8's input artifact from P5.5 (J4-19).

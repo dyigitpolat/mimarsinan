@@ -32,7 +32,7 @@ each can and cannot do, and prototypes the best one against the repo's deployed 
   analogue of why only schedule changes (doc 54's D1/D2 complete-sum deferral) are
   lossless.
 
-Prototype: `/tmp/claude-1005/-home-yigit-repos-research-stuff/11224c9e-f926-4cb5-a527-2d0211f4bd25/scratchpad/m1/`
+Prototype: a scratch directory (`m1/`)
 (`casc_first_crossing.py` = semantics + worst-case guard; `casc_guard_calibrated.py`
 = calibrated guard sweep). The genuine forward is driven THROUGH the repo kernel
 `ttfs_cycle_contribute_and_fire`; a numpy closed-form twin is asserted equal to the

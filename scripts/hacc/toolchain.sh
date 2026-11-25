@@ -1,14 +1,15 @@
 # shellcheck shell=bash
 # Where the cluster's Vitis and XRT actually are — discovered, never assumed.
 #
-# FIELD LESSON (2026-08-25, hacchead). The v1 scripts hard-coded Vitis 2022.2
-# under /tools/xilinx because that is what Xtra-Computing/hacc_demo documents.
+# FIELD LESSON (2026-08-25, the head node). The v1 scripts hard-coded Vitis
+# 2022.2 under /tools/xilinx because that is what the cluster's documentation
+# says.
 # The live cluster carries Vitis **2024.2** under **/tools/Xilinx** (capital X),
 # so every hard-coded probe refused before it ever reached a compiler. This file
 # is the one place that resolves it: newest version first, env overrides win,
 # and both the build script and run_all.sh source it so they can never disagree.
 #
-# SECOND FIELD LESSON (2026-08-25, hacc-node0). "Newest" is not always right.
+# SECOND FIELD LESSON (2026-08-25, the build node). "Newest" is not always right.
 # The installed set is 2020.1 2020.2 2021.2 2022.1 2023.2 2024.2, and a
 # platform's IP is locked to the release it was built with: the U250
 # 3_1_202020_1 shell wants 2020.2, and linking it under 2024.2 is how you find
@@ -22,10 +23,11 @@ odin_vitis_roots() {
     if [ -n "${XILINX_ROOT:-}" ]; then
         printf '%s\n' "${XILINX_ROOT}"
     else
-        # /tools/Xilinx/new: admin-disclosed 2026-08-25 — Vitis 2022.2 lives
-        # there, in the standard ROOT/Vitis/VERSION shape, invisible from the
-        # conventional roots. Probed first: a version an admin placed
-        # deliberately outranks the stock trees when both carry one.
+        # /tools/Xilinx/new: a site may keep an extra release there (Vitis
+        # 2022.2 on the cluster since 2026-08-25), in the standard
+        # ROOT/Vitis/VERSION shape, invisible from the conventional roots.
+        # Probed first: a version an admin placed deliberately outranks the
+        # stock trees when both carry one.
         printf '%s\n' /tools/Xilinx/new /tools/Xilinx /tools/xilinx /opt/Xilinx /opt/xilinx
     fi
 }
@@ -97,7 +99,7 @@ odin_vitis_settings() {
     printf '%s\n' "${first}"
 }
 
-# The XRT the cluster keeps at /opt/xilinx/xrt (hacc_demo/doc/0-login.md line 55).
+# The XRT at its stock root, /opt/xilinx/xrt, unless XRT_ROOT says otherwise.
 odin_xrt_setup() {
     printf '%s/setup.sh\n' "${XRT_ROOT:-/opt/xilinx/xrt}"
 }

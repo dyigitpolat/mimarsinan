@@ -16,8 +16,7 @@ RUN = os.environ.get(
 )
 CKPT = os.environ.get(
     "PR23_CKPT",
-    "/tmp/claude-1005/-home-yigit-repos-research-stuff-mimarsinan/"
-    "c73daf12-2a91-4dc4-9e8f-3b7f618308d5/scratchpad/pr23_stage.ckpt",
+    os.path.join(os.environ.get("PROBE_SCRATCH", "generated/_probes"), "pr23_stage.ckpt"),
 )
 STEPS = int(os.environ.get("PR23_STEPS", "1200"))
 LR = float(os.environ.get("PR23_LR", "2e-5"))

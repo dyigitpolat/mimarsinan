@@ -219,7 +219,7 @@ class TestWithoutCuda:
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
 class TestRealCuda:
-    """On a real device (run once on a sura GPU under the GPU rule): two profiled phases, the first larger."""
+    """On a real device (run once on a GPU of our server under the GPU rule): two profiled phases, the first larger."""
 
     def test_two_phases_on_the_device(self, fresh_lifetime):
         dev = torch.cuda.current_device()

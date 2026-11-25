@@ -1,4 +1,4 @@
-"""Registry entries: the HACC NUS - ODIN Deployment export and its campaign."""
+"""Registry entries: the HACC ODIN Deployment export and its campaign."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ ENTRIES = (
     _E(_ENABLE, domain="event", group="deployment_target",
        owner="ConversionPolicy/backend_registry", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="derived",
-       label="HACC NUS - ODIN Deployment",
+       label="HACC ODIN Deployment",
        doc="Whether the deployed network is FROZEN into a sealed HACC "
            "deployment bundle: per-core programs, per-sample stimuli, the "
            "routing plan and the expectations a board certifies itself "

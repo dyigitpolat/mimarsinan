@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HACC NUS - ODIN Deployment: one sealed bundle, one card, one measured verdict.
+"""HACC ODIN Deployment: one sealed bundle, one card, one measured verdict.
 
 THE SHAPE OF THE PROBLEM. A bitstream instantiates NC ODIN cores behind one
 sequencer (NC is a build parameter, ODIN_KERNEL_CORES; the archived bitstreams

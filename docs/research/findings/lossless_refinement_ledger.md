@@ -12,7 +12,7 @@ MATCH pretraining accuracy. Definitions used throughout:
   the ledger names the arithmetic term the training cannot express.
 
 **Sources.** 21 runs of 2026-07-12 (logs at
-`~/.slurmech/workspaces/mimarsinan-xlog1/runs/<run_id>/artifacts/stdout.log`;
+`~/.slurmech/workspaces/<profile>/runs/<run_id>/artifacts/stdout.log`;
 run_ids in §1). Theory base: `lif_deployment_exactness.md` (Theorems 0–3,
 corrections C1–C6, violations V1–V9), `sync_deployment_exactness.md`
 (Theorem 1, preconditions P1–P6, corrections E1–E5/S1–S4),

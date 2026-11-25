@@ -60,18 +60,18 @@ source "${HERE}/scripts/hacc/cards.sh"
 # shellcheck source=scripts/hacc/chips.sh
 source "${HERE}/scripts/hacc/chips.sh"
 
-# /data is the only path the head node and the board VMs share
-# (hacc_demo/doc/1-FPGA-allocation.md line 155). ODIN_DATA_ROOT moves it so the
-# whole flow can be exercised off-cluster.
+# /data is the only path the head node and the board VMs share (the cluster's
+# documentation). ODIN_DATA_ROOT moves it, for another site's shared root or so
+# the whole flow can be exercised off-cluster.
 DATA_ROOT="${ODIN_DATA_ROOT:-/data}"
-EXPECTED_XRT="${ODIN_EXPECTED_XRT:-2.18.179}"                 # hacc_demo/README.md line 32
-XRT_ROOT="${XRT_ROOT:-/opt/xilinx/xrt}"                       # doc/0-login line 55
+EXPECTED_XRT="${ODIN_EXPECTED_XRT:-2.18.179}"                 # the cluster's documented XRT
+XRT_ROOT="${XRT_ROOT:-/opt/xilinx/xrt}"                       # the stock XRT root
 
 # THE CARD IS A PARAMETER (v3). scripts/hacc/cards.sh is the only place that
-# knows what one implies — platform, part, v++ config, preferred Vitis, and the
-# partitions the board and joint phases may use. ODIN_CARD=u250 is the route
-# this cluster can actually build; the u55c default refuses with the deadlock
-# reason when the evidence still shows it.
+# knows what one implies — platform, part, v++ config and preferred Vitis. The
+# partitions are the SITE's, read below from the environment. ODIN_CARD=u250
+# is the route this cluster can actually build; the u55c default refuses with
+# the deadlock reason when the evidence still shows it.
 # The card is PINNED per install (.odin_card, written by bootstrap --card or by
 # hand). The pin beats a stray ODIN_CARD in the environment: an exported card
 # from one install's shell has twice leaked into another install's run, and an
@@ -122,15 +122,18 @@ fi
 
 CARD="$(odin_card)"
 PLATFORM="$(odin_effective_platform "${CARD}" 2>/dev/null || true)"
-read -r -a BOARD_CANDIDATES <<< "$(odin_card_field board_candidates "${CARD}" 2>/dev/null || true)"
-read -r -a JOINT_CANDIDATES <<< "$(odin_card_field joint_candidates "${CARD}" 2>/dev/null || true)"
-
-# Candidate partitions, best first. NOTHING here is trusted: each is kept only
-# if scontrol says your groups may use it and sinfo says it has a node that is
-# up. See pick_partition() — and the field notes in README_HACC.md. The BUILD
-# candidates are card-independent: a place-and-route needs a compile venue, not
-# a card, and the same three serve every card this package knows.
-BUILD_CANDIDATES=(cpu_only vck5000_compile mi210_u280_u55c_long_reservation)
+# Candidate partitions, best first, one space-separated list per role. They are
+# the SITE's names, so the package names none: set ODIN_BUILD_CANDIDATES,
+# ODIN_BOARD_CANDIDATES and ODIN_JOINT_CANDIDATES (or pin one partition with
+# ODIN_BUILD_PARTITION / ODIN_BOARD_PARTITION / ODIN_JOINT_PARTITION). NOTHING
+# here is trusted: each is kept only if scontrol says your groups may use it and
+# sinfo says it has a node that is up. See pick_partition() and README_HACC.md.
+# The BUILD candidates are card-independent: a place-and-route needs a compile
+# venue, not a card. The BOARD and JOINT candidates must allocate the card you
+# build for.
+read -r -a BUILD_CANDIDATES <<< "${ODIN_BUILD_CANDIDATES:-}"
+read -r -a BOARD_CANDIDATES <<< "${ODIN_BOARD_CANDIDATES:-}"
+read -r -a JOINT_CANDIDATES <<< "${ODIN_JOINT_CANDIDATES:-}"
 
 STAGE_DIR="${ODIN_STAGE:-${DATA_ROOT}/${USER}/odin}"
 BUILD_DIR="${HERE}/build/hacc"
@@ -299,9 +302,8 @@ my_groups() {
 # The trailing newline is load-bearing: `read` returns 1 on a final line with no
 # terminator, which ends the loop BEFORE the body runs, so the LAST group in an
 # AllowGroups list was never tested. It went unnoticed while every partition we
-# used was reachable through a non-final group (`hgpu` in lab,hgpu,fpga_u55c);
-# the U250's `lab,fpga_u250` — where the admitting group IS the last one — is
-# what surfaced it.
+# used was reachable through a non-final group (the middle one of three); a
+# U250 partition whose admitting group IS the last one is what surfaced it.
 group_admits() {
     local allow="$1" mine group
     if [ "${allow}" = "ALL" ] || [ -z "${allow}" ]; then
@@ -346,15 +348,22 @@ pick_partition() {
         record_pick "${role}" "${PICKED} (env override)"
         return 0
     fi
+    if [ "$#" -eq 0 ]; then
+        local upper
+        upper="$(printf '%s' "${role}" | tr '[:lower:]' '[:upper:]')"
+        say "REFUSING: no ${role} partition is configured. The package names no"
+        say "  partition of its own: set ODIN_${upper}_CANDIDATES to your site's"
+        say "  partitions for this role (space-separated, best first), or pin one"
+        say "  with ODIN_${upper}_PARTITION=<name>."
+        say "${RERUN_LINE}"
+        return 2
+    fi
     if ! command -v scontrol > /dev/null 2>&1 || ! command -v sinfo > /dev/null 2>&1; then
-        # Blind fallback: prefer the second candidate — the candidate lists put
-        # the docs-canonical venue first and the field-proven one (2026-08-25:
-        # cpu_only's node dead, vck5000_compile/mi210_u280_u55c alive and
-        # permitted) second, and with no slurm to consult, field evidence beats
-        # stale docs.
-        PICKED="${2:-$1}"
+        # Blind fallback: the first candidate, since the list is best first and
+        # with no slurm to consult there is nothing to filter it by.
+        PICKED="$1"
         say "[pick/${role}] no scontrol/sinfo on PATH — cannot filter anything."
-        say "[pick/${role}] falling back to ${PICKED} (field-proven 2026-08-25);"
+        say "[pick/${role}] falling back to ${PICKED}, the first candidate;"
         say "[pick/${role}] override with the env var if the cluster changed."
         return 0
     fi
@@ -365,8 +374,8 @@ pick_partition() {
     for candidate in "$@"; do
         if ! dump="$(scontrol show partition "${candidate}" 2>&1)"; then
             say "[pick/${role}] REJECT ${candidate}: scontrol has no such partition."
-            say "               Slurm does not show it to this account at all. In the"
-            say "               field (2026-08-25) a submission to it answered"
+            say "               Slurm does not show it to this account at all, and a"
+            say "               submission to such a partition is answered"
             say "               'User's group not permitted to use this partition'."
             continue
         fi
@@ -469,7 +478,7 @@ phase_0() {
         if [ -x "${XRT_ROOT}/bin/xbutil" ]; then
             "${XRT_ROOT}/bin/xbutil" examine 2>&1 || true
         else
-            say "no ${XRT_ROOT}/bin/xbutil here (expected on hacchead)"
+            say "no ${XRT_ROOT}/bin/xbutil here (expected on the head node)"
         fi
     } > "${report}" 2>&1
     say "[phase0] wrote ${report}"
@@ -479,7 +488,7 @@ phase_0() {
         *)
             say "REFUSING: the package is unpacked at ${HERE}, not under ${DATA_ROOT}."
             say "  ${DATA_ROOT} is the ONLY path shared between the head node and the"
-            say "  board VMs (hacc_demo/doc/1-FPGA-allocation.md line 155), so a"
+            say "  board VMs (set ODIN_DATA_ROOT if your site shares another), so a"
             say "  job would not be able to read this directory at all."
             say "  FIX: run ./bootstrap_hacc.sh next to the uploaded zip; it unpacks"
             say "  to ${DATA_ROOT}/\${USER}/odin_hacc_package and launches this for you."
@@ -498,13 +507,14 @@ phase_0() {
     fi
     if [ ! -f "$(odin_xrt_setup)" ]; then
         say "REFUSING: no XRT at $(odin_xrt_setup)."
-        say "  FIX: the cluster keeps XRT at /opt/xilinx/xrt"
-        say "  (hacc_demo/doc/0-login.md line 55). Set XRT_ROOT if it moved."
+        say "  FIX: XRT installs at /opt/xilinx/xrt by default."
+        say "  Set XRT_ROOT if your site keeps it elsewhere."
         failures=$((failures + 1))
     fi
     if ! command -v sbatch > /dev/null 2>&1; then
         say "REFUSING: no sbatch on PATH — phases 2-7 all submit slurm jobs."
-        say "  FIX: run this from hacchead (source /home/hacc_env)."
+        say "  FIX: run this from the head node, with your site's environment"
+        say "  script sourced (it puts sbatch, sinfo and scontrol on PATH)."
         failures=$((failures + 1))
     fi
     # The report contains our own "expect XRT:" line; exclude it so this greps
@@ -512,8 +522,8 @@ phase_0() {
     if grep -v '^expect XRT:' "${report}" | grep -q "${EXPECTED_XRT}"; then
         say "[phase0] XRT ${EXPECTED_XRT} seen in the probe."
     else
-        say "[phase0] NOTE: XRT ${EXPECTED_XRT} (hacc_demo/README.md line 32) was"
-        say "         not seen in ${report}. hacc_demo/doc/0-login.md still lists"
+        say "[phase0] NOTE: XRT ${EXPECTED_XRT} (ODIN_EXPECTED_XRT) was"
+        say "         not seen in ${report}. Older documentation lists"
         say "         2.14.384 for this shell and is stale; confirm the real"
         say "         version with xbutil examine ON THE BOARD NODE. A shell/XRT"
         say "         mismatch against what the xclbin was linked with is triage"
@@ -804,7 +814,7 @@ phase_7() {
 }
 
 # ---------------------------------------------------------------------------
-# 8. HACC NUS - ODIN Deployment
+# 8. HACC ODIN Deployment
 # ---------------------------------------------------------------------------
 deployment_default() {
     # The one field phase 8 needs, read without a JSON parser the node may lack.
@@ -814,7 +824,7 @@ deployment_default() {
 
 phase_8() {
     pick_partition board "${ODIN_BOARD_PARTITION:-}" "${BOARD_CANDIDATES[@]}" || return 2
-    head_line "phase 8: HACC NUS - ODIN Deployment on ${PICKED}"
+    head_line "phase 8: HACC ODIN Deployment on ${PICKED}"
     say "The chip routes nothing between its cores (NC per bitstream), so the"
     say "shipped network runs as one host-mediated PASS per core:"
     say "program the core, run a sample, read its per-cycle counts back,"

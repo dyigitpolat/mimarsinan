@@ -1,6 +1,6 @@
 """[U-J2 K-1, K-2] The host's energy split by what the deployment causes, and the idle term's wait without a crash.
 
-Owner answer of 2026-10-29, verbatim choice "Host's work only (Recommended)": the main energy charges the energy the
+The design choice of 2026-10-29, the host's work only: the main energy charges the energy the
 host spends because of the deployment, its active power above idle while it works ((p_host - p_host_idle) x host
 time) plus every byte over the chip link and through host memory ((e_link_per_byte + e_host_mem_per_byte) x crossing
 bytes, both directions); host time always adds to latency; the whole-system energy, with the host's idle power over

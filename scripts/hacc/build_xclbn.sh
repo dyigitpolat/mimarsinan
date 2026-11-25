@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the ODIN RTL kernel into an xclbin on HACC@NUS, for the card you name.
+# Build the ODIN RTL kernel into an xclbin on HACC, for the card you name.
 #
 # THE CARD IS A PARAMETER (v3). ODIN_CARD selects a profile in
 # scripts/hacc/cards.sh — platform, Vivado part, v++ connectivity config,
@@ -18,11 +18,10 @@
 # (emitted and gated by scripts/hacc/gen_chip_rtl.py) and its artifacts land in
 # a chip-suffixed build directory, so the two never overwrite each other.
 #
-# WHERE: hacchead or a compile partition — NEVER on a board reservation: the
-# bare board partitions are capped at ONE HOUR and a placed-and-routed build is
-# hours. FIELD-OBSERVED 2026-08-25: `vck5000_compile` (hacc-node0,
-# AllowGroups=ALL, 7 days) is the live build venue; `cpu_only` maps to
-# hacc-gpu0, which is DOWN. Vitis is discovered by toolchain.sh, and the card
+# WHERE: the head node or a compile partition — NEVER on a board reservation:
+# the bare board partitions are typically capped at ONE HOUR and a placed-and-
+# routed build is hours. Use a compile partition with a long time limit (no
+# card needed) whose node is up. Vitis is discovered by toolchain.sh, and the card
 # profile's preferred version wins when it is installed.
 #
 # WHAT: package_xo turns the Verilog kernel + its kernel.xml into an .xo, then
@@ -97,7 +96,7 @@ fi
 # still pin it if you need a specific one.
 if ! vitis="$(odin_vitis_settings)"; then
     echo "REFUSING: no Vitis under ${XILINX_ROOT:-/tools/Xilinx or /tools/xilinx}." >&2
-    echo "  This script builds ONLY on HACC@NUS (hacchead or a compile" >&2
+    echo "  This script builds ONLY on HACC (the head node or a compile" >&2
     echo "  partition). Log in per scripts/hacc/RUNBOOK.md and run it there;" >&2
     echo "  off-cluster there is no toolchain and no shell to link against." >&2
     echo "  Pin one with XILINX_ROOT=/tools/Xilinx VITIS_VERSION=2020.2." >&2
@@ -119,17 +118,17 @@ odin_source_toolchain "${VITIS_SETTINGS}"
 BUILD="build/hacc/$(odin_build_leaf "${TARGET}")${CU_SUFFIX}"
 mkdir -p "${BUILD}"
 
-echo "[hacc-build] card     : ${CARD}"
-echo "[hacc-build] chip     : ${CHIP} (${CHIP_CORE_KIND}${CHIP_VARIANT:+ ${CHIP_VARIANT}})"
-echo "[hacc-build] vitis    : ${XILINX_ROOT}/Vitis/${VITIS_VERSION} (prefer ${ODIN_VITIS_PREFER:-none})"
-echo "[hacc-build] platform : ${PLATFORM}"
-echo "[hacc-build] part     : ${PART}"
-echo "[hacc-build] config   : ${CFG}"
-echo "[hacc-build] target   : ${TARGET}"
-echo "[hacc-build] cores    : ${NC}"
-echo "[hacc-build] compute units: ${CUS}"
-echo "[hacc-build] build dir: ${BUILD}"
-echo "[hacc-build] host     : $(hostname)"
+echo "[odin-build] card     : ${CARD}"
+echo "[odin-build] chip     : ${CHIP} (${CHIP_CORE_KIND}${CHIP_VARIANT:+ ${CHIP_VARIANT}})"
+echo "[odin-build] vitis    : ${XILINX_ROOT}/Vitis/${VITIS_VERSION} (prefer ${ODIN_VITIS_PREFER:-none})"
+echo "[odin-build] platform : ${PLATFORM}"
+echo "[odin-build] part     : ${PART}"
+echo "[odin-build] config   : ${CFG}"
+echo "[odin-build] target   : ${TARGET}"
+echo "[odin-build] cores    : ${NC}"
+echo "[odin-build] compute units: ${CUS}"
+echo "[odin-build] build dir: ${BUILD}"
+echo "[odin-build] host     : $(hostname)"
 
 if [[ ! -f "${CFG}" ]]; then
     echo "REFUSING: the card profile names ${CFG}, which is not in this tree." >&2
@@ -148,7 +147,7 @@ if [[ "${CUS}" != "1" ]]; then
         exit 2
     fi
     CFG="${LINK_CFG}"
-    echo "[hacc-build] link cfg : ${CFG} (${CUS} compute units${ODIN_CU_SLRS:+, SLRs ${ODIN_CU_SLRS}})"
+    echo "[odin-build] link cfg : ${CFG} (${CUS} compute units${ODIN_CU_SLRS:+, SLRs ${ODIN_CU_SLRS}})"
 fi
 
 # --- 1. the kernel description v++ packages ---------------------------------
@@ -170,7 +169,7 @@ while IFS= read -r src; do
     fi
     SOURCES+=("${src}")
 done < <(odin_chip_sources "${CHIP}")
-echo "[hacc-build] sources  : ${#SOURCES[@]} RTL file(s)"
+echo "[odin-build] sources  : ${#SOURCES[@]} RTL file(s)"
 
 # --- 2a. the SPI clock domain of every vendored core --------------------------
 # Each vendored ODIN core is programmed through its SPI slave, and the slave is
@@ -199,7 +198,8 @@ echo "[hacc-build] sources  : ${#SOURCES[@]} RTL file(s)"
 #     and, once per kernel, the gated core clock. opt_design's BUFG optimization
 #     inserts at most eight buffers per build and counts the requested ones
 #     against them, so asking for SCK alone left six of seven units' core clocks
-#     unbuffered at N = 7 (build 71055); asking for all of them leaves none to it.
+#     unbuffered at N = 7 (the seven-unit build); asking for all of them leaves
+#     none to it.
 #     The core-clock request sits on the net at its leaf driver (the gating LUT).
 # The domain's own paths keep their default (true) relations.
 # A fabric without the vendored slave (a generated core) has no SCK: no file.
@@ -211,7 +211,8 @@ odin_spi_domain_xdc() {   # odin_spi_domain_xdc NC
     # master, so core 0's master names it at any NC. The request goes on the net at
     # its LEAF DRIVER (the gating LUT), so one buffer carries all its clock pins: on
     # the hierarchical segment at the master's clock pin it buffered only the
-    # master's 58 and the LUT kept driving the other 3,929 (probe 71068, build 71057).
+    # master's 58 and the LUT kept driving the other 3,929 (a probe of the seven-unit
+    # build).
     printf '# the gated core clock of the kernel, at its leaf driver\n'
     printf 'set_property CLOCK_BUFFER_TYPE BUFG [get_nets -of_objects [get_pins -leaf -filter {DIRECTION == OUT} -of_objects [get_nets -of_objects [get_pins {kernel_i/core_gen[0].spi_i/sck_reg/C}]]]]\n'
     for ((c = 0; c < nc; c++)); do
@@ -248,13 +249,13 @@ SPI_XDC=""
 if [[ "${CHIP_CORE_KIND}" == "vendored" ]]; then
     SPI_XDC="${BUILD}/${SPI_XDC_NAME}"
     odin_spi_domain_xdc "${NC}" > "${SPI_XDC}"
-    echo "[hacc-build] spi xdc  : ${NC} SPI clock domain(s) (${SPI_XDC})"
+    echo "[odin-build] spi xdc  : ${NC} SPI clock domain(s) (${SPI_XDC})"
 else
-    echo "[hacc-build] spi xdc  : none (no SPI clock domain in this fabric)"
+    echo "[odin-build] spi xdc  : none (no SPI clock domain in this fabric)"
 fi
 
 # package_xo is a Vivado Tcl command, NOT a Vitis binary (field-observed
-# 2026-08-25 on hacc-node0: ${XILINX_VITIS}/bin has no package_xo). The
+# 2026-08-25 on the build node: ${XILINX_VITIS}/bin has no package_xo). The
 # documented batch flow (UG1393 ch. RTL Kernels; AMD Vitis-Tutorials
 # 05-bottom_up_rtl_kernel pack_kernel.tcl) packages the sources as a Vivado
 # IP with ipx::package_project, marks it sdx_kernel/rtl, and calls package_xo
@@ -311,7 +312,7 @@ TCL
     cat <<'TCL'
 set_property top $kernel_name [current_fileset]
 update_compile_order -fileset sources_1
-ipx::package_project -root_dir $ip_dir -vendor nus.edu -library user \
+ipx::package_project -root_dir $ip_dir -vendor mimarsinan -library user \
     -taxonomy /UserIP -import_files -set_current true
 ipx::associate_bus_interfaces -busif m_axi_gmem -clock ap_clk [ipx::current_core]
 ipx::associate_bus_interfaces -busif s_axi_control -clock ap_clk [ipx::current_core]
@@ -369,7 +370,7 @@ TCL
 } > "${BUILD}/pack_kernel.tcl"
 if ! vivado -mode batch -nojournal -log "${BUILD}/pack_kernel.log" \
         -source "${BUILD}/pack_kernel.tcl"; then
-    echo "[hacc-build] packaging FAILED — last 40 lines of ${BUILD}/pack_kernel.log:" >&2
+    echo "[odin-build] packaging FAILED — last 40 lines of ${BUILD}/pack_kernel.log:" >&2
     tail -n 40 "${BUILD}/pack_kernel.log" >&2 || true
     exit 2
 fi
@@ -388,7 +389,7 @@ if [[ "${packaged_nc}" != "${NC} ${NC}" ]]; then
     echo "  ${BUILD}/pack_kernel.log. No link is started from this .xo." >&2
     exit 2
 fi
-echo "[hacc-build] packaged : NC ${NC} (user and HDL parameter, read back)"
+echo "[odin-build] packaged : NC ${NC} (user and HDL parameter, read back)"
 # A vendored core's SPI constraints must be in the packaged core, for
 # implementation only and processed late, or the link would route an untimed
 # SPI domain for hours.
@@ -402,7 +403,7 @@ if [[ -n "${SPI_XDC}" ]]; then
         echo "  ${BUILD}/pack_kernel.log. No link is started from this .xo." >&2
         exit 2
     fi
-    echo "[hacc-build] packaged : spi xdc for implementation, late (${SPI_XDC_NAME})"
+    echo "[odin-build] packaged : spi xdc for implementation, late (${SPI_XDC_NAME})"
 fi
 
 # --- 3. v++ --link: .xo -> .xclbin against the card's shell -------------------
@@ -418,7 +419,7 @@ fi
     -o "${BUILD}/odin_fpga_${TARGET}.xclbin" \
     "${BUILD}/${KERNEL}.xo"
 
-echo "[hacc-build] wrote ${BUILD}/odin_fpga_${TARGET}.xclbin"
+echo "[odin-build] wrote ${BUILD}/odin_fpga_${TARGET}.xclbin"
 
 # --- 4. the build's identity, NC included, beside the xclbin --------------------
 # A host that loads this xclbin checks its declared core count against this
@@ -439,5 +440,5 @@ xclbin_uuid="$(sed -n 's/^ *UUID (xclbin): *\([0-9a-fA-F-]*\) *$/\1/p' \
     printf 'card=%s\n' "${CARD}"
     printf 'platform=%s\n' "${PLATFORM}"
 } > "${XCLBIN_OUT}.identity"
-echo "[hacc-build] identity : NC ${NC}, UUID ${xclbin_uuid:-unknown} (${XCLBIN_OUT}.identity)"
-echo "[hacc-build] stage it:  cp ${BUILD}/odin_fpga_${TARGET}.xclbin /data/${USER}/odin/"
+echo "[odin-build] identity : NC ${NC}, UUID ${xclbin_uuid:-unknown} (${XCLBIN_OUT}.identity)"
+echo "[odin-build] stage it:  cp ${BUILD}/odin_fpga_${TARGET}.xclbin ${ODIN_DATA_ROOT:-/data}/${USER}/odin/"

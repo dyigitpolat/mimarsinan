@@ -17,7 +17,7 @@ a measured constraint, the interaction is stated explicitly in Part II/III.
 
 ## Part 0 — Standing engineering rules (bounding every workstream)
 
-These are the owner's standing directives; they are not optional style:
+These are standing engineering rules; they are not optional style:
 
 1. **No e2e regression, ever.** Any change must not regress end-to-end deployment
    accuracy or runtime on any covered configuration; only improve. Accuracy A/Bs MUST
