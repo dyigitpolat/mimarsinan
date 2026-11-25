@@ -271,7 +271,8 @@ def test_outcome_to_dict_is_typed():
 
 _LEDGER_CANDIDATES = [
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "runs", "campaign", "ledger.jsonl"),
-    "/home/yigit/repos/research_stuff/mimarsinan/runs/campaign/ledger.jsonl",
+    # A worktree reads the main checkout's ledger through this variable.
+    os.environ.get("MIMARSINAN_CAMPAIGN_LEDGER", ""),
 ]
 
 

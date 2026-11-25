@@ -1,4 +1,6 @@
-profile = "mimarsinan-xlog1"
+# The slurmech profile: it names the login host and the account in your own
+# slurmech configuration, and scripts/slurm_campaign.py reads it from here.
+profile = "mimarsinan"
 
 [sync]
 include = [
@@ -33,22 +35,19 @@ exclude = [
 [slurm]
 partition = "gpu"
 time = "02:00:00"
-gres = "gpu:h100-47:1"
+gres = "gpu:1"
 mem = "200G"
 cpus_per_gpu = 40
 nodes = 1
 
-# The de-facto runtime env (the old mimarsinan_slurmech venv was relocated and
-# its activate no longer takes effect; jobs were already running on this one).
-# Reuse stays the default while that venv is hand-built. It now needs the
-# declared dependencies rather than the synced submodule trees -- run once on
-# the remote host, inside the synced project root:
+# The runtime env: a virtual environment on the remote host that already holds
+# the declared dependencies. Build it once, inside the synced project root:
 #   uv sync --extra dev --extra loihi   (add --extra sanafe for the GPL backend)
-# and point `venv` at .venv, or drop this block entirely: slurmech runs
-# `uv sync` itself when a pyproject.toml is present.
+# and point `venv` at it (.venv there), or drop this block entirely: slurmech
+# runs `uv sync` itself when a pyproject.toml is present.
 [env]
 mode = "reuse"
-venv = "/home/y/yigit/imagenetshaq/env"
+venv = ".venv"
 
 [pack]
 parallelism = 1

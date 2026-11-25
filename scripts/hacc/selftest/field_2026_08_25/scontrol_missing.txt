@@ -1,1 +1,0 @@
-scontrol: error: Partition name PARTITION not found

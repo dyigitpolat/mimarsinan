@@ -1,6 +1,6 @@
 # θ-aware WQ tuning — design (decide-before-build)
 
-**Status:** DESIGN ONLY (user: "design only, then decide", 2026-07-14). Not
+**Status:** DESIGN ONLY (design first, decision later, 2026-07-14). Not
 implemented. This memo scopes the mechanism, seams, candidate payoff, risk, and
 a tests-first plan so the guarded WQ θ-freeze is only touched with eyes open.
 

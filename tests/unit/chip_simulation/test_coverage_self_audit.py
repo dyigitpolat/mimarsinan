@@ -379,12 +379,12 @@ class TestFlagAging:
     def test_report_surfaces_flag_metadata_with_owner_and_age(self):
         # A flagged row that carries a flag owner + timestamp is surfaced with both in
         # the report's flag-metadata table.
-        row = self._flagged_row(flag_owner="dyigit", flag_ts="2026-01-01")
+        row = self._flagged_row(flag_owner="named-owner", flag_ts="2026-01-01")
         report = coverage_report([row], now_ts="2026-01-31")
         meta = report.flag_metadata
         assert meta  # non-empty
         entry = meta[0]
-        assert entry.owner == "dyigit"
+        assert entry.owner == "named-owner"
         assert entry.age_days == pytest.approx(30, abs=1)
 
     def test_unowned_flag_has_no_owner_and_is_aged(self):
@@ -438,7 +438,7 @@ class TestCiGuard:
 
     def test_guard_passes_aged_flag_with_owner(self):
         row = _row("vit_b", "mnist", "cascaded", "VALID_FLAGGED_unsupported_op",
-                   flag_owner="dyigit", flag_ts="2026-01-01")
+                   flag_owner="named-owner", flag_ts="2026-01-01")
         report = coverage_report([row], now_ts="2026-06-01")
         assert_no_aged_unowned_flags(report, max_age_days=90)  # owned → ok
 

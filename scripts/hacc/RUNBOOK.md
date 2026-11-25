@@ -1,10 +1,10 @@
-# ODIN on HACC@NUS — the owner's runbook (P7b)
+# ODIN on HACC — the owner's runbook (P7b)
 
 Everything in P7a is local and already gated: the physical backend is complete
 software, the RTL cosimulation is the first device behind the transport seam,
 and `scripts/hw_tests/run_hw_tests.sh` proves the deployed counts equal the HCM
 reference and nevresim at zero difference. **This runbook is the part that
-needs you**: HACC login is 2FA, so nothing here can be automated from the repo.
+needs you**: the cluster login is interactive, so nothing here can be automated from the repo.
 
 What comes back from it is one number nothing local can produce — the same
 counts, produced by an Alveo card, with measured programming and execution
@@ -12,19 +12,19 @@ walls.
 
 ---
 
-## READ FIRST — UPDATE (admin-disclosed 2026-08-25): the U55C block is LIFTED
+## READ FIRST — UPDATE (2026-08-25): the U55C block is LIFTED
 
-The admins answered the deadlock report the same day:
+The deadlock below was resolved the same day:
 
 * **Vitis 2022.2 exists** — at `/tools/Xilinx/new/Vitis/2022.2`, a root the
   conventional trees do not reveal. `toolchain.sh` now probes it first, so the
   u55c profile self-selects 2022.2 and the deadlock guard stands down on its
   own evidence. Nothing needs pinning.
-* **U55C cards on `hacc-gpu3` are reachable via `amd_gpu_rocm_6_0_0`**
-  (12 h cap, allowed via `gpgpu`) — admin-granted; the earlier probe that saw
-  "0 devices" predates the grant. It is now a u55c board candidate after the
-  1-hour platform partition. Verify with `xbutil examine` inside an
-  allocation before trusting it.
+* **A second partition reaches the U55C cards**, with a 12 h cap, on a board
+  node that also carries a GPU; an earlier probe from a non-board partition saw
+  "0 devices". Name it in `ODIN_BOARD_CANDIDATES` after the 1-hour platform
+  partition, and verify with `xbutil examine` inside an allocation before
+  trusting it.
 
 The section below records the deadlock as it stood, because its evidence
 pattern (locked platform IP vs installed toolchains) is the reusable lesson.
@@ -35,7 +35,7 @@ The U55C path does not build on this cluster, and no amount of scripting fixes
 it. The facts, each checked in the live session:
 
 * The **only** U55C platform installed anywhere — `/opt/xilinx/platforms` on
-  `hacc-node0` **and** on `hacc-gpu3` — is
+  the build node **and** on a U55C board node — is
   `xilinx_u55c_gen3x16_xdma_3_202210_1`.
 * Its SmartConnect IP is **customized with the 2022.2 release**. `vpl` refuses
   to link it under anything else: three separate logs, under Vitis **2022.1,
@@ -45,30 +45,25 @@ it. The facts, each checked in the live session:
 * Vitis installed: `2020.1 2020.2 2021.2 2022.1 2023.2 2024.2`. **There is no
   2022.2.**
 
-So U55C is **deadlocked pending admins**, and there are exactly two fixes, both
-theirs: install Vitis/Vivado 2022.2, or install a U55C shell built for a
-release that is already here.
+So U55C is **deadlocked pending the cluster administrators**, and there are
+exactly two fixes, both theirs: install Vitis/Vivado 2022.2, or install a U55C
+shell built for a release that is already here.
 
 **The field-viable route is the U250.** The build node also carries
 `xilinx_u250_gen3x16_xdma_3_1_202020_1` — a 2020.2-era shell — and **Vitis
-2020.2 IS installed**. This account is in `fpga_u250`, and all three U250
-partitions admit it:
-
-| Partition | AllowGroups | MaxTime | Nodes |
-|---|---|---|---|
-| `xilinx_u250_gen3x16_xdma_3_1_202020_1` | `lab,fpga_u250` | **1 h** | 6 idle |
-| `u250_standard_reservation_pool` | `lab,fpga_u250` | 12 h | `hacc-u250-[1-4]`, `hacc-u250-frp` |
-| `u250_long_reservation_pool` | `lab,fpga_u250` | 2 d | `hacc-u250-[1-4]` |
+2020.2 IS installed**. U250 cards are typically reachable through a bare
+platform partition with a short cap and through longer pools; name yours, best
+first, in `ODIN_BOARD_CANDIDATES` (§1).
 
 The build node ALSO carries `xilinx_u250_gen3x16_xdma_4_1_202210_1`. **Do not
 use it** — it is a 2022.2-era shell and hits the identical lock. The package
 refuses it by name and says so.
 
-**A card is allocated, not ambient.** `xbutil` on `hacc-gpu3` answered
+**A card is allocated, not ambient.** `xbutil` on a U55C board node answered
 `0 devices found` from a non-FPGA partition on 2026-08-25. The cards are passed
-into the job's VM at allocation time — `doc/1-FPGA-allocation.md`'s board-VM
-model, now field-confirmed — so only a board-partition job sees a card. An
-empty `xbutil examine` is the wrong partition, not a dead board.
+into the job's VM at allocation time — the board-VM model of the cluster's
+documentation, now field-confirmed — so only a board-partition job sees a card.
+An empty `xbutil examine` is the wrong partition, not a dead board.
 
 ### Therefore: the target card is a parameter (v3)
 
@@ -82,8 +77,10 @@ everything downstream reads it:
 | v++ config | `scripts/hacc/odin_u55c.cfg` | `scripts/hacc/odin_u250.cfg` |
 | AXI master bank | `HBM[0]` | `DDR[0]` (no HBM on a U250) |
 | preferred Vitis | 2022.2 — **absent** | **2020.2** |
-| board partitions | the U55C shell partition | the three above, 1 h first |
-| joint partitions | `mi210_vck_u55c`, `mi210_u280_u55c`, `…_long_reservation` | the 12 h pool, then 2 d, then 1 h |
+
+Partitions are not a card fact: your site names them in `ODIN_BOARD_CANDIDATES`
+and `ODIN_JOINT_CANDIDATES` (§1), so set those to the partitions that allocate
+the card you selected.
 
 ```bash
 ./bootstrap_hacc.sh --card u250            # the packaged path
@@ -184,9 +181,9 @@ walks phases 0–7 (env probe, no-hardware selftest, `hw_emu` build + a bounded
 emulation smoke, `hw` build, staging, B0, B1, and a two-component
 board-plus-reference job).
 
-Upload **both files into the same directory** on `hacchead` and run
+Upload **both files into the same directory** on the head node and run
 `./bootstrap_hacc.sh`: it verifies the upload, archives any previous install
-to `odin_prev_<utc>.tar.gz`, unpacks under `/data/${USER}`, and launches
+to `odin_prev_<utc>.tar.gz`, unpacks under `${ODIN_DATA_ROOT:-/data}/${USER}`, and launches
 `run_all.sh` **detached** (`setsid nohup`, log at `results/run_all.log`). It
 prints the tail command, the status command, and that you may log out.
 `scripts/status.sh` inside the package answers "how far has it got" at any time.
@@ -197,10 +194,10 @@ front: the package does **not** clone this repository onto the cluster, so it
 runs the frozen fixtures rather than a full `run.py` deployment config.
 
 **Why v2 exists.** The 2026-08-25 live session found three things that made v1
-need a human at the keyboard: the documented build venue is down, the
-documented joint venue refuses this account, and the documented Vitis is not
+need a human at the keyboard: the documented build venue was down, the
+documented joint venue refused the account, and the documented Vitis was not
 the installed one. v2 stops trusting any of the three and asks the cluster
-instead — see §1 and §2, where every field-observed fact is tagged as such.
+instead — see §1 and §2.
 
 ---
 
@@ -231,54 +228,55 @@ Three phases, in this order:
 |---|---|---|---|
 | **B0** | build → introspect → load → **null-program round trip** on one board | one build (2–6 h) + <1 board hour | the xclbin's metadata declares `odin_fpga_kernel_top` with its six arguments, the card takes the bitstream, the CU opens EXCLUSIVE, and a one-token null program comes back with a capture header the fabric wrote |
 | **B1** | the parity campaign + measured walls | board hours | `PASS exact=1.000000 max\|dcount\|=0`, plus the two measured walls |
-| **HACC NUS - ODIN Deployment** (§6b) | a whole multi-core NETWORK, run as one host-mediated pass per core, certified per pass and end to end | minutes on a board, after B1 | every per-pass certificate green, every sample's readout equal to its frozen one, and an ACCURACY that came from counting |
+| **HACC ODIN Deployment** (§6b) | a whole multi-core NETWORK, run as one host-mediated pass per core, certified per pass and end to end | minutes on a board, after B1 | every per-pass certificate green, every sample's readout equal to its frozen one, and an ACCURACY that came from counting |
 
 ---
 
-## 1. Log in (2FA — only you can do this)
+## 1. Log in (interactive — only you can do this)
 
 ```bash
-ssh <username>@xacchead.d2.comp.nus.edu.sg     # 2FA per the registration email
-source /home/hacc_env                          # or add it to ~/.bashrc
+ssh <user>@<head node>                     # your site's login and its second factor
+source <your site's environment script>    # or add it to ~/.bashrc
 ```
 
-You land on `hacchead`. Check what is free before planning anything:
+You land on the head node. Check what is free before planning anything:
 
 ```bash
 sinfo      # partitions, time limits, states
 squeue     # who is holding what
 ```
 
-### The venues, as the cluster actually answered (field-observed 2026-08-25)
+### The venues: what each role needs, and how to name them
 
-Read this table, not the vendor doc's. Every row on the left was checked in the
-live session; the right column is what `Xtra-Computing/hacc_demo` still says.
+The package names no partition. Your site's partition names go into the
+environment, best first, one list per role:
 
-| Partition | Field-observed 2026-08-25 | Stale doc claim |
+| Role | What the partition must give | Variable |
 |---|---|---|
-| `cpu_only` | node is **hacc-gpu0**, state `down*`, reason `NO NETWORK ADDRESS FOUND`. Unusable. | `hacc-node2`, 7 days, the build venue |
-| `vck5000_compile` | `AllowGroups=ALL`, `MaxTime=7-00:00:00`, **hacc-node0 idle** — **the build venue** | not mentioned |
-| `xilinx_u55c_gen3x16_xdma_3_202210_1` | `AllowGroups=lab,hgpu,fpga_u55c`, 1 h cap — this account gets in through **`hgpu`**, without `fpga_u55c` | hacc-gpu1/2/3, one hour |
-| `mi210_vck_u55c` | **absent** from `scontrol show partition`; `sbatch` answers `User's group not permitted to use this partition` | hacc-gpu2/3, 7 days, U55C + MI210 |
-| `mi210_u280_u55c` | `AllowGroups=lab,hgpu,fpga_u280`, 12 h, node **hacc-gpu1** which hosts MI210 **and** U280 **and** U55C — **the joint venue** | doc names `mi210_u250_u55c` and warns its pair is U250/U280 |
-| `mi210_u280_u55c_long_reservation` | same groups, **5 days** | not mentioned |
-| `xilinx_u250_gen3x16_xdma_3_1_202020_1` | `AllowGroups=lab,fpga_u250`, 1 h, **6 nodes idle** — the board venue that actually builds | 1 h, `hacc-u250-[1-4]` |
-| `u250_standard_reservation_pool` | `AllowGroups=lab,fpga_u250`, **12 h** | 12 h, `hacc-u250-[1-4],hacc-u250-frp` |
-| `u250_long_reservation_pool` | `AllowGroups=lab,fpga_u250`, **2 days** | 2 d, `hacc-u250-[1-4]` |
+| build (phases 2 and 3) | a long time limit (a place-and-route takes hours) and no card | `ODIN_BUILD_CANDIDATES` |
+| board (phases 5, 6 and 8) | an allocation that passes the card into the job | `ODIN_BOARD_CANDIDATES` |
+| joint (phase 7) | the card and a GPU in one allocation, or on the U250 the card and the node's CPUs for the reference | `ODIN_JOINT_CANDIDATES` |
 
-The account's groups, verbatim: `yigit video render hgpu gpgpu fpga_u280
-fpga_u250 fpga_vck5000`. Note what is NOT there — `fpga_u55c` and `lab` — and
-that `hgpu` is nevertheless enough for both U55C partitions, while `fpga_u250`
-opens all three U250 ones outright.
+```bash
+export ODIN_BUILD_CANDIDATES="<build partition> <second choice>"
+export ODIN_BOARD_CANDIDATES="<card partition> <longer card pool>"
+export ODIN_JOINT_CANDIDATES="<card and GPU partition>"
+export SBATCH_ACCOUNT=<account>            # only if your site requires an account
+```
 
-`run_all.sh` no longer takes any of this on faith: it re-derives the pick at
-phase time from `scontrol show partition` (groups) and `sinfo` (a node that is
-up), prints why each rejected candidate lost, and yields to
-`ODIN_BUILD_PARTITION` / `ODIN_BOARD_PARTITION` / `ODIN_JOINT_PARTITION`. When
-the cluster changes again, the script follows it and this table is the record of
-what it looked like on 2026-08-25.
+`run_all.sh` takes none of these on faith: it re-derives the pick at phase time
+from `scontrol show partition` (one of your groups must be admitted) and
+`sinfo` (a node that is up), prints why each rejected candidate lost, and
+yields to `ODIN_BUILD_PARTITION` / `ODIN_BOARD_PARTITION` /
+`ODIN_JOINT_PARTITION` when you pin one. With neither a list nor a pin for a
+role, that phase refuses and names these variables. Bare platform partitions
+are often capped at one hour, so a build never goes there, and a pool with a
+longer cap is the right second board candidate. A documented partition table
+can be stale: on 2026-08-25 the documented build venue's node was down and the
+documented joint venue refused the account, which is why the picker asks the
+cluster instead.
 
-## 2. Build the kernel (on a compile partition or `hacchead`, NEVER on a board)
+## 2. Build the kernel (on a build partition or the head node, NEVER on a board)
 
 The board partitions are capped at one hour; a place-and-route is hours. The
 build needs no board at all.
@@ -287,8 +285,7 @@ build needs no board at all.
 git clone <this repo> /data/${USER}/odin/mimarsinan
 cd /data/${USER}/odin/mimarsinan
 
-srun -p vck5000_compile -n 1 --pty bash -i   # field-observed 2026-08-25:
-                                             # cpu_only's node is DOWN
+srun -p <build partition> -n 1 --pty bash -i
 
 export ODIN_CARD=u250                        # see READ FIRST: u55c is blocked
 scripts/hacc/build_xclbn.sh hw_emu           # FIRST: ~15 min, functional
@@ -296,10 +293,10 @@ scripts/hacc/build_xclbn.sh hw               # THEN: the real bitstream
 ```
 
 Build venues are **card-independent** — a place-and-route needs a compile
-partition, not a card — so `vck5000_compile` is right for either card.
+partition, not a card — so the same build partition is right for either card.
 
 Toolchain (field-observed 2026-08-25): Vitis lives under **`/tools/Xilinx`** —
-capital X; the vendor docs' `/tools/xilinx` is stale and cost the first live
+capital X; the cluster documentation's `/tools/xilinx` is stale and cost the first live
 session a refusal at the door — and the installed set is
 `2020.1 2020.2 2021.2 2022.1 2023.2 2024.2`.
 `scripts/hacc/toolchain.sh` is the single place that resolves this: it probes
@@ -310,7 +307,7 @@ is locked to the release it was built with, which is the whole U55C story, so
 `ODIN_CARD=u250` builds under **2020.2** on purpose. It refuses loudly if there
 is no Vitis anywhere, which is what happens if you run it on your laptop.
 
-`hacc_demo/README.md` pairs the U250 202020 shell with Vitis **2021.2** rather
+The cluster's documentation pairs the U250 202020 shell with Vitis **2021.2** rather
 than 2020.2. Both are plausible for a 202020 shell; the profile pins 2020.2
 because it is the release the shell was built against and it is installed. If a
 2020.2 link ever fails on this shell, `VITIS_VERSION=2021.2` is the first thing
@@ -320,10 +317,10 @@ That file also owns the `set +u` around the vendor setup scripts: Vitis 2024.x's
 `.settings64-Vitis.sh` reads `$PYTHONPATH`, and under `set -u` an unset
 `PYTHONPATH` in a fresh slurm shell kills the build before it starts.
 
-**XRT version — the two cluster docs disagree, and the newer one wins.**
-`Xtra-Computing/hacc_demo/README.md`'s current cluster table lists the U55C
-cluster at **XRT 2.18.179** (Vitis 2022.2). `hacc_demo/doc/0-login.md` still
-carries an older table listing 2.14.384 for the same shell; that page is stale.
+**XRT version — two pages of the cluster's documentation disagree, and the
+newer one wins.** Its current cluster table lists the U55C nodes at
+**XRT 2.18.179** (Vitis 2022.2), while an older login page still lists
+2.14.384 for the same shell; that page is stale.
 Take 2.18.179 as the expected runtime and **confirm it on the node** with
 `xbutil examine` (§5) before blaming anything else — a shell/XRT mismatch
 against what the xclbin was linked with is triage step 1, not a footnote.
@@ -424,13 +421,13 @@ reset inputs, which no SCK edge takes, and S1-NC1's feedback failed at
 guarantees, a two-core-period data-path bound out of the slave, `ASYNC_REG` on
 its synchronizers and a global buffer asked for on every kernel clock (each SCK
 net and the gated core clock: asking for SCK alone left six of seven units' core
-clocks unbuffered in build 71055, where opt_design's BUFG optimization inserted
+clocks unbuffered in the first seven-unit build, where opt_design's BUFG optimization inserted
 one buffer after the seven requested ones. INFERENCE, from that 7 + 1 and from
 the SPI triage's multi-unit builds, which each got exactly eight: the
 optimization inserts at most eight per build and counts requested ones against
 them). At seven units on SLR0
 that is 14 kernel global clocks, and they fit, but with little room: the routed
-audit of build 71070 counts at most 19 global clocks in one clock region (X4Y2)
+audit of the fixed seven-unit build counts at most 19 global clocks in one clock region (X4Y2)
 and 24 of 24 horizontal clock routes used in X3Y2, so more units on one SLR may
 not place with every kernel clock buffered. It packages
 the file for implementation only, processed late, and refuses before the link
@@ -492,17 +489,17 @@ whose resolution SOURCE is compared with, the job's `vivado.log` shows the
 restore and no clock replaced after it, and no SCK clock carries a FILE_NAME
 (Vivado 2022.2.2 restores a routed checkpoint's clocks without FILE_NAME or
 LINE_NUMBER; a clock defined by a text read in the job carries that text's
-name: U-SP4's targeted pass, probe 71259 against control 71238).
+name: U-SP4's targeted pass, the own-build probe against its control probe).
 
 Two notes on the comment block 2a of `build_xclbn.sh`, kept here and not in the
 script: the chip-cache key and the overlay identity of bitstream `a58f67f7`
-(build 71070) hash the script it was built with (`9df0e01e`). U-SP4 changes the
+(the fixed seven-unit build) hash the script it was built with (`9df0e01e`). U-SP4 changes the
 script by its one declared change (the generated clock's source, and the comment
 lines that describe it), so every build on a head that carries it has a new
-chip-cache key, and its constraint text differs from 71070's only in the
+chip-cache key, and its constraint text differs from that build's only in the
 `create_generated_clock` line of each core. (1) Its sentence that opt_design's BUFG optimization "inserts at most
 eight buffers per build and counts the requested ones against them" is an
-INFERENCE (build 71055: seven requested buffers inserted, then one by the
+INFERENCE (the first seven-unit build: seven requested buffers inserted, then one by the
 optimizer; the triage's multi-unit builds: exactly eight each), not a measured
 rule. (2) Its `ASYNC_REG` line also tags
 `controller_0/SPI_GATE_ACTIVITY_sync_reg`, which is not a plain second
@@ -530,7 +527,8 @@ not mark a plain two-flop synchronizer.
 
 ## 4. Stage the run
 
-`/data` is the only path shared between the head node and the board VMs.
+The data root (`ODIN_DATA_ROOT`, default `/data`) is the path the head node and
+the board VMs share; the commands below use the default.
 
 ```bash
 mkdir -p /data/${USER}/odin
@@ -574,7 +572,7 @@ the driver that assumed otherwise crashed on a U250 at its first CSR touch on
 2026-08-25. So B0 is now the round trip instead, which proves strictly more.
 
 ```bash
-srun -p xilinx_u55c_gen3x16_xdma_3_202210_1 -n 1 --pty bash -i
+srun -p <board partition> -n 1 --pty bash -i
 source /opt/xilinx/xrt/setup.sh
 xbutil examine                      # the card must be listed and healthy;
                                     # READ THE XRT VERSION HERE (§2)
@@ -627,10 +625,10 @@ is a campaign worth board hours.
 
 ## 6. Phase B1 — the parity campaign
 
-Batched, for the campaign (the 7-day pool if you need more than an hour):
+Batched, for the campaign (a longer pool if you need more than an hour):
 
 ```bash
-sbatch -p mi210_u280_u55c scripts/hacc/odin_u55c.sbatch   # field-observed 2026-08-25
+sbatch -p <card and GPU partition> scripts/hacc/odin_u55c.sbatch
 squeue                              # watch it
 ls -t /data/${USER}/log/odin_*/     # the newest run's artifact directory
 tail -f /data/${USER}/log/odin_*/run_board.log
@@ -669,7 +667,7 @@ Under `/data/${USER}/log/odin_<timestamp>/`:
 Copy the whole log directory back and attach the build `reports/` to it. That
 bundle is the R11b evidence.
 
-## 6b. HACC NUS - ODIN Deployment
+## 6b. HACC ODIN Deployment
 
 B1 certifies FIXTURES — frozen programs whose counts the cosimulation recorded.
 This phase deploys a NETWORK, and everything below is about the one thing that
@@ -958,7 +956,7 @@ the package did not carry. `make_package.py` refuses two bundles claiming one
 name.
 
 That bundle is produced by the pipeline itself, not by hand. The step is
-`"HACC NUS - ODIN Deployment"`; a tier cell (or any deployment document) turns
+`"HACC ODIN Deployment"`; a tier cell (or any deployment document) turns
 it on with `enable_odin_hacc_export` and sizes the campaign with
 `odin_hacc_bundle_samples` (how many test-set samples the bundle can execute at
 all) and `odin_hacc_certification_samples` (how many carry frozen PER-PASS
@@ -1050,23 +1048,22 @@ and most likely first:
 ## 8. Things that will bite you
 
 * Submitting a build to a board partition — killed at one hour, every time.
-* `--account=slurm` is required in the **sbatch** preamble
-  (`hacc_demo/doc/1-FPGA-allocation.md`'s `example.sh` carries it, and
-  `scripts/hacc/odin_u55c.sbatch` does too). The **`srun`** examples in that
-  same document pass no `--account` at all — do not add one to an `srun` on the
-  strength of the sbatch template.
+* An account, where your site requires one, goes on the `sbatch` command line
+  (`--account=<account>`) or into `SBATCH_ACCOUNT`, which sbatch reads; the
+  scripts here carry no account line. Check your site's rule for `srun` before
+  adding one there.
 * Slurm opens `--output`/`--error` before the job body runs. Ours are relative
-  to `--chdir` (`/tmp`) for exactly that reason; if you point them at `/data`,
+  to `--chdir` (`/tmp`) for exactly that reason; if you point them at the data root,
   create the directory first or the submission never launches.
-* Staging outside `/data` — the VM cannot see it.
-* Trusting the vendor doc's partition table: **field-observed 2026-08-25**,
-  `cpu_only`'s node is down, `mi210_vck_u55c` refuses this account outright, and
-  `hacc-gpu1` — which that doc warns off as "U250/U280" — is in fact the node
-  carrying MI210 + U280 + **U55C**, i.e. the one joint venue that works. Ask
-  `scontrol show partition` and `sinfo -a -N` before believing any of it; that
-  is exactly what `run_all.sh` now does at phase time.
+* Staging outside the shared data root — the VM cannot see it.
+* Trusting a documented partition table: on 2026-08-25 the documented build
+  venue's node was down, the documented joint venue refused the account
+  outright, and a node the documentation warned off as U250/U280 was in fact
+  the one carrying MI210 + U280 + **U55C**, i.e. the one joint venue that
+  worked. Ask `scontrol show partition` and `sinfo -a -N` before believing any
+  of it; that is exactly what `run_all.sh` now does at phase time.
 * Assuming a card is present because the cluster owns one. `xbutil` answered
-  `0 devices found` on `hacc-gpu3` from a non-FPGA partition: cards are
+  `0 devices found` on a U55C board node from a non-FPGA partition: cards are
   VM-passed at allocation time. Allocate a board partition first.
 * Reaching for `xilinx_u250_gen3x16_xdma_4_1_202210_1` because it is newer than
   the 202020 one. It is 2022.2-era and hits the same lock as the U55C shell;
@@ -1077,5 +1074,5 @@ and most likely first:
   hiccup needed you at the keyboard. Use `bootstrap_hacc.sh`, which detaches it,
   and `scripts/status.sh` to look in.
 * Assuming `.slurmech.toml` applies: it targets a different cluster entirely
-  (xlog1/H100). HACC submission is hand-written `sbatch`, which is what this
+  (an H100 compute cluster). HACC submission is hand-written `sbatch`, which is what this
   directory is.

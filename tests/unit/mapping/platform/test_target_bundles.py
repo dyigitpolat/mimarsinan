@@ -115,7 +115,7 @@ class TestShippedRegistry:
     def test_odin_and_the_22nm_point_declare_their_geometry_with_claim_classes(self):
         odin, point = target_bundles()["odin"], target_bundles()["generic_estimated_22nm"]
         assert odin.geometry not in imc_platform_names() and point.geometry not in imc_platform_names()
-        # CL-SG (owner 2026-10-20, "256 x 256, per-row sign"): the physical core, one static sign per axon row.
+        # CL-SG (2026-10-20: 256 x 256, per-row sign): the physical core, one static sign per axon row.
         assert odin.values["cores"] == [{"max_axons": 256, "max_neurons": 256, "count": 1, "has_bias": False,
                                          "weight_sign_granularity": "per_axon"}]
         assert odin.values["weight_bits"] == 4 and odin.claim_class == "quarantined"

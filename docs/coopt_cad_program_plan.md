@@ -457,10 +457,10 @@ mutation-checked.
 4. The wizard can select, inspect, and override a profile, and shows which objectives
    each profile can back BEFORE launch.
 
-## V — Silicon correlation (added 2026-08-13, on owner instruction)
+## V — Silicon correlation (added 2026-08-13)
 
-> "we need to match multiple hardware numbers through methodologically sourced and
-> derived values for the units"
+Requirement: several published hardware numbers are matched through methodologically
+sourced and derived values for the units.
 
 The C0–C7 program sourced every constant from a paper. It never asked the next
 question: **do the constants, multiplied by a published workload's census, reproduce

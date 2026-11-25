@@ -211,7 +211,7 @@ def test_every_graph_resolves_to_the_latest_valid_start_or_refuses_by_name(tmp_p
 # ---------------------------------------------------------------------------
 
 CARD_CONFIG = REPO / "scripts" / "hacc" / "odin_deployment_cell.json"
-EXPORT = "HACC NUS - ODIN Deployment"
+EXPORT = "HACC ODIN Deployment"
 # The cache keys of the lineage stock card run (metadata.json of
 # odin_narrowconv_lifs_wq_s16_nobias_phased_deployment_run, the run the HACC card sessions measured).
 LINEAGE_KEYS = (
@@ -230,7 +230,7 @@ LINEAGE_KEYS = (
     "Weight Quantization.model", "Weight Quantization.adaptation_ledger", "Normalization Fusion.model",
     "Normalization Fusion.fused_model", "Soft Core Mapping.ir_graph", "Soft Core Mapping.deployment_record_scm",
     "hybrid_mapping", "Hard Core Mapping.hard_core_mapping", "Hard Core Mapping.deployment_record_hcm",
-    "Simulation.deployment_record_nevresim", "HACC NUS - ODIN Deployment.odin_hacc_deployment_bundle",
+    "Simulation.deployment_record_nevresim", "HACC ODIN Deployment.odin_hacc_deployment_bundle",
     "Deployment Record.deployment_record",
 )
 # The converted flows the release head refuses as uncertified (Wave 0 exactness) and the group quarantined with the

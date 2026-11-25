@@ -1,4 +1,4 @@
-"""HACC NUS - ODIN Deployment: freezing a mapped network into a board bundle."""
+"""HACC ODIN Deployment: freezing a mapped network into a board bundle."""
 
 from mimarsinan.chip_simulation.odin_hacc.freeze import (
     CAPTURE_SCHEMA as CAPTURE_SCHEMA,

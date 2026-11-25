@@ -241,7 +241,7 @@
         "report": "papers/mimarsinan_tcad_2026/research_artifacts/12_tcad_readiness/hardware/results_20261026/odin_power_overlay/results/board_power/step03_recertify_wide/deployment_report.json",
         "sha256": "74c659107020dd47d879d6bd069593333ad3b0d395f98fa3620168209a830ffc",
         "design": "chip configuration odin_wide_1024x256_mb16, xclbin UUID 4d3b43ef-af3f-5b4e-75f7-11788ab241cd (sha256 df7d661eaf7ae93eb0043bfaf9b3d6c9feedecef7d9030b0d83ce425291ddf11)",
-        "session": "card power session of 2026-10-26, HACC U55C, Slurm job 70881 (12_tcad_readiness/hardware/power_run_report.md)",
+        "session": "card power session of 2026-10-26, HACC U55C, one Slurm job (12_tcad_readiness/hardware/power_run_report.md)",
         "result": "resident recertification on the card: 150 of 150 certificates exact and 64 of 64 readouts equal to the frozen ones (power_run_report.md, Outcome)"
       },
       "pricing_absent": "No physics profile describes the realization: it is an FPGA build on the Alveo U55C card (xclbin 4d3b43ef-af3f-5b4e-75f7-11788ab241cd), and the odin profile prices the 28 nm ASIC (its validity 256 x 256 cores of 3-bit cells), another technology. A run on the realization refuses absolute pricing by name."

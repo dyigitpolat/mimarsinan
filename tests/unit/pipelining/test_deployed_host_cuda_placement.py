@@ -7,7 +7,7 @@ device. The hand-back (``place_on_host`` inside ``borrowed_host_placement``, the
 pinned only here: the CIFAR fixture's model, a parameter-holding preprocessor and every host op's module live on
 ``cuda:0`` (the state a GPU session leaves them in), the pipeline names ``cuda:0``, and each case asserts that every
 executor forward, host kernel and NF forward ran on the CPU and that every module is where it was. These tests need a
-CUDA device and skip by name without one (the reason below); a sura GPU run reads them.
+CUDA device and skip by name without one (the reason below); a server GPU run reads them.
 """
 
 from __future__ import annotations

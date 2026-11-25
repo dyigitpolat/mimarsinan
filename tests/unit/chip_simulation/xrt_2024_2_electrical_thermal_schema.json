@@ -3,7 +3,7 @@
     "class": "CONSTRUCTED, NOT RECORDED: key structure transcribed from the XRT sources, values illustrative. No card was read to make this file.",
     "repository": "github.com/Xilinx/XRT",
     "branch": "2024.2",
-    "runtime": "XRT 2.18.179, the runtime the HACC@NUS board VM reported on 2026-09-01 (results/*/xbutil_examine.log)",
+    "runtime": "XRT 2.18.179, the runtime the HACC board VM reported on 2026-09-01 (results/*/xbutil_examine.log)",
     "sources": [
       "src/runtime_src/core/common/sensor.cpp: read_electrical (legacy path: power_rails of {id, description, voltage{volts, is_present}, current{amps, is_present}}, power_consumption_watts from microwatts with 6 decimals, power_consumption_max_watts 75/150/225/N/A, power_consumption_warning), read_thermals (thermals of {location_id, description, temp_C, is_present}), msg 'No sensors present'",
       "src/runtime_src/core/tools/common/reports/ReportElectrical.cpp: the electrical tree is added under 'electrical'",

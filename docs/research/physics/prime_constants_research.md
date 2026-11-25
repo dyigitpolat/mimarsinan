@@ -405,7 +405,7 @@ over-counts by 1.5× relative to the 4-partial form (6 vs 4), and by 2× relativ
 |---|---|
 | `src/mimarsinan/mapping/platform/imc_platforms_literature.py` (lines 125–136) | `prime_mat_256x256` IMCPlatform geometry + provenance quote |
 | `src/mimarsinan/deployment_record/platform_physics/conversion.py` (lines 96–103) | `bit_sliced_crossbar` docstring naming PRIME as one of its two motivating targets |
-| `/home/yigit/backups/se_review_copy/papers/structured_elimination_aaai/research_artifacts/13_chip_geometries.json` | the extraction card the registry entry is transcribed from (outside this repo) |
+| `papers/structured_elimination_aaai/research_artifacts/13_chip_geometries.json` (a backup copy of the research repository) | the extraction card the registry entry is transcribed from (outside this repo) |
 | `src/mimarsinan/deployment_record/platform_physics/profiles/` | **no `prime.json` exists yet** |
 
 ### 5.2 Value-by-value cross-check of `prime_mat_256x256`

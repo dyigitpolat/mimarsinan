@@ -1,22 +1,20 @@
 #!/bin/bash
 #SBATCH --chdir /tmp/
-#SBATCH --account=slurm
 #SBATCH --job-name=odin_board
 #SBATCH --output=slurm-odin-board-%j.out
 #SBATCH --error=slurm-odin-board-%j.err
 #
 # Run the ODIN driver against an allocated card. run_all.sh picks the partition
-# from the CARD PROFILE (scripts/hacc/cards.sh) and the cluster's own answers.
-#   U55C: -p xilinx_u55c_gen3x16_xdma_3_202210_1  (hacc-gpu1/2/3, ONE HOUR cap)
-#         -p mi210_u280_u55c                      (hacc-gpu1, 12 h)
-#   U250: -p xilinx_u250_gen3x16_xdma_3_1_202020_1 (1 h) or the 12 h / 2 d pools
+# from the site's candidates (ODIN_BOARD_CANDIDATES, or ODIN_BOARD_PARTITION)
+# and the cluster's own answers: a partition that allocates the card you built
+# for, typically an hour-capped shell partition or a longer pool.
 #
 # ODIN_MODE=probe is B0: introspect the xclbin, load it, open the CU EXCLUSIVE,
 # execute a one-token NULL PROGRAM and read back the capture header the fabric
 # DMA'd home. It reads NO control register -- pyxrt binds none, which is what
 # field-falsified the previous driver on this cluster on 2026-08-25.
 #
-# ODIN_MODE=deploy is "HACC NUS - ODIN Deployment": the sealed bundle under
+# ODIN_MODE=deploy is "HACC ODIN Deployment": the sealed bundle under
 # deployment/ executed as one host-mediated PASS per core -- program the core
 # once, run each sample, transcode the counts into the next core's axon slots.
 # ODIN_BUNDLE names a bundle other than the packaged default; ODIN_CHIP names
@@ -40,20 +38,19 @@
 # kernel-idle and loop blocks per design, drift reference. ODIN_FAKE_PYXRT runs
 # the same session against the fake pyxrt (no card; structure, not silicon).
 #
-# FIELD-OBSERVED 2026-08-25: the U55C board partition's AllowGroups is
-# lab,hgpu,fpga_u55c — reachable through `hgpu` without fpga_u55c membership —
-# and mi210_vck_u55c, which the vendor doc names, refuses this account outright.
-# The u250 partitions are lab,fpga_u250, and this account IS in fpga_u250.
+# FIELD-OBSERVED 2026-08-25: a partition's AllowGroups decides who may use it,
+# and a partition the documentation names may still refuse an account outright;
+# the picker in run_all.sh checks both before it submits anything.
 #
-# THE CARD IS ALLOCATED, NOT AMBIENT. hacc-gpu3 answered '0 devices found' under
-# xbutil from a non-FPGA partition on 2026-08-25: the cards are passed into the
-# job's VM at allocation time (doc/1's board-VM model, now field-confirmed), so
-# `xbutil examine` finding nothing here means the wrong partition, not a dead
-# card.
+# THE CARD IS ALLOCATED, NOT AMBIENT. A board node answered '0 devices found'
+# under xbutil from a non-FPGA partition on 2026-08-25: the cards are passed
+# into the job's VM at allocation time (the cluster's board-VM model, now
+# field-confirmed), so `xbutil examine` finding nothing here means the wrong
+# partition, not a dead card.
 #
-# The first two #SBATCH lines are the cluster's required preamble (that doc's
-# example.sh lines 143-145). --output/--error stay under --chdir (/tmp) because
-# slurm opens them before the job body runs.
+# No account is set here: a site that requires one sets SBATCH_ACCOUNT=<account>
+# (sbatch reads it) or passes --account. --output/--error stay under --chdir
+# (/tmp) because slurm opens them before the job body runs.
 #
 #   ODIN_PKG=... ODIN_XCLBIN=... ODIN_MODE=probe|run \
 #       sbatch --wait -p <partition> scripts/hacc/odin_board.sbatch
@@ -89,8 +86,8 @@ echo "[board] mode    ${MODE}"
 
 if [[ ! -f "${XRT_SETUP}" ]]; then
     echo "REFUSING: no XRT at ${XRT_SETUP}. This job runs ONLY on an allocated" >&2
-    echo "  HACC@NUS board node; /opt/xilinx/xrt is the cluster's XRT root" >&2
-    echo "  (hacc_demo/doc/0-login.md line 55)." >&2
+    echo "  HACC board node; /opt/xilinx/xrt is the stock XRT root" >&2
+    echo "  (set XRT_SETUP and XRT_BIN if your site keeps it elsewhere)." >&2
     exit 2
 fi
 

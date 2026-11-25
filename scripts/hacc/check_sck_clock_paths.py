@@ -30,7 +30,7 @@ clock path (a ``-datapath_only`` path prints none), and the totals.
 An SCK clock is a clock whose name ends in ``sck_reg/Q``: a generated clock takes the name
 of the pin it is defined on, and the SPI master's register is ``sck``. Exit 0: PASS. Exit
 1: FAIL (each reason on its own line). Exit 2: no "Timing Details" or no path section in an
-input. Standard library only: it runs on sura and on the build host alike.
+input. Standard library only: it runs on a workstation and on the build host alike.
 """
 
 from __future__ import annotations

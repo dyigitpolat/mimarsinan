@@ -1,0 +1,6 @@
+# Invented example for the local gate harness, not a capture of any real cluster.
+PartitionName=joint_gpu_long
+   AllowGroups=staff,gpu_users,u280_users AllowAccounts=ALL AllowQos=ALL
+   MaxNodes=UNLIMITED MaxTime=5-00:00:00 MinNodes=0
+   Nodes=gpu-1
+   State=UP

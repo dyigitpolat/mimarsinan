@@ -56,7 +56,7 @@ post-training σ stays banned by the scope law. Two laws recorded:
   and the refuted cover.
 
 ### The infra reality (unchanged all session)
-The shared box (`sura`) kills session-spawned processes at ~952 s. The AQ step
+The shared development server kills session-spawned processes at ~952 s. The AQ step
 needs ~17 min, so it structurally cannot cache inside one window; the workaround
 was an auto-resuming supervisor + a halved tuning budget, with the user's own
 tmux as the immune escape.
@@ -298,7 +298,7 @@ far better start.
    potential leverage if real).
 2. The genuine conversion needs LIF adaptation — make the long run tractable
    (M2: SE-sized in-loop eval, `n = p(1−p)/SE²`, full census only at
-   entry/final) + immune execution (user tmux / xlog1 Slurm when the tunnel is
+   entry/final) + immune execution (user tmux / a Slurm job on the compute cluster when the tunnel is
    restored).
 3. Q4 e2e DoD: deployed ≡ analytic within 2·SE + parity ≥ 0.98.
 

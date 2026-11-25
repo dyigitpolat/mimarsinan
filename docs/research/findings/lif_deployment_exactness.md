@@ -64,8 +64,8 @@ Prototype scripts and raw outputs archived at
 `docs/research/findings/lif_deployment_exactness_artifacts/`
 (`lif_lab.py` = twin checks + main arms, `lif_lab2.py` = comparator/reset/WQ/
 phase/V0, `lif_lab3.py` = drift law + Novena repair, `lif_lab4.py` = re-encode
-+ stochastic; `results*.json`; working copies in scratch
-`/tmp/claude-1005/-home-yigit-repos-research-stuff/11224c9e-f926-4cb5-a527-2d0211f4bd25/scratchpad/L1/`). All hops run THROUGH the repo kernels
++ stochastic; `results*.json`; working copies in a scratch
+directory, `L1/`). All hops run THROUGH the repo kernels
 (`lif_core_contribute_and_fire`, `lif_fire_and_reset`, `to_uniform_spikes`);
 the closed-form count law is asserted bit-equal to the kernels before use
 (float64 = `COMPUTE_DTYPE`; seed 0; 2000 test / 4000 calib samples; RTX PRO

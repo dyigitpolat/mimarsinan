@@ -62,7 +62,7 @@ plan builds scaffolding into `src/`.
 | Monetary cost placement | **Research-side pricing** — the framework seals raw facts (model name, calls, tokens in/out, wall); dollars are computed in `mimarsinan_research` from a price table. |
 | Adaptation ledger home | **Step artifact AND an additive-optional DeploymentRecord fragment** (totals summary; the `invocations` schema precedent). |
 | Derived programming constants | **All five profiles** (loihi, truenorth, odin, isaac_like, generic_estimated_22nm), NVM-class with wide literature bands + the endurance-unmodeled note. |
-| Algorithm 7.1 semantics | **Code reality is authoritative** (owner directive): no `tuning_policy` change; the ledger reports per-increment spending as consumed, and the thesis algorithm is rewritten FROM the ledger. |
+| Algorithm 7.1 semantics | **Code reality is authoritative** (design decision): no `tuning_policy` change; the ledger reports per-increment spending as consumed, and the thesis algorithm is rewritten FROM the ledger. |
 
 ## Recon facts the design builds on (verified 2026-08-18)
 
@@ -271,7 +271,7 @@ verdict pin red.
 
 ## TS5 — adaptation ledger + stall trace
 
-Reports code reality (owner directive): the ledger seals what the
+Reports code reality (design decision): the ledger seals what the
 controller actually did and spent — per-increment budgets as consumed —
 and the thesis's Algorithm 7.1 is rewritten from it.
 

@@ -27,7 +27,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F_nn
 
-sys.path.insert(0, "/home/yigit/repos/research_stuff/mimarsinan/src")
+_REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
+sys.path.insert(0, os.path.join(_REPO, "src"))
 
 from mimarsinan.models.nn.lif_kernels import lif_fire_and_reset
 from mimarsinan.models.spiking.lif_core_step import lif_core_contribute_and_fire
@@ -37,7 +38,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64  # COMPUTE_DTYPE (models/spiking/spiking_config.py)
 SEED = 0
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = "/home/yigit/repos/research_stuff/mimarsinan/datasets"
+DATA_DIR = os.path.join(_REPO, "datasets")
 
 THRESHOLDING_MODE = "<"  # t0_01 lif config; "<=" checked in twin tests
 

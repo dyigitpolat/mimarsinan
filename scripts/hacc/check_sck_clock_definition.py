@@ -46,8 +46,8 @@ also unless:
      constraints restored from the checkpoint's binary archive and no clock replaced after
      it; and no SCK clock carries a FILE_NAME. Vivado 2022.2.2 restores a routed
      checkpoint's clocks without FILE_NAME or LINE_NUMBER, and a clock defined by a text
-     read in the session carries that text's name (MEASURED, U-SP4 targeted pass: probe
-     71259 in mode own against the control 71238).
+     read in the session carries that text's name (MEASURED, U-SP4 targeted pass: the own-build
+     probe in mode own against a control probe).
 
 It prints, per SCK clock, its defining file and line, the source, and for each feedback
 check its slack and source clock delay (SCD), and the path's shape.
@@ -55,7 +55,7 @@ check its slack and source clock delay (SCD), and the path's shape.
     python3 scripts/hacc/check_sck_clock_definition.py <probe dir> [--expect-sck N] [--own-build]
 
 Exit 0: PASS. Exit 1: FAIL (each reason on its own line). Exit 2: a record is missing.
-Standard library only: it runs on sura and on the build host alike.
+Standard library only: it runs on a workstation and on the build host alike.
 """
 
 from __future__ import annotations
