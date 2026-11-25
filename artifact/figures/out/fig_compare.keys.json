@@ -1,0 +1,425 @@
+[
+ {
+  "what": "classifiers of the census",
+  "value": 80,
+  "key": "censusmembers",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "MimarSinan: all on cores",
+  "value": 24,
+  "key": "censusallcores",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "MimarSinan: with host share",
+  "value": 54,
+  "key": "censushostshare",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "MimarSinan: undecided",
+  "value": 2,
+  "key": "censusundecidable",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "MimarSinan: classifiers converted",
+  "value": 78,
+  "key": "censusconvert",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: classifiers compiled",
+  "value": "13 of 80",
+  "key": "pimcompscope",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: clean compile (printed as 'Clean')",
+  "value": 11,
+  "key": "pimcompscope",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: operators not executed",
+  "value": 2,
+  "key": "pimcompscope",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: operator scope (printed as 'Unsupported operator')",
+  "value": 21,
+  "key": "pimcompscope",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: crash",
+  "value": 4,
+  "key": "pimcompother",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: capacity",
+  "value": 3,
+  "key": "pimcompother",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: memory cap (printed as 'Memory')",
+  "value": 19,
+  "key": "pimcompother",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: not exported (printed as 'Export')",
+  "value": 14,
+  "key": "pimcompother",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: time limit (printed as 'Time')",
+  "value": 6,
+  "key": "pimcompother",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: classifiers compiled",
+  "value": "12 of 80",
+  "key": "cimflowcompile",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: operators not executed",
+  "value": 12,
+  "key": "cimflowcompile",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: graph structure",
+  "value": 27,
+  "key": "cimflowscope",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: grouped convolution",
+  "value": 17,
+  "key": "cimflowscope",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: input side (printed as 'Input size')",
+  "value": 8,
+  "key": "cimflowcompile",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: crash",
+  "value": 8,
+  "key": "cimflowcrashother",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: not exported (printed as 'Export')",
+  "value": 8,
+  "key": "cimflowcompile",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "toolchain passes at 3 cores (128 x 128 crossbars)",
+  "value": 922,
+  "source": "records/frozen/w22_keys_t1_20261123T055229/tiers/family_locks/w22/record_644b4c3bc5d7/readings/split/nonblind.txt#L138",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN at 3 cores (128 x 128 crossbars)",
+  "value": "refused",
+  "source": "records/frozen/w22_keys_t1_20261123T055229/tiers/family_locks/w22/record_644b4c3bc5d7/readings/split/nonblind.txt#L138",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "toolchain passes at 12 cores (128 x 128 crossbars)",
+  "value": 228,
+  "source": "records/frozen/w22_keys_t1_20261123T055229/tiers/family_locks/w22/record_644b4c3bc5d7/readings/split/nonblind.txt#L138",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN at 12 cores (128 x 128 crossbars)",
+  "value": "refused",
+  "source": "records/frozen/w22_keys_t1_20261123T055229/tiers/family_locks/w22/record_644b4c3bc5d7/readings/split/nonblind.txt#L138",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: need for ResNet-18 (cores)",
+  "value": 23,
+  "key": "pimcompneed",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "toolchain passes at 9 cores (8,192 x 64 cores)",
+  "value": 98,
+  "key": "passesstages",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow stages at 9 cores (8,192 x 64 cores)",
+  "value": 11,
+  "key": "passesstages",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "toolchain passes at 36 cores (8,192 x 64 cores)",
+  "value": 32,
+  "key": "passesstages",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow stages at 36 cores (8,192 x 64 cores)",
+  "value": 4,
+  "key": "passesstages",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "toolchain passes at 64 cores (8,192 x 64 cores)",
+  "value": 24,
+  "key": "passesstages",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow stages at 64 cores (8,192 x 64 cores)",
+  "value": 3,
+  "key": "passesstages",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: need for ResNet-18 (cores)",
+  "value": 81,
+  "key": "cimflowneed",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "TrueNorth chip: neither drawn nor listed (no source prices a network (the section's published-chip statement))",
+  "value": "not expressible",
+  "key": "pubneurram,pubsram,pubhermes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Loihi chip: neither drawn nor listed (no source prices a network (the section's published-chip statement))",
+  "value": "not expressible",
+  "key": "pubneurram,pubsram,pubhermes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ODIN chip: neither drawn nor listed (no source prices a network (the section's published-chip statement))",
+  "value": "not expressible",
+  "key": "pubneurram,pubsram,pubhermes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "HERMES-64 layer, energy: neither drawn nor listed (no source prices a network (the section's published-chip statement))",
+  "value": "not expressible",
+  "key": "pubhermes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "HERMES-64 layer, latency: neither drawn nor listed (no source prices a network (the section's published-chip statement))",
+  "value": "not expressible",
+  "key": "pubhermes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "band of the cost estimates (percent)",
+  "value": "pending",
+  "key": "corrcases",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Card, published geometry: error of the estimate (percent), the range its draft-local key prints, rounded outward, drawn alone (a bar with end caps, no single reading)",
+  "value": "-4.6% to -2.7%",
+  "key": "cardstreamerr",
+  "source": "records/hardware/multicore/r5_card_session_3/read/readings/expectations.json#E1 stock as_run P-A/min,max",
+  "sha256": "06a6892103031f4f67f6a55d4ff560d59fb17889c1c125e93cc0e601e5836cda",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Card, wider core: error of the estimate (percent), the range its draft-local key prints, rounded outward, drawn alone (a bar with end caps, no single reading)",
+  "value": "-7.8% to -3.9%",
+  "key": "cardstreamerrwide",
+  "source": "records/hardware/multicore/r5_card_session_3/read/readings/expectations.json#E1 generated as_run P-A/min,max",
+  "sha256": "06a6892103031f4f67f6a55d4ff560d59fb17889c1c125e93cc0e601e5836cda",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SANA-FE, energy: error of the estimate (percent), low and high, then the readings drawn as marks",
+  "value": [
+   2.44,
+   2.44,
+   2.44
+  ],
+  "key": "sanafeenergy",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SANA-FE, energy: the label of each mark, the ledger's print form",
+  "value": [
+   "+2.44%"
+  ],
+  "key": "sanafeenergy",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "System cost model, energy: error of the estimate (percent), the range the ledger prints, drawn alone (a bar with end caps, no single reading)",
+  "value": "-14.3% to +4.4%",
+  "key": "studytcenergy",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "System cost model, tile area: error of the estimate (percent), the range the ledger prints, drawn alone (a bar with end caps, no single reading)",
+  "value": "+5.2% to +5.7%",
+  "key": "studytcarea",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, latency: estimate over reference (ratio), low and high, then the readings drawn as marks",
+  "value": [
+   2440.0808,
+   4572.4184
+  ],
+  "key": "simdevlatency,simlatency",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, latency: the factor range printed beside its bar (two significant figures)",
+  "value": "2,400 to 4,600\u00d7",
+  "key": "simdevlatency,simlatency",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, latency: named cause (Weight load), carried by the row's name",
+  "value": "at least 99.9% at 21 points at 9 and 36 cores",
+  "key": "latloadshare",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, latency, matched weight store: estimate over reference (ratio), low and high, then the readings drawn as marks",
+  "value": [
+   1.3072,
+   1.8538
+  ],
+  "source": "records/tiers/family_locks/w22/matched_keys_644b4c3bc5d7/keys.json#keys[key=simmddevlatency,simmdlatency]/value/ratio_low,ratio_high",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, latency, matched weight store: the factor range printed beside its bar (two significant figures)",
+  "value": "1.3 to 1.9\u00d7",
+  "source": "records/tiers/family_locks/w22/matched_keys_644b4c3bc5d7/keys.json#keys[key=simmddevlatency,simmdlatency]/value/ratio_low,ratio_high",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, energy: estimate over reference (ratio), low and high, then the readings drawn as marks",
+  "value": [
+   5.4107,
+   59.91
+  ],
+  "key": "simdevenergy,simenergy",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, energy: the factor range printed beside its bar (two significant figures)",
+  "value": "5.4 to 60\u00d7",
+  "key": "simdevenergy,simenergy",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, energy: named cause (Constants not mapped), carried by the row's name",
+  "value": "0 of 38",
+  "key": "latmapped",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, energy, matched weight store: estimate over reference (ratio), low and high, then the readings drawn as marks",
+  "value": [
+   1.2754,
+   1.8537
+  ],
+  "source": "records/tiers/family_locks/w22/matched_keys_644b4c3bc5d7/keys.json#keys[key=simmddevenergy,simmdenergy]/value/ratio_low,ratio_high",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow simulator, energy, matched weight store: the factor range printed beside its bar (two significant figures)",
+  "value": "1.3 to 1.9\u00d7",
+  "source": "records/tiers/family_locks/w22/matched_keys_644b4c3bc5d7/keys.json#keys[key=simmddevenergy,simmdenergy]/value/ratio_low,ratio_high",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PIMCOMP-NN: crossbars of one core, the unit of the block's core counts (the need's words)",
+  "value": "64",
+  "source": "statement: a declared category of its row; records/frozen/w22_keys_t1_20261123T055229/tiers/family_locks/w22/record_644b4c3bc5d7/readings/split/nonblind.txt#L170",
+  "derivation": "the data file's budgets_cores.unit",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "CIMFlow: crossbars of one core, the unit of the block's core counts (the need's words)",
+  "value": "1",
+  "source": "statement: a declared category of its row; records/frozen/w22_keys_t1_20261123T055229/tiers/family_locks/w22/record_644b4c3bc5d7/readings/split/nonblind.txt#L176",
+  "derivation": "the data file's budgets_cores.unit",
+  "family": "data file",
+  "state": "value"
+ }
+]

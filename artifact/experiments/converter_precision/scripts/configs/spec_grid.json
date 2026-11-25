@@ -1,0 +1,1586 @@
+[
+ {
+  "adc": 3,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/resident/adc3",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/resident/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/resident/adc4",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/resident/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/resident/adc5",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/resident/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/resident/adc6",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/resident/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/resident/adc8",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/resident/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/resident/adc32",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/resident/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/half/adc3",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/half/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/half/adc4",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/half/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/half/adc5",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/half/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/half/adc6",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/half/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/half/adc8",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/half/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/half/adc32",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/half/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/eighth/adc3",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/eighth/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/eighth/adc4",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/eighth/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/eighth/adc5",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/eighth/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/eighth/adc6",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/eighth/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/eighth/adc8",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/eighth/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/tuned/eighth/adc32",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/tuned/eighth/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/resident/adc3",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/resident/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/resident/adc4",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/resident/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/resident/adc5",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/resident/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/resident/adc6",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/resident/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/resident/adc8",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/resident/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 108,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/resident/adc32",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/resident/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/half/adc3",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/half/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/half/adc4",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/half/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/half/adc5",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/half/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/half/adc6",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/half/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/half/adc8",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/half/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 54,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/half/adc32",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/half/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/eighth/adc3",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/eighth/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/eighth/adc4",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/eighth/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/eighth/adc5",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/eighth/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/eighth/adc6",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/eighth/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/eighth/adc8",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/eighth/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 1,
+    "has_bias": true,
+    "max_axons": 784,
+    "max_neurons": 512
+   },
+   {
+    "count": 14,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "mvm_int_readout_lenet5/untrained/eighth/adc32",
+  "member": "mvm_int_readout_lenet5",
+  "out": "records/11_wave2/explore/cl6/points/mvm_int_readout_lenet5/untrained/eighth/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/resident/adc3",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/resident/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/resident/adc4",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/resident/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/resident/adc5",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/resident/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/resident/adc6",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/resident/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/resident/adc8",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/resident/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "tuned",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/resident/adc32",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/resident/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/half/adc3",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/half/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/half/adc4",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/half/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/half/adc5",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/half/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/half/adc6",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/half/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/half/adc8",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/half/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "tuned",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/half/adc32",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/half/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/eighth/adc3",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/eighth/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/eighth/adc4",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/eighth/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/eighth/adc5",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/eighth/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/eighth/adc6",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/eighth/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/eighth/adc8",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/eighth/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "tuned",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/tuned/eighth/adc32",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/tuned/eighth/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/resident/adc3",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/resident/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/resident/adc4",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/resident/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/resident/adc5",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/resident/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/resident/adc6",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/resident/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/resident/adc8",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/resident/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "untrained",
+  "budget": "resident",
+  "cores": [
+   {
+    "count": 15,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 623,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/resident/adc32",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/resident/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/half/adc3",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/half/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/half/adc4",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/half/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/half/adc5",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/half/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/half/adc6",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/half/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/half/adc8",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/half/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "untrained",
+  "budget": "half",
+  "cores": [
+   {
+    "count": 8,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 312,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/half/adc32",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/half/adc32"
+ },
+ {
+  "adc": 3,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/eighth/adc3",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/eighth/adc3"
+ },
+ {
+  "adc": 4,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/eighth/adc4",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/eighth/adc4"
+ },
+ {
+  "adc": 5,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/eighth/adc5",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/eighth/adc5"
+ },
+ {
+  "adc": 6,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/eighth/adc6",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/eighth/adc6"
+ },
+ {
+  "adc": 8,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/eighth/adc8",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/eighth/adc8"
+ },
+ {
+  "adc": 32,
+  "arm": "untrained",
+  "budget": "eighth",
+  "cores": [
+   {
+    "count": 2,
+    "has_bias": true,
+    "max_axons": 2304,
+    "max_neurons": 512
+   },
+   {
+    "count": 78,
+    "has_bias": true,
+    "max_axons": 512,
+    "max_neurons": 256
+   }
+  ],
+  "label": "t0_43v/untrained/eighth/adc32",
+  "member": "t0_43v",
+  "out": "records/11_wave2/explore/cl6/points/t0_43v/untrained/eighth/adc32"
+ }
+]

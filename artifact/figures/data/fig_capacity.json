@@ -1,0 +1,530 @@
+{
+ "name": "fig_capacity",
+ "focal": {
+  "key": "capimagenet",
+  "source": "ledger:capimagenet",
+  "value": "72 of 110",
+  "display": "72 of 110",
+  "unit": "",
+  "class": "ESTIMATE",
+  "status": "estimated",
+  "form": "adopted",
+  "label": "",
+  "tier": "1",
+  "preliminary": false,
+  "range": null,
+  "replaced_by": "",
+  "head": "paper",
+  "exceed": 72,
+  "pairs": 110,
+  "sources": [
+   {
+    "path": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/capacity_counts.json",
+    "json_path": "probe_estimate/exceed",
+    "value": 72
+   },
+   {
+    "path": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/capacity_counts.json",
+    "json_path": "probe_estimate/pairs",
+    "value": 110
+   }
+  ]
+ },
+ "definition": {
+  "ratio": "weight count of the network over the weight cells of the chip description (fluid bound, fill 1.0)",
+  "packing": "fluid (fill 1.0)",
+  "source": "records/08_significance/probes/arch/runs/capacity_census.json assumptions/packing"
+ },
+ "record": {
+  "path": "records/08_significance/probes/arch/runs/capacity_census.json",
+  "sha256": "a873be99478886d28fcc5ff43d80d62ee5e865fa0068c451fcb540e9685bd555"
+ },
+ "network_key": "capinetnets",
+ "chip_key": "capprobechips",
+ "chip_kind": {
+  "values": [
+   "fabricated",
+   "design_study"
+  ],
+  "counts": {
+   "fabricated": 6,
+   "design_study": 5
+  },
+  "source": "scripts/build_fig_capacity_data.py CHIP_KIND: per column, the cited work and what it reports (a fabricated chip's measurements, or an architecture evaluated by simulation only). The census record and the ledger hold no such field."
+ },
+ "networks": [
+  {
+   "id": "VGG-16",
+   "label": "VGG-16",
+   "weights": 138344128,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/11/weights"
+  },
+  {
+   "id": "ViT-B/16",
+   "label": "ViT-B/16",
+   "weights": 86292480,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/17/weights"
+  },
+  {
+   "id": "ResNet-152",
+   "label": "ResNet-152",
+   "weights": 60040384,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/10/weights"
+  },
+  {
+   "id": "ConvNeXt-T",
+   "label": "ConvNeXt-T",
+   "weights": 28524000,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/15/weights"
+  },
+  {
+   "id": "Swin-T",
+   "label": "Swin-T",
+   "weights": 28199424,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/16/weights"
+  },
+  {
+   "id": "ResNet-50",
+   "label": "ResNet-50",
+   "weights": 25502912,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/9/weights"
+  },
+  {
+   "id": "ResNet-18",
+   "label": "ResNet-18",
+   "weights": 11678912,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/8/weights"
+  },
+  {
+   "id": "DenseNet-121",
+   "label": "DenseNet-121",
+   "weights": 7894208,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/12/weights"
+  },
+  {
+   "id": "EfficientNet-B0",
+   "label": "EfficientNet-B0",
+   "weights": 5236192,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/14/weights"
+  },
+  {
+   "id": "MobileNetV2",
+   "label": "MobileNetV2",
+   "weights": 3469760,
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json networks/13/weights"
+  }
+ ],
+ "chips": [
+  {
+   "id": "dynap_se_64x256x4",
+   "label": "DYNAP-SE",
+   "kind": "fabricated",
+   "kind_work": "moradi2017a",
+   "kind_basis": "measurements of a fabricated multi-core prototype chip",
+   "capacity_cells": 65536,
+   "cores": 4,
+   "weight_bits": 2,
+   "technology": "SRAM/CAM",
+   "eligibility": "curve-only",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/1/cells"
+  },
+  {
+   "id": "recom_64x64_256",
+   "label": "ReCom",
+   "kind": "design_study",
+   "kind_work": "ji2018recom",
+   "kind_basis": "an architecture evaluated by simulation (its Table II, Simulation Configuration)",
+   "capacity_cells": 1048576,
+   "cores": 256,
+   "weight_bits": 8,
+   "technology": "ReRAM",
+   "eligibility": "headline-eligible",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/9/cells"
+  },
+  {
+   "id": "neurram_like",
+   "label": "NeuRRAM",
+   "kind": "fabricated",
+   "kind_work": "wan2022a",
+   "kind_basis": "measurements of a fabricated chip",
+   "capacity_cells": 3145728,
+   "cores": 48,
+   "weight_bits": 4,
+   "technology": "RRAM",
+   "eligibility": "headline-eligible",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/7/cells"
+  },
+  {
+   "id": "hermes_64core",
+   "label": "HERMES-64",
+   "kind": "fabricated",
+   "kind_work": "gallo2022a",
+   "kind_basis": "measurements of a fabricated 64-core chip",
+   "capacity_cells": 4194304,
+   "cores": 64,
+   "weight_bits": 8,
+   "technology": "PCM",
+   "eligibility": "derived",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/15/cells"
+  },
+  {
+   "id": "puma_node (16-bit weights)",
+   "label": "PUMA node",
+   "kind": "design_study",
+   "kind_work": "ankit2019puma",
+   "kind_basis": "an architecture evaluated by simulation",
+   "capacity_cells": 4521984,
+   "cores": 2208,
+   "weight_bits": 16,
+   "technology": "ReRAM (memristor)",
+   "eligibility": "derived",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/16/cells"
+  },
+  {
+   "id": "prime_mat_256x256",
+   "label": "PRIME",
+   "kind": "design_study",
+   "kind_work": "chi2016prime",
+   "kind_basis": "an architecture evaluated by simulation",
+   "capacity_cells": 8388608,
+   "cores": 128,
+   "weight_bits": 4,
+   "technology": "ReRAM",
+   "eligibility": "curve-only",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/8/cells"
+  },
+  {
+   "id": "ibm_analog_ai_512x512x34",
+   "label": "Analog-AI chip",
+   "kind": "fabricated",
+   "kind_work": "ambrogio2023an",
+   "kind_basis": "measurements of a fabricated chip (its Fig. 1c, a micrograph of the chip)",
+   "capacity_cells": 8912896,
+   "cores": 34,
+   "weight_bits": 8,
+   "technology": "PCM",
+   "eligibility": "headline-eligible",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/3/cells"
+  },
+  {
+   "id": "loihi_dense_equiv_128x1024",
+   "label": "Loihi",
+   "kind": "fabricated",
+   "kind_work": "davies2018loihi",
+   "kind_basis": "a fabricated chip",
+   "capacity_cells": 16777216,
+   "cores": 128,
+   "weight_bits": 8,
+   "technology": "SRAM",
+   "eligibility": "curve-only",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/5/cells"
+  },
+  {
+   "id": "xformer_pe_like",
+   "label": "X-Former",
+   "kind": "design_study",
+   "kind_work": "sridharan2023xformer",
+   "kind_basis": "an architecture evaluated by simulation",
+   "capacity_cells": 28311552,
+   "cores": 1728,
+   "weight_bits": 8,
+   "technology": "ReRAM (static) + SRAM (dynamic)",
+   "eligibility": "curve-only",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/11/cells"
+  },
+  {
+   "id": "isaac_like",
+   "label": "ISAAC",
+   "kind": "design_study",
+   "kind_work": "shafiee2016isaac",
+   "kind_basis": "an architecture evaluated by simulation (the paper's chip table names it a design study)",
+   "capacity_cells": 264241152,
+   "cores": 16128,
+   "weight_bits": 16,
+   "technology": "ReRAM",
+   "eligibility": "curve-only",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/4/cells"
+  },
+  {
+   "id": "truenorth_like",
+   "label": "TrueNorth",
+   "kind": "fabricated",
+   "kind_work": "akopyan2015truenorth",
+   "kind_basis": "a fabricated chip",
+   "capacity_cells": 268435456,
+   "cores": 4096,
+   "weight_bits": 1,
+   "technology": "SRAM",
+   "eligibility": "headline-eligible",
+   "source": "records/08_significance/probes/arch/runs/capacity_census.json chips/10/cells"
+  }
+ ],
+ "ratio": [
+  [
+   2110.9638671875,
+   131.93524169921875,
+   43.978413899739586,
+   32.98381042480469,
+   30.59367923460145,
+   16.491905212402344,
+   15.521793141084558,
+   8.245952606201172,
+   4.886490433304398,
+   0.5235525464254712,
+   0.5153720378875732
+  ],
+  [
+   1316.71875,
+   82.294921875,
+   27.431640625,
+   20.57373046875,
+   19.08288043478261,
+   10.286865234375,
+   9.681755514705882,
+   5.1434326171875,
+   3.0479600694444446,
+   0.32656715029761907,
+   0.32146453857421875
+  ],
+  [
+   916.1435546875,
+   57.25897216796875,
+   19.086324055989582,
+   14.314743041992188,
+   13.27744282155797,
+   7.157371520996094,
+   6.736349666819853,
+   3.578685760498047,
+   2.1207026728877314,
+   0.22721814352368552,
+   0.22366786003112793
+  ],
+  [
+   435.24169921875,
+   27.202606201171875,
+   9.067535400390625,
+   6.800651550292969,
+   6.307850713315218,
+   3.4003257751464844,
+   3.2003066119025734,
+   1.7001628875732422,
+   1.0075039333767362,
+   0.10794685000465029,
+   0.10626018047332764
+  ],
+  [
+   430.2890625,
+   26.89306640625,
+   8.96435546875,
+   6.7232666015625,
+   6.236073369565218,
+   3.36163330078125,
+   3.1638901654411766,
+   1.680816650390625,
+   0.9960394965277778,
+   0.10671851748511904,
+   0.10505104064941406
+  ],
+  [
+   389.1435546875,
+   24.32147216796875,
+   8.107157389322916,
+   6.0803680419921875,
+   5.639761662137682,
+   3.0401840209960938,
+   2.861349666819853,
+   1.5200920104980469,
+   0.9007952654803241,
+   0.09651377844432044,
+   0.09500575065612793
+  ],
+  [
+   178.2060546875,
+   11.13787841796875,
+   3.7126261393229165,
+   2.7844696044921875,
+   2.582696444746377,
+   1.3922348022460938,
+   1.3103386374080883,
+   0.6961174011230469,
+   0.41251401548032407,
+   0.044197930230034724,
+   0.04350733757019043
+  ],
+  [
+   120.4560546875,
+   7.52850341796875,
+   2.5095011393229165,
+   1.8821258544921875,
+   1.7457399230072463,
+   0.9410629272460938,
+   0.8857062844669118,
+   0.4705314636230469,
+   0.27883345992476855,
+   0.029875013563368056,
+   0.02940821647644043
+  ],
+  [
+   79.89794921875,
+   4.993621826171875,
+   1.6645406087239583,
+   1.2484054565429688,
+   1.1579412930253623,
+   0.6242027282714844,
+   0.5874849207261029,
+   0.3121013641357422,
+   0.18494895652488427,
+   0.01981595962766617,
+   0.019506335258483887
+  ],
+  [
+   52.9443359375,
+   3.30902099609375,
+   1.1030069986979167,
+   0.8272552490234375,
+   0.7673092164855072,
+   0.41362762451171875,
+   0.3892965877757353,
+   0.20681381225585938,
+   0.12255633318865741,
+   0.013131035698784722,
+   0.012925863265991211
+  ]
+ ],
+ "ratio_source": [
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/210/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/218/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/216/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/224/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/225/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/217/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/212/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/214/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/220/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/213/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/219/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/324/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/332/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/330/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/338/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/339/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/331/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/326/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/328/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/334/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/327/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/333/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/191/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/199/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/197/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/205/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/206/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/198/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/193/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/195/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/201/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/194/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/200/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/286/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/294/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/292/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/300/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/301/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/293/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/288/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/290/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/296/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/289/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/295/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/305/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/313/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/311/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/319/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/320/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/312/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/307/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/309/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/315/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/308/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/314/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/172/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/180/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/178/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/186/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/187/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/179/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/174/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/176/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/182/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/175/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/181/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/153/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/161/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/159/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/167/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/168/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/160/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/155/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/157/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/163/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/156/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/162/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/229/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/237/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/235/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/243/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/244/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/236/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/231/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/233/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/239/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/232/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/238/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/267/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/275/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/273/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/281/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/282/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/274/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/269/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/271/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/277/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/270/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/276/x_fluid"
+  ],
+  [
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/248/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/256/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/254/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/262/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/263/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/255/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/250/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/252/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/258/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/251/x_fluid",
+   "records/08_significance/probes/arch/runs/capacity_census.json pairs/257/x_fluid"
+  ]
+ ],
+ "schematic": {
+  "panel": "b",
+  "values": "none (a schematic of passes on the same cores; no number drawn)"
+ }
+}

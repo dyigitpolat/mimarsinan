@@ -1,0 +1,319 @@
+[
+ {
+  "what": "(a) CIFAR-100 output codes: compared instances (output codes)",
+  "value": 20000000,
+  "key": "routebinvariance",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) CIFAR-100 output codes: instances that differ",
+  "value": 0,
+  "key": "routebinvariance",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Tiled against untiled IR: compared instances (neuron-windows)",
+  "value": 623788,
+  "key": "ditherwindows",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Tiled against untiled IR: instances that differ",
+  "value": 0,
+  "key": "ditherwindows",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) FPGA, neuron windows: compared instances (neuron-windows)",
+  "value": 64000,
+  "key": "cardwindows, cardchecks",
+  "derivation": "differing = cardchecks total minus passing (every per-pass check passes); compared = cardwindows",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) FPGA, neuron windows: instances that differ",
+  "value": 0,
+  "key": "cardwindows, cardchecks",
+  "derivation": "differing = cardchecks total minus passing (every per-pass check passes); compared = cardwindows",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LIF neuron windows: compared instances (neuron-windows)",
+  "value": 54188,
+  "key": "proptwosynclif",
+  "derivation": "compared = the neuron-windows proptwosynclif prints; differing = the differing instances proptwosynclif prints (zero instances of 153, so zero neuron-windows)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LIF neuron windows: instances that differ",
+  "value": 0,
+  "key": "proptwosynclif",
+  "derivation": "compared = the neuron-windows proptwosynclif prints; differing = the differing instances proptwosynclif prints (zero instances of 153, so zero neuron-windows)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) TTFS neuron windows: compared instances (neuron-windows)",
+  "value": 48504,
+  "key": "proptwottfs",
+  "derivation": "compared = the neuron-windows proptwottfs prints; differing = the differing instances proptwottfs prints (zero instances of 136, so zero neuron-windows)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) TTFS neuron windows: instances that differ",
+  "value": 0,
+  "key": "proptwottfs",
+  "derivation": "compared = the neuron-windows proptwottfs prints; differing = the differing instances proptwottfs prints (zero instances of 136, so zero neuron-windows)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Integer neuron windows: compared instances (output windows)",
+  "value": 41348,
+  "key": "proptwovalue",
+  "derivation": "compared = the output windows proptwovalue prints; differing = the differing instances proptwovalue prints (zero instances of 118, so zero output windows)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Integer neuron windows: instances that differ",
+  "value": 0,
+  "key": "proptwovalue",
+  "derivation": "compared = the output windows proptwovalue prints; differing = the differing instances proptwovalue prints (zero instances of 118, so zero output windows)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Static check and sampled run: compared instances (checks)",
+  "value": 18000,
+  "key": "staticdisagree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Static check and sampled run: instances that differ",
+  "value": 0,
+  "key": "staticdisagree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LeNet-5 outputs: compared instances (outputs)",
+  "value": 15000,
+  "key": "lenetmismatch",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LeNet-5 outputs: instances that differ",
+  "value": 0,
+  "key": "lenetmismatch",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Random multi-pass programs: compared instances (programs)",
+  "value": 9494,
+  "key": "gfivefuzz",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Random multi-pass programs: instances that differ",
+  "value": 0,
+  "key": "gfivefuzz",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Simulator runs: compared instances (programs)",
+  "value": 4200,
+  "key": "xbackendfuzz",
+  "derivation": "differing = compared minus equal, both printed by xbackendfuzz",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Simulator runs: instances that differ",
+  "value": 0,
+  "key": "xbackendfuzz",
+  "derivation": "differing = compared minus equal, both printed by xbackendfuzz",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Randomized test, 9 to 64 steps: compared instances (deployments)",
+  "value": 200,
+  "key": "screenlong",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Randomized test, 9 to 64 steps: instances that differ",
+  "value": 0,
+  "key": "screenlong",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Randomized test, 9 to 64 steps: the window lengths (steps, T in the text) in the label",
+  "value": "9 to 64",
+  "derivation": "ledger words of screenlong: T 9 to 64, checked against records/frozen/exactness_block_t1_20261124T165039/exactness_block/644b4c3bc5d7_r3/w12/screen/report.json at hypothesis_on_beyond_declared_window_scope: T in 9-64",
+  "category_of": "screenlong",
+  "source": "statement: a declared category of its row",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) All kept: differing of accepted deployments",
+  "value": "0 of 400",
+  "key": "screencex, screenaccepted",
+  "derivation": "differing = screencex, accepted = screenaccepted; share = 100 x differing / accepted",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) All kept: differing share (%), the bar's length",
+  "value": 0.0,
+  "key": "screencex, screenaccepted",
+  "derivation": "differing = screencex, accepted = screenaccepted; share = 100 x differing / accepted",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Declared semantics: differing of accepted deployments",
+  "value": "84 of 100",
+  "key": "armhzero",
+  "derivation": "share = 100 x differing / accepted, both printed by armhzero",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Declared semantics: differing share (%), the bar's length",
+  "value": 84.0,
+  "key": "armhzero",
+  "derivation": "share = 100 x differing / accepted, both printed by armhzero",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Equal stored values: differing of accepted deployments",
+  "value": "44 of 100",
+  "key": "armhonetheta",
+  "derivation": "share = 100 x differing / accepted, both printed by armhonetheta",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Equal stored values: differing share (%), the bar's length",
+  "value": 44.0,
+  "key": "armhonetheta",
+  "derivation": "share = 100 x differing / accepted, both printed by armhonetheta",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Delivery across passes: differing of accepted deployments",
+  "value": "43 of 100",
+  "key": "armhfivecollapse",
+  "derivation": "share = 100 x differing / accepted, both printed by armhfivecollapse",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Delivery across passes: differing share (%), the bar's length",
+  "value": 43.0,
+  "key": "armhfivecollapse",
+  "derivation": "share = 100 x differing / accepted, both printed by armhfivecollapse",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Input encoding: differing of accepted deployments",
+  "value": "24 of 100",
+  "key": "armrfour",
+  "derivation": "share = 100 x differing / accepted, both printed by armrfour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Input encoding: differing share (%), the bar's length",
+  "value": 24.0,
+  "key": "armrfour",
+  "derivation": "share = 100 x differing / accepted, both printed by armrfour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Exact counts, levels, sums: differing of accepted deployments",
+  "value": "1 of 100",
+  "key": "armheight",
+  "derivation": "share = 100 x differing / accepted, both printed by armheight",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Exact counts, levels, sums: differing share (%), the bar's length",
+  "value": 1.0,
+  "key": "armheight",
+  "derivation": "share = 100 x differing / accepted, both printed by armheight",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Pass timing: differing of accepted deployments",
+  "value": "0 of 2740",
+  "key": "armhfiveskew",
+  "derivation": "share = 100 x differing / accepted, both printed by armhfiveskew",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Pass timing: differing share (%), the bar's length",
+  "value": 0.0,
+  "key": "armhfiveskew",
+  "derivation": "share = 100 x differing / accepted, both printed by armhfiveskew",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Producer order: differing of accepted deployments",
+  "value": "0 of 2933",
+  "key": "armrsix",
+  "derivation": "share = 100 x differing / accepted, both printed by armrsix",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Producer order: differing share (%), the bar's length",
+  "value": 0.0,
+  "key": "armrsix",
+  "derivation": "share = 100 x differing / accepted, both printed by armrsix",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Pass replay: differing of random multi-pass programs",
+  "value": "956 of 2494",
+  "key": "replayneeded",
+  "derivation": "bar length = 100 x differing / compared, both printed by replayneeded; the label prints the ledger's form",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) Pass replay: differing share (%), the bar's length",
+  "value": 38.331996792301524,
+  "key": "replayneeded",
+  "derivation": "bar length = 100 x differing / compared, both printed by replayneeded; the label prints the ledger's form",
+  "family": "data file",
+  "state": "value"
+ }
+]

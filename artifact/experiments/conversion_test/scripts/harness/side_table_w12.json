@@ -1,0 +1,6684 @@
+{
+ "builder_sha16": {
+  "cov_members.py": "ef7fd48943b4f323",
+  "cov_side.py": "aa8a26a677d2a216"
+ },
+ "built_s": 71.6,
+ "ceiling": 1024,
+ "enumeration_check": {
+  "listed": 80,
+  "problems": [],
+  "roster_listed": 80,
+  "roster_torchvision": "0.26.0+cu130",
+  "torchvision": "0.26.0+cu130"
+ },
+ "floor": 112,
+ "members": {
+  "alexnet": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "alexnet",
+   "params": 61100840,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         2,
+         2
+        ],
+        [
+         6,
+         6
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 5,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 63,
+    "min_side_from": "AlexNet_Weights.IMAGENET1K_V1.meta['min_size'] = [63, 63]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 5,
+     "unread_taps": []
+    }
+   }
+  },
+  "convnext_base": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      128,
+      128
+     ],
+     "side": 128,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "convnext_base",
+   "params": 88591464,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 3,
+      "tap_layers": 40,
+      "unread_taps": [
+       [
+        "features.7.0.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ],
+       [
+        "features.7.1.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ],
+       [
+        "features.7.2.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ]
+      ]
+     },
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       128,
+       128
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 40,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "ConvNeXt_Base_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 40,
+     "unread_taps": []
+    }
+   }
+  },
+  "convnext_large": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      128,
+      128
+     ],
+     "side": 128,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "convnext_large",
+   "params": 197767336,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 3,
+      "tap_layers": 40,
+      "unread_taps": [
+       [
+        "features.7.0.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ],
+       [
+        "features.7.1.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ],
+       [
+        "features.7.2.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ]
+      ]
+     },
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       128,
+       128
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 40,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "ConvNeXt_Large_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 40,
+     "unread_taps": []
+    }
+   }
+  },
+  "convnext_small": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      128,
+      128
+     ],
+     "side": 128,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "convnext_small",
+   "params": 50223688,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 3,
+      "tap_layers": 40,
+      "unread_taps": [
+       [
+        "features.7.0.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ],
+       [
+        "features.7.1.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ],
+       [
+        "features.7.2.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ]
+      ]
+     },
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       128,
+       128
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 40,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "ConvNeXt_Small_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 40,
+     "unread_taps": []
+    }
+   }
+  },
+  "convnext_tiny": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      128,
+      128
+     ],
+     "side": 128,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "convnext_tiny",
+   "params": 28589128,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 3,
+      "tap_layers": 22,
+      "unread_taps": [
+       [
+        "features.7.0.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ],
+       [
+        "features.7.1.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ],
+       [
+        "features.7.2.block.0",
+        "Conv2d",
+        0,
+        7,
+        3
+       ]
+      ]
+     },
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       128,
+       128
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 22,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "ConvNeXt_Tiny_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 22,
+     "unread_taps": []
+    }
+   }
+  },
+  "densenet121": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "densenet121",
+   "params": 7978856,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 120,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 29,
+    "min_side_from": "DenseNet121_Weights.IMAGENET1K_V1.meta['min_size'] = [29, 29]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 120,
+     "unread_taps": []
+    }
+   }
+  },
+  "densenet161": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "densenet161",
+   "params": 28681000,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 160,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 29,
+    "min_side_from": "DenseNet161_Weights.IMAGENET1K_V1.meta['min_size'] = [29, 29]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 160,
+     "unread_taps": []
+    }
+   }
+  },
+  "densenet169": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "densenet169",
+   "params": 14149480,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 168,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 29,
+    "min_side_from": "DenseNet169_Weights.IMAGENET1K_V1.meta['min_size'] = [29, 29]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 168,
+     "unread_taps": []
+    }
+   }
+  },
+  "densenet201": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "densenet201",
+   "params": 20013928,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 200,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 29,
+    "min_side_from": "DenseNet201_Weights.IMAGENET1K_V1.meta['min_size'] = [29, 29]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 200,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_b0": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_b0",
+   "params": 5288548,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 17,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 81,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "EfficientNet_B0_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 17,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 81,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_b1": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_b1",
+   "params": 7794184,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 24,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 115,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "EfficientNet_B1_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 24,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 115,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_b2": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_b2",
+   "params": 9109994,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 24,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 115,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "EfficientNet_B2_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 24,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 115,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_b3": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_b3",
+   "params": 12233232,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 27,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 130,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "EfficientNet_B3_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 27,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 130,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_b4": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_b4",
+   "params": 19341616,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 33,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 160,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "EfficientNet_B4_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 33,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 160,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_b5": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_b5",
+   "params": 30389784,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 40,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 194,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "EfficientNet_B5_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 40,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 194,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_b6": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_b6",
+   "params": 43040704,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 46,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 224,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "EfficientNet_B6_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 46,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 224,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_b7": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_b7",
+   "params": 66347960,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 56,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 273,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "EfficientNet_B7_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 56,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 273,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_v2_l": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_v2_l",
+   "params": 118515272,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 62,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 339,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 33,
+    "min_side_from": "EfficientNet_V2_L_Weights.IMAGENET1K_V1.meta['min_size'] = [33, 33]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 62,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 339,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_v2_m": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_v2_m",
+   "params": 54139356,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 45,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 245,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 33,
+    "min_side_from": "EfficientNet_V2_M_Weights.IMAGENET1K_V1.meta['min_size'] = [33, 33]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 45,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 245,
+     "unread_taps": []
+    }
+   }
+  },
+  "efficientnet_v2_s": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "efficientnet_v2_s",
+   "params": 21458488,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 31,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 170,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 33,
+    "min_side_from": "EfficientNet_V2_S_Weights.IMAGENET1K_V1.meta['min_size'] = [33, 33]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 31,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 170,
+     "unread_taps": []
+    }
+   }
+  },
+  "googlenet": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "googlenet",
+   "params": 6624904,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 57,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 15,
+    "min_side_from": "GoogLeNet_Weights.IMAGENET1K_V1.meta['min_size'] = [15, 15]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 57,
+     "unread_taps": []
+    }
+   }
+  },
+  "inception_v3": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "inception_v3",
+   "params": 23834568,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 94,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 75,
+    "min_side_from": "Inception_V3_Weights.IMAGENET1K_V1.meta['min_size'] = [75, 75]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 94,
+     "unread_taps": []
+    }
+   }
+  },
+  "maxvit_t": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "maxvit_t",
+   "params": 30919624,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 12,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 61,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "MaxVit_T_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 12,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 61,
+     "unread_taps": []
+    }
+   }
+  },
+  "mnasnet0_5": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "mnasnet0_5",
+   "params": 2218512,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 52,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "MNASNet0_5_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 52,
+     "unread_taps": []
+    }
+   }
+  },
+  "mnasnet0_75": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "mnasnet0_75",
+   "params": 3170208,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 52,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "MNASNet0_75_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 52,
+     "unread_taps": []
+    }
+   }
+  },
+  "mnasnet1_0": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "mnasnet1_0",
+   "params": 4383312,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 52,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "MNASNet1_0_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 52,
+     "unread_taps": []
+    }
+   }
+  },
+  "mnasnet1_3": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "mnasnet1_3",
+   "params": 6282256,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 52,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "MNASNet1_3_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 52,
+     "unread_taps": []
+    }
+   }
+  },
+  "mobilenet_v2": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "mobilenet_v2",
+   "params": 3504872,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 52,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "MobileNet_V2_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 52,
+     "unread_taps": []
+    }
+   }
+  },
+  "mobilenet_v3_large": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "mobilenet_v3_large",
+   "params": 5483032,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 9,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 62,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "MobileNet_V3_Large_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 9,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 62,
+     "unread_taps": []
+    }
+   }
+  },
+  "mobilenet_v3_small": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "mobilenet_v3_small",
+   "params": 2542856,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 10,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 52,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "MobileNet_V3_Small_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 10,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 52,
+     "unread_taps": []
+    }
+   }
+  },
+  "net_models/gru": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      16,
+      32
+     ],
+     "side": null,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      16,
+      32
+     ],
+     "side": null,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/gru",
+   "params": 6666,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     16,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       16,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 0,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/gru[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      16,
+      32
+     ],
+     "side": null,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      16,
+      32
+     ],
+     "side": null,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/gru[decomposed]",
+   "params": 6666,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     16,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       16,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 0,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/lstm": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      16,
+      32
+     ],
+     "side": null,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      16,
+      32
+     ],
+     "side": null,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/lstm",
+   "params": 8778,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     16,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       16,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 0,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/lstm[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      16,
+      32
+     ],
+     "side": null,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      16,
+      32
+     ],
+     "side": null,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/lstm[decomposed]",
+   "params": 8778,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     16,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       16,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 0,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_batchfirst_F_softmax": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_batchfirst_F_softmax",
+   "params": 74954,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_batchfirst_F_softmax[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_batchfirst_F_softmax[decomposed]",
+   "params": 74954,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_batchfirst_bn_relu_reluattn": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_batchfirst_bn_relu_reluattn",
+   "params": 74826,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_batchfirst_bn_relu_reluattn[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_batchfirst_bn_relu_reluattn[decomposed]",
+   "params": 74826,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_bn_relu_reluattn": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_bn_relu_reluattn",
+   "params": 74826,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_bn_relu_reluattn[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_bn_relu_reluattn[decomposed]",
+   "params": 74826,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_explicit_F_softmax": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_explicit_F_softmax",
+   "params": 74954,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_explicit_F_softmax[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_explicit_F_softmax[decomposed]",
+   "params": 74954,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_explicit_method_softmax": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_explicit_method_softmax",
+   "params": 74954,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_explicit_method_softmax[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_explicit_method_softmax[decomposed]",
+   "params": 74954,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_mha_leaf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_mha_leaf",
+   "params": 75082,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_mha_leaf[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_mha_leaf[decomposed]",
+   "params": 75082,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_sdpa": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_sdpa",
+   "params": 74954,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_sdpa[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_sdpa[decomposed]",
+   "params": 74954,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_torch_encoder": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_torch_encoder",
+   "params": 74826,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "net_models/vit_torch_encoder[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "net_models/vit_torch_encoder[decomposed]",
+   "params": 74826,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "net_models.instances() (sha a538dbb191e833f5)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "regnet_x_16gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_x_16gf",
+   "params": 54278536,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 71,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_X_16GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 71,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_x_1_6gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_x_1_6gf",
+   "params": 9190136,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 59,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_X_1_6GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 59,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_x_32gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_x_32gf",
+   "params": 107811560,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 74,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_X_32GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 74,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_x_3_2gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_x_3_2gf",
+   "params": 15296552,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 80,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_X_3_2GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 80,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_x_400mf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_x_400mf",
+   "params": 5495976,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 71,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_X_400MF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 71,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_x_800mf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_x_800mf",
+   "params": 7259656,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 53,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_X_800MF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 53,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_x_8gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_x_8gf",
+   "params": 39572648,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 74,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_X_8GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 74,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_y_128gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_y_128gf",
+   "params": 644812894,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 28,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 140,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_Y_128GF_Weights.IMAGENET1K_SWAG_E2E_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 28,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 140,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_y_16gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_y_16gf",
+   "params": 83590140,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 19,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 95,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_Y_16GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 19,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 95,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_y_1_6gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_y_1_6gf",
+   "params": 11202430,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 28,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 140,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_Y_1_6GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 28,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 140,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_y_32gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_y_32gf",
+   "params": 145046770,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 21,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 105,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_Y_32GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 21,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 105,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_y_3_2gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_y_3_2gf",
+   "params": 19436338,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 22,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 110,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_Y_3_2GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 22,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 110,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_y_400mf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_y_400mf",
+   "params": 4344144,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 17,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 85,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_Y_400MF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 17,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 85,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_y_800mf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_y_800mf",
+   "params": 6432512,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 15,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 75,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_Y_800MF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 15,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 75,
+     "unread_taps": []
+    }
+   }
+  },
+  "regnet_y_8gf": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "regnet_y_8gf",
+   "params": 39381472,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 18,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 90,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "RegNet_Y_8GF_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 18,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 90,
+     "unread_taps": []
+    }
+   }
+  },
+  "resnet101": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "resnet101",
+   "params": 44549160,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 104,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ResNet101_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 104,
+     "unread_taps": []
+    }
+   }
+  },
+  "resnet152": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "resnet152",
+   "params": 60192808,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 155,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ResNet152_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 155,
+     "unread_taps": []
+    }
+   }
+  },
+  "resnet18": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "resnet18",
+   "params": 11689512,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 20,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ResNet18_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 20,
+     "unread_taps": []
+    }
+   }
+  },
+  "resnet34": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "resnet34",
+   "params": 21797672,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 36,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ResNet34_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 36,
+     "unread_taps": []
+    }
+   }
+  },
+  "resnet50": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "resnet50",
+   "params": 25557032,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 53,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ResNet50_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 53,
+     "unread_taps": []
+    }
+   }
+  },
+  "resnext101_32x8d": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "resnext101_32x8d",
+   "params": 88791336,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 104,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ResNeXt101_32X8D_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 104,
+     "unread_taps": []
+    }
+   }
+  },
+  "resnext101_64x4d": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "resnext101_64x4d",
+   "params": 83455272,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 104,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ResNeXt101_64X4D_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 104,
+     "unread_taps": []
+    }
+   }
+  },
+  "resnext50_32x4d": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "resnext50_32x4d",
+   "params": 25028904,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 53,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ResNeXt50_32X4D_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 53,
+     "unread_taps": []
+    }
+   }
+  },
+  "shufflenet_v2_x0_5": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "shufflenet_v2_x0_5",
+   "params": 1366792,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 56,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ShuffleNet_V2_X0_5_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 56,
+     "unread_taps": []
+    }
+   }
+  },
+  "shufflenet_v2_x1_0": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "shufflenet_v2_x1_0",
+   "params": 2278604,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 56,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ShuffleNet_V2_X1_0_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 56,
+     "unread_taps": []
+    }
+   }
+  },
+  "shufflenet_v2_x1_5": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "shufflenet_v2_x1_5",
+   "params": 3503624,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 56,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ShuffleNet_V2_X1_5_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 56,
+     "unread_taps": []
+    }
+   }
+  },
+  "shufflenet_v2_x2_0": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "shufflenet_v2_x2_0",
+   "params": 7393996,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 56,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "ShuffleNet_V2_X2_0_Weights.IMAGENET1K_V1.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 56,
+     "unread_taps": []
+    }
+   }
+  },
+  "squeezenet1_0": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "squeezenet1_0",
+   "params": 1248424,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 26,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 21,
+    "min_side_from": "SqueezeNet1_0_Weights.IMAGENET1K_V1.meta['min_size'] = [21, 21]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 26,
+     "unread_taps": []
+    }
+   }
+  },
+  "squeezenet1_1": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "squeezenet1_1",
+   "params": 1235496,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 26,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 17,
+    "min_side_from": "SqueezeNet1_1_Weights.IMAGENET1K_V1.meta['min_size'] = [17, 17]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 26,
+     "unread_taps": []
+    }
+   }
+  },
+  "swin_b": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "swin_b",
+   "params": 87768224,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "Swin_B_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "swin_s": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "swin_s",
+   "params": 49606258,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "Swin_S_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "swin_t": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "swin_t",
+   "params": 28288354,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "Swin_T_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "swin_v2_b": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "side": 256,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "side": 256,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "swin_v2_b",
+   "params": 87930848,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       256,
+       256
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 256,
+    "min_side_from": "Swin_V2_B_Weights.IMAGENET1K_V1.meta['min_size'] = [256, 256]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "swin_v2_s": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "side": 256,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "side": 256,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "swin_v2_s",
+   "params": 49737442,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       256,
+       256
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 256,
+    "min_side_from": "Swin_V2_S_Weights.IMAGENET1K_V1.meta['min_size'] = [256, 256]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "swin_v2_t": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "side": 256,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "side": 256,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "swin_v2_t",
+   "params": 28351570,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       256,
+       256
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 256,
+    "min_side_from": "Swin_V2_T_Weights.IMAGENET1K_V1.meta['min_size'] = [256, 256]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      256,
+      256
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "vgg11": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vgg11",
+   "params": 132863336,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         3,
+         3
+        ],
+        [
+         7,
+         7
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 8,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "VGG11_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 8,
+     "unread_taps": []
+    }
+   }
+  },
+  "vgg11_bn": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vgg11_bn",
+   "params": 132868840,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         3,
+         3
+        ],
+        [
+         7,
+         7
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 8,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "VGG11_BN_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 8,
+     "unread_taps": []
+    }
+   }
+  },
+  "vgg13": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vgg13",
+   "params": 133047848,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         3,
+         3
+        ],
+        [
+         7,
+         7
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 10,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "VGG13_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 10,
+     "unread_taps": []
+    }
+   }
+  },
+  "vgg13_bn": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vgg13_bn",
+   "params": 133053736,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         3,
+         3
+        ],
+        [
+         7,
+         7
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 10,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "VGG13_BN_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 10,
+     "unread_taps": []
+    }
+   }
+  },
+  "vgg16": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vgg16",
+   "params": 138357544,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         3,
+         3
+        ],
+        [
+         7,
+         7
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 13,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "VGG16_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 13,
+     "unread_taps": []
+    }
+   }
+  },
+  "vgg16_bn": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vgg16_bn",
+   "params": 138365992,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         3,
+         3
+        ],
+        [
+         7,
+         7
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 13,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "VGG16_BN_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 13,
+     "unread_taps": []
+    }
+   }
+  },
+  "vgg19": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vgg19",
+   "params": 143667240,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         3,
+         3
+        ],
+        [
+         7,
+         7
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 16,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "VGG19_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 16,
+     "unread_taps": []
+    }
+   }
+  },
+  "vgg19_bn": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vgg19_bn",
+   "params": 143678248,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [
+       [
+        "avgpool",
+        "AdaptiveAvgPool2d",
+        [
+         3,
+         3
+        ],
+        [
+         7,
+         7
+        ]
+       ]
+      ],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 16,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 32,
+    "min_side_from": "VGG19_BN_Weights.IMAGENET1K_V1.meta['min_size'] = [32, 32]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 16,
+     "unread_taps": []
+    }
+   }
+  },
+  "vit_b_16": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_b_16",
+   "params": 86567656,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "ViT_B_16_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "vit_b_16[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_b_16[decomposed]",
+   "params": 86567656,
+   "population": "test model",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "ViT_B_16_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "vit_b_32": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_b_32",
+   "params": 88224232,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "ViT_B_32_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "vit_h_14": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_h_14",
+   "params": 632045800,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": false,
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "refusal": "AssertionError: Wrong image height! Expected 224 but got 112!"
+     },
+     {
+      "accepted": false,
+      "input_shape": [
+       3,
+       128,
+       128
+      ],
+      "refusal": "AssertionError: Wrong image height! Expected 224 but got 128!"
+     },
+     {
+      "accepted": false,
+      "input_shape": [
+       3,
+       144,
+       144
+      ],
+      "refusal": "AssertionError: Wrong image height! Expected 224 but got 144!"
+     },
+     {
+      "accepted": false,
+      "input_shape": [
+       3,
+       160,
+       160
+      ],
+      "refusal": "AssertionError: Wrong image height! Expected 224 but got 160!"
+     },
+     {
+      "accepted": false,
+      "input_shape": [
+       3,
+       176,
+       176
+      ],
+      "refusal": "AssertionError: Wrong image height! Expected 224 but got 176!"
+     },
+     {
+      "accepted": false,
+      "input_shape": [
+       3,
+       192,
+       192
+      ],
+      "refusal": "AssertionError: Wrong image height! Expected 224 but got 192!"
+     },
+     {
+      "accepted": false,
+      "input_shape": [
+       3,
+       208,
+       208
+      ],
+      "refusal": "AssertionError: Wrong image height! Expected 224 but got 208!"
+     },
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": null,
+    "min_side_from": "none: the DEFAULT weights' minimum belongs to those weights only (weights_only_minimum); the network as built declares no minimum, so the candidates run from F",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    },
+    "weights_only_minimum": {
+     "candidates_scanned": [
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        518,
+        518
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 518!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        528,
+        528
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 528!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        544,
+        544
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 544!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        560,
+        560
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 560!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        576,
+        576
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 576!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        592,
+        592
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 592!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        608,
+        608
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 608!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        624,
+        624
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 624!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        640,
+        640
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 640!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        656,
+        656
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 656!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        672,
+        672
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 672!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        688,
+        688
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 688!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        704,
+        704
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 704!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        720,
+        720
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 720!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        736,
+        736
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 736!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        752,
+        752
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 752!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        768,
+        768
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 768!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        784,
+        784
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 784!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        800,
+        800
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 800!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        816,
+        816
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 816!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        832,
+        832
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 832!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        848,
+        848
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 848!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        864,
+        864
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 864!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        880,
+        880
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 880!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        896,
+        896
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 896!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        912,
+        912
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 912!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        928,
+        928
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 928!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        944,
+        944
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 944!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        960,
+        960
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 960!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        976,
+        976
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 976!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        992,
+        992
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 992!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        1008,
+        1008
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 1008!"
+      },
+      {
+       "accepted": false,
+       "input_shape": [
+        3,
+        1024,
+        1024
+       ],
+       "refusal": "AssertionError: Wrong image height! Expected 224 but got 1024!"
+      }
+     ],
+     "min_side": 518,
+     "min_side_from": "ViT_H_14_Weights.IMAGENET1K_SWAG_E2E_V1.meta['min_size'] = [518, 518]",
+     "reason": "the native model as built (no weights) refuses every candidate from this minimum to the ceiling: the DEFAULT weights build the network for another input (a builder argument they set), so the minimum is theirs only and the candidates run from F"
+    }
+   }
+  },
+  "vit_l_16": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_l_16",
+   "params": 304326632,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "ViT_L_16_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "vit_l_32": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_l_32",
+   "params": 306535400,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       224,
+       224
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 224,
+    "min_side_from": "ViT_L_32_Weights.IMAGENET1K_V1.meta['min_size'] = [224, 224]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 0,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 1,
+     "unread_taps": []
+    }
+   }
+  },
+  "vit_lite_7_4_relu": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_lite_7_4_relu",
+   "params": 3740004,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "G1 coverage_rows_r1_g1.py:81, shape = (3, 32, 32)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "vit_lite_7_4_relu[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_lite_7_4_relu[decomposed]",
+   "params": 3740004,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "G1 coverage_rows_r1_g1.py:81, shape = (3, 32, 32)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "vit_lite_7_4_softmax": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_lite_7_4_softmax",
+   "params": 3740004,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "G1 coverage_rows_r1_g1.py:81, shape = (3, 32, 32)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "vit_lite_7_4_softmax[decomposed]": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      32,
+      32
+     ],
+     "side": 32,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "vit_lite_7_4_softmax[decomposed]",
+   "params": 3740004,
+   "population": "test model",
+   "rule_inputs": {
+    "declared_from": "G1 coverage_rows_r1_g1.py:81, shape = (3, 32, 32)",
+    "declared_shape": [
+     3,
+     32,
+     32
+    ],
+    "kind": "fixed input shape",
+    "scan": [
+     {
+      "accepted": true,
+      "adaptive_pools": 0,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       32,
+       32
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 1,
+      "unread_taps": []
+     }
+    ]
+   }
+  },
+  "wide_resnet101_2": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "wide_resnet101_2",
+   "params": 126886696,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 104,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "Wide_ResNet101_2_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 104,
+     "unread_taps": []
+    }
+   }
+  },
+  "wide_resnet50_2": {
+   "checks": {
+    "supplement": {
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "side": 224,
+     "stages": "stage 1 only (converted model)"
+    },
+    "verdict": {
+     "input_shape": [
+      3,
+      112,
+      112
+     ],
+     "side": 112,
+     "stages": "both (converted model, identity value program)"
+    }
+   },
+   "member": "wide_resnet50_2",
+   "params": 68883240,
+   "population": "torchvision",
+   "rule_inputs": {
+    "candidates_scanned": [
+     {
+      "accepted": true,
+      "adaptive_pools": 1,
+      "adaptive_replicating": [],
+      "input_shape": [
+       3,
+       112,
+       112
+      ],
+      "n_layers_with_unread_taps": 0,
+      "tap_layers": 53,
+      "unread_taps": []
+     }
+    ],
+    "floor": 112,
+    "kind": "declared minimum side, resizable",
+    "min_side": 1,
+    "min_side_from": "Wide_ResNet50_2_Weights.IMAGENET1K_V2.meta['min_size'] = [1, 1]",
+    "step": 16,
+    "supplement_scan": {
+     "accepted": true,
+     "adaptive_pools": 1,
+     "adaptive_replicating": [],
+     "input_shape": [
+      3,
+      224,
+      224
+     ],
+     "n_layers_with_unread_taps": 0,
+     "tap_layers": 53,
+     "unread_taps": []
+    }
+   }
+  }
+ },
+ "population": "census",
+ "rule": "s(m) = max(declared minimum side, smallest side >= F = 112, in steps of 16, that the native model accepts with every weight tap (every convolution kernel tap) reading input data); the declared minimum side is the DEFAULT weights' min_size, and none when the native model as built refuses every side from it to the ceiling (those weights build the network for another input); a member built for one input shape: that shape",
+ "schema": "cl_cov.side_table/1",
+ "sources": {
+  "g1_coverage": [
+   "records/10_wave1/g1_lowering/coverage_table.json",
+   "72363e8342c02226"
+  ],
+  "g7_roster": [
+   "records/10_wave1/g7_requirement_census/runs/census/zoo_roster.json",
+   "32e4382b5b29de6d"
+  ],
+  "net_models": [
+   "records/09_wave0/runs/net_models.py",
+   "a538dbb191e833f5"
+  ]
+ },
+ "step": 16,
+ "supplement_rule": "stage 1 only at max(224, declared minimum side); a member built for one input shape: that shape",
+ "supplement_side": 224,
+ "torch": "2.11.0+cu130",
+ "torchvision": "0.26.0+cu130"
+}

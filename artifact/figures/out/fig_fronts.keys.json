@@ -1,0 +1,424 @@
+[
+ {
+  "what": "Batch 64: gain label at the energy budget (the gap of the two drawn selections, seed 0, development split, in pp)",
+  "value": "4.70",
+  "key": "pzgaink",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: energy budget (\u00b5J)",
+  "value": 745.700314512242,
+  "key": "figbudgetk",
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/K64/energy_budget_uJ = 2 x records/tiers/paper_v6/fix5/study_build/reread/out/analysis.json#P0_units_uJ/64 (the reference design's energy at batch 64, records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#latency/groups/DDR4, 91 MHz | lane-shared | K64/unit_uJ)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: trained members, accuracy against energy",
+  "value": 48,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/K64/energy_multi/<network> = [energy uJ, passes, tiles, geometry, accuracy %]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: single-pass energy front",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/K64/energy_single (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: multi-pass energy front",
+  "value": 74.68,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/K64/energy_multi (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: single-pass selection at the energy budget (%)",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/K64/at_budget_single",
+  "network": "R18 w1/2 b4444",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: multi-pass selection at the energy budget (%)",
+  "value": 74.36,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/K64/at_budget_multi",
+  "network": "R18 w1 b4444",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: gain label at the energy budget (the gap of the two drawn selections, seed 0, development split, in pp)",
+  "value": "4.70",
+  "key": "pzgainh",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: energy budget (\u00b5J)",
+  "value": 794.3790095679035,
+  "key": "figbudgeth",
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/H10.1/energy_budget_uJ = 2 x records/tiers/paper_v6/fix5/study_build/reread/out/analysis.json#P0_units_uJ/16 (the reference design's energy at batch 16, records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#latency/groups/DDR4, 91 MHz | lane-shared | K16/unit_uJ)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: trained members, accuracy against energy",
+  "value": 48,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/H10.1/energy_multi/<network> = [energy uJ, passes, tiles, geometry, accuracy %]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: single-pass energy front",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/H10.1/energy_single (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: multi-pass energy front",
+  "value": 74.68,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/H10.1/energy_multi (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: single-pass selection at the energy budget (%)",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/H10.1/at_budget_single",
+  "network": "R18 w1/2 b4444",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: multi-pass selection at the energy budget (%)",
+  "value": 74.36,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/H10.1/at_budget_multi",
+  "network": "R18 w1 b4444",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: gain label at the energy budget (the gap of the two drawn selections, seed 0, development split, in pp)",
+  "value": "1.96",
+  "key": "pzgainronep",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: energy budget (\u00b5J)",
+  "value": 3188.5639898695367,
+  "key": "figbudgetronep",
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1'/energy_budget_uJ = 4 x records/tiers/paper_v6/fix5/study_build/reread/out/analysis.json#P0_units_uJ/1 (the reference design's energy at batch 1, records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#latency/groups/DDR4, 91 MHz | lane-shared | K1/unit_uJ)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: trained members, accuracy against energy",
+  "value": 48,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1'/energy_multi/<network> = [energy uJ, passes, tiles, geometry, accuracy %]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: single-pass energy front",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1'/energy_single (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: multi-pass energy front",
+  "value": 74.68,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1'/energy_multi (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: single-pass selection at the energy budget (%)",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1'/at_budget_single",
+  "network": "R18 w1/2 b4444",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: multi-pass selection at the energy budget (%)",
+  "value": 71.62,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1'/at_budget_multi",
+  "network": "R18 w1/sqrt2 b4444",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: gain label at the energy budget (the gap of the two drawn selections, seed 0, development split, in pp)",
+  "value": "4.42",
+  "key": "pzgainronel",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: energy budget (\u00b5J)",
+  "value": 1594.2819949347684,
+  "key": "figbudgetronel",
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1L/energy_budget_uJ = 2 x records/tiers/paper_v6/fix5/study_build/reread/out/analysis.json#P0_units_uJ/1 (the reference design's energy at batch 1, records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#latency/groups/DDR4, 91 MHz | lane-shared | K1/unit_uJ)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: trained members, accuracy against energy",
+  "value": 41,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1L/energy_multi/<network> = [energy uJ, passes, tiles, geometry, accuracy %]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: single-pass energy front",
+  "value": 65.24,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1L/energy_single (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: multi-pass energy front",
+  "value": 72.8,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1L/energy_multi (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: single-pass selection at the energy budget (%)",
+  "value": 65.24,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1L/at_budget_single",
+  "network": "R18 w1/(2sqrt2) b4444",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: multi-pass selection at the energy budget (%)",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread/out/read/P0.json#fronts/R1L/at_budget_multi",
+  "network": "R18 w1/2 b4444",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: five-seed mean gain, test images (pp)",
+  "value": "+4.69",
+  "key": "pzfivek",
+  "source": "records/06_build/headline_v46_pairs/pairs_result_record.json#cells/K64/mean_pp, records/tiers/paper_v6/fix5/study_build/reread/out/analysis.json#P0_full/K64/five_seed_test",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: one-sided 95% lower bound (pp)",
+  "value": 4.42,
+  "key": "trkpairlower",
+  "source": "records/06_build/headline_v46_pairs/pairs_result_record.json#cells/K64/lower95_pp",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: the five seeds' gains (pp)",
+  "value": [
+   5.09,
+   4.76,
+   4.29,
+   4.62,
+   4.71
+  ],
+  "source": "records/06_build/headline_v46_pairs/pairs_result_record.json#cells/K64/d_images over total (images of 10000, in pp)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: gap of the fronts at the energy budget, seed 0 (pp)",
+  "value": "4.70",
+  "key": "pzgaink",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: five-seed mean gain, test images (pp) (the read of Batch 64: the same pair)",
+  "value": "+4.69",
+  "key": "pzfivek",
+  "source": "records/06_build/headline_v46_pairs/pairs_result_record.json#cells/K64/mean_pp, records/tiers/paper_v6/fix5/study_build/reread/out/analysis.json#P0_full/H10.1/five_seed_test",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: one-sided 95% lower bound (pp) (the read of Batch 64: the same pair)",
+  "value": 4.42,
+  "key": "trkpairlower",
+  "source": "records/06_build/headline_v46_pairs/pairs_result_record.json#cells/K64/lower95_pp",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: gap of the fronts at the energy budget, seed 0 (pp)",
+  "value": "4.70",
+  "key": "pzgainh",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: five-seed mean gain, test images (pp)",
+  "value": "+2.29",
+  "key": "pzfiveh",
+  "source": "records/06_build/headline_v46_pairs/pairs_result_record.json#cells/H10.1/mean_pp, records/tiers/paper_v6/fix5/study_build/reread/out/analysis.json#P0_full/R1'/five_seed_test",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: one-sided 95% lower bound (pp)",
+  "value": 1.59,
+  "key": "trhpairlower",
+  "source": "records/06_build/headline_v46_pairs/pairs_result_record.json#cells/H10.1/lower95_pp",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: the five seeds' gains (pp)",
+  "value": [
+   2.93,
+   2.66,
+   1.05,
+   2.27,
+   2.55
+  ],
+  "source": "records/06_build/headline_v46_pairs/pairs_result_record.json#cells/H10.1/d_images over total (images of 10000, in pp)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: gap of the fronts at the energy budget, seed 0 (pp)",
+  "value": "1.96",
+  "key": "pzgainronep",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: five-seed mean gain, test images (pp) (descriptive: the pair was declared after its networks' test reads)",
+  "value": "+4.19",
+  "key": "pzfiveronel",
+  "source": "records/06_build/headline_v46_pairs/r3_nominal/b/pairs_r3b_record.json#test/mean_pp",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: one-sided 95% lower bound (pp) (descriptive: the pair was declared after its networks' test reads)",
+  "value": 3.67,
+  "key": "pzfivelowronel",
+  "source": "records/06_build/headline_v46_pairs/r3_nominal/b/pairs_r3b_record.json#test/lower95_pp",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: gap of the fronts at the energy budget, seed 0 (pp)",
+  "value": "4.42",
+  "key": "pzgainronel",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: single-pass time front",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/K64/time_single (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: multi-pass time front",
+  "value": 74.68,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/K64/time_multi (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 64: time range of the fronts' members (ms)",
+  "value": [
+   0.368778,
+   1.280499
+  ],
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/K64/time_multi/<network> = [period us, passes, tiles, geometry, accuracy %], x 1e-3 to ms",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: single-pass time front",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/H10.1/time_single (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: multi-pass time front",
+  "value": 74.68,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/H10.1/time_multi (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 16: time range of the fronts' members (ms)",
+  "value": [
+   0.368778,
+   1.374539
+  ],
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/H10.1/time_multi/<network> = [period us, passes, tiles, geometry, accuracy %], x 1e-3 to ms",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: single-pass time front",
+  "value": 69.66,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/R1'/time_single (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: multi-pass time front",
+  "value": 74.68,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/R1'/time_multi (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, loose: time range of the fronts' members (ms)",
+  "value": [
+   0.368778,
+   4.583736
+  ],
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/R1'/time_multi/<network> = [period us, passes, tiles, geometry, accuracy %], x 1e-3 to ms",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: single-pass time front",
+  "value": 65.24,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/R1L/time_single (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: multi-pass time front",
+  "value": 72.8,
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/R1L/time_multi (upper-left envelope)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Batch 1, tight: time range of the fronts' members (ms)",
+  "value": [
+   0.375154,
+   3.768782
+  ],
+  "source": "records/tiers/paper_v6/fix5/study_build/reread_time/out/time_fronts.json#fronts/R1L/time_multi/<network> = [period us, passes, tiles, geometry, accuracy %], x 1e-3 to ms",
+  "family": "data file",
+  "state": "value"
+ }
+]

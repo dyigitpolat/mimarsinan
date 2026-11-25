@@ -1,0 +1,134 @@
+{
+ "id": "fig_replay",
+ "count": {
+  "display": {
+   "key": "gfivefuzz",
+   "source": "ledger:gfivefuzz",
+   "value": "0 of 9,494",
+   "display": "0 of 9,494",
+   "unit": "",
+   "class": "MEASURED",
+   "status": "measured",
+   "form": "adopted",
+   "label": "",
+   "tier": "1",
+   "preliminary": false,
+   "range": null,
+   "replaced_by": "",
+   "head": "paper"
+  },
+  "differ": {
+   "value": 0,
+   "source": "records/frozen/exactness_block_t1_20261124T165039/exactness_block/644b4c3bc5d7_r3/w13/summary.json:jobs/0/theorem_programs/differ",
+   "key": "gfivefuzz"
+  },
+  "programs": {
+   "value": 9494,
+   "source": "records/frozen/exactness_block_t1_20261124T165039/exactness_block/644b4c3bc5d7_r3/w13/summary.json:jobs/0/theorem_programs/N",
+   "key": "gfivefuzz"
+  },
+  "what": "random multi-pass programs of W13's base fuzz on the release version (2,000 seeds x 7 core capacities) differing from their identity programs, compared bit for bit under each semantics gfivesemantics names (the analytical TTFS run of the same programs, outside Theorem 1, is ttfsanalytic)",
+  "same_value_under": "frozenfuzz"
+ },
+ "example": {
+  "status": "example (invented values, schematic)",
+  "note": "invented illustration, not a measurement: a residual block L1 -> L2 -> L3 with a skip L1 -> L3 mapped into one neural segment, each layer's cores enabled during their own event window; on a chip with fewer cores the segment runs in two passes, pass 2 replaying the spikes stored in pass 1 at their original steps; mechanism after the U1 design record",
+  "mechanism_record": "records/10_wave1/g5_residency_planner/u1_design.md:13, records/10_wave1/g5_residency_planner/u1_design.md:59, records/10_wave1/g5_residency_planner/u1_design.md:62",
+  "source": "records/figures_v2/data/fig_exact.json:replay/schematic_example",
+  "layers": [
+   "L1",
+   "L2",
+   "L3"
+  ],
+  "cores_single_pass": 3,
+  "cores_chip": 2,
+  "steps": 5,
+  "hop": 1,
+  "windows": {
+   "L1": [
+    0,
+    2
+   ],
+   "L2": [
+    1,
+    3
+   ],
+   "L3": [
+    2,
+    4
+   ]
+  },
+  "spikes": {
+   "L1": [
+    0,
+    2
+   ],
+   "L2": [
+    1,
+    3
+   ],
+   "L3": [
+    2,
+    4
+   ]
+  },
+  "passes": [
+   [
+    "L1"
+   ],
+   [
+    "L2",
+    "L3"
+   ]
+  ],
+  "stored_steps": [
+   0,
+   2
+  ],
+  "deliveries": [
+   {
+    "src": "L1",
+    "sent": 0,
+    "dst": "L2",
+    "at": 1,
+    "skip": false
+   },
+   {
+    "src": "L1",
+    "sent": 2,
+    "dst": "L2",
+    "at": 3,
+    "skip": false
+   },
+   {
+    "src": "L2",
+    "sent": 1,
+    "dst": "L3",
+    "at": 2,
+    "skip": false
+   },
+   {
+    "src": "L2",
+    "sent": 3,
+    "dst": "L3",
+    "at": 4,
+    "skip": false
+   },
+   {
+    "src": "L1",
+    "sent": 0,
+    "dst": "L3",
+    "at": 2,
+    "skip": true
+   },
+   {
+    "src": "L1",
+    "sent": 2,
+    "dst": "L3",
+    "at": 4,
+    "skip": true
+   }
+  ],
+  "output_layer": "L3"
+ }
+}

@@ -1,0 +1,49 @@
+[
+ {
+  "what": "I1 Stored values and latency: condition ids and check (identifiers of the theorem's statement, not measurements)",
+  "value": {
+   "conditions": "H1theta, H1L, H10",
+   "check": "static and run"
+  },
+  "source": "the statement of Theorem 1 by four invariants (Section IV); condition ids as in Table II",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "I2 Delivery: condition ids and check (identifiers of the theorem's statement, not measurements)",
+  "value": {
+   "conditions": "H5c, H5s (R1 and R2), R3 to R5",
+   "check": "static and run"
+  },
+  "source": "the statement of Theorem 1 by four invariants (Section IV); condition ids as in Table II",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "I3 Exact integer sum: condition ids and check (identifiers of the theorem's statement, not measurements)",
+  "value": {
+   "conditions": "H6, H8",
+   "check": "static and run"
+  },
+  "source": "the statement of Theorem 1 by four invariants (Section IV); condition ids as in Table II",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "I4 Update, event order, host: condition ids and check (identifiers of the theorem's statement, not measurements); printed as Update function",
+  "value": {
+   "conditions": "H0, H7, H9, R6, Host",
+   "check": "static and run"
+  },
+  "source": "the statement of Theorem 1 by four invariants (Section IV); condition ids as in Table II",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "the two lanes (producers, carry buffer, weight write, split cores): a schematic of one induction step of the proof, not a measurement",
+  "value": "schematic",
+  "source": "the statement of Theorem 1 by four invariants (Section IV); condition ids as in Table II",
+  "family": "data file",
+  "state": "value"
+ }
+]

@@ -1,0 +1,553 @@
+{
+ "figure": "fig_exact",
+ "label": "fig:exact",
+ "panels": {
+  "a": {
+   "title": "All conditions kept",
+   "xlabel": "Compared instances"
+  },
+  "b": {
+   "title": "One condition switched off",
+   "xlabel": "Differing share (%)"
+  }
+ },
+ "families": [
+  {
+   "id": "cifar",
+   "label": "CIFAR-100 output codes",
+   "unit": "output codes",
+   "differ": 0,
+   "compared": 20000000,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "routebinvariance",
+     "display": "0 of 20,000,000",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "route (b): output codes differing between any budget B1 to B5 and B0, on all 5,000 E01 images"
+    }
+   ],
+   "note": "trained networks across core budgets, development split",
+   "derived": ""
+  },
+  {
+   "id": "tiling",
+   "label": "Tiled against untiled IR",
+   "unit": "neuron-windows",
+   "differ": 0,
+   "compared": 623788,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "ditherwindows",
+     "display": "0 of 623,788",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "neuron-windows compared in that screen, differing"
+    }
+   ],
+   "note": "",
+   "derived": ""
+  },
+  {
+   "id": "card",
+   "label": "FPGA card, neuron windows",
+   "unit": "neuron-windows",
+   "differ": 0,
+   "compared": 64000,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "cardwindows",
+     "display": "64,000",
+     "form": "carried",
+     "class": "MEASURED",
+     "tier": "carried",
+     "head": null,
+     "pending": false,
+     "what": "neuron-windows certified on the card"
+    },
+    {
+     "key": "cardchecks",
+     "display": "250 of 250",
+     "form": "carried",
+     "class": "MEASURED",
+     "tier": "carried",
+     "head": null,
+     "pending": false,
+     "what": "per-pass card checks passing on two ODIN realizations (100 and 150)"
+    }
+   ],
+   "note": "two ODIN realizations on the card",
+   "derived": "differing = cardchecks total minus passing (every per-pass check passes); compared = cardwindows"
+  },
+  {
+   "id": "proptwo_lif",
+   "label": "LIF neuron windows",
+   "unit": "neuron-windows",
+   "differ": 0,
+   "compared": 54188,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "proptwosynclif",
+     "display": "0 of 153 instances, 54,188 neuron-windows",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "Proposition 2 measured: synchronized LIF identity programs differing from N"
+    }
+   ],
+   "note": "identity program against the integer network (Proposition 2), synchronized LIF",
+   "derived": "compared = the neuron-windows proptwosynclif prints; differing = the differing instances proptwosynclif prints (zero instances of 153, so zero neuron-windows)"
+  },
+  {
+   "id": "proptwo_ttfs",
+   "label": "TTFS neuron windows",
+   "unit": "neuron-windows",
+   "differ": 0,
+   "compared": 48504,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "proptwottfs",
+     "display": "0 of 136 instances, 48,504 neuron-windows",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "Proposition 2 measured: synchronized TTFS identity programs differing from N"
+    }
+   ],
+   "note": "identity program against the integer network (Proposition 2), synchronized TTFS",
+   "derived": "compared = the neuron-windows proptwottfs prints; differing = the differing instances proptwottfs prints (zero instances of 136, so zero neuron-windows)"
+  },
+  {
+   "id": "proptwo_value",
+   "label": "Integer neuron windows",
+   "unit": "output windows",
+   "differ": 0,
+   "compared": 41348,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "proptwovalue",
+     "display": "0 of 118 instances, 41,348 output windows",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "Proposition 2 measured: value-domain identity programs differing from N"
+    }
+   ],
+   "note": "identity program against the integer network (Proposition 2), value domain",
+   "derived": "compared = the output windows proptwovalue prints; differing = the differing instances proptwovalue prints (zero instances of 118, so zero output windows)"
+  },
+  {
+   "id": "static",
+   "label": "Static part against sampled run",
+   "unit": "checks",
+   "differ": 0,
+   "compared": 18000,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "staticdisagree",
+     "display": "0 of 18,000",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "fuzz checks established on R5 whose sampled run differs"
+    }
+   ],
+   "note": "",
+   "derived": ""
+  },
+  {
+   "id": "lenet",
+   "label": "LeNet-5 outputs",
+   "unit": "outputs",
+   "differ": 0,
+   "compared": 15000,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "lenetmismatch",
+     "display": "0 of 15,000",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "trained LeNet-5 on R5: output values that differ (HCM and SCM executors against the int64 golden, the two goldens), of the outputs per check (1,500 inputs: MNIST count half: 1,500 MNIST training images held out from training (positions 1,500 to 2,999 of the provider's seeded validation split), read by no calibration and no decision; the other 1,500 held-out images calibrate and gate; never the MNIST test images)"
+    }
+   ],
+   "note": "",
+   "derived": ""
+  },
+  {
+   "id": "fuzz",
+   "label": "Random multi-pass programs",
+   "unit": "programs",
+   "differ": 0,
+   "compared": 9494,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "gfivefuzz",
+     "display": "0 of 9,494",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "random multi-pass programs of W13's base fuzz on the release version (2,000 seeds x 7 core capacities) differing from their identity programs, compared bit for bit under each semantics gfivesemantics names (the analytical TTFS run of the same programs, outside Theorem 1, is ttfsanalytic)"
+    }
+   ],
+   "note": "",
+   "derived": ""
+  },
+  {
+   "id": "simulators",
+   "label": "Simulator runs",
+   "unit": "programs",
+   "differ": 0,
+   "compared": 4200,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "xbackendfuzz",
+     "display": "4,200 of 4,200",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "generated programs per semantics on which nevresim, SANA-FE and Lava equal the hardware-core model at atol 0 (streamed LIF; cascaded TTFS without Lava)"
+    }
+   ],
+   "note": "",
+   "derived": "differing = compared minus equal, both printed by xbackendfuzz"
+  },
+  {
+   "id": "long",
+   "label": "Randomized test, 9 to 64 steps",
+   "unit": "deployments",
+   "differ": 0,
+   "compared": 200,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "screenlong",
+     "display": "200 deployments, 0 counterexamples",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "long-window stratum (T 9 to 64, synchronized semantics): accepted, counterexamples"
+    }
+   ],
+   "note": "",
+   "derived": "",
+   "window_range": {
+    "lo": 9,
+    "hi": 64,
+    "basis": [
+     "ledger words of screenlong: T 9 to 64",
+     "records/frozen/exactness_block_t1_20261124T165039/exactness_block/644b4c3bc5d7_r3/w12/screen/report.json at hypothesis_on_beyond_declared_window_scope: T in 9-64"
+    ]
+   }
+  }
+ ],
+ "controls": {
+  "baseline": {
+   "id": "none",
+   "label": "All kept",
+   "tag_stem": "",
+   "tag_sub": "",
+   "differ": 0,
+   "of": 400,
+   "unit": "accepted deployments",
+   "number": "count",
+   "share_pct": 0.0,
+   "status": "measured",
+   "keys": [
+    {
+     "key": "screencex",
+     "display": "0",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "counterexamples among them"
+    },
+    {
+     "key": "screenaccepted",
+     "display": "400",
+     "form": "adopted",
+     "class": "MEASURED",
+     "tier": "1",
+     "head": "paper",
+     "pending": false,
+     "what": "hypothesis-on deployments of the toolchain as shipped accepted by the code-level screen (of those drawn, screendrawn)"
+    }
+   ],
+   "note": "the code-level screen with every condition kept",
+   "derived": "differing = screencex, accepted = screenaccepted; share = 100 x differing / accepted"
+  },
+  "removed": [
+   {
+    "id": "H0",
+    "label": "Declared semantics",
+    "tag_stem": "H0",
+    "tag_sub": "",
+    "differ": 84,
+    "of": 100,
+    "unit": "accepted deployments",
+    "number": "count",
+    "share_pct": 84.0,
+    "status": "measured",
+    "keys": [
+     {
+      "key": "armhzero",
+      "display": "84 of 100",
+      "form": "adopted",
+      "class": "MEASURED",
+      "tier": "1",
+      "head": "paper",
+      "pending": false,
+      "what": "the H0 arm's teeth at code level on R5 (switched off with paired controls): counterexamples of its 100 accepted deployments"
+     }
+    ],
+    "note": "accepted deployments that differ, each with an equal paired control",
+    "derived": "share = 100 x differing / accepted, both printed by armhzero",
+    "reason": ""
+   },
+   {
+    "id": "H1-theta",
+    "label": "Equal stored values",
+    "tag_stem": "H1",
+    "tag_sub": "θ",
+    "differ": 44,
+    "of": 100,
+    "unit": "accepted deployments",
+    "number": "count",
+    "share_pct": 44.0,
+    "status": "measured",
+    "keys": [
+     {
+      "key": "armhonetheta",
+      "display": "44 of 100",
+      "form": "adopted",
+      "class": "MEASURED",
+      "tier": "1",
+      "head": "paper",
+      "pending": false,
+      "what": "the H1-theta arm's teeth at code level on R5 (switched off with paired controls): counterexamples of its 100 accepted deployments"
+     }
+    ],
+    "note": "accepted deployments that differ, each with an equal paired control",
+    "derived": "share = 100 x differing / accepted, both printed by armhonetheta",
+    "reason": ""
+   },
+   {
+    "id": "H5-collapse",
+    "label": "Delivery across passes",
+    "tag_stem": "H5",
+    "tag_sub": "c",
+    "differ": 43,
+    "of": 100,
+    "unit": "accepted deployments",
+    "number": "count",
+    "share_pct": 43.0,
+    "status": "measured",
+    "keys": [
+     {
+      "key": "armhfivecollapse",
+      "display": "43 of 100",
+      "form": "adopted",
+      "class": "MEASURED",
+      "tier": "1",
+      "head": "paper",
+      "pending": false,
+      "what": "the H5-collapse arm's teeth at code level on R5 (switched off with paired controls): counterexamples of its 100 accepted deployments"
+     }
+    ],
+    "note": "accepted deployments that differ, each with an equal paired control",
+    "derived": "share = 100 x differing / accepted, both printed by armhfivecollapse",
+    "reason": ""
+   },
+   {
+    "id": "R4",
+    "label": "Input encoding",
+    "tag_stem": "R4",
+    "tag_sub": "",
+    "differ": 24,
+    "of": 100,
+    "unit": "accepted deployments",
+    "number": "count",
+    "share_pct": 24.0,
+    "status": "measured",
+    "keys": [
+     {
+      "key": "armrfour",
+      "display": "24 of 100",
+      "form": "adopted",
+      "class": "MEASURED",
+      "tier": "1",
+      "head": "paper",
+      "pending": false,
+      "what": "the R4 arm's teeth at code level on R5 (switched off with paired controls): counterexamples of its 100 accepted deployments"
+     }
+    ],
+    "note": "accepted deployments that differ, each with an equal paired control",
+    "derived": "share = 100 x differing / accepted, both printed by armrfour",
+    "reason": ""
+   },
+   {
+    "id": "H8",
+    "label": "Exact counts, levels, sums",
+    "tag_stem": "H8",
+    "tag_sub": "",
+    "differ": 1,
+    "of": 100,
+    "unit": "accepted deployments",
+    "number": "count",
+    "share_pct": 1.0,
+    "status": "measured",
+    "keys": [
+     {
+      "key": "armheight",
+      "display": "1 of 100",
+      "form": "adopted",
+      "class": "MEASURED",
+      "tier": "1",
+      "head": "paper",
+      "pending": false,
+      "what": "the H8 arm's teeth at code level on R5 (switched off with paired controls): counterexamples of its 100 accepted deployments"
+     }
+    ],
+    "note": "accepted deployments that differ, each with an equal paired control",
+    "derived": "share = 100 x differing / accepted, both printed by armheight",
+    "reason": ""
+   },
+   {
+    "id": "H5-skew",
+    "label": "Pass timing",
+    "tag_stem": "H5",
+    "tag_sub": "s",
+    "differ": 0,
+    "of": 2740,
+    "unit": "accepted deployments",
+    "number": "count",
+    "share_pct": 0.0,
+    "status": "measured",
+    "keys": [
+     {
+      "key": "armhfiveskew",
+      "display": "0 of 2,740",
+      "form": "adopted",
+      "class": "MEASURED",
+      "tier": "1",
+      "head": "paper",
+      "pending": false,
+      "what": "the H5-skew arm's teeth at code level on R5 (switched off with paired controls): counterexamples of its 2,740 accepted deployments"
+     }
+    ],
+    "note": "accepted deployments that differ, each with an equal paired control",
+    "derived": "share = 100 x differing / accepted, both printed by armhfiveskew",
+    "reason": "Both: fan-ins balanced by relay cores"
+   },
+   {
+    "id": "R6",
+    "label": "Producer order",
+    "tag_stem": "R6",
+    "tag_sub": "",
+    "differ": 0,
+    "of": 2933,
+    "unit": "accepted deployments",
+    "number": "count",
+    "share_pct": 0.0,
+    "status": "measured",
+    "keys": [
+     {
+      "key": "armrsix",
+      "display": "0 of 2,933",
+      "form": "adopted",
+      "class": "MEASURED",
+      "tier": "1",
+      "head": "paper",
+      "pending": false,
+      "what": "the R6 arm's teeth at code level on R5 (switched off with paired controls): counterexamples of its 2,933 accepted deployments"
+     }
+    ],
+    "note": "accepted deployments that differ, each with an equal paired control",
+    "derived": "share = 100 x differing / accepted, both printed by armrsix",
+    "reason": "Both: fan-ins balanced by relay cores"
+   }
+  ],
+  "other": [
+   {
+    "id": "replay",
+    "label": "Pass replay",
+    "tag_stem": "R1 to R6",
+    "tag_sub": "",
+    "differ": 956,
+    "of": 2494,
+    "unit": "random multi-pass programs",
+    "number": "count",
+    "share_pct": 38.331996792301524,
+    "status": "measured",
+    "keys": [
+     {
+      "key": "replayneeded",
+      "display": "956 of 2,494",
+      "form": "carried",
+      "class": "MEASURED",
+      "tier": "carried",
+      "head": null,
+      "pending": false,
+      "what": "multi-pass programs that differ without pass replay (streamed LIF, base tree)"
+     }
+    ],
+    "note": "random multi-pass programs of an earlier version without pass replay, streamed LIF; not one of the screen's switched conditions. The gray ids after the name: the earlier version lacks the six multi-pass mapping rules R1 to R6 at once (records/10_wave1/g5_residency_planner/u1_design.md, section 5.1, rules 1 to 6)",
+    "derived": "bar length = 100 x differing / compared, both printed by replayneeded; the label prints the ledger's form"
+   }
+  ],
+  "switched": {
+   "key": "hypswitched",
+   "display": "7 plus 0",
+   "form": "adopted",
+   "class": "MEASURED",
+   "tier": "1",
+   "head": "paper",
+   "pending": false,
+   "what": "hypotheses switched off at code level with paired controls on R5, plus those the base violated"
+  },
+  "per_condition": {
+   "key": "armaccepted",
+   "display": "pending (tier 1, exactness block)",
+   "form": "pending",
+   "class": "MEASURED-PROVISIONAL",
+   "tier": "1",
+   "head": "cl9",
+   "pending": true,
+   "what": "accepted deployments per switched-off arm of the code-level screen (denominator of the arm counts)"
+  }
+ }
+}

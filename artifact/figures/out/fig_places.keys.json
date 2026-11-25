@@ -1,0 +1,933 @@
+[
+ {
+  "what": "place of operation 0 (Norm)",
+  "value": "host",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/whole_program/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 1 (Q, K, V)",
+  "value": "cores",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 2 (Dynamic write)",
+  "value": "host",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 3 (QK$^{T}$)",
+  "value": "operand",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 4 (Softmax)",
+  "value": "host",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/5",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 5 (AV)",
+  "value": "operand",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/6",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 6 (Projection)",
+  "value": "cores",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/6",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 7 (Add)",
+  "value": "host",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/8",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 8 (Norm)",
+  "value": "host",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/9",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 9 (MLP 1)",
+  "value": "cores",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/10",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 10 (GELU)",
+  "value": "host",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/12",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 11 (MLP 2)",
+  "value": "cores",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/13",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "place of operation 12 (Add)",
+  "value": "host",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/15",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "block instance",
+  "value": "ViT-Lite-7/4",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:instance",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "segment 1 of the block (Q, K, V): its passes (ruler row, squares per operation, dashed boundaries)",
+  "value": 2,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=1]/pass (distinct values), /computes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "segment 2 of the block (QK$^{T}$): its passes (ruler row, squares per operation, dashed boundaries)",
+  "value": 1,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=2]/pass (distinct values), /computes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "segment 3 of the block (AV, Projection): its passes (ruler row, squares per operation, dashed boundaries)",
+  "value": 2,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=3]/pass (distinct values), /computes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "segment 4 of the block (MLP 1): its passes (ruler row, squares per operation, dashed boundaries)",
+  "value": 2,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=4]/pass (distinct values), /computes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "segment 5 of the block (MLP 2): its passes (ruler row, squares per operation, dashed boundaries)",
+  "value": 2,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=5]/pass (distinct values), /computes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "model row (layout, no measured value): the groups, the residual connections (start side, start operation, addition) and the operations the toolchain adds",
+  "value": "group Attention: operations [1, 3, 4, 5, 6]; group MLP: operations [9, 10, 11]; residual connection from before operation 0 to the addition 7; residual connection from after operation 8 to the addition 12; added by the toolchain: operations [2]",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "cores of the deployment the passes belong to (the label of the cores lane)",
+  "value": 33,
+  "key": "attnsegments",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:declaration/cores/0/count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "share of multiply-accumulates on cores",
+  "value": "100%",
+  "key": "attnmacshare",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "share on cores that store weights",
+  "value": "94.05%",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/before_n2",
+  "key": "attnmacshare,vitlitehostbefore",
+  "derivation": "100% (ledger key attnmacshare) minus 5.95% (ledger key vitlitehostbefore, 5.95% to 0: the share on the host CPU before operand cores) = 94.05%; the record field named as the source holds the same value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "share on operand cores",
+  "value": "5.95%",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/lowered_product_macs over records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/total_macs",
+  "key": "vitlitehostbefore",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "share on the host CPU",
+  "value": "0%",
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/host_ops_by_kind_after/*/macs (sum) over records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/total_macs",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "censusmembers",
+  "value": "80",
+  "key": "censusmembers",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "censusconvert",
+  "value": "78 of 80",
+  "key": "censusconvert",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "censussilent",
+  "value": "0",
+  "key": "censussilent",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "censusallcores",
+  "value": "24",
+  "key": "censusallcores",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "censushostshare",
+  "value": "54",
+  "key": "censushostshare",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "censusundecidable",
+  "value": "2",
+  "key": "censusundecidable",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: vgg11 (VGG)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:82",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: vgg11_bn (VGG)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:84",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: vgg19 (VGG)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:194",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: vgg19_bn (VGG)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:196",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: vgg16 (VGG)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:197",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: vgg16_bn (VGG)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:198",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: vgg13 (VGG)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:204",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: vgg13_bn (VGG)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:205",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: resnet50 (ResNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:21",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: resnet152 (ResNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:25",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: resnet34 (ResNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:31",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: resnet18 (ResNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:45",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: resnet101 (ResNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:63",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: densenet201 (DenseNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:23",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: densenet169 (DenseNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:33",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: densenet121 (DenseNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:40",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: densenet161 (DenseNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:191",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: squeezenet1_0 (SqueezeNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:55",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: squeezenet1_1 (SqueezeNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:69",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: wide_resnet50_2 (Wide ResNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:74",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: wide_resnet101_2 (Wide ResNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:202",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: alexnet (AlexNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:96",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: googlenet (GoogLeNet)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:47",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "fully on cores: inception_v3 (Inception-v3)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:39",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "undecided: regnet_y_128gf (RegNetY)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:28",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "undecided: regnet_y_32gf (RegNetY)",
+  "value": 1,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:199",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_v2_l (EfficientNetV2)",
+  "value": 0.7793455662948606,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:188",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_v2_m (EfficientNetV2)",
+  "value": 1.0125600798836596,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:42",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_v2_s (EfficientNetV2)",
+  "value": 1.078704342761335,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:73",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): EfficientNetV2 (3 members)",
+  "value": [
+   0.7793455662948606,
+   1.0125600798836596,
+   1.078704342761335
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): convnext_large (ConvNeXt)",
+  "value": 0.9980562323760507,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:187",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): convnext_base (ConvNeXt)",
+  "value": 1.488926172852011,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:200",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): convnext_small (ConvNeXt)",
+  "value": 1.9744752389019717,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:51",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): convnext_tiny (ConvNeXt)",
+  "value": 2.358165983476796,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:22",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): ConvNeXt (4 members)",
+  "value": [
+   0.9980562323760507,
+   1.731700705876991,
+   2.358165983476796
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): shufflenet_v2_x2_0 (ShuffleNetV2)",
+  "value": 1.3715928077172947,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:54",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): shufflenet_v2_x1_5 (ShuffleNetV2)",
+  "value": 1.9895223573690841,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:61",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): shufflenet_v2_x1_0 (ShuffleNetV2)",
+  "value": 2.6688380897768886,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:77",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): shufflenet_v2_x0_5 (ShuffleNetV2)",
+  "value": 3.954931211290827,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:90",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): ShuffleNetV2 (4 members)",
+  "value": [
+   1.3715928077172947,
+   2.329180223572987,
+   3.954931211290827
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): maxvit_t (MaxViT)",
+  "value": 3.7699390911201265,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:67",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): MaxViT (1 members)",
+  "value": [
+   3.7699390911201265,
+   3.7699390911201265,
+   3.7699390911201265
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): resnext50_32x4d (ResNeXt)",
+  "value": 5.508041326920451,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:26",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): resnext101_64x4d (ResNeXt)",
+  "value": 6.189079737466834,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:34",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): resnext101_32x8d (ResNeXt)",
+  "value": 11.65671602535441,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:35",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): ResNeXt (3 members)",
+  "value": [
+   5.508041326920451,
+   6.189079737466834,
+   11.65671602535441
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_b7 (EfficientNet)",
+  "value": 4.607246444643113,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:190",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_b6 (EfficientNet)",
+  "value": 5.198531936268953,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:27",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_b5 (EfficientNet)",
+  "value": 5.6507963135159995,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:44",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_b4 (EfficientNet)",
+  "value": 6.380009713475985,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:72",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_b3 (EfficientNet)",
+  "value": 6.984216461989455,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:24",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_b2 (EfficientNet)",
+  "value": 7.7914446527723795,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:32",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_b1 (EfficientNet)",
+  "value": 8.407074301327143,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:36",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): efficientnet_b0 (EfficientNet)",
+  "value": 8.425446655177396,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:41",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): EfficientNet (8 members)",
+  "value": [
+   4.607246444643113,
+   6.68211308773272,
+   8.425446655177396
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): mobilenet_v2 (MobileNet)",
+  "value": 6.443780263869009,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:48",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): mobilenet_v3_large (MobileNet)",
+  "value": 7.9774391437578975,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:56",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): mobilenet_v3_small (MobileNet)",
+  "value": 11.794985019028735,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:88",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): MobileNet (3 members)",
+  "value": [
+   6.443780263869009,
+   7.9774391437578975,
+   11.794985019028735
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): mnasnet1_3 (MnasNet)",
+  "value": 6.745045927986943,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:46",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): mnasnet1_0 (MnasNet)",
+  "value": 8.416853635446875,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:50",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): mnasnet0_75 (MnasNet)",
+  "value": 10.228026416821692,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:57",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): mnasnet0_5 (MnasNet)",
+  "value": 13.774712172106977,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:66",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): MnasNet (4 members)",
+  "value": [
+   6.745045927986943,
+   9.322440026134284,
+   13.774712172106977
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_y_400mf (RegNetY)",
+  "value": 13.193777957988948,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:59",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_y_800mf (RegNetY)",
+  "value": 18.817301357690962,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:49",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_y_3_2gf (RegNetY)",
+  "value": 19.07859987900821,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:30",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_y_1_6gf (RegNetY)",
+  "value": 27.227426601947748,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:38",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_y_8gf (RegNetY)",
+  "value": 27.52245391039445,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:65",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_y_16gf (RegNetY)",
+  "value": 35.237635620216906,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:58",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): RegNetY (6 members)",
+  "value": [
+   13.193777957988948,
+   23.153013240477975,
+   35.237635620216906
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): swin_b (Swin)",
+  "value": 33.94069685062674,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:78",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): swin_t (Swin)",
+  "value": 34.013694328736406,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:100",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): swin_s (Swin)",
+  "value": 34.35793369994486,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:71",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): Swin (3 members)",
+  "value": [
+   33.94069685062674,
+   34.013694328736406,
+   34.35793369994486
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): swin_v2_b (Swin V2)",
+  "value": 34.3383567670909,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:179",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): swin_v2_t (Swin V2)",
+  "value": 34.63950217337391,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:176",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): swin_v2_s (Swin V2)",
+  "value": 34.880121472209865,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:177",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): Swin V2 (3 members)",
+  "value": [
+   34.3383567670909,
+   34.63950217337391,
+   34.880121472209865
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): vit_b_32 (ViT)",
+  "value": 33.15027987531371,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:80",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): vit_l_32 (ViT)",
+  "value": 33.52971353776834,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:186",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): vit_l_16 (ViT)",
+  "value": 35.31526404767206,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:189",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): vit_h_14 (ViT)",
+  "value": 35.45085136796138,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:181",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): vit_b_16 (ViT)",
+  "value": 35.82762910082079,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:193",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): ViT (5 members)",
+  "value": [
+   33.15027987531371,
+   35.31526404767206,
+   35.82762910082079
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_x_800mf (RegNetX)",
+  "value": 18.344570457177113,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:52",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_x_400mf (RegNetX)",
+  "value": 21.75290188610635,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:62",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_x_1_6gf (RegNetX)",
+  "value": 24.73773432161849,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:43",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_x_3_2gf (RegNetX)",
+  "value": 38.66587585859557,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:37",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_x_8gf (RegNetX)",
+  "value": 42.36440998679401,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:29",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_x_32gf (RegNetX)",
+  "value": 44.39974172342901,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:201",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "host share of multiply-accumulates (%): regnet_x_16gf (RegNetX)",
+  "value": 46.07332404690513,
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:53",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "range bar and median tick (%): RegNetX (7 members)",
+  "value": [
+   18.344570457177113,
+   38.66587585859557,
+   46.07332404690513
+  ],
+  "source": "the family's member rows above (smallest, median, largest)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "census condition in the title of (b): no dynamic-weight cores",
+  "value": "MaxViT 1 (Contraction); Swin 3 (Contraction); Swin V2 3 (Contraction); ViT 5 (MultiheadAttention) on the host",
+  "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:67:outcome/host_mac_kinds and the like lines; ledger key vitbhostbefore (not read on operand cores)",
+  "family": "data file",
+  "state": "value"
+ }
+]

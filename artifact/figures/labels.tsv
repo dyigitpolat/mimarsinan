@@ -1,0 +1,22 @@
+Cost-only keys	Cost-only	fig_toolchain
+Computation keys	Computation	fig_toolchain
+Acceptance keys	Feasibility	fig_toolchain
+Built and checked	Sample-checked	fig_toolchain
+Named refusal	Rejected	fig_toolchain
+Acceptance	Feasibility	fig_classes
+Accepted programs	Feasible programs	fig_classes
+Carry-buffer size	Inter-pass buffer size	fig_classes
+no operand cores	no dynamic-weight cores	fig_places
+FPGA card, neuron windows	FPGA, neuron windows	fig_exact
+Static part against sampled run	Static check and sampled run	fig_exact
+ResNet-18 w1	ResNet-18	fig_invariance, fig_area, fig_space
+DenseNet-BC k12	DenseNet-BC	fig_invariance, fig_area, fig_space
+ViT-Lite-7/4, operand cores	ViT-Lite-7/4, dynamic weights	fig_invariance, fig_area
+B5	Co-designed	fig_invariance, fig_area
+Study cost model, energy	System cost model, energy	fig_compare
+Study cost model, tile area	System cost model, tile area	fig_compare
+Accepted	Feasible	fig_block, fig_space
+Declared rate	Required rate	fig_block
+Capacity-free	Compute-dominated	fig_regime
+Batch for declared rate	Batch for required rate	fig_chipprops
+Operand write	Dynamic write	fig_places

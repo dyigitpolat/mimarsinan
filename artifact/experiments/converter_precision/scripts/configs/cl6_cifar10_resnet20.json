@@ -1,0 +1,73 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "cl6_cifar10_resnet20_s0",
+  "generated_files_path": "./generated",
+  "data_provider_name": "CIFAR10_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 2304,
+        "max_neurons": 512,
+        "count": 256,
+        "has_bias": true
+      },
+      {
+        "max_axons": 512,
+        "max_neurons": 256,
+        "count": 256,
+        "has_bias": true
+      }
+    ],
+    "max_axons": 2304,
+    "max_neurons": 512,
+    "has_bias": true,
+    "weight_bits": 8,
+    "activation_bits": 8,
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "max_schedule_passes": 128,
+    "readout_law": {
+      "adc_bits": 32,
+      "range": "calibrated",
+      "mult_bits": 16
+    }
+  },
+  "deployment_parameters": {
+    "core_semantics": "mvm",
+    "lr": 0.003,
+    "tuning_budget_scale": 0.5,
+    "degradation_tolerance": 0.15,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "cifar_resnet20",
+    "model_config": {
+      "blocks_per_stage": 3,
+      "base_width": 16
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 25,
+    "enable_nevresim_simulation": false,
+    "value_parity_samples": 128,
+    "weight_quantization": true,
+    "pruning": false,
+    "allow_scheduling": true,
+    "training_epochs": 60,
+    "training_recipe": {
+      "optimizer": "adamw",
+      "scheduler": "cosine",
+      "weight_decay": 0.0005,
+      "warmup_ratio": 0.05,
+      "grad_clip_norm": 1,
+      "layer_wise_lr_decay": 1,
+      "label_smoothing": 0,
+      "betas": [
+        0.9,
+        0.999
+      ]
+    }
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}

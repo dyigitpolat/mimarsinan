@@ -1,0 +1,93 @@
+[
+ {
+  "what": "regime bound on the intensity: capacity_free_max",
+  "value": "0.099",
+  "key": "regimefree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "regime bound on the intensity: write_dominated_min",
+  "value": "62.9",
+  "key": "regimewrite",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "tolerance of the capacity-free reading, printed in the regime's gloss",
+  "value": "10%",
+  "key": "regimetau",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Latency panel, Write-dominated: one mark per point at its recorded position (3014 distinct positions)",
+  "value": 11844,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, time.pi_over_k[1] (nominal corner), time.regime.reading = 'resident-dominant'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Latency panel, Mixed: one mark per point at its recorded position (162 distinct positions)",
+  "value": 908,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, time.pi_over_k[1] (nominal corner), time.regime.reading = 'informative'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Latency panel, Compute-dominated: one mark per point at its recorded position (0 distinct positions)",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, time.pi_over_k[1] (nominal corner), time.regime.reading = 'capacity-free'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Latency panel, Corner-dependent regime: one mark per point at its recorded position (2133 distinct positions)",
+  "value": 8629,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, time.pi_over_k[1] (nominal corner), time.regime.reading = 'straddles'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Latency panel, Single pass, no rewrites: one mark per point at its recorded position (12 distinct positions)",
+  "value": 48,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, time.pi_over_k[1] (nominal corner), time.regime.reading = 'resident (no per-inference weight writes)'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Energy panel, Write-dominated: one mark per point at its recorded position (1115 distinct positions)",
+  "value": 5839,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, energy.pi_over_k[1] (nominal corner), energy.regime.reading = 'resident-dominant'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Energy panel, Mixed: one mark per point at its recorded position (424 distinct positions)",
+  "value": 1619,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, energy.pi_over_k[1] (nominal corner), energy.regime.reading = 'informative'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Energy panel, Compute-dominated: one mark per point at its recorded position (0 distinct positions)",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, energy.pi_over_k[1] (nominal corner), energy.regime.reading = 'capacity-free'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Energy panel, Corner-dependent regime: one mark per point at its recorded position (3331 distinct positions)",
+  "value": 9747,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, energy.pi_over_k[1] (nominal corner), energy.regime.reading = 'straddles'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Energy panel, Single pass, no rewrites: one mark per point at its recorded position (12 distinct positions)",
+  "value": 36,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[*]: x_packed, energy.pi_over_k[1] (nominal corner), energy.regime.reading = 'resident (no per-inference weight writes)'",
+  "family": "data file",
+  "state": "value"
+ }
+]

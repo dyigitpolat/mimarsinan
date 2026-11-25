@@ -1,0 +1,213 @@
+[
+ {
+  "what": "(a) ResNet-18, CIFAR-100: accuracy lost at 4 converter bits (pp)",
+  "value": 23.78,
+  "source": "records/frozen/w34_adc_sweep_t1_20261120T183547/11_wave2/explore/cl6/w34/points_644b4c3bc5d7/collect_r4_t1.json#members/C1/readings/loss_pp (equal at budgets B0, B1) (sha256 dd72faaaa578a8e6)",
+  "key": "adclosscifar",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ResNet-18, CIFAR-100: accuracy lost at 5 converter bits (pp)",
+  "value": 8.1,
+  "source": "records/frozen/w34_adc_sweep_t1_20261120T183547/11_wave2/explore/cl6/w34/points_644b4c3bc5d7/collect_r4_t1.json#members/C1/readings/loss_pp (equal at budgets B0, B1) (sha256 dd72faaaa578a8e6)",
+  "key": null,
+  "checked_against": "adclosscifar",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ResNet-18, CIFAR-100: accuracy lost at 6 converter bits (pp)",
+  "value": 2.62,
+  "source": "records/frozen/w34_adc_sweep_t1_20261120T183547/11_wave2/explore/cl6/w34/points_644b4c3bc5d7/collect_r4_t1.json#members/C1/readings/loss_pp (equal at budgets B0, B1) (sha256 dd72faaaa578a8e6)",
+  "key": null,
+  "checked_against": "adclosscifar",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ResNet-18, CIFAR-100: accuracy lost at 8 converter bits (pp)",
+  "value": 0.3,
+  "source": "records/frozen/w34_adc_sweep_t1_20261120T183547/11_wave2/explore/cl6/w34/points_644b4c3bc5d7/collect_r4_t1.json#members/C1/readings/loss_pp (equal at budgets B0, B1) (sha256 dd72faaaa578a8e6)",
+  "key": null,
+  "checked_against": "adclosscifar",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ResNet-20, CIFAR-10: accuracy lost at 3 converter bits (pp)",
+  "value": 80.72,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/cifar10/records_644b4c3bc5d7/cifar10_summary_r2.json#cells[*].mean (mean of the seeds, against adc_bits 32) (sha256 caecf6fb7ec73130)",
+  "key": null,
+  "checked_against": "adccifarten",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ResNet-20, CIFAR-10: accuracy lost at 4 converter bits (pp)",
+  "value": 33.2,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/cifar10/records_644b4c3bc5d7/cifar10_summary_r2.json#cells[*].mean (mean of the seeds, against adc_bits 32) (sha256 caecf6fb7ec73130)",
+  "key": "adccifarten",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ResNet-20, CIFAR-10: accuracy lost at 5 converter bits (pp)",
+  "value": 3.8133,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/cifar10/records_644b4c3bc5d7/cifar10_summary_r2.json#cells[*].mean (mean of the seeds, against adc_bits 32) (sha256 caecf6fb7ec73130)",
+  "key": null,
+  "checked_against": "adccifarten",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ResNet-20, CIFAR-10: accuracy lost at 6 converter bits (pp)",
+  "value": 0.7467,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/cifar10/records_644b4c3bc5d7/cifar10_summary_r2.json#cells[*].mean (mean of the seeds, against adc_bits 32) (sha256 caecf6fb7ec73130)",
+  "key": null,
+  "checked_against": "adccifarten",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ResNet-20, CIFAR-10: accuracy lost at 8 converter bits (pp)",
+  "value": 0.1067,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/cifar10/records_644b4c3bc5d7/cifar10_summary_r2.json#cells[*].mean (mean of the seeds, against adc_bits 32) (sha256 caecf6fb7ec73130)",
+  "key": null,
+  "checked_against": "adccifarten",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) 8-layer CNN, MNIST: accuracy lost at 3 converter bits (pp)",
+  "value": 88.4,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/t0_43v/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": null,
+  "checked_against": "adctzerofour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) 8-layer CNN, MNIST: accuracy lost at 4 converter bits (pp)",
+  "value": 1.1333,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/t0_43v/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": "adctzerofour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) 8-layer CNN, MNIST: accuracy lost at 5 converter bits (pp)",
+  "value": -0.0667,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/t0_43v/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": null,
+  "checked_against": "adctzerofour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) 8-layer CNN, MNIST: accuracy lost at 6 converter bits (pp)",
+  "value": 0.0667,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/t0_43v/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": null,
+  "checked_against": "adctzerofour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) 8-layer CNN, MNIST: accuracy lost at 8 converter bits (pp)",
+  "value": 0.0,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/t0_43v/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": null,
+  "checked_against": "adctzerofour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LeNet-5, MNIST: accuracy lost at 3 converter bits (pp)",
+  "value": 73.4667,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/mvm_int_readout_lenet5/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": "adclenetthree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LeNet-5, MNIST: accuracy lost at 4 converter bits (pp)",
+  "value": 1.4,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/mvm_int_readout_lenet5/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": "adclenetfour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LeNet-5, MNIST: accuracy lost at 5 converter bits (pp)",
+  "value": 0.1333,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/mvm_int_readout_lenet5/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": null,
+  "checked_against": "adclenetfour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LeNet-5, MNIST: accuracy lost at 6 converter bits (pp)",
+  "value": 0.0667,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/mvm_int_readout_lenet5/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": null,
+  "checked_against": "adclenetfour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) LeNet-5, MNIST: accuracy lost at 8 converter bits (pp)",
+  "value": 0.0667,
+  "source": "records/frozen/cl6_t1_20261120T183429/11_wave2/explore/cl6/mnist_644b4c3bc5d7/summary.json#members/mvm_int_readout_lenet5/untrained/counts (of 1,500 images, ledger adclenetfour) (sha256 348cfcf082709948)",
+  "key": null,
+  "checked_against": "adclenetfour",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) closed form at 1e+10 cycles: minimum batch per unit of overflow beyond 1 (the line)",
+  "value": 4.0303008,
+  "source": "closed form (x - 1) r T p / E from ledger rate, lifefloor, rrampulses and rramendurance",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ResNet-50 on NeuRRAM at 1e+10 cycles: closed form 61.381, printed as batch 62",
+  "value": 62,
+  "key": "kminendurance",
+  "source": "closed form (x - 1) r T p / E at x = ledger inetxfluid, E = 1e+10 cycles (ledger rramendurance), r = ledger rate, T = ledger lifefloor, p = ledger rrampulses; its ceiling equals ledger kminendurance",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) closed form at 1e+11 cycles: minimum batch per unit of overflow beyond 1 (the line)",
+  "value": 0.40303008,
+  "source": "closed form (x - 1) r T p / E from ledger rate, lifefloor, rrampulses and rramendurance",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ResNet-50 on NeuRRAM at 1e+11 cycles: closed form 6.138, printed as batch 7",
+  "value": 7,
+  "key": "kminendurance",
+  "source": "closed form (x - 1) r T p / E at x = ledger inetxfluid, E = 1e+11 cycles (ledger rramendurance), r = ledger rate, T = ledger lifefloor, p = ledger rrampulses; its ceiling equals ledger kminendurance",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ResNet-50 on NeuRRAM: overflow",
+  "value": 16.23,
+  "key": "inetxfluid",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) batch for the declared rate (write bandwidth) at that overflow, and its line",
+  "value": 80498.0,
+  "key": "kminbandwidth",
+  "source": "ledger kminbandwidth at x = ledger inetxfluid; the line is proportional to x - 1 (a period's writes grow with the weights beyond capacity), as the closed form K >= r t_w",
+  "family": "data file",
+  "state": "value"
+ }
+]

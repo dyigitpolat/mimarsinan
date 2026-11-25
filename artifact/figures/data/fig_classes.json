@@ -1,0 +1,290 @@
+{
+ "figure": "fig_classes",
+ "classes": [
+  {
+   "id": "cost",
+   "role": "cost_only",
+   "name": "Cost-only",
+   "effect": "Cost",
+   "keys": [
+    {
+     "label": "Placement",
+     "picture": "placement",
+     "wording": "placement",
+     "source": "(internal note withheld)",
+     "drawn": true
+    },
+    {
+     "label": "Splitting",
+     "picture": "splitting",
+     "wording": "splitting",
+     "source": "(internal note withheld)",
+     "drawn": false
+    },
+    {
+     "label": "Pass order",
+     "picture": "passes",
+     "wording": "pass partition and order",
+     "source": "(internal note withheld)",
+     "drawn": true
+    },
+    {
+     "label": "Weights on chip",
+     "picture": "resident",
+     "wording": "weights kept on chip",
+     "source": "(internal note withheld)",
+     "drawn": true
+    },
+    {
+     "label": "Batch",
+     "picture": "batch",
+     "wording": "batch",
+     "source": "(internal note withheld)",
+     "drawn": false
+    },
+    {
+     "label": "Core geometry",
+     "picture": "geometry",
+     "wording": "core geometry",
+     "source": "(internal note withheld)",
+     "drawn": false
+    }
+   ],
+   "source": "(internal note withheld)",
+   "quote": "changes only cost (placement, splitting, pass partition and order, weights kept on chip, batch, core geometry), changes the computation (weight and operand grids, converter precision, neuron model), or rules programs out (write endurance against a service-life floor, and the carry-buffer size)"
+  },
+  {
+   "id": "comp",
+   "role": "changing",
+   "name": "Computation",
+   "effect": "Outputs",
+   "keys": [
+    {
+     "label": "Weight bits",
+     "picture": "grid",
+     "wording": "weight and operand grids",
+     "source": "(internal note withheld)",
+     "drawn": true
+    },
+    {
+     "label": "Converter bits",
+     "picture": "converter",
+     "wording": "converter precision",
+     "source": "(internal note withheld)",
+     "drawn": true
+    },
+    {
+     "label": "Neuron model",
+     "picture": "neuron",
+     "wording": "neuron model",
+     "source": "(internal note withheld)",
+     "drawn": true
+    }
+   ],
+   "source": "(internal note withheld)",
+   "quote": "changes only cost (placement, splitting, pass partition and order, weights kept on chip, batch, core geometry), changes the computation (weight and operand grids, converter precision, neuron model), or rules programs out (write endurance against a service-life floor, and the carry-buffer size)"
+  },
+  {
+   "id": "adm",
+   "role": "admission",
+   "name": "Acceptance",
+   "effect": "Accepted programs",
+   "keys": [
+    {
+     "label": "Write endurance",
+     "picture": "endurance",
+     "wording": "write endurance against a service-life floor",
+     "source": "(internal note withheld)",
+     "drawn": true
+    },
+    {
+     "label": "Carry-buffer size",
+     "picture": "buffer",
+     "wording": "carry-buffer size",
+     "source": "(internal note withheld)",
+     "drawn": true
+    }
+   ],
+   "source": "(internal note withheld)",
+   "quote": "changes only cost (placement, splitting, pass partition and order, weights kept on chip, batch, core geometry), changes the computation (weight and operand grids, converter precision, neuron model), or rules programs out (write endurance against a service-life floor, and the carry-buffer size)"
+  }
+ ],
+ "counts": {
+  "costonlyrows": {
+   "key": "costonlyrows",
+   "source": "ledger:costonlyrows",
+   "value": "38",
+   "display": "38",
+   "unit": "",
+   "class": "MEASURED",
+   "status": "measured",
+   "form": "adopted",
+   "label": "",
+   "tier": "1",
+   "preliminary": false,
+   "range": null,
+   "replaced_by": "",
+   "head": "paper"
+  },
+  "provenrows": {
+   "key": "provenrows",
+   "source": "ledger:provenrows",
+   "value": "38 of 38",
+   "display": "38 of 38",
+   "unit": "",
+   "class": "MEASURED",
+   "status": "measured",
+   "form": "adopted",
+   "label": "",
+   "tier": "1",
+   "preliminary": false,
+   "range": null,
+   "replaced_by": "",
+   "head": "paper"
+  }
+ },
+ "pair": {
+  "key": {
+   "key": "rbcheckrone",
+   "source": "ledger:rbcheckrone",
+   "value": "6 of 6 budget rows equal to B0",
+   "display": "B0 to B2, B5",
+   "unit": "",
+   "class": "MEASURED",
+   "status": "measured",
+   "form": "adopted",
+   "label": "",
+   "tier": "1",
+   "preliminary": true,
+   "range": null,
+   "replaced_by": "",
+   "head": "paper"
+  },
+  "count_key": "rbcountrone",
+  "network": {
+   "value": "ResNet-18 w 1",
+   "display": "ResNet-18",
+   "images": 5000,
+   "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json rows[row=C1.T-INT.b.B2.256x256]/label",
+   "key": "rbcheckrone"
+  },
+  "images": 5000,
+  "read_by": "figures_v3/scripts/build_fig_invariance_data.py build_row (the reader of fig_invariance)",
+  "deployments": [
+   {
+    "row": "C1.T-INT.b.B0.256x256",
+    "budget": "B0",
+    "geometry": "256x256",
+    "schedule": {
+     "weight_write_passes": {
+      "value": 1,
+      "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#record/schedule/reprogram_passes"
+     },
+     "segments_scheduled": {
+      "value": 0,
+      "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/segments_scheduled"
+     },
+     "passes_per_segment": {
+      "value": {},
+      "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/passes_per_segment"
+     },
+     "fullest_pass_cores": {
+      "value": 21730,
+      "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/physical_cores_max_stage"
+     },
+     "per_pass_cores": {
+      "value": null,
+      "fields_found": [],
+      "note": "the record states no cores and no layers per pass (deployment and record/schedule hold no per-pass field); every pass is drawn as the declared cores"
+     },
+     "record_sha256": "bb3461b6acb314fdd21c4084952e6b44531e936d6593ca4b42c283d80edbf5f7"
+    },
+    "cores": {
+     "value": 21730,
+     "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+     "key": "rbcheckrone",
+     "record_sha256": "bb3461b6acb314fdd21c4084952e6b44531e936d6593ca4b42c283d80edbf5f7"
+    },
+    "passes": {
+     "value": 0,
+     "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+     "key": "rbcheckrone",
+     "record_sha256": "bb3461b6acb314fdd21c4084952e6b44531e936d6593ca4b42c283d80edbf5f7",
+     "measure": "scheduled passes of the whole deployment (record/schedule/pass_count, the measure of fig_invariance)",
+     "label": "Single pass",
+     "label_basis": "no scheduled pass (records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count = 0) and one pass in every segment (records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/max_passes = 1)"
+    },
+    "theorem_1_failed": {
+     "value": false,
+     "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#static_program_check/theorem_1_failed"
+    }
+   },
+   {
+    "row": "C1.T-INT.b.B2.256x256",
+    "budget": "B2",
+    "geometry": "256x256",
+    "schedule": {
+     "weight_write_passes": {
+      "value": 9,
+      "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#record/schedule/reprogram_passes"
+     },
+     "segments_scheduled": {
+      "value": 1,
+      "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/segments_scheduled"
+     },
+     "passes_per_segment": {
+      "value": {
+       "0": 9
+      },
+      "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/passes_per_segment"
+     },
+     "fullest_pass_cores": {
+      "value": 2717,
+      "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/physical_cores_max_stage"
+     },
+     "per_pass_cores": {
+      "value": null,
+      "fields_found": [],
+      "note": "the record states no cores and no layers per pass (deployment and record/schedule hold no per-pass field); every pass is drawn as the declared cores"
+     },
+     "record_sha256": "324e8dd5bb0f4157cb0524be2d2d06b3e6b801a8e96c2efac68fe19bc45f26d5"
+    },
+    "cores": {
+     "value": 2717,
+     "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+     "key": "rbcheckrone",
+     "record_sha256": "324e8dd5bb0f4157cb0524be2d2d06b3e6b801a8e96c2efac68fe19bc45f26d5"
+    },
+    "passes": {
+     "value": 9,
+     "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+     "key": "rbcheckrone",
+     "record_sha256": "324e8dd5bb0f4157cb0524be2d2d06b3e6b801a8e96c2efac68fe19bc45f26d5",
+     "measure": "scheduled passes of the whole deployment (record/schedule/pass_count, the measure of fig_invariance)"
+    },
+    "theorem_1_failed": {
+     "value": false,
+     "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#static_program_check/theorem_1_failed"
+    }
+   }
+  ],
+  "ratios": {
+   "cores": {
+    "value": 8,
+    "display": "8",
+    "key": "budgetladder",
+    "source": "the divisor d of the ladder's rule; derived: ceil(21730 / 8) = 2717, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count"
+   }
+  },
+  "outputs": {
+   "value": 500000,
+   "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/C1.T-INT.b.B2.256x256/outputs",
+   "key": "rbcheckrone"
+  },
+  "outputs_differ": {
+   "value": 0,
+   "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/C1.T-INT.b.B2.256x256/outputs_differ",
+   "key": "rbcheckrone"
+  }
+ }
+}

@@ -1,0 +1,268 @@
+{
+ "id": "fig_toolchain",
+ "values_plotted": "none: the figure is a schematic of Section III; each part cites the draft's wording",
+ "inputs": {
+  "network": {
+   "label": "Trained network",
+   "source": "(internal note withheld)",
+   "quote": "takes a trained network, given as a graph of tensor operations with its weights"
+  },
+  "chip": {
+   "label": "Chip description",
+   "source": "(internal note withheld)",
+   "quote": "A chip description lists core types (geometry, count, weight bits, sign granularity, bias, run-time writable matrix, write technology), the integer semantics and neuron model, the converter law at core outputs, the supported operation classes and banded cost constants"
+  }
+ },
+ "toolchain_label": "Toolchain",
+ "stages": [
+  {
+   "label": "Conversion and adaptation",
+   "source": "(internal note withheld)",
+   "quote": "Adaptation fits the network to the properties that change the computation",
+   "id": "conversion",
+   "tags": [
+    "comp"
+   ],
+   "picture": "staircase",
+   "picture_labels": [
+    "Trained weights",
+    "Quantization"
+   ],
+   "also": {
+    "source": "(internal note withheld)",
+    "quote": "Conversion folds batch normalization into the weight layers"
+   }
+  },
+  {
+   "label": "Mapping",
+   "source": "(internal note withheld)",
+   "quote": "Beyond capacity each segment is cut into passes",
+   "id": "mapping",
+   "tags": [
+    "cost",
+    "adm"
+   ],
+   "picture": "passes",
+   "picture_labels": [
+    "Pass"
+   ],
+   "also": {
+    "source": "(internal note withheld)",
+    "quote": "Packing, passes and weight planning"
+   }
+  },
+  {
+   "label": "Check",
+   "source": "(internal note withheld)",
+   "quote": "A deployment passing both is \\emph{certified}: equal to $\\iota$ for every input",
+   "id": "check",
+   "tags": [],
+   "picture": "equal_strips",
+   "picture_labels": [
+    "Single-pass outputs",
+    "Program outputs"
+   ]
+  }
+ ],
+ "classes": {
+  "comp": {
+   "tag": "Computation keys",
+   "role": "changing",
+   "stage": "conversion",
+   "keys": {
+    "value": [
+     "weight and operand grids",
+     "converter precision",
+     "neuron model"
+    ],
+    "source": "(internal note withheld)",
+    "quote": "changes only cost (placement, splitting, pass partition and order, weights kept on chip, batch, core geometry), changes the computation (weight and operand grids, converter precision, neuron model), or rules programs out (write endurance against a service-life floor, and the carry-buffer size)"
+   },
+   "stage_basis": [
+    {
+     "source": "(internal note withheld)",
+     "quote": "Adaptation fits the network to the properties that change the computation"
+    }
+   ]
+  },
+  "cost": {
+   "tag": "Cost-only keys",
+   "role": "cost_only",
+   "stage": "mapping",
+   "keys": {
+    "value": [
+     "placement",
+     "splitting",
+     "pass partition and order",
+     "weights kept on chip",
+     "batch",
+     "core geometry"
+    ],
+    "source": "(internal note withheld)",
+    "quote": "changes only cost (placement, splitting, pass partition and order, weights kept on chip, batch, core geometry), changes the computation (weight and operand grids, converter precision, neuron model), or rules programs out (write endurance against a service-life floor, and the carry-buffer size)"
+   },
+   "stage_basis": [
+    {
+     "source": "(internal note withheld)",
+     "quote": "The weight planner, shared by build, exploration and comparison, chooses which tiles stay programmed across passes and batches"
+    },
+    {
+     "source": "(internal note withheld)",
+     "quote": "the copy count is a mapping decision"
+    },
+    {
+     "source": "(internal note withheld)",
+     "quote": "it \\emph{changes only cost} (cores, packing, passes, weights kept on chip, cost estimates or a refusal by name)"
+    }
+   ]
+  },
+  "adm": {
+   "tag": "Acceptance keys",
+   "role": "admission",
+   "stage": "mapping",
+   "keys": {
+    "value": [
+     "write endurance against a service-life floor",
+     "carry-buffer size"
+    ],
+    "source": "(internal note withheld)",
+    "quote": "changes only cost (placement, splitting, pass partition and order, weights kept on chip, batch, core geometry), changes the computation (weight and operand grids, converter precision, neuron model), or rules programs out (write endurance against a service-life floor, and the carry-buffer size)"
+   },
+   "stage_basis": [
+    {
+     "source": "(internal note withheld)",
+     "quote": "which programs the cost caps, write law and carry-buffer size accept"
+    },
+    {
+     "source": "(internal note withheld)",
+     "quote": "writes are split by technology, each pass's divided over its declared write units and ports"
+    },
+    {
+     "source": "(internal note withheld)",
+     "quote": "accepted if it holds at every corner, ruled out by name if it fails at every corner"
+    },
+    {
+     "source": "(internal note withheld)",
+     "quote": "\\emph{rules programs out} (only which programs are accepted, as the carry-buffer size and a write-endurance service-life floor do)"
+    }
+   ]
+  }
+ },
+ "outputs": {
+  "program": {
+   "label": "Program",
+   "source": "(internal note withheld)",
+   "quote": "returns a program for the cores and the host CPU with its check",
+   "places": [
+    "Cores",
+    "Host CPU"
+   ]
+  },
+  "verdict": {
+   "label": "Verdict",
+   "source": "(internal note withheld)",
+   "quote": "or a refusal naming the stage and its reason",
+   "forms": [
+    "Certified",
+    "Built and checked",
+    "Refused by name"
+   ],
+   "forms_printed": [
+    "Bit-exact",
+    "Built and checked",
+    "Named refusal"
+   ],
+   "forms_printed_basis": {
+    "source": "(internal note withheld)",
+    "quote": "Passing both makes it \\emph{bit-exact}: on the toolchain's model of the cores, with analog arrays idealized as exact, it equals its single-pass program for every input. This assumes a correct cut of the IR into core-sized tiles and correct code for that model and the single-pass program. Only the sampled run tests that code (Section~\\ref{theory:sec:check}). Passing only the sampled run makes it \\emph{built and checked}. A differing output yields a named refusal"
+   },
+   "form_basis": [
+    {
+     "source": "(internal note withheld)",
+     "quote": "A deployment passing both is \\emph{certified}: equal to $\\iota$ for every input"
+    },
+    {
+     "source": "(internal note withheld)",
+     "quote": "a deployment it does not establish is only \\emph{built and checked}"
+    },
+    {
+     "source": "(internal note withheld)",
+     "quote": "else it is refused by name"
+    }
+   ],
+   "also": {
+    "source": "(internal note withheld)",
+    "quote": "else it is refused by name"
+   }
+  },
+  "estimate": {
+   "label": "Cost estimate",
+   "source": "(internal note withheld)",
+   "quote": "latency, energy, area and lifetime are estimates",
+   "terms": [
+    {
+     "label": "Latency",
+     "icon": "clock"
+    },
+    {
+     "label": "Energy",
+     "icon": "zap"
+    },
+    {
+     "label": "Area",
+     "icon": "grid"
+    },
+    {
+     "label": "Lifetime",
+     "icon": "hourglass"
+    }
+   ]
+  }
+ },
+ "loop": {
+  "label": "Exploration loop",
+  "source": "(internal note withheld)",
+  "quote": "the exploration adapts and checks a network once per setting of the properties that change the computation and visits each chip description at each core budget"
+ },
+ "pictograms": {
+  "note": "illustration only: the shapes of the pictures carry no value. One chip of two cores is drawn throughout: a network of four layers, two layers per pass, two passes",
+  "network_layers": [
+   3,
+   4,
+   4,
+   2
+  ],
+  "chip_grid": [
+   1,
+   2
+  ],
+  "property_bars": {
+   "comp": 14,
+   "cost": 10,
+   "adm": 12
+  },
+  "staircase_levels": 5,
+  "passes": [
+   [
+    1,
+    1,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    1,
+    1
+   ]
+  ],
+  "strip_cells": [
+   2,
+   0,
+   3,
+   1,
+   0,
+   2
+  ]
+ }
+}

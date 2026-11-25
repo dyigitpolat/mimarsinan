@@ -1,0 +1,420 @@
+{
+ "figure": "fig_block",
+ "label": "fig:block",
+ "floor": {
+  "hours": {
+   "value": 43800.0,
+   "key": "lifefloor",
+   "source": "records/frozen/provisional/11_wave2/explore/cl5/out/regime_map.json :: meta/assumptions/min_lifetime_hours"
+  },
+  "years": 5.0,
+  "ledger": {
+   "key": "lifefloor",
+   "source": "ledger:lifefloor",
+   "value": "43,800",
+   "display": "43,800 h (5 years)",
+   "unit": "h",
+   "class": "DECLARED",
+   "status": "declared",
+   "form": "carried"
+  },
+  "label": "Required life, 5 years"
+ },
+ "rate": {
+  "per_second": {
+   "value": 30.0,
+   "key": "rate",
+   "source": "records/frozen/provisional/11_wave2/explore/cl5/out/regime_map.json :: meta/assumptions/inference_rate_hz"
+  },
+  "ledger": {
+   "key": "rate",
+   "source": "ledger:rate",
+   "value": "30 per second",
+   "display": "30 per second",
+   "unit": "",
+   "class": "DECLARED",
+   "status": "declared",
+   "form": "carried"
+  },
+  "label": "Declared rate"
+ },
+ "rows": [
+  {
+   "id": "sram_macro",
+   "name": "SRAM macro",
+   "tone": "accent",
+   "fit": {
+    "cores": {
+     "value": 33,
+     "key": "attnsegments",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: declaration/cores/0/count"
+    },
+    "passes": {
+     "value": 2,
+     "key": "attnsegments",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: pass_timeline/packed/max_passes_per_segment"
+    },
+    "cores_per_tile": {
+     "value": 0.5,
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: declaration/budget_attempts/0/fraction"
+    },
+    "widest_segment_tiles": {
+     "value": 65,
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: declaration/widest_segment_tiles"
+    }
+   },
+   "lifetime_h": {
+    "low": {
+     "value": 1446759259.2592592,
+     "key": "figonerowoneverdict",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/0/lifetime_hours/low"
+    },
+    "nominal": {
+     "value": 1446759259.2592592,
+     "key": "figonerowonelife",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/0/lifetime_hours/nominal"
+    },
+    "high": {
+     "value": 1446759259.2592592,
+     "key": "figonerowoneverdict",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/0/lifetime_hours/high"
+    }
+   },
+   "lifetime": {
+    "key": "figonerowonelife",
+    "source": "ledger:figonerowonelife",
+    "value": "1.45e9",
+    "display": "1.45e9 h",
+    "unit": "h",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   },
+   "verdict": {
+    "key": "figonerowoneverdict",
+    "source": "ledger:figonerowoneverdict",
+    "value": "accepted",
+    "display": "accepted",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted",
+    "label": "Accepted"
+   },
+   "rate_lines": [
+    {
+     "batch": 1,
+     "write_s": {
+      "low": {
+       "value": 0.2885481126373627,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/0/exposed_write_s/low"
+      },
+      "nominal": {
+       "value": 1.3128939124999999,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/0/exposed_write_s/nominal"
+      },
+      "high": {
+       "value": 21.006302599999998,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/0/exposed_write_s/high"
+      }
+     },
+     "rate": {
+      "low": 0.04760476029703581,
+      "nominal": 0.7616761647525729,
+      "high": 3.465626549624206
+     },
+     "derivation": "1 / write time per inference",
+     "key": "figonerowoneunmet"
+    },
+    {
+     "batch": 16,
+     "write_s": {
+      "low": {
+       "value": 0.02778425703983517,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/4/exposed_write_s/low"
+      },
+      "nominal": {
+       "value": 0.12641836953125,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/4/exposed_write_s/nominal"
+      },
+      "high": {
+       "value": 2.0226939125,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/4/exposed_write_s/high"
+      }
+     },
+     "rate": {
+      "low": 0.4943901762991043,
+      "nominal": 7.910242820785669,
+      "high": 35.99160483457479
+     },
+     "derivation": "1 / write time per inference",
+     "key": "figonerowoneunmet"
+    },
+    {
+     "batch": 64,
+     "write_s": {
+      "low": {
+       "value": 0.014746064259958794,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/8/exposed_write_s/low"
+      },
+      "nominal": {
+       "value": 0.0670945923828125,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/8/exposed_write_s/nominal"
+      },
+      "high": {
+       "value": 1.073513478125,
+       "key": "figonerowoneunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: priced_writes/rows/8/exposed_write_s/high"
+      }
+     },
+     "rate": {
+      "low": 0.9315206752192821,
+      "nominal": 14.904330803508513,
+      "high": 67.81470515596372
+     },
+     "derivation": "1 / write time per inference",
+     "key": "figonerowoneunmet"
+    }
+   ],
+   "rate_print": {
+    "key": "figonerowonerate",
+    "source": "ledger:figonerowonerate",
+    "value": "0.76, 7.9 and 15 per second",
+    "display": "0.76, 7.9 and 15 per second",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   },
+   "rate_reading": {
+    "key": "figonerowoneunmet",
+    "source": "ledger:figonerowoneunmet",
+    "value": "unmet at 3 of 3 batches at the nominal constants and at 1 of 3 at the band's fast end",
+    "display": "unmet at every batch at the nominal constants, met at batch 16 and 64 at the band's fast end (36 and 68 per second)",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   }
+  },
+  {
+   "id": "resistive_sram",
+   "name": "Resistive + SRAM",
+   "tone": "accent",
+   "fit": {
+    "cores_per_tile": {
+     "value": 1.0,
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/cores_declared/*/count over row/tiles_unbounded"
+    },
+    "passes": {
+     "value": 1,
+     "key": "figonerowtwopasses",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/packed/max_passes_per_segment"
+    }
+   },
+   "lifetime_h": {
+    "low": {
+     "value": 92592592592.59259,
+     "key": "figonerowtwoverdict",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/write_verdicts/neurram static + sram_cim_macro operand/lifetime_hours/low"
+    },
+    "nominal": {
+     "value": 92592592592.59259,
+     "key": "lifemixed",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/write_verdicts/neurram static + sram_cim_macro operand/lifetime_hours/nominal"
+    },
+    "high": {
+     "value": 92592592592.59259,
+     "key": "figonerowtwoverdict",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/write_verdicts/neurram static + sram_cim_macro operand/lifetime_hours/high"
+    }
+   },
+   "lifetime": {
+    "key": "lifemixed",
+    "source": "ledger:lifemixed",
+    "value": "9.26e10",
+    "display": "9.26e10 h",
+    "unit": "h",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   },
+   "verdict": {
+    "key": "figonerowtwoverdict",
+    "source": "ledger:figonerowtwoverdict",
+    "value": "accepted",
+    "display": "accepted",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted",
+    "label": "Accepted"
+   },
+   "rate_lines": [
+    {
+     "batch": "every",
+     "write_s": {
+      "low": {
+       "value": 0.010400000000000001,
+       "key": "figonerowtwounmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5/n2b/acceptance/price_n2b.softmax.O8.json :: declarations/0/rows/18/exposed_write_s/low"
+      },
+      "nominal": {
+       "value": 0.04732,
+       "key": "figonerowtwounmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5/n2b/acceptance/price_n2b.softmax.O8.json :: declarations/0/rows/18/exposed_write_s/nominal"
+      },
+      "high": {
+       "value": 0.75712,
+       "key": "figonerowtwounmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5/n2b/acceptance/price_n2b.softmax.O8.json :: declarations/0/rows/18/exposed_write_s/high"
+      }
+     },
+     "rate": {
+      "low": 1.3207945900253593,
+      "nominal": 21.132713440405748,
+      "high": 96.15384615384615
+     },
+     "derivation": "1 / write time per inference",
+     "key": "figonerowtwounmet",
+     "batches": [
+      1,
+      16,
+      64
+     ]
+    }
+   ],
+   "rate_print": {
+    "key": "figonerowtworate",
+    "source": "ledger:figonerowtworate",
+    "value": "21 per second",
+    "display": "21 per second",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   },
+   "rate_reading": {
+    "key": "figonerowtwounmet",
+    "source": "ledger:figonerowtwounmet",
+    "value": "unmet at 3 of 3 batches at the nominal constants and at 0 of 3 at the band's fast end",
+    "display": "unmet at the nominal constants, met at the band's fast end (96 per second)",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   }
+  },
+  {
+   "id": "resistive_only",
+   "name": "Resistive only",
+   "tone": "quiet",
+   "fit": {
+    "cores_per_tile": {
+     "value": 1.0,
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/cores_declared/*/count over row/tiles_unbounded"
+    }
+   },
+   "lifetime_h": {
+    "low": {
+     "value": 10867.675186924014,
+     "key": "lifeallnvm",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/write_verdicts/all neurram/lifetime_hours/low"
+    },
+    "nominal": {
+     "value": 34366.606461576026,
+     "key": "lifeallnvm",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/write_verdicts/all neurram/lifetime_hours/nominal"
+    },
+    "high": {
+     "value": 108676.75186924014,
+     "key": "lifeallnvm",
+     "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/write_verdicts/all neurram/lifetime_hours/high"
+    }
+   },
+   "lifetime": {
+    "key": "lifeallnvm",
+    "source": "ledger:lifeallnvm",
+    "value": "34,367",
+    "display": "34,367 h, band 10,868 to 108,677 h",
+    "unit": "h",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   },
+   "verdict": {
+    "key": "figonerowthreeverdict",
+    "source": "ledger:figonerowthreeverdict",
+    "value": "dependent on the corner",
+    "display": "dependent on the corner (accepted at the high corner, refused at the low)",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted",
+    "label": "Corner-dependent"
+   },
+   "rate_lines": [
+    {
+     "batch": "every",
+     "write_s": {
+      "low": {
+       "value": 516.052992,
+       "key": "figonerowthreeunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5/n2b/acceptance/price_n2b.softmax.O8.json :: declarations/0/rows/0/exposed_write_s/low"
+      },
+      "nominal": {
+       "value": 1695.9565529088,
+       "key": "figonerowthreeunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5/n2b/acceptance/price_n2b.softmax.O8.json :: declarations/0/rows/0/exposed_write_s/nominal"
+      },
+      "high": {
+       "value": 2838.291456,
+       "key": "figonerowthreeunmet",
+       "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5/n2b/acceptance/price_n2b.softmax.O8.json :: declarations/0/rows/0/exposed_write_s/high"
+      }
+     },
+     "rate": {
+      "low": 0.0003523246345564872,
+      "nominal": 0.0005896377464887657,
+      "high": 0.0019377854900606796
+     },
+     "derivation": "1 / write time per inference",
+     "key": "figonerowthreeunmet",
+     "batches": [
+      1,
+      16,
+      64
+     ]
+    }
+   ],
+   "rate_print": {
+    "key": "figonerowthreerate",
+    "source": "ledger:figonerowthreerate",
+    "value": "5.9e-4 per second",
+    "display": "5.9e-4 per second",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   },
+   "rate_reading": {
+    "key": "figonerowthreeunmet",
+    "source": "ledger:figonerowthreeunmet",
+    "value": "unmet at 3 of 3 batches at the nominal constants and at 3 of 3 at the band's fast end",
+    "display": "unmet at every corner",
+    "unit": "",
+    "class": "ESTIMATE",
+    "status": "estimated",
+    "form": "adopted"
+   }
+  }
+ ]
+}

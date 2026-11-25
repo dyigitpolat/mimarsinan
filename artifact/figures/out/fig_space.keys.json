@@ -1,0 +1,531 @@
+[
+ {
+  "what": "(a) Generic 22 nm: points estimated",
+  "value": 3078,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/generic_estimated_22nm|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES-64: points estimated",
+  "value": 3042,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/hermes_64|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) NeuRRAM: points estimated",
+  "value": 3030,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/neurram|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) COMPASS-geometry study: points estimated",
+  "value": 2808,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_compass|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC-like: points estimated",
+  "value": 2808,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/isaac_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC-like study: points estimated",
+  "value": 2808,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_isaac_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Multi-bit-cell study: points estimated",
+  "value": 2808,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_vr_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) SRAM macro: points estimated",
+  "value": 2712,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/sram_cim_macro|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi: points estimated",
+  "value": 2040,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/loihi|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) TrueNorth: points estimated",
+  "value": 1524,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/truenorth|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ODIN: points estimated",
+  "value": 768,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/odin|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Generic 22 nm: points over budget",
+  "value": 18,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/generic_estimated_22nm|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES-64: points over budget",
+  "value": 18,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/hermes_64|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) NeuRRAM: points over budget",
+  "value": 18,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/neurram|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) COMPASS-geometry study: points over budget",
+  "value": 180,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_compass|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC-like: points over budget",
+  "value": 180,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/isaac_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC-like study: points over budget",
+  "value": 180,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_isaac_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Multi-bit-cell study: points over budget",
+  "value": 180,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_vr_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) SRAM macro: points over budget",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/sram_cim_macro|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi: points over budget",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/loihi|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) TrueNorth: points over budget",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/truenorth|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ODIN: points over budget",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/odin|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Generic 22 nm: points refused",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/generic_estimated_22nm|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES-64: points refused",
+  "value": 36,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/hermes_64|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) NeuRRAM: points refused",
+  "value": 48,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/neurram|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) COMPASS-geometry study: points refused",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_compass|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC-like: points refused",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/isaac_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC-like study: points refused",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_isaac_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Multi-bit-cell study: points refused",
+  "value": 0,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/study_vr_like|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) SRAM macro: points refused",
+  "value": 276,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/sram_cim_macro|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi: points refused",
+  "value": 3180,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/loihi|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) TrueNorth: points refused",
+  "value": 3696,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/truenorth|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ODIN: points refused",
+  "value": 4452,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/summary.json status_per_target/odin|*",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) total of the explored points",
+  "value": "39,888",
+  "key": "clfivepoints",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Generic 22 nm: sampled points built and equal to the estimate, of 10",
+  "value": 10,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=generic_estimated_22nm].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES-64: sampled points built and equal to the estimate, of 10",
+  "value": 10,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=hermes_64].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) NeuRRAM: sampled points built and equal to the estimate, of 10",
+  "value": 10,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=neurram].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) COMPASS-geometry study: sampled points built and equal to the estimate, of 10",
+  "value": 10,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=study_compass].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC-like: sampled points built and equal to the estimate, of 10",
+  "value": 10,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=isaac_like].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC-like study: sampled points built and equal to the estimate, of 10",
+  "value": 10,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=study_isaac_like].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Multi-bit-cell study: sampled points built and equal to the estimate, of 10",
+  "value": 10,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=study_vr_like].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) SRAM macro: sampled points built and equal to the estimate, of 10",
+  "value": 10,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=sram_cim_macro].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi: sampled points built and equal to the estimate, of 10",
+  "value": 9,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=loihi].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) TrueNorth: sampled points built and equal to the estimate, of 10",
+  "value": 7,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=truenorth].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ODIN: sampled points built and equal to the estimate, of 10",
+  "value": 8,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/plane_facts.json rows[target=odin].sampled.planes.agree",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) sampled points built and equal to the estimate, of the sampled points",
+  "value": "104 of 110",
+  "key": "planefacts",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) sampled points with a named refusal before a build (gray hollow dots) (drawn as gray crosses)",
+  "value": 6,
+  "key": "planefacts",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ResNet-18: checked accuracy carried",
+  "value": "74.4%",
+  "key": "rbcountrone",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ResNet-18: points, energy (mJ) against time per inference (s)",
+  "value": 420,
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=C1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18: lifetime (h) of the points that write a cell per inference",
+  "value": 360,
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=C1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ResNet-18: built and checked cost points (diamonds): 3 of the 21 deployments of figfourchecked, each at batch 1, 16 and 64",
+  "value": 9,
+  "key": "figfourchecked",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ResNet-18: range of time per inference across the points, greatest over least (two significant digits)",
+  "value": "1,100,000\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=C1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ResNet-18: range of energy across the points, greatest over least (two significant digits)",
+  "value": "61,000\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=C1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18: the shortest lifetime over the required service life (a factor, two significant digits)",
+  "value": "42,000\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=C1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K); ledger:lifefloor",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) DenseNet-BC: checked accuracy carried",
+  "value": "67.1%",
+  "key": "rbcountdensenet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) DenseNet-BC: points, energy (mJ) against time per inference (s)",
+  "value": 276,
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=S1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC: lifetime (h) of the points that write a cell per inference",
+  "value": 240,
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=S1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) DenseNet-BC: range of time per inference across the points, greatest over least (two significant digits)",
+  "value": "8,200\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=S1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) DenseNet-BC: range of energy across the points, greatest over least (two significant digits)",
+  "value": "3,900\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=S1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC: the shortest lifetime over the required service life (a factor, two significant digits)",
+  "value": "10,000\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=S1.T-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K); ledger:lifefloor",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ViT-Lite-7/4, host attention: checked accuracy carried",
+  "value": "72.9%",
+  "key": "rbcountvitlite",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ViT-Lite-7/4, host attention: points, energy (mJ) against time per inference (s)",
+  "value": 180,
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=ViT.T-VAL8-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, host attention: lifetime (h) of the points that write a cell per inference",
+  "value": 156,
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=ViT.T-VAL8-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ViT-Lite-7/4, host attention: range of time per inference across the points, greatest over least (two significant digits)",
+  "value": "9,200\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=ViT.T-VAL8-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ViT-Lite-7/4, host attention: range of energy across the points, greatest over least (two significant digits)",
+  "value": "410\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=ViT.T-VAL8-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, host attention: the shortest lifetime over the required service life (a factor, two significant digits)",
+  "value": "56,000\u00d7",
+  "source": "records/figures_v2/data/fig_space_toolchain.json points[network=ViT.T-VAL8-INT.b, accuracy.rule=carried] (from records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/member_map.json points[*].write_law.terms, nominal corner; time per inference = batch period / K); ledger:lifefloor",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) required service life (h)",
+  "value": "43,800 h (5 years)",
+  "key": "lifefloor",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(d) NeuRRAM: explored points with a lifetime reading (h, nominal corner) per batch",
+  "value": 2580,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[target=neurram]: inference_batch_K, write_law.terms.lifetime_hours[1] (nominal corner), write_law.verdicts[name=lifetime_admissible]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(d) NeuRRAM: points below the required service life at the nominal corner (under the dashed line)",
+  "value": 1946,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[target=neurram]: inference_batch_K, write_law.terms.lifetime_hours[1] (nominal corner), write_law.verdicts[name=lifetime_admissible]; ledger:lifefloor",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(d) NeuRRAM: points ruled out, below the required service life at every corner (gray, filled)",
+  "value": 1352,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[target=neurram]: inference_batch_K, write_law.terms.lifetime_hours[1] (nominal corner), write_law.verdicts[name=lifetime_admissible]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(d) NeuRRAM: points corner dependent, below the required service life at some corner (gray, hollow)",
+  "value": 1060,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[target=neurram]: inference_batch_K, write_law.terms.lifetime_hours[1] (nominal corner), write_law.verdicts[name=lifetime_admissible]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(d) NeuRRAM: points accepted, over the required service life at every corner (blue, hollow)",
+  "value": 168,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[target=neurram]: inference_batch_K, write_law.terms.lifetime_hours[1] (nominal corner), write_law.verdicts[name=lifetime_admissible]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(d) NeuRRAM: example configuration (resnet18_w1q, budget 0.8408964152537145), lifetime (h) at batch 1, 16, 64",
+  "value": [
+   1909.2559145320013,
+   30548.09463251202,
+   122192.37853004808
+  ],
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json points[target=neurram, network=resnet18_w1q, budget=0.8408964152537145, inference_batch_K=1]: write_law.terms.lifetime_hours[1], k_star.k_star_census_batch",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(d) the example's minimum batch that meets the required service life (toolchain:eq:kstar)",
+  "value": 23,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json points[target=neurram, network=resnet18_w1q, budget=0.8408964152537145, inference_batch_K=1]: write_law.terms.lifetime_hours[1], k_star.k_star_census_batch",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(d) connectors: one per configuration, lifetime in proportion to the batch (pale blue over the required service life, gray under it, at the nominal corner; sampled behind the key's marks)",
+  "value": 860,
+  "source": "records/frozen/cl5_exploration_t1_20261122T161849/11_wave2/explore/cl5/out_644b4c3bc5d7/regime_map.json (sha256 204bec14ecd50cd2) points[target=neurram]: inference_batch_K, write_law.terms.lifetime_hours[1] (nominal corner), write_law.verdicts[name=lifetime_admissible]; lifetime at batch K = K times the lifetime at batch 1 (checked on every point of the record)",
+  "family": "data file",
+  "state": "value"
+ }
+]

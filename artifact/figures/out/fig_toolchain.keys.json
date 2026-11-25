@@ -1,0 +1,184 @@
+[
+ {
+  "what": "input: Trained network",
+  "value": "takes a trained network, given as a graph of tensor operations with its weights",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "input: Chip description",
+  "value": "A chip description lists core types (geometry, count, weight bits, sign granularity, bias, run-time writable matrix, write technology), the integer semantics and neuron model, the converter law at core outputs, the supported operation classes and banded cost constants",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "stage: Conversion and adaptation",
+  "value": "Adaptation fits the network to the properties that change the computation",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Conversion and adaptation: Computation (the keys of the class)",
+  "value": [
+   "weight and operand grids",
+   "converter precision",
+   "neuron model"
+  ],
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Conversion and adaptation: Computation (the stage of the tag)",
+  "value": "Adaptation fits the network to the properties that change the computation",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "stage: Mapping",
+  "value": "Beyond capacity each segment is cut into passes",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Cost-only (the keys of the class)",
+  "value": [
+   "placement",
+   "splitting",
+   "pass partition and order",
+   "weights kept on chip",
+   "batch",
+   "core geometry"
+  ],
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Cost-only (the stage of the tag)",
+  "value": "The weight planner, shared by build, exploration and comparison, chooses which tiles stay programmed across passes and batches",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Cost-only (the stage of the tag)",
+  "value": "the copy count is a mapping decision",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Cost-only (the stage of the tag)",
+  "value": "it \\emph{changes only cost} (cores, packing, passes, weights kept on chip, cost estimates or a refusal by name)",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Feasibility (the keys of the class)",
+  "value": [
+   "write endurance against a service-life floor",
+   "carry-buffer size"
+  ],
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Feasibility (the stage of the tag)",
+  "value": "which programs the cost caps, write law and carry-buffer size accept",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Feasibility (the stage of the tag)",
+  "value": "writes are split by technology, each pass's divided over its declared write units and ports",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Feasibility (the stage of the tag)",
+  "value": "accepted if it holds at every corner, ruled out by name if it fails at every corner",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "class tag on Mapping: Feasibility (the stage of the tag)",
+  "value": "\\emph{rules programs out} (only which programs are accepted, as the carry-buffer size and a write-endurance service-life floor do)",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "stage: Check",
+  "value": "A deployment passing both is \\emph{certified}: equal to $\\iota$ for every input",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "output: Program",
+  "value": "returns a program for the cores and the host CPU with its check",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "output: Verdict",
+  "value": "or a refusal naming the stage and its reason",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "output: Verdict: outcome Bit-exact (the frozen text's name: Certified)",
+  "value": "A deployment passing both is \\emph{certified}: equal to $\\iota$ for every input",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "output: Verdict: outcome Sample-checked (the frozen text's name: Sample-checked)",
+  "value": "a deployment it does not establish is only \\emph{built and checked}",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "output: Verdict: outcome Rejected (the frozen text's name: Refused by name)",
+  "value": "else it is refused by name",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "output: Verdict: the printed outcome names (Bit-exact, Sample-checked, Rejected)",
+  "value": "Passing both makes it \\emph{bit-exact}: on the toolchain's model of the cores, with analog arrays idealized as exact, it equals its single-pass program for every input. This assumes a correct cut of the IR into core-sized tiles and correct code for that model and the single-pass program. Only the sampled run tests that code (Section~\\ref{theory:sec:check}). Passing only the sampled run makes it \\emph{built and checked}. A differing output yields a named refusal",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "output: Cost estimate",
+  "value": "latency, energy, area and lifetime are estimates",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "loop: Exploration loop",
+  "value": "the exploration adapts and checks a network once per setting of the properties that change the computation and visits each chip description at each core budget",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ }
+]

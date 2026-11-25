@@ -1,0 +1,1885 @@
+[
+ {
+  "what": "(a) TrueNorth: published area (mm2), core",
+  "value": "0.0936",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-TN-01].value (Fig. 1 caption, p.1538 (PDF p.2))",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) TrueNorth: held-out estimate (mm2)",
+  "value": "0.04053",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[0].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ODIN: published area (mm2), core",
+  "value": "0.0864",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-OD-01].value (Sec. III 'Specifications, measurements and benchmarking results', PDF p.6)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ODIN: held-out estimate (mm2)",
+  "value": "0.1529",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[1].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) MorphIC: the derived mark (mark_kind 'derived': its published area is computed from printed figures)",
+  "value": "derived",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[2].published_mm2 (derived from T1-MO-01, T1-MO-02)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) MorphIC: published area (mm2), core (derived)",
+  "value": "0.674316",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[2].published_mm2 (derived from T1-MO-01, T1-MO-02)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) MorphIC: held-out estimate (mm2)",
+  "value": "1.046",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[2].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ReckOn: published area (mm2), core",
+  "value": "0.45",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-RK-01].value (Measurement section (Fig. 7 die microphotograph), PDF p.7; geometry PDF p.2)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ReckOn: held-out estimate (mm2)",
+  "value": "0.5428",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[3].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi: published area (mm2), core (vendor)",
+  "value": "0.41",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-LO-05].value (Table 2 'Comparison of Loihi to Loihi 2', row 'Core Area', column 'Loihi', p.7)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi: held-out estimate (mm2)",
+  "value": "0.2831",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[4].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) SRAM macro: estimate over published with the area from other publications (the whisker)",
+  "value": "0.434 to 0.434",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[5].strict_form_ii",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) SRAM macro: the derived mark (mark_kind 'derived': its published area is computed from printed figures)",
+  "value": "derived",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T2-JI-02].value (T2-JI-01)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) SRAM macro: published area (mm2), macro",
+  "value": "0.5",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T2-JI-02].value (T2-JI-01)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) SRAM macro: held-out estimate (mm2), own cell or converter area kept",
+  "value": "0.217",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[5].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) CAP-RAM: the reading with the type's default unit areas, a named refusal (a gray tick, in no statistic), over published",
+  "value": "1.09",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[6].strict_form_ii",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) CAP-RAM: published area (mm2), macro",
+  "value": "0.179",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T2-CR-01].value (Sec. IV 'Measurement results', PDF p.7)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) CAP-RAM: held-out estimate (mm2), own cell or converter area kept",
+  "value": "0.1461",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[6].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Jia et al.: published area (mm2), die",
+  "value": "13.5",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T2-JA-01].value (Fig. 10 'Processor measurement summary', PDF p.9; die dimensions Fig. 9 labels '4.5mm', '3mm' PDF p.8)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Jia et al.: held-out estimate (mm2)",
+  "value": "2.942",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[7].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) NeuRRAM: the reading with the type's default unit areas, a named refusal (a gray tick, in no statistic), over published",
+  "value": "0.429",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[8].strict_form_ii",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) NeuRRAM: published area (mm2), die",
+  "value": "158.76",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T3-NR-01].value (Extended Data Fig. 11c 'Micrograph of a 48-core NeuRRAM chip', PDF p.26 (labels read from the rendered page))",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) NeuRRAM: held-out estimate (mm2), own cell or converter area kept",
+  "value": "68.73",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[8].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC: published area (mm2), tile",
+  "value": "0.372",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T3-IS-17].value (Table I 'ISAAC Tile at 1.2 GHz, 0.37 mm2', row '1 Tile Total', column 'Area (mm2 )', PDF p.8)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) ISAAC: held-out estimate (mm2)",
+  "value": "0.249",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[9].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) PUMA: published area (mm2), tile",
+  "value": "0.479",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T3-PU-05].value (Table 3 'PUMA Hardware Characteristics' (PUMA Tile at 1GHz on 32nm Technology node), row 'Tile', column 'Area (mm2 )', PDF p.9)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) PUMA: held-out estimate (mm2)",
+  "value": "0.379",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[10].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES-64: published area (mm2), core",
+  "value": "1.392",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T4-HE-02].value (Sec. 'Chip architecture', p.681 (published PDF p.2))",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES-64: held-out estimate (mm2)",
+  "value": "1.964",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[11].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES core: estimate over published with the area from other publications (the whisker)",
+  "value": "2.79 to 2.79",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[12].strict_form_ii",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES core: the derived mark (mark_kind 'derived': its published area is computed from printed figures)",
+  "value": "derived",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T4-HC-03].value (Table I, column 'This work', p.1034 (PDF p.8; table read from the rendered page))",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES core: published area (mm2), core",
+  "value": "0.634",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T4-HC-03].value (Table I, column 'This work', p.1034 (PDF p.8; table read from the rendered page))",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) HERMES core: held-out estimate (mm2), own cell or converter area kept",
+  "value": "1.33",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[12].estimate_mm2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi 2: a named refusal (sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own), a gray cap with a downward stroke at its upper-bound reading (mm2), in no statistic; over published: at most 0.72",
+  "value": "at most 0.150 mm2",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi 2: readings not drawn (the text carries them)",
+  "value": "bounds nothing",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) Loihi 2: published area (mm2), core (vendor)",
+  "value": "0.21",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) IMAGINE: a named refusal (converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)), a gray bar between its readings (mm2), in no statistic; over published: 1.07 to 1.42",
+  "value": "0.210 mm2 to 0.278 mm2",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/1",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) IMAGINE: published area (mm2), macro",
+  "value": "0.196",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/1",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) focal label: fabricated chips of the statistics and their worst factor",
+  "value": "10 chips and macros, factor 2.31 at worst",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/print_bounds/focal_label",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) key: the sample of the priced readings' entry, in the form of their marks (a whisker with two caps where a priced strict_ratio is a range, one cap where none is)",
+  "value": "single cap",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[5].strict_form_ii; records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[12].strict_form_ii",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) key: the derived mark's entry (points with mark_kind 'derived')",
+  "value": "Published area, computed",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[2].published_mm2 (derived from T1-MO-01, T1-MO-02); records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T2-JI-02].value (T2-JI-01); records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T4-HC-03].value (Table I, column 'This work', p.1034 (PDF p.8; table read from the rendered page))",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) the axis end, in published totals (the whole multiple that covers the longest estimate bar)",
+  "value": "2",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_axis",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) TrueNorth: array, published (um2), drawn as a share of the published total",
+  "value": "15953.9",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) TrueNorth: logic and periphery, published (um2), drawn as a share of the published total",
+  "value": "77646.1",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) TrueNorth: array, held-out estimate (um2), drawn as a share of the published total",
+  "value": "15553.7",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) TrueNorth: logic and periphery, held-out estimate (um2), drawn as a share of the published total",
+  "value": "24971.6",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) TrueNorth: published total (um2), core",
+  "value": "93600",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/0",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ODIN: array, published (um2), drawn as a share of the published total",
+  "value": "56160",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/1",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ODIN: logic and periphery, published (um2), drawn as a share of the published total",
+  "value": "30240",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/1",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ODIN: array, held-out estimate (um2), drawn as a share of the published total",
+  "value": "56588.5",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/1",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ODIN: logic and periphery, held-out estimate (um2), drawn as a share of the published total",
+  "value": "96295.5",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/1",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) ODIN: published total (um2), core",
+  "value": "86400",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/1",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) MorphIC: array, published (um2), drawn as a share of the published total",
+  "value": "1.59e+06",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) MorphIC: logic and periphery, published (um2), drawn as a share of the published total",
+  "value": "1.27e+06",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) MorphIC: array, held-out estimate (um2), drawn as a share of the published total",
+  "value": "1.36554e+06",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) MorphIC: logic and periphery, held-out estimate (um2), drawn as a share of the published total",
+  "value": "2.8185e+06",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) MorphIC: published total (um2), chip w/o pads",
+  "value": "2.86e+06",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/2",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) CAP-RAM: array, published (um2), drawn as a share of the published total",
+  "value": "112054",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/3",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) CAP-RAM: converters, published (um2), drawn as a share of the published total",
+  "value": "14678",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/3",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) CAP-RAM: logic and periphery, published (um2), drawn as a share of the published total",
+  "value": "52268",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/3",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) CAP-RAM: array, held-out estimate (um2), drawn as a share of the published total",
+  "value": "101717",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/3",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) CAP-RAM: converters, held-out estimate (um2), drawn as a share of the published total",
+  "value": "13728",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/3",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) CAP-RAM: logic and periphery, held-out estimate (um2), drawn as a share of the published total",
+  "value": "30688",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/3",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) CAP-RAM: published total (um2), macro",
+  "value": "179000",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/3",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) IMAGINE: array, published (um2), drawn as a share of the published total",
+  "value": "145040",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) IMAGINE: converters, published (um2), drawn as a share of the published total",
+  "value": "9800",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) IMAGINE: logic and periphery, published (um2), drawn as a share of the published total",
+  "value": "41160",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) IMAGINE: array, held-out estimate (um2), drawn as a share of the published total",
+  "value": "148968",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) IMAGINE: converters, logic and periphery, a named refusal (no estimate): one gray outlined segment, its length the groups' published area (um2) as a share of the published total",
+  "value": "50960",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) IMAGINE: the status of its refused groups and of the stack",
+  "value": "named refusal: converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) IMAGINE: published total (um2), macro",
+  "value": "196000",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/4",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) NeuRRAM: array, published (um2), drawn as a share of the published total",
+  "value": "1.90512e+07",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/5",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) NeuRRAM: converters, published (um2), drawn as a share of the published total",
+  "value": "4.44528e+07",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/5",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) NeuRRAM: logic and periphery, published (um2), drawn as a share of the published total",
+  "value": "9.5256e+07",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/5",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) NeuRRAM: array, held-out estimate (um2), drawn as a share of the published total",
+  "value": "1.08753e+07",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/5",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) NeuRRAM: converters, held-out estimate (um2), drawn as a share of the published total",
+  "value": "1.56058e+07",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/5",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) NeuRRAM: logic and periphery, held-out estimate (um2), drawn as a share of the published total",
+  "value": "4.2249e+07",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/5",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) NeuRRAM: published total (um2), die",
+  "value": "1.5876e+08",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/5",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) HERMES-64: array, published (um2), drawn as a share of the published total",
+  "value": "522000",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/7",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) HERMES-64: converters, published (um2), drawn as a share of the published total",
+  "value": "391500",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/7",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) HERMES-64: logic and periphery, published (um2), drawn as a share of the published total",
+  "value": "478500",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/7",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) HERMES-64: array, held-out estimate (um2), drawn as a share of the published total",
+  "value": "770703",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/7",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) HERMES-64: converters, held-out estimate (um2), drawn as a share of the published total",
+  "value": "102400",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/7",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) HERMES-64: logic and periphery, held-out estimate (um2), drawn as a share of the published total",
+  "value": "1.09122e+06",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/7",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(b) HERMES-64: published total (um2), core",
+  "value": "1.392e+06",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/7",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 B0 (reference): scheduled passes",
+  "value": 0,
+  "source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 B0 (reference): estimated chip area (mm2) at 21,730 cores; the band's low edge 2344.3",
+  "value": "5128.3",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B0.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/1.25 (planned): scheduled passes",
+  "value": 2,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/1/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/1.25 (planned): estimated chip area (mm2) at 17,384 cores; the band's low edge 1875.5",
+  "value": "4102.6",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d1.25]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/1.5 (planned): scheduled passes",
+  "value": 2,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/2/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/1.5 (planned): estimated chip area (mm2) at 14,487 cores; the band's low edge 1562.9",
+  "value": "3418.9",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d1.5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 B1 (equal): scheduled passes",
+  "value": 3,
+  "source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 B1 (equal): estimated chip area (mm2) at 10,865 cores; the band's low edge 1172.2",
+  "value": "2564.1",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B1.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/2.5 (planned): scheduled passes",
+  "value": 3,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/4/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/2.5 (planned): estimated chip area (mm2) at 8,692 cores; the band's low edge 937.73",
+  "value": "2051.3",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d2.5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/3 (planned): scheduled passes",
+  "value": 4,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/5/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/3 (planned): estimated chip area (mm2) at 7,244 cores; the band's low edge 781.51",
+  "value": "1709.6",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d3]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 L4 (equal): scheduled passes",
+  "value": 5,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 L4 (equal): estimated chip area (mm2) at 5,433 cores; the band's low edge 586.13",
+  "value": "1282.2",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.L4.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/5 (planned): scheduled passes",
+  "value": 6,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/7/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/5 (planned): estimated chip area (mm2) at 4,346 cores; the band's low edge 468.86",
+  "value": "1025.7",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/6 (planned): scheduled passes",
+  "value": 7,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/8/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/6 (planned): estimated chip area (mm2) at 3,622 cores; the band's low edge 390.76",
+  "value": "854.79",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d6]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 B2 (equal): scheduled passes",
+  "value": 9,
+  "source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 B2 (equal): estimated chip area (mm2) at 2,717 cores; the band's low edge 293.12",
+  "value": "641.21",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B2.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/10 (planned): scheduled passes",
+  "value": 11,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/10/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/10 (planned): estimated chip area (mm2) at 2,173 cores; the band's low edge 234.43",
+  "value": "512.83",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d10]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/12 (planned): scheduled passes",
+  "value": 13,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/11/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/12 (planned): estimated chip area (mm2) at 1,811 cores; the band's low edge 195.38",
+  "value": "427.39",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d12]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 L16 (equal): scheduled passes",
+  "value": 17,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 L16 (equal): estimated chip area (mm2) at 1,359 cores; the band's low edge 146.61",
+  "value": "320.72",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.L16.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/20 (planned): scheduled passes",
+  "value": 21,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/13/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/20 (planned): estimated chip area (mm2) at 1,087 cores; the band's low edge 117.27",
+  "value": "256.53",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d20]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/24 (planned): scheduled passes",
+  "value": 25,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/14/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/24 (planned): estimated chip area (mm2) at 906 cores; the band's low edge 97.743",
+  "value": "213.82",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d24]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 L32 (equal): scheduled passes",
+  "value": 33,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 L32 (equal): estimated chip area (mm2) at 680 cores; the band's low edge 73.361",
+  "value": "160.48",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.L32.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/48 (planned): scheduled passes",
+  "value": 49,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/16/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/48 (planned): estimated chip area (mm2) at 453 cores; the band's low edge 48.871",
+  "value": "106.91",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d48]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/64 (planned): scheduled passes",
+  "value": 65,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/17/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/64 (planned): estimated chip area (mm2) at 340 cores; the band's low edge 36.681",
+  "value": "80.24",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d64]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 Co-designed (equal): scheduled passes",
+  "value": 197,
+  "source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B5.256x64/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 Co-designed (equal): estimated chip area (mm2) at 242 cores; the band's low edge 6.527",
+  "value": "14.278",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B5.256x64]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/96 (planned): scheduled passes",
+  "value": 98,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/18/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/96 (planned): estimated chip area (mm2) at 227 cores; the band's low edge 24.49",
+  "value": "53.572",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d96]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/128 (planned): scheduled passes",
+  "value": 131,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/19/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/128 (planned): estimated chip area (mm2) at 170 cores; the band's low edge 18.34",
+  "value": "40.12",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d128]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/192 (planned): scheduled passes",
+  "value": 198,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/20/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/192 (planned): estimated chip area (mm2) at 114 cores; the band's low edge 12.299",
+  "value": "26.904",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d192]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/256 (planned): scheduled passes",
+  "value": 262,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/21/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18 1/256 (planned): estimated chip area (mm2) at 85 cores; the band's low edge 9.1701",
+  "value": "20.06",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC B0 (reference): scheduled passes",
+  "value": 0,
+  "source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC B0 (reference): estimated chip area (mm2) at 60,807 cores; the band's low edge 6560.1",
+  "value": "14350",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.B0.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/1.25 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/1/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/1.25 (planned): estimated chip area (mm2) at 48,646 cores; the band's low edge 5248.1",
+  "value": "11480",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d1.25]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/1.5 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/2/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/1.5 (planned): estimated chip area (mm2) at 40,538 cores; the band's low edge 4373.4",
+  "value": "9566.9",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d1.5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC B1 (equal): scheduled passes",
+  "value": 100,
+  "source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC B1 (equal): estimated chip area (mm2) at 30,404 cores; the band's low edge 3280.1",
+  "value": "7175.3",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.B1.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/2.5 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/4/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/2.5 (planned): estimated chip area (mm2) at 24,323 cores; the band's low edge 2624.1",
+  "value": "5740.2",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d2.5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/3 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/5/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/3 (planned): estimated chip area (mm2) at 20,269 cores; the band's low edge 2186.7",
+  "value": "4783.5",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d3]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC L4 (equal): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC L4 (equal): estimated chip area (mm2) at 15,202 cores; the band's low edge 1640.1",
+  "value": "3587.7",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.L4.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/5 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/7/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/5 (planned): estimated chip area (mm2) at 12,162 cores; the band's low edge 1312.1",
+  "value": "2870.2",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/6 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/8/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/6 (planned): estimated chip area (mm2) at 10,135 cores; the band's low edge 1093.4",
+  "value": "2391.9",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d6]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC B2 (equal): scheduled passes",
+  "value": 100,
+  "source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC B2 (equal): estimated chip area (mm2) at 7,601 cores; the band's low edge 820.03",
+  "value": "1793.8",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.B2.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/10 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/10/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/10 (planned): estimated chip area (mm2) at 6,081 cores; the band's low edge 656.04",
+  "value": "1435.1",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d10]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/12 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/11/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/12 (planned): estimated chip area (mm2) at 5,068 cores; the band's low edge 546.76",
+  "value": "1196",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d12]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC L16 (equal): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC L16 (equal): estimated chip area (mm2) at 3,801 cores; the band's low edge 410.07",
+  "value": "897.03",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.L16.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/20 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/13/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/20 (planned): estimated chip area (mm2) at 3,041 cores; the band's low edge 328.07",
+  "value": "717.67",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d20]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/24 (planned): scheduled passes",
+  "value": 100,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/14/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/24 (planned): estimated chip area (mm2) at 2,534 cores; the band's low edge 273.38",
+  "value": "598.02",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d24]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC L32 (equal): scheduled passes",
+  "value": 116,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC L32 (equal): estimated chip area (mm2) at 1,901 cores; the band's low edge 205.09",
+  "value": "448.63",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.L32.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/48 (planned): scheduled passes",
+  "value": 116,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/16/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/48 (planned): estimated chip area (mm2) at 1,267 cores; the band's low edge 136.69",
+  "value": "299.01",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d48]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/64 (planned): scheduled passes",
+  "value": 141,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/17/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/64 (planned): estimated chip area (mm2) at 951 cores; the band's low edge 102.6",
+  "value": "224.44",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d64]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/96 (planned): scheduled passes",
+  "value": 157,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/18/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/96 (planned): estimated chip area (mm2) at 634 cores; the band's low edge 68.398",
+  "value": "149.62",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d96]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/128 (planned): scheduled passes",
+  "value": 204,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/19/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/128 (planned): estimated chip area (mm2) at 476 cores; the band's low edge 51.353",
+  "value": "112.34",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d128]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/192 (planned): scheduled passes",
+  "value": 248,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/20/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/192 (planned): estimated chip area (mm2) at 317 cores; the band's low edge 34.199",
+  "value": "74.812",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d192]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/256 (planned): scheduled passes",
+  "value": 323,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/21/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) DenseNet-BC 1/256 (planned): estimated chip area (mm2) at 238 cores; the band's low edge 25.676",
+  "value": "56.168",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 B0 (reference): scheduled passes",
+  "value": 0,
+  "source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 B0 (reference): estimated chip area (mm2) at 87,859 cores; the band's low edge 9478.6",
+  "value": "20735",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.B0.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/1.25 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/1/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/1.25 (planned): estimated chip area (mm2) at 70,288 cores; the band's low edge 7582.9",
+  "value": "16588",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d1.25]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/1.5 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/2/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/1.5 (planned): estimated chip area (mm2) at 58,573 cores; the band's low edge 6319.1",
+  "value": "13823",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d1.5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 B1 (equal): scheduled passes",
+  "value": 110,
+  "source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 B1 (equal): estimated chip area (mm2) at 43,930 cores; the band's low edge 4739.3",
+  "value": "10367",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.B1.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/2.5 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/4/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/2.5 (planned): estimated chip area (mm2) at 35,144 cores; the band's low edge 3791.5",
+  "value": "8294",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d2.5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/3 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/5/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/3 (planned): estimated chip area (mm2) at 29,287 cores; the band's low edge 3159.6",
+  "value": "6911.7",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d3]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 L4 (equal): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 L4 (equal): estimated chip area (mm2) at 21,965 cores; the band's low edge 2369.7",
+  "value": "5183.7",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.L4.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/5 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/7/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/5 (planned): estimated chip area (mm2) at 17,572 cores; the band's low edge 1895.7",
+  "value": "4147",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/6 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/8/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/6 (planned): estimated chip area (mm2) at 14,644 cores; the band's low edge 1579.9",
+  "value": "3456",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d6]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 B2 (equal): scheduled passes",
+  "value": 110,
+  "source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 B2 (equal): estimated chip area (mm2) at 10,983 cores; the band's low edge 1184.9",
+  "value": "2592",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.B2.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/10 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/10/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/10 (planned): estimated chip area (mm2) at 8,786 cores; the band's low edge 947.87",
+  "value": "2073.5",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d10]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/12 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/11/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/12 (planned): estimated chip area (mm2) at 7,322 cores; the band's low edge 789.93",
+  "value": "1728",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d12]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 L16 (equal): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 L16 (equal): estimated chip area (mm2) at 5,492 cores; the band's low edge 592.5",
+  "value": "1296.1",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.L16.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/20 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/13/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/20 (planned): estimated chip area (mm2) at 4,393 cores; the band's low edge 473.93",
+  "value": "1036.7",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d20]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/24 (planned): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/14/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/24 (planned): estimated chip area (mm2) at 3,661 cores; the band's low edge 394.96",
+  "value": "863.99",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d24]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 L32 (equal): scheduled passes",
+  "value": 110,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 L32 (equal): estimated chip area (mm2) at 2,746 cores; the band's low edge 296.25",
+  "value": "648.05",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.L32.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/48 (planned): scheduled passes",
+  "value": 129,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/16/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/48 (planned): estimated chip area (mm2) at 1,831 cores; the band's low edge 197.54",
+  "value": "432.11",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d48]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/64 (planned): scheduled passes",
+  "value": 129,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/17/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/64 (planned): estimated chip area (mm2) at 1,373 cores; the band's low edge 148.12",
+  "value": "324.03",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d64]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/96 (planned): scheduled passes",
+  "value": 166,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/18/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/96 (planned): estimated chip area (mm2) at 916 cores; the band's low edge 98.822",
+  "value": "216.18",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d96]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/128 (planned): scheduled passes",
+  "value": 185,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/19/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/128 (planned): estimated chip area (mm2) at 687 cores; the band's low edge 74.116",
+  "value": "162.13",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d128]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/192 (planned): scheduled passes",
+  "value": 258,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/20/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/192 (planned): estimated chip area (mm2) at 458 cores; the band's low edge 49.411",
+  "value": "108.09",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d192]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/256 (planned): scheduled passes",
+  "value": 296,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/21/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) PyramidNet-110 1/256 (planned): estimated chip area (mm2) at 344 cores; the band's low edge 37.112",
+  "value": "81.184",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights B0 (reference): scheduled passes",
+  "value": 0,
+  "source": "records/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights B0 (reference): estimated chip area (mm2) at 4,909 cores; the band's low edge 1047.1",
+  "value": "2317",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.B0.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/1.25 (planned): scheduled passes",
+  "value": 44,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/1/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/1.25 (planned): estimated chip area (mm2) at 3,928 cores; the band's low edge 837.83",
+  "value": "1854",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d1.25]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/1.5 (planned): scheduled passes",
+  "value": 44,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/2/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/1.5 (planned): estimated chip area (mm2) at 3,273 cores; the band's low edge 698.12",
+  "value": "1544.9",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d1.5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights B3 (equal): scheduled passes",
+  "value": 44,
+  "source": "records/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B3.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights B3 (equal): estimated chip area (mm2) at 2,455 cores; the band's low edge 523.64",
+  "value": "1158.8",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.B3.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/2.5 (planned): scheduled passes",
+  "value": 44,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/4/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/2.5 (planned): estimated chip area (mm2) at 1,964 cores; the band's low edge 418.92",
+  "value": "927.01",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d2.5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/3 (planned): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/5/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/3 (planned): estimated chip area (mm2) at 1,637 cores; the band's low edge 349.17",
+  "value": "772.66",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d3]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights L4f (equal): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L4f.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights L4f (equal): estimated chip area (mm2) at 1,228 cores; the band's low edge 261.93",
+  "value": "579.61",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.L4f.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/5 (planned): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/7/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/5 (planned): estimated chip area (mm2) at 982 cores; the band's low edge 209.46",
+  "value": "463.5",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d5]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/6 (planned): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/8/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/6 (planned): estimated chip area (mm2) at 819 cores; the band's low edge 174.69",
+  "value": "386.57",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d6]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights L8f (equal): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L8f.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights L8f (equal): estimated chip area (mm2) at 614 cores; the band's low edge 130.96",
+  "value": "289.81",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.L8f.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/10 (planned): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/10/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/10 (planned): estimated chip area (mm2) at 491 cores; the band's low edge 104.73",
+  "value": "231.75",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d10]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/12 (planned): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/11/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/12 (planned): estimated chip area (mm2) at 410 cores; the band's low edge 87.452",
+  "value": "193.52",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d12]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/16 (planned): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/12/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/16 (planned): estimated chip area (mm2) at 307 cores; the band's low edge 65.482",
+  "value": "144.9",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d16]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/20 (planned): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/13/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/20 (planned): estimated chip area (mm2) at 246 cores; the band's low edge 52.471",
+  "value": "116.11",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d20]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/24 (planned): scheduled passes",
+  "value": 45,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/14/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/24 (planned): estimated chip area (mm2) at 205 cores; the band's low edge 43.726",
+  "value": "96.76",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d24]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/32 (planned): scheduled passes",
+  "value": 52,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/15/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/32 (planned): estimated chip area (mm2) at 154 cores; the band's low edge 32.848",
+  "value": "72.688",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d32]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/48 (planned): scheduled passes",
+  "value": 72,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/16/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/48 (planned): estimated chip area (mm2) at 103 cores; the band's low edge 21.97",
+  "value": "48.616",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d48]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/64 (planned): scheduled passes",
+  "value": 87,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/17/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/64 (planned): estimated chip area (mm2) at 77 cores; the band's low edge 16.424",
+  "value": "36.344",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d64]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/96 (planned): scheduled passes",
+  "value": 115,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/18/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/96 (planned): estimated chip area (mm2) at 52 cores; the band's low edge 11.091",
+  "value": "24.544",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d96]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/128 (planned): scheduled passes",
+  "value": 143,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/19/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/128 (planned): estimated chip area (mm2) at 39 cores; the band's low edge 8.3186",
+  "value": "18.408",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d128]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/192 (planned): scheduled passes",
+  "value": 200,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/20/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/192 (planned): estimated chip area (mm2) at 26 cores; the band's low edge 5.5457",
+  "value": "12.272",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d192]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/256 (planned): scheduled passes",
+  "value": 264,
+  "source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/21/passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ViT-Lite-7/4, dynamic weights 1/256 (planned): estimated chip area (mm2) at 20 cores; the band's low edge 4.2659",
+  "value": "9.44",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) TrueNorth: published die area (mm2), a reference line",
+  "value": "430",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-TN-02].value (Sec. VI-C 'Manufacturing Considerations', p.1550 (PDF p.14); core grid 64 x 64: Fig. 5 caption p.1542)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) Loihi: published die area (mm2), a reference line",
+  "value": "60",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-LO-01].value (Sec. Results, 'Silicon Realization', p.95 (PDF p.14))",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) NeuRRAM: published die area (mm2), a reference line",
+  "value": "158.76",
+  "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T3-NR-01].value (Extended Data Fig. 11c 'Micrograph of a 48-core NeuRRAM chip', PDF p.26 (labels read from the rendered page))",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) value label: PyramidNet-110, resident area over the area at 2,746 cores and 110 passes (L32, equal outputs)",
+  "value": "32\u00d7 less area",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.B0.256x256] ; records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.L32.256x256]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(c) ResNet-18: the budget's name at the end of the dashed step",
+  "value": "Co-designed",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B5.256x64]",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "(a) key: the one entry of the gray strokes (a named refusal's readings: status or strict_status 'named refusal')",
+  "value": "Rejected",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/0; records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/1; records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[6].strict_form_ii; records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[8].strict_form_ii",
+  "family": "data file",
+  "state": "value"
+ }
+]

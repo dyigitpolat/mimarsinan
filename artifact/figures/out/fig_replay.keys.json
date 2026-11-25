@@ -1,0 +1,61 @@
+[
+ {
+  "what": "random multi-pass programs that differ from their single-pass programs (focal label, caption)",
+  "value": "0 of 9,494",
+  "key": "gfivefuzz",
+  "source": "records/frozen/exactness_block_t1_20261124T165039/exactness_block/644b4c3bc5d7_r3/w13/summary.json:jobs/0/theorem_programs/differ; records/frozen/exactness_block_t1_20261124T165039/exactness_block/644b4c3bc5d7_r3/w13/summary.json:jobs/0/theorem_programs/N",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "the timeline's schedule (layers, windows, spike steps, passes, stored steps, core counts): a schematic of the mechanism, not a measurement",
+  "value": {
+   "windows": {
+    "L1": [
+     0,
+     2
+    ],
+    "L2": [
+     1,
+     3
+    ],
+    "L3": [
+     2,
+     4
+    ]
+   },
+   "spikes": {
+    "L1": [
+     0,
+     2
+    ],
+    "L2": [
+     1,
+     3
+    ],
+    "L3": [
+     2,
+     4
+    ]
+   },
+   "passes": [
+    [
+     "L1"
+    ],
+    [
+     "L2",
+     "L3"
+    ]
+   ],
+   "stored_steps": [
+    0,
+    2
+   ],
+   "cores_single_pass": 3,
+   "cores_chip": 2
+  },
+  "source": "records/figures_v2/data/fig_exact.json:replay/schematic_example (example (invented values, schematic)); mechanism: records/10_wave1/g5_residency_planner/u1_design.md:13, records/10_wave1/g5_residency_planner/u1_design.md:59, records/10_wave1/g5_residency_planner/u1_design.md:62",
+  "family": "data file",
+  "state": "value"
+ }
+]

@@ -1,0 +1,240 @@
+[
+ {
+  "what": "SRAM macro: cores per tile (pictogram)",
+  "value": 0.5,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: declaration/budget_attempts/0/fraction",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: cores (not printed, the label prints the tiles per core)",
+  "value": 33,
+  "key": "attnsegments",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive + SRAM: cores per tile (pictogram)",
+  "value": 1.0,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/cores_declared/*/count over row/tiles_unbounded",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive only: cores per tile (pictogram)",
+  "value": 1.0,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_n2b512/certify_n2b.gate.softmax.O8.i512.json :: row/cores_declared/*/count over row/tiles_unbounded",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "required service life (h)",
+  "value": 43800.0,
+  "key": "lifefloor",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: lifetime, low corner (h)",
+  "value": 1446759259.2592592,
+  "key": "figonerowoneverdict",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: lifetime, nominal corner (h)",
+  "value": 1446759259.2592592,
+  "key": "figonerowonelife",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: lifetime, high corner (h)",
+  "value": 1446759259.2592592,
+  "key": "figonerowoneverdict",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: verdict",
+  "value": "accepted",
+  "key": "figonerowoneverdict",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive + SRAM: lifetime, low corner (h)",
+  "value": 92592592592.59259,
+  "key": "figonerowtwoverdict",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive + SRAM: lifetime, nominal corner (h)",
+  "value": 92592592592.59259,
+  "key": "lifemixed",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive + SRAM: lifetime, high corner (h)",
+  "value": 92592592592.59259,
+  "key": "figonerowtwoverdict",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive + SRAM: verdict",
+  "value": "accepted",
+  "key": "figonerowtwoverdict",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive only: lifetime, low corner (h)",
+  "value": 10867.675186924014,
+  "key": "lifeallnvm",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive only: lifetime, nominal corner (h)",
+  "value": 34366.606461576026,
+  "key": "lifeallnvm",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive only: lifetime, high corner (h)",
+  "value": 108676.75186924014,
+  "key": "lifeallnvm",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive only: verdict",
+  "value": "dependent on the corner",
+  "key": "figonerowthreeverdict",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "declared rate (per second)",
+  "value": 30.0,
+  "key": "rate",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 1, low (per second) = 1 / write time",
+  "value": 0.04760476029703581,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 1, nominal (per second) = 1 / write time",
+  "value": 0.7616761647525729,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 1, high (per second) = 1 / write time",
+  "value": 3.465626549624206,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 16, low (per second) = 1 / write time",
+  "value": 0.4943901762991043,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 16, nominal (per second) = 1 / write time",
+  "value": 7.910242820785669,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 16, high (per second) = 1 / write time",
+  "value": 35.99160483457479,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 64, low (per second) = 1 / write time",
+  "value": 0.9315206752192821,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 64, nominal (per second) = 1 / write time",
+  "value": 14.904330803508513,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: sustainable rate, batch 64, high (per second) = 1 / write time",
+  "value": 67.81470515596372,
+  "key": "figonerowoneunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive + SRAM: sustainable rate, batch every, low (per second) = 1 / write time",
+  "value": 1.3207945900253593,
+  "key": "figonerowtwounmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive + SRAM: sustainable rate, batch every, nominal (per second) = 1 / write time",
+  "value": 21.132713440405748,
+  "key": "figonerowtwounmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive + SRAM: sustainable rate, batch every, high (per second) = 1 / write time",
+  "value": 96.15384615384615,
+  "key": "figonerowtwounmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive only: sustainable rate, batch every, low (per second) = 1 / write time",
+  "value": 0.0003523246345564872,
+  "key": "figonerowthreeunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive only: sustainable rate, batch every, nominal (per second) = 1 / write time",
+  "value": 0.0005896377464887657,
+  "key": "figonerowthreeunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Resistive only: sustainable rate, batch every, high (per second) = 1 / write time",
+  "value": 0.0019377854900606796,
+  "key": "figonerowthreeunmet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "SRAM macro: tiles per core (the label)",
+  "value": 2,
+  "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json :: declaration/budget_attempts/0/fraction",
+  "family": "data file",
+  "state": "value"
+ }
+]

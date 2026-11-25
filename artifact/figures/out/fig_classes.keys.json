@@ -1,0 +1,181 @@
+[
+ {
+  "what": "Cost-only key: Placement",
+  "value": "placement",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Cost-only key: Pass order",
+  "value": "pass partition and order",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Cost-only key: Weights on chip",
+  "value": "weights kept on chip",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Computation key: Weight bits",
+  "value": "weight and operand grids",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Computation key: Converter bits",
+  "value": "converter precision",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Computation key: Neuron model",
+  "value": "neuron model",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Feasibility key: Write endurance",
+  "value": "write endurance against a service-life floor",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "Feasibility key: Inter-pass buffer size",
+  "value": "carry-buffer size",
+  "source": "(internal note withheld)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "network of the pair (panel b title)",
+  "value": "ResNet-18",
+  "source": "statement: a declared category of its row; records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json rows[row=C1.T-INT.b.B2.256x256]/label",
+  "category_of": "rbcheckrone",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "the pair's rows and values: read by the row reader of fig_invariance (the same ledger keys and record fields)",
+  "value": [
+   "C1.T-INT.b.B0.256x256",
+   "C1.T-INT.b.B2.256x256"
+  ],
+  "key": "rbcheckrone",
+  "source": "figures_v3/scripts/build_fig_invariance_data.py build_row (the reader of fig_invariance)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "declared cores, B0",
+  "value": 21730,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "passes, B0: the label \"Single pass\", no count printed (scheduled passes of the whole deployment (record/schedule/pass_count, the measure of fig_invariance): 0)",
+  "value": "Single pass",
+  "source": "statement: a declared category of its row; no scheduled pass (records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count = 0) and one pass in every segment (records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/max_passes = 1)",
+  "category_of": "rbcheckrone",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "declared cores, B2",
+  "value": 2717,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "passes, B2 (scheduled passes of the whole deployment (record/schedule/pass_count, the measure of fig_invariance))",
+  "value": 9,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "\"8\u00d7 fewer cores\": ratio of declared cores between the two settings (derived in build_fig_classes_data.py)",
+  "value": 8,
+  "key": "rbcheckrone, budgetladder",
+  "source": "the divisor d of the ladder's rule; derived: ceil(21730 / 8) = 2717, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "keys that change only cost",
+  "value": "38",
+  "key": "costonlyrows",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "compared output codes",
+  "value": 500000,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/C1.T-INT.b.B2.256x256/outputs",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "differing output codes",
+  "value": 0,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/C1.T-INT.b.B2.256x256/outputs_differ",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "strip mark beside Outputs (panel a)",
+  "value": null,
+  "source": "pictogram, no value: an alternating pattern of drawn cells",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "cores blocks (panel b): one pass wide, heights to scale across the pair",
+  "value": [
+   21730,
+   2717
+  ],
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count; records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "pass blocks and pass numbers 1 to 9 (panel b): one block per scheduled pass, every pass drawn as the declared cores (the record states no cores and no layers per pass (deployment and record/schedule hold no per-pass field); every pass is drawn as the declared cores)",
+  "value": 9,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "weight-write marks (panel b): a pictogram, one between two successive passes; the record's passes that rewrite weights",
+  "value": 9,
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#record/schedule/reprogram_passes",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "the mark \"Equal outputs\" (panel b): the form and words of Fig. 1(b), drawn because the differing output codes above are 0",
+  "value": 0,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/C1.T-INT.b.B2.256x256/outputs_differ",
+  "family": "data file",
+  "state": "value"
+ }
+]

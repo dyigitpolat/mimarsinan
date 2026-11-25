@@ -1,0 +1,2835 @@
+[
+ {
+  "what": "ResNet-18: header line, deployed accuracy of the executed budgets, development split",
+  "value": "Development-split accuracy 74.4%",
+  "key": "rbcountrone",
+  "source": "derived: 100 x correct / images of each executed row (B0, B1, L4, B2, L16, L32, Co-designed), 1 distinct value(s) on 7 of 7 executed rows; each row's count is its keys row 'correct development-split images'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18: deployed accuracy, development split (%)",
+  "value": "74.4",
+  "key": "rbcountrone",
+  "source": "derived: 100 x 3,718 / 5,000 (ledger:rbcountrone over ledger:eimages; records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#K9/correct over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#K9/images)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B0: correct development-split images",
+  "value": "3,718 of 5,000",
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#K9/correct",
+  "record_sha256": "bb3461b6acb314fdd21c4084952e6b44531e936d6593ca4b42c283d80edbf5f7",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B0: scheduled passes of the whole deployment",
+  "value": 0,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "bb3461b6acb314fdd21c4084952e6b44531e936d6593ca4b42c283d80edbf5f7",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B0: declared core budget",
+  "value": 21730,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "record_sha256": "bb3461b6acb314fdd21c4084952e6b44531e936d6593ca4b42c283d80edbf5f7",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/1.25: scheduled passes of the whole deployment (planned)",
+  "value": 2,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/1/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/1.25: declared core budget",
+  "value": 17384,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/1/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/1.25: budget as a share of the resident core count",
+  "value": "1/1.25",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/1/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/1.5: scheduled passes of the whole deployment (planned)",
+  "value": 2,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/2/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/1.5: declared core budget",
+  "value": 14487,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/2/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/1.5: budget as a share of the resident core count",
+  "value": "1/1.5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/2/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B1: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/C1.T-INT.b.B1.256x256",
+  "key": "rbcheckrone",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B1: correct development-split images",
+  "value": "3,718 of 5,000",
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B1.256x256/result.json#K9/correct",
+  "record_sha256": "da752f73e30048d08f07167b3a932d112d2934f81492c1d24b925858151d5c13",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B1: scheduled passes of the whole deployment",
+  "value": 3,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "da752f73e30048d08f07167b3a932d112d2934f81492c1d24b925858151d5c13",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B1: declared core budget",
+  "value": 10865,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B1.256x256/result.json#deployment/declared_count",
+  "record_sha256": "da752f73e30048d08f07167b3a932d112d2934f81492c1d24b925858151d5c13",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B1: budget as a share of the resident core count",
+  "value": "1/2",
+  "source": "derived: ceil(21730 / 2) = 10865, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B1.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "key": "budgetladder",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/2.5: scheduled passes of the whole deployment (planned)",
+  "value": 3,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/4/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/2.5: declared core budget",
+  "value": 8692,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/4/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/2.5: budget as a share of the resident core count",
+  "value": "1/2.5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/4/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/3: scheduled passes of the whole deployment (planned)",
+  "value": 4,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/5/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/3: declared core budget",
+  "value": 7244,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/5/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/3: budget as a share of the resident core count",
+  "value": "1/3",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/5/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L4: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#C1.T-INT.b.L4.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L4: correct development-split images",
+  "value": "3,718 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L4.256x256/result.json#K9/correct",
+  "record_sha256": "e55f00d55cb514d777297d3be4b996563fadfdc3c9a5193529e4defda7a83089",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L4: scheduled passes of the whole deployment",
+  "value": 5,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "e55f00d55cb514d777297d3be4b996563fadfdc3c9a5193529e4defda7a83089",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L4: declared core budget",
+  "value": 5433,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L4.256x256/result.json#deployment/declared_count",
+  "record_sha256": "e55f00d55cb514d777297d3be4b996563fadfdc3c9a5193529e4defda7a83089",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L4: budget as a share of the resident core count",
+  "value": "1/4",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/6/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/5: scheduled passes of the whole deployment (planned)",
+  "value": 6,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/7/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/5: declared core budget",
+  "value": 4346,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/7/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/5: budget as a share of the resident core count",
+  "value": "1/5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/7/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/6: scheduled passes of the whole deployment (planned)",
+  "value": 7,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/8/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/6: declared core budget",
+  "value": 3622,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/8/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/6: budget as a share of the resident core count",
+  "value": "1/6",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/8/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B2: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/C1.T-INT.b.B2.256x256",
+  "key": "rbcheckrone",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B2: correct development-split images",
+  "value": "3,718 of 5,000",
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#K9/correct",
+  "record_sha256": "324e8dd5bb0f4157cb0524be2d2d06b3e6b801a8e96c2efac68fe19bc45f26d5",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B2: scheduled passes of the whole deployment",
+  "value": 9,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "324e8dd5bb0f4157cb0524be2d2d06b3e6b801a8e96c2efac68fe19bc45f26d5",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B2: declared core budget",
+  "value": 2717,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+  "record_sha256": "324e8dd5bb0f4157cb0524be2d2d06b3e6b801a8e96c2efac68fe19bc45f26d5",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 B2: budget as a share of the resident core count",
+  "value": "1/8",
+  "source": "derived: ceil(21730 / 8) = 2717, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "key": "budgetladder",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/10: scheduled passes of the whole deployment (planned)",
+  "value": 11,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/10/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/10: declared core budget",
+  "value": 2173,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/10/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/10: budget as a share of the resident core count",
+  "value": "1/10",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/10/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/12: scheduled passes of the whole deployment (planned)",
+  "value": 13,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/11/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/12: declared core budget",
+  "value": 1811,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/11/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/12: budget as a share of the resident core count",
+  "value": "1/12",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/11/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L16: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#C1.T-INT.b.L16.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L16: correct development-split images",
+  "value": "3,718 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L16.256x256/result.json#K9/correct",
+  "record_sha256": "6070d4d4c616f60b42835a4d328f82d18172c98e085f280afd8f7f77ff1ac442",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L16: scheduled passes of the whole deployment",
+  "value": 17,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "6070d4d4c616f60b42835a4d328f82d18172c98e085f280afd8f7f77ff1ac442",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L16: declared core budget",
+  "value": 1359,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L16.256x256/result.json#deployment/declared_count",
+  "record_sha256": "6070d4d4c616f60b42835a4d328f82d18172c98e085f280afd8f7f77ff1ac442",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L16: budget as a share of the resident core count",
+  "value": "1/16",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/12/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/20: scheduled passes of the whole deployment (planned)",
+  "value": 21,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/13/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/20: declared core budget",
+  "value": 1087,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/13/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/20: budget as a share of the resident core count",
+  "value": "1/20",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/13/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/24: scheduled passes of the whole deployment (planned)",
+  "value": 25,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/14/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/24: declared core budget",
+  "value": 906,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/14/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/24: budget as a share of the resident core count",
+  "value": "1/24",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/14/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L32: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#C1.T-INT.b.L32.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L32: correct development-split images",
+  "value": "3,718 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L32.256x256/result.json#K9/correct",
+  "record_sha256": "141334a2e91cdfc136b5572215b2109de59394d34e1ac28d63b1333abafcb4c4",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L32: scheduled passes of the whole deployment",
+  "value": 33,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "141334a2e91cdfc136b5572215b2109de59394d34e1ac28d63b1333abafcb4c4",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L32: declared core budget",
+  "value": 680,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L32.256x256/result.json#deployment/declared_count",
+  "record_sha256": "141334a2e91cdfc136b5572215b2109de59394d34e1ac28d63b1333abafcb4c4",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 L32: budget as a share of the resident core count",
+  "value": "1/32",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/15/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/48: scheduled passes of the whole deployment (planned)",
+  "value": 49,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/16/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/48: declared core budget",
+  "value": 453,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/16/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/48: budget as a share of the resident core count",
+  "value": "1/48",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/16/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/64: scheduled passes of the whole deployment (planned)",
+  "value": 65,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/17/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/64: declared core budget",
+  "value": 340,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/17/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/64: budget as a share of the resident core count",
+  "value": "1/64",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/17/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 Co-designed: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/C1.T-INT.b.B5.256x64",
+  "key": "rbcheckrone",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 Co-designed: correct development-split images",
+  "value": "3,718 of 5,000",
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B5.256x64/result.json#K9/correct",
+  "record_sha256": "56e16c7a1dcc3038593ce3fd04f81b5fdce32e4d6d2a9289c37a164b1461dca3",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 Co-designed: scheduled passes of the whole deployment",
+  "value": 197,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B5.256x64/result.json#record/schedule/pass_count",
+  "record_sha256": "56e16c7a1dcc3038593ce3fd04f81b5fdce32e4d6d2a9289c37a164b1461dca3",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 Co-designed: declared core budget",
+  "value": 242,
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B5.256x64/result.json#deployment/declared_count",
+  "record_sha256": "56e16c7a1dcc3038593ce3fd04f81b5fdce32e4d6d2a9289c37a164b1461dca3",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 Co-designed: the tick's name, the budget's name on the declared ladder",
+  "value": "Co-designed",
+  "key": "budgetladder",
+  "source": "ledger:budgetladder",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 Co-designed: core geometry",
+  "value": "256x64",
+  "key": "rbcheckrone",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/C1.T-INT.b.B5.256x64/result.json#geometry",
+  "record_sha256": "56e16c7a1dcc3038593ce3fd04f81b5fdce32e4d6d2a9289c37a164b1461dca3",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/96: scheduled passes of the whole deployment (planned)",
+  "value": 98,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/18/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/96: declared core budget",
+  "value": 227,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/18/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/96: budget as a share of the resident core count",
+  "value": "1/96",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/18/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/128: scheduled passes of the whole deployment (planned)",
+  "value": 131,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/19/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/128: declared core budget",
+  "value": 170,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/19/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/128: budget as a share of the resident core count",
+  "value": "1/128",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/19/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/192: scheduled passes of the whole deployment (planned)",
+  "value": 198,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/20/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/192: declared core budget",
+  "value": 114,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/20/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/192: budget as a share of the resident core count",
+  "value": "1/192",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/20/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/256: scheduled passes of the whole deployment (planned)",
+  "value": 262,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/21/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/256: declared core budget",
+  "value": 85,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/21/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ResNet-18 1/256: budget as a share of the resident core count",
+  "value": "1/256",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/21/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC: header line, deployed accuracy of the executed budgets, development split",
+  "value": "Development-split accuracy 67.1%",
+  "key": "rbcountdensenet",
+  "source": "derived: 100 x correct / images of each executed row (B0, B1, L4, B2, L16, L32), 1 distinct value(s) on 6 of 6 executed rows; each row's count is its keys row 'correct development-split images'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC: deployed accuracy, development split (%)",
+  "value": "67.1",
+  "key": "rbcountdensenet",
+  "source": "derived: 100 x 3,355 / 5,000 (ledger:rbcountdensenet over ledger:eimages; records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#K9/correct over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#K9/images)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B0: correct development-split images",
+  "value": "3,355 of 5,000",
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#K9/correct",
+  "record_sha256": "5bc3afc62ef84bd4dae6aec68aa27820b0571b27169f8963a14fb45a9f019fee",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B0: scheduled passes of the whole deployment",
+  "value": 0,
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "5bc3afc62ef84bd4dae6aec68aa27820b0571b27169f8963a14fb45a9f019fee",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B0: declared core budget",
+  "value": 60807,
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "record_sha256": "5bc3afc62ef84bd4dae6aec68aa27820b0571b27169f8963a14fb45a9f019fee",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/1.25: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/1/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/1.25: declared core budget",
+  "value": 48646,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/1/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/1.25: budget as a share of the resident core count",
+  "value": "1/1.25",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/1/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/1.5: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/2/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/1.5: declared core budget",
+  "value": 40538,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/2/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/1.5: budget as a share of the resident core count",
+  "value": "1/1.5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/2/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B1: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/S1.T-INT.b.B1.256x256",
+  "key": "rbcheckdensenet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B1: correct development-split images",
+  "value": "3,355 of 5,000",
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B1.256x256/result.json#K9/correct",
+  "record_sha256": "33bd7a67a80d12ca9180d47052f36ecdafd4556242c7d6322dc488290292322c",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B1: scheduled passes of the whole deployment",
+  "value": 100,
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "33bd7a67a80d12ca9180d47052f36ecdafd4556242c7d6322dc488290292322c",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B1: declared core budget",
+  "value": 30404,
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B1.256x256/result.json#deployment/declared_count",
+  "record_sha256": "33bd7a67a80d12ca9180d47052f36ecdafd4556242c7d6322dc488290292322c",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B1: budget as a share of the resident core count",
+  "value": "1/2",
+  "source": "derived: ceil(60807 / 2) = 30404, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B1.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "key": "budgetladder",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/2.5: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/4/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/2.5: declared core budget",
+  "value": 24323,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/4/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/2.5: budget as a share of the resident core count",
+  "value": "1/2.5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/4/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/3: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/5/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/3: declared core budget",
+  "value": 20269,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/5/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/3: budget as a share of the resident core count",
+  "value": "1/3",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/5/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L4: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#S1.T-INT.b.L4.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L4: correct development-split images",
+  "value": "3,355 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L4.256x256/result.json#K9/correct",
+  "record_sha256": "82974dd12a5d627d3fe8e80223b9ca78620131115f59545e2692c0d560fce131",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L4: scheduled passes of the whole deployment",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "82974dd12a5d627d3fe8e80223b9ca78620131115f59545e2692c0d560fce131",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L4: declared core budget",
+  "value": 15202,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L4.256x256/result.json#deployment/declared_count",
+  "record_sha256": "82974dd12a5d627d3fe8e80223b9ca78620131115f59545e2692c0d560fce131",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L4: budget as a share of the resident core count",
+  "value": "1/4",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/6/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/5: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/7/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/5: declared core budget",
+  "value": 12162,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/7/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/5: budget as a share of the resident core count",
+  "value": "1/5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/7/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/6: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/8/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/6: declared core budget",
+  "value": 10135,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/8/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/6: budget as a share of the resident core count",
+  "value": "1/6",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/8/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B2: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/S1.T-INT.b.B2.256x256",
+  "key": "rbcheckdensenet",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B2: correct development-split images",
+  "value": "3,355 of 5,000",
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B2.256x256/result.json#K9/correct",
+  "record_sha256": "1a8c3093ba2282d1e3b6ffc68a4b4350d7207a1be1762bbb7591fbe8a7146d5d",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B2: scheduled passes of the whole deployment",
+  "value": 100,
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "1a8c3093ba2282d1e3b6ffc68a4b4350d7207a1be1762bbb7591fbe8a7146d5d",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B2: declared core budget",
+  "value": 7601,
+  "key": "rbcheckdensenet",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+  "record_sha256": "1a8c3093ba2282d1e3b6ffc68a4b4350d7207a1be1762bbb7591fbe8a7146d5d",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC B2: budget as a share of the resident core count",
+  "value": "1/8",
+  "source": "derived: ceil(60807 / 8) = 7601, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B2.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "key": "budgetladder",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/10: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/10/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/10: declared core budget",
+  "value": 6081,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/10/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/10: budget as a share of the resident core count",
+  "value": "1/10",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/10/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/12: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/11/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/12: declared core budget",
+  "value": 5068,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/11/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/12: budget as a share of the resident core count",
+  "value": "1/12",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/11/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L16: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#S1.T-INT.b.L16.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L16: correct development-split images",
+  "value": "3,355 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L16.256x256/result.json#K9/correct",
+  "record_sha256": "9f6fa95e53dd552559634031dcf99872e9a2829917f24e0d0726eeb5eb479823",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L16: scheduled passes of the whole deployment",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "9f6fa95e53dd552559634031dcf99872e9a2829917f24e0d0726eeb5eb479823",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L16: declared core budget",
+  "value": 3801,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L16.256x256/result.json#deployment/declared_count",
+  "record_sha256": "9f6fa95e53dd552559634031dcf99872e9a2829917f24e0d0726eeb5eb479823",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L16: budget as a share of the resident core count",
+  "value": "1/16",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/12/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/20: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/13/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/20: declared core budget",
+  "value": 3041,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/13/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/20: budget as a share of the resident core count",
+  "value": "1/20",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/13/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/24: scheduled passes of the whole deployment (planned)",
+  "value": 100,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/14/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/24: declared core budget",
+  "value": 2534,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/14/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/24: budget as a share of the resident core count",
+  "value": "1/24",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/14/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L32: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#S1.T-INT.b.L32.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L32: correct development-split images",
+  "value": "3,355 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L32.256x256/result.json#K9/correct",
+  "record_sha256": "be4622f5474037b20dd92f1eb12f60baefd7a9c896f083fe9ef706b39119ff53",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L32: scheduled passes of the whole deployment",
+  "value": 116,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "be4622f5474037b20dd92f1eb12f60baefd7a9c896f083fe9ef706b39119ff53",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L32: declared core budget",
+  "value": 1901,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L32.256x256/result.json#deployment/declared_count",
+  "record_sha256": "be4622f5474037b20dd92f1eb12f60baefd7a9c896f083fe9ef706b39119ff53",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC L32: budget as a share of the resident core count",
+  "value": "1/32",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/15/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/48: scheduled passes of the whole deployment (planned)",
+  "value": 116,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/16/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/48: declared core budget",
+  "value": 1267,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/16/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/48: budget as a share of the resident core count",
+  "value": "1/48",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/16/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/64: scheduled passes of the whole deployment (planned)",
+  "value": 141,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/17/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/64: declared core budget",
+  "value": 951,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/17/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/64: budget as a share of the resident core count",
+  "value": "1/64",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/17/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/96: scheduled passes of the whole deployment (planned)",
+  "value": 157,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/18/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/96: declared core budget",
+  "value": 634,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/18/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/96: budget as a share of the resident core count",
+  "value": "1/96",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/18/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/128: scheduled passes of the whole deployment (planned)",
+  "value": 204,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/19/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/128: declared core budget",
+  "value": 476,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/19/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/128: budget as a share of the resident core count",
+  "value": "1/128",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/19/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/192: scheduled passes of the whole deployment (planned)",
+  "value": 248,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/20/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/192: declared core budget",
+  "value": 317,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/20/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/192: budget as a share of the resident core count",
+  "value": "1/192",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/20/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/256: scheduled passes of the whole deployment (planned)",
+  "value": 323,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/21/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/256: declared core budget",
+  "value": 238,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/21/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "DenseNet-BC 1/256: budget as a share of the resident core count",
+  "value": "1/256",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/21/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110: header line, deployed accuracy of the executed budgets, development split",
+  "value": "Development-split accuracy 70.6%",
+  "key": "rbcountpyramid",
+  "source": "derived: 100 x correct / images of each executed row (B0, B1, L4, B2, L16, L32), 1 distinct value(s) on 6 of 6 executed rows; each row's count is its keys row 'correct development-split images'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110: deployed accuracy, development split (%)",
+  "value": "70.6",
+  "key": "rbcountpyramid",
+  "source": "derived: 100 x 3,531 / 5,000 (ledger:rbcountpyramid over ledger:eimages; records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#K9/correct over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#K9/images)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B0: correct development-split images",
+  "value": "3,531 of 5,000",
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#K9/correct",
+  "record_sha256": "7c3a05dac68633c45c5f1b7d85a097bee1c8055c1eea307e926244de3e4d7ffc",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B0: scheduled passes of the whole deployment",
+  "value": 0,
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "7c3a05dac68633c45c5f1b7d85a097bee1c8055c1eea307e926244de3e4d7ffc",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B0: declared core budget",
+  "value": 87859,
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "record_sha256": "7c3a05dac68633c45c5f1b7d85a097bee1c8055c1eea307e926244de3e4d7ffc",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/1.25: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/1/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/1.25: declared core budget",
+  "value": 70288,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/1/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/1.25: budget as a share of the resident core count",
+  "value": "1/1.25",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/1/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/1.5: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/2/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/1.5: declared core budget",
+  "value": 58573,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/2/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/1.5: budget as a share of the resident core count",
+  "value": "1/1.5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/2/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B1: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/S4.T-INT.b.B1.256x256",
+  "key": "rbcheckpyramid",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B1: correct development-split images",
+  "value": "3,531 of 5,000",
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B1.256x256/result.json#K9/correct",
+  "record_sha256": "1397d0aeaab0209cd65e1f2bde1ab17801c50c484f1d82b91eb1f3e19da6bb91",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B1: scheduled passes of the whole deployment",
+  "value": 110,
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "1397d0aeaab0209cd65e1f2bde1ab17801c50c484f1d82b91eb1f3e19da6bb91",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B1: declared core budget",
+  "value": 43930,
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B1.256x256/result.json#deployment/declared_count",
+  "record_sha256": "1397d0aeaab0209cd65e1f2bde1ab17801c50c484f1d82b91eb1f3e19da6bb91",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B1: budget as a share of the resident core count",
+  "value": "1/2",
+  "source": "derived: ceil(87859 / 2) = 43930, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B1.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "key": "budgetladder",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/2.5: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/4/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/2.5: declared core budget",
+  "value": 35144,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/4/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/2.5: budget as a share of the resident core count",
+  "value": "1/2.5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/4/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/3: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/5/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/3: declared core budget",
+  "value": 29287,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/5/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/3: budget as a share of the resident core count",
+  "value": "1/3",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/5/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L4: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#S4.T-INT.b.L4.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L4: correct development-split images",
+  "value": "3,531 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L4.256x256/result.json#K9/correct",
+  "record_sha256": "d979d12899d1db346ec27ca6c613d34a0f9321d4091ee6a199c9f4316b350af8",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L4: scheduled passes of the whole deployment",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "d979d12899d1db346ec27ca6c613d34a0f9321d4091ee6a199c9f4316b350af8",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L4: declared core budget",
+  "value": 21965,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L4.256x256/result.json#deployment/declared_count",
+  "record_sha256": "d979d12899d1db346ec27ca6c613d34a0f9321d4091ee6a199c9f4316b350af8",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L4: budget as a share of the resident core count",
+  "value": "1/4",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/6/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/5: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/7/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/5: declared core budget",
+  "value": 17572,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/7/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/5: budget as a share of the resident core count",
+  "value": "1/5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/7/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/6: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/8/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/6: declared core budget",
+  "value": 14644,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/8/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/6: budget as a share of the resident core count",
+  "value": "1/6",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/8/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B2: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-6/table.json#K10/S4.T-INT.b.B2.256x256",
+  "key": "rbcheckpyramid",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B2: correct development-split images",
+  "value": "3,531 of 5,000",
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B2.256x256/result.json#K9/correct",
+  "record_sha256": "1d6430bf2300cf87356195f10a365ec1ca4bc31b6be90ab3838bdeff2547fb99",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B2: scheduled passes of the whole deployment",
+  "value": 110,
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "1d6430bf2300cf87356195f10a365ec1ca4bc31b6be90ab3838bdeff2547fb99",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B2: declared core budget",
+  "value": 10983,
+  "key": "rbcheckpyramid",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+  "record_sha256": "1d6430bf2300cf87356195f10a365ec1ca4bc31b6be90ab3838bdeff2547fb99",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 B2: budget as a share of the resident core count",
+  "value": "1/8",
+  "source": "derived: ceil(87859 / 8) = 10983, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B2.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+  "key": "budgetladder",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/10: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/10/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/10: declared core budget",
+  "value": 8786,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/10/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/10: budget as a share of the resident core count",
+  "value": "1/10",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/10/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/12: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/11/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/12: declared core budget",
+  "value": 7322,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/11/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/12: budget as a share of the resident core count",
+  "value": "1/12",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/11/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L16: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#S4.T-INT.b.L16.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L16: correct development-split images",
+  "value": "3,531 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L16.256x256/result.json#K9/correct",
+  "record_sha256": "0200d046f3d61aec1e3237306d83b380726da0edbc5b90d2f4d30bb16cf7a6ea",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L16: scheduled passes of the whole deployment",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "0200d046f3d61aec1e3237306d83b380726da0edbc5b90d2f4d30bb16cf7a6ea",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L16: declared core budget",
+  "value": 5492,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L16.256x256/result.json#deployment/declared_count",
+  "record_sha256": "0200d046f3d61aec1e3237306d83b380726da0edbc5b90d2f4d30bb16cf7a6ea",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L16: budget as a share of the resident core count",
+  "value": "1/16",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/12/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/20: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/13/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/20: declared core budget",
+  "value": 4393,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/13/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/20: budget as a share of the resident core count",
+  "value": "1/20",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/13/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/24: scheduled passes of the whole deployment (planned)",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/14/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/24: declared core budget",
+  "value": 3661,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/14/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/24: budget as a share of the resident core count",
+  "value": "1/24",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/14/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L32: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#S4.T-INT.b.L32.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L32: correct development-split images",
+  "value": "3,531 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L32.256x256/result.json#K9/correct",
+  "record_sha256": "aa84bfd88e1bd11226b8ce6105caa24e20bed0c83c2a953a096c6efeb6a8afff",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L32: scheduled passes of the whole deployment",
+  "value": 110,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "aa84bfd88e1bd11226b8ce6105caa24e20bed0c83c2a953a096c6efeb6a8afff",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L32: declared core budget",
+  "value": 2746,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L32.256x256/result.json#deployment/declared_count",
+  "record_sha256": "aa84bfd88e1bd11226b8ce6105caa24e20bed0c83c2a953a096c6efeb6a8afff",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 L32: budget as a share of the resident core count",
+  "value": "1/32",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/15/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/48: scheduled passes of the whole deployment (planned)",
+  "value": 129,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/16/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/48: declared core budget",
+  "value": 1831,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/16/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/48: budget as a share of the resident core count",
+  "value": "1/48",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/16/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/64: scheduled passes of the whole deployment (planned)",
+  "value": 129,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/17/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/64: declared core budget",
+  "value": 1373,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/17/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/64: budget as a share of the resident core count",
+  "value": "1/64",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/17/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/96: scheduled passes of the whole deployment (planned)",
+  "value": 166,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/18/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/96: declared core budget",
+  "value": 916,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/18/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/96: budget as a share of the resident core count",
+  "value": "1/96",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/18/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/128: scheduled passes of the whole deployment (planned)",
+  "value": 185,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/19/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/128: declared core budget",
+  "value": 687,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/19/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/128: budget as a share of the resident core count",
+  "value": "1/128",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/19/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/192: scheduled passes of the whole deployment (planned)",
+  "value": 258,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/20/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/192: declared core budget",
+  "value": 458,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/20/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/192: budget as a share of the resident core count",
+  "value": "1/192",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/20/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/256: scheduled passes of the whole deployment (planned)",
+  "value": 296,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/21/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/256: declared core budget",
+  "value": 344,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/21/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "PyramidNet-110 1/256: budget as a share of the resident core count",
+  "value": "1/256",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/21/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights: header line, deployed accuracy of the executed budgets, development split",
+  "value": "Development-split accuracy 72.8%",
+  "key": "rbcountvitop",
+  "source": "derived: 100 x correct / images of each executed row (B0, B3, L4f, L8f), 1 distinct value(s) on 4 of 4 executed rows; each row's count is its keys row 'correct development-split images'",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights: deployed accuracy, development split (%)",
+  "value": "72.8",
+  "key": "rbcountvitop",
+  "source": "derived: 100 x 3,642 / 5,000 (ledger:rbcountvitop over ledger:eimages; records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#K9/correct over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#K9/images)",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights B0: correct development-split images",
+  "value": "3,642 of 5,000",
+  "key": "rbcheckvitop",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#K9/correct",
+  "record_sha256": "89bd72a4d3ab4cedd48a5b73a2fec32554916f13f25f8317f67d8fded6179888",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights B0: scheduled passes of the whole deployment",
+  "value": 0,
+  "key": "rbcheckvitop",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "89bd72a4d3ab4cedd48a5b73a2fec32554916f13f25f8317f67d8fded6179888",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights B0: declared core budget",
+  "value": 4909,
+  "key": "rbcheckvitop",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#deployment/declared_count",
+  "record_sha256": "89bd72a4d3ab4cedd48a5b73a2fec32554916f13f25f8317f67d8fded6179888",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/1.25: scheduled passes of the whole deployment (planned)",
+  "value": 44,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/1/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/1.25: declared core budget",
+  "value": 3928,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/1/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/1.25: budget as a share of the resident core count",
+  "value": "1/1.25",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/1/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/1.5: scheduled passes of the whole deployment (planned)",
+  "value": 44,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/2/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/1.5: declared core budget",
+  "value": 3273,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/2/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/1.5: budget as a share of the resident core count",
+  "value": "1/1.5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/2/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights B3: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/tables/r20/t1/WI-7/table.json#K10/ViT.T-VAL8-OP.b-op.B3.256x256",
+  "key": "rbcheckvitop",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights B3: correct development-split images",
+  "value": "3,642 of 5,000",
+  "key": "rbcheckvitop",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B3.256x256/result.json#K9/correct",
+  "record_sha256": "ba4c3997662b8fb0d5e8dc156b5f07d847cd4711548c8c829f559f99ef6068bf",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights B3: scheduled passes of the whole deployment",
+  "value": 44,
+  "key": "rbcheckvitop",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B3.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "ba4c3997662b8fb0d5e8dc156b5f07d847cd4711548c8c829f559f99ef6068bf",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights B3: declared core budget",
+  "value": 2455,
+  "key": "rbcheckvitop",
+  "source": "records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B3.256x256/result.json#deployment/declared_count",
+  "record_sha256": "ba4c3997662b8fb0d5e8dc156b5f07d847cd4711548c8c829f559f99ef6068bf",
+  "basis": "a field of the row's record; the record is a source of the ledger key (which holds its sha256); no ledger key prints the value",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights B3: budget as a share of the resident core count",
+  "value": "1/2",
+  "source": "derived: ceil(4909 / 2) = 2455, the declared ladder's rule (ledger:budgetladder): records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B3.256x256/result.json#deployment/declared_count over records/frozen/routeb_tint_supplement_t1_20261121T001425/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#deployment/declared_count",
+  "key": "budgetladder",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/2.5: scheduled passes of the whole deployment (planned)",
+  "value": 44,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/4/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/2.5: declared core budget",
+  "value": 1964,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/4/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/2.5: budget as a share of the resident core count",
+  "value": "1/2.5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/4/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/3: scheduled passes of the whole deployment (planned)",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/5/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/3: declared core budget",
+  "value": 1637,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/5/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/3: budget as a share of the resident core count",
+  "value": "1/3",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/5/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L4f: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#ViT.T-VAL8-OP.b-op.L4f.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L4f: correct development-split images",
+  "value": "3,642 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L4f.256x256/result.json#K9/correct",
+  "record_sha256": "04d764630ddcf160b9dbf5902c79f17219864c3451cd38915234e9f6be239bfd",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L4f: scheduled passes of the whole deployment",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L4f.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "04d764630ddcf160b9dbf5902c79f17219864c3451cd38915234e9f6be239bfd",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L4f: declared core budget",
+  "value": 1228,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L4f.256x256/result.json#deployment/declared_count",
+  "record_sha256": "04d764630ddcf160b9dbf5902c79f17219864c3451cd38915234e9f6be239bfd",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L4f: budget as a share of the resident core count",
+  "value": "1/4",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/6/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/5: scheduled passes of the whole deployment (planned)",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/7/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/5: declared core budget",
+  "value": 982,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/7/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/5: budget as a share of the resident core count",
+  "value": "1/5",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/7/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/6: scheduled passes of the whole deployment (planned)",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/8/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/6: declared core budget",
+  "value": 819,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/8/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/6: budget as a share of the resident core count",
+  "value": "1/6",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/8/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L8f: output codes differing from the resident deployment",
+  "value": "0 of 500,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl#ViT.T-VAL8-OP.b-op.L8f.256x256/K10",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L8f: correct development-split images",
+  "value": "3,642 of 5,000",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L8f.256x256/result.json#K9/correct",
+  "record_sha256": "17ee968ca8bd508568c87d2f459a87c288d7089b42cf26d8157bec3465c798a5",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L8f: scheduled passes of the whole deployment",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L8f.256x256/result.json#record/schedule/pass_count",
+  "record_sha256": "17ee968ca8bd508568c87d2f459a87c288d7089b42cf26d8157bec3465c798a5",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L8f: declared core budget",
+  "value": 614,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L8f.256x256/result.json#deployment/declared_count",
+  "record_sha256": "17ee968ca8bd508568c87d2f459a87c288d7089b42cf26d8157bec3465c798a5",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights L8f: budget as a share of the resident core count",
+  "value": "1/8",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/9/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "basis": "not a ledger key yet: a row of the collected table of the dense ladder (sha256 pinned in the builder) and a field of the row's own record; record_sha256 is the record's sha256 as read",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/10: scheduled passes of the whole deployment (planned)",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/10/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/10: declared core budget",
+  "value": 491,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/10/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/10: budget as a share of the resident core count",
+  "value": "1/10",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/10/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/12: scheduled passes of the whole deployment (planned)",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/11/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/12: declared core budget",
+  "value": 410,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/11/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/12: budget as a share of the resident core count",
+  "value": "1/12",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/11/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/16: scheduled passes of the whole deployment (planned)",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/12/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/16: declared core budget",
+  "value": 307,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/12/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/16: budget as a share of the resident core count",
+  "value": "1/16",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/12/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/20: scheduled passes of the whole deployment (planned)",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/13/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/20: declared core budget",
+  "value": 246,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/13/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/20: budget as a share of the resident core count",
+  "value": "1/20",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/13/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/24: scheduled passes of the whole deployment (planned)",
+  "value": 45,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/14/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/24: declared core budget",
+  "value": 205,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/14/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/24: budget as a share of the resident core count",
+  "value": "1/24",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/14/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/32: scheduled passes of the whole deployment (planned)",
+  "value": 52,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/15/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/32: declared core budget",
+  "value": 154,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/15/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/32: budget as a share of the resident core count",
+  "value": "1/32",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/15/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/48: scheduled passes of the whole deployment (planned)",
+  "value": 72,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/16/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/48: declared core budget",
+  "value": 103,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/16/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/48: budget as a share of the resident core count",
+  "value": "1/48",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/16/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/64: scheduled passes of the whole deployment (planned)",
+  "value": 87,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/17/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/64: declared core budget",
+  "value": 77,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/17/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/64: budget as a share of the resident core count",
+  "value": "1/64",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/17/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/96: scheduled passes of the whole deployment (planned)",
+  "value": 115,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/18/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/96: declared core budget",
+  "value": 52,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/18/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/96: budget as a share of the resident core count",
+  "value": "1/96",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/18/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/128: scheduled passes of the whole deployment (planned)",
+  "value": 143,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/19/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/128: declared core budget",
+  "value": 39,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/19/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/128: budget as a share of the resident core count",
+  "value": "1/128",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/19/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/192: scheduled passes of the whole deployment (planned)",
+  "value": 200,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/20/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/192: declared core budget",
+  "value": 26,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/20/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/192: budget as a share of the resident core count",
+  "value": "1/192",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/20/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/256: scheduled passes of the whole deployment (planned)",
+  "value": 264,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/21/passes",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/256: declared core budget",
+  "value": 20,
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/21/cores",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "ViT-Lite-7/4, dynamic weights 1/256: budget as a share of the resident core count",
+  "value": "1/256",
+  "source": "records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/21/d (the declared ladder, records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#declared_ladder)",
+  "record_sha256": "3a90dcb8e4da2ee84f33f09dd5657ddcc496c6a66d5f2dec34e2509b2e426325",
+  "basis": "a planned row: the planner's mapping and pass schedule alone, no execution, no comparison",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "output codes differing from the resident deployment on one compared budget row (the same count on each of the 19 rows drawn with a check)",
+  "value": "0 of 500,000",
+  "source": "derived: K10/<row>/outputs_differ = 0 of K10/<row>/outputs = 500000 on each of the 19 compared budget rows drawn (one value on every row), 8 rows in the comparison tables the check keys cite (K10/<row>; ledger:rbcheckrone, ledger:rbcheckdensenet, ledger:rbcheckpyramid, ledger:rbcheckvitop) and 11 rows in the collected table of the dense ladder (<row>/K10; records/frozen/routeb_budget_ladder_t1_20261120T183320/tiers/paper_locks/r20b/ladder/run/tables/t2/ladder_rows.jsonl, sha256 49413b9a306bec0b876c19a14279657ea4b66710b4888c929e770a5cb436469d; not ledger keys yet); the same fields summed over every budget row of Table III are ledger:routebinvariance",
+  "key": "rbcheckrone, rbcheckdensenet, rbcheckpyramid, rbcheckvitop",
+  "family": "data file",
+  "state": "value"
+ },
+ {
+  "what": "compared budget rows drawn with a check (executed budgets below the resident one)",
+  "value": 19,
+  "source": "data/fig_invariance.json#compared/rows_drawn: the rows with status equal, 8 under the check keys and 11 in the collected table (not ledger keys yet)",
+  "key": "rbcheckrone, rbcheckdensenet, rbcheckpyramid, rbcheckvitop",
+  "family": "data file",
+  "state": "value"
+ }
+]

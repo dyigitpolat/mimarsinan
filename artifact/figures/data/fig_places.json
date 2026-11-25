@@ -1,0 +1,1468 @@
+{
+ "figure": "fig_places",
+ "label": "fig:places",
+ "block": {
+  "instance": {
+   "value": "ViT-Lite-7/4",
+   "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:instance"
+  },
+  "record": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json",
+  "record_sha256": "edf0648be5f8d189ad6357650ba613f6a13494624673c1867eb167176c1a6f33",
+  "ops": [
+   {
+    "place": "host",
+    "label": "Norm",
+    "record_names": [
+     "blocks_0_pre_norm"
+    ],
+    "op_type": "LayerNorm",
+    "stages": [
+     4
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/whole_program/4",
+    "order": 0
+   },
+   {
+    "place": "cores",
+    "label": "Q, K, V",
+    "record_names": [
+     "blocks_0_self_attn_qkv"
+    ],
+    "stages": [
+     5,
+     6
+    ],
+    "segment": 1,
+    "passes": [
+     0,
+     1
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/0",
+    "order": 1
+   },
+   {
+    "place": "host",
+    "label": "Operand write",
+    "record_names": [
+     "matmul_1_operand_write",
+     "matmul_operand_write"
+    ],
+    "op_type": "OperandWrite",
+    "stages": [
+     7,
+     8
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/2",
+    "order": 2
+   },
+   {
+    "place": "operand",
+    "label": "QK$^{T}$",
+    "record_names": [
+     "matmul"
+    ],
+    "stages": [
+     9
+    ],
+    "segment": 2,
+    "passes": [
+     0
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/4",
+    "order": 3
+   },
+   {
+    "place": "host",
+    "label": "Softmax",
+    "record_names": [
+     "softmax"
+    ],
+    "op_type": "TensorBase.softmax",
+    "stages": [
+     10
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/5",
+    "order": 4
+   },
+   {
+    "place": "operand",
+    "label": "AV",
+    "record_names": [
+     "matmul_1"
+    ],
+    "stages": [
+     11
+    ],
+    "segment": 3,
+    "passes": [
+     0
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/6",
+    "order": 5
+   },
+   {
+    "place": "cores",
+    "label": "Projection",
+    "record_names": [
+     "blocks_0_self_attn_proj"
+    ],
+    "stages": [
+     11,
+     12
+    ],
+    "segment": 3,
+    "passes": [
+     0,
+     1
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/6",
+    "order": 6
+   },
+   {
+    "place": "host",
+    "label": "Add",
+    "record_names": [
+     "add_1"
+    ],
+    "op_type": "_operator.add",
+    "stages": [
+     13
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/8",
+    "order": 7
+   },
+   {
+    "place": "host",
+    "label": "Norm",
+    "record_names": [
+     "blocks_0_norm1"
+    ],
+    "op_type": "LayerNorm",
+    "stages": [
+     14
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/9",
+    "order": 8
+   },
+   {
+    "place": "cores",
+    "label": "MLP 1",
+    "record_names": [
+     "blocks_0_linear1"
+    ],
+    "stages": [
+     15,
+     16
+    ],
+    "segment": 4,
+    "passes": [
+     0,
+     1
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/10",
+    "order": 9
+   },
+   {
+    "place": "host",
+    "label": "GELU",
+    "record_names": [
+     "gelu"
+    ],
+    "op_type": "torch._C._nn.gelu",
+    "stages": [
+     17
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/12",
+    "order": 10
+   },
+   {
+    "place": "cores",
+    "label": "MLP 2",
+    "record_names": [
+     "blocks_0_linear2"
+    ],
+    "stages": [
+     18,
+     19
+    ],
+    "segment": 5,
+    "passes": [
+     0,
+     1
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/13",
+    "order": 11
+   },
+   {
+    "place": "host",
+    "label": "Add",
+    "record_names": [
+     "add_2"
+    ],
+    "op_type": "_operator.add",
+    "stages": [
+     20
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/15",
+    "order": 12
+   }
+  ],
+  "segments": [
+   {
+    "order": 1,
+    "record_segment": 1,
+    "ops": [
+     1
+    ],
+    "passes": 2,
+    "pass_ops": [
+     [
+      1
+     ],
+     [
+      1
+     ]
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=1]/pass (distinct values), /computes"
+   },
+   {
+    "order": 2,
+    "record_segment": 2,
+    "ops": [
+     3
+    ],
+    "passes": 1,
+    "pass_ops": [
+     [
+      3
+     ]
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=2]/pass (distinct values), /computes"
+   },
+   {
+    "order": 3,
+    "record_segment": 3,
+    "ops": [
+     5,
+     6
+    ],
+    "passes": 2,
+    "pass_ops": [
+     [
+      5,
+      6
+     ],
+     [
+      6
+     ]
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=3]/pass (distinct values), /computes"
+   },
+   {
+    "order": 4,
+    "record_segment": 4,
+    "ops": [
+     9
+    ],
+    "passes": 2,
+    "pass_ops": [
+     [
+      9
+     ],
+     [
+      9
+     ]
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=4]/pass (distinct values), /computes"
+   },
+   {
+    "order": 5,
+    "record_segment": 5,
+    "ops": [
+     11
+    ],
+    "passes": 2,
+    "pass_ops": [
+     [
+      11
+     ],
+     [
+      11
+     ]
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/block_0/*[segment=5]/pass (distinct values), /computes"
+   }
+  ],
+  "model": {
+   "kind": "layout",
+   "source": "(internal note withheld)",
+   "inserted": [
+    2
+   ],
+   "inserted_rule": "host stages of the types ['OperandWrite']: added by the toolchain",
+   "groups": [
+    {
+     "name": "Attention",
+     "ops": [
+      1,
+      3,
+      4,
+      5,
+      6
+     ],
+     "rule": "the operations from the first to the last layer named blocks_0_self_attn_*, less the operations the toolchain adds"
+    },
+    {
+     "name": "MLP",
+     "ops": [
+      9,
+      10,
+      11
+     ],
+     "rule": "the operations from the first to the last layer named blocks_0_linear*, less the operations the toolchain adds"
+    }
+   ],
+   "residuals": [
+    {
+     "add": 7,
+     "start": {
+      "side": "before",
+      "op": 0
+     },
+     "record_names": {
+      "add": "add_1",
+      "start": "blocks_0_pre_norm"
+     }
+    },
+    {
+     "add": 12,
+     "start": {
+      "side": "after",
+      "op": 8
+     },
+     "record_names": {
+      "add": "add_2",
+      "start": "blocks_0_norm1"
+     }
+    }
+   ]
+  },
+  "deployment": {
+   "cores": {
+    "value": 33,
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:declaration/cores/0/count",
+    "class": "DECLARED",
+    "key": "attnsegments"
+   },
+   "ledger": {
+    "key": "attnsegments",
+    "source": "ledger:attnsegments",
+    "value": "37, 29, 66",
+    "display": "37 segments, 29 in two passes, and 66 neural stages on 33 cores",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "geometry": {
+    "value": [
+     768,
+     768
+    ],
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:declaration/cores/0/max_axons, max_neurons"
+   },
+   "budget_fraction": {
+    "value": 0.5,
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:declaration/budget_attempts/0/fraction"
+   },
+   "widest_segment_tiles": {
+    "value": 65,
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:declaration/widest_segment_tiles"
+   },
+   "segments_of_program": {
+    "value": 37,
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/packed/segments"
+   },
+   "most_passes_of_a_segment": {
+    "value": 2,
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:pass_timeline/packed/max_passes_per_segment"
+   }
+  },
+  "mac_share": {
+   "on_cores": {
+    "key": "attnmacshare",
+    "source": "ledger:attnmacshare",
+    "value": "1.000",
+    "display": "100%",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "host_before_operand_cores": {
+    "key": "vitlitehostbefore",
+    "source": "ledger:vitlitehostbefore",
+    "value": "0.0595 to 0",
+    "display": "5.95% to 0",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "carried",
+    "label": "",
+    "tier": "carried",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "n2"
+   },
+   "weights": {
+    "value": 0.9405026544969532,
+    "percent": 94.05026544969533,
+    "display": "94.05%",
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/before_n2",
+    "class": "MEASURED",
+    "key": "attnmacshare,vitlitehostbefore",
+    "derivation": "100% (ledger key attnmacshare) minus 5.95% (ledger key vitlitehostbefore, 5.95% to 0: the share on the host CPU before operand cores) = 94.05%; the record field named as the source holds the same value"
+   },
+   "operand": {
+    "value": 0.059497345503046785,
+    "percent": 5.949734550304679,
+    "display": "5.95%",
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/lowered_product_macs over records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/total_macs",
+    "class": "MEASURED",
+    "key": "vitlitehostbefore"
+   },
+   "host": {
+    "value": 0,
+    "percent": 0.0,
+    "display": "0%",
+    "source": "records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/host_ops_by_kind_after/*/macs (sum) over records/frozen/n2_cl7_t1_20261107T093743/11_wave2/n2_attention/r5_rerun_fig1_data/fig1_vit_block.json:on_chip_mac_share/total_macs",
+    "class": "MEASURED"
+   }
+  },
+  "labels": {
+   "layers": {
+    "blocks_0_self_attn_qkv": "Q, K, V",
+    "matmul": "QK$^{T}$",
+    "matmul_1": "AV",
+    "blocks_0_self_attn_proj": "Projection",
+    "blocks_0_linear1": "MLP 1",
+    "blocks_0_linear2": "MLP 2"
+   },
+   "host": {
+    "LayerNorm": "Norm",
+    "OperandWrite": "Operand write",
+    "TensorBase.softmax": "Softmax",
+    "_operator.add": "Add",
+    "torch._C._nn.gelu": "GELU"
+   }
+  }
+ },
+ "census": {
+  "members_file": "records/figures_v2/data/fig_toolchain_1b.json",
+  "counts": {
+   "censusmembers": {
+    "key": "censusmembers",
+    "source": "ledger:censusmembers",
+    "value": "80",
+    "display": "80",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censusconvert": {
+    "key": "censusconvert",
+    "source": "ledger:censusconvert",
+    "value": "78 of 80",
+    "display": "78 of 80",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censusallcores": {
+    "key": "censusallcores",
+    "source": "ledger:censusallcores",
+    "value": "24",
+    "display": "24",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censushostshare": {
+    "key": "censushostshare",
+    "source": "ledger:censushostshare",
+    "value": "54",
+    "display": "54",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censusundecidable": {
+    "key": "censusundecidable",
+    "source": "ledger:censusundecidable",
+    "value": "2",
+    "display": "2",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censussilent": {
+    "key": "censussilent",
+    "source": "ledger:censussilent",
+    "value": "0",
+    "display": "0",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censusrefused": {
+    "key": "censusrefused",
+    "source": "ledger:censusrefused",
+    "value": "0",
+    "display": "0",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censusnotchecked": {
+    "key": "censusnotchecked",
+    "source": "ledger:censusnotchecked",
+    "value": "0",
+    "display": "0",
+    "unit": "",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censushostmin": {
+    "key": "censushostmin",
+    "source": "ledger:censushostmin",
+    "value": "0.8",
+    "display": "0.8%",
+    "unit": "%",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   },
+   "censushostmax": {
+    "key": "censushostmax",
+    "source": "ledger:censushostmax",
+    "value": "46.1",
+    "display": "46.1%",
+    "unit": "%",
+    "class": "MEASURED",
+    "status": "measured",
+    "form": "adopted",
+    "label": "",
+    "tier": "1",
+    "preliminary": false,
+    "range": null,
+    "replaced_by": "",
+    "head": "r5"
+   }
+  },
+  "condition": {
+   "label": "no operand cores",
+   "probe": {
+    "decompose_leaf_modules": false,
+    "entry": "probe_witness_conversion",
+    "packaging": "MVM",
+    "population": "torchvision"
+   },
+   "activation_kinds": [
+    "Contraction",
+    "MultiheadAttention"
+   ],
+   "activation_products_on_host": [
+    {
+     "family": "MaxViT",
+     "members": 1,
+     "kinds": [
+      "Contraction"
+     ],
+     "sources": [
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:67:outcome/host_mac_kinds"
+     ]
+    },
+    {
+     "family": "Swin",
+     "members": 3,
+     "kinds": [
+      "Contraction"
+     ],
+     "sources": [
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:78:outcome/host_mac_kinds",
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:100:outcome/host_mac_kinds",
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:71:outcome/host_mac_kinds"
+     ]
+    },
+    {
+     "family": "Swin V2",
+     "members": 3,
+     "kinds": [
+      "Contraction"
+     ],
+     "sources": [
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:179:outcome/host_mac_kinds",
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:176:outcome/host_mac_kinds",
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:177:outcome/host_mac_kinds"
+     ]
+    },
+    {
+     "family": "ViT",
+     "members": 5,
+     "kinds": [
+      "MultiheadAttention"
+     ],
+     "sources": [
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:80:outcome/host_mac_kinds",
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:186:outcome/host_mac_kinds",
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:189:outcome/host_mac_kinds",
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:181:outcome/host_mac_kinds",
+      "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:193:outcome/host_mac_kinds"
+     ]
+    }
+   ],
+   "ledger": {
+    "key": "vitbhostbefore",
+    "display": "not read on operand cores",
+    "reason": "NOT_ON_OPERAND_CORES"
+   }
+  },
+  "on_cores": [
+   {
+    "family": "VGG",
+    "count": 8,
+    "members": [
+     {
+      "member": "vgg11",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:82"
+     },
+     {
+      "member": "vgg11_bn",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:84"
+     },
+     {
+      "member": "vgg19",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:194"
+     },
+     {
+      "member": "vgg19_bn",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:196"
+     },
+     {
+      "member": "vgg16",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:197"
+     },
+     {
+      "member": "vgg16_bn",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:198"
+     },
+     {
+      "member": "vgg13",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:204"
+     },
+     {
+      "member": "vgg13_bn",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:205"
+     }
+    ]
+   },
+   {
+    "family": "ResNet",
+    "count": 5,
+    "members": [
+     {
+      "member": "resnet50",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:21"
+     },
+     {
+      "member": "resnet152",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:25"
+     },
+     {
+      "member": "resnet34",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:31"
+     },
+     {
+      "member": "resnet18",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:45"
+     },
+     {
+      "member": "resnet101",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:63"
+     }
+    ]
+   },
+   {
+    "family": "DenseNet",
+    "count": 4,
+    "members": [
+     {
+      "member": "densenet201",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:23"
+     },
+     {
+      "member": "densenet169",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:33"
+     },
+     {
+      "member": "densenet121",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:40"
+     },
+     {
+      "member": "densenet161",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:191"
+     }
+    ]
+   },
+   {
+    "family": "SqueezeNet",
+    "count": 2,
+    "members": [
+     {
+      "member": "squeezenet1_0",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:55"
+     },
+     {
+      "member": "squeezenet1_1",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:69"
+     }
+    ]
+   },
+   {
+    "family": "Wide ResNet",
+    "count": 2,
+    "members": [
+     {
+      "member": "wide_resnet50_2",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:74"
+     },
+     {
+      "member": "wide_resnet101_2",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:202"
+     }
+    ]
+   },
+   {
+    "family": "AlexNet",
+    "count": 1,
+    "members": [
+     {
+      "member": "alexnet",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:96"
+     }
+    ]
+   },
+   {
+    "family": "GoogLeNet",
+    "count": 1,
+    "members": [
+     {
+      "member": "googlenet",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:47"
+     }
+    ]
+   },
+   {
+    "family": "Inception-v3",
+    "count": 1,
+    "members": [
+     {
+      "member": "inception_v3",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:39"
+     }
+    ]
+   }
+  ],
+  "host_share": [
+   {
+    "family": "EfficientNetV2",
+    "count": 3,
+    "median_percent": 1.0125600798836596,
+    "min_percent": 0.7793455662948606,
+    "max_percent": 1.078704342761335,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "efficientnet_v2_l",
+      "percent": 0.7793455662948606,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:188",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_v2_m",
+      "percent": 1.0125600798836596,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:42",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_v2_s",
+      "percent": 1.078704342761335,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:73",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "ConvNeXt",
+    "count": 4,
+    "median_percent": 1.731700705876991,
+    "min_percent": 0.9980562323760507,
+    "max_percent": 2.358165983476796,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "convnext_large",
+      "percent": 0.9980562323760507,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:187",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "convnext_base",
+      "percent": 1.488926172852011,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:200",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "convnext_small",
+      "percent": 1.9744752389019717,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:51",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "convnext_tiny",
+      "percent": 2.358165983476796,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:22",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "ShuffleNetV2",
+    "count": 4,
+    "median_percent": 2.329180223572987,
+    "min_percent": 1.3715928077172947,
+    "max_percent": 3.954931211290827,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "shufflenet_v2_x2_0",
+      "percent": 1.3715928077172947,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:54",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "shufflenet_v2_x1_5",
+      "percent": 1.9895223573690841,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:61",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "shufflenet_v2_x1_0",
+      "percent": 2.6688380897768886,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:77",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "shufflenet_v2_x0_5",
+      "percent": 3.954931211290827,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:90",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "MaxViT",
+    "count": 1,
+    "median_percent": 3.7699390911201265,
+    "min_percent": 3.7699390911201265,
+    "max_percent": 3.7699390911201265,
+    "host_mac_kinds": [
+     "Contraction",
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "maxvit_t",
+      "percent": 3.7699390911201265,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:67",
+      "host_mac_kinds": [
+       "Contraction",
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "ResNeXt",
+    "count": 3,
+    "median_percent": 6.189079737466834,
+    "min_percent": 5.508041326920451,
+    "max_percent": 11.65671602535441,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "resnext50_32x4d",
+      "percent": 5.508041326920451,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:26",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "resnext101_64x4d",
+      "percent": 6.189079737466834,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:34",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "resnext101_32x8d",
+      "percent": 11.65671602535441,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:35",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "EfficientNet",
+    "count": 8,
+    "median_percent": 6.68211308773272,
+    "min_percent": 4.607246444643113,
+    "max_percent": 8.425446655177396,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "efficientnet_b7",
+      "percent": 4.607246444643113,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:190",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_b6",
+      "percent": 5.198531936268953,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:27",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_b5",
+      "percent": 5.6507963135159995,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:44",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_b4",
+      "percent": 6.380009713475985,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:72",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_b3",
+      "percent": 6.984216461989455,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:24",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_b2",
+      "percent": 7.7914446527723795,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:32",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_b1",
+      "percent": 8.407074301327143,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:36",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "efficientnet_b0",
+      "percent": 8.425446655177396,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:41",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "MobileNet",
+    "count": 3,
+    "median_percent": 7.9774391437578975,
+    "min_percent": 6.443780263869009,
+    "max_percent": 11.794985019028735,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "mobilenet_v2",
+      "percent": 6.443780263869009,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:48",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "mobilenet_v3_large",
+      "percent": 7.9774391437578975,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:56",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "mobilenet_v3_small",
+      "percent": 11.794985019028735,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:88",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "MnasNet",
+    "count": 4,
+    "median_percent": 9.322440026134284,
+    "min_percent": 6.745045927986943,
+    "max_percent": 13.774712172106977,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "mnasnet1_3",
+      "percent": 6.745045927986943,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:46",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "mnasnet1_0",
+      "percent": 8.416853635446875,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:50",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "mnasnet0_75",
+      "percent": 10.228026416821692,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:57",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "mnasnet0_5",
+      "percent": 13.774712172106977,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:66",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "RegNetY",
+    "count": 6,
+    "median_percent": 23.153013240477975,
+    "min_percent": 13.193777957988948,
+    "max_percent": 35.237635620216906,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "regnet_y_400mf",
+      "percent": 13.193777957988948,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:59",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_y_800mf",
+      "percent": 18.817301357690962,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:49",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_y_3_2gf",
+      "percent": 19.07859987900821,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:30",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_y_1_6gf",
+      "percent": 27.227426601947748,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:38",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_y_8gf",
+      "percent": 27.52245391039445,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:65",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_y_16gf",
+      "percent": 35.237635620216906,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:58",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "Swin",
+    "count": 3,
+    "median_percent": 34.013694328736406,
+    "min_percent": 33.94069685062674,
+    "max_percent": 34.35793369994486,
+    "host_mac_kinds": [
+     "ComputeAdapter",
+     "Contraction"
+    ],
+    "members": [
+     {
+      "member": "swin_b",
+      "percent": 33.94069685062674,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:78",
+      "host_mac_kinds": [
+       "ComputeAdapter",
+       "Contraction"
+      ]
+     },
+     {
+      "member": "swin_t",
+      "percent": 34.013694328736406,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:100",
+      "host_mac_kinds": [
+       "ComputeAdapter",
+       "Contraction"
+      ]
+     },
+     {
+      "member": "swin_s",
+      "percent": 34.35793369994486,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:71",
+      "host_mac_kinds": [
+       "ComputeAdapter",
+       "Contraction"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "Swin V2",
+    "count": 3,
+    "median_percent": 34.63950217337391,
+    "min_percent": 34.3383567670909,
+    "max_percent": 34.880121472209865,
+    "host_mac_kinds": [
+     "ComputeAdapter",
+     "Contraction"
+    ],
+    "members": [
+     {
+      "member": "swin_v2_b",
+      "percent": 34.3383567670909,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:179",
+      "host_mac_kinds": [
+       "ComputeAdapter",
+       "Contraction"
+      ]
+     },
+     {
+      "member": "swin_v2_t",
+      "percent": 34.63950217337391,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:176",
+      "host_mac_kinds": [
+       "ComputeAdapter",
+       "Contraction"
+      ]
+     },
+     {
+      "member": "swin_v2_s",
+      "percent": 34.880121472209865,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:177",
+      "host_mac_kinds": [
+       "ComputeAdapter",
+       "Contraction"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "ViT",
+    "count": 5,
+    "median_percent": 35.31526404767206,
+    "min_percent": 33.15027987531371,
+    "max_percent": 35.82762910082079,
+    "host_mac_kinds": [
+     "MultiheadAttention"
+    ],
+    "members": [
+     {
+      "member": "vit_b_32",
+      "percent": 33.15027987531371,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:80",
+      "host_mac_kinds": [
+       "MultiheadAttention"
+      ]
+     },
+     {
+      "member": "vit_l_32",
+      "percent": 33.52971353776834,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:186",
+      "host_mac_kinds": [
+       "MultiheadAttention"
+      ]
+     },
+     {
+      "member": "vit_l_16",
+      "percent": 35.31526404767206,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:189",
+      "host_mac_kinds": [
+       "MultiheadAttention"
+      ]
+     },
+     {
+      "member": "vit_h_14",
+      "percent": 35.45085136796138,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:181",
+      "host_mac_kinds": [
+       "MultiheadAttention"
+      ]
+     },
+     {
+      "member": "vit_b_16",
+      "percent": 35.82762910082079,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:193",
+      "host_mac_kinds": [
+       "MultiheadAttention"
+      ]
+     }
+    ]
+   },
+   {
+    "family": "RegNetX",
+    "count": 7,
+    "median_percent": 38.66587585859557,
+    "min_percent": 18.344570457177113,
+    "max_percent": 46.07332404690513,
+    "host_mac_kinds": [
+     "Conv2d"
+    ],
+    "members": [
+     {
+      "member": "regnet_x_800mf",
+      "percent": 18.344570457177113,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:52",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_x_400mf",
+      "percent": 21.75290188610635,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:62",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_x_1_6gf",
+      "percent": 24.73773432161849,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:43",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_x_3_2gf",
+      "percent": 38.66587585859557,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:37",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_x_8gf",
+      "percent": 42.36440998679401,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:29",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_x_32gf",
+      "percent": 44.39974172342901,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:201",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     },
+     {
+      "member": "regnet_x_16gf",
+      "percent": 46.07332404690513,
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:53",
+      "host_mac_kinds": [
+       "Conv2d"
+      ]
+     }
+    ]
+   }
+  ],
+  "undecidable": [
+   {
+    "family": "RegNetY",
+    "count": 2,
+    "members": [
+     {
+      "member": "regnet_y_128gf",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:28"
+     },
+     {
+      "member": "regnet_y_32gf",
+      "source": "records/frozen/census_baseline_t1_20261109T230030/tiers/fcap/runs/r5b_merged/records.jsonl:199"
+     }
+    ]
+   }
+  ]
+ }
+}

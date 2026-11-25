@@ -1,0 +1,2 @@
+# The repository ignores folders named data. The data files of this folder belong to the artifact.
+!data/

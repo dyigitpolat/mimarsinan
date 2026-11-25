@@ -1,0 +1,3101 @@
+{
+ "name": "fig_area",
+ "sources": {
+  "fig_area_data.json": {
+   "path": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json",
+   "sha256": "2bb6da01426e3218f623041541c790654d0534b5ccac6a48c4ae68343f1268dc"
+  },
+  "published.json": {
+   "path": "records/tiers/paper_v6/fix4/area/r2/published.json",
+   "sha256": "caa8ee69e65e35c53bc6a67b4e29bf505364e686c3a4118b9e433f597859381f"
+  },
+  "parity.json": {
+   "path": "records/tiers/fidelity/uarea/build_r6/w9/unit_facts.json",
+   "sha256": "16d1ebfa504c63e56804209071284f70f6fb3d177913e8e085b3f09de35ca926"
+  },
+  "fig_invariance.json": {
+   "path": "records/figures_v3/data/fig_invariance.json",
+   "sha256": "1cd4294c8fcd9f8f197d853df71fdb1929a26a8bceceba226e0668b01de13498"
+  }
+ },
+ "type_labels": {
+  "T1": "Digital spiking",
+  "T2a": "SRAM in-memory",
+  "T2d": "SRAM in-memory",
+  "T3": "Resistive",
+  "T4": "Phase-change"
+ },
+ "type_notes": {
+  "T2a": "analog",
+  "T2d": "digital"
+ },
+ "parity": [
+  {
+   "chip": "TrueNorth",
+   "label": "TrueNorth",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "type_note": null,
+   "scope": "core",
+   "cls": "anchor",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 28.0,
+   "published_mm2": 0.0936,
+   "estimate_mm2": 0.04052528067937848,
+   "ratio": 0.43296240042071027,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T1-TN-01",
+   "bib_key": "akopyan2015truenorth",
+   "internal_note_1": "(withheld)",
+   "kind": "measured",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-TN-01].value (Fig. 1 caption, p.1538 (PDF p.2))",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[0].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[0].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[0].class",
+   "mark_kind": "measured",
+   "strict_status": null
+  },
+  {
+   "chip": "ODIN",
+   "label": "ODIN",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "type_note": null,
+   "scope": "core",
+   "cls": "anchor",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 28.0,
+   "published_mm2": 0.0864,
+   "estimate_mm2": 0.15288401571301752,
+   "ratio": 1.7694909226043694,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T1-OD-01",
+   "bib_key": "frenkel2018a",
+   "internal_note_2": "(withheld)",
+   "kind": "measured",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-OD-01].value (Sec. III 'Specifications, measurements and benchmarking results', PDF p.6)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[1].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[1].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[1].class",
+   "mark_kind": "measured",
+   "strict_status": null
+  },
+  {
+   "chip": "MorphIC",
+   "label": "MorphIC",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "type_note": null,
+   "scope": "core (derived)",
+   "cls": "independent",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 65.0,
+   "published_mm2": 0.6743165,
+   "estimate_mm2": 1.0460094730007168,
+   "ratio": 1.5512144119278066,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T1-MO-01 + T1-MO-02",
+   "bib_key": null,
+   "internal_note_3": "(withheld)",
+   "kind": "derived",
+   "published_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[2].published_mm2 (derived from T1-MO-01, T1-MO-02)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[2].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[2].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[2].class",
+   "mark_kind": "derived",
+   "strict_status": null
+  },
+  {
+   "chip": "ReckOn",
+   "label": "ReckOn",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "type_note": null,
+   "scope": "core",
+   "cls": "independent",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 28.0,
+   "published_mm2": 0.45,
+   "estimate_mm2": 0.5428228498402022,
+   "ratio": 1.2062729996448938,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T1-RK-01",
+   "bib_key": null,
+   "internal_note_4": "(withheld)",
+   "kind": "measured",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-RK-01].value (Measurement section (Fig. 7 die microphotograph), PDF p.7; geometry PDF p.2)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[3].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[3].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[3].class",
+   "mark_kind": "measured",
+   "strict_status": null
+  },
+  {
+   "chip": "Loihi",
+   "label": "Loihi",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "type_note": null,
+   "scope": "core (vendor)",
+   "cls": "cited",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 14.0,
+   "published_mm2": 0.41,
+   "estimate_mm2": 0.28308233446528264,
+   "ratio": 0.6904447182080065,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T1-LO-05",
+   "bib_key": null,
+   "internal_note_5": "(withheld)",
+   "kind": "layout",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-LO-05].value (Table 2 'Comparison of Loihi to Loihi 2', row 'Core Area', column 'Loihi', p.7)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[4].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[4].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[4].class",
+   "mark_kind": "measured",
+   "strict_status": null
+  },
+  {
+   "chip": "jiang2023a macro",
+   "label": "SRAM macro",
+   "type": "T2d",
+   "type_label": "SRAM in-memory",
+   "type_note": "digital",
+   "scope": "macro",
+   "cls": "cited",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 16.0,
+   "published_mm2": 0.5,
+   "estimate_mm2": 0.2170189399930564,
+   "ratio": 0.4340378799861128,
+   "own_unit": true,
+   "own_unit_inputs": [
+    "T2-JI-01"
+   ],
+   "strict_ratio": [
+    0.4340378799861128,
+    0.4340378799861128
+   ],
+   "strict_readings": [
+    {
+     "reading": "jiang2023a macro: strict, priced (own printed units replaced by the type's defaults)",
+     "ratio": 0.4340378799861128
+    }
+   ],
+   "published_id": "T2-JI-02",
+   "bib_key": "jiang2023a",
+   "internal_note_6": "(withheld)",
+   "kind": "derived",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T2-JI-02].value (T2-JI-01)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[5].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[5].own_unit_inputs",
+   "strict_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[5].strict_form_ii",
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[5].class",
+   "mark_kind": "derived",
+   "strict_status": "priced"
+  },
+  {
+   "chip": "CAP-RAM",
+   "label": "CAP-RAM",
+   "type": "T2a",
+   "type_label": "SRAM in-memory",
+   "type_note": "analog",
+   "scope": "macro",
+   "cls": "independent",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 65.0,
+   "published_mm2": 0.179,
+   "estimate_mm2": 0.14613341694749102,
+   "ratio": 0.8163878041759275,
+   "own_unit": true,
+   "own_unit_inputs": [
+    "T2-CR-02",
+    "T2-CR-03"
+   ],
+   "strict_ratio": [
+    1.088287494347677,
+    1.088287494347677
+   ],
+   "strict_readings": [
+    {
+     "reading": "CAP-RAM: strict, a named refusal by converter kind; reading: the type's default kind sar_dedicated at 7.0 bits (its range lifted)",
+     "ratio": 1.088287494347677
+    }
+   ],
+   "published_id": "T2-CR-01",
+   "bib_key": null,
+   "internal_note_7": "(withheld)",
+   "kind": "measured",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T2-CR-01].value (Sec. IV 'Measurement results', PDF p.7)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[6].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[6].own_unit_inputs",
+   "strict_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[6].strict_form_ii",
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[6].class",
+   "mark_kind": "measured",
+   "strict_status": "named refusal"
+  },
+  {
+   "chip": "Jia 2020 processor",
+   "label": "Jia et al.",
+   "type": "T2a",
+   "type_label": "SRAM in-memory",
+   "type_note": "analog",
+   "scope": "die",
+   "cls": "independent",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": true,
+   "headline": false,
+   "node_nm": 65.0,
+   "published_mm2": 13.5,
+   "estimate_mm2": 2.9421019243781616,
+   "ratio": 0.21793347587986384,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T2-JA-01",
+   "bib_key": null,
+   "internal_note_8": "(withheld)",
+   "kind": "measured",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T2-JA-01].value (Fig. 10 'Processor measurement summary', PDF p.9; die dimensions Fig. 9 labels '4.5mm', '3mm' PDF p.8)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[7].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[7].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[7].class",
+   "mark_kind": "measured",
+   "strict_status": null
+  },
+  {
+   "chip": "NeuRRAM",
+   "label": "NeuRRAM",
+   "type": "T3",
+   "type_label": "Resistive",
+   "type_note": null,
+   "scope": "die",
+   "cls": "cited",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 130.0,
+   "published_mm2": 158.76,
+   "estimate_mm2": 68.73004961459999,
+   "ratio": 0.43291792400226753,
+   "own_unit": true,
+   "own_unit_inputs": [
+    "T3-NR-03"
+   ],
+   "strict_ratio": [
+    0.4286992203125239,
+    0.4286992203125239
+   ],
+   "strict_readings": [
+    {
+     "reading": "NeuRRAM: strict, a named refusal by converter kind; reading: the type's default kind sar_gsps at 6.0 bits (its range lifted)",
+     "ratio": 0.4286992203125239
+    }
+   ],
+   "published_id": "T3-NR-01",
+   "bib_key": "wan2022a",
+   "internal_note_9": "(withheld)",
+   "kind": "measured",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T3-NR-01].value (Extended Data Fig. 11c 'Micrograph of a 48-core NeuRRAM chip', PDF p.26 (labels read from the rendered page))",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[8].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[8].own_unit_inputs",
+   "strict_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[8].strict_form_ii",
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[8].class",
+   "mark_kind": "measured",
+   "strict_status": "named refusal"
+  },
+  {
+   "chip": "ISAAC (model)",
+   "label": "ISAAC",
+   "type": "T3",
+   "type_label": "Resistive",
+   "type_note": null,
+   "scope": "tile",
+   "cls": "anchor (model)",
+   "primary": true,
+   "silicon": false,
+   "scope_mismatch": false,
+   "headline": false,
+   "node_nm": 32.0,
+   "published_mm2": 0.372,
+   "estimate_mm2": 0.24901563040850008,
+   "ratio": 0.6693968559368282,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T3-IS-17",
+   "bib_key": "shafiee2016isaac",
+   "internal_note_10": "(withheld)",
+   "kind": "model",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T3-IS-17].value (Table I 'ISAAC Tile at 1.2 GHz, 0.37 mm2', row '1 Tile Total', column 'Area (mm2 )', PDF p.8)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[9].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[9].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[9].class",
+   "mark_kind": "model",
+   "strict_status": null
+  },
+  {
+   "chip": "PUMA (model)",
+   "label": "PUMA",
+   "type": "T3",
+   "type_label": "Resistive",
+   "type_note": null,
+   "scope": "tile",
+   "cls": "cited (model)",
+   "primary": true,
+   "silicon": false,
+   "scope_mismatch": false,
+   "headline": false,
+   "node_nm": 32.0,
+   "published_mm2": 0.479,
+   "estimate_mm2": 0.3790079981854772,
+   "ratio": 0.791248430449848,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T3-PU-05",
+   "bib_key": "ankit2019puma",
+   "internal_note_11": "(withheld)",
+   "kind": "model",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T3-PU-05].value (Table 3 'PUMA Hardware Characteristics' (PUMA Tile at 1GHz on 32nm Technology node), row 'Tile', column 'Area (mm2 )', PDF p.9)",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[10].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[10].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[10].class",
+   "mark_kind": "model",
+   "strict_status": null
+  },
+  {
+   "chip": "HERMES 64-core",
+   "label": "HERMES-64",
+   "type": "T4",
+   "type_label": "Phase-change",
+   "type_note": null,
+   "scope": "core",
+   "cls": "anchor",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 14.0,
+   "published_mm2": 1.392,
+   "estimate_mm2": 1.9643206528395472,
+   "ratio": 1.411149894281284,
+   "own_unit": false,
+   "own_unit_inputs": [],
+   "strict_ratio": null,
+   "strict_readings": null,
+   "published_id": "T4-HE-02",
+   "bib_key": "gallo2022a",
+   "internal_note_12": "(withheld)",
+   "kind": "measured",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T4-HE-02].value (Sec. 'Chip architecture', p.681 (published PDF p.2))",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[11].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[11].own_unit_inputs",
+   "strict_source": null,
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[11].class",
+   "mark_kind": "measured",
+   "strict_status": null
+  },
+  {
+   "chip": "HERMES-core (JSSC)",
+   "label": "HERMES core",
+   "type": "T4",
+   "type_label": "Phase-change",
+   "type_note": null,
+   "scope": "core",
+   "cls": "cited",
+   "primary": true,
+   "silicon": true,
+   "scope_mismatch": false,
+   "headline": true,
+   "node_nm": 14.0,
+   "published_mm2": 0.634,
+   "estimate_mm2": 1.3304432152380954,
+   "ratio": 2.0984908757698664,
+   "own_unit": true,
+   "own_unit_inputs": [
+    "T4-HC-02"
+   ],
+   "strict_ratio": [
+    2.7933384046867955,
+    2.7933384046867955
+   ],
+   "strict_readings": [
+    {
+     "reading": "HERMES-core (JSSC): strict, priced (own printed units replaced by the type's defaults)",
+     "ratio": 2.7933384046867955
+    }
+   ],
+   "published_id": "T4-HC-03",
+   "bib_key": "khaddamaljameh2022hermescorea",
+   "internal_note_13": "(withheld)",
+   "kind": "derived",
+   "published_source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T4-HC-03].value (Table I, column 'This work', p.1034 (PDF p.8; table read from the rendered page))",
+   "estimate_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[12].estimate_mm2",
+   "own_unit_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[12].own_unit_inputs",
+   "strict_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[12].strict_form_ii",
+   "cls_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_parity_points[12].class",
+   "mark_kind": "derived",
+   "strict_status": "priced"
+  }
+ ],
+ "stats": {
+  "n": 10,
+  "geomean": 0.9231780742822498,
+  "min": 0.43291792400226753,
+  "max": 2.0984908757698664,
+  "worst_factor": 2.309906669502467,
+  "within_2x": 6,
+  "within_3x": 10,
+  "types": 4,
+  "own_unit": 5,
+  "independent": 3,
+  "independent_min": 0.8163878041759275,
+  "independent_max": 1.5512144119278066,
+  "strict_worst_low": 2.3326377856973823,
+  "strict_worst_high": 4.377225657261292,
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_headline",
+  "strict_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#a_headline.strict_print_definition: the worst factor over the headline points when every own unit is replaced, at its most and least favorable reading (the print's definition, form (i), evaluated under the unit's rule)"
+ },
+ "stacks": [
+  {
+   "chip": "TrueNorth",
+   "label": "TrueNorth",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "scope": "core",
+   "silicon": true,
+   "published_total_um2": 93600.0,
+   "estimate_total_um2": 40525.280679378484,
+   "groups": {
+    "array": {
+     "published_um2": 15953.92,
+     "estimate_um2": 15553.690734427904,
+     "ratio": 0.9749134215558248,
+     "published_ids": [
+      "T1-TN-04",
+      "T1-TN-05"
+     ]
+    },
+    "periphery_logic_routing": {
+     "published_um2": 77646.08,
+     "estimate_um2": 24971.58994495058,
+     "ratio": 0.3216078641053171,
+     "published_ids": [
+      "T1-TN-01",
+      "T1-TN-06 (neuron block 2,900 inside)"
+     ]
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#b_component_stacks[0]"
+  },
+  {
+   "chip": "ODIN",
+   "label": "ODIN",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "scope": "core",
+   "silicon": true,
+   "published_total_um2": 86400.0,
+   "estimate_total_um2": 152884.01571301752,
+   "groups": {
+    "array": {
+     "published_um2": 56160.0,
+     "estimate_um2": 56588.514735765966,
+     "ratio": 1.007630248143981,
+     "published_ids": [
+      "T1-OD-03"
+     ]
+    },
+    "periphery_logic_routing": {
+     "published_um2": 30239.999999999996,
+     "estimate_um2": 96295.50097725156,
+     "ratio": 3.1843750323165203,
+     "published_ids": [
+      "T1-OD-03",
+      "T1-OD-04"
+     ]
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#b_component_stacks[1]"
+  },
+  {
+   "chip": "MorphIC",
+   "label": "MorphIC",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "scope": "chip w/o pads",
+   "silicon": true,
+   "published_total_um2": 2860000.0,
+   "estimate_total_um2": 4184037.8920028675,
+   "groups": {
+    "array": {
+     "published_um2": 1590000.0,
+     "estimate_um2": 1365542.1132861096,
+     "ratio": 0.8588315177900061,
+     "published_ids": [
+      "T1-MO-01"
+     ]
+    },
+    "periphery_logic_routing": {
+     "published_um2": 1270000.0,
+     "estimate_um2": 2818495.778716758,
+     "ratio": 2.2192880147376046,
+     "published_ids": [
+      "T1-MO-01",
+      "T1-MO-02 (routers 10.84%)"
+     ]
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#b_component_stacks[2]"
+  },
+  {
+   "chip": "CAP-RAM",
+   "label": "CAP-RAM",
+   "type": "T2a",
+   "type_label": "SRAM in-memory",
+   "scope": "macro",
+   "silicon": true,
+   "published_total_um2": 179000.0,
+   "estimate_total_um2": 146133.41694749103,
+   "groups": {
+    "array": {
+     "published_um2": 112054.0,
+     "estimate_um2": 101717.39938851792,
+     "ratio": 0.907753399151462,
+     "published_ids": [
+      "T2-CR-02"
+     ]
+    },
+    "converters": {
+     "published_um2": 14677.999999999998,
+     "estimate_um2": 13728.0,
+     "ratio": 0.9352772857337514,
+     "published_ids": [
+      "T2-CR-02"
+     ]
+    },
+    "periphery_logic_routing": {
+     "published_um2": 52268.0,
+     "estimate_um2": 30688.017558973108,
+     "ratio": 0.5871282153320025,
+     "published_ids": [
+      "T2-CR-02"
+     ]
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#b_component_stacks[3]"
+  },
+  {
+   "chip": "NeuRRAM",
+   "label": "NeuRRAM",
+   "type": "T3",
+   "type_label": "Resistive",
+   "scope": "die",
+   "silicon": true,
+   "published_total_um2": 158760000.0,
+   "estimate_total_um2": 68730049.61459999,
+   "groups": {
+    "array": {
+     "published_um2": 19051200.0,
+     "estimate_um2": 10875297.275182065,
+     "ratio": 0.570845787938926,
+     "published_ids": [
+      "T3-NR-02"
+     ]
+    },
+    "converters": {
+     "published_um2": 44452800.00000001,
+     "estimate_um2": 15605760.0,
+     "ratio": 0.3510636000431918,
+     "published_ids": [
+      "T3-NR-02 (neurons with their ADC)"
+     ]
+    },
+    "periphery_logic_routing": {
+     "published_um2": 95256000.0,
+     "estimate_um2": 42248992.33941792,
+     "ratio": 0.4435310357291711,
+     "published_ids": [
+      "T3-NR-02 (drivers 21, logic 19, registers 14, LFSR 6)"
+     ]
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#b_component_stacks[4]"
+  },
+  {
+   "chip": "ISAAC (model)",
+   "label": "ISAAC",
+   "type": "T3",
+   "type_label": "Resistive",
+   "scope": "tile",
+   "silicon": false,
+   "published_total_um2": 372000.0,
+   "estimate_total_um2": 249015.6304085001,
+   "groups": {
+    "array": {
+     "published_um2": 2400.0,
+     "estimate_um2": 6442.450944,
+     "ratio": 2.68435456,
+     "published_ids": [
+      "T3-IS-12",
+      "T3-IS-16"
+     ]
+    },
+    "converters": {
+     "published_um2": 115200.0,
+     "estimate_um2": 124800.0,
+     "ratio": 1.0833333333333333,
+     "published_ids": [
+      "T3-IS-09",
+      "T3-IS-16"
+     ]
+    },
+    "periphery_logic_routing": {
+     "published_um2": 254400.0,
+     "estimate_um2": 117773.17946450008,
+     "ratio": 0.4629448878321544,
+     "published_ids": [
+      "T3-IS-17"
+     ]
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#b_component_stacks[5]"
+  },
+  {
+   "chip": "HERMES 64-core",
+   "label": "HERMES-64",
+   "type": "T4",
+   "type_label": "Phase-change",
+   "scope": "core",
+   "silicon": true,
+   "published_total_um2": 1392000.0,
+   "estimate_total_um2": 1964320.652839547,
+   "groups": {
+    "array": {
+     "published_um2": 522000.0,
+     "estimate_um2": 770703.36,
+     "ratio": 1.4764432183908045,
+     "published_ids": [
+      "T4-HE-03",
+      "T4-HE-01",
+      "T4-HE-02"
+     ]
+    },
+    "converters": {
+     "published_um2": 391500.0,
+     "estimate_um2": 102400.0,
+     "ratio": 0.26155810983397193,
+     "published_ids": [
+      "T4-HE-03"
+     ]
+    },
+    "periphery_logic_routing": {
+     "published_um2": 478500.0,
+     "estimate_um2": 1091217.2928395472,
+     "ratio": 2.2804959098005164,
+     "published_ids": [
+      "T4-HE-03 (LDPU 29, PWM 2, programming < 2, link < 2)"
+     ]
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#b_component_stacks[6]"
+  }
+ ],
+ "ladder": [
+  {
+   "member": "C1.T-INT.b",
+   "label": "ResNet-18 w1",
+   "resident_cores": 21730,
+   "per_core_mm2": {
+    "256x256": 0.2359993461144795,
+    "256x64": 0.05899983652861987
+   },
+   "per_core_low_mm2": {
+    "256x256": 0.10788385484566236,
+    "256x64": 0.026970963711415594
+   },
+   "rows": [
+    {
+     "row": "C1.T-INT.b.B0.256x256",
+     "budget": "B0",
+     "plan": "Resident",
+     "status": "reference",
+     "geometry": "256x256",
+     "cores": 21730,
+     "passes": 0,
+     "share_den": 1,
+     "area_mm2": 5128.26579106764,
+     "area_low_mm2": 2344.3161657962432,
+     "cores_source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B0.256x256]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d1.25",
+     "budget": "1/1.25",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 17384,
+     "passes": 2,
+     "share_den": 1.25,
+     "area_mm2": 4102.612632854111,
+     "area_low_mm2": 1875.4529326369948,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/1/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/1/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d1.25]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d1.5",
+     "budget": "1/1.5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 14487,
+     "passes": 2,
+     "share_den": 1.5,
+     "area_mm2": 3418.9225271604646,
+     "area_low_mm2": 1562.9134051491105,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/2/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/2/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d1.5]"
+    },
+    {
+     "row": "C1.T-INT.b.B1.256x256",
+     "budget": "B1",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 10865,
+     "passes": 3,
+     "share_den": 2,
+     "area_mm2": 2564.13289553382,
+     "area_low_mm2": 1172.1580828981216,
+     "cores_source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B1.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B1.256x256]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d2.5",
+     "budget": "1/2.5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 8692,
+     "passes": 3,
+     "share_den": 2.5,
+     "area_mm2": 2051.3063164270557,
+     "area_low_mm2": 937.7264663184974,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/4/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/4/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d2.5]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d3",
+     "budget": "1/3",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 7244,
+     "passes": 4,
+     "share_den": 3,
+     "area_mm2": 1709.5792632532896,
+     "area_low_mm2": 781.5106445019783,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/5/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/5/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d3]"
+    },
+    {
+     "row": "C1.T-INT.b.L4.256x256",
+     "budget": "L4",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 5433,
+     "passes": 5,
+     "share_den": 4,
+     "area_mm2": 1282.184447439967,
+     "area_low_mm2": 586.1329833764837,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L4.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.L4.256x256]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d5",
+     "budget": "1/5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 4346,
+     "passes": 6,
+     "share_den": 5,
+     "area_mm2": 1025.6531582135278,
+     "area_low_mm2": 468.8632331592487,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/7/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/7/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d5]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d6",
+     "budget": "1/6",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 3622,
+     "passes": 7,
+     "share_den": 6,
+     "area_mm2": 854.7896316266448,
+     "area_low_mm2": 390.75532225098914,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/8/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/8/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d6]"
+    },
+    {
+     "row": "C1.T-INT.b.B2.256x256",
+     "budget": "B2",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 2717,
+     "passes": 9,
+     "share_den": 8,
+     "area_mm2": 641.2102233930407,
+     "area_low_mm2": 293.1204336156647,
+     "cores_source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B2.256x256]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d10",
+     "budget": "1/10",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 2173,
+     "passes": 11,
+     "share_den": 10,
+     "area_mm2": 512.8265791067639,
+     "area_low_mm2": 234.43161657962435,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/10/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/10/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d10]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d12",
+     "budget": "1/12",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 1811,
+     "passes": 13,
+     "share_den": 12,
+     "area_mm2": 427.3948158133224,
+     "area_low_mm2": 195.37766112549457,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/11/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/11/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d12]"
+    },
+    {
+     "row": "C1.T-INT.b.L16.256x256",
+     "budget": "L16",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 1359,
+     "passes": 17,
+     "share_den": 16,
+     "area_mm2": 320.7231113695776,
+     "area_low_mm2": 146.61415873525516,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L16.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.L16.256x256]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d20",
+     "budget": "1/20",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 1087,
+     "passes": 21,
+     "share_den": 20,
+     "area_mm2": 256.5312892264392,
+     "area_low_mm2": 117.269750217235,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/13/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/13/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d20]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d24",
+     "budget": "1/24",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 906,
+     "passes": 25,
+     "share_den": 24,
+     "area_mm2": 213.81540757971842,
+     "area_low_mm2": 97.74277249017011,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/14/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/14/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d24]"
+    },
+    {
+     "row": "C1.T-INT.b.L32.256x256",
+     "budget": "L32",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 680,
+     "passes": 33,
+     "share_den": 32,
+     "area_mm2": 160.47955535784604,
+     "area_low_mm2": 73.36102129505042,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L32.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/C1.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.L32.256x256]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d48",
+     "budget": "1/48",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 453,
+     "passes": 49,
+     "share_den": 48,
+     "area_mm2": 106.90770378985921,
+     "area_low_mm2": 48.871386245085056,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/16/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/16/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d48]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d64",
+     "budget": "1/64",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 340,
+     "passes": 65,
+     "share_den": 64,
+     "area_mm2": 80.23977767892302,
+     "area_low_mm2": 36.68051064752521,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/17/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/17/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d64]"
+    },
+    {
+     "row": "C1.T-INT.b.B5.256x64",
+     "budget": "B5",
+     "plan": "Study pick",
+     "status": "equal",
+     "geometry": "256x64",
+     "cores": 242,
+     "passes": 197,
+     "share_den": null,
+     "area_mm2": 14.277960439926009,
+     "area_low_mm2": 6.526973218162573,
+     "cores_source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B5.256x64/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/C1.T-INT.b.B5.256x64/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.B5.256x64]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d96",
+     "budget": "1/96",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 227,
+     "passes": 98,
+     "share_den": 96,
+     "area_mm2": 53.57185156798684,
+     "area_low_mm2": 24.48963504996536,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/18/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/18/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d96]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d128",
+     "budget": "1/128",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 170,
+     "passes": 131,
+     "share_den": 128,
+     "area_mm2": 40.11988883946151,
+     "area_low_mm2": 18.340255323762605,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/19/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/19/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d128]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d192",
+     "budget": "1/192",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 114,
+     "passes": 198,
+     "share_den": 192,
+     "area_mm2": 26.90392545705066,
+     "area_low_mm2": 12.29875945240551,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/20/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/20/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d192]"
+    },
+    {
+     "row": "C1.T-INT.b.planned.d256",
+     "budget": "1/256",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 85,
+     "passes": 262,
+     "share_den": 256,
+     "area_mm2": 20.059944419730755,
+     "area_low_mm2": 9.170127661881303,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/21/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/C1.T-INT.b/points/21/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=C1.T-INT.b].rows[row=C1.T-INT.b.planned.d256]"
+    }
+   ]
+  },
+  {
+   "member": "S1.T-INT.b",
+   "label": "DenseNet-BC k12",
+   "resident_cores": 60807,
+   "per_core_mm2": {
+    "256x256": 0.23599934611447948
+   },
+   "per_core_low_mm2": {
+    "256x256": 0.10788385484566237
+   },
+   "rows": [
+    {
+     "row": "S1.T-INT.b.B0.256x256",
+     "budget": "B0",
+     "plan": "Resident",
+     "status": "reference",
+     "geometry": "256x256",
+     "cores": 60807,
+     "passes": 0,
+     "share_den": 1,
+     "area_mm2": 14350.412239183153,
+     "area_low_mm2": 6560.093561600192,
+     "cores_source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.B0.256x256]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d1.25",
+     "budget": "1/1.25",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 48646,
+     "passes": 100,
+     "share_den": 1.25,
+     "area_mm2": 11480.424191084967,
+     "area_low_mm2": 5248.118002822092,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/1/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/1/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d1.25]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d1.5",
+     "budget": "1/1.5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 40538,
+     "passes": 100,
+     "share_den": 1.5,
+     "area_mm2": 9566.941492788768,
+     "area_low_mm2": 4373.395707733462,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/2/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/2/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d1.5]"
+    },
+    {
+     "row": "S1.T-INT.b.B1.256x256",
+     "budget": "B1",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 30404,
+     "passes": 100,
+     "share_den": 2,
+     "area_mm2": 7175.324119264634,
+     "area_low_mm2": 3280.1007227275186,
+     "cores_source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B1.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.B1.256x256]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d2.5",
+     "budget": "1/2.5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 24323,
+     "passes": 100,
+     "share_den": 2.5,
+     "area_mm2": 5740.212095542483,
+     "area_low_mm2": 2624.059001411046,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/4/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/4/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d2.5]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d3",
+     "budget": "1/3",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 20269,
+     "passes": 100,
+     "share_den": 3,
+     "area_mm2": 4783.470746394384,
+     "area_low_mm2": 2186.697853866731,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/5/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/5/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d3]"
+    },
+    {
+     "row": "S1.T-INT.b.L4.256x256",
+     "budget": "L4",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 15202,
+     "passes": 100,
+     "share_den": 4,
+     "area_mm2": 3587.662059632317,
+     "area_low_mm2": 1640.0503613637593,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L4.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.L4.256x256]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d5",
+     "budget": "1/5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 12162,
+     "passes": 100,
+     "share_den": 5,
+     "area_mm2": 2870.2240474442992,
+     "area_low_mm2": 1312.0834426329457,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/7/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/7/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d5]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d6",
+     "budget": "1/6",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 10135,
+     "passes": 100,
+     "share_den": 6,
+     "area_mm2": 2391.853372870249,
+     "area_low_mm2": 1093.4028688607882,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/8/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/8/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d6]"
+    },
+    {
+     "row": "S1.T-INT.b.B2.256x256",
+     "budget": "B2",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 7601,
+     "passes": 100,
+     "share_den": 8,
+     "area_mm2": 1793.8310298161584,
+     "area_low_mm2": 820.0251806818796,
+     "cores_source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/S1.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.B2.256x256]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d10",
+     "budget": "1/10",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 6081,
+     "passes": 100,
+     "share_den": 10,
+     "area_mm2": 1435.1120237221496,
+     "area_low_mm2": 656.0417213164728,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/10/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/10/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d10]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d12",
+     "budget": "1/12",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 5068,
+     "passes": 100,
+     "share_den": 12,
+     "area_mm2": 1196.0446861081818,
+     "area_low_mm2": 546.7553763578169,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/11/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/11/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d12]"
+    },
+    {
+     "row": "S1.T-INT.b.L16.256x256",
+     "budget": "L16",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 3801,
+     "passes": 100,
+     "share_den": 16,
+     "area_mm2": 897.0335145811365,
+     "area_low_mm2": 410.06653226836266,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L16.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.L16.256x256]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d20",
+     "budget": "1/20",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 3041,
+     "passes": 100,
+     "share_den": 20,
+     "area_mm2": 717.6740115341321,
+     "area_low_mm2": 328.0748025856593,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/13/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/13/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d20]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d24",
+     "budget": "1/24",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 2534,
+     "passes": 100,
+     "share_den": 24,
+     "area_mm2": 598.0223430540909,
+     "area_low_mm2": 273.37768817890844,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/14/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/14/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d24]"
+    },
+    {
+     "row": "S1.T-INT.b.L32.256x256",
+     "budget": "L32",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 1901,
+     "passes": 116,
+     "share_den": 32,
+     "area_mm2": 448.6347569636255,
+     "area_low_mm2": 205.08720806160417,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L32.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S1.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.L32.256x256]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d48",
+     "budget": "1/48",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 1267,
+     "passes": 116,
+     "share_den": 48,
+     "area_mm2": 299.01117152704546,
+     "area_low_mm2": 136.68884408945422,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/16/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/16/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d48]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d64",
+     "budget": "1/64",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 951,
+     "passes": 141,
+     "share_den": 64,
+     "area_mm2": 224.43537815487,
+     "area_low_mm2": 102.59754595822491,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/17/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/17/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d64]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d96",
+     "budget": "1/96",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 634,
+     "passes": 157,
+     "share_den": 96,
+     "area_mm2": 149.62358543658,
+     "area_low_mm2": 68.39836397214995,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/18/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/18/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d96]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d128",
+     "budget": "1/128",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 476,
+     "passes": 204,
+     "share_den": 128,
+     "area_mm2": 112.33568875049221,
+     "area_low_mm2": 51.35271490653529,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/19/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/19/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d128]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d192",
+     "budget": "1/192",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 317,
+     "passes": 248,
+     "share_den": 192,
+     "area_mm2": 74.81179271829,
+     "area_low_mm2": 34.199181986074976,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/20/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/20/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d192]"
+    },
+    {
+     "row": "S1.T-INT.b.planned.d256",
+     "budget": "1/256",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 238,
+     "passes": 323,
+     "share_den": 256,
+     "area_mm2": 56.167844375246105,
+     "area_low_mm2": 25.676357453267645,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/21/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S1.T-INT.b/points/21/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S1.T-INT.b].rows[row=S1.T-INT.b.planned.d256]"
+    }
+   ]
+  },
+  {
+   "member": "S4.T-INT.b",
+   "label": "PyramidNet-110",
+   "resident_cores": 87859,
+   "per_core_mm2": {
+    "256x256": 0.23599934611447948
+   },
+   "per_core_low_mm2": {
+    "256x256": 0.10788385484566237
+   },
+   "rows": [
+    {
+     "row": "S4.T-INT.b.B0.256x256",
+     "budget": "B0",
+     "plan": "Resident",
+     "status": "reference",
+     "geometry": "256x256",
+     "cores": 87859,
+     "passes": 0,
+     "share_den": 1,
+     "area_mm2": 20734.666550272053,
+     "area_low_mm2": 9478.56760288505,
+     "cores_source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B0.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.B0.256x256]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d1.25",
+     "budget": "1/1.25",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 70288,
+     "passes": 110,
+     "share_den": 1.25,
+     "area_mm2": 16587.922039694535,
+     "area_low_mm2": 7582.940389391917,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/1/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/1/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d1.25]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d1.5",
+     "budget": "1/1.5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 58573,
+     "passes": 110,
+     "share_den": 1.5,
+     "area_mm2": 13823.189699963406,
+     "area_low_mm2": 6319.081029874982,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/2/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/2/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d1.5]"
+    },
+    {
+     "row": "S4.T-INT.b.B1.256x256",
+     "budget": "B1",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 43930,
+     "passes": 110,
+     "share_den": 2,
+     "area_mm2": 10367.451274809084,
+     "area_low_mm2": 4739.337743369948,
+     "cores_source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B1.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B1.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.B1.256x256]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d2.5",
+     "budget": "1/2.5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 35144,
+     "passes": 110,
+     "share_den": 2.5,
+     "area_mm2": 8293.961019847267,
+     "area_low_mm2": 3791.4701946959585,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/4/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/4/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d2.5]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d3",
+     "budget": "1/3",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 29287,
+     "passes": 110,
+     "share_den": 3,
+     "area_mm2": 6911.71284965476,
+     "area_low_mm2": 3159.5944568649143,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/5/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/5/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d3]"
+    },
+    {
+     "row": "S4.T-INT.b.L4.256x256",
+     "budget": "L4",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 21965,
+     "passes": 110,
+     "share_den": 4,
+     "area_mm2": 5183.725637404542,
+     "area_low_mm2": 2369.668871684974,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L4.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L4.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.L4.256x256]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d5",
+     "budget": "1/5",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 17572,
+     "passes": 110,
+     "share_den": 5,
+     "area_mm2": 4146.980509923634,
+     "area_low_mm2": 1895.7350973479793,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/7/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/7/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d5]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d6",
+     "budget": "1/6",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 14644,
+     "passes": 110,
+     "share_den": 6,
+     "area_mm2": 3455.974424500437,
+     "area_low_mm2": 1579.8511703598797,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/8/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/8/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d6]"
+    },
+    {
+     "row": "S4.T-INT.b.B2.256x256",
+     "budget": "B2",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 10983,
+     "passes": 110,
+     "share_den": 8,
+     "area_mm2": 2591.9808183753285,
+     "area_low_mm2": 1184.8883777699098,
+     "cores_source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B2.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/S4.T-INT.b.B2.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.B2.256x256]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d10",
+     "budget": "1/10",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 8786,
+     "passes": 110,
+     "share_den": 10,
+     "area_mm2": 2073.490254961817,
+     "area_low_mm2": 947.8675486739896,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/10/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/10/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d10]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d12",
+     "budget": "1/12",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 7322,
+     "passes": 110,
+     "share_den": 12,
+     "area_mm2": 1727.9872122502186,
+     "area_low_mm2": 789.9255851799398,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/11/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/11/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d12]"
+    },
+    {
+     "row": "S4.T-INT.b.L16.256x256",
+     "budget": "L16",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 5492,
+     "passes": 110,
+     "share_den": 16,
+     "area_mm2": 1296.1084088607213,
+     "area_low_mm2": 592.4981308123778,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L16.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L16.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.L16.256x256]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d20",
+     "budget": "1/20",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 4393,
+     "passes": 110,
+     "share_den": 20,
+     "area_mm2": 1036.7451274809084,
+     "area_low_mm2": 473.9337743369948,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/13/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/13/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d20]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d24",
+     "budget": "1/24",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 3661,
+     "passes": 110,
+     "share_den": 24,
+     "area_mm2": 863.9936061251093,
+     "area_low_mm2": 394.9627925899699,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/14/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/14/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d24]"
+    },
+    {
+     "row": "S4.T-INT.b.L32.256x256",
+     "budget": "L32",
+     "plan": "Default schedule",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 2746,
+     "passes": 110,
+     "share_den": 32,
+     "area_mm2": 648.0542044303606,
+     "area_low_mm2": 296.2490654061889,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L32.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/S4.T-INT.b.L32.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.L32.256x256]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d48",
+     "budget": "1/48",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 1831,
+     "passes": 129,
+     "share_den": 48,
+     "area_mm2": 432.11480273561193,
+     "area_low_mm2": 197.53533822240777,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/16/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/16/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d48]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d64",
+     "budget": "1/64",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 1373,
+     "passes": 129,
+     "share_den": 64,
+     "area_mm2": 324.0271022151803,
+     "area_low_mm2": 148.12453270309445,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/17/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/17/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d64]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d96",
+     "budget": "1/96",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 916,
+     "passes": 166,
+     "share_den": 96,
+     "area_mm2": 216.1754010408632,
+     "area_low_mm2": 98.82161103862673,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/18/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/18/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d96]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d128",
+     "budget": "1/128",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 687,
+     "passes": 185,
+     "share_den": 128,
+     "area_mm2": 162.13155078064742,
+     "area_low_mm2": 74.11620827897006,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/19/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/19/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d128]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d192",
+     "budget": "1/192",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 458,
+     "passes": 258,
+     "share_den": 192,
+     "area_mm2": 108.0877005204316,
+     "area_low_mm2": 49.410805519313364,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/20/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/20/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d192]"
+    },
+    {
+     "row": "S4.T-INT.b.planned.d256",
+     "budget": "1/256",
+     "plan": "Default schedule",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 344,
+     "passes": 296,
+     "share_den": 256,
+     "area_mm2": 81.18377506338093,
+     "area_low_mm2": 37.11204606690786,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/21/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/S4.T-INT.b/points/21/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=S4.T-INT.b].rows[row=S4.T-INT.b.planned.d256]"
+    }
+   ]
+  },
+  {
+   "member": "ViT.T-VAL8-OP.b-op",
+   "label": "ViT-Lite-7/4, operand cores",
+   "resident_cores": 4909,
+   "per_core_mm2": {
+    "256x256": 0.471998692228959
+   },
+   "per_core_low_mm2": {
+    "256x256": 0.21329708706127143
+   },
+   "rows": [
+    {
+     "row": "ViT.T-VAL8-OP.b-op.B0.256x256",
+     "budget": "B0",
+     "plan": "Resident",
+     "status": "reference",
+     "geometry": "256x256",
+     "cores": 4909,
+     "passes": 0,
+     "share_den": 1,
+     "area_mm2": 2317.04158015196,
+     "area_low_mm2": 1047.0754003837815,
+     "cores_source": "records/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B0.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.B0.256x256]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d1.25",
+     "budget": "1/1.25",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 3928,
+     "passes": 44,
+     "share_den": 1.25,
+     "area_mm2": 1854.010863075351,
+     "area_low_mm2": 837.8309579766741,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/1/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/1/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d1.25]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d1.5",
+     "budget": "1/1.5",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 3273,
+     "passes": 44,
+     "share_den": 1.5,
+     "area_mm2": 1544.8517196653827,
+     "area_low_mm2": 698.1213659515413,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/2/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/2/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d1.5]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.B3.256x256",
+     "budget": "B3",
+     "plan": "Floor plan",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 2455,
+     "passes": 44,
+     "share_den": 2,
+     "area_mm2": 1158.7567894220942,
+     "area_low_mm2": 523.6443487354213,
+     "cores_source": "records/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B3.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/e2e/routeb/rows_r20/ViT.T-VAL8-OP.b-op.B3.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.B3.256x256]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d2.5",
+     "budget": "1/2.5",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 1964,
+     "passes": 44,
+     "share_den": 2.5,
+     "area_mm2": 927.0054315376755,
+     "area_low_mm2": 418.91547898833704,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/4/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/4/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d2.5]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d3",
+     "budget": "1/3",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 1637,
+     "passes": 45,
+     "share_den": 3,
+     "area_mm2": 772.6618591788058,
+     "area_low_mm2": 349.16733151930134,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/5/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/5/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d3]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.L4f.256x256",
+     "budget": "L4f",
+     "plan": "Floor plan",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 1228,
+     "passes": 45,
+     "share_den": 4,
+     "area_mm2": 579.6143940571616,
+     "area_low_mm2": 261.9288229112413,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L4f.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L4f.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.L4f.256x256]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d5",
+     "budget": "1/5",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 982,
+     "passes": 45,
+     "share_den": 5,
+     "area_mm2": 463.50271576883773,
+     "area_low_mm2": 209.45773949416852,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/7/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/7/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d5]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d6",
+     "budget": "1/6",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 819,
+     "passes": 45,
+     "share_den": 6,
+     "area_mm2": 386.56692893551735,
+     "area_low_mm2": 174.6903143031813,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/8/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/8/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d6]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.L8f.256x256",
+     "budget": "L8f",
+     "plan": "Floor plan",
+     "status": "equal",
+     "geometry": "256x256",
+     "cores": 614,
+     "passes": 45,
+     "share_den": 8,
+     "area_mm2": 289.8071970285808,
+     "area_low_mm2": 130.96441145562065,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L8f.256x256/result.json#deployment/declared_count",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/run/rows/ViT.T-VAL8-OP.b-op.L8f.256x256/result.json#record/schedule/pass_count",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.L8f.256x256]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d10",
+     "budget": "1/10",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 491,
+     "passes": 45,
+     "share_den": 10,
+     "area_mm2": 231.75135788441887,
+     "area_low_mm2": 104.72886974708426,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/10/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/10/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d10]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d12",
+     "budget": "1/12",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 410,
+     "passes": 45,
+     "share_den": 12,
+     "area_mm2": 193.51946381387316,
+     "area_low_mm2": 87.45180569512128,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/11/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/11/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d12]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d16",
+     "budget": "1/16",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 307,
+     "passes": 45,
+     "share_den": 16,
+     "area_mm2": 144.9035985142904,
+     "area_low_mm2": 65.48220572781032,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/12/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/12/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d16]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d20",
+     "budget": "1/20",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 246,
+     "passes": 45,
+     "share_den": 20,
+     "area_mm2": 116.11167828832389,
+     "area_low_mm2": 52.47108341707278,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/13/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/13/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d20]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d24",
+     "budget": "1/24",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 205,
+     "passes": 45,
+     "share_den": 24,
+     "area_mm2": 96.75973190693658,
+     "area_low_mm2": 43.72590284756064,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/14/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/14/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d24]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d32",
+     "budget": "1/32",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 154,
+     "passes": 52,
+     "share_den": 32,
+     "area_mm2": 72.68779860325968,
+     "area_low_mm2": 32.847751407435794,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/15/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/15/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d32]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d48",
+     "budget": "1/48",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 103,
+     "passes": 72,
+     "share_den": 48,
+     "area_mm2": 48.61586529958278,
+     "area_low_mm2": 21.969599967310955,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/16/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/16/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d48]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d64",
+     "budget": "1/64",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 77,
+     "passes": 87,
+     "share_den": 64,
+     "area_mm2": 36.34389930162984,
+     "area_low_mm2": 16.423875703717897,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/17/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/17/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d64]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d96",
+     "budget": "1/96",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 52,
+     "passes": 115,
+     "share_den": 96,
+     "area_mm2": 24.543931995905865,
+     "area_low_mm2": 11.091448527186113,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/18/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/18/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d96]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d128",
+     "budget": "1/128",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 39,
+     "passes": 143,
+     "share_den": 128,
+     "area_mm2": 18.407948996929395,
+     "area_low_mm2": 8.318586395389586,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/19/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/19/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d128]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d192",
+     "budget": "1/192",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 26,
+     "passes": 200,
+     "share_den": 192,
+     "area_mm2": 12.271965997952933,
+     "area_low_mm2": 5.545724263593057,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/20/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/20/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d192]"
+    },
+    {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d256",
+     "budget": "1/256",
+     "plan": "Floor plan",
+     "status": "planned",
+     "geometry": "256x256",
+     "cores": 20,
+     "passes": 264,
+     "share_den": 256,
+     "area_mm2": 9.439973844579178,
+     "area_low_mm2": 4.265941741225428,
+     "cores_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/21/cores",
+     "passes_source": "records/tiers/paper_locks/r20b/ladder/plan_paper/planned_ladder.json#members/ViT.T-VAL8-OP.b-op/points/21/passes",
+     "area_source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#c_area_against_passes[member=ViT.T-VAL8-OP.b-op].rows[row=ViT.T-VAL8-OP.b-op.planned.d256]"
+    }
+   ]
+  }
+ ],
+ "dies": [
+  {
+   "chip": "TrueNorth",
+   "label": "TrueNorth",
+   "type": "T1",
+   "mm2": 430.0,
+   "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-TN-02].value (Sec. VI-C 'Manufacturing Considerations', p.1550 (PDF p.14); core grid 64 x 64: Fig. 5 caption p.1542)"
+  },
+  {
+   "chip": "Loihi",
+   "label": "Loihi",
+   "type": "T1",
+   "mm2": 60.0,
+   "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T1-LO-01].value (Sec. Results, 'Silicon Realization', p.95 (PDF p.14))"
+  },
+  {
+   "chip": "NeuRRAM",
+   "label": "NeuRRAM",
+   "type": "T3",
+   "mm2": 158.76,
+   "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T3-NR-01].value (Extended Data Fig. 11c 'Micrograph of a 48-core NeuRRAM chip', PDF p.26 (labels read from the rendered page))"
+  },
+  {
+   "chip": "HERMES 64-core",
+   "label": "HERMES-64",
+   "type": "T4",
+   "mm2": 144.0,
+   "source": "records/tiers/paper_v6/fix4/area/r2/published.json#entries[id=T4-HE-01].value (Sec. 'Chip architecture', p.681 (published PDF p.2))"
+  }
+ ],
+ "facts": {
+  "units": {
+   "area": "mm2"
+  },
+  "arrays": {
+   "sram_chips": 5,
+   "sram_labels": [
+    "TrueNorth",
+    "ODIN",
+    "MorphIC",
+    "IMAGINE",
+    "CAP-RAM"
+   ],
+   "sram_max_deviation": 0.1411684822099939,
+   "sram_own_cell": 2,
+   "resistive_factor": 1.7517865965352248,
+   "resistive_chip": "NeuRRAM",
+   "phase_change_factor": 1.4764432183908045,
+   "phase_change_chip": "HERMES-64",
+   "rule": "array group of each fabricated chip's stack: estimate over published; SRAM: digital spiking and SRAM in-memory chips; the deviation is the largest |ratio - 1|; a factor is the larger of ratio and inverse (under the unit: each array at its published figure's scope; IMAGINE's array priced, its total a named refusal)"
+  },
+  "ladder": {
+   "C1.T-INT.b": {
+    "label": "ResNet-18 w1",
+    "resident": {
+     "row": "C1.T-INT.b.B0.256x256",
+     "budget": "B0",
+     "status": "reference",
+     "cores": 21730,
+     "passes": 0,
+     "area_mm2": 5128.26579106764,
+     "area_low_mm2": 2344.3161657962432,
+     "area_ratio": 1.0,
+     "cores_ratio": 1.0
+    },
+    "executed": {
+     "B1": {
+      "row": "C1.T-INT.b.B1.256x256",
+      "budget": "B1",
+      "status": "equal",
+      "cores": 10865,
+      "passes": 3,
+      "area_mm2": 2564.13289553382,
+      "area_low_mm2": 1172.1580828981216,
+      "area_ratio": 2.0,
+      "cores_ratio": 2.0
+     },
+     "L4": {
+      "row": "C1.T-INT.b.L4.256x256",
+      "budget": "L4",
+      "status": "equal",
+      "cores": 5433,
+      "passes": 5,
+      "area_mm2": 1282.184447439967,
+      "area_low_mm2": 586.1329833764837,
+      "area_ratio": 3.9996318792563965,
+      "cores_ratio": 3.999631879256396
+     },
+     "B2": {
+      "row": "C1.T-INT.b.B2.256x256",
+      "budget": "B2",
+      "status": "equal",
+      "cores": 2717,
+      "passes": 9,
+      "area_mm2": 641.2102233930407,
+      "area_low_mm2": 293.1204336156647,
+      "area_ratio": 7.997791682002211,
+      "cores_ratio": 7.997791682002208
+     },
+     "L16": {
+      "row": "C1.T-INT.b.L16.256x256",
+      "budget": "L16",
+      "status": "equal",
+      "cores": 1359,
+      "passes": 17,
+      "area_mm2": 320.7231113695776,
+      "area_low_mm2": 146.61415873525516,
+      "area_ratio": 15.989698307579104,
+      "cores_ratio": 15.989698307579102
+     },
+     "L32": {
+      "row": "C1.T-INT.b.L32.256x256",
+      "budget": "L32",
+      "status": "equal",
+      "cores": 680,
+      "passes": 33,
+      "area_mm2": 160.47955535784604,
+      "area_low_mm2": 73.36102129505042,
+      "area_ratio": 31.95588235294118,
+      "cores_ratio": 31.955882352941178
+     },
+     "B5": {
+      "row": "C1.T-INT.b.B5.256x64",
+      "budget": "B5",
+      "status": "equal",
+      "cores": 242,
+      "passes": 197,
+      "area_mm2": 14.277960439926009,
+      "area_low_mm2": 6.526973218162573,
+      "area_ratio": 359.17355371900834,
+      "cores_ratio": 89.79338842975207
+     }
+    },
+    "fewest_passes": {
+     "row": "C1.T-INT.b.planned.d1.5",
+     "budget": "1/1.5",
+     "status": "planned",
+     "cores": 14487,
+     "passes": 2,
+     "area_mm2": 3418.9225271604646,
+     "area_low_mm2": 1562.9134051491105,
+     "area_ratio": 1.4999654862980605,
+     "cores_ratio": 1.4999654862980603
+    },
+    "rule": "executed: rows compared equal to the resident outputs; fewest_passes: the smallest budget whose scheduled pass count is the network's smallest; area_ratio: resident area over the row's area"
+   },
+   "S1.T-INT.b": {
+    "label": "DenseNet-BC k12",
+    "resident": {
+     "row": "S1.T-INT.b.B0.256x256",
+     "budget": "B0",
+     "status": "reference",
+     "cores": 60807,
+     "passes": 0,
+     "area_mm2": 14350.412239183153,
+     "area_low_mm2": 6560.093561600192,
+     "area_ratio": 1.0,
+     "cores_ratio": 1.0
+    },
+    "executed": {
+     "B1": {
+      "row": "S1.T-INT.b.B1.256x256",
+      "budget": "B1",
+      "status": "equal",
+      "cores": 30404,
+      "passes": 100,
+      "area_mm2": 7175.324119264634,
+      "area_low_mm2": 3280.1007227275186,
+      "area_ratio": 1.9999671095908433,
+      "cores_ratio": 1.9999671095908433
+     },
+     "L4": {
+      "row": "S1.T-INT.b.L4.256x256",
+      "budget": "L4",
+      "status": "equal",
+      "cores": 15202,
+      "passes": 100,
+      "area_mm2": 3587.662059632317,
+      "area_low_mm2": 1640.0503613637593,
+      "area_ratio": 3.9999342191816867,
+      "cores_ratio": 3.9999342191816867
+     },
+     "B2": {
+      "row": "S1.T-INT.b.B2.256x256",
+      "budget": "B2",
+      "status": "equal",
+      "cores": 7601,
+      "passes": 100,
+      "area_mm2": 1793.8310298161584,
+      "area_low_mm2": 820.0251806818796,
+      "area_ratio": 7.999868438363373,
+      "cores_ratio": 7.999868438363373
+     },
+     "L16": {
+      "row": "S1.T-INT.b.L16.256x256",
+      "budget": "L16",
+      "status": "equal",
+      "cores": 3801,
+      "passes": 100,
+      "area_mm2": 897.0335145811365,
+      "area_low_mm2": 410.06653226836266,
+      "area_ratio": 15.997632202052092,
+      "cores_ratio": 15.997632202052092
+     },
+     "L32": {
+      "row": "S1.T-INT.b.L32.256x256",
+      "budget": "L32",
+      "status": "equal",
+      "cores": 1901,
+      "passes": 116,
+      "area_mm2": 448.6347569636255,
+      "area_low_mm2": 205.08720806160417,
+      "area_ratio": 31.986849026827986,
+      "cores_ratio": 31.986849026827986
+     }
+    },
+    "fewest_passes": {
+     "row": "S1.T-INT.b.planned.d24",
+     "budget": "1/24",
+     "status": "planned",
+     "cores": 2534,
+     "passes": 100,
+     "area_mm2": 598.0223430540909,
+     "area_low_mm2": 273.37768817890844,
+     "area_ratio": 23.99644830307814,
+     "cores_ratio": 23.996448303078136
+    },
+    "rule": "executed: rows compared equal to the resident outputs; fewest_passes: the smallest budget whose scheduled pass count is the network's smallest; area_ratio: resident area over the row's area"
+   },
+   "S4.T-INT.b": {
+    "label": "PyramidNet-110",
+    "resident": {
+     "row": "S4.T-INT.b.B0.256x256",
+     "budget": "B0",
+     "status": "reference",
+     "cores": 87859,
+     "passes": 0,
+     "area_mm2": 20734.666550272053,
+     "area_low_mm2": 9478.56760288505,
+     "area_ratio": 1.0,
+     "cores_ratio": 1.0
+    },
+    "executed": {
+     "B1": {
+      "row": "S4.T-INT.b.B1.256x256",
+      "budget": "B1",
+      "status": "equal",
+      "cores": 43930,
+      "passes": 110,
+      "area_mm2": 10367.451274809084,
+      "area_low_mm2": 4739.337743369948,
+      "area_ratio": 1.9999772365126338,
+      "cores_ratio": 1.9999772365126338
+     },
+     "L4": {
+      "row": "S4.T-INT.b.L4.256x256",
+      "budget": "L4",
+      "status": "equal",
+      "cores": 21965,
+      "passes": 110,
+      "area_mm2": 5183.725637404542,
+      "area_low_mm2": 2369.668871684974,
+      "area_ratio": 3.9999544730252676,
+      "cores_ratio": 3.9999544730252676
+     },
+     "B2": {
+      "row": "S4.T-INT.b.B2.256x256",
+      "budget": "B2",
+      "status": "equal",
+      "cores": 10983,
+      "passes": 110,
+      "area_mm2": 2591.9808183753285,
+      "area_low_mm2": 1184.8883777699098,
+      "area_ratio": 7.999544750978784,
+      "cores_ratio": 7.999544750978785
+     },
+     "L16": {
+      "row": "S4.T-INT.b.L16.256x256",
+      "budget": "L16",
+      "status": "equal",
+      "cores": 5492,
+      "passes": 110,
+      "area_mm2": 1296.1084088607213,
+      "area_low_mm2": 592.4981308123778,
+      "area_ratio": 15.9976329206118,
+      "cores_ratio": 15.9976329206118
+     },
+     "L32": {
+      "row": "S4.T-INT.b.L32.256x256",
+      "budget": "L32",
+      "status": "equal",
+      "cores": 2746,
+      "passes": 110,
+      "area_mm2": 648.0542044303606,
+      "area_low_mm2": 296.2490654061889,
+      "area_ratio": 31.9952658412236,
+      "cores_ratio": 31.9952658412236
+     }
+    },
+    "fewest_passes": {
+     "row": "S4.T-INT.b.L32.256x256",
+     "budget": "L32",
+     "status": "equal",
+     "cores": 2746,
+     "passes": 110,
+     "area_mm2": 648.0542044303606,
+     "area_low_mm2": 296.2490654061889,
+     "area_ratio": 31.9952658412236,
+     "cores_ratio": 31.9952658412236
+    },
+    "rule": "executed: rows compared equal to the resident outputs; fewest_passes: the smallest budget whose scheduled pass count is the network's smallest; area_ratio: resident area over the row's area"
+   },
+   "ViT.T-VAL8-OP.b-op": {
+    "label": "ViT-Lite-7/4, operand cores",
+    "resident": {
+     "row": "ViT.T-VAL8-OP.b-op.B0.256x256",
+     "budget": "B0",
+     "status": "reference",
+     "cores": 4909,
+     "passes": 0,
+     "area_mm2": 2317.04158015196,
+     "area_low_mm2": 1047.0754003837815,
+     "area_ratio": 1.0,
+     "cores_ratio": 1.0
+    },
+    "executed": {
+     "B3": {
+      "row": "ViT.T-VAL8-OP.b-op.B3.256x256",
+      "budget": "B3",
+      "status": "equal",
+      "cores": 2455,
+      "passes": 44,
+      "area_mm2": 1158.7567894220942,
+      "area_low_mm2": 523.6443487354213,
+      "area_ratio": 1.9995926680244402,
+      "cores_ratio": 1.99959266802444
+     },
+     "L4f": {
+      "row": "ViT.T-VAL8-OP.b-op.L4f.256x256",
+      "budget": "L4f",
+      "status": "equal",
+      "cores": 1228,
+      "passes": 45,
+      "area_mm2": 579.6143940571616,
+      "area_low_mm2": 261.9288229112413,
+      "area_ratio": 3.9975570032573295,
+      "cores_ratio": 3.997557003257329
+     },
+     "L8f": {
+      "row": "ViT.T-VAL8-OP.b-op.L8f.256x256",
+      "budget": "L8f",
+      "status": "equal",
+      "cores": 614,
+      "passes": 45,
+      "area_mm2": 289.8071970285808,
+      "area_low_mm2": 130.96441145562065,
+      "area_ratio": 7.995114006514659,
+      "cores_ratio": 7.995114006514658
+     }
+    },
+    "fewest_passes": {
+     "row": "ViT.T-VAL8-OP.b-op.planned.d2.5",
+     "budget": "1/2.5",
+     "status": "planned",
+     "cores": 1964,
+     "passes": 44,
+     "area_mm2": 927.0054315376755,
+     "area_low_mm2": 418.91547898833704,
+     "area_ratio": 2.49949083503055,
+     "cores_ratio": 2.49949083503055
+    },
+    "rule": "executed: rows compared equal to the resident outputs; fewest_passes: the smallest budget whose scheduled pass count is the network's smallest; area_ratio: resident area over the row's area"
+   }
+  },
+  "share_fit": {
+   "t1_chips": 5,
+   "t1_points": [
+    0.19843310017163815,
+    0.6069718358191285,
+    0.5462951354871372,
+    0.44673127116287853,
+    0.2858860721746701
+   ],
+   "t1_value": 0.3844942669024798,
+   "source": "records/tiers/fidelity/uarea/build_r6/w9/unit_facts.json#share_fit (fitted: the geometric mean of the chips' shares; Loihi 2: sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own)"
+  },
+  "headline_chips_per_type": {
+   "counts": {
+    "T1": 5,
+    "T2d": 1,
+    "T2a": 1,
+    "T3": 1,
+    "T4": 2
+   },
+   "rule": "headline points per technology type (T2a: SRAM in-memory, analog; T2d: SRAM in-memory, digital) (under the unit: the priced headline points)"
+  }
+ },
+ "ladder_readings": {
+  "main": "T2d: 262144 b x k_L 1.8848 x sigma(22) 0.1160 / eta 0.8524 / s 0.3246; chip = n x core / gamma 0.8777 (T1 dies, fallback)",
+  "low": "T1: 268288 b x sigma(22) 0.1160 / eta 0.8548 / s 0.3845",
+  "description": "generic_estimated_22nm"
+ },
+ "exploration": {
+  "points_with_cores": 27822,
+  "distinct_configurations": 2003,
+  "beyond_published_size": 12036,
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#e_exploration"
+ },
+ "forms": {
+  "ratio": "estimate over published",
+  "worst_factor": "largest of ratio and its inverse"
+ },
+ "named_refusals": [
+  {
+   "chip": "Loihi 2",
+   "label": "Loihi 2",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "scope": "core (vendor)",
+   "node_nm": 4.0,
+   "published_mm2": 0.21,
+   "published_id": "T1-L2-02",
+   "bib_key": null,
+   "kind": "layout",
+   "mark_kind": "measured",
+   "status": "named refusal",
+   "reason": "sigma(4 nm): the node lies outside the published 6T series (5 to 65 nm) and the description declares no bitcell of its own",
+   "refused_by": "rule",
+   "readings": [
+    {
+     "label": "Intel 7's HD cell (S-SRAM-10) declared: an upper bound on Intel 4's",
+     "role": "upper bound",
+     "cell_um2": 0.0312,
+     "estimate_mm2": 0.14931455619062303,
+     "ratio": 0.711021696145824,
+     "source": {
+      "file": "records/tiers/fidelity/uarea/build_r6/w9/unit_facts.json",
+      "pointer": "/loihi2_readings/readings/0"
+     },
+     "ratio_display": {
+      "template": "at most {a}",
+      "parts": {
+       "a": {
+        "value": 0.711021696145824,
+        "role": "upper",
+        "digits": 2,
+        "printed": "0.72",
+        "printed_value": 0.72
+       }
+      },
+      "text": "at most 0.72"
+     },
+     "mm2_display": {
+      "template": "at most {a} mm2",
+      "parts": {
+       "a": {
+        "value": 0.14931455619062303,
+        "role": "upper",
+        "digits": 3,
+        "printed": "0.150",
+        "printed_value": 0.15
+       }
+      },
+      "text": "at most 0.150 mm2"
+     }
+    },
+    {
+     "label": "the 6T series extrapolated below 5 nm (log-log through 5 and 7 nm)",
+     "role": "bounds nothing",
+     "cell_um2": 0.017776090445513346,
+     "estimate_mm2": 0.08507144409218591,
+     "ratio": 0.4051021147246948,
+     "source": {
+      "file": "records/tiers/fidelity/uarea/build_r6/w9/unit_facts.json",
+      "pointer": "/loihi2_readings/readings/1"
+     },
+     "ratio_display": {
+      "template": "{a}",
+      "parts": {
+       "a": {
+        "value": 0.4051021147246948,
+        "role": "point",
+        "digits": 3,
+        "printed": "0.405",
+        "printed_value": 0.405
+       }
+      },
+      "text": "0.405"
+     },
+     "mm2_display": {
+      "template": "{a} mm2",
+      "parts": {
+       "a": {
+        "value": 0.08507144409218591,
+        "role": "point",
+        "digits": 3,
+        "printed": "0.085",
+        "printed_value": 0.085
+       }
+      },
+      "text": "0.085 mm2"
+     }
+    }
+   ],
+   "today_index": 5,
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/0"
+  },
+  {
+   "chip": "IMAGINE",
+   "label": "IMAGINE",
+   "type": "T2a",
+   "type_label": "SRAM in-memory",
+   "scope": "macro",
+   "node_nm": 22.0,
+   "published_mm2": 0.196,
+   "published_id": "T2-IM-01",
+   "bib_key": null,
+   "kind": "measured",
+   "mark_kind": "measured",
+   "status": "named refusal",
+   "reason": "converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)",
+   "refused_by": "converter",
+   "readings": [
+    {
+     "label": "no converter area (the bound's open low edge)",
+     "role": "range low",
+     "converter_um2": 0.0,
+     "estimate_mm2": 0.21040730871547147,
+     "ratio": 1.0735066771197523,
+     "source": {
+      "file": "records/tiers/fidelity/uarea/build_r6/w9/unit_facts.json",
+      "pointer": "/refused/1/readings/0"
+     },
+     "ratio_display": {
+      "template": "{a}",
+      "parts": {
+       "a": {
+        "value": 1.0735066771197523,
+        "role": "lower",
+        "digits": 2,
+        "printed": "1.07",
+        "printed_value": 1.07
+       }
+      },
+      "text": "1.07"
+     },
+     "mm2_display": {
+      "template": "{a} mm2",
+      "parts": {
+       "a": {
+        "value": 0.21040730871547147,
+        "role": "lower",
+        "digits": 3,
+        "printed": "0.210",
+        "printed_value": 0.21
+       }
+      },
+      "text": "0.210 mm2"
+     }
+    },
+    {
+     "label": "the type's default kind sar_dedicated at 8.0 bits (its range lifted)",
+     "role": "range high",
+     "converter_um2": 739.269911780849,
+     "estimate_mm2": 0.27723396740752565,
+     "ratio": 1.4144590173853349,
+     "source": {
+      "file": "records/tiers/fidelity/uarea/build_r6/w9/unit_facts.json",
+      "pointer": "/refused/1/readings/1"
+     },
+     "ratio_display": {
+      "template": "{a}",
+      "parts": {
+       "a": {
+        "value": 1.4144590173853349,
+        "role": "upper",
+        "digits": 2,
+        "printed": "1.42",
+        "printed_value": 1.42
+       }
+      },
+      "text": "1.42"
+     },
+     "mm2_display": {
+      "template": "{a} mm2",
+      "parts": {
+       "a": {
+        "value": 0.27723396740752565,
+        "role": "upper",
+        "digits": 3,
+        "printed": "0.278",
+        "printed_value": 0.278
+       }
+      },
+      "text": "0.278 mm2"
+     }
+    }
+   ],
+   "today_index": 7,
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/a_named_refusals/1"
+  }
+ ],
+ "stacks_all": [
+  {
+   "chip": "TrueNorth",
+   "label": "TrueNorth",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "scope": "core",
+   "silicon": true,
+   "published_total_um2": 93600.0,
+   "estimate_total_um2": 40525.280679378484,
+   "groups": {
+    "array": {
+     "published_um2": 15953.92,
+     "estimate_um2": 15553.690734427904,
+     "ratio": 0.9749134215558248,
+     "published_ids": [
+      "T1-TN-04",
+      "T1-TN-05"
+     ],
+     "status": "priced"
+    },
+    "periphery_logic_routing": {
+     "published_um2": 77646.08,
+     "estimate_um2": 24971.58994495058,
+     "ratio": 0.3216078641053171,
+     "published_ids": [
+      "T1-TN-01",
+      "T1-TN-06 (neuron block 2,900 inside)"
+     ],
+     "status": "priced"
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/0",
+   "stack_status": "priced"
+  },
+  {
+   "chip": "ODIN",
+   "label": "ODIN",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "scope": "core",
+   "silicon": true,
+   "published_total_um2": 86400.0,
+   "estimate_total_um2": 152884.01571301752,
+   "groups": {
+    "array": {
+     "published_um2": 56160.0,
+     "estimate_um2": 56588.514735765966,
+     "ratio": 1.007630248143981,
+     "published_ids": [
+      "T1-OD-03"
+     ],
+     "status": "priced"
+    },
+    "periphery_logic_routing": {
+     "published_um2": 30239.999999999996,
+     "estimate_um2": 96295.50097725156,
+     "ratio": 3.1843750323165203,
+     "published_ids": [
+      "T1-OD-03",
+      "T1-OD-04"
+     ],
+     "status": "priced"
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/1",
+   "stack_status": "priced"
+  },
+  {
+   "chip": "MorphIC",
+   "label": "MorphIC",
+   "type": "T1",
+   "type_label": "Digital spiking",
+   "scope": "chip w/o pads",
+   "silicon": true,
+   "published_total_um2": 2860000.0,
+   "estimate_total_um2": 4184037.8920028675,
+   "groups": {
+    "array": {
+     "published_um2": 1590000.0,
+     "estimate_um2": 1365542.1132861096,
+     "ratio": 0.8588315177900061,
+     "published_ids": [
+      "T1-MO-01"
+     ],
+     "status": "priced"
+    },
+    "periphery_logic_routing": {
+     "published_um2": 1270000.0,
+     "estimate_um2": 2818495.778716758,
+     "ratio": 2.2192880147376046,
+     "published_ids": [
+      "T1-MO-01",
+      "T1-MO-02 (routers 10.84%)"
+     ],
+     "status": "priced"
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/2",
+   "stack_status": "priced"
+  },
+  {
+   "chip": "CAP-RAM",
+   "label": "CAP-RAM",
+   "type": "T2a",
+   "type_label": "SRAM in-memory",
+   "scope": "macro",
+   "silicon": true,
+   "published_total_um2": 179000.0,
+   "estimate_total_um2": 146133.41694749103,
+   "groups": {
+    "array": {
+     "published_um2": 112054.0,
+     "estimate_um2": 101717.39938851792,
+     "ratio": 0.907753399151462,
+     "published_ids": [
+      "T2-CR-02"
+     ],
+     "status": "priced"
+    },
+    "converters": {
+     "published_um2": 14677.999999999998,
+     "estimate_um2": 13728.0,
+     "ratio": 0.9352772857337514,
+     "published_ids": [
+      "T2-CR-02"
+     ],
+     "status": "priced"
+    },
+    "periphery_logic_routing": {
+     "published_um2": 52268.0,
+     "estimate_um2": 30688.017558973108,
+     "ratio": 0.5871282153320025,
+     "published_ids": [
+      "T2-CR-02"
+     ],
+     "status": "priced"
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/3",
+   "stack_status": "priced"
+  },
+  {
+   "chip": "IMAGINE",
+   "label": "IMAGINE",
+   "type": "T2a",
+   "type_label": "SRAM in-memory",
+   "scope": "macro",
+   "silicon": true,
+   "published_total_um2": 196000.0,
+   "estimate_total_um2": null,
+   "groups": {
+    "array": {
+     "published_um2": 145040.0,
+     "estimate_um2": 148968.3745705538,
+     "ratio": 1.0270847667578171,
+     "published_ids": [
+      "T2-IM-02"
+     ],
+     "status": "priced"
+    },
+    "converters": {
+     "published_um2": 9800.0,
+     "estimate_um2": null,
+     "ratio": null,
+     "published_ids": [
+      "T2-IM-03 (upper bound)"
+     ],
+     "status": "named refusal",
+     "reason": "converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)"
+    },
+    "periphery_logic_routing": {
+     "published_um2": 41160.0,
+     "estimate_um2": null,
+     "ratio": null,
+     "published_ids": [
+      "T2-IM-02",
+      "T2-IM-03"
+     ],
+     "status": "named refusal",
+     "reason": "converter kind sar_bitcell_reusing: no published unit area remains (outside the held-out chip)"
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/4",
+   "stack_status": "named refusal"
+  },
+  {
+   "chip": "NeuRRAM",
+   "label": "NeuRRAM",
+   "type": "T3",
+   "type_label": "Resistive",
+   "scope": "die",
+   "silicon": true,
+   "published_total_um2": 158760000.0,
+   "estimate_total_um2": 68730049.61459999,
+   "groups": {
+    "array": {
+     "published_um2": 19051200.0,
+     "estimate_um2": 10875297.275182065,
+     "ratio": 0.570845787938926,
+     "published_ids": [
+      "T3-NR-02"
+     ],
+     "status": "priced"
+    },
+    "converters": {
+     "published_um2": 44452800.00000001,
+     "estimate_um2": 15605760.0,
+     "ratio": 0.3510636000431918,
+     "published_ids": [
+      "T3-NR-02 (neurons with their ADC)"
+     ],
+     "status": "priced"
+    },
+    "periphery_logic_routing": {
+     "published_um2": 95256000.0,
+     "estimate_um2": 42248992.33941792,
+     "ratio": 0.4435310357291711,
+     "published_ids": [
+      "T3-NR-02 (drivers 21, logic 19, registers 14, LFSR 6)"
+     ],
+     "status": "priced"
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/5",
+   "stack_status": "priced"
+  },
+  {
+   "chip": "ISAAC (model)",
+   "label": "ISAAC",
+   "type": "T3",
+   "type_label": "Resistive",
+   "scope": "tile",
+   "silicon": false,
+   "published_total_um2": 372000.0,
+   "estimate_total_um2": 249015.6304085001,
+   "groups": {
+    "array": {
+     "published_um2": 2400.0,
+     "estimate_um2": 6442.450944,
+     "ratio": 2.68435456,
+     "published_ids": [
+      "T3-IS-12",
+      "T3-IS-16"
+     ],
+     "status": "priced"
+    },
+    "converters": {
+     "published_um2": 115200.0,
+     "estimate_um2": 124800.0,
+     "ratio": 1.0833333333333333,
+     "published_ids": [
+      "T3-IS-09",
+      "T3-IS-16"
+     ],
+     "status": "priced"
+    },
+    "periphery_logic_routing": {
+     "published_um2": 254400.0,
+     "estimate_um2": 117773.17946450008,
+     "ratio": 0.4629448878321544,
+     "published_ids": [
+      "T3-IS-17"
+     ],
+     "status": "priced"
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/6",
+   "stack_status": "priced"
+  },
+  {
+   "chip": "HERMES 64-core",
+   "label": "HERMES-64",
+   "type": "T4",
+   "type_label": "Phase-change",
+   "scope": "core",
+   "silicon": true,
+   "published_total_um2": 1392000.0,
+   "estimate_total_um2": 1964320.652839547,
+   "groups": {
+    "array": {
+     "published_um2": 522000.0,
+     "estimate_um2": 770703.36,
+     "ratio": 1.4764432183908045,
+     "published_ids": [
+      "T4-HE-03",
+      "T4-HE-01",
+      "T4-HE-02"
+     ],
+     "status": "priced"
+    },
+    "converters": {
+     "published_um2": 391500.0,
+     "estimate_um2": 102400.0,
+     "ratio": 0.26155810983397193,
+     "published_ids": [
+      "T4-HE-03"
+     ],
+     "status": "priced"
+    },
+    "periphery_logic_routing": {
+     "published_um2": 478500.0,
+     "estimate_um2": 1091217.2928395472,
+     "ratio": 2.2804959098005164,
+     "published_ids": [
+      "T4-HE-03 (LDPU 29, PWM 2, programming < 2, link < 2)"
+     ],
+     "status": "priced"
+    }
+   },
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_all/7",
+   "stack_status": "priced"
+  }
+ ],
+ "stacks_axis": {
+  "longest_estimate_ratio": 1.7694909226043694,
+  "chip": "ODIN",
+  "axis_end_multiple": 2,
+  "over": "the drawn stacks (silicon): each estimate total over its published total",
+  "rule": "panel (b)'s axis ends at the next whole multiple of the published total that covers the longest estimate bar, and at 2 at least",
+  "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/b_stacks_axis"
+ },
+ "displays": {
+  "focal_label": {
+   "template": "{n} chips and macros, factor {f} at worst",
+   "parts": {
+    "n": {
+     "value": 10,
+     "role": "count",
+     "digits": 0,
+     "printed": "10",
+     "printed_value": 10,
+     "source": {
+      "file": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_r2.json",
+      "pointer": "/stats/n"
+     }
+    },
+    "f": {
+     "value": 2.309906669502467,
+     "role": "upper",
+     "digits": 2,
+     "printed": "2.31",
+     "printed_value": 2.31,
+     "source": {
+      "file": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_r2.json",
+      "pointer": "/stats/worst_factor"
+     }
+    }
+   },
+   "text": "10 chips and macros, factor 2.31 at worst",
+   "source": "records/tiers/fidelity/uarea/build_r6/w9_paper_644b4c3bc5d7/k02/fig_area_unit_data_r2.json#/print_bounds/focal_label"
+  },
+  "rule": "One display rule. An upper end (a 'within' or 'at most' bound, a range's high end) is rounded up at its printed digits, a lower end (a range's low end) is rounded down, a point value is rounded to the nearest, and a count prints whole (scripts/displays.py, part)."
+ }
+}
