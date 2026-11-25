@@ -465,7 +465,7 @@ factor and therefore under-counts ISAAC by **8×**.
 |---|---|
 | `src/mimarsinan/mapping/platform/imc_platforms_literature.py` (lines 60–71) | `isaac_like` IMCPlatform geometry + provenance quote |
 | `src/mimarsinan/deployment_record/platform_physics/conversion.py` (lines 43–68, 96–103) | `bit_sliced_crossbar` conversion model, whose docstring names ISAAC |
-| `/home/yigit/backups/se_review_copy/papers/structured_elimination_aaai/research_artifacts/13_chip_geometries.json` | the extraction card the registry entry is transcribed from (outside this repo) |
+| `papers/structured_elimination_aaai/research_artifacts/13_chip_geometries.json` (a backup copy of the research repository) | the extraction card the registry entry is transcribed from (outside this repo) |
 | `src/mimarsinan/deployment_record/platform_physics/profiles/` | **no `isaac.json` exists yet** (only `truenorth`, `loihi`, `generic_estimated_22nm`) |
 
 ### 5.2 Value-by-value cross-check of `isaac_like`

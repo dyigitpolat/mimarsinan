@@ -88,7 +88,7 @@ prototype scripts in scratch `wsy/`, §5.0):**
 Prototype provenance: `wsy_probe_lif_envelope.py`, `wsy_exact_qat_proto.py`,
 `wsy_exact_qat_cascade.py`, `wsy_e2_retimed_eval.py` + result JSONs + arm
 state dicts in the session scratch directory
-(`/tmp/claude-1005/-home-yigit-repos-research-stuff-mimarsinan/11224c9e-f926-4cb5-a527-2d0211f4bd25/scratchpad/wsy/`);
+(`wsy/`);
 every forward goes through the repo modules
 (`LIFActivation`, `SegmentForwardDriver`, `uniform_spike_train`,
 `apply_lif_half_step_bias_compensation`, `NormalizationAwarePerceptronQuantization`);

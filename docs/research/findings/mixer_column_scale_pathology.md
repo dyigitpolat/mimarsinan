@@ -23,7 +23,7 @@ nn.Identity()` in both mixer cores; no skip connections anywhere;
    below.
 
 Everything below is evidence-first: campaign logs under
-`/home/yigit/.slurmech/workspaces/mimarsinan-xlog1/runs/<run>/artifacts/stdout.log`;
+`~/.slurmech/workspaces/<profile>/runs/<run>/artifacts/stdout.log`;
 prototype scripts and raw outputs archived at
 `docs/research/findings/mixer_scale_pathology_artifacts/` (`proto.py`,
 `qat_probe.py`, `clipped_proj.py`, `results.json`, `qat_results.json`,

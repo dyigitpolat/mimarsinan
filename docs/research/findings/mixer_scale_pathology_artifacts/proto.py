@@ -25,7 +25,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-sys.path.insert(0, "/home/yigit/repos/research_stuff/mimarsinan/src")
+_REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
+sys.path.insert(0, os.path.join(_REPO, "src"))
 from mimarsinan.models.spiking.wire_semantics import (  # noqa: E402
     ttfs_quantized_staircase,
     ttfs_grid_quantize,
@@ -35,7 +36,7 @@ from mimarsinan.models.lenet5 import LeNet5  # noqa: E402
 
 DEVICE = torch.device("cuda:0")
 OUT = os.path.dirname(os.path.abspath(__file__))
-DATA = "/home/yigit/repos/research_stuff/mimarsinan/datasets"
+DATA = os.path.join(_REPO, "datasets")
 torch.manual_seed(0)
 
 # ---------------------------------------------------------------- data

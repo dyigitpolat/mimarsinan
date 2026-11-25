@@ -53,8 +53,7 @@ training-free repairs.
   grid-steps-times-elapsed-cycles; two-scale shrinks the grid step where the
   price is highest (the bias row), θ̂ absorbs what remains at the crossing.
 
-Prototype (nothing under `src/` was modified):
-`/tmp/claude-1005/-home-yigit-repos-research-stuff/11224c9e-f926-4cb5-a527-2d0211f4bd25/scratchpad/m2/`
+Prototype (nothing under `src/` was modified): a scratch directory, `m2/`
 — `artifact_repair.py` (real lenet5 artifacts, hook-instrumented, framework
 forward + framework NAPQ class), `proto2.py` (controlled 7-hop cascade-FT MLP,
 kernel-faithful reimplementation, sanity-asserted against the differentiable

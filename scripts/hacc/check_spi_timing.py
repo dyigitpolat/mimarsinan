@@ -32,7 +32,7 @@ It prints the setup and hold slack of every SCK clock and its master for the rec
     python3 scripts/hacc/check_spi_timing.py <summary.rpt> [--expect-sck N] [--json out.json]
 
 Exit 0: PASS. Exit 1: FAIL (each reason on its own line). Exit 2: not a routed timing
-summary. Standard library only: it runs on sura and on the build host alike.
+summary. Standard library only: it runs on a workstation and on the build host alike.
 """
 
 from __future__ import annotations

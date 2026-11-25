@@ -293,10 +293,10 @@ class TestPlacementFlagOwnership:
         assert entry.fix_path == PLACEMENT_FIXABLE_FIX_PATH
 
     def test_explicit_owner_wins_over_the_default(self):
-        row = _placement_row(flag_owner="dyigit", ts="2026-01-01")
+        row = _placement_row(flag_owner="named-owner", ts="2026-01-01")
         report = coverage_report([row], now_ts="2026-06-01")
         entry = report.flag_metadata[0]
-        assert entry.owner == "dyigit"  # explicit owner is not overwritten
+        assert entry.owner == "named-owner"  # explicit owner is not overwritten
         assert entry.fix_path == PLACEMENT_FIXABLE_FIX_PATH  # still placement-fixable
 
     def test_research_gap_flag_does_not_auto_own(self):

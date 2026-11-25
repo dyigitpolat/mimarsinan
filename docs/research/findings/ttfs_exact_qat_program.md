@@ -71,7 +71,7 @@ regresses, arm `ttfsq_exact_qat` / adopt `sync_exact_qat_theta` in the recipe
 and dial back the interim S64 respec; else keep config-armable, document the
 refutation (the campaign's post-QAT-inversion discipline).
 
-### 4.1 Scalar theta (slurm/xlog1): REFUTED for the mixer
+### 4.1 Scalar theta (Slurm, compute cluster): REFUTED for the mixer
 
 | cell | exact/theta | baseline | delta |
 |---|---|---|---|

@@ -5,7 +5,7 @@ Five runs re-ran the S-study protocol on the H-series machinery (2026-08-17):
 LeNet5 pruned-offload stretch (truenorth), NSGA-II pop 12 × 6 generations,
 seed 0, five absolute objectives, `activity_factor = 0.05` declared, and —
 new this study — the host rate MEASURED on the deployment host
-(`scripts/calibrate_host.py`: 21.02 G/s on `sura`, evidence `measured`;
+(`scripts/calibrate_host.py`: 21.02 G/s on our development server, evidence `measured`;
 `p_host` stays a disclosed 20 W estimate, RAPL unreadable).
 
 Every run sealed a record with the H1 event census and emitted a

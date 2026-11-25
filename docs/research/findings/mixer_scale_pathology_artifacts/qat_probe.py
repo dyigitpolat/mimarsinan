@@ -16,7 +16,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-sys.path.insert(0, "/home/yigit/repos/research_stuff/mimarsinan/src")
+_REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
+sys.path.insert(0, os.path.join(_REPO, "src"))
 from mimarsinan.models.nn.activations.autograd import TTFSStaircaseFunction  # noqa: E402
 from mimarsinan.models.torch_mlp_mixer_core import TorchMLPMixerCore  # noqa: E402
 

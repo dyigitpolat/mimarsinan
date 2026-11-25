@@ -1,0 +1,2 @@
+# Invented example for the local gate harness, not a capture of any real cluster.
+scontrol: error: Partition name PARTITION not found

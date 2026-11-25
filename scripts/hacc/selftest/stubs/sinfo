@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# sinfo, replaying scripts/hacc/selftest/field_2026_08_25/sinfo_a_N.txt.
+# sinfo, replaying scripts/hacc/selftest/example_cluster/sinfo_a_N.txt.
 #
 # It understands only what run_all.sh asks for: `-a -N` with an optional
 # `-h` and `-o '%N %P %t'`. The transcript is the stock four-column table
 # (NODELIST NODES PARTITION STATE); this projects the requested columns out of
-# it rather than storing a second copy of the same facts.
+# it rather than storing a second copy of the same facts. Lines beginning with
+# `#` (the file's example marker) are not part of the table.
 set -euo pipefail
-FIELD="${ODIN_STUB_FIELD:?ODIN_STUB_FIELD must point at the transcript dir}"
-TABLE="${FIELD}/sinfo_a_N.txt"
+FIELD="${ODIN_STUB_FIELD:?ODIN_STUB_FIELD must point at the example cluster dir}"
+table() { grep -v '^#' "${FIELD}/sinfo_a_N.txt"; }
 
 no_header=0
 format=""
@@ -23,9 +24,9 @@ done
 
 if [ -z "${format}" ]; then
     if [ "${no_header}" = "1" ]; then
-        tail -n +2 "${TABLE}"
+        table | tail -n +2
     else
-        cat "${TABLE}"
+        table
     fi
     exit 0
 fi
@@ -39,4 +40,4 @@ case "${format}" in
 esac
 
 awk -v skip="${no_header}" 'NR == 1 { if (skip == 1) next; print "NODELIST PARTITION STATE"; next }
-     { printf "%s %s %s\n", $1, $3, $4 }' "${TABLE}"
+     { printf "%s %s %s\n", $1, $3, $4 }' < <(table)

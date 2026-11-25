@@ -30,7 +30,7 @@ build needs no cosimulation, so neither does this overlay.
     python3 scripts/hacc/make_power_overlay.py --stage-only --out <dir>
     python3 scripts/hacc/make_power_overlay.py --build    # plus the rebuild payload
 
-On the cluster: unzip under ``/data/$USER/``, then
+On the cluster: unzip under ``${ODIN_DATA_ROOT:-/data}/$USER/``, then
 ``python3 odin_power_overlay/host/odin_power_protocol.py selftest --results
 odin_power_overlay/results/power_selftest`` before any board job.
 """

@@ -1,0 +1,6 @@
+# Invented example for the local gate harness, not a capture of any real cluster.
+PartitionName=build_long
+   AllowGroups=ALL AllowAccounts=ALL AllowQos=ALL
+   MaxNodes=UNLIMITED MaxTime=7-00:00:00 MinNodes=0
+   Nodes=build-1
+   State=UP

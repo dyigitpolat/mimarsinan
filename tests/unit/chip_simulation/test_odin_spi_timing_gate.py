@@ -30,12 +30,12 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 GATE = REPO / "scripts" / "hacc" / "check_spi_timing.py"
 FIXTURES = REPO / "tests" / "fixtures" / "odin_routed_timing"
-ROUTE_D_R5_A = FIXTURES / "b71035_A_impl_1.summary.rpt"
-STAGE1_NC1 = FIXTURES / "b71018_stage1_nc1.summary.rpt"
+ROUTE_D_R5_A = FIXTURES / "route_d_r5_a_impl_1.summary.rpt"
+STAGE1_NC1 = FIXTURES / "stage1_nc1.summary.rpt"
 
 FIXTURE_SHA256 = {
-    ROUTE_D_R5_A.name: "eae3335262d11cb386ba274d49b026f1f613ead9f8488855f7a234824ba624a4",
-    STAGE1_NC1.name: "736f60e2cc946fd674c387e561fe258d0d1bd3172419bdb3fb7fe1e1a523133b",
+    ROUTE_D_R5_A.name: "4cf3dbfc621550e9e0aaff1b356569cb9e3e903eecaaac8988e4b0bec4e231c7",
+    STAGE1_NC1.name: "e563fc0740c7c969e443426016c8ce028ee70219871e43fab25c444b40867a6e",
 }
 
 
@@ -199,25 +199,25 @@ class TestTheVerdictCoversEveryWayToHideTheDomain:
         assert fails[1] == "  4 unclocked pin(s) driven by level0_i/ulp/x/clk_div_reg/Q (other)"
 
 
-STAGE1_NC1_TIMED = FIXTURES / "b71018_stage1_nc1_spi_xdc_in_memory.summary.rpt"
-ROUTE_D_R5_A_TIMED = FIXTURES / "b71035_A_impl_1_spi_xdc_in_memory.summary.rpt"
+STAGE1_NC1_TIMED = FIXTURES / "stage1_nc1_spi_xdc_in_memory.summary.rpt"
+ROUTE_D_R5_A_TIMED = FIXTURES / "route_d_r5_a_impl_1_spi_xdc_in_memory.summary.rpt"
 
 
 class TestTheGateOnRealSummariesOfTheConstrainedDomain:
     """Vivado's own summaries with the build's XDC read, in memory, into two archived routings.
 
     The constraint makes the domain visible: check_timing clears in both. Where the
-    SCK net sat on a global buffer (71018) the domain meets timing and the gate
-    passes; where six SCK nets were fabric-routed without the constraint (71035)
+    SCK net sat on a global buffer (the Stage 1 build) the domain meets timing and the gate
+    passes; where six SCK nets were fabric-routed without the constraint (route D, candidate A)
     the gate names each unit's hold race, which is what a constrained build's
     router must fix.
     """
 
     def test_the_fixtures_are_the_probe_bytes(self):
         assert hashlib.sha256(STAGE1_NC1_TIMED.read_bytes()).hexdigest() == (
-            "ac36471f80020120ad4d95f2ccb2793e66fadbcd2a830f4c8f29d5f0f06435cf")
+            "b8a619fc7bef20220cca466df2af21640825038dd1f8c593b9bc2f40eb27e3b2")
         assert hashlib.sha256(ROUTE_D_R5_A_TIMED.read_bytes()).hexdigest() == (
-            "9d7d380ce3c01a0040be77421c5a9899206a4f4e533b73dcc7817ffeab2e46f9")
+            "131bc4b1945fa1b43f100caa4a837e5afa0bc69f3ba604c686901e6084868fd3")
 
     def test_a_timed_and_met_domain_passes_with_its_clock_count(self):
         result = _gate(str(STAGE1_NC1_TIMED), "--expect-sck", "1")
@@ -356,7 +356,7 @@ class TestTheDomainCannotBePartlyHidden:
                          f"inside the domain is not timed"]
 
 
-FIXED_CU7 = FIXTURES / "b71070_fixed_cu7_impl_1.summary.rpt"
+FIXED_CU7 = FIXTURES / "fixed_cu7_impl_1.summary.rpt"
 
 
 class TestTheCrossingsCannotBeHidden:
@@ -399,7 +399,7 @@ class TestTheCrossingsCannotBeHidden:
 
     def test_the_fixture_is_the_fixed_builds_archived_summary(self):
         assert hashlib.sha256(FIXED_CU7.read_bytes()).hexdigest() == (
-            "25956a300d7f628ab151653ec000c488631a54a83952f9f497522ba768bfa745")
+            "d76303b62cea50434f8ca28700b45abb22bb0262115821a1a8941e0c29be618d")
         result = _gate(str(FIXED_CU7), "--expect-sck", "7")
         assert result.returncode == 0, result.stdout + result.stderr
         assert result.stdout.rstrip().endswith("RESULT: PASS")

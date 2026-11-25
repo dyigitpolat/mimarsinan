@@ -249,7 +249,7 @@ def _build_default_registry() -> BackendRegistry:
         ),
         SimulationBackend(
             "odin_hacc",
-            step_name="HACC NUS - ODIN Deployment",
+            step_name="HACC ODIN Deployment",
             step_class=OdinHaccDeploymentStep,
             # OPT-IN like the device it exports FOR: freezing a bundle costs a pass over the shipped samples.
             enabled_for=lambda plan: plan.enable_odin_hacc_export,

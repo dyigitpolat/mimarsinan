@@ -288,7 +288,7 @@ Scripts + raw JSON in the session scratchpad
 (`.../scratchpad/m3/`): `exp1_eval_variants.py` (variant grid, 10 000 samples),
 `exp2_boundary_mass.py` (mass + flips per stage), `exp3_reduction_order.py`
 (permuted/split-K), `probe_body.py` (stack fingerprint; cluster run
-`slurmech 20260710-021822-e9b1c134`, job 679136), `run_seeded.py` (fix-(a)
+`slurmech 20260710-021822-e9b1c134`), `run_seeded.py` (fix-(a)
 prototype), configs `m3_{van,seed}_{a,b}.json`. The seeded wrapper, for
 reference:
 

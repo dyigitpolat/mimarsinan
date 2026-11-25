@@ -855,7 +855,7 @@
    "units": "2fe8f6e0fefad44aa29de09c5e5881197f94716647b4caf4316a349133ed1cb4"
   }
  },
- "export": "/tmp/claude-1005/-home-yigit-repos-research-stuff/0dc5568f-acf6-4fe7-81cc-1acf39a655db/scratchpad/resid_head",
+ "export": "a scratch export of the head",
  "head": "c913118818b83b2225562556427a397321fa6aaf",
  "walls_s": {
   "chain@5:floor": 0.5,

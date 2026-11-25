@@ -62,8 +62,7 @@ from mimarsinan.pipelining.session import apply_determinism
 
 apply_determinism(0)
 RUN = "generated/t2_04_stemheal_ab3_phased_deployment_run"
-SCRATCH = ("/tmp/claude-1005/-home-yigit-repos-research-stuff-mimarsinan/"
-           "c73daf12-2a91-4dc4-9e8f-3b7f618308d5/scratchpad")
+SCRATCH = os.environ.get("PROBE_SCRATCH", "generated/_probes")  # where the probe states live
 
 import mimarsinan.data_handling.data_providers  # noqa: F401
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory

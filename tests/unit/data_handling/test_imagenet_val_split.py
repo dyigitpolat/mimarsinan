@@ -260,7 +260,7 @@ def _imagenet_metadata_present() -> bool:
         from dotenv import load_dotenv
         from pathlib import Path
 
-        load_dotenv(Path("/home/yigit/repos/wt-leak/.env"))
+        load_dotenv(Path(__file__).resolve().parents[3] / ".env")
     except Exception:
         pass
     raw = os.environ.get("IMAGENET_ROOT", "").strip()

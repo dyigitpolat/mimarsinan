@@ -1,30 +1,28 @@
 #!/bin/bash
 #SBATCH --chdir /tmp/
-#SBATCH --account=slurm
 #SBATCH --job-name=odin_build
 #SBATCH --output=slurm-odin-build-%j.out
 #SBATCH --error=slurm-odin-build-%j.err
 #
 # Build the ODIN kernel into an xclbin. run_all.sh picks the partition from the
-# cluster's own scontrol/sinfo answers and submits with -p <that>.
+# site's candidates (ODIN_BUILD_CANDIDATES, or ODIN_BUILD_PARTITION) and the
+# cluster's own scontrol/sinfo answers, and submits with -p <that>.
 #
-# The first two #SBATCH lines are the cluster's required preamble
-# (Xtra-Computing/hacc_demo/doc/1-FPGA-allocation.md, example.sh lines 143-145),
-# and --output/--error are relative to --chdir (/tmp on the node) because slurm
-# opens them BEFORE the job body runs: a path under a directory that does not
-# exist yet makes the submission fail to launch with nothing to read.
+# No account is set here: a site that requires one sets SBATCH_ACCOUNT=<account>
+# (sbatch reads it) or passes --account. --output/--error are relative to
+# --chdir (/tmp on the node) because slurm opens them BEFORE the job body runs:
+# a path under a directory that does not exist yet makes the submission fail to
+# launch with nothing to read.
 #
-# NEVER submit this to a board partition: the bare shell partitions
-# (xilinx_u55c_gen3x16_xdma_3_202210_1, xilinx_u250_gen3x16_xdma_3_1_202020_1)
-# are capped at ONE HOUR (doc/1-FPGA-allocation.md lines 42-44) and a
-# place-and-route is hours. FIELD-OBSERVED 2026-08-25: the live build venue is
-# `vck5000_compile` (AllowGroups=ALL, MaxTime 7d, hacc-node0 idle). `cpu_only`
-# maps to hacc-gpu0, which is DOWN with 'NO NETWORK ADDRESS FOUND' — the docs'
-# hacc-node2 is stale. Build venues are card-independent; ODIN_CARD only
-# decides what gets linked, not where.
+# NEVER submit this to a board partition: the bare shell partitions are
+# typically capped at ONE HOUR and a place-and-route is hours. Submit it to a
+# compile partition with a long time limit; it needs no card. A partition whose
+# only node is down is rejected by the picker before anything is submitted.
+# Build venues are card-independent; ODIN_CARD only decides what gets linked,
+# not where.
 #
-#   ODIN_PKG=/data/$USER/odin_hacc_package ODIN_TARGET=hw_emu ODIN_CARD=u250 \
-#       sbatch --wait -p vck5000_compile scripts/hacc/odin_build.sbatch
+#   ODIN_PKG=${ODIN_DATA_ROOT:-/data}/$USER/odin_hacc_package ODIN_TARGET=hw_emu ODIN_CARD=u250 \
+#       sbatch --wait -p <compile partition> scripts/hacc/odin_build.sbatch
 #
 # ODIN_COMPUTE_UNITS=N (route D) links N compute units, unit k on bank k, into
 # build/hacc/<target>_nc<NC><chip suffix>_cu<N>/; ODIN_CU_SLRS places them (data).
@@ -74,7 +72,8 @@ ls -l "${BUILD_OUT}/"
 
 # --- the hw_emu smoke, ON THIS BUILD NODE, with NO card ----------------------
 # XCL_EMULATION_MODE=hw_emu makes XRT bind to the QEMU/RTL emulation model that
-# v++ packaged into the xclbin instead of to a device, so this runs on cpu_only.
+# v++ packaged into the xclbin instead of to a device, so this runs on a
+# compile node with no card.
 # WHAT IT PROVES: the packaged kernel opens by name with its six frozen
 # arguments, the AXI master moves the program and stimulus payloads, the
 # sequencer executes them, and the capture buffer comes home carrying a header
@@ -88,9 +87,9 @@ ls -l "${BUILD_OUT}/"
 # five; ODIN_EMU_SMOKE=off skips it. B0/B1 on silicon supersede it either way.
 # OPT-IN since 2026-08-31: silicon B0/B1 supersede this smoke entirely, and
 # its worst case is sitting the full timeout on a slow node learning nothing
-# (field: gpu3 finished the same fixture in ~18 min; node0 burned the whole
-# 5400 s budget). ODIN_EMU_SMOKE=smallest|all turns it on when the emulation
-# number is wanted for its own sake.
+# (field: a board node finished the same fixture in ~18 min; the build node
+# burned the whole 5400 s budget). ODIN_EMU_SMOKE=smallest|all turns it on
+# when the emulation number is wanted for its own sake.
 SMOKE="${ODIN_EMU_SMOKE:-off}"
 SMOKE_TIMEOUT="${ODIN_EMU_SMOKE_TIMEOUT:-5400}"
 SMALLEST_FIXTURE="nc1_single_core_ceiling"

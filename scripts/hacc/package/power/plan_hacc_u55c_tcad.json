@@ -23,16 +23,16 @@
   },
   "designs": {
     "stock": {
-      "xclbin": "/data/yigit/odin_stock/odin_fpga_hw.xclbin",
-      "bundle": "/data/yigit/odin_hacc_package/deployment/odin_narrowconv_mnist_wb4_s16.json",
+      "xclbin": "/data/${USER}/odin_stock/odin_fpga_hw.xclbin",
+      "bundle": "/data/${USER}/odin_hacc_package/deployment/odin_narrowconv_mnist_wb4_s16.json",
       "bundle_self_hash": "sha256:2c5de8ebd57c42644b551a90100f46b77c316739989093f988497e20a969d884",
       "xclbin_identity": {
         "archived": {
           "size_bytes": 48395756,
           "written": "2026-08-31 20:39:18, cluster local time (v++ link, xclbinutil step)",
           "link_started": "2026-08-31 16:18:15",
-          "build_info": "/data/yigit/odin_hacc_package/build/hacc/hw_nc1/odin_fpga_hw.xclbin.info (xclbinutil --info, written by the link at 20:39:19)",
-          "source": "misc/odin_hacc_results_hacchead.tar.gz, build_logs/hw_nc1/link/v++.log lines 4 and 436",
+          "build_info": "/data/${USER}/odin_hacc_package/build/hacc/hw_nc1/odin_fpga_hw.xclbin.info (xclbinutil --info, written by the link at 20:39:19)",
+          "source": "the results archive of the stock build, build_logs/hw_nc1/link/v++.log lines 4 and 436",
           "class": "MEASURED (link log)"
         },
         "uuid": null,
@@ -43,7 +43,7 @@
         "odin_0_dynamic_w": 0.068,
         "hmss_0_dynamic_w": 2.223,
         "class": "ESTIMATE: Vivado 2022.2.2 report_power, routed, vectorless, confidence Low",
-        "source": "vivado_power_interim.json; impl_1_runme.log lines 2408 (odin_0) and 2407 (hmss_0) of misc/odin_hacc_results_hacchead.tar.gz",
+        "source": "vivado_power_interim.json; impl_1_runme.log lines 2408 (odin_0) and 2407 (hmss_0) of the results archive of the stock build",
         "describes": "the archived 2026-08-31 stock build"
       },
       "chip": "odin_stock_256x256",
@@ -52,16 +52,16 @@
       "campaign_s_class": "as_run MEASURED (wall_s 13.29 s, 2026-09-01); resident ESTIMATE (3.61 M enabled cycles per pass, scout_estimates.py)"
     },
     "wide": {
-      "xclbin": "/data/yigit/odin_wide/odin_fpga_hw.xclbin",
-      "bundle": "/data/yigit/wide/yigit/odin_hacc_package/deployment/odin_wide_mlp_mnist_wb8_s16.json",
+      "xclbin": "/data/${USER}/odin_wide/odin_fpga_hw.xclbin",
+      "bundle": "/data/${USER}/wide/${USER}/odin_hacc_package/deployment/odin_wide_mlp_mnist_wb8_s16.json",
       "bundle_self_hash": "sha256:e1b44e0668f1d0168577cf669ea48d2a9a8026a30071ab0b33a4c2fc9de45fb1",
       "xclbin_identity": {
         "archived": {
           "size_bytes": 47559659,
           "written": "2026-08-31 11:20:37, cluster local time (v++ link, xclbinutil step)",
           "link_started": "2026-08-31 09:13:20",
-          "build_info": "/data/yigit/wide/yigit/odin_hacc_package/build/hacc/hw_nc1_odin_wide_1024x256_mb16/odin_fpga_hw.xclbin.info (xclbinutil --info, written by the link at 11:20:38)",
-          "source": "misc/odin_hacc_results_hacchead_wide.tar.gz, build_logs/hw_nc1/link/v++.log lines 4 and 298",
+          "build_info": "/data/${USER}/wide/${USER}/odin_hacc_package/build/hacc/hw_nc1_odin_wide_1024x256_mb16/odin_fpga_hw.xclbin.info (xclbinutil --info, written by the link at 11:20:38)",
+          "source": "the results archive of the widened build, build_logs/hw_nc1/link/v++.log lines 4 and 298",
           "class": "MEASURED (link log)"
         },
         "uuid": null,
@@ -72,7 +72,7 @@
         "odin_0_dynamic_w": 0.145,
         "hmss_0_dynamic_w": 2.199,
         "class": "ESTIMATE: Vivado 2022.2.2 report_power, routed, vectorless, confidence Low",
-        "source": "vivado_power_interim.json; impl_1_runme.log lines 2259 (odin_0) and 2258 (hmss_0) of misc/odin_hacc_results_hacchead_wide.tar.gz",
+        "source": "vivado_power_interim.json; impl_1_runme.log lines 2259 (odin_0) and 2258 (hmss_0) of the results archive of the widened build",
         "describes": "the archived 2026-08-31 widened build"
       },
       "chip": "odin_wide_1024x256_mb16",

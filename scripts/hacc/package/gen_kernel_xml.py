@@ -65,7 +65,7 @@ def main() -> int:
             file=sys.stderr)
         return 2
     shutil.copyfile(FROZEN, options.output)
-    print(f"[hacc-build] wrote {options.output} from the frozen kernel.xml "
+    print(f"[odin-build] wrote {options.output} from the frozen kernel.xml "
           f"(sha256 {digest[:16]}, verified)")
     return 0
 

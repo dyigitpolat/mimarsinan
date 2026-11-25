@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# groups, replaying the field account's membership verbatim.
+# groups, replaying the example account's membership.
 set -euo pipefail
-FIELD="${ODIN_STUB_FIELD:?ODIN_STUB_FIELD must point at the transcript dir}"
-cat "${FIELD}/groups.txt"
+FIELD="${ODIN_STUB_FIELD:?ODIN_STUB_FIELD must point at the example cluster dir}"
+grep -v '^#' "${FIELD}/groups.txt"

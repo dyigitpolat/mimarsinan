@@ -73,7 +73,7 @@ def main() -> int:
     tree = build(options.kernel)
     ET.indent(tree, space="  ")
     tree.write(options.output, encoding="utf-8", xml_declaration=True)
-    print(f"[hacc-build] wrote {options.output} ({len(ARGS)} kernel arguments)")
+    print(f"[odin-build] wrote {options.output} ({len(ARGS)} kernel arguments)")
     return 0
 
 

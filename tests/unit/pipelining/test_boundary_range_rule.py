@@ -88,7 +88,7 @@ class TestT1TheFailingFormInMiniature:
         assert chosen < grid_error(magnitudes, low, snap)  # strictly better than the discarded tail's clamp
 
     # [U-BRANGE2 stage 1d, the check's n-2] the reference reads the grid's float64 error at every candidate (45 s on a
-    # sura worker at load 180, over the default 60 s budget under heavier load): a time budget of its own
+    # shared-server worker at load 180, over the default 60 s budget under heavier load): a time budget of its own
     @pytest.mark.timeout(240)
     def test_the_value_is_kept_or_its_clamp_is_the_error_minimum(self):
         _form, quantizer, seams, _census = _calibrated_form()

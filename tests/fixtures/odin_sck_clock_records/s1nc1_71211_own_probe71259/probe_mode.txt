@@ -1,3 +1,0 @@
-mode own
-read_xdc none: the clock records are the checkpoint's own constraints, restored at open
-text /data/yigit/survey_r0/builds/S1-NC1/odin_power_overlay/build/hacc/hw_nc1/odin_spi_domain.xdc (resolved only, never read)
