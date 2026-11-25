@@ -1363,12 +1363,12 @@ registry entries move to `entries_endpoint.py` (both prior tables at the
 the structural reason stated). AB5 (AA @1200-step endpoint leg, physics
 knobs OFF in-chain per the AB4 lesson) is running.
 
-### 15.15 AB6 on peta: the AA-endpoint lever fires and is REFUTED — the
+### 15.15 AB6 on a lab GPU server (A100): the AA-endpoint lever fires and is REFUTED — the
 ### artifact deficit is not a training-budget deficit (2026-07-20)
 
 **Infra:** AB6 ran the whole Phase-Value chain (snapshot→AA→Clamp→Shift→
-AQ) in ONE uninterrupted 36-min process on peta's A100 (no reaper) —
-vs sura's 9-window reaper thrash. peta is now the chain vehicle
+AQ) in ONE uninterrupted 36-min process on the lab GPU server's A100 (no reaper) —
+vs the development server's 9-window reaper thrash. The A100 server is now the chain vehicle
 (cu126 wheels; `torch.backends.cudnn.enabled=False` for the one ViT conv;
 `MIMARSINAN_DISABLE_FFCV=1`; recorded in cluster-topology memory).
 
@@ -1447,7 +1447,7 @@ open question is whether that adaptation is BUDGET-limited (the §15.15
 leg was 1200 steps ≈ 0.05 epoch) or a family floor.
 
 **The endgame reduces to two decisive tests, both pre-registered:**
-(1) **PR34 (artifact, in flight on peta):** a PROPER multi-epoch ReLU
+(1) **PR34 (artifact, in flight on the A100 server):** a PROPER multi-epoch ReLU
 fine-tune of the origin backbone (LIF value-twin target, KD-to-origin,
 full trainset, keep-best analytic). ≥~0.86 ⇒ the artifact gap is budget,
 closable with a recipe change (activation-adaptation budget ∝ swap
@@ -1487,7 +1487,7 @@ the program.** origin 0.8678 → a properly-trained analytic artifact
 some. Generic fix: the conversion recipe must fund AA in proportion to
 the swap distance (real multi-epoch budget at a sane genuine-LR), exactly
 the L-C principle — not a ViT special case; any large-activation-swap
-workload inherits it. PR34 artifact saved (peta pr34_relu_best.pt).
+workload inherits it. PR34 artifact saved (pr34_relu_best.pt on the A100 server).
 
 **Next (in flight): AB7** — the full pipeline chain with the AA endpoint
 armed at a REAL budget (`aa_endpoint_recovery_steps`≈8000) and a sane LR
@@ -1679,7 +1679,7 @@ latency is priced; synchronized is the lossless mode.
 - **PR39 — backends:** nevresim + SANA-FE reuse the existing synchronized
   group scheduling (TTFS sync path); Loihi/Novena capability flags,
   fail-loud where unsupported.
-- **PR40 — AB8, the gate run:** full chain on peta with synchronized
+- **PR40 — AB8, the gate run:** full chain on the A100 server with synchronized
   discipline + the PR34-grade funded swap (aa_endpoint at epoch-scale
   budget, lr 1e-4) + AQ exact-QAT (whose gauge is now free) + WQ funded
   endpoint → SCM parity. **DoD: pretrained→deployed ≤2pp (PR25) — i.e.
@@ -1806,7 +1806,7 @@ verification instrument, not a deployment requirement.
 ### 16.8 AB8 — the victory-gate run: the fixed pipeline delivers its best
 ### deployed number natively (2026-07-21)
 
-**The chain (peta, ~26 min compute):** origin 0.8678 cached → AA with the
+**The chain (A100 server, ~26 min compute):** origin 0.8678 cached → AA with the
 origin-anchored endpoint at the TRUE origin target (stale envelope cap
 dropped): entry 0.8398 → **exit 0.8828** → Shift 0.8404 → σ-install
 (currencies stamped natively — the §16.7 fix in-chain; scoped certificate
@@ -2050,7 +2050,7 @@ demonstrated at both ends of the scale ladder.
 
 Pricing (PR46 datum): the identity-reference flow dominates — ~80-90 min
 wall at ViT scale (per-core python loops over ~thousands of single-node
-cores; 158GB RSS on peta). Fine as a one-off artifact certificate and at
+cores; 158GB RSS on the A100 server). Fine as a one-off artifact certificate and at
 tier-0 scale (seconds); TOO SLOW as a routine per-run ViT gate in this
 naive form. Follow-up: vectorized IR count reference (graph-level
 staircase walk over gather plans — no identity mapping/flow machinery) or

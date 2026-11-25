@@ -8,11 +8,10 @@
 | U2 surface: record/introspection echoes, templates (incl. t1_02 fix), docs | **DONE** — echoes landed with U1; generator drops the 5 enum declarations; t1_02/t1_03 become `_sched` cells (the 138-core ViT platform was always sized for streaming — the generator's own t1_09 note says so); template tests 40 green |
 | U3 ViT relaunch: feasibility probe, eval-cost measurement, seeded search + per-offspring report | **DONE** — 72/72 offspring FEASIBLE (was 72/72 infeasible pre-U1); the R6 seed validated in gen 1 at exactly the declaration (325.58M cells, 100% util); best capacity 196.0M -> 135.4M over 6 generations, final Pareto 12; search wall 148.7 s ~= 2.1 s/candidate at ViT scale, so the H4 pack consolidation stays deferred (measure-first verdict: not prohibitive); run `generated/vit_cifar10_hwshape_search_u1_phased_deployment_run` |
 
-## Owner directive (verbatim, 2026-08-18)
+## Design requirement (2026-08-18)
 
-> "why do we have separate schedule policies? we need to have a single policy
-> that must minimize weight reprogramming anyway, and it should still be able
-> to schedule in other ways too."
+There is one schedule policy, not several. It minimizes weight reprogramming,
+and it can still produce the other schedules.
 
 Sequencing decision: **unify first**, then the seeded ViT hardware-shape
 search runs under the final semantics. Companion decisions: the H4 pack
@@ -40,7 +39,7 @@ One planner, no policy parameter. Per segment:
 1. **Residency composition** via the shared law (`compose_bank_clustered_passes`)
    whenever applicable — every softcore carries a `bank_id`, one latency
    level — and every chunk packs. Adopted UNCONDITIONALLY when it composes:
-   the owner directive makes weight programming the primary objective, and
+   the design requirement makes weight programming the primary objective, and
    the token vehicle's own numbers show why pass-count dominance would be
    wrong — a fitting flat pack programs 7 bank copies in 1 pass while the
    residency composition programs 2 copies over 4 passes. Fewer programmed
@@ -49,7 +48,7 @@ One planner, no policy parameter. Per segment:
    its sync/latency cost is priced, so the search sees the trade.
 2. **Capacity split** (`split_softcores_by_capacity`, validated) as the
    fallback wherever residency is inapplicable or fails to pack — the
-   "schedule in other ways too" half of the directive.
+   other-schedules half of the requirement.
 
 `policy_applied` becomes `residency_applied` — an **outcome** the planner
 reports, not a config the operator declares. The E2 residency law
@@ -59,7 +58,7 @@ Named follow-up — priced composition choice: comparing compositions by
 priced cost (programming bytes vs sync/latency) would need the physics
 pricer, which `mapping/` must not import (AST import-direction wall).
 Reprogramming-first is deterministic, layer-clean, identical on both
-planes, and is the directive's own priority order; revisit only if a real
+planes, and is the requirement's own priority order; revisit only if a real
 vehicle shows the pass-inflation cost dominating.
 
 Applicability note (one behavior delta, conservative direction): the builder

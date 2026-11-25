@@ -5,7 +5,7 @@ attribute below is mirrored from
 
     https://github.com/Xilinx/XRT/blob/2024.2/src/python/pybind11/src/pyxrt.cpp
 
-(branch ``2024.2``; XRT 2.18.x is what HACC@NUS ships). The previous fake
+(branch ``2024.2``; XRT 2.18.x is what HACC ships). The previous fake
 carried a ``kernel.read_register`` that the real binding does not have, the
 whole driver was written against it, and on 2026-08-25 the shipped driver
 crashed on a U250 at its first CSR touch with

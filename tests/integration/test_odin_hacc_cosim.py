@@ -66,7 +66,7 @@ def _freeze(witness):
     mapping = two_core_mapping()
     return build_bundle(
         name="odin_hacc_micro_cosim",
-        title="HACC NUS - ODIN Deployment: the tiny classifier, measured on RTL",
+        title="HACC ODIN Deployment: the tiny classifier, measured on RTL",
         description=(
             "The unit loop-closer's two-core classifier, frozen with the "
             "vendored ODIN core as the witness."),

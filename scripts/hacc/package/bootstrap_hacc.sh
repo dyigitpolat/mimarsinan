@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The ONE command you run on hacchead after uploading odin_hacc_package.zip.
+# The ONE command you run on the head node after uploading odin_hacc_package.zip.
 #
 #   ./bootstrap_hacc.sh [--card u55c|u250] [/path/to/odin_hacc_package.zip]
 #
 # THE CARD IS A PARAMETER (v3). --card picks the profile in
 # scripts/hacc/cards.sh and travels into the detached run as ODIN_CARD. On
-# HACC@NUS today that means `--card u250`: the only U55C shell installed is
+# HACC today that means `--card u250`: the only U55C shell installed is
 # locked to Vitis 2022.2, which this cluster does not have, and the u55c
 # default refuses at startup with that reason rather than queueing a job to
 # rediscover it.
@@ -22,6 +22,10 @@
 #
 # ODIN_DATA_ROOT overrides /data (the only path the head node and the board VMs
 # share) so this whole flow can be rehearsed off-cluster.
+#
+# The detached run inherits this environment, so export the site's partitions
+# first (ODIN_BUILD_CANDIDATES, ODIN_BOARD_CANDIDATES, ODIN_JOINT_CANDIDATES, or
+# the ODIN_*_PARTITION pins) and SBATCH_ACCOUNT if the site requires an account.
 
 set -euo pipefail
 
@@ -61,7 +65,7 @@ for tool in unzip tar sha256sum setsid nohup; do
     command -v "${tool}" > /dev/null 2>&1 \
         || refuse "no '${tool}' on PATH." \
             "This script needs unzip, tar, sha256sum, setsid and nohup — all" \
-            "of them are on hacchead. Run it there, next to the uploaded zip."
+            "of them are on the head node. Run it there, next to the uploaded zip."
 done
 
 # --- 1. find the zip ---------------------------------------------------------

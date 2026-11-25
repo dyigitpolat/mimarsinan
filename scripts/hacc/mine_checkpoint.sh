@@ -84,7 +84,7 @@ mkdir -p "${OUT}/reports" "${OUT}/maps"
 
 if ! vitis="$(odin_vitis_settings)"; then
     die "no Vitis/Vivado here. Mining opens a checkpoint, which is a Vivado
-  operation; run this on hacchead or the compile partition the build ran on."
+  operation; run this on the head node or the compile partition the build ran on."
 fi
 odin_source_toolchain "${vitis##*|}"
 command -v vivado > /dev/null 2>&1 || die "no vivado on PATH after the settings"

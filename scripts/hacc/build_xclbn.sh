@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the ODIN RTL kernel into an xclbin on HACC@NUS, for the card you name.
+# Build the ODIN RTL kernel into an xclbin on HACC, for the card you name.
 #
 # THE CARD IS A PARAMETER (v3). ODIN_CARD selects a profile in
 # scripts/hacc/cards.sh — platform, Vivado part, v++ connectivity config,
@@ -18,11 +18,10 @@
 # (emitted and gated by scripts/hacc/gen_chip_rtl.py) and its artifacts land in
 # a chip-suffixed build directory, so the two never overwrite each other.
 #
-# WHERE: hacchead or a compile partition — NEVER on a board reservation: the
-# bare board partitions are capped at ONE HOUR and a placed-and-routed build is
-# hours. FIELD-OBSERVED 2026-08-25: `vck5000_compile` (hacc-node0,
-# AllowGroups=ALL, 7 days) is the live build venue; `cpu_only` maps to
-# hacc-gpu0, which is DOWN. Vitis is discovered by toolchain.sh, and the card
+# WHERE: the head node or a compile partition — NEVER on a board reservation:
+# the bare board partitions are typically capped at ONE HOUR and a placed-and-
+# routed build is hours. Use a compile partition with a long time limit (no
+# card needed) whose node is up. Vitis is discovered by toolchain.sh, and the card
 # profile's preferred version wins when it is installed.
 #
 # WHAT: package_xo turns the Verilog kernel + its kernel.xml into an .xo, then
@@ -69,7 +68,7 @@ odin_chip_resolve
 # still pin it if you need a specific one.
 if ! vitis="$(odin_vitis_settings)"; then
     echo "REFUSING: no Vitis under ${XILINX_ROOT:-/tools/Xilinx or /tools/xilinx}." >&2
-    echo "  This script builds ONLY on HACC@NUS (hacchead or a compile" >&2
+    echo "  This script builds ONLY on HACC (the head node or a compile" >&2
     echo "  partition). Log in per scripts/hacc/RUNBOOK.md and run it there;" >&2
     echo "  off-cluster there is no toolchain and no shell to link against." >&2
     echo "  Pin one with XILINX_ROOT=/tools/Xilinx VITIS_VERSION=2020.2." >&2
@@ -91,16 +90,16 @@ odin_source_toolchain "${VITIS_SETTINGS}"
 BUILD="build/hacc/${TARGET}_nc${NC}${CHIP_SUFFIX}"
 mkdir -p "${BUILD}"
 
-echo "[hacc-build] card     : ${CARD}"
-echo "[hacc-build] chip     : ${CHIP} (${CHIP_CORE_KIND}${CHIP_VARIANT:+ ${CHIP_VARIANT}})"
-echo "[hacc-build] vitis    : ${XILINX_ROOT}/Vitis/${VITIS_VERSION} (prefer ${ODIN_VITIS_PREFER:-none})"
-echo "[hacc-build] platform : ${PLATFORM}"
-echo "[hacc-build] part     : ${PART}"
-echo "[hacc-build] config   : ${CFG}"
-echo "[hacc-build] target   : ${TARGET}"
-echo "[hacc-build] cores    : ${NC}"
-echo "[hacc-build] build dir: ${BUILD}"
-echo "[hacc-build] host     : $(hostname)"
+echo "[odin-build] card     : ${CARD}"
+echo "[odin-build] chip     : ${CHIP} (${CHIP_CORE_KIND}${CHIP_VARIANT:+ ${CHIP_VARIANT}})"
+echo "[odin-build] vitis    : ${XILINX_ROOT}/Vitis/${VITIS_VERSION} (prefer ${ODIN_VITIS_PREFER:-none})"
+echo "[odin-build] platform : ${PLATFORM}"
+echo "[odin-build] part     : ${PART}"
+echo "[odin-build] config   : ${CFG}"
+echo "[odin-build] target   : ${TARGET}"
+echo "[odin-build] cores    : ${NC}"
+echo "[odin-build] build dir: ${BUILD}"
+echo "[odin-build] host     : $(hostname)"
 
 if [[ ! -f "${CFG}" ]]; then
     echo "REFUSING: the card profile names ${CFG}, which is not in this tree." >&2
@@ -128,10 +127,10 @@ while IFS= read -r src; do
     fi
     SOURCES+=("${src}")
 done < <(odin_chip_sources "${CHIP}")
-echo "[hacc-build] sources  : ${#SOURCES[@]} RTL file(s)"
+echo "[odin-build] sources  : ${#SOURCES[@]} RTL file(s)"
 
 # package_xo is a Vivado Tcl command, NOT a Vitis binary (field-observed
-# 2026-08-25 on hacc-node0: ${XILINX_VITIS}/bin has no package_xo). The
+# 2026-08-25 on the build node: ${XILINX_VITIS}/bin has no package_xo). The
 # documented batch flow (UG1393 ch. RTL Kernels; AMD Vitis-Tutorials
 # 05-bottom_up_rtl_kernel pack_kernel.tcl) packages the sources as a Vivado
 # IP with ipx::package_project, marks it sdx_kernel/rtl, and calls package_xo
@@ -173,7 +172,7 @@ abs_build="$(cd "${BUILD}" && pwd)"
     cat <<'TCL'
 set_property top $kernel_name [current_fileset]
 update_compile_order -fileset sources_1
-ipx::package_project -root_dir $ip_dir -vendor nus.edu -library user \
+ipx::package_project -root_dir $ip_dir -vendor mimarsinan -library user \
     -taxonomy /UserIP -import_files -set_current true
 ipx::associate_bus_interfaces -busif m_axi_gmem -clock ap_clk [ipx::current_core]
 ipx::associate_bus_interfaces -busif s_axi_control -clock ap_clk [ipx::current_core]
@@ -188,7 +187,7 @@ TCL
 } > "${BUILD}/pack_kernel.tcl"
 if ! vivado -mode batch -nojournal -log "${BUILD}/pack_kernel.log" \
         -source "${BUILD}/pack_kernel.tcl"; then
-    echo "[hacc-build] packaging FAILED — last 40 lines of ${BUILD}/pack_kernel.log:" >&2
+    echo "[odin-build] packaging FAILED — last 40 lines of ${BUILD}/pack_kernel.log:" >&2
     tail -n 40 "${BUILD}/pack_kernel.log" >&2 || true
     exit 2
 fi
@@ -211,5 +210,5 @@ fi
     -o "${BUILD}/odin_fpga_${TARGET}.xclbin" \
     "${BUILD}/${KERNEL}.xo"
 
-echo "[hacc-build] wrote ${BUILD}/odin_fpga_${TARGET}.xclbin"
-echo "[hacc-build] stage it:  cp ${BUILD}/odin_fpga_${TARGET}.xclbin /data/${USER}/odin/"
+echo "[odin-build] wrote ${BUILD}/odin_fpga_${TARGET}.xclbin"
+echo "[odin-build] stage it:  cp ${BUILD}/odin_fpga_${TARGET}.xclbin ${ODIN_DATA_ROOT:-/data}/${USER}/odin/"

@@ -50,7 +50,7 @@ docs in sync with the files they describe.
 - `scripts/` — commit gates: typecheck, module budget, undefined names;
   `scripts/hw_tests/run_hw_tests.sh` is the NAMED runner for the RTL
   cosimulation gates, which the default suite deliberately does not run;
-  `scripts/hacc/` holds the HACC@NUS packaging (`build_xclbn.sh`,
+  `scripts/hacc/` holds the HACC packaging (`build_xclbn.sh`,
   `run_board.sh`, the `sbatch` template and the owner's `RUNBOOK.md`),
   every script refusing loud when run off-cluster.
 - `nevresim/` — the co-owned C++ simulator, the one remaining submodule

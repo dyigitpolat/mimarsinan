@@ -1,6 +1,6 @@
 """[U1] One scheduler: residency-first, capacity fallback, no policy knob.
 
-The owner directive that retired the ``schedule_policy`` enum: weight
+The design requirement that retired the ``schedule_policy`` enum: weight
 programming is the PRIMARY objective, and other scheduling remains available
 where residency does not apply. The token vehicle states the whole argument in
 two numbers — a fitting flat pack programs SEVEN bank copies in one pass while

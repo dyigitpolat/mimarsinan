@@ -14,7 +14,7 @@
 
 Repo: `mimarsinan` @ `e97cec1c` (E-series closed). The E-series made the candidate's
 quantities MEAN what the record's mean; this program makes the loop between them
-verifiable. Deliverables per the owner's directive: correctness, performance, and
+verifiable. Deliverables: correctness, performance, and
 code elegance — each stage names all three.
 
 ## H0 — what the investigation established (measured, not assumed)

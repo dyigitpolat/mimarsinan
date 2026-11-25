@@ -1,0 +1,2 @@
+# Invented example for the local gate harness, not a capture of any real cluster.
+user1 users gpu_users u280_users u250_users

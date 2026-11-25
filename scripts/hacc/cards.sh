@@ -2,10 +2,10 @@
 # The TARGET CARD is a parameter, and this file is the only place that knows
 # what one implies.
 #
-# FIELD LESSON (2026-08-25, hacchead + hacc-node0 + hacc-gpu3). v2 hard-wired
-# the U55C everywhere — platform name, Vivado part, v++ config, board
-# partition. Then the U55C path turned out to be ADMIN-BLOCKED: the only U55C
-# platform installed anywhere on the cluster is
+# FIELD LESSON (2026-08-25). v2 hard-wired the U55C everywhere — platform
+# name, Vivado part, v++ config, board partition. Then the U55C path turned
+# out to be ADMIN-BLOCKED: the only U55C platform installed anywhere on the
+# cluster is
 # xilinx_u55c_gen3x16_xdma_3_202210_1, whose SmartConnect IP is locked to the
 # 2022.2 release, and 2022.2 is the one Vitis this cluster does NOT carry
 # (2020.1 2020.2 2021.2 2022.1 2023.2 2024.2 are installed). Three vpl links
@@ -16,8 +16,9 @@
 # xilinx_u250_gen3x16_xdma_3_1_202020_1 shell and Vitis 2020.2 — a pairing this
 # cluster can actually build today — and every card-shaped fact below travels
 # with it: the platform, the part, the v++ connectivity config (and therefore
-# whether the AXI master lands on HBM or DDR), the preferred Vitis, and the
-# partitions the board and joint phases may use.
+# whether the AXI master lands on HBM or DDR) and the preferred Vitis. The
+# partitions are a SITE fact, not a card fact: run_all.sh reads them from
+# ODIN_BUILD_CANDIDATES / ODIN_BOARD_CANDIDATES / ODIN_JOINT_CANDIDATES.
 #
 #   odin_card                      the selected card (ODIN_CARD, default u55c)
 #   odin_card_profile [card]       KEY=VALUE lines, or 1 for an unknown card
@@ -47,8 +48,6 @@ part=xcu55c-fsvh2892-2L-e
 cfg=scripts/hacc/odin_u55c.cfg
 memory=HBM[0]
 vitis_prefer=2022.2
-board_candidates=xilinx_u55c_gen3x16_xdma_3_202210_1 amd_gpu_rocm_6_0_0
-joint_candidates=mi210_vck_u55c mi210_u280_u55c mi210_u280_u55c_long_reservation
 joint_model=board_and_gpu_in_one_chassis
 PROFILE
             ;;
@@ -60,8 +59,6 @@ part=xcu250-figd2104-2L-e
 cfg=scripts/hacc/odin_u250.cfg
 memory=DDR[0]
 vitis_prefer=2020.2
-board_candidates=xilinx_u250_gen3x16_xdma_3_1_202020_1 u250_standard_reservation_pool u250_long_reservation_pool
-joint_candidates=u250_standard_reservation_pool u250_long_reservation_pool xilinx_u250_gen3x16_xdma_3_1_202020_1
 joint_model=board_and_cpu_reference_in_one_allocation
 PROFILE
             ;;
@@ -175,7 +172,7 @@ odin_card_refusal() {
                 return 1
             fi
             printf 'REFUSING: ODIN_CARD=u55c is DEADLOCKED on this cluster (field-observed 2026-08-25).\n'
-            printf '  The only U55C platform installed anywhere (hacc-node0 AND hacc-gpu3)\n'
+            printf '  The only U55C platform installed on this cluster (build and board nodes)\n'
             printf '  is %s.\n' "$(printf '%s\n' "${u55c_shells}" | tr '\n' ' ' | sed 's/ *$//')"
             _odin_deadlock_body
             return 0

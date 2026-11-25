@@ -2,17 +2,14 @@
 
 **Status: DESIGN — direction approved 2026-08-18, implementation unscheduled.**
 
-Owner directives folded in verbatim:
+Design requirements folded in:
 
-> "for loihi (or other platform templates that this information is missing), we
-> can derive the programming energy / time constants from other platforms,
-> having the relative fractions at reasonable values compared to other
-> constants."
-
-> "about the SNN flows, I know that we cannot 'tune' the QAT for spike
-> semantics if inputs are encoded as parameters, however, I believe that the
-> magnitude scaling etc can still work somehow. not a priority, but something
-> to keep in mind."
+- Where a platform template (Loihi among them) lacks programming energy and
+  time constants, they may be derived from other platforms, keeping their
+  ratios to the template's other constants at reasonable values.
+- For the spiking modes, the QAT cannot be tuned to spike semantics when the
+  inputs are encoded as parameters, but magnitude scaling may still apply. This
+  is a low-priority item to keep in view.
 
 ---
 
@@ -68,7 +65,7 @@ job is to prove that claim mechanism by mechanism and mark the deltas.
 | Unified pass planner | `mapping/support/schedule/pass_planner.py` (U1: residency-first, `bank_clustered_law`, `resident_passes`) | Within one inference, a programmed dynamic bank IS a resident bank: the streaming law composes "program K once, stream 197 tokens" verbatim. Across inferences it reprograms — which is already the record's per-program-load accounting. |
 | Pass-cut / carry | `mapping/support/schedule/pass_cut.py`, `pass_carry.py` (one census, both planes) | Streamed-operand rasters price as carry exactly as today. The payload does NOT ride carry (see §4.5 — no double count). |
 | Programming census | `mapping/weight_programming.py`; `deployment_record/build/from_mapping.py` (`programming ∈ {resident, reprogram}`, `params_bytes = 0 if resident`); candidate side `candidate_programming_census` | Payload bytes land in the SAME `reprogrammed_bytes` quantity; DOM adds only an attribution field (§4.5). |
-| Physics vocabulary | `deployment_record/platform_physics/vocabulary.py`: `e_program_per_byte` (multiplicand `reprogrammed_bytes \| carry_in_bytes`), `e_core_program` (× `reprogrammed_cores`), `t_program_per_byte` | The pricing formulas for DOM **already exist**. Declaration state today: `t_program_per_byte` in generic_estimated_22nm + truenorth only; the energy constants declared NOWHERE — §4.6 fixes this per the owner directive. |
+| Physics vocabulary | `deployment_record/platform_physics/vocabulary.py`: `e_program_per_byte` (multiplicand `reprogrammed_bytes \| carry_in_bytes`), `e_core_program` (× `reprogrammed_cores`), `t_program_per_byte` | The pricing formulas for DOM **already exist**. Declaration state today: `t_program_per_byte` in generic_estimated_22nm + truenorth only; the energy constants declared NOWHERE — §4.6 fixes this per the design requirement. |
 | Executor harness | `chip_simulation/hybrid_run/hybrid_stage_runner.py` (`run_hybrid_stages` callbacks over `state_buffer`), `host_compute.execute_compute_op_torch`, `StageTimer` | The payload is a host-op output sitting in `state_buffer`; materialization is one hook at neural-stage entry (§4.4). |
 | Per-stage backend programs | SANA-FE per-stage arch synthesis (R3), nevresim VERBATIM replay (G1), lava (G2), SCM `ValueHybridCoreFlow` | Every backend already builds per-stage programs; a per-sample payload is an injection at build time, with the G-series harness as the parity instrument. |
 | Certification | `pipelining/core/gates/value_gates.py` (fp64 window-exact twin, `value_parity_samples`, FATAL twin certs on mvm cells) | The correctness gauge for the whole construct: packed dynamic-MVM vs the float reference, per neuron-window. |
@@ -194,12 +191,12 @@ mutation check for exactly this (§8).
 - **Fidelity**: the new rows enter report-only; gates arm only after a
   sealed-vs-candidate evidence batch (the R4/R5 protocol).
 
-### 4.6 Derived programming constants (owner directive)
+### 4.6 Derived programming constants (design requirement)
 
 Current state: `t_program_per_byte` declared by generic_estimated_22nm and
 truenorth; `e_program_per_byte` and `e_core_program` declared by NO profile —
 so today a DOM headline would refuse by name everywhere except partially on
-two profiles. Per the directive, the missing constants are AUTHORED into the
+two profiles. Per the requirement, the missing constants are AUTHORED into the
 profile JSONs as `evidence_kind: "derived"` values with ratio-based
 derivations — data, not a new code path, exactly the C6 discipline (every
 constant carries its derivation string; comparisons disclose evidence kinds).
@@ -223,7 +220,7 @@ rule).
 
 ### 4.7 SNN flows — the keep-in-mind note (not in scope)
 
-The owner's read is right on both halves. Parameter-encoded inputs cannot be
+Both halves of that note hold. Parameter-encoded inputs cannot be
 QAT-tuned (the exact-QAT pairing needs trained weights to co-adapt with the
 spike semantics — a runtime payload has no training loop), so the
 window-exact certificate calculus does NOT extend to spiking DOM. What can

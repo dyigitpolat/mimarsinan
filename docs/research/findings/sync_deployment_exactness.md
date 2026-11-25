@@ -6,7 +6,7 @@ in a pinned band below the acceptance bar: **every S=8 pruned10 lever variant
 reads exactly 0.9527** with byte-identical stage trajectories (t0_21,
 t01_09_e4, t01_24_floor — pre 0.9614 → prune 0.9509 → AQ 0.9472 → WQ 0.9527 →
 every deployment step +0.0000;
-`~/.slurmech/workspaces/mimarsinan-xlog1/runs/20260710-025531-9267ffde` etc.),
+`~/.slurmech/workspaces/<profile>/runs/20260710-025531-9267ffde` etc.),
 0.9525 at S=4 (t01_05, AQ 0.9317), 0.9641 at S=16 (t01_04) — while every
 non-mixer sync cell passes easily (0.977–0.9942). This memo derives the exact
 end-to-end composition the deployed sync forward computes, proves it equals
@@ -83,8 +83,7 @@ kernels and the real tier-0 vehicles.
    better (−1.6 pp at S=16 on one draw). Verdict: a watch-item with a ready
    exact repair (comparator-side half-step), not a current binder.
 
-Prototype (nothing under `src/` modified):
-`/tmp/claude-1005/-home-yigit-repos-research-stuff/11224c9e-f926-4cb5-a527-2d0211f4bd25/scratchpad/S1/`
+Prototype (nothing under `src/` modified): a scratch directory, `S1/`
 (`proto_sync.py`, `results.json`; RTX PRO 6000, repo env, seed 0). All
 quantization arithmetic goes through the repo wire kernels
 (`ttfs_quantized_staircase`, `ttfs_grid_quantize`; torch/numpy twins asserted

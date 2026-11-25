@@ -80,8 +80,8 @@ def candidate_programming_census(
     """[E2] The programming multiplicands of this candidate's pass structure.
 
     A resident pass contributes its cores to core INIT and nothing else — the
-    weights it runs on are already installed (owner: "no we cannot charge
-    every pass as reprogram").
+    weights it runs on are already installed (not every pass is charged as a
+    reprogram).
 
     An undeclared ``weight_bits`` cannot size a payload, so the BYTES stay
     absent (the DMA term then refuses by name) while the core counts, which

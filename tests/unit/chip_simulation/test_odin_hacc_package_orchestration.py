@@ -6,10 +6,10 @@ to submit to, what counts as already done, whether a second instance may start.
 Nothing else in the suite would notice them rotting either.
 
 ``scripts/hacc/selftest/run_local_gates.sh`` puts stub ``sbatch``/``sinfo``/
-``scontrol``/``squeue``/``groups`` on PATH, backed by the 2026-08-25 hacchead
-transcripts, and drives the SHIPPED artifacts exactly as the owner would. This
-module is the thin pytest face of that harness: one process, one verdict, and
-its transcript on failure.
+``scontrol``/``squeue``/``groups`` on PATH, backed by an invented example
+cluster (``scripts/hacc/selftest/example_cluster/``), and drives the SHIPPED
+artifacts exactly as a user would. This module is the thin pytest face of that
+harness: one process, one verdict, and its transcript on failure.
 """
 
 from __future__ import annotations

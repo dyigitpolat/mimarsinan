@@ -4,14 +4,15 @@
 #   scripts/hacc/selftest/run_local_gates.sh [workdir]
 #
 # It puts stub sbatch/sinfo/scontrol/squeue/groups binaries on PATH, backed by
-# the 2026-08-25 field transcripts under field_2026_08_25/, points
-# ODIN_DATA_ROOT at a scratch directory, and then runs the SHIPPED bootstrap and
-# run_all.sh exactly as the owner would. Every gate below is a claim the package
+# the INVENTED example cluster under example_cluster/, sets the candidate
+# partitions the way a site would (ODIN_*_CANDIDATES), points ODIN_DATA_ROOT at
+# a scratch directory, and then runs the SHIPPED bootstrap and run_all.sh
+# exactly as a user would. Every gate below is a claim the package
 # makes about itself; a red line here is a package defect.
 #
-#   1  the build pick is vck5000_compile, and cpu_only loses on a DOWN node
-#   2  the joint pick is mi210_u280_u55c after mi210_vck_u55c is not permitted
-#   3  the board pick is the platform partition, reached through `hgpu`
+#   1  the build pick is build_long, and build_down loses on a DOWN node
+#   2  the joint pick is joint_gpu after joint_hidden is not permitted
+#   3  the board pick is u55c_board_1h, reached through a middle group
 #   4  bootstrap verifies the zip's sha256, extracts, launches DETACHED
 #   5  bootstrap ARCHIVES an existing install instead of deleting it
 #   6  a corrupted upload is refused before anything is unpacked
@@ -23,7 +24,7 @@
 #  12  the driver selftest passes from the fresh extract
 #  13  ODIN_CARD=u250 picks the 202020_1 shell, Vitis 2020.2, the U250 part and
 #      the DDR connectivity config — asserted on the v++ stub's own argv
-#  14  ODIN_CARD=u55c on the CURRENT field evidence REFUSES EARLY, names the
+#  14  ODIN_CARD=u55c on the example's evidence REFUSES EARLY, names the
 #      admin fix, submits nothing — and SELF-HEALS the moment 2022.2 appears
 #  15  bootstrap --card u250 threads the card into the detached run
 #  16  the DEPLOYMENT executor runs the two-core bundle as host-mediated passes
@@ -51,7 +52,7 @@ set -uo pipefail
 SELFTEST="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "${SELFTEST}/../../.." && pwd)"
 STUBS="${SELFTEST}/stubs"
-FIELD="${SELFTEST}/field_2026_08_25"
+FIELD="${SELFTEST}/example_cluster"
 ZIP="${REPO}/dist/odin_hacc_package.zip"
 DEPLOY_ZIP="${REPO}/dist/odin_hacc_deployment.zip"
 BOOTSTRAP="${REPO}/dist/bootstrap_hacc.sh"
@@ -67,6 +68,14 @@ mkdir -p "${WORK}"
 FAILED=0
 
 export ODIN_STUB_FIELD="${FIELD}"
+# The candidate partitions, best first, as a site sets them (the package names
+# none of its own). The defaults serve the default card, the U55C; the U250
+# gates pass their own lists.
+export ODIN_BUILD_CANDIDATES="build_down build_long"
+export ODIN_BOARD_CANDIDATES="u55c_board_1h"
+export ODIN_JOINT_CANDIDATES="joint_hidden joint_gpu joint_gpu_long"
+U250_BOARD_CANDIDATES="u250_board_1h u250_pool_12h u250_pool_2d"
+U250_JOINT_CANDIDATES="u250_pool_12h u250_pool_2d u250_board_1h"
 ODIN_REAL_PYTHON3="$(command -v python3)"
 export ODIN_REAL_PYTHON3
 export XILINX_ROOT="${WORK}/tools/Xilinx"
@@ -75,7 +84,7 @@ export PATH="${STUBS}:${PATH}"
 mkdir -p "${XRT_ROOT}"
 : > "${XRT_ROOT}/setup.sh"
 
-# The installed Vitis set, straight out of the field transcript — 2020.1 2020.2
+# The installed Vitis set, from the example cluster — 2020.1 2020.2
 # 2021.2 2022.1 2023.2 2024.2, and NO 2022.2. Each one gets the stub binaries
 # and a settings64.sh that exports XILINX_VITIS to ITSELF, so a gate can prove
 # which version the card profile actually chose.
@@ -97,16 +106,16 @@ export PATH="${dir}/bin:\${PATH}"
 EOF
     done
 }
-# shellcheck disable=SC2046  # the transcript is one version per line, by design
-install_vitis "${XILINX_ROOT}" $(cat "${FIELD}/vitis_installed.txt")
+# shellcheck disable=SC2046  # the example is one version per line, by design
+install_vitis "${XILINX_ROOT}" $(grep -v '^#' "${FIELD}/vitis_installed.txt")
 
-# /opt/xilinx/platforms as the field found it: one 2022.2-locked U55C shell and
+# /opt/xilinx/platforms as the example has it: one 2022.2-locked U55C shell and
 # the two U250 shells. NOT exported globally — the card gate must stay silent
 # where there is no evidence to read, which is every gate below that does not
 # opt in with ODIN_PLATFORM_ROOT.
 PLATFORM_ROOT="${WORK}/platforms"
 while IFS= read -r platform; do
-    [ -n "${platform}" ] || continue
+    case "${platform}" in ""|"#"*) continue ;; esac
     mkdir -p "${PLATFORM_ROOT}/${platform}"
 done < "${FIELD}/platforms_installed.txt"
 
@@ -157,8 +166,8 @@ PKG="$(fresh_package "${PICK_ROOT}")"
 LOG="${WORK}/pick_build.log"
 ( cd "${PKG}" && ODIN_DATA_ROOT="${PICK_ROOT}" ./run_all.sh --dry-run --only 2 ) > "${LOG}" 2>&1
 say "--- transcript ---"; sed -n '1,14p' "${LOG}"
-expect 1a "${LOG}" "REJECT cpu_only: every node is down or drained"
-expect 1b "${LOG}" "CHOSE vck5000_compile"
+expect 1a "${LOG}" "REJECT build_down: every node is down or drained"
+expect 1b "${LOG}" "CHOSE build_long"
 expect 1c "${LOG}" "AllowGroups=ALL"
 expect 1d "${LOG}" "MaxTime=7-00:00:00"
 
@@ -166,14 +175,14 @@ gate 2 "the joint pick, after the partition that refused this account"
 LOG="${WORK}/pick_joint.log"
 ( cd "${PKG}" && ODIN_DATA_ROOT="${PICK_ROOT}" ./run_all.sh --dry-run --only 7 ) > "${LOG}" 2>&1
 say "--- transcript ---"; sed -n '1,14p' "${LOG}"
-expect 2a "${LOG}" "REJECT mi210_vck_u55c: scontrol has no such partition"
+expect 2a "${LOG}" "REJECT joint_hidden: scontrol has no such partition"
 expect 2b "${LOG}" "User's group not permitted to use this partition"
-expect 2c "${LOG}" "CHOSE mi210_u280_u55c: AllowGroups=lab,hgpu,fpga_u280 (via hgpu)"
+expect 2c "${LOG}" "CHOSE joint_gpu: AllowGroups=staff,gpu_users,u280_users (via gpu_users)"
 
 gate 3 "the board pick"
 LOG="${WORK}/pick_board.log"
 ( cd "${PKG}" && ODIN_DATA_ROOT="${PICK_ROOT}" ./run_all.sh --dry-run --only 5 ) > "${LOG}" 2>&1
-expect 3a "${LOG}" "CHOSE xilinx_u55c_gen3x16_xdma_3_202210_1: AllowGroups=lab,hgpu,fpga_u55c (via hgpu)"
+expect 3a "${LOG}" "CHOSE u55c_board_1h: AllowGroups=staff,gpu_users,u55c_users (via gpu_users)"
 expect 3b "${LOG}" "MaxTime=01:00:00"
 
 # ===========================================================================
@@ -197,7 +206,7 @@ expect 4e "${RUN_LOG}" "[selftest] refusals: 5/5 typed correctly"
 expect_file 4f "${TARGET}/build/hacc/hw_nc1/odin_fpga_hw.xclbin.built_with"
 expect_file 4g "${TARGET}/results/board_run/summary_board.json"
 expect_file 4h "${TARGET}/results/joint/summary_join.json"
-expect 4i "${TARGET}/results/partition_picks.txt" "vck5000_compile"
+expect 4i "${TARGET}/results/partition_picks.txt" "build_long"
 ( cd "${TARGET}" && ./scripts/status.sh ) > "${WORK}/status.log" 2>&1
 say "--- status.sh ---"; cat "${WORK}/status.log"
 expect 4j "${WORK}/status.log" "NOT RUNNING: no lock is held"
@@ -353,7 +362,7 @@ expect 12b "${LOG}" "refusals: 5/5 typed correctly"
 # ===========================================================================
 # THE CARD IS A PARAMETER (v3). Everything above ran on the default card with
 # no platform evidence to read, which is exactly the off-cluster case. The
-# three gates below hand the package the FIELD's evidence — the installed
+# three gates below hand the package the example's evidence — the installed
 # platform list and the installed Vitis list — and check both answers it must
 # give: build the U250, refuse the U55C.
 # ===========================================================================
@@ -363,19 +372,21 @@ PKG="$(fresh_package "${U250_ROOT}")"
 LOG="${WORK}/u250_pick.log"
 (
     cd "${PKG}" && ODIN_DATA_ROOT="${U250_ROOT}" ODIN_CARD=u250 \
+        ODIN_BOARD_CANDIDATES="${U250_BOARD_CANDIDATES}" \
         ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" ./run_all.sh --dry-run --only 5
 ) > "${LOG}" 2>&1
 say "--- transcript ---"; sed -n '1,14p' "${LOG}"
 expect 13a "${LOG}" "card     : u250   (platform xilinx_u250_gen3x16_xdma_3_1_202020_1, config scripts/hacc/odin_u250.cfg)"
-expect 13b "${LOG}" "CHOSE xilinx_u250_gen3x16_xdma_3_1_202020_1: AllowGroups=lab,fpga_u250 (via fpga_u250)"
+expect 13b "${LOG}" "CHOSE u250_board_1h: AllowGroups=staff,u250_users (via u250_users)"
 expect 13c "${LOG}" "MaxTime=01:00:00"
 
 LOG="${WORK}/u250_joint_pick.log"
 (
     cd "${PKG}" && ODIN_DATA_ROOT="${U250_ROOT}" ODIN_CARD=u250 \
+        ODIN_JOINT_CANDIDATES="${U250_JOINT_CANDIDATES}" \
         ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" ./run_all.sh --dry-run --only 7
 ) > "${LOG}" 2>&1
-expect 13d "${LOG}" "CHOSE u250_standard_reservation_pool"
+expect 13d "${LOG}" "CHOSE u250_pool_12h"
 expect 13e "${LOG}" "These nodes carry no GPU, and the join never needed one"
 
 # The build itself, off-cluster, through the SHIPPED sbatch and build script.
@@ -390,8 +401,8 @@ status=$?
 say "--- transcript ---"; sed -n '1,20p' "${LOG}"
 if [ "${status}" -eq 0 ]; then pass 13f "the u250 build ran to the end (exit 0)"
 else fail 13f "exit ${status}; see ${LOG}"; fi
-expect 13g "${LOG}" "[hacc-build] card     : u250"
-expect 13h "${LOG}" "[hacc-build] platform : xilinx_u250_gen3x16_xdma_3_1_202020_1"
+expect 13g "${LOG}" "[odin-build] card     : u250"
+expect 13h "${LOG}" "[odin-build] platform : xilinx_u250_gen3x16_xdma_3_1_202020_1"
 expect 13i "${LOG}" "/Vitis/2020.2 (prefer 2020.2)"
 expect 13j "${PKG}/build/hacc/hw_nc1/pack_kernel.tcl" "-part xcu250-figd2104-2L-e"
 if [ -f "${VXX_TRACE}" ]; then
@@ -403,7 +414,7 @@ else
 fi
 expect 13m "${PKG}/scripts/hacc/odin_u250.cfg" "sp=odin_0.m_axi_gmem:DDR[0]"
 
-gate 14 "ODIN_CARD=u55c refuses EARLY on the field's own evidence"
+gate 14 "ODIN_CARD=u55c refuses EARLY on the example's evidence"
 DEAD_ROOT="${WORK}/deadlock"
 PKG="$(fresh_package "${DEAD_ROOT}")"
 LOG="${WORK}/u55c_refusal.log"
@@ -442,7 +453,7 @@ if grep -qF 'DEADLOCKED' "${LOG}"; then
 else
     pass 14g "with 2022.2 installed the refusal is gone by itself"
 fi
-expect 14h "${LOG}" "CHOSE xilinx_u55c_gen3x16_xdma_3_202210_1"
+expect 14h "${LOG}" "CHOSE u55c_board_1h"
 
 gate 15 "bootstrap --card u250 threads the card into the detached run"
 CARD_BOOT="${WORK}/cardboot"
@@ -450,6 +461,8 @@ mkdir -p "${CARD_BOOT}/${USER}"
 LOG="${WORK}/bootstrap_card.log"
 (
     cd "${WORK}" && ODIN_DATA_ROOT="${CARD_BOOT}" ODIN_PLATFORM_ROOT="${PLATFORM_ROOT}" \
+        ODIN_BOARD_CANDIDATES="${U250_BOARD_CANDIDATES}" \
+        ODIN_JOINT_CANDIDATES="${U250_JOINT_CANDIDATES}" \
         "${BOOTSTRAP}" --card u250 "${ZIP}"
 ) > "${LOG}" 2>&1
 TARGET="${CARD_BOOT}/${USER}/odin_hacc_package"
@@ -463,7 +476,7 @@ else
     fail 15c "the detached u250 run did not finish in 180s"
 fi
 expect 15d "${RUN_LOG}" "card     : u250"
-expect 15e "${TARGET}/results/partition_picks.txt" "xilinx_u250_gen3x16_xdma_3_1_202020_1"
+expect 15e "${TARGET}/results/partition_picks.txt" "u250_board_1h"
 expect 15f "${TARGET}/build/hacc/hw_nc1/odin_fpga_hw.xclbin.built_with" "card=u250"
 LOG="${WORK}/bootstrap_bad_card.log"
 (
@@ -652,7 +665,7 @@ else fail 18f "exit ${status}, wanted 2"; fi
 expect 18g "${LOG}" "mine_checkpoint.sh"
 
 
-gate 19 "phase 8 — HACC NUS - ODIN Deployment, end to end under stub slurm"
+gate 19 "phase 8 — HACC ODIN Deployment, end to end under stub slurm"
 P8_ROOT="${WORK}/phase8"
 PKG="$(fresh_package "${P8_ROOT}")"
 LOG="${WORK}/phase8.log"
@@ -662,7 +675,7 @@ status=$?
 say "--- transcript (phase 8) ---"; sed -n '/phase 8:/,$p' "${LOG}" | head -30
 if [ "${status}" -eq 0 ]; then pass 19a "the whole flow reached the end (exit 0)"
 else fail 19a "exit ${status}; see ${LOG}"; fi
-expect 19b "${LOG}" "phase 8: HACC NUS - ODIN Deployment"
+expect 19b "${LOG}" "phase 8: HACC ODIN Deployment"
 expect 19c "${LOG}" "one host-mediated PASS per core"
 expect 19d "${LOG}" "nc1_two_core_passes.json"
 expect_file 19e "${PKG}/results/board_deploy/deployment_report.json"

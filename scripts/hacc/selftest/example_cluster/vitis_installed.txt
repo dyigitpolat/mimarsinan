@@ -1,0 +1,7 @@
+# Invented example for the local gate harness, not a capture of any real cluster.
+2020.1
+2020.2
+2021.2
+2022.1
+2023.2
+2024.2

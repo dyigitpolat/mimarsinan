@@ -287,12 +287,12 @@ finding F6 below.
 
 | file | what it holds |
 |---|---|
-| `/home/yigit/repos/research_stuff/mimarsinan/src/mimarsinan/chip_simulation/sanafe/presets.py` | `TRUENORTH_PRESET` — 16 per-event energy/latency constants |
-| `/home/yigit/repos/research_stuff/mimarsinan/sana_fe/arch/truenorth.yaml` | vendored SANA-FE architecture (structure + all-zero physics) |
-| `/home/yigit/repos/research_stuff/mimarsinan/src/mimarsinan/mapping/platform/imc_platforms_literature.py` | `truenorth_like` IMC platform geometry + provenance quote |
-| `/home/yigit/repos/research_stuff/mimarsinan/src/mimarsinan/deployment_record/cost/coefficients.py` | `_REFERENCE_CORE_NEURONS_SMALL`, and bands built on `TRUENORTH_PRESET` |
-| `/home/yigit/repos/research_stuff/mimarsinan/src/mimarsinan/chip_simulation/sanafe/arch_synth/floorplan.py` | `PRESET_CORES_PER_TILE["truenorth"] = 1` |
-| `/home/yigit/repos/research_stuff/mimarsinan/src/mimarsinan/config_schema/registry/entries_platform.py`, `entries_execution.py` | enum option `"truenorth"` and doc text only — **no physical constants** |
+| `src/mimarsinan/chip_simulation/sanafe/presets.py` | `TRUENORTH_PRESET` — 16 per-event energy/latency constants |
+| `sana_fe/arch/truenorth.yaml` | vendored SANA-FE architecture (structure + all-zero physics) |
+| `src/mimarsinan/mapping/platform/imc_platforms_literature.py` | `truenorth_like` IMC platform geometry + provenance quote |
+| `src/mimarsinan/deployment_record/cost/coefficients.py` | `_REFERENCE_CORE_NEURONS_SMALL`, and bands built on `TRUENORTH_PRESET` |
+| `src/mimarsinan/chip_simulation/sanafe/arch_synth/floorplan.py` | `PRESET_CORES_PER_TILE["truenorth"] = 1` |
+| `src/mimarsinan/config_schema/registry/entries_platform.py`, `entries_execution.py` | enum option `"truenorth"` and doc text only — **no physical constants** |
 
 ### 4.2 Value-by-value cross-check
 
@@ -364,7 +364,7 @@ Its module docstring says every entry is "transcribed EXACTLY … from
 `papers/structured_elimination_aaai/research_artifacts/13_chip_geometries.json`" and instructs
 future editors to "add a new extraction card to that JSON and re-transcribe instead." Neither
 that directory nor any `*chip_geometries*` file exists under
-`/home/yigit/repos/research_stuff/papers/` (the closest directory is
+the papers directory of the research repository (the closest directory is
 `papers/exact_structured_pruning/`). The stated re-transcription workflow is therefore not
 executable as written. The *content* still checks out — I verified the `truenorth_like` quote
 against the PDF and it is verbatim — but the audit trail it points at is missing.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HACC NUS - ODIN Deployment: one sealed bundle, one card, one measured verdict.
+"""HACC ODIN Deployment: one sealed bundle, one card, one measured verdict.
 
 THE SHAPE OF THE PROBLEM. The shipped bitstream instantiates ONE ODIN core
 (NC=1, the only geometry build_xclbn.sh builds), and the chip routes nothing

@@ -16,6 +16,14 @@ from mimarsinan.common.lifecycle.child_launcher import ChildResult, run_child  #
 
 SLURMECH = [str(REPO / "env/bin/python"), "-c", "from slurmech.cli import main; main()"]
 
+
+def slurmech_profile() -> str:
+    """The slurmech profile the project's .slurmech.toml names (its workspaces live under it)."""
+    match = re.search(r'^profile\s*=\s*"([^"]+)"', (REPO / ".slurmech.toml").read_text(), re.MULTILINE)
+    if match is None:
+        raise SystemExit(".slurmech.toml names no profile")
+    return match.group(1)
+
 # Gate (user revision 2026-07-10): deployed >= max(ACC_FLOOR, RETENTION * pretrain).
 ACC_FLOOR = 0.97
 RETENTION = 0.98
@@ -122,7 +130,7 @@ def harvest_one(name: str, entry: dict, out_dir: Path) -> dict:
     _slurmech(
         "fetch", run_id, "--path", "generated/*_deployment_run/_GUI_STATE/*",
     )
-    artifacts = Path.home() / ".slurmech/workspaces/mimarsinan-xlog1/runs" / run_id / "artifacts"
+    artifacts = Path.home() / ".slurmech/workspaces" / slurmech_profile() / "runs" / run_id / "artifacts"
     row: dict = {"name": name, "run_id": run_id}
 
     stdout_log = artifacts / "stdout.log"

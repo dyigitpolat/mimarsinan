@@ -19,8 +19,7 @@ constant already living in `src/`.
 | `boyle2023sanafe` | J. A. Boyle et al., "SANA-FE: Simulating Advanced Neuromorphic Architectures for Fast Exploration", *IEEE TCAD* 44:3165–3178, 2025 | peer-reviewed | provenance of the in-repo SANA-FE Loihi preset (§6) |
 | `blouw2018benchmarking` | P. Blouw et al., "Benchmarking Keyword Spotting Efficiency on Neuromorphic Hardware", NICE 2018 | peer-reviewed | system-level anchor only; no per-unit constants taken |
 
-PDFs cached at
-`/tmp/claude-1005/-home-yigit-repos-research-stuff/45df81fa-3078-4a3f-8bb8-1b58f5a3b81c/scratchpad/papers/`.
+PDFs cached in a scratch directory (`papers/`).
 
 **Critical framing for the whole table below.** Davies 2018 Table 2 is titled
 "Loihi **pre-silicon** performance and energy measurements" and the body text
